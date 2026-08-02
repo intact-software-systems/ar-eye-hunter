@@ -69,8 +69,9 @@ child's later evidence ledger waits for both.
 
 Date: 2026-08-01
 
-Status: Review-driven revision drafted and unapproved. Planning publication
-does not authorize PR A or PR B.
+Status: Exact planning revision approved; PR A published; PR B Tasks 5-10
+implemented and independently accepted. Task 11 local completion evidence,
+whole-PR review, governed performance, and Branch Release Gate remain pending.
 
 ## 1. Prerequisite And Scope Boundary
 
@@ -89,6 +90,31 @@ PR #59 is the immutable implementation prerequisite for this QA child:
 These facts prove that PR #59 was safely published. They do not relabel its
 separate Task 10 ledger as published. The server child remains
 implementation-published with later-ledger publication pending.
+
+The QA planning and PR A prerequisite evidence is exact:
+
+- the human approved original plan blob
+  `23aee4769fa49f623f8114073ea8c132e3f25671` plus the explicitly authorized
+  Task 1 seven-owner test-tree and `package.json` registration amendment;
+- planning PR #60 published feature head
+  `8ccf9af6f97b6eb6df95d3f10286e8eca6d5a99e`; its squash result was
+  `2f7390c2b422a2b33f0ca781ecef8de9abd86a25`, tree
+  `25facef7df020b8021495449805d54429b45dc1e`;
+- the effective plan blob after the approved amendment and PR A merge is
+  `13d0059c9fa1377bd15a1d384ad3c4a7137479f7`;
+- PR A #61 published feature head
+  `8bc4ffd66f4a600f47ee0981ced1f4539bd6a91a`, frozen tree
+  `c1e572d21b145287f59c8c28db6caa72853f0801`, and Branch Release Gate run
+  `30707723830`, attempt 1, success for that exact head;
+- PR A's squash result is `a7a5f488cd185a7f2cc6bd814c319f97d5401d03`
+  with the same tree; and
+- **Run Hetzner Supported Distributed Manifests** run `30724358065`, attempt 1,
+  succeeded for that exact resulting-main SHA.
+
+Those facts authorize PR B from exact base
+`a7a5f488cd185a7f2cc6bd814c319f97d5401d03`. They do not predict PR B's final
+candidate, performance result, Branch Release Gate, merge, default workflow, or
+later ledger evidence.
 
 The QA child addresses only review findings about human navigation. Re-review
 against final feature head `bec8bea4eb095de9ad3a6b47c18e6799ab811239`
@@ -223,6 +249,184 @@ projection is visibly distinct from private after-commit data.
 Passing tests or checker output does not answer these questions. PR A makes this
 an explicit human-review deliverable; PR B makes the representative path visible
 in the code.
+
+### 2.1 Final construction and registration timelines
+
+The final target has one shared construction timeline and no invocation-time
+lookup of a required topology or RTC dependency:
+
+1. `createRallarMiddleware` creates the `InboxQueueReader`, transaction
+   repositories, wake callback, durable/cached `GroupStateService`, and
+   `AppGroupInboxService`. The facade constructs the group, topology, and RTC
+   handler shells; its constructor immediately calls
+   `registerGroupStateMessageHandlers`, so group mutations and session cleanup
+   capture their complete constructor-valid dependencies.
+2. `createRallarServer` constructs `GroupTopologyManagementService`, the RTT
+   repository, and the complete `RtcRttAppInboxDependencies`. It calls
+   `setTopologyManagementService` and then `setRtcRttAppInboxDependencies`.
+   Each first setter call registers its family once and the callback captures
+   that exact mandatory value. A same-object call registers nothing; a
+   different object throws the unchanged configuration error.
+3. `createRallarServer` returns the application only after both setters finish.
+   `apps/api-v1/src/main.ts` waits for runtime readiness and only then calls
+   `rallar.start()`. The queue engine cannot invoke a topology or RTC callback
+   before its complete captured dependency exists. `InboxQueueReader` owns the
+   registrations for the service lifetime; application unload owns background
+   task shutdown.
+
+The predecessor registered topology and RTC callbacks in the facade constructor
+and each invocation read an optional field set later. The final ownership keeps
+the public setters for compatibility but makes their first successful call the
+registration boundary. Group and cleanup registration remains constructor-owned.
+
+### 2.2 Final authenticated group mutation runtime trace
+
+- **Entry and caller:** an API group-state route calls
+  `defaultProcessGroupAppInbox`, whose first authority boundary is
+  `AppGroupInboxService.processAuthenticatedEntryUntilCompletion`.
+- **Translation and first guard:** `isTopologyConfigInboxType` selects the
+  unchanged topology branch; otherwise `prepareAuthenticatedGroupMutation`
+  first requires `isAuthenticatedGroupMutationInboxType`, then calls the direct
+  `toGroupMutationDescriptor` representation owner and
+  `GroupStateService.prepareMutation`.
+- **Queue and invocation:** `AppInboxService.processEntryUntilCompletionInternal`
+  enqueues once by command identity and waits. `InboxQueueReader` invokes the
+  registered group callback once per reserved queue attempt. A retryable error
+  is released to the ResourceInbox retry owner and a fresh reservation invokes
+  the complete handler path again; the handler itself owns no retry loop.
+- **Phases and transaction:** `processGroupStateMutation` reads the durable
+  preparation, inserts the current attempt, then calls the exact
+  `GroupStateInboxMutationOperations.read`, `compute`, `validate`, and
+  `commitMutation` owners. The first write guard is the lifecycle CAS when
+  present, followed by the validated outcome guard before
+  `writeGroupMutation`. The service write owns authoritative state, event,
+  receipt/idempotency, audience, and required final outbox intents; AppInbox's
+  transaction writer owns transaction start/commit, durable-result replacement,
+  and reservation finalization.
+- **Durable/private and normal exit:** the transaction callback returns one
+  immutable `{ durableResult, afterCommitResult }`. Only `durableResult` is
+  serialized/finalized. Successful transaction return releases the exact
+  `committedSnapshot` identity privately; the handler observes it when present,
+  wakes once, and returns only the durable result. The waiting caller reads that
+  durable JSON and returns the existing `Either`/route result.
+- **Early, failure, and cleanup exits:** inactive presence connect uses the
+  durable-only writer and no snapshot observation; replay/no-op retains its
+  computed durable result. Malformed authority, typed rejection, conditional
+  conflict, repository error, result replacement, finish, or commit failure
+  exposes no private result and performs no observation or wake. Retryable
+  failures restart from a fresh reserved attempt; terminal failures use the
+  AppInbox terminal finalization owner. Transaction rollback and queue release
+  are the cleanup boundaries.
+- **Canonical/compatibility:** `group-state/**` and
+  `to-group-mutation-descriptor.ts` are canonical. The exported
+  `AppGroupInboxService` path and broad `GroupStateService` remain direct
+  compatibility surfaces; the handler sees only its six-operation capability.
+
+The predecessor kept descriptor switches in the handler, supplied the whole
+service, and mutated a snapshot variable across the transaction callback. The
+final target gives translation, phase capability, and durable/private commit
+return distinct named owners without changing the public or durable result.
+
+### 2.3 Final presence cleanup runtime trace
+
+- `enqueueGroupSessionCleanup` builds the canonical cleanup enqueue and the
+  constructor-registered `GROUP_PRESENCE_SESSION_CLEANUP` callback invokes
+  `processGroupSessionCleanup` once per reserved attempt.
+- `toGroupCloseFacts` is the first shape/identity boundary. The lifecycle owner
+  reads and computes the close guard; `prepareSessionCleanupMutations` produces
+  the affected-group inventory; each prepared command runs direct
+  `read -> compute -> validate` exactly once for that attempt.
+- AppInbox owns retry and transaction. Inside one durable-only transaction,
+  lifecycle closure is written first and each computed `write` outcome calls
+  the canonical group-state writer, including its guarded state, event,
+  receipt, audience, and final outbox work. The durable normal exit is the
+  unchanged inactive result plus `affectedGroups`; commit is followed by one
+  wake and the waiting caller reads that result.
+- Invalid cleanup facts or any read/compute/validate/write/finalization failure
+  follows AppInbox terminal/retry classification; rollback exposes no durable
+  result and no wake. An empty preparation set still commits the lifecycle
+  result with `affectedGroups: 0`. Queue release and application-owned worker
+  shutdown remain the cleanup boundaries.
+- The direct functions in `group-state/presence/group-presence-service.ts` are
+  canonical. `services/app-group-ws-session-lifecycle.ts` remains a re-export-only
+  compatibility path.
+
+### 2.4 Final topology runtime trace
+
+- API topology routes call the existing authenticated facade entry. Its
+  topology predicate calls `TopologyAppInboxHandler.createAuthenticatedEnqueue`;
+  the setter-registered family callback later invokes `processMutation` once per
+  reserved attempt with the exact captured `GroupTopologyManagementService`.
+- `readTopologyAppInboxAuthority` and `verifyTopologyAppInboxAuthority` are the
+  first durable-authority guards. Reconfigure payload operation validation is
+  the first branch-specific guard. Config operations call named prepare, read,
+  compute, validate, and then the idempotency-conflict guard; reconfigure calls
+  named read, compute, validate directly.
+- AppInbox owns the transaction and retry. The topology owner performs the
+  first conditional/CAS write and its exact state, receipt/event where
+  applicable, and final outbox writes. The normal durable exit is either the
+  unchanged topology-config mutation result or queued reconfigure result.
+  Successful writes wake once after commit; no-op/claim behavior retains its
+  predecessor wake rule.
+- Authority, invalid operation, idempotency conflict, optimistic conflict, and
+  persistence/finalization failures expose no committed result or premature
+  wake. Retryable failures re-enter the full callback on a fresh AppInbox
+  attempt. Transaction rollback and queue release own cleanup.
+- `topology/inbox/**` is canonical; the exported facade/setter and existing
+  service compatibility paths remain one hop. The predecessor callback was live
+  before configuration and looked up optional facade state; the final callback
+  becomes live only when it captures the complete setter value.
+
+### 2.5 Final RTC RTT runtime trace
+
+- `enqueueRtcRtt` calls `RtcRttAppInboxHandler.createEnqueue`; the
+  setter-registered `RTC_RTT_SUBMIT` callback invokes `processMutation` once per
+  reserved attempt with the exact captured `RtcRttAppInboxDependencies`.
+- `readRtcRttAppInboxAuthority` and `verifyRtcRttAppInboxAuthority` are the
+  first guards. `readRttMutation` owns the authoritative read; receipt presence
+  selects replay inputs, otherwise `readPolicyInputs` supplies the complete
+  policy data. `computeRttMutation` and `validateRttMutation` remain pure/direct.
+- AppInbox owns retry and the transaction. `commitMutation` performs the first
+  write/lifecycle-facts guard, `writeRttMutation` owns the conditional
+  measurement/receipt/final-outbox write, and `toRtcRttAppInboxResult` owns the
+  durable result. After commit, a write outcome observes the exact committed
+  measurement once and wakes once; replay/no-op preserves its no-observe/no-wake
+  rule. The waiting caller receives the same durable result.
+- Invalid authority, missing lifecycle facts, conflict, read/policy, write, or
+  finalization failure exposes no observation or wake. Retryable failures
+  re-enter the complete path on a new attempt; transaction rollback and queue
+  release own cleanup.
+- `rtc-topology/inbox/**` is canonical. The public facade/setter remains the
+  compatibility surface. As with topology, final registration replaces the
+  predecessor invocation-time optional dependency lookup with a mandatory
+  captured value.
+
+### 2.6 Final timing and transaction/retry boundary traces
+
+`createGroupStateRuntime` constructs the complete untimed service and then calls
+`createTimedGroupStateService`. With no sink the exact service identity exits.
+With a sink, the adapter explicitly owns all 15 Promise-returning operation
+wrappers; every call invokes its corresponding underlying symbol exactly once,
+then records one success or error event with the predecessor details and returns
+or rejects with the exact value identity. `compute` and `validate` remain the
+same synchronous untimed functions, and absent optional `listRecentEvents`
+remains absent. There is no dynamic operation discovery, proxy, reflective
+dispatch, transaction, retry, state, or cleanup lifecycle in this family.
+
+For every mutation family, `AppInboxService.onStateMessage` registers one queue
+callback per message type. On each reserved attempt it validates command
+identity, creates one context, and calls `AppInboxTransactionWriter.begin`
+before the family handler. `writeMutation` or
+`writeMutationWithAfterCommitResult` invokes its transaction callback once for
+that `runInTransaction` call. The operation-specific conditional guard remains
+inside that callback; result replacement and reservation finish remain in the
+same transaction. Commit return precedes finalization-state publication and any
+private after-commit release. A retryable throw is rethrown to the
+ResourceInbox release/backoff/fairness owner, so a later attempt repeats the
+complete entry path rather than retrying a stale write. A non-retryable failure
+is transactionally finalized as failed. The caller's wait exits with the stored
+completed/failed result or the unchanged unavailable fallback. No PR B owner
+changes retry limits, lanes, backoff, exhaustion, or cleanup.
 
 ## 3. Exact Current And Target Trees
 
@@ -385,7 +589,7 @@ packages/shared-server/rallar-system/
     inbox/
       group-state-inbox-contracts.ts
       group-state-inbox-handler.ts
-      group-state-inbox-mutation-descriptor.ts
+      to-group-mutation-descriptor.ts
       group-state-inbox-result.ts
     mutation/
       group-mutation-result.ts
@@ -417,6 +621,7 @@ packages/tests/repo/
   group-state-server-source-ratchet-inventory.ts
   group-state-server-source-ratchet.test.ts
 packages/tests/shared-server/
+  app-inbox-test-database.ts
   app-inbox-transaction.test.ts
   rallar-middleware.test.ts
   topology-app-inbox-ownership.test.ts
@@ -431,6 +636,7 @@ packages/tests/shared-server/
       group-state-inbox-construction.test.ts
       group-state-inbox-operation-matrix.test.ts
       group-state-inbox-retry.test.ts
+      group-state-inbox-test-runtime.ts
     mutation/
       write-group-state-mutation-behavior.test.ts
 ```
@@ -443,7 +649,13 @@ apps/api-v1/test/
 packages/tests/repo/
   group-state-server-source-ratchet-inventory.ts
   group-state-server-source-ratchet.test.ts
+  group-state-source-ratchet-function-sizes.ts
+  group-state-traceability-active-paths.test.ts
 packages/tests/shared-server/
+  app-inbox-test-database-contracts.ts
+  app-inbox-test-database-sql.ts
+  app-inbox-test-database-transaction.ts
+  app-inbox-test-database.ts
   app-inbox-transaction.test.ts
   rallar-middleware.test.ts
   topology-app-inbox-ownership.test.ts
@@ -452,23 +664,34 @@ packages/tests/shared-server/
   mutation-routing-owner-inventory.ts
   group-state/
     group-state-service-idempotency.test.ts
+    group-state-service-timing-contract.test.ts
+    group-state-service-timing-fixture.ts
     group-state-service-timing.test.ts
     group-state-test-mutation-executor.ts
     inbox/
       app-group-inbox-registration-lifecycle.test.ts
       group-state-inbox-authority.test.ts
       group-state-inbox-construction.test.ts
+      group-state-inbox-descriptor-contract.test.ts
       group-state-inbox-operation-matrix.test.ts
+      group-state-inbox-resource-fixtures.ts
       group-state-inbox-retry.test.ts
+      group-state-inbox-test-runtime.ts
+      group-state-inbox-transaction-failures.test.ts
       group-state-inbox-transaction-result.test.ts
+      group-state-transaction-boundary-fixture.ts
     mutation/
       write-group-mutation-behavior.test.ts
 ```
 
-The target adds four directly owned test/production files, refines two existing
-owners, and makes two descriptive internal moves:
+The production target remains limited to the approved explicit timing and
+descriptor owners plus the transaction/handler refinements and descriptive
+internal moves. Task 5 adds only cohesive timing and transaction test owners.
+The in-memory database test support separates its public factory, contracts,
+SQL-family dispatch and stage hooks, and transaction publication/commit owners;
+its existing defaults and every consumer remain unchanged:
 
-- `group-state-inbox-mutation-descriptor.ts` owns the exact AppInbox payload to
+- `to-group-mutation-descriptor.ts` owns the exact AppInbox payload to
   `GroupMutationDescriptor` translation now embedded below the direct phase
   sequence in `group-state-inbox-handler.ts`.
 - `group-state-service-timing.ts` owns the real timing/instrumentation boundary
@@ -586,7 +809,7 @@ strictness.
 
 | Current owner                                                                                 | Target owner                                                                                                                                                                                             | Locked responsibility                                                                                                                                             |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| descriptor switches and `to*MutationDescriptor` helpers inside `group-state-inbox-handler.ts` | exported `toGroupMutationDescriptor` and private family helpers in `group-state-inbox-mutation-descriptor.ts`                                                                                            | exact payload-to-domain translation, switch order, errors, and field projection                                                                                   |
+| descriptor switches and `to*MutationDescriptor` helpers inside `group-state-inbox-handler.ts` | exported `toGroupMutationDescriptor` and private family helpers in `to-group-mutation-descriptor.ts`                                                                                                     | exact payload-to-domain translation, switch order, errors, and field projection                                                                                   |
 | `GroupStateInboxHandler.processMutation`                                                      | `GroupStateInboxHandler.processGroupStateMutation`                                                                                                                                                       | direct protocol entry with visible read/compute/validate/commit sequence                                                                                          |
 | dynamic `withGroupStateServiceTiming` and proxy-specific helpers in `group-state-service.ts`  | exported `createTimedGroupStateService` and private detail helpers in `group-state-service-timing.ts`                                                                                                    | identical timing names/details with one explicit wrapper per operation                                                                                            |
 | constructor-time topology/RTC registration over optional facade fields                        | group callbacks register in construction; topology/RTC callbacks register exactly once when each existing setter receives its complete mandatory dependency, before queue processing is enabled          | no live callback resolves an optional processing dependency; existing public setters remain one-hop lifecycle compatibility surfaces                              |
@@ -652,7 +875,7 @@ governance child and stops; it does not silently implement the rule.
 
 ### 6.1 Inbound translation owner
 
-`group-state-inbox-mutation-descriptor.ts` exposes exactly:
+`to-group-mutation-descriptor.ts` exposes exactly:
 
 ```ts
 export function toGroupMutationDescriptor<V>(
@@ -797,8 +1020,9 @@ Tests prove behavior, not prose:
   `writeMutationWithAfterCommitResult`, service write, durable/private result
   assembly, observation, and wake in the locked order;
 - timing absent returns the same object identity;
-- timing present calls every async operation once and preserves event details
-  and failure propagation;
+- timing present calls every async operation once and preserves event details;
+  every async operation independently preserves its exact rejection identity,
+  single underlying call, one error event, and operation-specific details;
 - `compute` and `validate` remain synchronous and untimed;
 - topology and RTC callbacks do not exist before complete configuration, capture
   the exact mandatory value once, and preserve setter idempotence/errors and
@@ -847,6 +1071,43 @@ domain. It therefore requires the complete mutation, registration, transaction,
 concurrency, and comparative-performance verification in Section 9. No result
 may be waived or rerolled inside this plan.
 
+### 7.1 Changed-production construction-warning dispositions
+
+The focused construction-detail scans remain warning-only, but every finding in
+a changed production owner has this explicit human disposition:
+
+| Path                                                                                                      | Rule and symbol                                                                                                                                                                                                      | Disposition, owner, and removal condition                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts`                   | `abstraction.pass-through`: `isAuthenticatedGroupMutationInboxType`                                                                                                                                                  | Demonstrated policy-boundary false positive. The predicate owns the authenticated message-family membership used before descriptor preparation; it does not forward a workflow. The inbox-contract owner removes it only if the protocol family becomes a discriminated contract that makes this runtime membership guard unnecessary.                                                                                    |
+| `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts`                     | `boundary.unknown`: `readGroupMutationPreparation`, `isAuthorityProofOrNull`, `isRecordOrNull`                                                                                                                       | Demonstrated durable-wire boundary. `unknown` enters only from the persisted AppInbox authority field and is narrowed before domain phases. The handler owns removal if a separately approved typed durable decoder replaces this exact boundary without weakening corruption checks.                                                                                                                                     |
+| `packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-group-aggregate-mutation.ts` | `abstraction.pass-through`: `cloneRecord`                                                                                                                                                                            | Demonstrated clone-helper false positive. The pure helper creates the non-aliasing record copy required by the aggregate result; it does not forward control. The aggregate owner removes it only if the owning contracts become immutably non-aliased and the clone is provably unnecessary.                                                                                                                             |
+| `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`                                   | `boundary.unknown`: registered `processGroupMutation` framework payload                                                                                                                                              | Demonstrated protocol boundary. `onStateMessage` supplies an untyped payload, while authenticated group processing intentionally reads the durable preparation from `AppInboxMessageContext`; the payload is not propagated. The facade owner removes it only if the queue callback contract gains a context-only form through a separately reviewed compatibility change.                                                |
+| `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`                                   | `abstraction.pass-through`: `isTopologyConfigInboxType`                                                                                                                                                              | Demonstrated routing-policy false positive. The predicate owns the exact topology family split at the public authenticated entry and does not wrap another callable. The facade owner removes it only if the public entry becomes a discriminated router with the same compatibility behavior.                                                                                                                            |
+| `packages/shared-server/rallar-system/services/AppInboxService.ts`                                        | inherited `file.length`; inherited `line.width` at lines 16 and 48; inherited `boundary.unknown` on durable result/error/callback/fallback boundaries; inherited `control.nested-callback-depth` in `onStateMessage` | Accepted existing debt with no new or worsened magnitude. PR B changes only `transactionWriter` visibility from private to protected; the file remains exactly 729 lines and the listed syntax is byte-identical to the base. `AppInboxService` owns a future separately approved decomposition/format pass; removal requires preserving its public subclass, callback, retry, terminal-finalization, and wait semantics. |
+| `packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts`                           | inherited `line.width` on imports; inherited `boundary.unknown` in `AppInboxHandlerFinalization.result` and `writeTerminalFailure` result                                                                            | Accepted existing formatting debt and demonstrated finalization boundaries. The wide import lines and the two `unknown` contracts predate PR B; the new durable/private result uses generics and adds no unknown propagation. The transaction writer owns removal when its inherited formatter debt or public terminal result contract is migrated separately without changing serialized failure compatibility.          |
+
+No optional warning is reclassified as a global checker gate, and no checker
+rule, severity, count, parser, schema, or debt calculation changes.
+
+### 7.2 Temporary ratchets and inherited formatting debt
+
+| Evidence                                                                                   | Current owner                                                                                         | Removal or replacement condition                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exact PR B production/test tree and changed-TypeScript owner inventory                     | `group-state-server-source-ratchet-inventory.ts` and `group-state-server-source-ratchet.test.ts`      | Temporary through PR B's resulting-main workflow and the later server ledger. Remove the exact frozen-tree inventory when the ledger is published and persistent semantic owner/active-path tests cover every canonical and compatibility path; retain those semantic tests.                                                                                     |
+| Historical literal, named-case, and assertion-site counts recorded during the Task 5 moves | `task-5-report.md` plus the directly owned descriptor, timing, transaction-result, and failure suites | The numeric migration counts are temporary through the later ledger and may then be removed when the behavior-named runtime assertions cover the same cases. The independently authored durable JSON/property-order assertion, exact descriptor mapping assertions, timing identity/error assertions, and rollback assertions are semantic contracts and remain. |
+| Recursive changed-function and changed-callback size inventory                             | `group-state-source-ratchet-function-sizes.ts` and the source-ratchet suite                           | Temporary through the later ledger or until repository governance enforces the same test/support-file size contract without a PR-specific owner list, whichever is later. Persistent architecture/cycle/owner tests remain; the exact predecessor allowances are not precedent for new code.                                                                     |
+
+Four changed paths reproduce inherited full-file Prettier debt from the exact PR
+A base: `docs/rallar-convergent-state-and-rtc-topology.md`,
+`packages/shared-server/architecture.md`, `services/AppInboxService.ts`, and
+`services/app-inbox-transaction-writer.ts`. The two Markdown files change only
+active path/command text. `AppInboxService.ts` changes one visibility token, and
+the transaction writer changes only the approved durable/private transaction
+contract. Their scoped diffs pass whitespace/no-churn comparison. Broad-formatting
+any of these files would create unrelated review noise, so Task 11 checks all
+ordinarily formatted changed files with their owning formatter and proves these
+four against the equally non-Prettier base blobs instead of rewriting them.
+
 ## 8. Implementation Tasks
 
 ### Task 0: Publish And Approve This Planning Revision
@@ -858,20 +1119,20 @@ may be waived or rerolled inside this plan.
 - Modify: `plans/repo-human-traceability-program-execution-plan.md`
 - Modify: `plans/rallar-group-state-server-structure-plan.md`
 
-- [ ] Verify the planning branch starts from exact `main`
+- [x] Verify the planning branch starts from exact `main`
       `06e0c5ab138c2ab55ac519b2244f727acd42d560` and tree
       `c1ac6a57dad974d04264cbe1fa92313697256712`.
-- [ ] Resume draft PR #60 from exact predecessor planning head
+- [x] Resume draft PR #60 from exact predecessor planning head
       `3b427a29692316d11b32ceac0e2a4ce482803b88`, tree
       `e45a87769a4f84bd869f3e09a6905cd3fed9ce35`, and unapproved plan blob
       `aad13aecdd916b201b1511d9e76707a1caddc650`; create no replacement branch,
       goal, or PR.
-- [ ] Record only already-existing PR #59 evidence; leave future planning, PR A,
+- [x] Record only already-existing PR #59 evidence; leave future planning, PR A,
       PR B, ledger, and API-v1 publication facts outside their producing trees.
-- [ ] Run Section 9.1.
-- [ ] Publish one non-default draft planning PR and require Branch Release Gate
+- [x] Run Section 9.1.
+- [x] Publish one non-default draft planning PR and require Branch Release Gate
       for its exact commit.
-- [ ] Stop for human approval of the exact plan Git blob and later human merge
+- [x] Stop for human approval of the exact plan Git blob and later human merge
       of the planning PR. Do not begin PR A from an unmerged plan branch.
 
 ### Task 1: Start PR A And Capture Guidance, Lineage, And Test Inventories
@@ -891,16 +1152,16 @@ may be waived or rerolled inside this plan.
 - Create: `packages/tests/repo/repo-style-structural-lineage-provenance.test.ts`
 - Modify: `package.json` (`test:repo-governance` registration only)
 
-- [ ] Start `codex/rallar-group-state-traceability-guidance` from the exact
+- [x] Start `codex/rallar-group-state-traceability-guidance` from the exact
       resulting `main` SHA of the planning PR after its default workflow.
-- [ ] Inventory the exact 17 manifest rows, 48 unique targets, source blobs,
+- [x] Inventory the exact 17 manifest rows, 48 unique targets, source blobs,
       compatibility paths, current source/target symbols, and changed regions.
-- [ ] Record all nineteen route-owner filenames, `describe` titles, named cases,
+- [x] Record all nineteen route-owner filenames, `describe` titles, named cases,
       independently written literals, and `expect(...)` sites.
-- [ ] Add focused assertions for Section 2 trace fields, canonical realtime
+- [x] Add focused assertions for Section 2 trace fields, canonical realtime
       paths, behavior-named tests, large-PR evidence, ratchet removal, human
       warning disposition, and complete provenance rows. Capture RED.
-- [ ] Split the two superseded mixed integrity owners into the seven descriptive
+- [x] Split the two superseded mixed integrity owners into the seven descriptive
       Task 1 owners, preserving every original case, fixture, literal,
       expectation, and assertion site; keep each module at or below 400 lines.
 
@@ -919,15 +1180,15 @@ may be waived or rerolled inside this plan.
 - Modify: `docs/repo-human-style-guide.md`
 - Test: the Task 1 integrity suites and the behavior-named testing guidance suite
 
-- [ ] Use `superpowers:writing-skills` for the skill changes and verify their
+- [x] Use `superpowers:writing-skills` for the skill changes and verify their
       pressure scenarios before treating prose-integrity tests as sufficient.
-- [ ] Add the single traceability/review contract in Sections 2, 4.1, and 5.
-- [ ] Add pressure-scenario tests proving thresholds require a decision rather
+- [x] Add the single traceability/review contract in Sections 2, 4.1, and 5.
+- [x] Add pressure-scenario tests proving thresholds require a decision rather
       than an automatic split and stale evidence blocks completion.
-- [ ] Keep semantic clarity and construction-warning disposition in human
+- [x] Keep semantic clarity and construction-warning disposition in human
       review; add no checker behavior, lineage consumer, rule, or strict mode.
-- [ ] Run the Task 1 tests and capture GREEN evidence.
-- [ ] Run `npm run test:repo-governance`.
+- [x] Run the Task 1 tests and capture GREEN evidence.
+- [x] Run `npm run test:repo-governance`.
 
 ### Task 3: Publish The Independent PR #59 Lineage Audit
 
@@ -938,15 +1199,15 @@ may be waived or rerolled inside this plan.
 - Test:
   `packages/tests/repo/repo-style-structural-lineage-provenance.test.ts`
 
-- [ ] For every manifest source/target, record exact source blob and symbol/span,
+- [x] For every manifest source/target, record exact source blob and symbol/span,
       target symbol/span, moved-versus-new classification, compatibility path,
       and capacity disposition. Semantically new target regions receive no
       inherited capacity.
-- [ ] Have a reviewer independent of PR #59 implementation verify derivation
+- [x] Have a reviewer independent of PR #59 implementation verify derivation
       from Git objects and record Critical/Important findings target by target.
-- [ ] Fail if any target lacks defensible provenance. Do not edit the manifest,
+- [x] Fail if any target lacks defensible provenance. Do not edit the manifest,
       checker, loader, schema, or debt calculation in PR A.
-- [ ] If automated enforcement is warranted, record a separate future
+- [x] If automated enforcement is warranted, record a separate future
       governance proposal and keep it unapproved/unimplemented.
 
 ### Task 4: Rename Historical Tests, Review, And Publish PR A
@@ -957,18 +1218,18 @@ may be waived or rerolled inside this plan.
 - Modify: direct imports, active commands, and coverage registries only where an
   exact old path exists
 
-- [ ] Record the pre-move test names, fixtures, literals, mutations, and
+- [x] Record the pre-move test names, fixtures, literals, mutations, and
       `expect(...)` site counts.
-- [ ] Move each suite and update only its `describe` title and direct imports.
-- [ ] Prove post-move test names, fixtures, literals, mutations, and assertion
+- [x] Move each suite and update only its `describe` title and direct imports.
+- [x] Prove post-move test names, fixtures, literals, mutations, and assertion
       counts are identical except the approved descriptive `describe` titles.
-- [ ] Run all nineteen renamed suites plus route-owner inventory/routing tests.
-- [ ] Independently review guidance consistency, pressure scenarios, lineage
+- [x] Run all nineteen renamed suites plus route-owner inventory/routing tests.
+- [x] Independently review guidance consistency, pressure scenarios, lineage
       provenance, unchanged checker behavior, test ownership, and exact scope;
       Critical 0 / Important 0 is required.
-- [ ] Run Section 9.2 on the unchanged tree, publish draft PR A, require Branch
+- [x] Run Section 9.2 on the unchanged tree, publish draft PR A, require Branch
       Release Gate, and mark ready only when green.
-- [ ] Stop for exact human merge approval; require the exact resulting `main`
+- [x] Stop for exact human merge approval; require the exact resulting `main`
       default workflow before Task 5.
 
 ### Task 5: Start PR B And Characterize Every Affected Control-Flow Family
@@ -983,45 +1244,90 @@ may be waived or rerolled inside this plan.
   `packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts`
 - Create:
   `packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts`
+- Create:
+  `packages/tests/shared-server/group-state/group-state-service-timing-fixture.ts`
+- Modify: `packages/tests/shared-server/app-inbox-test-database.ts`
+- Create: `packages/tests/shared-server/app-inbox-test-database-contracts.ts`
+- Create: `packages/tests/shared-server/app-inbox-test-database-sql.ts`
+- Create: `packages/tests/shared-server/app-inbox-test-database-transaction.ts`
 - Modify: `packages/tests/shared-server/app-inbox-transaction.test.ts`
 - Modify: `packages/tests/shared-server/rallar-middleware.test.ts`
 - Modify: `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`
 - Modify: `apps/api-v1/test/rallar-server.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-descriptor-contract.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-resource-fixtures.ts`
+- Modify:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts`
 - Rename: the two source-contract files in Section 4.3
 - Modify: direct imports and source-ratchet inventories
+- Create: `packages/tests/repo/group-state-source-ratchet-function-sizes.ts`
+- Create: `packages/tests/repo/group-state-traceability-active-paths.test.ts`
+- Modify: `.agents/skills/rallar-testing/references/test-commands.md`
+- Modify: `packages/shared-server/architecture.md`
+- Modify: `docs/rallar-convergent-state-and-rtc-topology.md`
 
-- [ ] Start `codex/rallar-group-state-traceability-runtime` from PR A's exact
+- [x] Start `codex/rallar-group-state-traceability-runtime` from PR A's exact
       resulting `main` SHA after its default workflow.
-- [ ] Re-inventory every `AppGroupInboxService` constructor/setter/public
+- [x] Re-inventory every `AppGroupInboxService` constructor/setter/public
       consumer and prove the supported configuration-to-worker-start lifetime.
-- [ ] Characterize each materially different group, presence, topology, RTC,
+- [x] Characterize each materially different group, presence, topology, RTC,
       transaction/retry, and lifecycle family using the Section 2 fields.
-- [ ] Lock every descriptor mapping/error, phase, callback invocation, retry,
+- [x] Lock every descriptor mapping/error, phase, callback invocation, retry,
       durable raw JSON/property order, private snapshot identity, commit failure,
       observation/wake, timing event, setter identity/error, and public result.
-- [ ] Rename the source contract suite/helper without changing assertions.
-- [ ] Record GREEN predecessor characterization.
-- [ ] Add target source ratchets and capture RED only for not-yet-created owners
+- [x] Rename the source contract suite/helper without changing assertions.
+- [x] Record GREEN predecessor characterization.
+- [x] Add target source ratchets and capture RED only for not-yet-created owners
       and still-present dynamic proxy, mutable callback escape, optional live
       dependency, broad handler-port, and inconsistent-name constructs.
+- [x] Derive the complete Task 5 changed TypeScript owner set from PR A's exact
+      resulting-main base and fail closed on an omitted path; allow only the
+      exact unchanged reviewed predecessor `runOperationMatrix` at 64 lines.
+
+Task 5 is accepted at exact head
+`4e736692112842811204174aef3d27c7135f0acb`, tree
+`79728b406d27a21dc571b7dc0ad4315cac1eff7a`, with independent review Critical 0 /
+Important 0 / Minor 0. Its current characterization is 9 files / 147 tests,
+supplementary characterization is 6 files / 17 tests, the source/mirrored-tree/
+active-path ratchets pass, and the future-only RED is exactly the 14 approved
+Task 6-10 target failures plus 10 predecessor passes. No production or checker
+behavior changed in that milestone.
 
 ### Task 6: Extract Descriptor Translation And Rename The Protocol Entry
 
 **Files:**
 
 - Create:
-  `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts`
+  `packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts`
 - Modify:
   `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
 - Modify: directly affected Task 5 tests/inventories
 
-- [ ] Move descriptor code without rewriting branches, casts, values, or errors.
-- [ ] Rename only the internal handler method to
+- [x] Move descriptor code without rewriting branches, casts, values, or errors.
+- [x] Rename only the internal handler method to
       `processGroupStateMutation` and update exact internal callers.
-- [ ] Remove the handler's pass-through descriptor method.
-- [ ] Run descriptor, authority, operation, routing, retry, and ratchet tests.
-- [ ] Obtain scoped review with Critical 0 / Important 0.
+- [x] Remove the handler's pass-through descriptor method.
+- [x] Run descriptor, authority, operation, routing, retry, and ratchet tests.
+- [x] Obtain scoped review with Critical 0 / Important 0.
+
+Task 6 implementation moved the top-level descriptor boundary plus five private
+family helpers—six declarations—without changing their branches, casts,
+projected values, errors, defaults, omissions, or volatile-value calls. The
+direct descriptor fixture covers all 17
+authenticated `GROUP_*` variants and the exact unsupported-family error. The
+independent review corrected the private target filename to
+`to-group-mutation-descriptor.ts`, matching the primary export without a
+compatibility hop or checker allowance. The accepted Task 6 milestone is exact
+head `3a730b845a78a268f1c1e19dc9b3edb7a54619cb`, tree
+`a96ca6935840752328f26980fa72dcfdf59472f4`, with independent re-review
+Critical 0 / Important 0 / Minor 0.
 
 ### Task 7: Replace Dynamic Timing Dispatch With Explicit Operations
 
@@ -1032,14 +1338,36 @@ may be waived or rerolled inside this plan.
 - Modify: `packages/shared-server/rallar-system/group-state/group-state-service.ts`
 - Test:
   `packages/tests/shared-server/group-state/group-state-service-timing.test.ts`
+- Test:
+  `packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts`
+- Modify:
+  `packages/tests/shared-server/group-state/group-state-service-timing-fixture.ts`
 - Modify: directly affected source ratchets
 
-- [ ] Implement the exact Section 6.2 interface and factory.
-- [ ] Preserve no-timing identity and untimed synchronous `compute`/`validate`.
-- [ ] Preserve every timed name, detail, call, return, rejection, and order.
-- [ ] Delete only superseded proxy-specific types/helpers.
-- [ ] Run timing, idempotency, handler, AppInbox, and ratchet tests.
-- [ ] Obtain scoped review with Critical 0 / Important 0.
+- [x] Implement the exact Section 6.2 interface and factory.
+- [x] Preserve no-timing identity and untimed synchronous `compute`/`validate`.
+- [x] Preserve every timed name, detail, call, return, rejection, and order.
+- [x] Delete only superseded proxy-specific types/helpers.
+- [x] Run timing, idempotency, handler, AppInbox, and ratchet tests.
+- [x] Obtain scoped review with Critical 0 / Important 0.
+
+Task 7 now routes the complete service through the explicit timing owner. The
+owner returns the exact service identity without a sink, retains synchronous
+`compute` and `validate`, and directly wraps all 15 asynchronous operations.
+The timing suite proves one underlying call followed by one success or error
+event for each operation, exact return or rejection identity, and the locked
+operation-specific details. The former proxy, reflective lookup, variadic
+arguments, runtime property discovery, and `Function.apply` helpers are gone.
+The first scoped review found that the test inventory did not fail closed when
+`GroupStateService` gains another required or optional Promise-returning method
+and did not prove exact argument identity. The review-fix derives that complete
+key union with explicit optional-method exclusion, enforces bidirectional type
+equality and runtime uniqueness, records every exact argument tuple, and tests
+`listRecentEvents` in both present and absent shapes. Production remains
+unchanged by this test-contract correction. The accepted Task 7 milestone is
+exact head `5e0a9fc5576c6975cd06de7b0280135eb1badf9d`, tree
+`b174d510666090d4a009cffc03d78b5367b2cff8`, with independent re-review
+Critical 0 / Important 0.
 
 ### Task 8: Make Topology And RTC Registration Construction-Valid
 
@@ -1049,14 +1377,30 @@ may be waived or rerolled inside this plan.
 - Test: the registration, middleware, topology ownership, operation, and RTC
   suites named in Tasks 5 and Section 9.3
 
-- [ ] Preserve the exact public constructor/setter surface and implement the
+- [x] Preserve the exact public constructor/setter surface and implement the
       Section 6.3 one-time registration lifecycle test-first.
-- [ ] Prove no topology/RTC callback is live with an incomplete processing
+- [x] Prove no topology/RTC callback is live with an incomplete processing
       dependency and no callback reads mutable optional state at invocation.
-- [ ] Prove normal composition, message registration order within each family,
+- [x] Prove normal composition, message registration order within each family,
       setter idempotence/error, queue processing, receipt/outbox, and result are
       unchanged. Stop if a real consumer needs preconfiguration processing.
-- [ ] Obtain scoped review with Critical 0 / Important 0.
+- [x] Obtain scoped review with Critical 0 / Important 0.
+
+Task 8 keeps group and cleanup registration in construction, then registers the
+five topology operations and single RTC RTT operation only on the first
+successful call to their existing setter. Same-object calls remain idempotent;
+different objects retain the exact predecessor errors. Runtime characterization
+proves the registered callbacks capture the supplied mandatory object even if
+the facade's identity-guard field is subsequently cleared by the test, so no
+callback resolves optional facade state during invocation. The API-v1 lifecycle
+test retains the supported `topology` -> `rtc-rtt` -> worker `start` order, and
+the consumer inventory found no supported preconfiguration processing caller.
+The focused registration, middleware, topology, operation, RTC, authority, and
+retry suites pass; the combined future-only selection now retains exactly the
+twelve Task 9–10 failures. The accepted Task 8 milestone is exact head
+`9b1dd873b183132a4379dd532c8fc516dbc2dfd4`, tree
+`b9094e7ccc77eff6318b1644cbc5916afc2babf7`, with independent re-review
+Critical 0 / Important 0 / Minor 0.
 
 ### Task 9: Return Immutable Transaction Data Through The AppInbox Owner
 
@@ -1066,6 +1410,8 @@ may be waived or rerolled inside this plan.
   `packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppInboxService.ts`
 - Modify:
+  `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
+- Modify:
   `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts`
 - Modify:
   `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts`
@@ -1074,16 +1420,31 @@ may be waived or rerolled inside this plan.
 - Test: the transaction-result, AppInbox transaction, operation, retry,
   idempotency, presence, and source-ratchet suites
 
-- [ ] Add the Section 6.4 immutable result RED/GREEN fixtures before removing
+- [x] Add the Section 6.4 immutable result RED/GREEN fixtures before removing
       mutable callback escape. Independently compare raw durable JSON and key
       order rather than serializing an expected compound result.
-- [ ] Introduce the one Section 6.5 handler-facing capability and prove the
+- [x] Introduce the one Section 6.5 handler-facing capability and prove the
       exported broad service, factory result, and public compatibility paths are
       unchanged.
-- [ ] Preserve callback invocation/retry, commit/failure, finalization, exact
+- [x] Preserve callback invocation/retry, commit/failure, finalization, exact
       snapshot identity, observation/wake order, receipt/event/final-outbox, and
       caller return behavior.
-- [ ] Obtain scoped review with Critical 0 / Important 0.
+- [x] Obtain scoped review with Critical 0 / Important 0.
+
+Task 9 implementation returns one immutable durable/private result through the
+transaction writer and persists only the predecessor durable projection. The
+handler and presence-connect owner now consume the exact six-operation internal
+capability while the exported broad service remains unchanged. The public
+`AppInboxService.ts` predecessor stays at its exact 729-line baseline: Task 9
+changes only the transaction-writer field from private to protected so the
+existing subclass can reach the new internal operation. Its four pre-existing
+over-60-line functions retain their exact baseline sizes; broad decomposition of
+that public base class is outside this child. Behavior, source-tree, cycle,
+size-baseline, TypeScript, and changed-style gates pass. The future-only target
+suite now fails only its ten reserved Task 10 naming cases. The accepted Task 9
+milestone is exact head `7556238729da5b485ca4811f2ee806d67205a1c0`, tree
+`f2358d6cf946a59a4ae3f66c3c185f7b89d9d3b5`, with independent re-review
+Critical 0 / Important 0.
 
 ### Task 10: Reconcile Remaining Internal Names And Protect Presence Ownership
 
@@ -1121,13 +1482,40 @@ may be waived or rerolled inside this plan.
   `packages/tests/shared-server/group-state/group-state-test-mutation-executor.ts`
 - Modify: exact source inventories; no compatibility export changes
 
-- [ ] Rename the two resolver functions and pure result constructor exactly as
+- [x] Rename the two resolver functions and pure result constructor exactly as
       Section 4.3 defines; preserve parameters, returns, errors, and call order.
-- [ ] Prove the final direct presence owner and re-export-only old path were
+- [x] Prove the final direct presence owner and re-export-only old path were
       already present at the PR #59 prerequisite and remain unchanged.
-- [ ] Run focused compute/read/write, public export, compatibility, source
+- [x] Run focused compute/read/write, public export, compatibility, source
       inventory, file/function, and cycle tests.
-- [ ] Obtain scoped review with Critical 0 / Important 0.
+- [x] Obtain scoped review with Critical 0 / Important 0.
+
+Task 10 moves the target-identity owner and write owner to the exact Section 4.3
+paths, renames both target resolvers and the pure computed-result constructor,
+and updates only their direct internal consumers and exact source/test
+inventories. The write owner is a 100% Git rename; its `writeGroupMutation`
+body, guard order, effects, event, receipt, and outbox work are unchanged. The
+behavior suite retains its single case and five `expect(...)` sites with only
+its path import updated. The longer computed-result symbol uses the shorter
+internal `GroupMutationWriteInput` contract name so its unchanged body remains
+exactly 60 physical lines; the input fields, parameter value, return, property
+order, defaults, errors, and every caller remain identical.
+
+PR #59 prerequisite blob `e2e642d54bcbd9b7ff04917ef9d900e39d3827c8`
+already owns the direct presence functions, and compatibility blob
+`b811c2f7429e2e10ab0fecf1998b0a7d9f7dd052` is byte-identical in the Task 10
+candidate. The only presence-owner difference after that prerequisite is Task
+9's already-reviewed type and property narrowing from broad
+`GroupStateService` to `GroupStateInboxMutationOperations`; no Task 10
+presence implementation, lifecycle, function export, or compatibility export
+changes. The Task 10 RED was exactly ten reserved path/name cases with the
+seven existing transaction cases green. GREEN is 17/17 for that target suite;
+the focused mutation, operation, retry, idempotency, presence, and owner batch
+is 23 files / 113 tests; the source/tree/active/owner batch is 4 files / 43
+tests; shared-server TypeScript passes. The accepted Task 10 milestone is exact
+head `41ae45afa268d186e65dfe0188be7f146ee80f7e`, tree
+`c6373a00e686bae64f7bc5b3361798fbfb105f98`, with independent re-review
+Critical 0 / Important 0 / Minor 0.
 
 ### Task 11: Prove Behavior, Compatibility, Concurrency, And Performance
 
@@ -1135,11 +1523,14 @@ may be waived or rerolled inside this plan.
 
 - Modify: this plan only for factual task evidence before the final freeze
 
-- [ ] Run Section 9.3 on one unchanged tree.
+- [x] Run Section 9.3 on one unchanged tree. The first complete pass recorded
+      exact counts in the Task 11 SDD report; the final post-evidence rerun is
+      required on the unchanged staged evidence tree and is reported externally
+      so no post-gate edit invalidates it.
 - [ ] Perform whole-PR review from PR A's resulting `main` through the exact
       candidate; Critical 0 / Important 0 required. Resolve every in-scope
       finding and rerun invalidated gates before the freeze.
-- [ ] Confirm TypeScript, checkers, public exports, compatibility paths,
+- [x] Confirm TypeScript, checkers, public exports, compatibility paths,
       AppInbox durable serialization/finalization, registration behavior,
       transaction/retry semantics, and unrelated plans remain unchanged.
 - [ ] Before measurement, finish every implementation, plan-evidence, review,
@@ -1236,6 +1627,7 @@ npx vitest run \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-authority.test.ts \
   packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-construction.test.ts \
+  packages/tests/shared-server/group-state/inbox/group-state-inbox-descriptor-contract.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-retry.test.ts \
   packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts \
@@ -1265,7 +1657,7 @@ npm run check:repo-style:layout-details
 npm run check:repo-style:construction-details
 npm run check:repo-style:output-contracts
 npm run check:repo-style:object-interfaces
-npm run check:repo-style:changed -- origin/main
+npm run check:repo-style:changed -- a7a5f488cd185a7f2cc6bd814c319f97d5401d03
 npm run test:unit
 npm run test:ci
 npm run build
@@ -1338,41 +1730,41 @@ never relabels or invalidates a frozen implementation tree.
 
 ## 12. Acceptance Checklist
 
-- [ ] Human approved this exact plan blob.
-- [ ] Planning PR merged and its exact default workflow succeeded.
-- [ ] PR A integrity tests failed before guidance and passed after.
-- [ ] PR A defines the two timelines and every family-level trace field in
+- [x] Human approved this exact plan blob plus the explicit Task 1 amendment.
+- [x] Planning PR merged and its exact default workflow succeeded.
+- [x] PR A integrity tests failed before guidance and passed after.
+- [x] PR A defines the two timelines and every family-level trace field in
       Section 2, including invocation count, failures, cleanup, and final result.
-- [ ] Transaction callbacks prefer immutable durable/private results; every
+- [x] Transaction callbacks prefer immutable durable/private results; every
       mutable escape requires the explicit fail-closed review disposition.
-- [ ] Realtime skills name canonical final owners and compatibility-only paths.
-- [ ] Testing guidance requires behavior names and semantic entry/transaction/
+- [x] Realtime skills name canonical final owners and compatibility-only paths.
+- [x] Testing guidance requires behavior names and semantic entry/transaction/
       exit evidence.
-- [ ] Publishing guidance defines review-pressure triggers, a written
+- [x] Publishing guidance defines review-pressure triggers, a written
       stacked-versus-single decision, read-first map, and stale-evidence block.
-- [ ] Every mechanical ratchet names an owner and removal condition and remains
+- [x] Every mechanical ratchet names an owner and removal condition and remains
       supplemental to semantic assertions.
-- [ ] All changed production construction warnings received a human disposition.
-- [ ] Every remaining PR #59 lineage target has independently reviewed
+- [x] All changed production construction warnings received a human disposition.
+- [x] Every remaining PR #59 lineage target has independently reviewed
       symbol/span provenance; semantic additions consume no inherited capacity.
-- [ ] PR A added no semantic checker rule or strict mode.
-- [ ] All nineteen historical tests have descriptive names with all assertions.
-- [ ] PR A review has Critical 0 / Important 0.
-- [ ] PR A local/remote gates and resulting-main workflow passed.
-- [ ] PR B characterization proves every predecessor mapping and runtime order.
-- [ ] `processGroupStateMutation` exposes the direct phase path.
-- [ ] `toGroupMutationDescriptor` owns only representation translation.
-- [ ] Timing is explicit and contains no dynamic method dispatch.
-- [ ] Topology/RTC callbacks become live only with complete mandatory
+- [x] PR A added no semantic checker rule or strict mode.
+- [x] All nineteen historical tests have descriptive names with all assertions.
+- [x] PR A review has Critical 0 / Important 0.
+- [x] PR A local/remote gates and resulting-main workflow passed.
+- [x] PR B characterization proves every predecessor mapping and runtime order.
+- [x] `processGroupStateMutation` exposes the direct phase path.
+- [x] `toGroupMutationDescriptor` owns only representation translation.
+- [x] Timing is explicit and contains no dynamic method dispatch.
+- [x] Topology/RTC callbacks become live only with complete mandatory
       dependencies; public setter signatures and supported behavior remain fixed.
-- [ ] AppInbox persists only the exact predecessor durable result; immutable
+- [x] AppInbox persists only the exact predecessor durable result; immutable
       private after-commit data becomes visible only after confirmed commit.
-- [ ] The handler depends on one cohesive narrow mutation capability while the
+- [x] The handler depends on one cohesive narrow mutation capability while the
       exported broad `GroupStateService` contract remains unchanged.
-- [ ] Target identity, computed-write, and mutation-write filenames/symbols use
+- [x] Target identity, computed-write, and mutation-write filenames/symbols use
       the exact Section 4.3 names.
-- [ ] Direct-function presence ownership remains verified, not reimplemented.
-- [ ] Public exports, compatibility, contracts, AppInbox, and API-v1 are unchanged.
+- [x] Direct-function presence ownership remains verified, not reimplemented.
+- [x] Public exports, compatibility, contracts, AppInbox, and API-v1 are unchanged.
 - [ ] Medium-scale convergence and governed performance comparison passed.
 - [ ] PR B review has Critical 0 / Important 0.
 - [ ] PR B local/remote gates and resulting-main workflow passed.
@@ -1402,16 +1794,21 @@ never relabels or invalidates a frozen implementation tree.
 
 ## 14. Progress Record
 
-| Milestone              | State                    | Evidence                                                                                                                                                                                                                                                                 |
-| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| PR #59 prerequisite    | complete                 | Feature `bec8bea4eb095de9ad3a6b47c18e6799ab811239`, tree `c1ac6a57dad974d04264cbe1fa92313697256712`, Branch Release Gate `30694693554` attempt 1 success, resulting `main` `06e0c5ab138c2ab55ac519b2244f727acd42d560`, default workflow `30697799787` attempt 1 success. |
-| Planning revision base | superseded; unapproved   | Draft PR #60 predecessor head `3b427a29692316d11b32ceac0e2a4ce482803b88`, tree `e45a87769a4f84bd869f3e09a6905cd3fed9ce35`, and plan blob `aad13aecdd916b201b1511d9e76707a1caddc650`; no approval attached.                                                               |
-| QA findings inventory  | revised draft            | Final PR #59 re-review distinguishes completed direct presence/stateless-handler fixes from remaining registration lifetime, transaction result, broad handler port, dynamic timing, naming, test-discoverability, review-guidance, and lineage-provenance findings.     |
-| QA child plan          | human-review pending     | No exact Git blob has been approved.                                                                                                                                                                                                                                     |
-| PR A                   | blocked by plan approval | No implementation branch, commit, or PR exists.                                                                                                                                                                                                                          |
-| PR B                   | blocked by PR A          | No implementation branch, commit, or PR exists.                                                                                                                                                                                                                          |
-| Server later ledger    | pending                  | Waits for both QA implementation envelopes and separate authorization.                                                                                                                                                                                                   |
-| API-v1 child           | blocked                  | Waits for the server ledger to be `ledger-published`.                                                                                                                                                                                                                    |
+| Milestone           | State                               | Evidence                                                                                                                                                                                                                                                                                                                 |
+| ------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| PR #59 prerequisite | complete                            | Feature `bec8bea4eb095de9ad3a6b47c18e6799ab811239`, tree `c1ac6a57dad974d04264cbe1fa92313697256712`, Branch Release Gate `30694693554` attempt 1 success, resulting `main` `06e0c5ab138c2ab55ac519b2244f727acd42d560`, default workflow `30697799787` attempt 1 success.                                                 |
+| QA child plan       | approved and published              | Original approved blob `23aee4769fa49f623f8114073ea8c132e3f25671` plus the authorized Task 1 amendment. Planning PR #60 head `8ccf9af6f97b6eb6df95d3f10286e8eca6d5a99e` produced `main` `2f7390c2b422a2b33f0ca781ecef8de9abd86a25`; effective merged plan blob after PR A is `13d0059c9fa1377bd15a1d384ad3c4a7137479f7`. |
+| PR A                | complete                            | PR #61 head `8bc4ffd66f4a600f47ee0981ced1f4539bd6a91a`, tree `c1e572d21b145287f59c8c28db6caa72853f0801`, Branch Release Gate `30707723830` attempt 1 success, resulting `main` `a7a5f488cd185a7f2cc6bd814c319f97d5401d03`, default workflow `30724358065` attempt 1 success for that exact SHA.                          |
+| PR B Task 5         | complete and independently accepted | Milestone `4e736692112842811204174aef3d27c7135f0acb`, tree `79728b406d27a21dc571b7dc0ad4315cac1eff7a`, Critical 0 / Important 0 / Minor 0.                                                                                                                                                                               |
+| PR B Task 6         | complete and independently accepted | Milestone `3a730b845a78a268f1c1e19dc9b3edb7a54619cb`, tree `a96ca6935840752328f26980fa72dcfdf59472f4`, Critical 0 / Important 0 / Minor 0.                                                                                                                                                                               |
+| PR B Task 7         | complete and independently accepted | Milestone `5e0a9fc5576c6975cd06de7b0280135eb1badf9d`, tree `b174d510666090d4a009cffc03d78b5367b2cff8`, Critical 0 / Important 0.                                                                                                                                                                                         |
+| PR B Task 8         | complete and independently accepted | Milestone `9b1dd873b183132a4379dd532c8fc516dbc2dfd4`, tree `b9094e7ccc77eff6318b1644cbc5916afc2babf7`, Critical 0 / Important 0 / Minor 0.                                                                                                                                                                               |
+| PR B Task 9         | complete and independently accepted | Milestone `7556238729da5b485ca4811f2ee806d67205a1c0`, tree `f2358d6cf946a59a4ae3f66c3c185f7b89d9d3b5`, Critical 0 / Important 0.                                                                                                                                                                                         |
+| PR B Task 10        | complete and independently accepted | Milestone `41ae45afa268d186e65dfe0188be7f146ee80f7e`, tree `c6373a00e686bae64f7bc5b3361798fbfb105f98`, Critical 0 / Important 0 / Minor 0.                                                                                                                                                                               |
+| PR B Task 11        | in progress                         | Final factual evidence, one-tree Section 9.3 gates, whole-PR review, exact candidate freeze, and governed A-B-B-A performance remain pending. No performance or Branch Release Gate fact exists yet.                                                                                                                     |
+| PR B Task 12        | pending                             | PR #62 is draft. Final candidate push, current PR evidence, Branch Release Gate, and ready transition wait for Task 11.                                                                                                                                                                                                  |
+| Server later ledger | pending                             | Waits for PR B merge/default-workflow evidence and separate authorization. No ledger branch or evidence exists.                                                                                                                                                                                                          |
+| API-v1 child        | blocked and unstarted               | Waits for the server ledger to be `ledger-published`.                                                                                                                                                                                                                                                                    |
 
 ## 15. Planning Self-Review Record
 

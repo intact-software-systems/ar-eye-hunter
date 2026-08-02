@@ -2,9 +2,9 @@ import { readRallarGroupDirectorAppointment } from '@shared/api/group-director.t
 
 import type { GroupMutationCommand, GroupMutationRead } from '../group-mutation-contracts.ts';
 import {
-  mutationTargetPrincipalId,
-  mutationTargetSessionId,
-} from '../orchestration/resolve-group-mutation-target.ts';
+  resolveGroupMutationTargetPrincipalId,
+  resolveGroupMutationTargetSessionId,
+} from '../orchestration/resolve-group-mutation-target-identity.ts';
 
 export interface GroupMutationReadIdentities {
   readonly actorPrincipalId: string | null;
@@ -20,10 +20,10 @@ export function resolveGroupMutationReadIdentities(
 ): GroupMutationReadIdentities {
   return {
     actorPrincipalId: command.input.actorPrincipalId,
-    targetPrincipalId: mutationTargetPrincipalId(command),
+    targetPrincipalId: resolveGroupMutationTargetPrincipalId(command),
     ownerPrincipalId: read.group?.value.ownerPrincipalId ?? null,
     directorPrincipalId:
       readRallarGroupDirectorAppointment(read.group?.value.metadata)?.principalId ?? null,
-    targetSessionId: mutationTargetSessionId(command),
+    targetSessionId: resolveGroupMutationTargetSessionId(command),
   };
 }

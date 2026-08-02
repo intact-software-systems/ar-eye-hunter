@@ -1,4 +1,5 @@
 import { parse } from '@babel/parser';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -7,13 +8,19 @@ import { describe, expect, it } from 'vitest';
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
 import {
   expectedGroupStateTestTree,
+  prBChangedTypeScriptOwners,
   readRuntimeCycles,
   reviewedPredecessorFunctionSizes,
   taskNineLayoutProductionOwners,
+  taskNineReviewedPredecessorModuleSizes,
+  taskNineReviewedPredecessorFunctionSizes,
   taskSevenRepairProductionOwners,
   taskSevenRepairTestOwners,
-  type NamedFunctionSize,
 } from './group-state-server-source-ratchet-inventory.ts';
+import {
+  readEveryFunctionSize,
+  readNamedFunctionSizes,
+} from './group-state-source-ratchet-function-sizes.ts';
 
 const repoRoot = process.cwd();
 const groupStateProductionRoot = path.join(
@@ -27,11 +34,13 @@ const expectedGroupStateProductionTree = [
   'group-mutation-command.ts',
   'group-presence-mutation-command.ts',
   'group-state-service-contracts.ts',
+  'group-state-service-timing.ts',
   'group-state-service.ts',
   'group-state-validation-primitives.ts',
   'inbox/group-state-inbox-contracts.ts',
   'inbox/group-state-inbox-handler.ts',
   'inbox/group-state-inbox-result.ts',
+  'inbox/to-group-mutation-descriptor.ts',
   'mutation/aggregate/compute-group-aggregate-mutation.ts',
   'mutation/aggregate/create-initial-group-mutation.ts',
   'mutation/aggregate/group-aggregate-mutation-policy.ts',
@@ -45,7 +54,7 @@ const expectedGroupStateProductionTree = [
   'mutation/membership/group-membership-mutation-policy.ts',
   'mutation/membership/transition-group-member-lifecycle.ts',
   'mutation/orchestration/compute-group-mutation.ts',
-  'mutation/orchestration/resolve-group-mutation-target.ts',
+  'mutation/orchestration/resolve-group-mutation-target-identity.ts',
   'mutation/presence/compute-group-presence-admission.ts',
   'mutation/presence/compute-group-presence-mutation.ts',
   'mutation/read/read-group-mutation-related-entries.ts',
@@ -58,7 +67,7 @@ const expectedGroupStateProductionTree = [
   'mutation/state-validation/validate-group-mutation-read.ts',
   'mutation/state-validation/validate-group-mutation.ts',
   'mutation/write/compute-group-membership-write.ts',
-  'mutation/write/write-group-state-mutation.ts',
+  'mutation/write/write-group-mutation.ts',
   'persistence/assemble-group-state-snapshot.ts',
   'persistence/group-aggregate-repository.ts',
   'persistence/group-membership-repository.ts',
@@ -107,8 +116,8 @@ const taskSixTestOwners = [
   'packages/tests/shared-server/mutation-routing-inventory.ts',
   'packages/tests/shared-server/mutation-routing-owner-inventory.ts',
   'packages/tests/shared-server/mutation-routing-reachability.ts',
-  'packages/tests/shared-server/read-compute-write-contract.test.ts',
-  'packages/tests/shared-server/read-compute-write-source-analysis.ts',
+  'packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts',
+  'packages/tests/shared-server/authoritative-mutation-source-analysis.ts',
   'packages/tests/shared-server/topology-app-inbox-ownership.test.ts',
 ] as const;
 
@@ -128,7 +137,7 @@ const mechanicalRuleIds = new Set([
 ]);
 
 describe('authoritative group-state server source ratchet', () => {
-  it('keeps the exact production owner tree and the exact 52-file mirrored test tree', () => {
+  it('keeps the exact production owner tree and the mirrored test tree', () => {
     expect(readRelativeFileTree(groupStateProductionRoot)).toEqual(
       expectedGroupStateProductionTree,
     );
@@ -184,10 +193,28 @@ describe('authoritative group-state server source ratchet', () => {
 
   it('keeps every named general function within 60 physical lines', () => {
     const oversizedFunctions = readRatchetedSources()
-      .flatMap(({ file, raw }) => readNamedFunctions(file, raw))
+      .flatMap(({ file, raw }) => readNamedFunctionSizes({ repoRoot, filePath: file, source: raw }))
       .filter(({ lines }) => lines > 60);
 
     expect(oversizedFunctions).toEqual(reviewedPredecessorFunctionSizes);
+  });
+
+  it('keeps every PR B changed module and function within physical-line limits', () => {
+    expect(readPrBChangedTypeScriptOwners()).toEqual([...prBChangedTypeScriptOwners]);
+
+    const sources = readSources(prBChangedTypeScriptOwners);
+    const oversizedModules = sources
+      .filter(({ raw }) => raw.trimEnd().split(/\r?\n/).length > 400)
+      .map(({ file, raw }) => ({
+        filePath: path.relative(repoRoot, file),
+        lines: raw.trimEnd().split(/\r?\n/).length,
+      }));
+    const oversizedFunctions = sources
+      .flatMap(({ file, raw }) => readEveryFunctionSize({ repoRoot, filePath: file, source: raw }))
+      .filter(({ lines }) => lines > 60);
+
+    expect(oversizedModules).toEqual(taskNineReviewedPredecessorModuleSizes);
+    expect(oversizedFunctions).toEqual(taskNineReviewedPredecessorFunctionSizes);
   });
 
   it('keeps imports first and runtime dependencies acyclic', () => {
@@ -291,6 +318,21 @@ function readRepoSource(relativePath: string): string {
   return readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
+function readPrBChangedTypeScriptOwners(): readonly string[] {
+  const base = 'a7a5f488cd185a7f2cc6bd814c319f97d5401d03';
+  const tracked = execFileSync('git', ['diff', '--name-only', base, '--', '*.ts', '*.mts'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  const untracked = execFileSync(
+    'git',
+    ['ls-files', '--others', '--exclude-standard', '--', '*.ts', '*.mts'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+
+  return [...new Set([...tracked.split('\n'), ...untracked.split('\n')].filter(Boolean))].sort();
+}
+
 function readRelativeFileTree(directoryPath: string, prefix = ''): readonly string[] {
   return readdirSync(directoryPath, { withFileTypes: true })
     .flatMap((entry) => {
@@ -337,53 +379,6 @@ function isReviewedMechanicalFinding(finding: MechanicalFinding): boolean {
     return true;
   }
   return false;
-}
-
-function readNamedFunctions(filePath: string, source: string): readonly NamedFunctionSize[] {
-  const syntaxTree = parse(source, { sourceType: 'module', plugins: ['typescript'] });
-
-  return syntaxTree.program.body.flatMap((statement) => {
-    const declaration =
-      statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
-    if (declaration?.type === 'FunctionDeclaration' && declaration.id && declaration.loc) {
-      return [toFunctionSize(filePath, declaration.id.name, declaration.loc)];
-    }
-    if (declaration?.type === 'VariableDeclaration') {
-      return declaration.declarations.flatMap((variable) => {
-        if (
-          variable.id.type !== 'Identifier' ||
-          (variable.init?.type !== 'ArrowFunctionExpression' &&
-            variable.init?.type !== 'FunctionExpression') ||
-          !variable.init.loc
-        ) {
-          return [];
-        }
-        return [toFunctionSize(filePath, variable.id.name, variable.init.loc)];
-      });
-    }
-    if (declaration?.type === 'ClassDeclaration') {
-      return declaration.body.body.flatMap((member) => {
-        if (member.type !== 'ClassMethod' || !member.loc) {
-          return [];
-        }
-        const name = member.key.type === 'Identifier' ? member.key.name : '<computed>';
-        return [toFunctionSize(filePath, name, member.loc)];
-      });
-    }
-    return [];
-  });
-}
-
-function toFunctionSize(
-  filePath: string,
-  name: string,
-  location: { readonly start: { readonly line: number }; readonly end: { readonly line: number } },
-): NamedFunctionSize {
-  return {
-    filePath: path.relative(repoRoot, filePath),
-    name,
-    lines: location.end.line - location.start.line + 1,
-  };
 }
 
 function hasImportAfterDeclaration(source: string): boolean {

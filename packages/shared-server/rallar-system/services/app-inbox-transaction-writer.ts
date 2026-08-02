@@ -22,6 +22,16 @@ export type AppInboxHandlerFinalization =
         result: unknown;
     }>;
 
+export interface AppInboxMutationTransactionResult<DurableResult, AfterCommitResult> {
+    readonly durableResult: DurableResult;
+    readonly afterCommitResult: AfterCommitResult;
+}
+
+interface AppInboxMutationFinalization<DurableResult, ReturnResult> {
+    readonly durableResult: DurableResult;
+    readonly returnResult: ReturnResult;
+}
+
 export class AppInboxTransactionWriter {
     private readonly finalizationByContext = new WeakMap<
         AppInboxMessageContext,
@@ -48,12 +58,36 @@ export class AppInboxTransactionWriter {
         context: AppInboxMessageContext,
         write: (transaction: PSqlTransactionSql) => Promise<R>,
     ): Promise<R> {
+        return await this.writeFinalizedMutation(context, async (transaction) => {
+            const durableResult = await write(transaction);
+            return { durableResult, returnResult: durableResult };
+        });
+    }
+
+    async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
+        context: AppInboxMessageContext,
+        write: (
+            transaction: PSqlTransactionSql,
+        ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>,
+    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
+        return await this.writeFinalizedMutation(context, async (transaction) => {
+            const result = await write(transaction);
+            return { durableResult: result.durableResult, returnResult: result };
+        });
+    }
+
+    private async writeFinalizedMutation<DurableResult, ReturnResult>(
+        context: AppInboxMessageContext,
+        write: (
+            transaction: PSqlTransactionSql,
+        ) => Promise<AppInboxMutationFinalization<DurableResult, ReturnResult>>,
+    ): Promise<ReturnResult> {
         this.ensurePending(context);
-        const result = await this.inTransaction(
+        const finalized = await this.inTransaction(
             context,
             this.options.toTimingDetails(context),
             async (transaction, repositories) => {
-                const value = await this.timeWrite(
+                const result = await this.timeWrite(
                     context,
                     this.options.toTimingDetails(context),
                     async () => await write(transaction),
@@ -62,7 +96,7 @@ export class AppInboxTransactionWriter {
                     toResourceEntryWithUpdatedResource(
                         context.entry,
                         EntityStatus.COMPLETED,
-                        value,
+                        result.durableResult,
                     ),
                 );
                 await this.finish(
@@ -71,15 +105,15 @@ export class AppInboxTransactionWriter {
                     EntityStatus.COMPLETED,
                     this.options.nowEpochMs(),
                 );
-                return value;
+                return result;
             },
         );
         this.finalizationByContext.set(context, {
             state: 'transaction-finalized',
             status: EntityStatus.COMPLETED,
-            result,
+            result: finalized.durableResult,
         });
-        return result;
+        return finalized.returnResult;
     }
 
     async writeTerminalFailure(

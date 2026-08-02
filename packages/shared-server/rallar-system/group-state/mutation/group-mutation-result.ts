@@ -33,7 +33,7 @@ import type {
 
 const DEFAULT_GROUP_JOIN_CODE_TTL_MS = 7 * 24 * 60 * 60 * 1_000;
 
-export interface WriteGroupMutationResultInput {
+export interface GroupMutationWriteInput {
   readonly command: GroupMutationCommand;
   readonly read: GroupMutationRead;
   readonly facts: GroupMutationFacts;
@@ -73,7 +73,7 @@ export function materializedRotateJoinCode(
   return { joinCode, expiresAtEpochMs };
 }
 
-export function writeResult(input: WriteGroupMutationResultInput): GroupMutationComputed {
+export function computeGroupMutationWrite(input: GroupMutationWriteInput): GroupMutationComputed {
   const { command, facts, read } = input;
   const group =
     input.eventGroup ??

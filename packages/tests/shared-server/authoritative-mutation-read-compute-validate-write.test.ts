@@ -5,7 +5,7 @@ import {
   readBranchBody as branchBody,
   readFunctionBody as functionBody,
   readMethodBody as methodBody,
-} from './read-compute-write-source-analysis.ts';
+} from './authoritative-mutation-source-analysis.ts';
 
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
@@ -39,7 +39,7 @@ const sources = {
   groupHandler: read(`${groupStateRoot}/inbox/group-state-inbox-handler.ts`),
   groupService: read(`${groupStateRoot}/group-state-service.ts`),
   client: read(`${serviceRoot}/client-state-service.ts`),
-  group: read(`${groupStateRoot}/mutation/write/write-group-state-mutation.ts`),
+  group: read(`${groupStateRoot}/mutation/write/write-group-mutation.ts`),
   topologyConfig: read(`${serviceRoot}/group-topology-management-service.ts`),
   topologyWorker: read(`${serviceRoot}/RtcTopologyOutboxWork.ts`),
   topologyRepository: read(`${repositoryRoot}/RtcTopologyExecutionRepository.ts`),
@@ -57,6 +57,7 @@ const trackedRuntimeSource = [
   `${groupStateRoot}/group-state-service.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
+  `${groupStateRoot}/inbox/to-group-mutation-descriptor.ts`,
   `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
   `${topologyInboxRoot}/topology-app-inbox-handler.ts`,
   `${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`,
@@ -81,7 +82,7 @@ const removedIntermediateOutboxSymbols = [
   'StateMutation' + 'OutboxWork',
 ] as const;
 
-describe('read/compute/validate/write implementation contract', { timeout: 30_000 }, () => {
+describe('authoritative mutation read/compute/validate/write contract', { timeout: 30_000 }, () => {
   it('contains no intermediate state-mutation outbox runtime wiring', () => {
     for (const forbidden of removedIntermediateOutboxSymbols) {
       expect(trackedRuntimeSource).not.toContain(forbidden);
@@ -97,6 +98,7 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
       `${groupStateRoot}/group-state-service.ts`,
       `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
       `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
+      `${groupStateRoot}/inbox/to-group-mutation-descriptor.ts`,
       `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
     ]) {
       expect(existsSync(file), file).toBe(true);
@@ -197,11 +199,11 @@ describe('read/compute/validate/write implementation contract', { timeout: 30_00
     {
       name: 'group AppInbox',
       source: sources.groupHandler,
-      owner: 'processMutation',
+      owner: 'processGroupStateMutation',
       calls: [
-        'this.dependencies.groupStateService.read(command)',
-        'this.dependencies.groupStateService.compute(command, read)',
-        'this.dependencies.groupStateService.validate(command, read, computed)',
+        'this.dependencies.mutationOperations.read(command)',
+        'this.dependencies.mutationOperations.compute(command, read)',
+        'this.dependencies.mutationOperations.validate(command, read, computed)',
         'this.commitMutation({ context, command, computed })',
       ],
     },

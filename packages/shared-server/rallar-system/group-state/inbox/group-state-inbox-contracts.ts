@@ -1,3 +1,4 @@
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
   AcceptGroupInviteRequest,
   AppointGroupDirectorRequest,
@@ -19,7 +20,35 @@ import type {
   UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
 
+import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type {
+  GroupMutationComputed,
+  GroupMutationComputedWrite,
+  GroupMutationRead,
+  GroupMutationReceipt,
+} from '../mutation/group-mutation-contracts.ts';
+import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
+// prettier-ignore
+import type {
+  WsSessionGenerationLifecycleService,
+} from '../../services/ws-session-generation-lifecycle.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
+
+export interface GroupStateInboxMutationOperations {
+  read(command: GroupStateMutationCommand): Promise<GroupMutationRead>;
+  compute(command: GroupStateMutationCommand, read: GroupMutationRead): GroupMutationComputed;
+  validate(
+    command: GroupStateMutationCommand,
+    read: GroupMutationRead,
+    computed: GroupMutationComputed,
+  ): void;
+  write(
+    transaction: PSqlTransactionSql,
+    computed: GroupMutationComputedWrite,
+  ): Promise<GroupMutationReceipt>;
+  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+  observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
+}
 
 export type GroupCreateAppInboxPayload = Readonly<{
   scope: StateScope;

@@ -22,11 +22,11 @@ import type {
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import {
   auditStamp,
+  computeGroupMutationWrite,
   materializedRotateJoinCode,
   noOp,
   rejected,
   requireGroup,
-  writeResult,
 } from '../group-mutation-result.ts';
 import {
   assertActive,
@@ -79,7 +79,7 @@ export function computeCreate(
   const group = createInitialGroup({ command, audit, snapshotVersion });
   const owner = createInitialOwner(command, audit);
   const summary = createInitialPresenceSummary({ command, read, facts, snapshotVersion });
-  return writeResult({
+  return computeGroupMutationWrite({
     command,
     read,
     facts,
@@ -222,7 +222,7 @@ export function computeRotateJoinCode(
 function groupWrite(input: GroupWriteInput): GroupMutationComputed {
   const { command, eventType, facts, group, read } = input;
   const stored = requireGroup(read, command.aggregateRef);
-  return writeResult({
+  return computeGroupMutationWrite({
     command,
     read,
     facts,

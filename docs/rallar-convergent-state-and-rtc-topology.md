@@ -559,7 +559,7 @@ changes and require a coordinated deployment.
 
 Focused concurrency coverage lives in:
 
-- `packages/tests/shared-server/read-compute-write-contract.test.ts`
+- `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`
 - `packages/tests/shared-server/cached-state-services.test.ts`
 - `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
 - `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`

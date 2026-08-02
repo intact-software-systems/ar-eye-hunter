@@ -12,9 +12,9 @@ import type {
   GroupMutationRead,
 } from '../group-mutation-contracts.ts';
 import {
-  mutationTargetPrincipalId,
-  mutationTargetSessionId,
-} from '../orchestration/resolve-group-mutation-target.ts';
+  resolveGroupMutationTargetPrincipalId,
+  resolveGroupMutationTargetSessionId,
+} from '../orchestration/resolve-group-mutation-target-identity.ts';
 import {
   validateGroupMutationIdempotencyRecord,
   validateMutationReceipt,
@@ -122,8 +122,8 @@ function validateComputedPresenceGuard({
     command.aggregateRef,
     'Group mutation computed presence guard',
   );
-  const expectedSessionId = mutationTargetSessionId(command);
-  const expectedPrincipalId = mutationTargetPrincipalId(command);
+  const expectedSessionId = resolveGroupMutationTargetSessionId(command);
+  const expectedPrincipalId = resolveGroupMutationTargetPrincipalId(command);
   if (
     expectedSessionId === null ||
     expectedPrincipalId === null ||
@@ -203,7 +203,7 @@ function validateComputedPresenceAdmission({
   validatePresenceAdmission(computed.presenceAdmission.value, command.aggregateRef);
   validateComputedAdmissionPredecessor(read, computed.presenceAdmission);
   const admittedPrincipalId = computed.presenceAdmission.value.principalId;
-  const expectedPrincipalId = mutationTargetPrincipalId(command);
+  const expectedPrincipalId = resolveGroupMutationTargetPrincipalId(command);
   if (expectedPrincipalId === null || expectedPrincipalId !== admittedPrincipalId) {
     throw new TypeError('Group mutation admission principal differs from command target identity');
   }
