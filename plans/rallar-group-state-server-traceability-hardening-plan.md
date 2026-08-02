@@ -235,6 +235,8 @@ packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts
 packages/tests/repo/rallar-group-state-owner-integrity.test.ts
 packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts
 packages/tests/repo/group-state-navigation-map-integrity.test.ts
+packages/tests/repo/group-state-server-source-ratchet.test.ts
+packages/tests/repo/group-state-server-source-ratchet-inventory.ts
 packages/tests/rallar-black-box/rallar-testing-skill.test.ts
 package.json
 plans/rallar-group-state-server-traceability-hardening-plan.md
@@ -521,6 +523,10 @@ or new file solely for this rename.
 - Create: `packages/tests/repo/group-state-navigation-map-integrity.test.ts`
 - Modify: `packages/tests/repo/rallar-group-state-owner-integrity.test.ts` only
   for non-overlapping owner assertions
+- Modify: `packages/tests/repo/group-state-server-source-ratchet.test.ts` and
+  `group-state-server-source-ratchet-inventory.ts` only to retain the exact-tree
+  ratchet for the new navigation map and the cumulative changed-TypeScript
+  owner inventory without parsing Markdown as TypeScript
 - Modify: `package.json` (`test:repo-governance` registration only)
 
 - [x] Derive every timeline and family trace from current source before writing

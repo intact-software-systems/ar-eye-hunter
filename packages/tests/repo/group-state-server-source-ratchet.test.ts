@@ -30,6 +30,7 @@ const groupStateProductionRoot = path.join(
 const groupStateTestRoot = path.join(repoRoot, 'packages/tests/shared-server/group-state');
 
 const expectedGroupStateProductionTree = [
+  'README.md',
   'group-mutation-authority.ts',
   'group-mutation-command.ts',
   'group-presence-mutation-command.ts',
@@ -283,9 +284,9 @@ function readRatchetedSources(): readonly { readonly file: string; readonly raw:
 
 function readProductionSources(): readonly { readonly file: string; readonly raw: string }[] {
   const relativePaths = [
-    ...expectedGroupStateProductionTree.map((filePath) =>
-      path.relative(repoRoot, path.join(groupStateProductionRoot, filePath)),
-    ),
+    ...expectedGroupStateProductionTree
+      .filter((filePath) => filePath.endsWith('.ts'))
+      .map((filePath) => path.relative(repoRoot, path.join(groupStateProductionRoot, filePath))),
     ...taskSixProductionOwners,
     ...taskSevenRepairProductionOwners,
   ];
