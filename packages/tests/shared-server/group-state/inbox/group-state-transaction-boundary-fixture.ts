@@ -84,11 +84,10 @@ export async function createGroupStateTransactionBoundaryHarness(
   });
   transactionWriter.begin(context);
   const handler = new GroupStateInboxHandler({
-    mutationOperations: groupState.service,
-    writeMutation: async (messageContext, write) =>
-      await transactionWriter.writeMutation(messageContext, write),
-    writeMutationWithAfterCommitResult: async (messageContext, write) =>
-      await transactionWriter.writeMutationWithAfterCommitResult(messageContext, write),
+    mutationService: groupState.service,
+    sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
+    snapshotObserver: groupState.service,
+    transactionWriter,
     wakeQueue: () => {
       wakeCount += 1;
     },

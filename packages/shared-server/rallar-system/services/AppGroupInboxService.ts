@@ -139,10 +139,10 @@ class AppGroupInboxService extends AppInboxService {
       wakeQueue,
     );
     this.groupStateInboxHandler = new GroupStateInboxHandler({
-      mutationOperations: this.groupStateService,
-      writeMutation: async (context, write) => await this.writeMutation(context, write),
-      writeMutationWithAfterCommitResult: async (context, write) =>
-        await this.transactionWriter.writeMutationWithAfterCommitResult(context, write),
+      mutationService: this.groupStateService,
+      sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,
+      snapshotObserver: this.groupStateService,
+      transactionWriter: this.transactionWriter,
       wakeQueue: this.wakeQueue,
     });
     this.topologyAppInboxHandler = new TopologyAppInboxHandler({
