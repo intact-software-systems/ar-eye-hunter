@@ -142,19 +142,36 @@ export const taskSevenRepairTestOwners = [
   'packages/tests/shared-test/api-v1-state-write-evidence-source.test.ts',
 ] as const;
 
-export const taskFiveReviewFixFunctionOwners = [
+export const taskFiveChangedTypeScriptOwners = [
+  'apps/api-v1/test/rallar-server.test.ts',
   'packages/tests/repo/group-state-server-source-ratchet-inventory.ts',
   'packages/tests/repo/group-state-server-source-ratchet.test.ts',
   'packages/tests/repo/group-state-source-ratchet-function-sizes.ts',
+  'packages/tests/repo/group-state-traceability-active-paths.test.ts',
   'packages/tests/shared-server/app-inbox-test-database-contracts.ts',
   'packages/tests/shared-server/app-inbox-test-database-sql.ts',
   'packages/tests/shared-server/app-inbox-test-database-transaction.ts',
   'packages/tests/shared-server/app-inbox-test-database.ts',
+  'packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts',
+  'packages/tests/shared-server/authoritative-mutation-source-analysis.ts',
   'packages/tests/shared-server/group-state/group-state-service-timing-fixture.ts',
   'packages/tests/shared-server/group-state/group-state-service-timing.test.ts',
+  'packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts',
+  'packages/tests/shared-server/group-state/inbox/group-state-inbox-descriptor-contract.test.ts',
+  'packages/tests/shared-server/group-state/inbox/group-state-inbox-resource-fixtures.ts',
+  'packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts',
   'packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts',
   'packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts',
   'packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts',
+  'packages/tests/shared-server/topology-app-inbox-ownership.test.ts',
+] as const;
+
+export const taskFiveReviewedPredecessorFunctionSizes: readonly NamedFunctionSize[] = [
+  {
+    filePath: 'packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts',
+    name: 'runOperationMatrix',
+    lines: 64,
+  },
 ] as const;
 
 export const reviewedPredecessorFunctionSizes: readonly NamedFunctionSize[] = [

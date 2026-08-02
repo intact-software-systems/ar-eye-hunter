@@ -1031,6 +1031,9 @@ may be waived or rerolled inside this plan.
 - [ ] Add target source ratchets and capture RED only for not-yet-created owners
       and still-present dynamic proxy, mutable callback escape, optional live
       dependency, broad handler-port, and inconsistent-name constructs.
+- [ ] Derive the complete Task 5 changed TypeScript owner set from PR A's exact
+      resulting-main base and fail closed on an omitted path; allow only the
+      exact unchanged reviewed predecessor `runOperationMatrix` at 64 lines.
 
 ### Task 6: Extract Descriptor Translation And Rename The Protocol Entry
 

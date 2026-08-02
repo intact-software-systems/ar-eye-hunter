@@ -45,8 +45,13 @@ public surface; none constructs the service at runtime:
 - `packages/shared-server/rallar-server-repositories.md`;
 - `packages/shared-server/rallar-server-repositories-improvements.md`;
 - `packages/shared-server/rallar-system/app-inbox-completion-notifications.md`;
+- `.agents/skills/performance-analysis/references/webrtc-performance-focus.md`;
 - the deprecation annotations in
   `packages/shared-server/rallar-system/services/group-topology-management-service.ts`.
+
+The performance-analysis skill reference is active human and AI guidance. It
+names the group-state owner as a performance-sensitive inspection path; it is
+not a runtime consumer or a historical record.
 
 The following executable test/analyzer paths inspect, import, construct, or
 exercise the compatibility surface, but they are not production constructors:
@@ -88,6 +93,18 @@ historical investigation evidence. They are not active code consumers:
 - `plans/repo-style-lineages/rallar-group-state-server-structure-provenance.md`;
 - `plans/repo-style-lineages/rallar-group-state-server-structure.json`;
 - `playground/performance/rallar-server-side-webrtc-scalability-audit-2026-07-03.md`.
+
+The exact occurrence search also returns five tracked SDD records. The current
+execution evidence is
+`.superpowers/sdd/rallar-group-state-server-traceability-qa-plan/progress.md`
+and
+`.superpowers/sdd/rallar-group-state-server-traceability-qa-plan/task-5-report.md`.
+The completed PR A and earlier correction evidence is
+`.superpowers/sdd/rallar-group-state-server-traceability-qa-plan/task-1-report.md`,
+`.superpowers/sdd/task-4-correction-3-report.md`, and
+`.superpowers/sdd/task-4-correction-4-report.md`. These five paths are evidence,
+not runtime consumers; the first two remain current for this execution, while
+the other three are retained historical records.
 
 The supported predecessor bootstrap calls both setters in
 `apps/api-v1/src/create-rallar-server.ts` after facade construction. The
@@ -234,7 +251,7 @@ failure behavior, receipt/event/final-outbox order, and caller result.
 
 ## GREEN predecessor evidence
 
-The original combined GREEN result was **9 files / 146 tests**, explicitly
+The original, historical combined GREEN result was **9 files / 146 tests**, explicitly
 classified as **8 behavior files / 139 tests** plus **1 source-ratchet file / 7
 tests**. The behavior files cover the group operation matrix (all descriptor
 families and errors through the real authenticated entry), handler
@@ -246,8 +263,10 @@ ownership inventory now use the descriptive paths.
 
 Review-fix runtime fixtures add actual timing operation/detail, setter identity,
 descriptor, and durable-result sequencing coverage. The original combined
-batch remains **9 files / 146 tests**, explicitly **8 behavior files / 139
-tests** plus **1 source-ratchet file / 7 tests**. A supplementary predecessor
+batch result of **9 files / 146 tests** and **7 source-ratchet tests** is retained
+only as historical evidence. The current combined GREEN is **9 files / 147
+tests**, explicitly **8 behavior files / 139 tests** plus **1 source-ratchet
+file / 8 tests**. A supplementary predecessor
 batch is **6 files / 17 tests**: timing 5, setter lifecycle 2, descriptor 2,
 durable/identity/failure 7, and active documentation 1. The separate future
 timing test uses a complete fake `GroupStateService` and reserves runtime
@@ -311,9 +330,13 @@ Tasks 6–10, not failures in predecessor behavior. No other target construct wa
 asserted as absent.
 
 The Task 5 changed-source ratchet recursively checks named functions and test
-callbacks while excluding only declarative `describe` containers. Every changed
-function/callback is at most 60 physical lines and every changed module is at
-most 400 physical lines.
+callbacks while excluding only declarative `describe` containers. It derives
+the complete changed TypeScript owner set from the exact PR A resulting-main
+base and fails when the inventory omits a changed path. Every changed
+function/callback is at most 60 physical lines except the exact reviewed
+predecessor `runOperationMatrix` at 64 lines, and every changed module is at
+most 400 physical lines. The API-v1 server test is 396 lines after separating
+server lifecycle/route verification from fake runtime construction.
 
 The three future-only runs fail in exactly **14 named cases**: one timing-owner
 case, one construction-valid registration case, and twelve transaction,
@@ -330,3 +353,18 @@ command names either deleted predecessor basename; historical names remain only
 historical evidence. The source-ratchet inventory is the exact discoverable
 test tree, so this report records a resolved active-path fact rather than a
 skill-change request.
+
+## Review-fix round 6 validation
+
+- Current predecessor batch: 9 files / 147 tests passed (139 behavior + 8
+  source ratchet).
+- Supplementary predecessor batch: 6 files / 17 tests passed; 14 future-only
+  cases remained skipped in that GREEN selection.
+- Source and mirrored-tree ratchets: 2 files / 14 tests passed.
+- API-v1 server test: 4 Deno tests passed and the exact file passed `deno check`.
+- Broad shared-server batch excluding the three intentional future-only owners:
+  178 files passed, with 1,496 tests passed and 18 tests skipped.
+- Repository governance: 14 files / 190 tests passed; shared-server TypeScript
+  passed with no emit.
+- The separately invoked future-only batch still fails in exactly 14 approved
+  Task 6–10 target cases and passes its 10 predecessor cases.

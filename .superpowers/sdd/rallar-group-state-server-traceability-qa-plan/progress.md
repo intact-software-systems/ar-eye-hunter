@@ -34,7 +34,7 @@ Task 5: implemented — Task 5 stays test-only. The renamed authoritative mutati
 source-contract suite/helper, expanded mirrored test inventory, three focused
 characterization suites, and target-owner ratchets are ready for review. GREEN
 predecessor behavior batch: 8 files / 139 tests, plus 1 source ratchet / 7
-tests for the original combined 9 files / 146 tests. Intentional RED: 3 files, 14 failures,
+tests for the original historical combined 9 files / 146 tests. Intentional RED: 3 files, 14 failures,
 all limited to the Task 6–10 absent target constructs. Full consumer and
 construction/runtime family inventory, including the performance benchmark
 setter consumer and the plan/skill path mismatch, is in `task-5-report.md`.
@@ -57,7 +57,7 @@ durable resource to an independently authored complete raw JSON literal, and
 four separately hooked real transaction phases prove rollback with no private
 result, observation, or wake escape. The exact-path inventory now classifies
 all live, documentation, analyzer, lineage, plan, and historical occurrences.
-The original predecessor batch remains 8 files / 139 tests plus source ratchet
+The then-current predecessor batch was 8 files / 139 tests plus source ratchet
 7 / 7; the supplementary predecessor batch is 6 files / 17 tests. Future RED
 is limited to the approved absent Task 6–10 constructs. Production/runtime and
 checker behavior remain unchanged.
@@ -74,3 +74,21 @@ requires exact rejection identity, one call, one error event, and exact
 operation details. Every changed function/callback is at most 60 lines and
 every changed module is at most 400 lines; production and checker behavior
 remain unchanged.
+
+Task 5 review-fix round 6: complete — the recursive size ratchet now derives and
+compares the complete 21-path Task 5 changed TypeScript inventory against the
+exact PR A resulting-main base. The API server test's lifecycle/route assertions
+and fake-runtime construction have cohesive <=60-line owners in a 396-line
+module. The only explicit size allowance is the unchanged reviewed predecessor
+`runOperationMatrix` at 64 lines. The current combined predecessor GREEN is 9
+files / 147 tests: 8 behavior
+files / 139 tests plus the source ratchet at 8 / 8. The supplementary predecessor
+batch remains 6 files / 17 tests. The active performance skill and five tracked
+SDD occurrences are classified as current guidance/current execution evidence
+or historical evidence rather than runtime consumers. Production and checker
+behavior remain unchanged.
+Final round validation: current predecessor 9 files / 147 tests, supplementary
+predecessor 6 / 17, source and mirrored-tree ratchets 2 / 14, API Deno 4 / 4
+plus check, broad shared-server 178 files with 1,496 passed and 18 skipped,
+governance 14 / 190, and shared-server TypeScript all pass; future-only RED
+remains exact at 14 target failures.

@@ -1,4 +1,5 @@
 import { parse } from '@babel/parser';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -9,7 +10,8 @@ import {
   expectedGroupStateTestTree,
   readRuntimeCycles,
   reviewedPredecessorFunctionSizes,
-  taskFiveReviewFixFunctionOwners,
+  taskFiveChangedTypeScriptOwners,
+  taskFiveReviewedPredecessorFunctionSizes,
   taskNineLayoutProductionOwners,
   taskSevenRepairProductionOwners,
   taskSevenRepairTestOwners,
@@ -194,12 +196,22 @@ describe('authoritative group-state server source ratchet', () => {
     expect(oversizedFunctions).toEqual(reviewedPredecessorFunctionSizes);
   });
 
-  it('keeps every Task 5 changed function and test callback within 60 physical lines', () => {
-    const oversizedFunctions = readSources(taskFiveReviewFixFunctionOwners)
+  it('keeps every Task 5 changed module and function within physical-line limits', () => {
+    expect(readTaskFiveChangedTypeScriptOwners()).toEqual([...taskFiveChangedTypeScriptOwners]);
+
+    const sources = readSources(taskFiveChangedTypeScriptOwners);
+    const oversizedModules = sources
+      .filter(({ raw }) => raw.trimEnd().split(/\r?\n/).length > 400)
+      .map(({ file, raw }) => ({
+        filePath: path.relative(repoRoot, file),
+        lines: raw.trimEnd().split(/\r?\n/).length,
+      }));
+    const oversizedFunctions = sources
       .flatMap(({ file, raw }) => readEveryFunctionSize({ repoRoot, filePath: file, source: raw }))
       .filter(({ lines }) => lines > 60);
 
-    expect(oversizedFunctions).toEqual([]);
+    expect(oversizedModules).toEqual([]);
+    expect(oversizedFunctions).toEqual(taskFiveReviewedPredecessorFunctionSizes);
   });
 
   it('keeps imports first and runtime dependencies acyclic', () => {
@@ -301,6 +313,21 @@ function readSources(
 
 function readRepoSource(relativePath: string): string {
   return readFileSync(path.join(repoRoot, relativePath), 'utf8');
+}
+
+function readTaskFiveChangedTypeScriptOwners(): readonly string[] {
+  const base = 'a7a5f488cd185a7f2cc6bd814c319f97d5401d03';
+  const tracked = execFileSync('git', ['diff', '--name-only', base, '--', '*.ts', '*.mts'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  const untracked = execFileSync(
+    'git',
+    ['ls-files', '--others', '--exclude-standard', '--', '*.ts', '*.mts'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+
+  return [...new Set([...tracked.split('\n'), ...untracked.split('\n')].filter(Boolean))].sort();
 }
 
 function readRelativeFileTree(directoryPath: string, prefix = ''): readonly string[] {
