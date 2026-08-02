@@ -17,7 +17,7 @@ import { toGroupMutationDescriptor } from
   '../group-state/inbox/to-group-mutation-descriptor.ts';
 import {
   GROUP_MUTATION_INBOX_TYPES,
-  isAuthenticatedGroupMutationInboxType,
+  isAuthenticatedGroupMutationEnqueue,
 } from '../group-state/inbox/group-state-inbox-contracts.ts';
 // prettier-ignore
 import type {
@@ -275,7 +275,7 @@ class AppGroupInboxService extends AppInboxService {
     enqueue: AppInboxEnqueueInput<V>,
     authority: IssuedAuthSession,
   ): Promise<AppInboxEnqueueInput<V>> {
-    if (!isAuthenticatedGroupMutationInboxType(enqueue.type)) {
+    if (!isAuthenticatedGroupMutationEnqueue(enqueue)) {
       throw new GroupMutationAuthorizationError(
         'App inbox type is not an authenticated group mutation.',
       );
