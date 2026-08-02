@@ -58,9 +58,19 @@ const navigationSourceLinks = [
     declaration: 'class AppGroupInboxService',
   },
   {
+    symbol: 'toGroupMutationDescriptor',
+    sourcePath: './inbox/to-group-mutation-descriptor.ts',
+    declaration: 'export function toGroupMutationDescriptor',
+  },
+  {
     symbol: 'GroupStateInboxHandler',
     sourcePath: './inbox/group-state-inbox-handler.ts',
     declaration: 'export class GroupStateInboxHandler',
+  },
+  {
+    symbol: 'GroupMutationComputed',
+    sourcePath: './mutation/group-mutation-contracts.ts',
+    declaration: 'export type GroupMutationComputed =',
   },
   {
     symbol: 'readGroupStateInboxResult',
@@ -71,6 +81,16 @@ const navigationSourceLinks = [
     symbol: 'AppInboxService',
     sourcePath: '../services/AppInboxService.ts',
     declaration: 'export class AppInboxService',
+  },
+  {
+    symbol: 'createQueueMessageReader',
+    sourcePath: '../../../shared/services/QueueMessageReader.ts',
+    declaration: 'export function createQueueMessageReader',
+  },
+  {
+    symbol: 'DequeueResourceEntryController',
+    sourcePath: '../../../shared/queuebox/DequeueResourceEntryController.ts',
+    declaration: 'export class DequeueResourceEntryController',
   },
   {
     symbol: 'AppInboxTransactionWriter',
@@ -106,6 +126,16 @@ const navigationSourceLinks = [
     symbol: 'initWsLifecycle',
     sourcePath: '../services/ws-lifecycle-service.ts',
     declaration: 'export function initWsLifecycle',
+  },
+  {
+    symbol: 'RallarWsLifecycleRuntime',
+    sourcePath: '../services/ws-lifecycle-service.ts',
+    declaration: 'export interface RallarWsLifecycleRuntime',
+  },
+  {
+    symbol: 'scheduleWsLifecycleRetry',
+    sourcePath: '../services/ws-lifecycle-service.ts',
+    declaration: 'export function scheduleWsLifecycleRetry',
   },
   {
     symbol: 'initPresenceExpiryReconciliation',

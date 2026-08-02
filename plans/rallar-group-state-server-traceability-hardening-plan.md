@@ -492,8 +492,10 @@ or new file solely for this rename.
 - [x] Start PR A from planning `main`
       `61356b7c72310864917005053d5a4c9f431ee91e` after its default workflow
       succeeds and create one child-specific goal.
-- [x] Add RED pressure scenarios for every Section 2.1 rule before changing
-      guidance.
+- [x] Add baseline pressure scenarios for every Section 2.1 rule before changing
+      guidance. The authorization-focused controls produced RED for Rules 1-7;
+      Rule 8 was already baseline compliant, so its clearer semantic-primary
+      vocabulary is plan-driven clarification rather than failure-derived work.
 - [x] Update the code standard, convergent-service guidance, realtime skill,
       testing skill, publishing skill, and human review guide as one consistent
       contract.
@@ -503,7 +505,12 @@ or new file solely for this rename.
       condition.
 - [x] Run the focused skill/review suites and `npm run test:repo-governance` to
       GREEN; Task 1 was accepted at
-      `afe4760aaea04b29d8b9063f421903ec9c7f5f6f`.
+      `afe4760aaea04b29d8b9063f421903ec9c7f5f6f`. The ignored final repeated
+      campaign retained five independent baseline-control and five independent
+      updated-guidance samples covering all eight rules: baseline had three
+      choice vectors and no all-rule target sample, while updated guidance
+      converged on `BBBBBBBB` in all five samples. Rule 8 stayed baseline
+      compliant.
 
 ### Task 2: Add The Durable Group-State Navigation Map
 

@@ -15,25 +15,28 @@ invocation so it is not a second runtime specification.
    route result.
 3. [AppGroupInboxService](../services/AppGroupInboxService.ts) owns
    authenticated enqueue preparation and group-message handler registration.
-4. [GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts) owns the
+4. [toGroupMutationDescriptor](./inbox/to-group-mutation-descriptor.ts) is the
+   canonical request-to-mutation-descriptor translation used during enqueue
+   preparation.
+5. [GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts) owns the
    group mutation handler's commit-return boundary and after-commit snapshot
    observation.
-5. [createGroupStateService](./group-state-service.ts) constructs the durable
+6. [createGroupStateService](./group-state-service.ts) constructs the durable
    group-state read, compute, validate, and write operations.
-6. [writeGroupMutation](./mutation/write/write-group-mutation.ts) owns the
+7. [writeGroupMutation](./mutation/write/write-group-mutation.ts) owns the
    first aggregate or presence-session conditional guard and transaction-local
    event, receipt, and outbox writes.
-7. [processGroupPresenceConnect](./presence/group-presence-service.ts) owns
+8. [processGroupPresenceConnect](./presence/group-presence-service.ts) owns
    the connect-specific generation high-water early exit and guard.
-8. [processGroupSessionCleanup](./presence/group-presence-service.ts) owns
+9. [processGroupSessionCleanup](./presence/group-presence-service.ts) owns
    WebSocket-close cleanup preparation and its one transaction for all affected
    group mutations.
-9. [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts)
-   owns downstream summary convergence, its queue transaction, and post-commit
-   wake.
-10. [createCachedGroupStateService](./snapshot/cached-group-state-service.ts)
+10. [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts)
+    owns downstream summary convergence, its queue transaction, and post-commit
+    wake.
+11. [createCachedGroupStateService](./snapshot/cached-group-state-service.ts)
     is the composition adapter for durable authority and cache reads.
-11. [GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts)
+12. [GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts)
     owns local snapshot observation, freshness checks, and durable read-through.
 
 ## Construction And Registration
@@ -66,8 +69,13 @@ available by this composition path.
 callback boundary through `onStateMessage`: it validates the stored command
 identity, starts its transaction-finalization state, calls the registered
 handler, and classifies exceptions. Retryable failures escape to the
-ResourceInbox retry owner; terminal failures are written as failed AppInbox
-results. Its synchronous `processEntryUntilCompletion` wait returns an
+ResourceInbox retry owner. The
+[DequeueResourceEntryController](../../../shared/queuebox/DequeueResourceEntryController.ts)
+releases those attempts for retry and later reserves eligible work again;
+[createQueueMessageReader](../../../shared/services/QueueMessageReader.ts)
+then invokes the already registered callback with the newly reserved entry.
+Terminal failures are written as failed AppInbox results. The synchronous
+`processEntryUntilCompletion` wait returns an
 unavailable `Either` result on timeout rather than invoking the mutation
 directly. [AppInboxTransactionWriter](../services/app-inbox-transaction-writer.ts)
 owns the transaction, completed result, and reserved-entry finalization that
@@ -82,7 +90,9 @@ the group handler uses.
    which calls `AppGroupInboxService.processAuthenticatedEntryUntilCompletion`.
 2. [AppGroupInboxService](../services/AppGroupInboxService.ts) rejects a
    non-authenticated group type, otherwise
-   `prepareAuthenticatedGroupMutation` calls `GroupStateService.prepareMutation`.
+   `prepareAuthenticatedGroupMutation` calls
+   [toGroupMutationDescriptor](./inbox/to-group-mutation-descriptor.ts) and
+   passes that canonical descriptor to `GroupStateService.prepareMutation`.
    Preparation verifies the issued session, creates the command-bound authority
    facts and queue resource ID, then AppInbox enqueues and wakes its owning
    queue. The caller waits for the persisted result.
@@ -90,23 +100,35 @@ the group handler uses.
    [GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts). It validates
    the durable preparation, adds the queue attempt count, and calls the durable
    service's `read`, `compute`, and `validate` operations.
-4. For a `write` outcome, `commitMutation` gives
+4. The [GroupMutationComputed](./mutation/group-mutation-contracts.ts) result
+   distinguishes `write`, `replay`, `no-op`, `rejected`, and
+   `idempotency-conflict`. Only `write` calls the state writer; `replay`,
+   `no-op`, and `rejected` skip that write but remain inside the same AppInbox
+   transaction so the handler can read and persist their exact durable caller
+   result. An idempotency conflict is rejected before that durable-result read.
+5. For a `write` outcome, `commitMutation` gives
    [writeGroupMutation](./mutation/write/write-group-mutation.ts) the AppInbox
    transaction. Its aggregate or presence-session guard is the first
    authoritative write; it then writes dependent admission/member/summary
-   state, event, receipt, and computed outbox entries. A `replay` has no
-   service state write; an idempotency conflict is rejected before commit.
-5. In the same AppInbox transaction,
+   state, event, receipt, and computed outbox entries.
+6. In the same AppInbox transaction,
    [readGroupStateInboxResult](./inbox/group-state-inbox-result.ts) reads the
    exact durable receipt result. `AppInboxTransactionWriter` stores the
    completed result and finalizes the reserved AppInbox entry before the
    transaction returns.
-6. Only after that commit-return does `commitMutation` observe a committed
+7. Only after that commit-return does `commitMutation` observe a committed
    snapshot through the cache and call the optional queue wake. The durable
    result is then read by AppInbox and folded by the HTTP route. Missing or
-   failed persisted results, policy/authority errors, and retryable transaction
-   failures all exit through the AppInbox result/classification boundary, not a
-   direct route mutation.
+   failed persisted results and policy or authority errors exit through the
+   AppInbox result/classification boundary, not a direct route mutation.
+8. A retryable transaction failure is rethrown to
+   [DequeueResourceEntryController](../../../shared/queuebox/DequeueResourceEntryController.ts),
+   which schedules the durable queue row for a later attempt. On that attempt,
+   [createQueueMessageReader](../../../shared/services/QueueMessageReader.ts)
+   calls the registered AppInbox handler again with the same stored enqueue and
+   its durable preparation, but a new dequeue attempt count. The handler
+   rebuilds the command facts and repeats `read`, `compute`, and `validate`;
+   request-side descriptor and authority preparation are not rerun.
 
 ### Connect-presence mutation
 
@@ -124,7 +146,21 @@ AppInbox transaction, and returns through the common durable-result path.
 [initWsLifecycle](../services/ws-lifecycle-service.ts), registered by
 [createRallarServer](../../../../apps/api-v1/src/create-rallar-server.ts),
 turns a WebSocket close into
-`AppGroupInboxService.enqueueGroupSessionCleanup`. The separately registered
+`AppGroupInboxService.enqueueGroupSessionCleanup`. Before that later queue
+phase, this lifecycle owner holds one pending close per session generation. A
+newer close releases any older pending close; a stale close superseded by a
+newer pending generation releases its close facts and exits. A durable enqueue
+failure uses [scheduleWsLifecycleRetry](../services/ws-lifecycle-service.ts);
+successful or superseded release cancels the pending timer and releases the
+close facts.
+
+The returned
+[RallarWsLifecycleRuntime](../services/ws-lifecycle-service.ts) exposes
+`retryPending`, which cancels each scheduled timer before immediately retrying
+the still-current pending close, and `stop`, which marks the lifecycle stopped,
+cancels and releases every pending close, and unregisters the WebSocket
+callback. A stopped, token-superseded, or factless scheduled invocation exits
+before enqueue. The separately registered
 [processGroupSessionCleanup](./presence/group-presence-service.ts) reads and
 computes the close lifecycle, prepares all affected internal disconnect
 commands, then reads, computes, and validates each before one AppInbox
@@ -138,9 +174,10 @@ calls
 [enqueuePresenceExpiryReconciliation](./presence/reconcile-expired-group-presence.ts),
 which asks [AppGroupInboxService](../services/AppGroupInboxService.ts) to
 prepare and enqueue expired-presence commands. Those `GROUP_PRESENCE_EXPIRE`
-entries use the common group handler with internal authority. The scheduler gets
-the enqueue count; the later queue invocation owns the durable result and any
-retry or failure.
+entries use the common group handler with internal authority. The enqueue helper
+awaits both maintenance services and returns `void`, so the scheduler receives
+no enqueue count or durable mutation result. The later queue invocation owns
+the durable result and any retry or failure.
 
 ### Presence-summary downstream work
 
