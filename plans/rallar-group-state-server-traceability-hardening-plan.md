@@ -297,6 +297,7 @@ packages/tests/repo/group-state-server-source-ratchet-inventory.ts
 packages/tests/repo/group-state-server-source-ratchet.test.ts
 packages/tests/repo/group-state-traceability-active-paths.test.ts
 packages/tests/repo/group-state-navigation-map-integrity.test.ts
+packages/tests/repo/rallar-group-state-owner-integrity.test.ts
 plans/rallar-group-state-server-traceability-hardening-plan.md
 ```
 

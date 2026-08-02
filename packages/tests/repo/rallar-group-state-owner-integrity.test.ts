@@ -85,11 +85,11 @@ describe('group-state owner integrity', () => {
       'transaction: PSqlTransactionSql',
     ]);
     expectAllNormalized(groupInboxHandler, [
-      'const read = await this.dependencies.mutationOperations.read(command)',
-      'const computed = this.dependencies.mutationOperations.compute(command, read)',
-      'this.dependencies.mutationOperations.validate(command, read, computed)',
-      'await this.dependencies.writeMutationWithAfterCommitResult(',
-      'await this.dependencies.mutationOperations.observeSnapshot(committedSnapshot)',
+      'const read = await this.dependencies.mutationService.read(command)',
+      'const computed = this.dependencies.mutationService.compute(command, read)',
+      'this.dependencies.mutationService.validate(command, read, computed)',
+      'await this.dependencies.transactionWriter.writeMutationWithAfterCommitResult(',
+      'await this.dependencies.snapshotObserver.observeSnapshot(committedSnapshot)',
     ]);
     expect(clientService).not.toContain('timeMutationPhase');
     expect(clientService).not.toContain('runtime.begin(');
