@@ -34,10 +34,7 @@ import type {
   RtcRttAppInboxDependencies,
 } from '../rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttAppInboxHandler } from '../rtc-topology/inbox/rtc-rtt-app-inbox-handler.ts';
-import {
-  requireTopologyManagementService,
-  TopologyAppInboxHandler,
-} from '../topology/inbox/topology-app-inbox-handler.ts';
+import { TopologyAppInboxHandler } from '../topology/inbox/topology-app-inbox-handler.ts';
 import type { GroupTopologyManagementService } from './group-topology-management-service.ts';
 import {
   type AppInboxEnqueueInput,
@@ -158,7 +155,7 @@ class AppGroupInboxService extends AppInboxService {
       nowEpochMs: () => this.nowEpochMs(),
       wakeQueue: this.wakeQueue,
     });
-    this.registerStateMessageHandlers();
+    this.registerGroupStateMessageHandlers();
   }
 
   public async enqueueExpiredPresenceSessions(atEpochMs: number): Promise<number> {
@@ -241,17 +238,25 @@ class AppGroupInboxService extends AppInboxService {
   }
 
   setTopologyManagementService(service: GroupTopologyManagementService): void {
-    if (this.topologyManagementService && this.topologyManagementService !== service) {
-      throw new TypeError('Topology management service is already configured');
+    if (this.topologyManagementService) {
+      if (this.topologyManagementService !== service) {
+        throw new TypeError('Topology management service is already configured');
+      }
+      return;
     }
     this.topologyManagementService = service;
+    this.registerTopologyStateMessageHandlers(service);
   }
 
   setRtcRttAppInboxDependencies(dependencies: RtcRttAppInboxDependencies): void {
-    if (this.rtcRttDependencies && this.rtcRttDependencies !== dependencies) {
-      throw new TypeError('RTC RTT AppInbox dependencies are already configured');
+    if (this.rtcRttDependencies) {
+      if (this.rtcRttDependencies !== dependencies) {
+        throw new TypeError('RTC RTT AppInbox dependencies are already configured');
+      }
+      return;
     }
     this.rtcRttDependencies = dependencies;
+    this.registerRtcRttStateMessageHandler(dependencies);
   }
 
   async enqueueRtcRtt(
@@ -284,7 +289,7 @@ class AppGroupInboxService extends AppInboxService {
     };
   }
 
-  private registerStateMessageHandlers(): void {
+  private registerGroupStateMessageHandlers(): void {
     const processGroupMutation = async (_payload: unknown, context: AppInboxMessageContext) =>
       await this.groupStateInboxHandler.processGroupStateMutation(context);
     for (const type of GROUP_MUTATION_INBOX_TYPES.filter(
@@ -303,31 +308,24 @@ class AppGroupInboxService extends AppInboxService {
           wakeQueue: this.wakeQueue,
         }),
     );
+  }
+
+  private registerTopologyStateMessageHandlers(service: GroupTopologyManagementService): void {
     for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
       this.onStateMessage(
         type,
         async (_payload, context) =>
-          await this.topologyAppInboxHandler.processMutation(
-            context,
-            requireTopologyManagementService(this.topologyManagementService),
-          ),
+          await this.topologyAppInboxHandler.processMutation(context, service),
       );
     }
+  }
+
+  private registerRtcRttStateMessageHandler(dependencies: RtcRttAppInboxDependencies): void {
     this.onStateMessage(
       AppInboxType.RTC_RTT_SUBMIT,
       async (_payload, context) =>
-        await this.rtcRttAppInboxHandler.processMutation(
-          context,
-          this.requireRtcRttAppInboxDependencies(),
-        ),
+        await this.rtcRttAppInboxHandler.processMutation(context, dependencies),
     );
-  }
-
-  private requireRtcRttAppInboxDependencies(): RtcRttAppInboxDependencies {
-    if (!this.rtcRttDependencies) {
-      throw new TypeError('RTC RTT AppInbox dependencies are not configured');
-    }
-    return this.rtcRttDependencies;
   }
 }
 

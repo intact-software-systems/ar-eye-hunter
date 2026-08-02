@@ -1123,14 +1123,28 @@ remains external until it exists.
 - Test: the registration, middleware, topology ownership, operation, and RTC
   suites named in Tasks 5 and Section 9.3
 
-- [ ] Preserve the exact public constructor/setter surface and implement the
+- [x] Preserve the exact public constructor/setter surface and implement the
       Section 6.3 one-time registration lifecycle test-first.
-- [ ] Prove no topology/RTC callback is live with an incomplete processing
+- [x] Prove no topology/RTC callback is live with an incomplete processing
       dependency and no callback reads mutable optional state at invocation.
-- [ ] Prove normal composition, message registration order within each family,
+- [x] Prove normal composition, message registration order within each family,
       setter idempotence/error, queue processing, receipt/outbox, and result are
       unchanged. Stop if a real consumer needs preconfiguration processing.
 - [ ] Obtain scoped review with Critical 0 / Important 0.
+
+Task 8 keeps group and cleanup registration in construction, then registers the
+five topology operations and single RTC RTT operation only on the first
+successful call to their existing setter. Same-object calls remain idempotent;
+different objects retain the exact predecessor errors. Runtime characterization
+proves the registered callbacks capture the supplied mandatory object even if
+the facade's identity-guard field is subsequently cleared by the test, so no
+callback resolves optional facade state during invocation. The API-v1 lifecycle
+test retains the supported `topology` -> `rtc-rtt` -> worker `start` order, and
+the consumer inventory found no supported preconfiguration processing caller.
+The focused registration, middleware, topology, operation, RTC, authority, and
+retry suites pass; the combined future-only selection now retains exactly the
+twelve Task 9–10 failures. Independent scoped review remains external until it
+exists.
 
 ### Task 9: Return Immutable Transaction Data Through The AppInbox Owner
 

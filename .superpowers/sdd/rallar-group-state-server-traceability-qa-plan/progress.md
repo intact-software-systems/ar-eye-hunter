@@ -141,3 +141,17 @@ records/asserts object or value identity for every argument of all 15 wrappers.
 no method, no call, and no timing event. Review-fix RED was 3 failed / 1 passed;
 timing GREEN is 2 files / 10 tests. Production is byte-identical to the
 reviewed Task 7 commit. Independent re-review is pending.
+
+Task 8: implemented — the complete consumer inventory found no supported
+topology or RTC processing before configuration. Construction retains exact
+group/cleanup registration; the existing topology and RTC setters now register
+their families exactly once and callbacks capture the supplied mandatory value
+instead of reading optional facade state. Same identity remains idempotent,
+different identity retains the exact predecessor errors, and API-v1 preserves
+topology -> rtc-rtt -> worker-start order. Predecessor behavior was 7 files /
+80 tests plus 2 setter-characterization cases; target lifecycle is 5 / 5;
+future-only registration is GREEN while exactly 12 Task 9–10 failures remain.
+Final focused behavior is 11 files / 119 tests, source/tree/active ratchets are
+3 / 15, API-v1 lifecycle is 4 / 4 plus check, two PGlite topology/RTC queue
+paths pass, shared-server TypeScript passes, and changed-style reports no new
+finding. Self-review is Critical 0 / Important 0; independent review is pending.
