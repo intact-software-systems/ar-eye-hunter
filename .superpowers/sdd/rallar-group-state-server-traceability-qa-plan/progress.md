@@ -110,4 +110,9 @@ descriptor variants, the unsupported-family error, phase ordering, routing,
 retry, authority, source-tree, cycle, size, and TypeScript checks pass. The
 evolving PR B changed-source inventory now covers 26 paths. The approved exact
 filename/function pairing has one explicitly disposed
-`layout.primary-export-name` heuristic warning; independent review is pending.
+`layout.primary-export-name` heuristic warning. Independent review then reported
+Critical 0 / Important 1 for that filename/export mismatch; review-fix round 1
+renames the private owner to `to-group-mutation-descriptor.ts`, removes the
+allowance, and adds no compatibility hop. The exact changed-style comparison
+fails on that one finding before the rename and passes afterward; the renamed
+owner is byte-identical. Independent re-review is pending.

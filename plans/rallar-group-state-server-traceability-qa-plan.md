@@ -385,7 +385,7 @@ packages/shared-server/rallar-system/
     inbox/
       group-state-inbox-contracts.ts
       group-state-inbox-handler.ts
-      group-state-inbox-mutation-descriptor.ts
+      to-group-mutation-descriptor.ts
       group-state-inbox-result.ts
     mutation/
       group-mutation-result.ts
@@ -486,7 +486,7 @@ The in-memory database test support separates its public factory, contracts,
 SQL-family dispatch and stage hooks, and transaction publication/commit owners;
 its existing defaults and every consumer remain unchanged:
 
-- `group-state-inbox-mutation-descriptor.ts` owns the exact AppInbox payload to
+- `to-group-mutation-descriptor.ts` owns the exact AppInbox payload to
   `GroupMutationDescriptor` translation now embedded below the direct phase
   sequence in `group-state-inbox-handler.ts`.
 - `group-state-service-timing.ts` owns the real timing/instrumentation boundary
@@ -604,7 +604,7 @@ strictness.
 
 | Current owner                                                                                 | Target owner                                                                                                                                                                                             | Locked responsibility                                                                                                                                             |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| descriptor switches and `to*MutationDescriptor` helpers inside `group-state-inbox-handler.ts` | exported `toGroupMutationDescriptor` and private family helpers in `group-state-inbox-mutation-descriptor.ts`                                                                                            | exact payload-to-domain translation, switch order, errors, and field projection                                                                                   |
+| descriptor switches and `to*MutationDescriptor` helpers inside `group-state-inbox-handler.ts` | exported `toGroupMutationDescriptor` and private family helpers in `to-group-mutation-descriptor.ts`                                                                                                     | exact payload-to-domain translation, switch order, errors, and field projection                                                                                   |
 | `GroupStateInboxHandler.processMutation`                                                      | `GroupStateInboxHandler.processGroupStateMutation`                                                                                                                                                       | direct protocol entry with visible read/compute/validate/commit sequence                                                                                          |
 | dynamic `withGroupStateServiceTiming` and proxy-specific helpers in `group-state-service.ts`  | exported `createTimedGroupStateService` and private detail helpers in `group-state-service-timing.ts`                                                                                                    | identical timing names/details with one explicit wrapper per operation                                                                                            |
 | constructor-time topology/RTC registration over optional facade fields                        | group callbacks register in construction; topology/RTC callbacks register exactly once when each existing setter receives its complete mandatory dependency, before queue processing is enabled          | no live callback resolves an optional processing dependency; existing public setters remain one-hop lifecycle compatibility surfaces                              |
@@ -670,7 +670,7 @@ governance child and stops; it does not silently implement the rule.
 
 ### 6.1 Inbound translation owner
 
-`group-state-inbox-mutation-descriptor.ts` exposes exactly:
+`to-group-mutation-descriptor.ts` exposes exactly:
 
 ```ts
 export function toGroupMutationDescriptor<V>(
@@ -1053,7 +1053,7 @@ may be waived or rerolled inside this plan.
 **Files:**
 
 - Create:
-  `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts`
+  `packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts`
 - Modify:
   `packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts`
 - Modify: `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
@@ -1070,11 +1070,10 @@ Task 6 implementation moved the existing five descriptor functions without
 changing their branches, casts, projected values, errors, defaults, omissions,
 or volatile-value calls. The direct descriptor fixture covers all 17
 authenticated `GROUP_*` variants and the exact unsupported-family error. The
-approved filename and exported representation-boundary symbol intentionally
-produce one `layout.primary-export-name` heuristic warning; the Task 6 source
-ratchet records that exact plan-owned disposition rather than renaming either
-locked contract. Independent review and its verdict remain external until they
-exist.
+independent review corrected the private target filename to
+`to-group-mutation-descriptor.ts`, matching the primary export without a
+compatibility hop or checker allowance. Independent re-review and its verdict
+remain external until they exist.
 
 ### Task 7: Replace Dynamic Timing Dispatch With Explicit Operations
 

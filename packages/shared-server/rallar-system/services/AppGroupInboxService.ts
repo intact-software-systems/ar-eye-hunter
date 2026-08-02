@@ -14,7 +14,7 @@ import type { GroupStateService } from '../group-state/group-state-service-contr
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
 // prettier-ignore
 import { toGroupMutationDescriptor } from
-  '../group-state/inbox/group-state-inbox-mutation-descriptor.ts';
+  '../group-state/inbox/to-group-mutation-descriptor.ts';
 import {
   GROUP_MUTATION_INBOX_TYPES,
   isAuthenticatedGroupMutationInboxType,

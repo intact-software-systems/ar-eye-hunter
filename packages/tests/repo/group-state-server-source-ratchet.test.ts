@@ -37,8 +37,8 @@ const expectedGroupStateProductionTree = [
   'group-state-validation-primitives.ts',
   'inbox/group-state-inbox-contracts.ts',
   'inbox/group-state-inbox-handler.ts',
-  'inbox/group-state-inbox-mutation-descriptor.ts',
   'inbox/group-state-inbox-result.ts',
+  'inbox/to-group-mutation-descriptor.ts',
   'mutation/aggregate/compute-group-aggregate-mutation.ts',
   'mutation/aggregate/create-initial-group-mutation.ts',
   'mutation/aggregate/group-aggregate-mutation-policy.ts',
@@ -186,7 +186,7 @@ describe('authoritative group-state server source ratchet', () => {
         message: finding.message,
       })),
     ).toEqual([]);
-    expect(reviewedFindings).toHaveLength(4);
+    expect(reviewedFindings).toHaveLength(3);
   });
 
   it('keeps every named general function within 60 physical lines', () => {
@@ -350,13 +350,6 @@ interface MechanicalFinding {
 }
 function isReviewedMechanicalFinding(finding: MechanicalFinding): boolean {
   const relativePath = path.relative(repoRoot, finding.file);
-  if (
-    relativePath ===
-      'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts' &&
-    finding.ruleId === 'layout.primary-export-name'
-  ) {
-    return true;
-  }
   if (
     relativePath ===
       'packages/shared-server/rallar-system/group-state/group-mutation-authority.ts' &&

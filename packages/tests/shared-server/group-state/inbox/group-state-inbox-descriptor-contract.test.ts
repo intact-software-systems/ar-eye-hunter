@@ -8,7 +8,7 @@ import { AppInboxType } from
   '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 // prettier-ignore
 import { toGroupMutationDescriptor } from
-  '@shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts';
+  '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 // prettier-ignore
 import type { GroupMutationDescriptor } from
   '@shared-server/rallar-system/services/group-state-service.ts';

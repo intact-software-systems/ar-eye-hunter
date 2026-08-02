@@ -145,7 +145,7 @@ export const taskSevenRepairTestOwners = [
 export const prBChangedTypeScriptOwners = [
   'apps/api-v1/test/rallar-server.test.ts',
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
-  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts',
+  'packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts',
   'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
   'packages/tests/repo/group-state-server-source-ratchet-inventory.ts',
   'packages/tests/repo/group-state-server-source-ratchet.test.ts',

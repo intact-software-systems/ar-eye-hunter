@@ -12,7 +12,7 @@ const transactionWriterPath =
 const contractsPath =
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 const descriptorPath =
-  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-mutation-descriptor.ts';
+  'packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 const targetIdentityPath =
   'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
 const targetWritePath =

@@ -17,7 +17,7 @@ The isolated future-contract assertion failed because
 `processGroupStateMutation` did not exist. After the target-facing tests were
 changed first, the focused batch failed because:
 
-- `group-state-inbox-mutation-descriptor.ts` could not be imported;
+- `to-group-mutation-descriptor.ts` could not be imported;
 - direct transaction fixtures could not call `processGroupStateMutation`; and
 - the authoritative phase trace could not find that direct handler entry.
 
@@ -26,7 +26,7 @@ pending Task 7–10 contracts; Task 6 neither addresses nor relabels them.
 
 ## GREEN implementation
 
-`group-state-inbox-mutation-descriptor.ts` is the canonical internal
+`to-group-mutation-descriptor.ts` is the canonical internal
 representation boundary. It exports `toGroupMutationDescriptor` and retains the
 five predecessor functions with the same switch order, payload casts,
 `mutationDescriptor` calls, fields, null/default behavior, errors, and volatile
@@ -48,13 +48,20 @@ and the source ratchet includes the new production owner.
 
 ## Mechanical review disposition
 
-The exact approved filename
-`group-state-inbox-mutation-descriptor.ts` and exact exported symbol
-`toGroupMutationDescriptor` intentionally trigger
-`layout.primary-export-name`. Task 6 cannot rename either locked plan contract.
-The source ratchet records this one plan-owned heuristic disposition; no checker
-rule, severity, output, or strictness changed. The new owner is 240 physical
-lines and each of its six functions is at most 41 lines.
+Independent review found that the initial private target filename did not match
+the exact exported symbol. The target-tree autonomy permits this internal
+naming correction, so `to-group-mutation-descriptor.ts` now matches
+`toGroupMutationDescriptor` without a compatibility re-export. The local
+`layout.primary-export-name` allowance was removed; no checker rule, severity,
+output, or strictness changed. The owner is 240 physical lines and each of its
+six functions is at most 41 lines.
+
+At exact review-fix start, changed-style comparison against
+`a7a5f488cd185a7f2cc6bd814c319f97d5401d03` failed on that single
+`layout.primary-export-name` finding. The unchanged comparison passes after the
+rename. A byte comparison proves the renamed owner is identical to the
+reviewed implementation file; only path references and factual evidence
+changed.
 
 Construction-detail review reports only retained boundary shapes in changed
 production: `GroupStateInboxHandler.readGroupMutationPreparation`,
@@ -75,6 +82,8 @@ mechanical findings, function/module limits, import order, and runtime cycles
 pass with the exact reviewed predecessor allowances plus the one locked-name
 disposition above.
 
-Self-review finds Critical 0 and Important 0. Independent scoped review is
-pending. The final commit and tree remain external publication evidence and are
-not predicted inside this report.
+The first independent review reported Critical 0 / Important 1 for the filename
+and primary-symbol mismatch. This review-fix resolves that exact finding;
+review-fix self-review finds Critical 0 / Important 0, and independent re-review
+is pending. The final commit and tree remain external publication evidence and
+are not predicted inside this report.
