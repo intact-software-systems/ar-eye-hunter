@@ -129,3 +129,15 @@ idempotency, handler, AppInbox, source/tree, and active-path batch is 16 files /
 future-only selection now passes timing and retains exactly 13 Task 8–10
 failures with 12 passing predecessor/Task 6–7 cases. Independent review is
 pending.
+
+Task 7 review-fix round 1: implemented — independent review Critical 0 /
+Important 1 found that the literal async-operation inventory was not tied
+bidirectionally to the complete service contract and the fake did not retain
+exact argument tuples. The correction derives required and optional
+Promise-returning keys with `Exclude<Method, undefined>`, rejects missing and
+extra operations through exact type equality, checks runtime uniqueness, and
+records/asserts object or value identity for every argument of all 15 wrappers.
+`listRecentEvents` now has explicit present and absent cases; absence preserves
+no method, no call, and no timing event. Review-fix RED was 3 failed / 1 passed;
+timing GREEN is 2 files / 10 tests. Production is byte-identical to the
+reviewed Task 7 commit. Independent re-review is pending.

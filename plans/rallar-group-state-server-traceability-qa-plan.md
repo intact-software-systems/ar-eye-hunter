@@ -460,6 +460,7 @@ packages/tests/shared-server/
   mutation-routing-owner-inventory.ts
   group-state/
     group-state-service-idempotency.test.ts
+    group-state-service-timing-contract.test.ts
     group-state-service-timing-fixture.ts
     group-state-service-timing.test.ts
     group-state-test-mutation-executor.ts
@@ -1085,6 +1086,10 @@ remain external until they exist.
 - Modify: `packages/shared-server/rallar-system/group-state/group-state-service.ts`
 - Test:
   `packages/tests/shared-server/group-state/group-state-service-timing.test.ts`
+- Test:
+  `packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts`
+- Modify:
+  `packages/tests/shared-server/group-state/group-state-service-timing-fixture.ts`
 - Modify: directly affected source ratchets
 
 - [x] Implement the exact Section 6.2 interface and factory.
@@ -1101,7 +1106,14 @@ The timing suite proves one underlying call followed by one success or error
 event for each operation, exact return or rejection identity, and the locked
 operation-specific details. The former proxy, reflective lookup, variadic
 arguments, runtime property discovery, and `Function.apply` helpers are gone.
-The scoped independent review remains external until it exists.
+The first scoped review found that the test inventory did not fail closed when
+`GroupStateService` gains another required or optional Promise-returning method
+and did not prove exact argument identity. The review-fix derives that complete
+key union with explicit optional-method exclusion, enforces bidirectional type
+equality and runtime uniqueness, records every exact argument tuple, and tests
+`listRecentEvents` in both present and absent shapes. Production remains
+unchanged by this test-contract correction. The scoped independent re-review
+remains external until it exists.
 
 ### Task 8: Make Topology And RTC Registration Construction-Valid
 

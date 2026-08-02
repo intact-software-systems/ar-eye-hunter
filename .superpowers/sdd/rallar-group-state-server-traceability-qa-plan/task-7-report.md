@@ -31,6 +31,29 @@ The accepted test path proves all 15 asynchronous operations independently:
 The no-timing branch returns the exact input service object. Optional
 `listRecentEvents` stays absent when it was absent on the input service.
 
+## Review-fix round 1
+
+The first independent review reported Critical 0 / Important 1: the literal
+operation list was not tied bidirectionally to every Promise-returning
+`GroupStateService` key, and the fake recorded operation names but not exact
+argument tuples. The focused correction started RED with three failures and
+one pass: the tuple inventory was absent for every operation and both explicit
+optional-method tests lacked that invocation evidence.
+
+`PromiseReturningMethodKey` now derives method keys from the complete service
+contract, uses `Exclude<Method, undefined>` so optional async operations remain
+covered, and excludes synchronous functions and data properties. The exact
+coverage constant rejects both missing and extra keys; the test also requires
+runtime uniqueness. Therefore a future required or optional Promise-returning
+method breaks the contract until the explicit adapter and inventory add it.
+
+The fake records every exact argument tuple through an operation-specific
+generic contract. The invocation table owns one stable tuple per operation, and
+the contract suite compares every object and value with identity semantics.
+The optional `listRecentEvents` case separately proves the present wrapper's
+arguments/result/details and the absent shape's missing method, zero calls, and
+zero timing events. No production source changed in this review fix.
+
 ## Implementation ownership
 
 `createTimedGroupStateService` is the single real instrumentation boundary.
@@ -51,9 +74,13 @@ package export was added.
 - Predecessor timing selection: 1 file / 5 tests passed; the future owner was
   skipped.
 - Isolated Task 7 RED: 1 named failure because the target owner was absent.
-- Complete Task 7 timing GREEN: 1 file / 6 tests passed.
+- Initial Task 7 timing GREEN: 1 file / 6 tests passed.
+- Review-fix RED: 1 new contract file / 3 failed and 1 passed.
+- Complete review-fix timing GREEN: 2 files / 10 tests passed.
 - Timing, idempotency, handler, AppInbox, operation, transaction-failure,
-  source/tree, and active-path batch: 16 files / 168 tests passed.
+  source/tree, and active-path batch: 17 files / 172 tests passed.
+- Focused timing test TypeScript compilation passed, including the exact
+  type-level operation equality and optional-method probe.
 - Source/mechanical/function/module/import/cycle ratchets: 14 tests passed as
   part of the focused runs; every new or changed module is at most 400 lines
   and every new or changed function/callback is at most 60 lines.
@@ -72,7 +99,8 @@ external publication evidence until they exist.
 
 ## Self-review
 
-Critical 0 / Important 0. The operation list is complete, direct navigation
+Critical 0 / Important 0. The derived operation list is exact in both
+directions, all argument tuples use identity assertions, direct navigation
 reaches every underlying method, the no-sink and optional-method shapes are
 preserved, and no later task or public surface is included. Independent scoped
-review is pending.
+re-review is pending.
