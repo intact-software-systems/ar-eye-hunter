@@ -96,4 +96,19 @@ describe('rallar-testing skill guidance', () => {
       expect(commands).toContain(suite);
     }
   });
+
+  it('treats semantic behavior as primary over temporary mechanical ratchets', () => {
+    const skill = readFileSync(
+      resolve(REPO_ROOT, '.agents/skills/rallar-testing/SKILL.md'),
+      'utf8',
+    );
+    const normalizedSkill = skill.replace(/\s+/g, ' ').trim();
+
+    expect(normalizedSkill).toContain('Semantic tests are primary');
+    expect(normalizedSkill).toContain(
+      'Source inventories, exact-tree checks, string assertions, and line/count ratchets',
+    );
+    expect(normalizedSkill).toContain('supplementary and temporary');
+    expect(normalizedSkill).toContain('named owner and removal condition');
+  });
 });

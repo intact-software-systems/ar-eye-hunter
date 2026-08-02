@@ -41,6 +41,20 @@ describe('repo code style review evidence integrity', () => {
     ]);
     expect(reviewOutcome).not.toContain('one representative input traced');
   });
+
+  it('keeps semantic evidence primary while preserving warning-only construction review', () => {
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+
+    for (const source of [canonicalStyle, humanGuide]) {
+      expectAllNormalized(source, [
+        'Semantic tests are primary',
+        'Source inventories, exact-tree checks, string assertions, and line/count ratchets are supplementary and temporary',
+        'named owner and removal condition',
+        'does not make every optional warning globally blocking',
+      ]);
+    }
+  });
 });
 
 function readRepo(filePath: string): string {

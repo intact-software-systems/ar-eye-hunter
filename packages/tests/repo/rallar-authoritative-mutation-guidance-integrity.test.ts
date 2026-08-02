@@ -259,6 +259,41 @@ describe('authoritative mutation guidance integrity', () => {
     ]);
   });
 
+  it('keeps group-state traceability guidance direct and compatibility-preserving', () => {
+    const codeStyle = readRepo('.agents/skills/rallar-code-writing/references/repo-code-style.md');
+    const serviceWriting = readRepo(canonicalServiceWritingPath);
+    const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
+    const publishing = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
+
+    expectAllNormalized(codeStyle, [
+      'discriminated type-to-payload relationship',
+      'Repeated case-local assertions are not an acceptable substitute',
+      'One boundary narrowing may establish an existing typed protocol relationship',
+      'must not claim to validate fields it did not inspect',
+      'named port declared beside the canonical owner',
+      'Go to Definition reveals invocation, retry, commit, and failure semantics',
+      'Capability cohesion is judged by responsibility, not method count',
+    ]);
+    expectAllNormalized(serviceWriting, [
+      'Transaction, retry, lifecycle, and after-commit dependencies use a named port',
+      'declared beside the canonical owner',
+      'closed operation-name type',
+      'exhaustive operation inventory',
+      'Timing identity fields are deliberately populated, deliberately retained for compatibility',
+      'separately approved observable-behavior work',
+    ]);
+    expectAllNormalized(realtime, [
+      'more than 20 production modules',
+      'more than three materially different control-flow families',
+      'durable repository navigation map',
+      'historical PR body is not a durable substitute',
+    ]);
+    expectAllNormalized(publishing, [
+      'durable repository navigation map',
+      'historical PR body is not a durable substitute',
+    ]);
+  });
+
   it('keeps detailed ingress retry policy in the canonical service reference', () => {
     const serviceWriting = readRepo(canonicalServiceWritingPath);
     const routedSkillPaths = [

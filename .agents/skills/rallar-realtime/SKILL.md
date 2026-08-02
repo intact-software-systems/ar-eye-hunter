@@ -70,6 +70,22 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   optional cache observation conflicts.
 - Group presence uses its per-session guard and does not contend on the group
   row. Group metadata and roster operations use the aggregate group guard.
+- For authoritative group-state protocol dispatch, retain the existing
+  discriminated type-to-payload relationship; repeated case-local assertions
+  are not an acceptable substitute. One boundary narrowing may establish that
+  relationship but must not claim payload validation it did not perform or
+  alter runtime error timing.
+- Keep transaction, retry, lifecycle, and after-commit dependencies behind a
+  named port beside the canonical owner so Go to Definition exposes invocation,
+  retry, commit, and failure semantics. Judge cohesion by responsibility, not
+  method count.
+- An explicit group-state timing or decorator owner uses a closed operation-name
+  type and exhaustive operation inventory. Timing identity fields are
+  deliberately populated, deliberately retained for compatibility, or changed
+  only through separately approved observable-behavior work.
+- A feature with more than 20 production modules or more than three materially
+  different control-flow families retains a durable repository navigation map;
+  a historical PR body is not a durable substitute.
 - Keep browser ergonomics, but diagnose ambiguity where string room IDs can cross scopes.
 - Use `rallar.rooms.createAndSwitch(...)` for browser flows where creating a new
   room should leave the previous current room. Plain `rooms.create(...)` keeps
