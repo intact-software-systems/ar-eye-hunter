@@ -2,11 +2,13 @@
 
 ## Scope and decision
 
-Task 5 changes only tests, source-ratchet inventory paths, and cohesive test
-support owners. It makes no production, public-contract, AppInbox, timing,
-registration, persistence, or checker change. The predecessor runtime remains
-the GREEN characterization target; the five future Task 6–10 owners are
-deliberately RED and are not a publication verdict for this intermediate task.
+Task 5 changes only tests, source-ratchet inventory paths, cohesive test support
+owners, and three active-path documentation corrections in the testing command
+reference and two architecture documents. It makes no production,
+public-contract, AppInbox, timing, registration, persistence, or checker change.
+The predecessor runtime remains the GREEN characterization target; the five
+future Task 6–10 owners are deliberately RED and are not a publication verdict
+for this intermediate task.
 
 ## Consumer and setter inventory
 
@@ -368,3 +370,24 @@ skill-change request.
   passed with no emit.
 - The separately invoked future-only batch still fails in exactly 14 approved
   Task 6–10 target cases and passes its 10 predecessor cases.
+
+## Review-fix round 7 validation
+
+The API-v1 server test now follows Deno formatting and retains the required
+external, workspace, and relative import groups. It is exactly 400 physical
+lines, every changed function and callback remains at most 60 lines, and the
+unchanged reviewed predecessor `runOperationMatrix` at 64 lines remains the
+only size allowance. All four Deno cases and all 33 assertion sites remain.
+
+Section 3.2 now distinguishes the pre-existing, materially changed
+`group-state-inbox-test-runtime.ts` from the newly created descriptor contract,
+resource fixture, and active-path ratchet owners. The Task 5 file inventory also
+names the testing command reference and both active architecture documents that
+received path corrections. This is evidence reconciliation only; no production,
+runtime, or checker file changed.
+
+The Deno format check, 4-case Deno suite, Deno type check, current 9-file /
+147-test batch, supplementary 6-file / 17-test batch, 2-file / 14-test source/tree
+ratchet, 14-file / 190-test governance suite, shared-server TypeScript, plan
+Prettier check, and diff check pass. The future-only selection still fails in
+exactly 14 approved Task 6–10 target cases and passes its 10 predecessor cases.

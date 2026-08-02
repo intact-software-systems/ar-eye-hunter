@@ -30,9 +30,10 @@ Task 4: complete — commit c92265af9979c74c7210a42f2adc12432263f229, tree 30e69
 
 Task 4 whole-PR review-fix round 1: implemented — whole-PR review Critical 0 / Important 1 / Minor 0 found the active shared-server architecture validation block still invoked the deleted mixed skill-integrity path. A focused integrity test captured RED, and the exact stale command now uses `npm run test:repo-governance` with adjacent commands and prose unchanged. Focused integrity 11/11, exact PR A batch 75/75, and governance 190/190 pass. Independent re-review and commit pending.
 
-Task 5: implemented — Task 5 stays test-only. The renamed authoritative mutation
-source-contract suite/helper, expanded mirrored test inventory, three focused
-characterization suites, and target-owner ratchets are ready for review. GREEN
+Task 5: implemented — Task 5 stays test-and-active-documentation-only. The
+renamed authoritative mutation source-contract suite/helper, expanded mirrored
+test inventory, three focused characterization suites, target-owner ratchets,
+and three active-path documentation corrections are ready for review. GREEN
 predecessor behavior batch: 8 files / 139 tests, plus 1 source ratchet / 7
 tests for the original historical combined 9 files / 146 tests. Intentional RED: 3 files, 14 failures,
 all limited to the Task 6–10 absent target constructs. Full consumer and
@@ -46,8 +47,8 @@ consumer manifest/two-timeline family traces. The original combined GREEN is
 explicitly classified as eight behavior files / 139 tests plus one source
 ratchet file / 7 tests; separate timing, setter, and active-path fixtures pass
 before their future-only RED cases. Future-only RED is separately runnable and has fourteen
-expected target-owner failures. The two skill command paths and two active
-source-contract documentation paths now name their live owners.
+expected target-owner failures. The testing command reference and two active
+architecture documentation paths now name their live owners.
 
 Task 5 review-fix round 4: complete — the timing fixture now provides a
 cohesive complete `GroupStateService` fake and reserves exact Task 7 runtime
@@ -92,3 +93,12 @@ predecessor 6 / 17, source and mirrored-tree ratchets 2 / 14, API Deno 4 / 4
 plus check, broad shared-server 178 files with 1,496 passed and 18 skipped,
 governance 14 / 190, and shared-server TypeScript all pass; future-only RED
 remains exact at 14 target failures.
+
+Task 5 review-fix round 7: complete — the API-v1 server test is Deno-formatted
+at exactly 400 lines with required import groups, four unchanged cases, 33
+unchanged assertion sites, and all changed functions/callbacks <=60 lines. The
+Section 3.2 current/target trees and Task 5 inventory now distinguish the
+pre-existing test runtime from the three new test/ratchet owners and name the
+testing command reference plus both active architecture-document corrections.
+All current GREEN, supplementary, source/tree, governance, Deno, TypeScript,
+format, and diff gates pass; the future-only RED remains exactly 14.

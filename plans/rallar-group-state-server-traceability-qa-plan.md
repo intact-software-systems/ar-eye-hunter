@@ -430,10 +430,9 @@ packages/tests/shared-server/
     inbox/
       group-state-inbox-authority.test.ts
       group-state-inbox-construction.test.ts
-      group-state-inbox-descriptor-contract.test.ts
       group-state-inbox-operation-matrix.test.ts
-      group-state-inbox-resource-fixtures.ts
       group-state-inbox-retry.test.ts
+      group-state-inbox-test-runtime.ts
     mutation/
       write-group-state-mutation-behavior.test.ts
 ```
@@ -447,6 +446,7 @@ packages/tests/repo/
   group-state-server-source-ratchet-inventory.ts
   group-state-server-source-ratchet.test.ts
   group-state-source-ratchet-function-sizes.ts
+  group-state-traceability-active-paths.test.ts
 packages/tests/shared-server/
   app-inbox-test-database-contracts.ts
   app-inbox-test-database-sql.ts
@@ -467,8 +467,11 @@ packages/tests/shared-server/
       app-group-inbox-registration-lifecycle.test.ts
       group-state-inbox-authority.test.ts
       group-state-inbox-construction.test.ts
+      group-state-inbox-descriptor-contract.test.ts
       group-state-inbox-operation-matrix.test.ts
+      group-state-inbox-resource-fixtures.ts
       group-state-inbox-retry.test.ts
+      group-state-inbox-test-runtime.ts
       group-state-inbox-transaction-failures.test.ts
       group-state-inbox-transaction-result.test.ts
       group-state-transaction-boundary-fixture.ts
@@ -1013,9 +1016,19 @@ may be waived or rerolled inside this plan.
 - Modify: `packages/tests/shared-server/rallar-middleware.test.ts`
 - Modify: `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`
 - Modify: `apps/api-v1/test/rallar-server.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-descriptor-contract.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-resource-fixtures.ts`
+- Modify:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts`
 - Rename: the two source-contract files in Section 4.3
 - Modify: direct imports and source-ratchet inventories
 - Create: `packages/tests/repo/group-state-source-ratchet-function-sizes.ts`
+- Create: `packages/tests/repo/group-state-traceability-active-paths.test.ts`
+- Modify: `.agents/skills/rallar-testing/references/test-commands.md`
+- Modify: `packages/shared-server/architecture.md`
+- Modify: `docs/rallar-convergent-state-and-rtc-topology.md`
 
 - [ ] Start `codex/rallar-group-state-traceability-runtime` from PR A's exact
       resulting `main` SHA after its default workflow.

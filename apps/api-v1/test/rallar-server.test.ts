@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
+
 import { AppTopics } from '@shared/api/api-config.ts';
 import {
   hashRallarCrdtUpdateEnvelope,
@@ -13,6 +14,7 @@ import {
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
 import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
+
 import type { Middleware } from '../src/middleware.ts';
 import { createRallarServer } from '../src/create-rallar-server.ts';
 import { init as initCrdtAdminRoutes } from '../src/routes/crdt-admin-routes.ts';
@@ -147,10 +149,9 @@ interface FakeMiddlewareState {
   starts: number;
 }
 
-type FakeRuntime = Readonly<FakeMiddlewareState> &
-  Readonly<{
-    middleware: Middleware;
-  }>;
+interface FakeRuntime extends Readonly<FakeMiddlewareState> {
+  readonly middleware: Middleware;
+}
 
 function createFakeWebSocketQueue(
   state: FakeMiddlewareState,
@@ -309,9 +310,12 @@ async function mountAndAssertServerRoutes(rallar: RallarServer): Promise<void> {
     assert.equal(removedResponse.headers.get('location'), '/swagger-ui');
   }
   assert.equal((await app.request('/api/admin/operations/overview')).status, 401);
-  assert.equal((await app.request('/api/admin/support/explain/queue-item', {
-    method: 'POST',
-  })).status, 401);
+  assert.equal(
+    (await app.request('/api/admin/support/explain/queue-item', {
+      method: 'POST',
+    })).status,
+    401,
+  );
   assert.equal(
     (await app.request(
       '/api/state/apps/app-1/workspaces/workspace-1/graphs/global?refresh=bogus',
