@@ -195,6 +195,9 @@ not current or approved exceptions.
 
 ## Documentation And Validation
 
+- [Group-state server navigation map](./rallar-system/group-state/README.md)
+  links the canonical group-state construction, queue, mutation, and cache
+  owners without duplicating their runtime contracts.
 - `rallar-server-repositories.md` inventories current persistence and data flow.
 - `rallar-server-repositories-improvements.md` is the historical hardening log.
 - `../../docs/rallar-convergent-state-and-rtc-topology.md` describes the
