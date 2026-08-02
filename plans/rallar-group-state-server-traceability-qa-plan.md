@@ -417,6 +417,7 @@ packages/tests/repo/
   group-state-server-source-ratchet-inventory.ts
   group-state-server-source-ratchet.test.ts
 packages/tests/shared-server/
+  app-inbox-test-database.ts
   app-inbox-transaction.test.ts
   rallar-middleware.test.ts
   topology-app-inbox-ownership.test.ts
@@ -446,6 +447,7 @@ packages/tests/repo/
   group-state-server-source-ratchet-inventory.ts
   group-state-server-source-ratchet.test.ts
 packages/tests/shared-server/
+  app-inbox-test-database.ts
   app-inbox-transaction.test.ts
   rallar-middleware.test.ts
   topology-app-inbox-ownership.test.ts
@@ -454,6 +456,7 @@ packages/tests/shared-server/
   mutation-routing-owner-inventory.ts
   group-state/
     group-state-service-idempotency.test.ts
+    group-state-service-timing-fixture.ts
     group-state-service-timing.test.ts
     group-state-test-mutation-executor.ts
     inbox/
@@ -462,13 +465,18 @@ packages/tests/shared-server/
       group-state-inbox-construction.test.ts
       group-state-inbox-operation-matrix.test.ts
       group-state-inbox-retry.test.ts
+      group-state-inbox-transaction-failures.test.ts
       group-state-inbox-transaction-result.test.ts
+      group-state-transaction-boundary-fixture.ts
     mutation/
       write-group-mutation-behavior.test.ts
 ```
 
-The target adds four directly owned test/production files, refines two existing
-owners, and makes two descriptive internal moves:
+The production target remains limited to the approved explicit timing and
+descriptor owners plus the transaction/handler refinements and descriptive
+internal moves. Task 5 adds only cohesive timing and transaction test owners
+and optional in-memory database failure hooks needed to characterize those
+future boundaries:
 
 - `group-state-inbox-mutation-descriptor.ts` owns the exact AppInbox payload to
   `GroupMutationDescriptor` translation now embedded below the direct phase
@@ -985,6 +993,13 @@ may be waived or rerolled inside this plan.
   `packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts`
 - Create:
   `packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts`
+- Create:
+  `packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts`
+- Create:
+  `packages/tests/shared-server/group-state/group-state-service-timing-fixture.ts`
+- Modify: `packages/tests/shared-server/app-inbox-test-database.ts`
 - Modify: `packages/tests/shared-server/app-inbox-transaction.test.ts`
 - Modify: `packages/tests/shared-server/rallar-middleware.test.ts`
 - Modify: `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`

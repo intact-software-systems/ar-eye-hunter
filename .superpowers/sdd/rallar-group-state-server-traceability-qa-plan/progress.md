@@ -34,7 +34,7 @@ Task 5: implemented — Task 5 stays test-only. The renamed authoritative mutati
 source-contract suite/helper, expanded mirrored test inventory, three focused
 characterization suites, and target-owner ratchets are ready for review. GREEN
 predecessor behavior batch: 8 files / 139 tests, plus 1 source ratchet / 7
-tests for the original combined 9 files / 146 tests. Intentional RED: 3 files, 4 failures,
+tests for the original combined 9 files / 146 tests. Intentional RED: 3 files, 14 failures,
 all limited to the Task 6–10 absent target constructs. Full consumer and
 construction/runtime family inventory, including the performance benchmark
 setter consumer and the plan/skill path mismatch, is in `task-5-report.md`.
@@ -45,6 +45,19 @@ documentation ratchet, the Task 10 name-owner RED, and the exact classified
 consumer manifest/two-timeline family traces. The original combined GREEN is
 explicitly classified as eight behavior files / 139 tests plus one source
 ratchet file / 7 tests; separate timing, setter, and active-path fixtures pass
-before their future-only RED cases. Future-only RED is separately runnable and now has five
+before their future-only RED cases. Future-only RED is separately runnable and has fourteen
 expected target-owner failures. The two skill command paths and two active
 source-contract documentation paths now name their live owners.
+
+Task 5 review-fix round 4: complete — the timing fixture now provides a
+cohesive complete `GroupStateService` fake and reserves exact Task 7 runtime
+identity, per-operation return/detail/error, and direct synchronous-operation
+assertions. The deterministic real create-group path compares the persisted
+durable resource to an independently authored complete raw JSON literal, and
+four separately hooked real transaction phases prove rollback with no private
+result, observation, or wake escape. The exact-path inventory now classifies
+all live, documentation, analyzer, lineage, plan, and historical occurrences.
+The original predecessor batch remains 8 files / 139 tests plus source ratchet
+7 / 7; the supplementary predecessor batch is 6 files / 16 tests. Future RED
+is limited to the approved absent Task 6–10 constructs. Production/runtime and
+checker behavior remain unchanged.

@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { createAuthorityHarness, createRoom } from './group-state-inbox-test-runtime.ts';
+import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
 
 const handlerPath =
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
@@ -23,32 +23,51 @@ const predecessorTargetIdentityPath =
   'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target.ts';
 const predecessorWritePath =
   'packages/shared-server/rallar-system/group-state/mutation/write/write-group-state-mutation.ts';
+const EXPECTED_CREATE_GROUP_DURABLE_JSON =
+  '{"status":"created","result":{"right":{"snapshot":' +
+  '{"stateRevision":1,"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
+  '"group":{"applicationId":"ar-eye-hunter","workspaceId":"default",' +
+  '"groupId":"transaction-boundary-room","slug":null,' +
+  '"displayName":"Transaction boundary room","description":null,"kind":"room",' +
+  '"status":"active","joinMode":"open","maxMembers":null,' +
+  '"maxSessionsPerMember":null,"metadata":{},"activeMemberCount":1,' +
+  '"ownerPrincipalId":"owner","snapshotVersion":1,"metadataVersion":1,' +
+  '"rosterVersion":1,"presenceVersion":0,"created":{"atEpochMs":1785628800000,' +
+  '"actor":{"kind":"session","sessionId":"owner-session","principalId":"owner"},' +
+  '"reason":null,"traceId":null,"requestId":"create-transaction-boundary-room"},' +
+  '"updated":{"atEpochMs":1785628800000,"actor":{"kind":"session",' +
+  '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
+  '"traceId":null,"requestId":"create-transaction-boundary-room"},' +
+  '"archived":null,"deleted":null,"expiresAtEpochMs":null,' +
+  '"emptySinceEpochMs":null,"purgeAfterEpochMs":null},"members":[' +
+  '{"applicationId":"ar-eye-hunter","workspaceId":"default",' +
+  '"groupId":"transaction-boundary-room","principalId":"owner","role":"owner",' +
+  '"status":"active","joined":{"atEpochMs":1785628800000,' +
+  '"actor":{"kind":"session","sessionId":"owner-session","principalId":"owner"},' +
+  '"reason":null,"traceId":null,"requestId":"create-transaction-boundary-room"},' +
+  '"updated":{"atEpochMs":1785628800000,"actor":{"kind":"session",' +
+  '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
+  '"traceId":null,"requestId":"create-transaction-boundary-room"},"left":null,' +
+  '"removed":null,"banned":null,"invitedByPrincipalId":null,' +
+  '"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,' +
+  '"onlineMemberCount":0},"event":{"applicationId":"ar-eye-hunter",' +
+  '"workspaceId":"default","groupId":"transaction-boundary-room",' +
+  '"eventId":"group-event:3e85b5e31f6a320e249e7fd18bf180c7ce3a15825453b7549a25897e91bc41c7",' +
+  '"eventType":"group-created","snapshotVersion":1,' +
+  '"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
+  '"occurredAtEpochMs":1785628800000,"actor":{"kind":"session",' +
+  '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
+  '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}}';
 
 describe('group-state AppInbox transaction result boundary', () => {
   it('persists the real durable result before exposing the committed snapshot', async () => {
-    const actions: string[] = [];
-    const harness = await createAuthorityHarness(['owner'], {
-      wakeQueue: () => actions.push('wake'),
-    });
-    const observedSnapshots: unknown[] = [];
-    const observeSnapshot = harness.groupStateService.observeSnapshot.bind(
-      harness.groupStateService,
-    );
-    harness.groupStateService.observeSnapshot = async (snapshot) => {
-      actions.push('observe');
-      observedSnapshots.push(snapshot);
-      return await observeSnapshot(snapshot);
-    };
+    const harness = await createGroupStateTransactionBoundaryHarness();
 
-    const created = await createRoom(harness, 'durable-result-room', 'Durable result room');
+    const created = await harness.handler.processMutation(harness.context);
 
-    const completed = harness
-      .queueEntries()
-      .find((entry) => entry.status === EntityStatus.COMPLETED);
-    expect(completed).toBeDefined();
-    const persisted = await harness.results.findByKey(completed!.key);
+    const persisted = await harness.results.findByKey(harness.context.entry.key);
     expect(persisted?.status).toBe(EntityStatus.COMPLETED);
-    expect(persisted?.resource).toMatch(/^\{"status":"created","result":\{"right":\{"snapshot":/u);
+    expect(persisted?.resource).toBe(EXPECTED_CREATE_GROUP_DURABLE_JSON);
     expect(persisted?.resource).not.toContain('committedSnapshot');
     const rawDurableResult = JSON.parse(persisted!.resource) as Record<string, unknown>;
     expect(Object.keys(rawDurableResult)).toEqual(['status', 'result']);
@@ -57,9 +76,9 @@ describe('group-state AppInbox transaction result boundary', () => {
       Object.keys((rawDurableResult.result as { right: Record<string, unknown> }).right),
     ).toEqual(['snapshot', 'event']);
     expect(rawDurableResult).toEqual(created);
-    expect(observedSnapshots).toHaveLength(1);
-    expect(observedSnapshots[0]).toEqual(created.result.right?.snapshot);
-    expect(actions.slice(-2)).toEqual(['observe', 'wake']);
+    expect(harness.observedSnapshots).toHaveLength(1);
+    expect(harness.observedSnapshots[0]).toEqual(created.result.right?.snapshot);
+    expect(harness.readWakeCount()).toBe(1);
   });
 
   it('passes the exact committed snapshot object to observation only after commit', async () => {
@@ -119,116 +138,6 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(actions).toEqual(['write', 'commit', 'observe', 'wake']);
     vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
   });
-
-  it('does not expose a private result, observe, or wake when the transaction callback fails', async () => {
-    const readResult = vi.fn();
-    vi.resetModules();
-    vi.doMock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts', () => ({
-      readGroupStateInboxResult: readResult,
-    }));
-    const { GroupStateInboxHandler } =
-      await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
-    const actions: string[] = [];
-    const handler = new GroupStateInboxHandler({
-      groupStateService: {
-        read: async () => ({}),
-        compute: () => ({ outcome: 'write', receipt: {} }),
-        validate: () => undefined,
-        write: async () => {
-          actions.push('write');
-          return {};
-        },
-        observeSnapshot: async () => {
-          actions.push('observe');
-          return {};
-        },
-        sessionGenerationLifecycle: {},
-      } as never,
-      writeMutation: async () => {
-        actions.push('transaction-failed');
-        throw new Error('controlled transaction failure');
-      },
-      wakeQueue: () => actions.push('wake'),
-    });
-
-    await expect(
-      handler.processMutation({
-        enqueue: {
-          authority: {
-            authorityProof: null,
-            descriptor: null,
-            command: { operation: 'updateGroup', aggregateRef: {} },
-            facts: {},
-            causalToken: 'causal-token',
-            queueResourceId: 'queue-resource',
-          },
-        },
-        entry: { dequeueAudit: { attempts: 1 } },
-      } as never),
-    ).rejects.toThrow('controlled transaction failure');
-    expect(readResult).not.toHaveBeenCalled();
-    expect(actions).toEqual(['transaction-failed']);
-    vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
-  });
-
-  it.each(['result-write', 'finalization', 'commit'] as const)(
-    'does not expose a private result, observe, or wake when %s fails after callback work',
-    async (failurePhase) => {
-      const committedSnapshot = { snapshot: `${failurePhase}-snapshot` };
-      const readResult = vi
-        .fn()
-        .mockResolvedValue({ durableResult: { status: 'ok' }, committedSnapshot });
-      vi.resetModules();
-      vi.doMock(
-        '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts',
-        () => ({ readGroupStateInboxResult: readResult }),
-      );
-      const { GroupStateInboxHandler } =
-        await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
-      const actions: string[] = [];
-      const handler = new GroupStateInboxHandler({
-        groupStateService: {
-          read: async () => ({}),
-          compute: () => ({ outcome: 'write', receipt: {} }),
-          validate: () => undefined,
-          write: async () => {
-            actions.push('write');
-            return {};
-          },
-          observeSnapshot: async () => {
-            actions.push('observe');
-            return {};
-          },
-          sessionGenerationLifecycle: {},
-        } as never,
-        writeMutation: async (_context, write) => {
-          const durableResult = await write({} as never);
-          actions.push('private-result');
-          throw new Error(`controlled ${failurePhase} failure after ${String(durableResult)}`);
-        },
-        wakeQueue: () => actions.push('wake'),
-      });
-
-      await expect(
-        handler.processMutation({
-          enqueue: {
-            authority: {
-              authorityProof: null,
-              descriptor: null,
-              command: { operation: 'updateGroup', aggregateRef: {} },
-              facts: {},
-              causalToken: 'causal-token',
-              queueResourceId: 'queue-resource',
-            },
-          },
-          entry: { dequeueAudit: { attempts: 1 } },
-        } as never),
-      ).rejects.toThrow(`controlled ${failurePhase} failure after [object Object]`);
-      expect(readResult).toHaveBeenCalledOnce();
-      expect(actions).toEqual(['write', 'private-result']);
-      vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
-    },
-  );
 
   it('characterizes the predecessor mutable committed snapshot escape', () => {
     const source = readFileSync(handlerPath, 'utf8');

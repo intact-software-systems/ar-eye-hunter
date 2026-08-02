@@ -11,23 +11,83 @@ deliberately RED and are not a publication verdict for this intermediate task.
 ## Consumer and setter inventory
 
 `AppGroupInboxService` remains exported from `packages/shared-server/mod.ts`.
-The following manifest classifies every active constructor, setter, public
-export, route, example, worker, fixture, and governed performance occurrence
-found by the Task 5 exact-path search. Documentation and repository-analysis
-occurrences remain evidence only; they are not live composition consumers.
+The following table isolates the active runtime, composition, behavior-test,
+fixture, and governed-performance occurrences found by the Task 5 exact-path
+search. The complete non-runtime documentation, analyzer, lineage, plan, and
+historical occurrence inventory follows it so none is mistaken for a live
+constructor or setter consumer.
 
-| Classification                 | Exact paths                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Relationship                                                                                                                   |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Public export                  | `packages/shared-server/mod.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Existing package path for the unchanged public class.                                                                          |
-| API composition                | `apps/api-v1/src/middleware.ts`; `apps/api-v1/src/create-rallar-server.ts`; `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Constructs or carries the facade, then supplies topology and RTC dependencies before normal server use.                        |
-| API routes/gateway             | `apps/api-v1/src/routes/group-state-routes.ts`; `apps/api-v1/src/routes/graph-topology-routes.ts`; `apps/api-v1/src/services/create-api-admin-mutation-gateway.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Uses the public authenticated entry/result surface.                                                                            |
-| API fixtures/tests             | `apps/api-v1/test/rallar-server.test.ts`; `apps/api-v1/test/db/pglite-sql-adapter.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-convergence.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-test-harness.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Composition double and PGlite lifecycle/setter coverage.                                                                       |
-| Shared-server handler fixtures | `packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts`; `packages/tests/shared-server/group-state/inbox/group-state-inbox-authority.test.ts`; `packages/tests/shared-server/group-state/inbox/group-state-inbox-retry.test.ts`; `packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts`; `packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts`; `packages/tests/shared-server/app-inbox-service.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-convergence.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-expiry.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-test-harness.ts` | Constructs or exercises the unchanged group AppInbox facade.                                                                   |
-| PostgreSQL workers/fixtures    | `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-runtime.ts`; `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-services.ts`; `packages/tests/shared-server/fixtures/postgres-expiry-worker.ts`; `packages/tests/shared-server/fixtures/postgres-topology-app-inbox-worker.ts`                                                                                                                                                                                                                                                                                                                                                                          | Worker construction; the services fixture configures topology before worker use.                                               |
-| Topology/RTC tests             | `packages/tests/shared-server/topology-app-inbox-contract.test.ts`; `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`; `packages/tests/shared-server/rtc-topology-mutations.test.ts`; `packages/tests/shared-server/rallar-middleware.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                       | Keeps command, ownership, and middleware composition contracts visible.                                                        |
-| Governed performance           | `scripts/perf/api-v1-state-write-concurrency-bench.ts:610`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Calls `setTopologyManagementService`; it remains in the Task 8 consumer audit despite omission from the abbreviated plan list. |
-| Examples                       | `examples/server-middleware/README.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Documents the supported server middleware construction path; it is traceability evidence, not a separate runtime constructor.  |
-| Evidence only                  | `packages/tests/repo/*.test.ts`; `packages/shared-server/rallar-server-repositories*.md`; `packages/shared-server/rallar-system/app-inbox-completion-notifications.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Source inventories and architecture evidence, not runtime consumers.                                                           |
+| Classification                 | Exact paths                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Relationship                                                                                                                   |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Public export                  | `packages/shared-server/mod.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Existing package path for the unchanged public class.                                                                          |
+| Canonical owners               | `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`; `packages/shared-server/rallar-system/group-state/group-state-service.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Define the facade lifecycle and the authoritative group-state operations.                                                      |
+| Direct compatibility owner     | `packages/shared-server/rallar-system/services/group-state-service.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Re-exports the canonical service surface without executable behavior.                                                          |
+| API composition                | `apps/api-v1/src/middleware.ts`; `apps/api-v1/src/create-rallar-server.ts`; `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Constructs or carries the facade, then supplies topology and RTC dependencies before normal server use.                        |
+| API routes/gateway             | `apps/api-v1/src/routes/group-state-routes.ts`; `apps/api-v1/src/routes/graph-topology-routes.ts`; `apps/api-v1/src/services/create-api-admin-mutation-gateway.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Uses the public authenticated entry/result surface.                                                                            |
+| API fixtures/tests             | `apps/api-v1/test/rallar-server.test.ts`; `apps/api-v1/test/db/pglite-sql-adapter.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-convergence.test.ts`; `apps/api-v1/test/db/pglite-app-inbox-ws-close-test-harness.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Composition double and PGlite lifecycle/setter coverage.                                                                       |
+| Shared-server handler fixtures | `packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts`; `packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts`; `packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts`; `packages/tests/shared-server/group-state/inbox/group-state-inbox-authority.test.ts`; `packages/tests/shared-server/group-state/inbox/group-state-inbox-retry.test.ts`; `packages/tests/shared-server/group-state/mutation/read-group-mutation-retry.test.ts`; `packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts`; `packages/tests/shared-server/app-inbox-service.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-convergence.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-expiry.test.ts`; `packages/tests/shared-server/app-inbox-ws-close-test-harness.ts` | Constructs or exercises the unchanged group AppInbox facade.                                                                   |
+| PostgreSQL workers/fixtures    | `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-runtime.ts`; `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-services.ts`; `packages/tests/shared-server/fixtures/postgres-expiry-worker.ts`; `packages/tests/shared-server/fixtures/postgres-topology-app-inbox-worker.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Worker construction; the services fixture configures topology before worker use.                                               |
+| Topology/RTC tests             | `packages/tests/shared-server/topology-app-inbox-contract.test.ts`; `packages/tests/shared-server/topology-app-inbox-ownership.test.ts`; `packages/tests/shared-server/rtc-topology-mutations.test.ts`; `packages/tests/shared-server/rallar-middleware.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Keeps command, ownership, and middleware composition contracts visible.                                                        |
+| Governed performance           | `scripts/perf/api-v1-state-write-concurrency-bench.ts:610`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Calls `setTopologyManagementService`; it remains in the Task 8 consumer audit despite omission from the abbreviated plan list. |
+| Examples                       | `examples/server-middleware/README.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Documents the supported server middleware construction path; it is traceability evidence, not a separate runtime constructor.  |
+| Evidence only                  | `packages/tests/repo/*.test.ts`; `packages/shared-server/rallar-server-repositories*.md`; `packages/shared-server/rallar-system/app-inbox-completion-notifications.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Source inventories and architecture evidence, not runtime consumers.                                                           |
+
+### Complete non-runtime occurrence classification
+
+The following active documentation paths teach or reference the supported
+public surface; none constructs the service at runtime:
+
+- `docs/rallar-api-reference.md`;
+- `docs/rallar-quickstart-and-recipes.md`;
+- `docs/rallar-ai-prompting-guide.md`;
+- `docs/rallar-troubleshooting-checklist.md`;
+- `examples/server-middleware/README.md`;
+- `packages/shared-server/rallar-server-repositories.md`;
+- `packages/shared-server/rallar-server-repositories-improvements.md`;
+- `packages/shared-server/rallar-system/app-inbox-completion-notifications.md`;
+- the deprecation annotations in
+  `packages/shared-server/rallar-system/services/group-topology-management-service.ts`.
+
+The following executable test/analyzer paths inspect, import, construct, or
+exercise the compatibility surface, but they are not production constructors:
+
+- `packages/tests/repo/group-state-server-source-ratchet.test.ts`;
+- `packages/tests/repo/rallar-group-state-owner-integrity.test.ts`;
+- `packages/tests/repo/repo-style-structural-lineage-provenance.test.ts`;
+- `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`;
+- `packages/tests/shared-server/mutation-boundary-traversal.ts`;
+- `packages/tests/shared-server/mutation-routing-owner-inventory.ts`;
+- `packages/tests/shared-server/mutation-route-owner-abrupt-completion.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-call-aliases.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-call-effects.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-control-flow-alternatives.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-lexical-resolution.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-logical-predicates.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-loop-and-switch-flow.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-loop-completion.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-loop-divergence.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-loop-fixed-point.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-map-projections.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-object-projections.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts`;
+- `packages/tests/shared-server/mutation-route-owner-state-coalescing.test.ts`;
+- `packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts`;
+- `packages/tests/shared-server/group-state/inbox/group-state-inbox-descriptor-contract.test.ts`;
+- `packages/tests/shared-server/topology-app-inbox-contract.test.ts`.
+
+The remaining occurrences are governance, provenance, completed-plan, or
+historical investigation evidence. They are not active code consumers:
+
+- `plans/api-v1-convergent-database-writing-remediation-plan.md`;
+- `plans/rallar-group-state-server-structure-plan.md`;
+- `plans/rallar-group-state-server-traceability-qa-plan.md`;
+- `plans/rallar-rest-snapshot-read-convergence-implementation-plan.md`;
+- `plans/rallar-room-group-state-translation-boundary-plan.md`;
+- `plans/repo-human-traceability-refactoring-program-plan.md`;
+- `plans/repo-style-lineages/rallar-group-state-server-structure-provenance.md`;
+- `plans/repo-style-lineages/rallar-group-state-server-structure.json`;
+- `playground/performance/rallar-server-side-webrtc-scalability-audit-2026-07-03.md`.
 
 The supported predecessor bootstrap calls both setters in
 `apps/api-v1/src/create-rallar-server.ts` after facade construction. The
@@ -185,41 +245,41 @@ preserved the same assertion bodies; the helper import and source-ratchet
 ownership inventory now use the descriptive paths.
 
 Review-fix runtime fixtures add actual timing operation/detail, setter identity,
-descriptor, and durable-result sequencing coverage. The original 9-file /
-146-test predecessor batch remains intact; predecessor-only filters pass three
-timing tests, two setter tests, two exact descriptor-contract tests, and the
-durable-result value/order characterization. A controlled current-handler
-fixture proves the exact private `committedSnapshot` object crosses the commit
-return boundary to `observeSnapshot` only after commit and before the final
-wake; the caller's separately deserialized durable JSON remains value-equal by
-design. The descriptor suite drives the real handler for all 17 authenticated
-`GROUP_*` types and the exact unsupported family error. The separate
-active-documentation path suite also passes, while the source-ratchet
-mechanical/cycle suite remains 7/7.
+descriptor, and durable-result sequencing coverage. The original combined
+batch remains **9 files / 146 tests**, explicitly **8 behavior files / 139
+tests** plus **1 source-ratchet file / 7 tests**. A supplementary predecessor
+batch is **6 files / 16 tests**: timing 4, setter lifecycle 2, descriptor 2,
+durable/identity/failure 7, and active documentation 1. The separate future
+timing test uses a
+complete fake `GroupStateService` and reserves runtime assertions for every
+async operation, including `write`, exact returns, details, rejection, and the
+direct untimed synchronous functions. It remains RED only because the Task 7
+owner does not exist; Task 5 does not export the predecessor's private wrapper
+or claim that no-timing identity is currently runtime-observable.
 
-The existing current-path failure fixtures remain the authoritative Task 5
-failure map. In `packages/tests/shared-server/app-inbox-transaction.test.ts`,
-`rolls the mutation back when the dependent-write fails`, `rolls the mutation
-back when the outbox-write fails`, `rolls every successful write back when the
-result write fails`, and `rolls every successful write back when reservation
-ownership changed` prove callback/result-write/finalization/commit failures
-roll back mutation, outbox, result, and completion together. Its
-`does not run legacy result persistence after a transaction-owned handler
-commits` and `returns the committed result when handler code throws after
-transaction finalization` cases prove finalization does not add a second result
-write. The directly owned handler-level case
-`does not expose a private result, observe, or wake when the transaction
-callback fails` supplies the missing group-handler proof: it fails the current
-write callback before result read, so no private snapshot is read, observed, or
-woken. Task 9 must retain that absence while moving the private result into its
-immutable carrier.
+The deterministic real create-group path now compares the stored resource with
+one independently authored complete raw JSON literal. The literal covers every
+ordered outer, snapshot, group, audit, member, actor, causal-revision, event,
+and payload property. It contains no `committedSnapshot`; the exact committed
+snapshot object still crosses the commit return boundary to observation only
+after commit and before one wake. The descriptor suite drives the real handler
+for all 17 authenticated `GROUP_*` types and the exact unsupported-family error.
 
-| Controlled current-handler failure | Callback invoked | Private committed snapshot read | Caller result / observe / wake               |
-| ---------------------------------- | ---------------- | ------------------------------- | -------------------------------------------- |
-| callback                           | no               | no                              | exact callback error; none / none / none     |
-| result-write                       | yes              | yes                             | exact result-write error; none / none / none |
-| finalization                       | yes              | yes                             | exact finalization error; none / none / none |
-| commit                             | yes              | yes                             | exact commit error; none / none / none       |
+`group-state-inbox-transaction-failures.test.ts` replaces the former
+same-shaped fake throws with the real `GroupStateInboxHandler`, real
+`GroupStateService`, and real `AppInboxTransactionWriter`. The shared in-memory
+database exposes three optional stage hooks without changing existing defaults;
+the existing conditional-write hook owns the domain-write failure. Every case
+proves its exact named stage was reached, the exact error propagated, all
+runtime state/event/result/outbox work rolled back, the reservation remained
+owned, and no caller result, observation, or wake escaped.
+
+| Controlled real-path failure | Callback entered | Private result assembled | Caller result / observe / wake                     |
+| ---------------------------- | ---------------- | ------------------------ | -------------------------------------------------- |
+| domain write                 | yes              | no                       | exact domain error; none / none / none             |
+| result repository replace    | yes              | yes                      | exact result-replace error; none / none / none     |
+| reservation finish           | yes              | yes                      | exact reservation-finish error; none / none / none |
+| transaction commit return    | yes              | yes                      | exact commit-return error; none / none / none      |
 
 ## Intentional RED evidence
 
@@ -246,6 +306,12 @@ not exist yet:
 These independently named target failures are the approved RED contract for
 Tasks 6–10, not failures in predecessor behavior. No other target construct was
 asserted as absent.
+
+The three future-only runs fail in exactly **14 named cases**: one timing-owner
+case, one construction-valid registration case, and twelve transaction,
+descriptor, narrow-capability, and Task 10 naming/owner cases. Each failure
+points to an absent future owner or a retained predecessor owner; predecessor
+behavior tests are excluded from these RED-only commands.
 
 ## Resolved active-path evidence
 

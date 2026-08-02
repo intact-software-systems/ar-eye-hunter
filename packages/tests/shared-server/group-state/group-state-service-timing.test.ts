@@ -4,6 +4,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import {
+  createGroupStateServiceTimingFake,
+  invokeEveryTimedGroupStateOperation,
+  invokeUntimedGroupStateOperations,
+  TIMED_ASYNC_OPERATIONS,
+  type TimedAsyncOperation,
+} from './group-state-service-timing-fixture.ts';
 import { createTestGroupStateRuntime } from './group-state-test-runtime.ts';
 
 const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
@@ -186,7 +193,7 @@ describe('group-state service timing boundary', () => {
     ]);
   });
 
-  it('requires the future explicit timing owner without dynamic dispatch', () => {
+  it('requires the future explicit timing owner without dynamic dispatch', async () => {
     expect(existsSync(timingPath), timingPath).toBe(true);
 
     const source = readFileSync(timingPath, 'utf8');
@@ -196,5 +203,112 @@ describe('group-state service timing boundary', () => {
     expect(source).not.toContain('.apply(');
     expect(source).toContain('if (!timing) return service;');
     expect(source).toContain('createTimedGroupStateService');
+
+    const { createTimedGroupStateService } =
+      await import('@shared-server/rallar-system/group-state/group-state-service-timing.ts');
+    const noTimingFake = createGroupStateServiceTimingFake();
+    expect(
+      createTimedGroupStateService({
+        service: noTimingFake.service,
+        serviceId: 'timing-service',
+        timing: undefined,
+      }),
+    ).toBe(noTimingFake.service);
+
+    const fake = createGroupStateServiceTimingFake();
+    const timingEvents: RallarTimingEvent[] = [];
+    const timed = createTimedGroupStateService({
+      service: fake.service,
+      serviceId: 'timing-service',
+      timing: (event) => timingEvents.push(event),
+    });
+    expect(timed.compute).toBe(fake.service.compute);
+    expect(timed.validate).toBe(fake.service.validate);
+    expect(timed.sessionGenerationLifecycle).toBe(fake.service.sessionGenerationLifecycle);
+
+    const results = await invokeEveryTimedGroupStateOperation(timed);
+    for (const operation of TIMED_ASYNC_OPERATIONS) {
+      expect(results[operation], operation).toBe(fake.sentinels[operation]);
+    }
+    expect(invokeUntimedGroupStateOperations(timed)).toBe(fake.sentinels.compute);
+    expect(fake.calls).toEqual([...TIMED_ASYNC_OPERATIONS, 'compute', 'validate']);
+    expect(timingEvents).toHaveLength(TIMED_ASYNC_OPERATIONS.length);
+    for (const [index, operation] of TIMED_ASYNC_OPERATIONS.entries()) {
+      expect(timingEvents[index], operation).toMatchObject({
+        type: 'rallar.timing',
+        component: 'group-state-service',
+        operation,
+        serviceId: 'timing-service',
+        status: 'ok',
+        ...expectedTimingIdentity(operation),
+      });
+    }
+
+    const rejectionFake = createGroupStateServiceTimingFake('listEvents');
+    const rejectionEvents: RallarTimingEvent[] = [];
+    const rejecting = createTimedGroupStateService({
+      service: rejectionFake.service,
+      serviceId: 'timing-service',
+      timing: (event) => rejectionEvents.push(event),
+    });
+    await expect(
+      rejecting.listEvents({
+        applicationId: 'timing-app',
+        workspaceId: 'timing-workspace',
+        groupId: 'timing-group',
+      }),
+    ).rejects.toBe(rejectionFake.rejection);
+    expect(rejectionFake.calls).toEqual(['listEvents']);
+    expect(rejectionEvents).toHaveLength(1);
+    expect(rejectionEvents[0]).toMatchObject({
+      type: 'rallar.timing',
+      component: 'group-state-service',
+      operation: 'listEvents',
+      serviceId: 'timing-service',
+      status: 'error',
+      error: {
+        name: 'Error',
+        message: 'controlled listEvents rejection',
+      },
+      ...expectedTimingIdentity('listEvents'),
+    });
   });
 });
+
+function expectedTimingIdentity(operation: TimedAsyncOperation) {
+  const empty = {
+    requestId: undefined,
+    applicationId: undefined,
+    workspaceId: undefined,
+    groupId: undefined,
+    principalId: undefined,
+    sessionId: undefined,
+  };
+  if (operation === 'read') {
+    return {
+      ...empty,
+      requestId: 'timing-read-request',
+      applicationId: 'timing-app',
+      workspaceId: 'timing-workspace',
+      groupId: 'timing-group',
+    };
+  }
+  if (operation === 'prepareSessionCleanupMutations') {
+    return { ...empty, principalId: 'cleanup-principal' };
+  }
+  if (SCOPE_TIMING_OPERATIONS.has(operation)) {
+    return { ...empty, applicationId: 'timing-app', workspaceId: 'timing-workspace' };
+  }
+  return empty;
+}
+
+const SCOPE_TIMING_OPERATIONS: ReadonlySet<TimedAsyncOperation> = new Set([
+  'listSnapshots',
+  'listSnapshotsPage',
+  'readSnapshot',
+  'readStateRevision',
+  'readCausalRevision',
+  'listEvents',
+  'listRecentEvents',
+  'listEventPage',
+]);
