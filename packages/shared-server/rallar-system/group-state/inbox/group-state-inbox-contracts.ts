@@ -1,4 +1,3 @@
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
   AcceptGroupInviteRequest,
   AppointGroupDirectorRequest,
@@ -20,35 +19,7 @@ import type {
   UpsertGroupMemberRequest,
 } from '@shared/api/state-types.ts';
 
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import type {
-  GroupMutationComputed,
-  GroupMutationComputedWrite,
-  GroupMutationRead,
-  GroupMutationReceipt,
-} from '../mutation/group-mutation-contracts.ts';
-import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
-// prettier-ignore
-import type {
-  WsSessionGenerationLifecycleService,
-} from '../../services/ws-session-generation-lifecycle.ts';
-import { AppInboxType } from '../../services/AppInboxService.ts';
-
-export interface GroupStateInboxMutationOperations {
-  read(command: GroupStateMutationCommand): Promise<GroupMutationRead>;
-  compute(command: GroupStateMutationCommand, read: GroupMutationRead): GroupMutationComputed;
-  validate(
-    command: GroupStateMutationCommand,
-    read: GroupMutationRead,
-    computed: GroupMutationComputed,
-  ): void;
-  write(
-    transaction: PSqlTransactionSql,
-    computed: GroupMutationComputedWrite,
-  ): Promise<GroupMutationReceipt>;
-  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-  observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
-}
+import { type AppInboxEnqueueInput, AppInboxType } from '../../services/AppInboxService.ts';
 
 export type GroupCreateAppInboxPayload = Readonly<{
   scope: StateScope;
@@ -161,6 +132,40 @@ export type GroupPresenceDisconnectAppInboxPayload = Readonly<{
   request: DisconnectGroupPresenceSessionRequest;
 }>;
 
+export interface AuthenticatedGroupMutationPayloadByType {
+  [AppInboxType.GROUP_CREATE]: GroupCreateAppInboxPayload;
+  [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
+  [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
+  [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
+  [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
+  [AppInboxType.GROUP_INVITE_REVOKE]: GroupInviteRevokeAppInboxPayload;
+  [AppInboxType.GROUP_INVITE_ACCEPT]: GroupInviteAcceptAppInboxPayload;
+  [AppInboxType.GROUP_JOIN_CODE_ROTATE]: GroupJoinCodeRotateAppInboxPayload;
+  [AppInboxType.GROUP_MEMBER_REMOVE]: GroupMemberRemoveAppInboxPayload;
+  [AppInboxType.GROUP_MEMBER_BAN]: GroupMemberBanAppInboxPayload;
+  [AppInboxType.GROUP_MEMBER_UNBAN]: GroupMemberUnbanAppInboxPayload;
+  [AppInboxType.GROUP_MEMBER_ROLE_SET]: GroupMemberRoleSetAppInboxPayload;
+  [AppInboxType.GROUP_OWNERSHIP_TRANSFER]: GroupOwnershipTransferAppInboxPayload;
+  [AppInboxType.GROUP_MEMBER_UPSERT]: GroupMemberUpsertAppInboxPayload;
+  [AppInboxType.GROUP_PRESENCE_CONNECT]: GroupPresenceConnectAppInboxPayload;
+  [AppInboxType.GROUP_PRESENCE_HEARTBEAT]: GroupPresenceHeartbeatAppInboxPayload;
+  [AppInboxType.GROUP_PRESENCE_DISCONNECT]: GroupPresenceDisconnectAppInboxPayload;
+}
+
+export type AuthenticatedGroupMutationInboxType = keyof AuthenticatedGroupMutationPayloadByType;
+
+export type AuthenticatedGroupMutationEnqueue = Readonly<{
+  [Type in AuthenticatedGroupMutationInboxType]: Omit<
+    AppInboxEnqueueInput<AuthenticatedGroupMutationPayloadByType[Type]>,
+    'type'
+  > &
+    Readonly<{ type: Type }>;
+}>[AuthenticatedGroupMutationInboxType];
+
+interface AuthenticatedGroupMutationEnqueueCandidate {
+  readonly type: AppInboxType;
+}
+
 export const AUTHENTICATED_GROUP_INBOX_TYPES = [
   AppInboxType.GROUP_CREATE,
   AppInboxType.GROUP_UPDATE,
@@ -187,6 +192,8 @@ export const GROUP_MUTATION_INBOX_TYPES = [
   AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP,
 ] as const;
 
-export function isAuthenticatedGroupMutationInboxType(type: AppInboxType): boolean {
-  return (AUTHENTICATED_GROUP_INBOX_TYPES as readonly AppInboxType[]).includes(type);
+export function isAuthenticatedGroupMutationEnqueue(
+  enqueue: AuthenticatedGroupMutationEnqueueCandidate,
+): enqueue is AuthenticatedGroupMutationEnqueue {
+  return (AUTHENTICATED_GROUP_INBOX_TYPES as readonly AppInboxType[]).includes(enqueue.type);
 }

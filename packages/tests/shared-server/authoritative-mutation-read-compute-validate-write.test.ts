@@ -201,9 +201,9 @@ describe('authoritative mutation read/compute/validate/write contract', { timeou
       source: sources.groupHandler,
       owner: 'processGroupStateMutation',
       calls: [
-        'this.dependencies.mutationOperations.read(command)',
-        'this.dependencies.mutationOperations.compute(command, read)',
-        'this.dependencies.mutationOperations.validate(command, read, computed)',
+        'this.dependencies.mutationService.read(command)',
+        'this.dependencies.mutationService.compute(command, read)',
+        'this.dependencies.mutationService.validate(command, read, computed)',
         'this.commitMutation({ context, command, computed })',
       ],
     },

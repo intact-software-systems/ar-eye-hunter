@@ -4,14 +4,15 @@ import type { GroupMutationComputed } from '../mutation/group-mutation-contracts
 import type {
   GroupMutationPreparation,
   GroupStateMutationCommand,
+  GroupStateMutationService,
   GroupStateService,
 } from '../group-state-service-contracts.ts';
-import type { GroupStateInboxMutationOperations } from '../inbox/group-state-inbox-contracts.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type {
   WsSessionGenerationCloseFacts,
   WsSessionGenerationLifecycleComputed,
+  WsSessionGenerationLifecycleService,
   WsSessionHighWaterIdentity,
 } from '../../services/ws-session-generation-lifecycle.ts';
 // prettier-ignore
@@ -27,6 +28,20 @@ export interface InactiveGroupPresenceResult {
   readonly status: 'inactive';
   readonly sessionId: string;
   readonly generationId: string;
+}
+
+export type GroupPresenceConnectOutcome =
+  | InactiveGroupPresenceResult
+  | Readonly<{
+      status: 'ready-to-commit';
+      computed: GroupMutationComputed;
+      lifecycleGuard: WsSessionGenerationLifecycleComputed;
+    }>;
+
+interface ProcessGroupPresenceConnectInput {
+  readonly command: GroupStateMutationCommand;
+  readonly mutationService: GroupStateMutationService;
+  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
 }
 
 interface GroupSessionCleanupResult extends InactiveGroupPresenceResult {
@@ -66,17 +81,9 @@ export function toExpiredPresenceEnqueue(
   };
 }
 
-export async function processGroupPresenceConnect<Result>(
-  input: Readonly<{
-    command: GroupStateMutationCommand;
-    mutationOperations: GroupStateInboxMutationOperations;
-    writeMutation: WriteMutation;
-    commitMutation(
-      computed: GroupMutationComputed,
-      lifecycleGuard: WsSessionGenerationLifecycleComputed,
-    ): Promise<Result>;
-  }>,
-): Promise<Result | InactiveGroupPresenceResult> {
+export async function processGroupPresenceConnect(
+  input: ProcessGroupPresenceConnectInput,
+): Promise<GroupPresenceConnectOutcome> {
   const operation = input.command.command;
   if (operation.operation !== 'connectPresence') {
     throw new TypeError('Group presence connect command is invalid');
@@ -87,20 +94,18 @@ export async function processGroupPresenceConnect<Result>(
     principalId: operation.input.principalId,
     sessionId: operation.sessionId,
   });
-  const lifecycle = input.mutationOperations.sessionGenerationLifecycle;
+  const lifecycle = input.sessionGenerationLifecycle;
   const lifecycleRead = await lifecycle.read(identity);
   if (lifecycle.isObservedAtClosed(identity, observedAtEpochMs, lifecycleRead)) {
-    return await input.writeMutation(() =>
-      Promise.resolve({
-        status: 'inactive',
-        sessionId: operation.sessionId,
-        generationId: operation.input.generationId,
-      }),
-    );
+    return {
+      status: 'inactive',
+      sessionId: operation.sessionId,
+      generationId: operation.input.generationId,
+    };
   }
-  const read = await input.mutationOperations.read(input.command);
-  const computed = input.mutationOperations.compute(input.command, read);
-  input.mutationOperations.validate(input.command, read, computed);
+  const read = await input.mutationService.read(input.command);
+  const computed = input.mutationService.compute(input.command, read);
+  input.mutationService.validate(input.command, read, computed);
   const lifecycleGuard = lifecycle.computeConnectGuard(
     {
       ...identity,
@@ -110,7 +115,7 @@ export async function processGroupPresenceConnect<Result>(
     },
     lifecycleRead,
   );
-  return await input.commitMutation(computed, lifecycleGuard);
+  return { status: 'ready-to-commit', computed, lifecycleGuard };
 }
 
 export async function processGroupSessionCleanup(

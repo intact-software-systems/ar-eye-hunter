@@ -73,16 +73,15 @@ export function materializedRotateJoinCode(
   return { joinCode, expiresAtEpochMs };
 }
 
-export function computeGroupMutationWrite(input: GroupMutationWriteInput): GroupMutationComputed {
-  const { command, facts, read } = input;
+export function computeGroupMutationWriteResult(
+  input: GroupMutationWriteInput,
+): GroupMutationComputed {
+  const { command, eventGroup, facts, guard, read } = input;
   const group =
-    input.eventGroup ??
-    (input.guard.kind === 'group'
-      ? input.guard.value
-      : requireGroup(read, command.aggregateRef).value);
-  const groupRevision = group.snapshotVersion;
+    eventGroup ??
+    (guard.kind === 'group' ? guard.value : requireGroup(read, command.aggregateRef).value);
   const presenceRevision = read.presenceSummary?.value.causalRevision.presenceRevision ?? 0;
-  const causalRevision = { groupRevision, presenceRevision };
+  const causalRevision = { groupRevision: group.snapshotVersion, presenceRevision };
   const event = newGroupEvent({
     eventType: input.eventType,
     group,

@@ -1,4 +1,3 @@
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 // prettier-ignore
 import { createTransactionBoundGroupStateRepository } from
   '../persistence/group-state-repository.ts';
@@ -8,35 +7,32 @@ import {
 } from '../presence/group-presence-service.ts';
 import type { AppInboxMessageContext } from '../../services/AppInboxService.ts';
 // prettier-ignore
-import type { AppInboxMutationTransactionResult } from
+import type { AppInboxMutationTransactionWriter } from
   '../../services/app-inbox-transaction-writer.ts';
 import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
 // prettier-ignore
-import type { WsSessionGenerationLifecycleComputed } from
+import type {
+  WsSessionGenerationLifecycleComputed,
+  WsSessionGenerationLifecycleService,
+} from
   '../../services/ws-session-generation-lifecycle.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
   GroupMutationPreparation,
   GroupStateMutationCommand,
+  GroupStateMutationService,
+  GroupStateService,
 } from '../group-state-service-contracts.ts';
-import type { GroupStateInboxMutationOperations } from './group-state-inbox-contracts.ts';
 import {
   readGroupStateInboxResult,
   type GroupStateInboxDurableResult,
 } from './group-state-inbox-result.ts';
 
 export interface GroupStateInboxHandlerDependencies {
-  readonly mutationOperations: GroupStateInboxMutationOperations;
-  readonly writeMutation: <Result>(
-    context: AppInboxMessageContext,
-    write: (transaction: PSqlTransactionSql) => Promise<Result>,
-  ) => Promise<Result>;
-  readonly writeMutationWithAfterCommitResult: <DurableResult, AfterCommitResult>(
-    context: AppInboxMessageContext,
-    write: (
-      transaction: PSqlTransactionSql,
-    ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>,
-  ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>;
+  readonly mutationService: GroupStateMutationService;
+  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+  readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
+  readonly transactionWriter: AppInboxMutationTransactionWriter;
   readonly wakeQueue?: () => void;
 }
 
@@ -64,17 +60,26 @@ export class GroupStateInboxHandler {
       },
     };
     if (command.command.operation === 'connectPresence') {
-      return await processGroupPresenceConnect({
+      const outcome = await processGroupPresenceConnect({
         command,
-        mutationOperations: this.dependencies.mutationOperations,
-        writeMutation: async (write) => await this.dependencies.writeMutation(context, write),
-        commitMutation: async (computed, lifecycleGuard) =>
-          await this.commitMutation({ context, command, computed, lifecycleGuard }),
+        mutationService: this.dependencies.mutationService,
+        sessionGenerationLifecycle: this.dependencies.sessionGenerationLifecycle,
+      });
+      if (outcome.status === 'inactive') {
+        return await this.dependencies.transactionWriter.writeMutation(context, () =>
+          Promise.resolve(outcome),
+        );
+      }
+      return await this.commitMutation({
+        context,
+        command,
+        computed: outcome.computed,
+        lifecycleGuard: outcome.lifecycleGuard,
       });
     }
-    const read = await this.dependencies.mutationOperations.read(command);
-    const computed = this.dependencies.mutationOperations.compute(command, read);
-    this.dependencies.mutationOperations.validate(command, read, computed);
+    const read = await this.dependencies.mutationService.read(command);
+    const computed = this.dependencies.mutationService.compute(command, read);
+    this.dependencies.mutationService.validate(command, read, computed);
     return await this.commitMutation({ context, command, computed });
   }
 
@@ -82,11 +87,11 @@ export class GroupStateInboxHandler {
     input: CommitGroupStateMutationInput,
   ): Promise<GroupStateInboxDurableResult> {
     const { durableResult, afterCommitResult } =
-      await this.dependencies.writeMutationWithAfterCommitResult(
+      await this.dependencies.transactionWriter.writeMutationWithAfterCommitResult(
         input.context,
         async (transaction) => {
           if (input.lifecycleGuard) {
-            await this.dependencies.mutationOperations.sessionGenerationLifecycle.write(
+            await this.dependencies.sessionGenerationLifecycle.write(
               transaction,
               input.lifecycleGuard,
             );
@@ -95,7 +100,7 @@ export class GroupStateInboxHandler {
             throw new TypeError('Validated group idempotency conflict is unreachable');
           }
           if (input.computed.outcome === 'write') {
-            await this.dependencies.mutationOperations.write(transaction, input.computed);
+            await this.dependencies.mutationService.write(transaction, input.computed);
           }
           const inboxResult = await readGroupStateInboxResult({
             repository: createTransactionBoundGroupStateRepository(transaction),
@@ -110,7 +115,7 @@ export class GroupStateInboxHandler {
       );
     const { committedSnapshot } = afterCommitResult;
     if (committedSnapshot) {
-      await this.dependencies.mutationOperations.observeSnapshot(committedSnapshot);
+      await this.dependencies.snapshotObserver.observeSnapshot(committedSnapshot);
     }
     this.dependencies.wakeQueue?.();
     return durableResult;

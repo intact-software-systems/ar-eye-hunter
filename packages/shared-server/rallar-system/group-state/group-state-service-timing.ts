@@ -24,10 +24,15 @@ interface GroupStateTimingDetails {
   readonly sessionId?: string;
 }
 
+type GroupStateTimedOperation = Exclude<
+  keyof GroupStateService,
+  'compute' | 'validate' | 'sessionGenerationLifecycle'
+>;
+
 interface TimeGroupStateOperationInput<T> {
   readonly timing: RallarTimingSink;
   readonly serviceId: string;
-  readonly operation: string;
+  readonly operation: GroupStateTimedOperation;
   readonly details: GroupStateTimingDetails;
   readonly action: () => Promise<T>;
 }
@@ -241,7 +246,7 @@ function toMutationTimingDetails(command: GroupStateMutationCommand): GroupState
 
 function toGroupStateTimingEventInput(
   serviceId: string,
-  operation: string,
+  operation: GroupStateTimedOperation,
   details: GroupStateTimingDetails,
 ): RallarTimingEventInput {
   return {

@@ -3,22 +3,20 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
+// prettier-ignore
+import {
+  GroupStateInboxHandler,
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 
-const handlerPath =
-  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
-const transactionWriterPath =
-  'packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
-const contractsPath =
-  'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-const descriptorPath =
-  'packages/shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
+// prettier-ignore
+import {
+  createGroupStateTransactionBoundaryHarness,
+} from './group-state-transaction-boundary-fixture.ts';
+
 const targetIdentityPath =
   'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
 const targetWritePath =
   'packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-const computedWritePath =
-  'packages/shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
 const targetWriteTestPath =
   'packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts';
 const predecessorTargetIdentityPath =
@@ -89,6 +87,66 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(harness.outboxEntries.size).toBe(1);
   });
 
+  it('persists an inactive presence result once without active mutation effects', async () => {
+    const actions: string[] = [];
+    const writeMutation = vi.fn(async (_context, write) => {
+      actions.push('inactive-transaction');
+      return await write({} as never);
+    });
+    const writeMutationWithAfterCommitResult = vi.fn(async () => {
+      throw new Error('Inactive presence must not enter the active mutation transaction');
+    });
+    const handler = new GroupStateInboxHandler({
+      mutationService: {
+        read: async () => {
+          throw new Error('Inactive presence must not read group mutation state');
+        },
+        compute: () => {
+          throw new Error('Inactive presence must not compute a group mutation');
+        },
+        validate: () => {
+          throw new Error('Inactive presence must not validate a group mutation');
+        },
+        write: async () => {
+          throw new Error('Inactive presence must not write group mutation state');
+        },
+      },
+      sessionGenerationLifecycle: {
+        read: async (identity) => ({
+          identity,
+          key: 'closed-lifecycle',
+          entry: null,
+          state: null,
+        }),
+        isObservedAtClosed: () => true,
+        isGenerationClosed: () => true,
+        computeClosed: () => {
+          throw new Error('Presence connect must not compute a close state');
+        },
+        computeConnectGuard: () => {
+          throw new Error('Inactive presence must not compute a connect guard');
+        },
+        write: async () => {
+          throw new Error('Inactive presence must not write lifecycle state');
+        },
+      },
+      snapshotObserver: {
+        observeSnapshot: async () => {
+          throw new Error('Inactive presence must not observe a snapshot');
+        },
+      },
+      transactionWriter: { writeMutation, writeMutationWithAfterCommitResult },
+      wakeQueue: () => actions.push('wake'),
+    });
+    const result = await handler.processGroupStateMutation(inactiveConnectContext());
+    expect(JSON.stringify(result)).toBe(
+      '{"status":"inactive","sessionId":"inactive-session","generationId":"inactive-generation"}',
+    );
+    expect(actions).toEqual(['inactive-transaction']);
+    expect(writeMutation).toHaveBeenCalledOnce();
+    expect(writeMutationWithAfterCommitResult).not.toHaveBeenCalled();
+  });
+
   it('passes the exact committed snapshot object to observation only after commit', async () => {
     const committedSnapshot = { snapshot: 'exact-committed-object' };
     const durableResult = { status: 'ok', result: { right: { durable: true } } };
@@ -97,35 +155,8 @@ describe('group-state AppInbox transaction result boundary', () => {
     vi.doMock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts', () => ({
       readGroupStateInboxResult: readResult,
     }));
-    const { GroupStateInboxHandler } =
-      await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
-    const actions: string[] = [];
-    const observed: unknown[] = [];
-    const writeMutationWithAfterCommitResult = vi.fn(async (_context, write) => {
-      const result = await write({} as never);
-      actions.push('commit');
-      return result;
-    });
-    const handler = new GroupStateInboxHandler({
-      mutationOperations: {
-        read: async () => ({}),
-        compute: () => ({ outcome: 'write', receipt: {} }),
-        validate: () => undefined,
-        write: async () => {
-          actions.push('write');
-          return {};
-        },
-        observeSnapshot: async (snapshot: unknown) => {
-          actions.push('observe');
-          observed.push(snapshot);
-          return snapshot;
-        },
-        sessionGenerationLifecycle: {},
-      } as never,
-      writeMutation: async (_context, write) => await write({} as never),
-      writeMutationWithAfterCommitResult,
-      wakeQueue: () => actions.push('wake'),
-    });
+    const { actions, handler, observed, writeMutationWithAfterCommitResult } =
+      await createCommittedSnapshotObservationFixture();
 
     await expect(
       handler.processGroupStateMutation({
@@ -148,16 +179,6 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(observed[0]).toBe(committedSnapshot);
     expect(actions).toEqual(['write', 'commit', 'observe', 'wake']);
     vi.doUnmock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts');
-  });
-
-  it('returns immutable committed snapshot data without a mutable callback escape', () => {
-    const source = readFileSync(handlerPath, 'utf8');
-
-    expect(source).not.toContain('let committedSnapshot: GroupSnapshot | undefined;');
-    expect(source).not.toContain('committedSnapshot = inboxResult.committedSnapshot;');
-    expect(source).toContain(
-      'await this.dependencies.mutationOperations.observeSnapshot(committedSnapshot);',
-    );
   });
 
   it('keeps the existing durable-only writer result and serialization unchanged', async () => {
@@ -188,42 +209,6 @@ describe('group-state AppInbox transaction result boundary', () => {
     });
   });
 
-  it('requires distinct durable and after-commit transaction results', () => {
-    const source = readFileSync(transactionWriterPath, 'utf8');
-
-    expect(source).toContain('interface AppInboxMutationTransactionResult');
-    expect(source).toContain('writeMutationWithAfterCommitResult');
-    expect(source).toContain('durableResult');
-    expect(source).toContain('afterCommitResult');
-  });
-
-  it('requires direct descriptor routing', () => {
-    const handler = readFileSync(handlerPath, 'utf8');
-
-    expect(handler).toContain('processGroupStateMutation(');
-    expect(handler).not.toContain('toMutationDescriptor<V>(');
-    expect(readFileSync(descriptorPath, 'utf8')).toContain('toGroupMutationDescriptor');
-  });
-
-  it('requires a narrow handler capability', () => {
-    const handler = readFileSync(handlerPath, 'utf8');
-    const contracts = readFileSync(contractsPath, 'utf8');
-
-    expect(handler).not.toContain('groupStateService: GroupStateService;');
-    expect(contracts).toContain('interface GroupStateInboxMutationOperations');
-    expect(contracts).toContain('readonly sessionGenerationLifecycle:');
-    expect(contracts).toContain('observeSnapshot(snapshot: GroupSnapshot)');
-    for (const excludedOperation of [
-      'prepareMutation',
-      'prepareSessionCleanupMutations',
-      'listSnapshots',
-      'listEvents',
-      'readSnapshot',
-    ]) {
-      expect(readNarrowCapabilitySource(contracts)).not.toContain(excludedOperation);
-    }
-  });
-
   it('requires the Task 10 target-identity owner path', () => {
     expect(existsSync(targetIdentityPath), targetIdentityPath).toBe(true);
   });
@@ -252,17 +237,6 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(existsSync(predecessorWritePath), predecessorWritePath).toBe(false);
   });
 
-  it('requires computeGroupMutationWrite without the predecessor writeResult symbol', () => {
-    expect(readTargetSource(computedWritePath)).toContain('computeGroupMutationWrite');
-  });
-
-  it('removes the predecessor writeResult symbol from the computed-result owner', () => {
-    const source = readTargetSource(computedWritePath);
-
-    expect(source, computedWritePath).not.toBe('');
-    expect(source).not.toContain('writeResult');
-  });
-
   it('retains the Task 10 writeGroupMutation primary symbol', () => {
     expect(readTargetSource(targetWritePath)).toContain('writeGroupMutation');
   });
@@ -272,7 +246,93 @@ function readTargetSource(path: string): string {
   return existsSync(path) ? readFileSync(path, 'utf8') : '';
 }
 
-function readNarrowCapabilitySource(source: string): string {
-  const start = source.indexOf('export interface GroupStateInboxMutationOperations');
-  return source.slice(start, source.indexOf('\n}\n', start) + 3);
+interface CommittedSnapshotFixture {
+  readonly actions: string[];
+  readonly handler: GroupStateInboxHandler;
+  readonly observed: unknown[];
+  readonly writeMutationWithAfterCommitResult: ReturnType<typeof vi.fn>;
+}
+
+async function createCommittedSnapshotObservationFixture(): Promise<CommittedSnapshotFixture> {
+  const { GroupStateInboxHandler: UncachedGroupStateInboxHandler } =
+    await import('@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts');
+  const actions: string[] = [];
+  const observed: unknown[] = [];
+  const writeMutationWithAfterCommitResult = vi.fn(async (_context, write) => {
+    const result = await write({} as never);
+    actions.push('commit');
+    return result;
+  });
+  const handler = new UncachedGroupStateInboxHandler({
+    mutationService: {
+      read: async () => ({}),
+      compute: () => ({ outcome: 'write', receipt: {} }),
+      validate: () => undefined,
+      write: async () => {
+        actions.push('write');
+        return {};
+      },
+    } as never,
+    sessionGenerationLifecycle: {} as never,
+    snapshotObserver: {
+      observeSnapshot: async (snapshot: unknown) => {
+        actions.push('observe');
+        observed.push(snapshot);
+        return snapshot;
+      },
+    } as never,
+    transactionWriter: {
+      writeMutation: async (_context, write) => await write({} as never),
+      writeMutationWithAfterCommitResult,
+    },
+    wakeQueue: () => actions.push('wake'),
+  });
+  return { actions, handler, observed, writeMutationWithAfterCommitResult };
+}
+
+function inactiveConnectContext() {
+  return {
+    enqueue: {
+      authority: {
+        authorityProof: null,
+        descriptor: null,
+        command: {
+          operation: 'connectPresence',
+          aggregateRef: {
+            applicationId: 'ar-eye-hunter',
+            workspaceId: 'default',
+            groupId: 'inactive-group',
+          },
+          commandId: 'inactive-command',
+          requestId: 'inactive-request',
+          sessionId: 'inactive-session',
+          input: {
+            principalId: 'owner',
+            generationId: 'inactive-generation',
+            connectedAtEpochMs: 1_000,
+            lastHeartbeatAtEpochMs: 1_000,
+            expiresAtEpochMs: 61_000,
+            actorPrincipalId: 'owner',
+            actorSessionId: 'inactive-session',
+            reason: null,
+            traceId: null,
+          },
+        },
+        facts: {
+          nowEpochMs: 2_000,
+          expireAtEpochMs: 604_802_000,
+          serviceId: 'server-1',
+          eventId: 'event-1',
+          commandHash: 'sha256:inactive',
+          resolvedJoinCode: null,
+          joinCodeVerifier: null,
+          internalAuthority: 'none',
+          authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' },
+        },
+        causalToken: 'causal-token',
+        queueResourceId: 'inactive-queue-resource',
+      },
+    },
+    entry: { dequeueAudit: { attempts: 1 } },
+  } as never;
 }

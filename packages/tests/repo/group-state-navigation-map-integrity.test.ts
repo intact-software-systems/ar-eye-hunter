@@ -63,6 +63,11 @@ const navigationSourceLinks = [
     declaration: 'export function toGroupMutationDescriptor',
   },
   {
+    symbol: 'isAuthenticatedGroupMutationEnqueue',
+    sourcePath: './inbox/group-state-inbox-contracts.ts',
+    declaration: 'export function isAuthenticatedGroupMutationEnqueue',
+  },
+  {
     symbol: 'GroupStateInboxHandler',
     sourcePath: './inbox/group-state-inbox-handler.ts',
     declaration: 'export class GroupStateInboxHandler',
@@ -103,6 +108,11 @@ const navigationSourceLinks = [
     declaration: 'export function createGroupStateService',
   },
   {
+    symbol: 'createTimedGroupStateService',
+    sourcePath: './group-state-service-timing.ts',
+    declaration: 'export function createTimedGroupStateService',
+  },
+  {
     symbol: 'createQueryOperations',
     sourcePath: './group-state-service.ts',
     declaration: 'function createQueryOperations(',
@@ -111,6 +121,11 @@ const navigationSourceLinks = [
     symbol: 'writeGroupMutation',
     sourcePath: './mutation/write/write-group-mutation.ts',
     declaration: 'export async function writeGroupMutation',
+  },
+  {
+    symbol: 'computeGroupMutationWriteResult',
+    sourcePath: './mutation/group-mutation-result.ts',
+    declaration: 'export function computeGroupMutationWriteResult',
   },
   {
     symbol: 'processGroupPresenceConnect',

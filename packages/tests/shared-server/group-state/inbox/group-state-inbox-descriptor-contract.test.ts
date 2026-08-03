@@ -9,6 +9,7 @@ import { AppInboxType } from
 // prettier-ignore
 import { toGroupMutationDescriptor } from
   '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
+import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 // prettier-ignore
 import type { GroupMutationDescriptor } from
   '@shared-server/rallar-system/services/group-state-service.ts';
@@ -20,9 +21,10 @@ const actor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' };
 describe('AppGroupInboxService authenticated mutation descriptors', () => {
   it('maps every authenticated GROUP_* AppInbox variant to one exact descriptor', () => {
     for (const testCase of descriptorCases) {
-      expect(toGroupMutationDescriptor(testCase.enqueue), testCase.name).toEqual(
-        testCase.descriptor,
-      );
+      expect(
+        toGroupMutationDescriptor(testCase.enqueue as AuthenticatedGroupMutationEnqueue),
+        testCase.name,
+      ).toEqual(testCase.descriptor);
     }
   });
 
@@ -34,7 +36,7 @@ describe('AppGroupInboxService authenticated mutation descriptors', () => {
         contextId: 'descriptor-contract',
         senderId: 'owner',
         data: {},
-      }),
+      } as never),
     ).toThrow('App inbox type is not an authenticated group mutation.');
   });
 });

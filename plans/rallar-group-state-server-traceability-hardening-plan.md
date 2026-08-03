@@ -278,6 +278,7 @@ Approved directly owned semantic and architecture tests:
 packages/tests/shared-server/group-state/inbox/group-state-inbox-descriptor-contract.test.ts
 packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts
 packages/tests/shared-server/group-state/inbox/group-state-inbox-construction.test.ts
+packages/tests/shared-server/group-state/inbox/group-state-inbox-payload-contract.test.ts
 packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts
 packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts
 packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts
@@ -291,9 +292,12 @@ packages/tests/shared-server/group-state/mutation/group-mutation-result-persiste
 packages/tests/shared-server/group-state/mutation/group-aggregate-mutation.test.ts
 packages/tests/shared-server/group-state/mutation/group-membership-mutation.test.ts
 packages/tests/shared-server/group-state/mutation/group-presence-mutation.test.ts
+packages/tests/shared-server/group-state/presence/group-presence-connect-decision.test.ts
+packages/tests/repo/group-state-server-source-ratchet-inventory.ts
 packages/tests/repo/group-state-server-source-ratchet.test.ts
 packages/tests/repo/group-state-traceability-active-paths.test.ts
 packages/tests/repo/group-state-navigation-map-integrity.test.ts
+packages/tests/repo/rallar-group-state-owner-integrity.test.ts
 plans/rallar-group-state-server-traceability-hardening-plan.md
 ```
 
@@ -336,16 +340,20 @@ export interface AuthenticatedGroupMutationPayloadByType {
 
 export type AuthenticatedGroupMutationInboxType = keyof AuthenticatedGroupMutationPayloadByType;
 
-export type AuthenticatedGroupMutationEnqueue = {
+export type AuthenticatedGroupMutationEnqueue = Readonly<{
   [Type in AuthenticatedGroupMutationInboxType]: Omit<
     AppInboxEnqueueInput<AuthenticatedGroupMutationPayloadByType[Type]>,
     'type'
   > &
     Readonly<{ type: Type }>;
-}[AuthenticatedGroupMutationInboxType];
+}>[AuthenticatedGroupMutationInboxType];
+
+interface AuthenticatedGroupMutationEnqueueCandidate {
+  readonly type: AppInboxType;
+}
 
 export function isAuthenticatedGroupMutationEnqueue(
-  enqueue: AppInboxEnqueueInput<unknown>,
+  enqueue: AuthenticatedGroupMutationEnqueueCandidate,
 ): enqueue is AuthenticatedGroupMutationEnqueue;
 
 export function toGroupMutationDescriptor(
@@ -648,6 +656,10 @@ tests in Section 3.2.
       Critical 0 / Important 0.
 - [ ] Resolve ordinary in-scope findings test-first and rerun every invalidated
       gate.
+- [ ] Keep the PR B ratchet inventory synchronized with the exact changed and
+      mirrored test owners, keep navigation links aligned to current primary
+      symbols, and resolve only behavior-neutral type-expression, function-size,
+      and formatting findings found by the final review.
 - [ ] Run Section 7.3 on the final unchanged content tree.
 - [ ] Finish every content, review, evidence, and formatting edit before
       creating the performance candidate.
