@@ -43,6 +43,7 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     typeOwnerSource,
     dispatchSource,
     operationDiscriminant,
+    familyRegistrationMarker,
   ] = row.split('\t');
   const sourcePath = PATHS[source as keyof typeof PATHS];
   const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
@@ -82,5 +83,6 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     typeOwnerSourcePath,
     dispatchSourcePath,
     operationDiscriminant,
+    familyRegistrationMarker,
   };
 }

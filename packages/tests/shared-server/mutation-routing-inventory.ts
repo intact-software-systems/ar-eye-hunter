@@ -22,6 +22,7 @@ export interface MutationRouteInventoryEntry {
   readonly typeOwnerSourcePath: string;
   readonly dispatchSourcePath: string;
   readonly operationDiscriminant?: string;
+  readonly familyRegistrationMarker?: string;
 }
 
 export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] =
@@ -74,6 +75,7 @@ export function validateMutationRouteInventory(
       'typeOwnerSourcePath',
       'dispatchSourcePath',
       'operationDiscriminant',
+      'familyRegistrationMarker',
     ] as const) {
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
     }
@@ -127,7 +129,7 @@ function checkRegistration(
     method: method.toLowerCase(),
     routePath,
     registrationMarker: item.registrationMarker,
-    namedOwnerRequired: item.operationDiscriminant !== undefined,
+    familyRegistrationMarker: item.familyRegistrationMarker,
   });
   if (!handler) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);

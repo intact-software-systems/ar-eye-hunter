@@ -2,13 +2,14 @@ import {
   findRouteRegistration,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
+import { findDirectGroupRouteHandler } from './mutation-routing-group-registration.ts';
 
 interface FindHttpRouteHandlerInput {
   readonly program: AstNode;
   readonly method: string;
   readonly routePath: string;
   readonly registrationMarker: string;
-  readonly namedOwnerRequired: boolean;
+  readonly familyRegistrationMarker?: string;
 }
 
 interface GroupStateRouteOperation {
@@ -21,27 +22,19 @@ export function findExactHttpRouteHandler({
   method,
   routePath,
   registrationMarker,
-  namedOwnerRequired,
+  familyRegistrationMarker,
 }: FindHttpRouteHandlerInput): AstNode | undefined {
-  if (!namedOwnerRequired) {
+  if (!familyRegistrationMarker) {
     const direct = findRouteRegistration(program, method, routePath);
     return direct ? asNodes(direct.arguments)[1] : undefined;
   }
-
-  const owners = findNamedTopLevelFunctions(program, registrationMarker);
-  if (owners.length !== 1) return undefined;
-  const statements = readBlockStatements(asNode(owners[0]?.body));
-  if (statements.length !== 1 || statements[0]?.type !== 'ExpressionStatement') return undefined;
-  const registration = asNode(statements[0].expression);
-  if (
-    registration?.type !== 'CallExpression' ||
-    readMemberObject(registration) !== 'app' ||
-    readMemberName(asNode(registration.callee)) !== method ||
-    resolveModuleString(program, asNodes(registration.arguments)[0]) !== routePath
-  ) {
-    return undefined;
-  }
-  return asNodes(registration.arguments)[1];
+  return findDirectGroupRouteHandler({
+    program,
+    method,
+    routePath,
+    privateOwnerName: registrationMarker,
+    familyOwnerName: familyRegistrationMarker,
+  });
 }
 
 export function isExactGroupStateRouteOperation(
@@ -85,19 +78,26 @@ function isSubmittedCommand(
   statements: readonly AstNode[],
 ): boolean {
   if (findCallsOutsideFunctions(submission.arguments).includes(command)) return true;
-  const binding = findCommandBinding(statements, command);
+  const binding = findCommandBindingBeforeSubmission(statements, command, submission);
   return Boolean(binding && hasIdentifierOutsideFunctions(submission.arguments, binding));
 }
 
-function findCommandBinding(statements: readonly AstNode[], command: AstNode): string | undefined {
+function findCommandBindingBeforeSubmission(
+  statements: readonly AstNode[],
+  command: AstNode,
+  submission: AstNode,
+): string | undefined {
+  let bindingName: string | undefined;
   for (const statement of statements) {
     if (statement.type === 'ReturnStatement' || statement.type === 'ThrowStatement')
       return undefined;
-    if (statement.type !== 'VariableDeclaration') continue;
-    const binding = asNodes(statement.declarations).find(
-      (declaration) => asNode(declaration.init) === command,
-    );
-    if (binding) return readName(asNode(binding.id)) || undefined;
+    if (findCallsOutsideFunctions(statement).includes(submission)) return bindingName;
+    if (statement.type === 'VariableDeclaration') {
+      const binding = asNodes(statement.declarations).find(
+        (declaration) => asNode(declaration.init) === command,
+      );
+      if (binding) bindingName = readName(asNode(binding.id)) || undefined;
+    }
   }
   return undefined;
 }
@@ -196,7 +196,11 @@ function visitOutsideFunctions(value: unknown, visitor: (node: AstNode) => void)
 function readOperationLiteral(command: AstNode | undefined): string | undefined {
   const input = asNodes(command?.arguments)[0];
   if (input?.type !== 'ObjectExpression') return undefined;
-  const values = asNodes(input.properties)
+  const properties = asNodes(input.properties);
+  if (properties.some((property) => property.type === 'SpreadElement' || property.computed)) {
+    return undefined;
+  }
+  const values = properties
     .filter(
       (property) =>
         property.type === 'ObjectProperty' && readName(asNode(property.key)) === 'operation',
@@ -208,63 +212,15 @@ function readOperationLiteral(command: AstNode | undefined): string | undefined 
 
 function readObjectMemberPath(object: AstNode | undefined, propertyName: string): string {
   if (object?.type !== 'ObjectExpression') return '';
-  const properties = asNodes(object.properties).filter(
+  const objectProperties = asNodes(object.properties);
+  if (objectProperties.some((property) => property.type === 'SpreadElement' || property.computed)) {
+    return '';
+  }
+  const properties = objectProperties.filter(
     (property) =>
       property.type === 'ObjectProperty' && readName(asNode(property.key)) === propertyName,
   );
   return properties.length === 1 ? readMemberPath(asNode(properties[0]?.value)) : '';
-}
-
-function resolveModuleString(
-  program: AstNode,
-  value: AstNode | undefined,
-  resolving = new Set<string>(),
-): string | undefined {
-  if (!value) return undefined;
-  const direct = readString(value);
-  if (direct !== undefined) return direct;
-  if (value.type === 'Identifier') {
-    const name = readName(value);
-    if (!name || resolving.has(name)) return undefined;
-    const binding = findModuleConst(program, name);
-    if (!binding) return undefined;
-    return resolveModuleString(program, asNode(binding.init), new Set(resolving).add(name));
-  }
-  if (value.type === 'TemplateLiteral') return resolveTemplateLiteral(program, value, resolving);
-  if (value.type !== 'BinaryExpression' || value.operator !== '+') return undefined;
-  const left = resolveModuleString(program, asNode(value.left), resolving);
-  const right = resolveModuleString(program, asNode(value.right), resolving);
-  return left === undefined || right === undefined ? undefined : `${left}${right}`;
-}
-
-function resolveTemplateLiteral(
-  program: AstNode,
-  template: AstNode,
-  resolving: ReadonlySet<string>,
-): string | undefined {
-  const expressions = asNodes(template.expressions);
-  const quasis = asNodes(template.quasis);
-  if (quasis.length !== expressions.length + 1) return undefined;
-  let resolved = readTemplateElement(quasis[0]);
-  if (resolved === undefined) return undefined;
-  for (const [index, expression] of expressions.entries()) {
-    const expressionValue = resolveModuleString(program, expression, new Set(resolving));
-    const following = readTemplateElement(quasis[index + 1]);
-    if (expressionValue === undefined || following === undefined) return undefined;
-    resolved += expressionValue + following;
-  }
-  return resolved;
-}
-
-function findModuleConst(program: AstNode, name: string): AstNode | undefined {
-  for (const statement of asNodes(program.body)) {
-    if (statement.type !== 'VariableDeclaration' || statement.kind !== 'const') continue;
-    const binding = asNodes(statement.declarations).find(
-      (declaration) => readName(asNode(declaration.id)) === name,
-    );
-    if (binding) return binding;
-  }
-  return undefined;
 }
 
 function findNamedTopLevelFunctions(program: AstNode, name: string): readonly AstNode[] {
@@ -282,17 +238,6 @@ function readTopLevelDeclaration(statement: AstNode): AstNode | undefined {
 
 function readBlockStatements(block: AstNode | undefined): readonly AstNode[] {
   return block?.type === 'BlockStatement' ? asNodes(block.body) : [];
-}
-
-function readTemplateElement(node: AstNode | undefined): string | undefined {
-  if (node?.type !== 'TemplateElement') return undefined;
-  const value = asNode(node.value);
-  return typeof value?.cooked === 'string' ? value.cooked : undefined;
-}
-
-function readMemberObject(call: AstNode): string {
-  const callee = asNode(call.callee);
-  return callee?.type === 'MemberExpression' ? readName(asNode(callee.object)) : '';
 }
 
 function readMemberPath(node: AstNode | undefined): string {
