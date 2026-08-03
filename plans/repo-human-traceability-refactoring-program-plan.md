@@ -104,8 +104,14 @@ is complete through guidance/navigation PR #64 and behavior-neutral runtime PR
 evidence ledger was published through PR #66 and reached `ledger-published` at
 exact resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12` after
 workflow `30780849548` attempt 1 succeeded. The
-[API-v1 group-state route child](api-v1-group-state-route-structure-plan.md) is
-now drafted and unapproved; no implementation has begun.
+[API-v1 group-state route child](api-v1-group-state-route-structure-plan.md) was
+approved at Git blob `00a8efe0e6124ec9882360c1328045cde781b726` subject only to
+its recorded amendments. Structure PR #68 and code-standard alignment PR #69
+are implemented and published through exact resulting `main`
+`cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3`; both implementation envelopes are
+green. The implementation is `complete`, and its separately authorized later
+evidence-ledger publication is pending. The API-v1 child is not yet
+`ledger-published`.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -206,6 +212,21 @@ updated through the current ledger:
   Supported Distributed Manifests** run `30780849548` attempt 1 passed for
   that exact SHA. The server structure, traceability QA, and traceability
   hardening work is therefore `ledger-published`.
+- API-v1 structure PR #68 published frozen tree
+  `8126969737977c901dc56a35b3b523a9209a4fa7` from feature SHA
+  `cb9f074db23135de682a19108282b95f71b5e54e`. Branch Release Gate run
+  `30815005047` attempt 1 passed for that feature SHA. It squash-merged as
+  exact `main` SHA `4d616edc649fe30ebf0fca48db4ab683d9c512e3` with the same
+  tree; **Run Hetzner Supported Distributed Manifests** run `30818878869`
+  attempt 1 passed for that exact SHA.
+- API-v1 code-standard alignment PR #69 published frozen tree
+  `620bb455688ee4f927dd662da0fce01a3c0c7bd9` from feature SHA
+  `bcabb62072fa82759e21fc14f6e7efedd7adf00f`. Branch Release Gate run
+  `30825695539` attempt 2 passed for that feature SHA. It squash-merged as
+  exact `main` SHA `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3` with the same
+  tree; **Run Hetzner Supported Distributed Manifests** run `30833235855`
+  attempt 1 passed for that exact SHA. The API-v1 implementation is therefore
+  `complete`; its separate evidence-ledger publication is pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -1094,7 +1115,19 @@ to write, review, approve, execute, and hand off these child plans in order:
     inventory, semantic ratchets, and internal naming alignment;
   - the separate five-plan server evidence ledger was published through PR #66.
 - [ ] [API-v1 group-state route structure](api-v1-group-state-route-structure-plan.md)
-  - state: drafted and unapproved; implementation has not begun;
+  - state: approved at Git blob
+    `00a8efe0e6124ec9882360c1328045cde781b726` with its recorded amendments;
+    structure tree `8126969737977c901dc56a35b3b523a9209a4fa7`, feature
+    `cb9f074db23135de682a19108282b95f71b5e54e`, Branch Release Gate
+    `30815005047` attempt 1, PR #68, resulting `main`
+    `4d616edc649fe30ebf0fca48db4ab683d9c512e3`, and default workflow
+    `30818878869` attempt 1 are complete; alignment tree
+    `620bb455688ee4f927dd662da0fce01a3c0c7bd9`, feature
+    `bcabb62072fa82759e21fc14f6e7efedd7adf00f`, Branch Release Gate
+    `30825695539` attempt 2, PR #69, resulting `main`
+    `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3`, and default workflow
+    `30833235855` attempt 1 are complete; implementation `complete`, separate
+    evidence-ledger publication pending;
   - route split and descriptive registration symbols;
   - request defaults and request-to-command translation;
   - API-v1 composition changes needed by group-state only;
@@ -1152,5 +1185,9 @@ evidence ledger was published through PR #66 at feature
 `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree
 `111995e3a72eb246fd0b8028aada4fbeda65fe69`, resulting `main`
 `04b041824073e50a4f1623ca9a71d0d02b770c12`, and default workflow
-`30780849548` attempt 1 success. The API-v1 child is now drafted and unapproved;
-no implementation has begun.
+`30780849548` attempt 1 success. The API-v1 child implementation is complete
+through PR #68 and PR #69, ending at exact resulting `main`
+`cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3` with default workflow
+`30833235855` attempt 1 success. Its separately authorized evidence-ledger
+publication is pending, so the child is not yet `ledger-published` and pilot
+evaluation remains blocked.
