@@ -121,9 +121,10 @@ describe('API-v1 group-state route executable compatibility references', () => {
       ),
     );
     expect(activeCompatibilitySpecifiers()).toEqual([]);
-    expect(() => moduleSpecifiers('const x = 1;', 'fixture.jsx')).toThrow(
-      'unsupported source extension',
-    );
+    const importEquals = "import x = require('../routes/group-state-route-errors.ts');";
+    expect(moduleSpecifiers(importEquals, 'fixture.cts')).toEqual([legacyErrorsSpecifier]);
+    expect(() => moduleSpecifiers('x', 'fixture.jsx')).toThrow('unsupported source extension');
+    expect(() => moduleSpecifiers('import(', 'fixture.ts')).toThrow();
   });
 });
 function validateContentBoundEvidence(
@@ -263,6 +264,9 @@ function compatibilityFixture(filePath: string): readonly [string, string] {
     filePath,
     [
       ...fixtureOperations.map(([statement]) => statement),
+      "const route = 'group-state-routes';",
+      'import(`../routes/${route}`);',
+      'require(`../routes/${route}.ts`);',
       "const prose = '../routes/group-state-routes';",
       "const markdown = '[legacy](../routes/group-state-route-errors.ts)';",
       "// import '../routes/group-state-route-errors.ts';",
@@ -278,15 +282,8 @@ function moduleSpecifiers(source: string, filePath = 'fixture.ts'): readonly str
   }).program;
   const result: string[] = [];
   visit(program, (node) => {
-    const value = stringValue(node.source);
-    if (
-      ['ImportDeclaration', 'ExportNamedDeclaration', 'ExportAllDeclaration'].includes(
-        String(node.type),
-      ) &&
-      value
-    )
-      result.push(value);
-    if (node.type === 'ImportExpression' && value) result.push(value);
+    const value = stringValue(node.source ?? node.expression);
+    if (value && moduleSpecifierNodeTypePattern.test(String(node.type))) result.push(value);
     if (
       node.type === 'CallExpression' &&
       record(node.callee) &&
@@ -363,9 +360,14 @@ function hash(source: string, start: number, end: number): string {
   return createHash('sha256').update(`${region}\n`).digest('hex');
 }
 function stringValue(value: unknown): string | undefined {
-  return record(value) && value.type === 'StringLiteral' && typeof value.value === 'string'
-    ? value.value
-    : undefined;
+  if (!record(value)) return undefined;
+  if (value.type === 'StringLiteral' && typeof value.value === 'string') return value.value;
+  if (value.type !== 'TemplateLiteral' || !Array.isArray(value.expressions)) return undefined;
+  if (value.expressions.length > 0 || !Array.isArray(value.quasis)) return undefined;
+  if (value.quasis.length !== 1 || !record(value.quasis[0])) return undefined;
+  const templateValue = value.quasis[0].value;
+  if (!record(templateValue) || typeof templateValue.cooked !== 'string') return undefined;
+  return templateValue.cooked;
 }
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -382,18 +384,17 @@ const regionPattern = new RegExp(
   'gm',
 );
 const compatibilityPattern = /^\- Path: `([^`]+)`; SHA-256: `([^`]+)`$/gm;
+const moduleSpecifierNodeTypePattern = new RegExp(
+  '^(' +
+    'ImportDeclaration|ExportNamedDeclaration|ExportAllDeclaration|' +
+    'ImportExpression|TSExternalModuleReference)$',
+);
+const legacyErrorsSpecifier = '../routes/group-state-route-errors.ts';
 const fixtureOperations = [
-  ["import value from '../routes/group-state-routes';", '../routes/group-state-routes'],
-  [
-    "export { value } from '../routes/group-state-route-errors.ts';",
-    '../routes/group-state-route-errors.ts',
-  ],
-  [
-    "const dynamicValue = import('../routes/group-state-routes.ts');",
-    '../routes/group-state-routes.ts',
-  ],
-  [
-    "const requiredValue = require('../routes/group-state-route-errors');",
-    '../routes/group-state-route-errors',
-  ],
+  ["import x from '../routes/group-state-routes';", '../routes/group-state-routes'],
+  ["export { x } from '../routes/group-state-route-errors.ts';", legacyErrorsSpecifier],
+  ["import('../routes/group-state-routes.ts');", '../routes/group-state-routes.ts'],
+  ["require('../routes/group-state-route-errors');", '../routes/group-state-route-errors'],
+  ['import(`../routes/group-state-routes`);', '../routes/group-state-routes'],
+  ['require(`../routes/group-state-route-errors.ts`);', legacyErrorsSpecifier],
 ] as const;
