@@ -1,17 +1,27 @@
 import assert from 'node:assert/strict';
 
+import { Either } from '@shared/resilience/Either.ts';
 import type {
-  AppInboxEnqueueInput,
+  GroupCreateAppInboxPayload,
+  GroupUpdateAppInboxPayload,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import {
+  type AppInboxEnqueueInput,
+  AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import {
   readGroupStateRouteRequest,
 } from '../../src/group-state/read-group-state-route-request.ts';
+import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
+import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
 import * as groupStateRoutes from '../../src/routes/group-state-routes.ts';
 
 import {
+  createGroupStateRouteAuthSession,
   createGroupStateRouteSnapshot,
   createGroupStateRouteTestRuntime,
+  TEST_GROUP_SCOPE,
   toGroupStateWritten,
 } from './group-state-route-test-runtime.ts';
 
@@ -31,6 +41,109 @@ Deno.test('canonical group request reader retains body request ID precedence', a
   });
 
   assert.deepEqual(request, { requestId: 'body-request', name: 'Room' });
+});
+
+Deno.test('group create command retains its authenticated AppInbox envelope', () => {
+  const command = toGroupStateCommand({
+    operation: 'create-group',
+    authSession: createGroupStateRouteAuthSession('alice'),
+    scope: TEST_GROUP_SCOPE,
+    request: {
+      groupId: 'room/1',
+      displayName: 'Room',
+      kind: 'room',
+      createdByPrincipalId: 'forged-creator',
+      actorPrincipalId: 'forged-actor',
+      actorSessionId: 'forged-session',
+      requestId: 'create-body',
+    },
+  });
+
+  assert.equal(
+    JSON.stringify(command),
+    '{"type":"GROUP_CREATE","resourceId":"create-body","contextId":"app-1:workspace-1:room%2F1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"room/1","displayName":"Room","kind":"room","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"create-body"}}}',
+  );
+});
+
+Deno.test('group command output keeps create payloads isolated from updates', () => {
+  const command = toGroupStateCommand({
+    operation: 'create-group',
+    authSession: createGroupStateRouteAuthSession('alice'),
+    scope: TEST_GROUP_SCOPE,
+    request: {
+      groupId: 'room-1',
+      displayName: 'Room',
+      kind: 'room',
+      createdByPrincipalId: 'forged-creator',
+      requestId: 'create-request',
+    },
+  });
+
+  assert.equal(command.type, AppInboxType.GROUP_CREATE);
+  if (command.type === AppInboxType.GROUP_CREATE) {
+    const payload: GroupCreateAppInboxPayload = command.data;
+    assert.equal(payload.request.groupId, 'room-1');
+    // @ts-expect-error A create enqueue is not a group-update payload.
+    const invalidPayload: GroupUpdateAppInboxPayload = command.data;
+    void invalidPayload;
+  }
+});
+
+Deno.test('group aggregate commands retain update and director envelopes', () => {
+  const authSession = createGroupStateRouteAuthSession('alice');
+  const commands = [
+    toGroupStateCommand({
+      operation: 'update-group',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-2',
+      request: {
+        displayName: 'Renamed',
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'update-body',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'appoint-group-director',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-3',
+      request: {
+        heartbeatTtlMs: 20,
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'appoint-body',
+      },
+    }),
+  ];
+
+  assert.equal(
+    JSON.stringify(commands),
+    '[{"type":"GROUP_UPDATE","resourceId":"update-body","contextId":"app-1:workspace-1:room-2","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-2","request":{"displayName":"Renamed","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"update-body"}}},{"type":"GROUP_DIRECTOR_APPOINT","resourceId":"appoint-body","contextId":"app-1:workspace-1:room-3","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-3","request":{"heartbeatTtlMs":20,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"appoint-body"}}}]',
+  );
+});
+
+Deno.test('group mutation response retains snapshot identity and durable error text', () => {
+  const snapshot = createGroupStateRouteSnapshot('room-1');
+  const response = toGroupStateResponse({
+    kind: 'mutation',
+    written: toGroupStateWritten(snapshot),
+  });
+
+  assert.strictEqual(response.snapshot, snapshot);
+  assert.equal(
+    JSON.stringify(response.snapshot),
+    '{"stateRevision":1,"causalRevision":{"groupRevision":1,"presenceRevision":0},"group":{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","slug":null,"displayName":"room-1","description":null,"kind":"room","status":"active","joinMode":"open","maxMembers":null,"maxSessionsPerMember":null,"metadata":{},"activeMemberCount":1,"ownerPrincipalId":"alice","snapshotVersion":1,"metadataVersion":1,"rosterVersion":1,"presenceVersion":0,"created":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"expiresAtEpochMs":null,"emptySinceEpochMs":null,"purgeAfterEpochMs":null,"archived":null,"deleted":null},"members":[{"applicationId":"app-1","workspaceId":"workspace-1","groupId":"room-1","principalId":"alice","role":"owner","status":"active","joined":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"updated":{"atEpochMs":1,"actor":{"kind":"service","serviceId":"test"},"reason":null,"traceId":null,"requestId":null},"left":null,"removed":null,"banned":null,"invitedByPrincipalId":null,"invitationExpiresAtEpochMs":null}],"activeSessions":[],"memberCount":1,"onlineMemberCount":0}',
+  );
+  assert.throws(
+    () =>
+      toGroupStateResponse({
+        kind: 'mutation',
+        written: { status: 'error', result: Either.ofLeft('Mutation result rejected') },
+      }),
+    { message: 'Mutation result rejected' },
+  );
 });
 
 Deno.test('group aggregate routes retain their AppInbox envelopes', async () => {

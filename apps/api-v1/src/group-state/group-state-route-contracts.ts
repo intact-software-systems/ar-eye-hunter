@@ -1,4 +1,23 @@
-import type { StateScope } from '@shared/api/state-types.ts';
+import type {
+  AcceptGroupInviteRequest,
+  AppointGroupDirectorRequest,
+  BanGroupMemberRequest,
+  ConnectGroupPresenceSessionRequest,
+  CreateGroupInviteRequest,
+  CreateGroupRequest,
+  DisconnectGroupPresenceSessionRequest,
+  HeartbeatGroupPresenceSessionRequest,
+  JoinGroupRequest,
+  RemoveGroupMemberRequest,
+  RevokeGroupInviteRequest,
+  RotateGroupJoinCodeRequest,
+  SetGroupMemberRoleRequest,
+  StateScope,
+  TransferGroupOwnershipRequest,
+  UnbanGroupMemberRequest,
+  UpdateGroupRequest,
+  UpsertGroupMemberRequest,
+} from '@shared/api/state-types.ts';
 import type {
   CachedGroupStateService,
 } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
@@ -34,6 +53,160 @@ export type GroupStateRouteAuthSession = Pick<
   | 'issuedAtEpochMs'
   | 'expiresAtEpochMs'
 >;
+
+interface GroupStateRouteCommandInputBase {
+  readonly authSession: GroupStateRouteAuthSession;
+  readonly scope: StateScope;
+}
+
+type GroupStateRouteRequestWithId<T> = T & Readonly<{ requestId: string }>;
+
+export type GroupStateRouteCommandInput =
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'create-group';
+      request: GroupStateRouteRequestWithId<CreateGroupRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'update-group';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<UpdateGroupRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'appoint-group-director';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<AppointGroupDirectorRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'join-group';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<JoinGroupRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'accept-group-invite';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<AcceptGroupInviteRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'rotate-group-join-code';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<RotateGroupJoinCodeRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'create-group-invite';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<CreateGroupInviteRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'revoke-group-invite';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<RevokeGroupInviteRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'remove-group-member';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<RemoveGroupMemberRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'ban-group-member';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<BanGroupMemberRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'unban-group-member';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<UnbanGroupMemberRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'set-group-member-role';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<SetGroupMemberRoleRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'transfer-group-ownership';
+      groupId: string;
+      request: GroupStateRouteRequestWithId<TransferGroupOwnershipRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'upsert-group-member';
+      groupId: string;
+      principalId: string;
+      request: GroupStateRouteRequestWithId<UpsertGroupMemberRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'connect-group-presence';
+      groupId: string;
+      sessionId: string;
+      request: GroupStateRouteRequestWithId<ConnectGroupPresenceSessionRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'heartbeat-group-presence';
+      groupId: string;
+      sessionId: string;
+      request: GroupStateRouteRequestWithId<HeartbeatGroupPresenceSessionRequest>;
+    }>
+  )
+  | (
+    & GroupStateRouteCommandInputBase
+    & Readonly<{
+      operation: 'disconnect-group-presence';
+      groupId: string;
+      sessionId: string;
+      request: GroupStateRouteRequestWithId<DisconnectGroupPresenceSessionRequest>;
+    }>
+  );
 
 export type ProcessGroupAppInbox = <V, R>(
   authority: GroupStateRouteAuthSession,

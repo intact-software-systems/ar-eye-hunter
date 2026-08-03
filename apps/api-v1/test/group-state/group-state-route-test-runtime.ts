@@ -9,6 +9,7 @@ import type {
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 
 import * as groupStateRoutes from '../../src/routes/group-state-routes.ts';
 
@@ -134,7 +135,7 @@ export function createGroupStateRouteEvent(eventId: string): GroupEvent {
   };
 }
 
-export function toGroupStateWritten(snapshot: GroupSnapshot) {
+export function toGroupStateWritten(snapshot: GroupSnapshot): GroupStateWritten {
   return {
     status: 'ok',
     result: Either.ofRight({ snapshot, event: null }),

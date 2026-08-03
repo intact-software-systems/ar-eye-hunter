@@ -1,15 +1,104 @@
 import assert from 'node:assert/strict';
 
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import * as groupStateRoutes from '../../src/routes/group-state-routes.ts';
 
 import {
+  createGroupStateRouteAuthSession,
   createGroupStateRouteSnapshot,
   createGroupStateRouteTestRuntime,
+  TEST_GROUP_SCOPE,
   toGroupStateWritten,
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
+
+Deno.test('group membership commands retain governance and self-service envelopes', () => {
+  const authSession = createGroupStateRouteAuthSession('alice');
+  const commands = [
+    toGroupStateCommand({
+      operation: 'remove-group-member',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'remove-request',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'ban-group-member',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'ban-request',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'unban-group-member',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'unban-request',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'set-group-member-role',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-1',
+      principalId: 'bob',
+      request: {
+        role: 'admin',
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'role-request',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'transfer-group-ownership',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-1',
+      request: {
+        newOwnerPrincipalId: 'bob',
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'transfer-request',
+      },
+    }),
+    toGroupStateCommand({
+      operation: 'upsert-group-member',
+      authSession,
+      scope: TEST_GROUP_SCOPE,
+      groupId: 'room-1',
+      principalId: 'alice',
+      request: {
+        status: 'active',
+        role: 'admin',
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'upsert-request',
+      },
+    }),
+  ];
+
+  assert.equal(
+    JSON.stringify(commands),
+    '[{"type":"GROUP_MEMBER_REMOVE","resourceId":"remove-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"remove-request"}}},{"type":"GROUP_MEMBER_BAN","resourceId":"ban-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"ban-request"}}},{"type":"GROUP_MEMBER_UNBAN","resourceId":"unban-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"unban-request"}}},{"type":"GROUP_MEMBER_ROLE_SET","resourceId":"role-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"role":"admin","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"role-request"}}},{"type":"GROUP_OWNERSHIP_TRANSFER","resourceId":"transfer-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"newOwnerPrincipalId":"bob","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"transfer-request"}}},{"type":"GROUP_MEMBER_UPSERT","resourceId":"upsert-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"alice","request":{"status":"active","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"upsert-request"}}}]',
+  );
+});
 
 Deno.test('group membership routes retain every AppInbox envelope and self-service omission', async () => {
   const enqueued: unknown[] = [];
