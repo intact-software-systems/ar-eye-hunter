@@ -4,13 +4,12 @@ import type {
   GroupCreateAppInboxPayload,
   GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
-
 import {
   type AppInboxEnqueueInput,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
+import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
 import {
   readGroupStateRouteRequest,
 } from '../../src/group-state/read-group-state-route-request.ts';

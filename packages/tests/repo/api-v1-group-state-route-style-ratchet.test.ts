@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 const maximumLineLength = 100;
 const maximumModuleLines = 400;
 type RatchetedSourceKind = 'production' | 'test';
-// Temporary Task 7 evidence; the later child ledger decides removal once semantic coverage is published.
+// Temporary Task 7 evidence; the later child ledger decides removal once
+// semantic coverage is published.
 const ratchetedProductionPaths = [
   'apps/api-v1/src/group-state/create-group-state-route-dependencies.ts',
   'apps/api-v1/src/group-state/group-state-route-authorization.ts',
@@ -23,6 +24,7 @@ const ratchetedProductionPaths = [
   'apps/api-v1/src/group-state/to-group-state-response.ts',
 ] as const;
 const ratchetedTestPaths = [
+  'packages/tests/repo/api-v1-group-state-route-style-ratchet.test.ts',
   'apps/api-v1/test/group-state/group-admission-routes.test.ts',
   'apps/api-v1/test/group-state/group-membership-routes.test.ts',
   'apps/api-v1/test/group-state/group-presence-routes.test.ts',
