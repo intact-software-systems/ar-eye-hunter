@@ -30,6 +30,7 @@ Deno.test('group presence routes retain every AppInbox envelope and post-receipt
       generationId: 'generation-connect',
       principalId: 'forged-principal',
       actorPrincipalId: 'forged-actor',
+      actorSessionId: 'forged-session',
       connectedAtEpochMs: 1,
       lastHeartbeatAtEpochMs: 1,
       expiresAtEpochMs: 2,
@@ -38,6 +39,8 @@ Deno.test('group presence routes retain every AppInbox envelope and post-receipt
     await requestPresenceMutation(runtime.app, `${API_BASE}/heartbeat`, 'POST', {
       generationId: 'generation-heartbeat',
       principalId: 'forged-principal',
+      actorPrincipalId: 'forged-actor',
+      actorSessionId: 'forged-session',
       lastHeartbeatAtEpochMs: 2,
       expiresAtEpochMs: 3,
       requestId: 'heartbeat-request',
@@ -45,6 +48,8 @@ Deno.test('group presence routes retain every AppInbox envelope and post-receipt
     await requestPresenceMutation(runtime.app, `${API_BASE}/disconnect`, 'POST', {
       generationId: 'generation-disconnect',
       principalId: 'forged-principal',
+      actorPrincipalId: 'forged-actor',
+      actorSessionId: 'forged-session',
       lastHeartbeatAtEpochMs: 3,
       disconnectedAtEpochMs: 4,
       expiresAtEpochMs: 5,
@@ -59,7 +64,7 @@ Deno.test('group presence routes retain every AppInbox envelope and post-receipt
   assert.equal(currentSnapshotReads, 3);
   assert.equal(
     JSON.stringify(enqueued),
-    '[{"type":"GROUP_PRESENCE_CONNECT","resourceId":"connect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-connect","principalId":"alice","actorPrincipalId":"alice","connectedAtEpochMs":1,"lastHeartbeatAtEpochMs":1,"expiresAtEpochMs":2,"requestId":"connect-request","actorSessionId":"alice-session"}}},{"type":"GROUP_PRESENCE_HEARTBEAT","resourceId":"heartbeat-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-heartbeat","principalId":"alice","lastHeartbeatAtEpochMs":2,"expiresAtEpochMs":3,"requestId":"heartbeat-request","actorPrincipalId":"alice","actorSessionId":"alice-session"}}},{"type":"GROUP_PRESENCE_DISCONNECT","resourceId":"disconnect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-disconnect","principalId":"alice","lastHeartbeatAtEpochMs":3,"disconnectedAtEpochMs":4,"expiresAtEpochMs":5,"requestId":"disconnect-request","actorPrincipalId":"alice","actorSessionId":"alice-session"}}}]',
+    '[{"type":"GROUP_PRESENCE_CONNECT","resourceId":"connect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-connect","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","connectedAtEpochMs":1,"lastHeartbeatAtEpochMs":1,"expiresAtEpochMs":2,"requestId":"connect-request"}}},{"type":"GROUP_PRESENCE_HEARTBEAT","resourceId":"heartbeat-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-heartbeat","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","lastHeartbeatAtEpochMs":2,"expiresAtEpochMs":3,"requestId":"heartbeat-request"}}},{"type":"GROUP_PRESENCE_DISCONNECT","resourceId":"disconnect-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","sessionId":"alice-session","request":{"generationId":"generation-disconnect","principalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","lastHeartbeatAtEpochMs":3,"disconnectedAtEpochMs":4,"expiresAtEpochMs":5,"requestId":"disconnect-request"}}}]',
   );
 });
 
@@ -81,6 +86,8 @@ Deno.test('group presence route rejects a receipt before its cleanup read', asyn
 
   const response = await requestPresenceMutation(runtime.app, API_BASE, 'PUT', {
     generationId: 'generation-1',
+    actorPrincipalId: 'forged-actor',
+    actorSessionId: 'forged-session',
     connectedAtEpochMs: 1,
     lastHeartbeatAtEpochMs: 1,
     expiresAtEpochMs: 2,

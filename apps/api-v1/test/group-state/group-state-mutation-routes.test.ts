@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import * as groupStateRoutes from '../../src/routes/group-state-routes.ts';
 
 import {
@@ -11,6 +10,8 @@ import {
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
+const RANDOM_UUID_DESCRIPTOR_AT_MODULE_LOAD = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
+const RANDOM_UUID_AT_MODULE_LOAD = crypto.randomUUID;
 
 Deno.test('group aggregate routes retain their AppInbox envelopes', async () => {
   const enqueued: unknown[] = [];
@@ -33,10 +34,12 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
     await requestGroupMutation(runtime.app, `${API_BASE}/room-2`, 'PUT', {
       displayName: 'Renamed',
       actorPrincipalId: 'forged-actor',
+      actorSessionId: 'forged-session',
       requestId: 'update-body',
     }),
     await requestGroupMutation(runtime.app, `${API_BASE}/room-3/director/appoint`, 'POST', {
       heartbeatTtlMs: 20,
+      actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'appoint-body',
     }),
@@ -47,7 +50,7 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
   assert.equal(responses[2].status, 200);
   assert.equal(
     JSON.stringify(enqueued),
-    '[{"type":"GROUP_CREATE","resourceId":"create-body","contextId":"app-1:workspace-1:room%2F1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"room/1","displayName":"Room","kind":"room","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"create-body"}}},{"type":"GROUP_UPDATE","resourceId":"update-body","contextId":"app-1:workspace-1:room-2","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-2","request":{"displayName":"Renamed","actorPrincipalId":"alice","requestId":"update-body","actorSessionId":"alice-session"}}},{"type":"GROUP_DIRECTOR_APPOINT","resourceId":"appoint-body","contextId":"app-1:workspace-1:room-3","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-3","request":{"heartbeatTtlMs":20,"actorSessionId":"alice-session","requestId":"appoint-body","actorPrincipalId":"alice"}}}]',
+    '[{"type":"GROUP_CREATE","resourceId":"create-body","contextId":"app-1:workspace-1:room%2F1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"room/1","displayName":"Room","kind":"room","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"create-body"}}},{"type":"GROUP_UPDATE","resourceId":"update-body","contextId":"app-1:workspace-1:room-2","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-2","request":{"displayName":"Renamed","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"update-body"}}},{"type":"GROUP_DIRECTOR_APPOINT","resourceId":"appoint-body","contextId":"app-1:workspace-1:room-3","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-3","request":{"heartbeatTtlMs":20,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"appoint-body"}}}]',
   );
 });
 
@@ -89,6 +92,15 @@ Deno.test('group aggregate routes preserve body, header, then one generated requ
     })),
     '[["body-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"body-id-group","displayName":"Body","kind":"room","requestId":"body-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}],["header-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"header-id-group","displayName":"Header","kind":"room","requestId":"header-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}],["generated-request",{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"request":{"groupId":"generated-id-group","displayName":"Generated","kind":"room","requestId":"generated-request","createdByPrincipalId":"alice","actorPrincipalId":"alice","actorSessionId":"alice-session"}}]]',
   );
+});
+
+Deno.test('group aggregate request ID UUID stub restores crypto randomUUID observable shape', () => {
+  assert.deepEqual(
+    Object.getOwnPropertyDescriptor(crypto, 'randomUUID'),
+    RANDOM_UUID_DESCRIPTOR_AT_MODULE_LOAD,
+  );
+  assert.equal(crypto.randomUUID, RANDOM_UUID_AT_MODULE_LOAD);
+  assert.notEqual(crypto.randomUUID(), 'generated-request');
 });
 
 Deno.test('group aggregate route waits for AppInbox completion before its normal response', async () => {
@@ -211,6 +223,10 @@ async function withRandomUuid(
   try {
     await action(() => callCount);
   } finally {
-    if (descriptor) Object.defineProperty(crypto, 'randomUUID', descriptor);
+    if (descriptor) {
+      Object.defineProperty(crypto, 'randomUUID', descriptor);
+    } else {
+      Reflect.deleteProperty(crypto, 'randomUUID');
+    }
   }
 }
