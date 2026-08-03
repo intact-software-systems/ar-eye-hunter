@@ -34,6 +34,35 @@ import {
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
+const GROUP_ROUTE = `${API_BASE}/room-1`;
+const MALFORMED_NON_PRESENCE_ROUTE_CASES = [
+  { method: 'POST', path: API_BASE, body: { displayName: 7, kind: 'room', groupId: 'room-2' } },
+  { method: 'PUT', path: GROUP_ROUTE, body: { status: 'unknown' } },
+  { method: 'POST', path: `${GROUP_ROUTE}/director/appoint`, body: { heartbeatTtlMs: 0 } },
+  { method: 'POST', path: `${GROUP_ROUTE}/join`, body: { inviteToken: 7 } },
+  { method: 'POST', path: `${GROUP_ROUTE}/invites/accept`, body: { reason: 7 } },
+  {
+    method: 'POST',
+    path: `${GROUP_ROUTE}/join-code/rotate`,
+    body: { joinCode: '', expiresAtEpochMs: 0 },
+  },
+  {
+    method: 'POST',
+    path: `${GROUP_ROUTE}/invites/bob`,
+    body: { invitationExpiresAtEpochMs: -1 },
+  },
+  { method: 'POST', path: `${GROUP_ROUTE}/invites/bob/revoke`, body: { traceId: 7 } },
+  { method: 'POST', path: `${GROUP_ROUTE}/members/bob/remove`, body: { reason: {} } },
+  { method: 'POST', path: `${GROUP_ROUTE}/members/bob/ban`, body: { requestId: {} } },
+  { method: 'POST', path: `${GROUP_ROUTE}/members/bob/unban`, body: { traceId: [] } },
+  { method: 'PUT', path: `${GROUP_ROUTE}/members/bob/role`, body: { role: 'superuser' } },
+  { method: 'POST', path: `${GROUP_ROUTE}/owner/transfer`, body: { newOwnerPrincipalId: '' } },
+  {
+    method: 'PUT',
+    path: `${GROUP_ROUTE}/members/alice`,
+    body: { status: 'active', invitationExpiresAtEpochMs: -1 },
+  },
+] as const;
 const randomUuidDescriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
 const randomUuidAtModuleLoad = crypto.randomUUID;
 Deno.test('canonical group request reader retains body request ID precedence', async () => {
@@ -353,37 +382,7 @@ Deno.test(
         return Promise.reject(new Error('Malformed request reached group inbox'));
       },
     });
-    const base = '/api/state/apps/app-1/workspaces/workspace-1/groups';
-    const group = `${base}/room-1`;
-    const cases = [
-      { method: 'POST', path: base, body: { displayName: 7, kind: 'room', groupId: 'room-2' } },
-      { method: 'PUT', path: group, body: { status: 'unknown' } },
-      { method: 'POST', path: `${group}/director/appoint`, body: { heartbeatTtlMs: 0 } },
-      { method: 'POST', path: `${group}/join`, body: { inviteToken: 7 } },
-      { method: 'POST', path: `${group}/invites/accept`, body: { reason: 7 } },
-      {
-        method: 'POST',
-        path: `${group}/join-code/rotate`,
-        body: { joinCode: '', expiresAtEpochMs: 0 },
-      },
-      {
-        method: 'POST',
-        path: `${group}/invites/bob`,
-        body: { invitationExpiresAtEpochMs: -1 },
-      },
-      { method: 'POST', path: `${group}/invites/bob/revoke`, body: { traceId: 7 } },
-      { method: 'POST', path: `${group}/members/bob/remove`, body: { reason: {} } },
-      { method: 'POST', path: `${group}/members/bob/ban`, body: { requestId: {} } },
-      { method: 'POST', path: `${group}/members/bob/unban`, body: { traceId: [] } },
-      { method: 'PUT', path: `${group}/members/bob/role`, body: { role: 'superuser' } },
-      { method: 'POST', path: `${group}/owner/transfer`, body: { newOwnerPrincipalId: '' } },
-      {
-        method: 'PUT',
-        path: `${group}/members/alice`,
-        body: { status: 'active', invitationExpiresAtEpochMs: -1 },
-      },
-    ] as const;
-    for (const testCase of cases) {
+    for (const testCase of MALFORMED_NON_PRESENCE_ROUTE_CASES) {
       const response = await app.request(testCase.path, {
         method: testCase.method,
         headers: {

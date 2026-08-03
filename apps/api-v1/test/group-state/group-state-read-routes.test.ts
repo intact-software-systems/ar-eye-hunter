@@ -137,6 +137,7 @@ Deno.test(
   async () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     let hydrationCalls = 0;
+    const warnings: unknown[][] = [];
     const runtime = createGroupStateRouteTestRuntime({
       groupService: { readCurrentSnapshot: () => Promise.resolve(snapshot) },
       hydrateStateSyncSnapshotCaches: () => {
@@ -145,12 +146,22 @@ Deno.test(
       },
     });
 
-    const response = await runtime.app.request(API_BASE);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const originalWarn = console.warn;
+    console.warn = (...arguments_) => warnings.push(arguments_);
+    try {
+      const response = await runtime.app.request(API_BASE);
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), snapshot);
-    assert.equal(hydrationCalls, 1);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), snapshot);
+      assert.equal(hydrationCalls, 1);
+      assert.equal(warnings.length, 1);
+      assert.equal(warnings[0]?.[0], 'Failed to hydrate group state sync snapshot caches');
+      assert.ok(warnings[0]?.[1] instanceof Error);
+      assert.equal(warnings[0][1].message, 'cache observation failed');
+    } finally {
+      console.warn = originalWarn;
+    }
 
     const missing = createGroupStateRouteTestRuntime({
       groupService: { readCurrentSnapshot: () => Promise.resolve(undefined) },
