@@ -1103,11 +1103,13 @@ test ! -e apps/api-v1/src/routes/group-state-route-errors.ts
 npx vitest run packages/tests/repo/api-v1-group-state-route-lineage-provenance.test.ts
 ```
 
-The focused test parses TypeScript source and fails for static imports,
+The focused test parses supported TypeScript and JavaScript source (`ts`,
+`tsx`, `mts`, `cts`, `js`, `mjs`, and `cjs`) and fails for static imports,
 re-exports, dynamic `import()`, and `require()` calls that name either
-compatibility path. Comments, Markdown, and ordinary strings are not module
-specifiers and do not count as active compatibility evidence. A parsed module
-specifier blocks compatibility-file removal until reviewed.
+compatibility path, extensionless or with `.ts`. Comments, Markdown, and
+ordinary strings are not module specifiers and do not count as active
+compatibility evidence. A parsed module specifier blocks compatibility-file
+removal until reviewed.
 
 No performance command is required when the exact Section 9 exemption remains
 true. If it does not, execution stops for an amended performance protocol
