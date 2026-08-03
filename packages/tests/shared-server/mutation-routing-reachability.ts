@@ -44,18 +44,21 @@ export function findMutationRouteReachabilityIssues({
   const operationHandlers = operation
     ? handlers.filter((handler) => isExactGroupStateRouteOperation(handler, enqueueSource, item))
     : handlers;
-  const handoff = operationHandlers
-    .map((handler) => findReachableHandoff({ item, source, enqueueSource, handler, matchesMarker }))
-    .find((candidate) => candidate !== undefined);
+  const handoff = operation
+    ? undefined
+    : operationHandlers
+        .map((handler) =>
+          findReachableHandoff({ item, source, enqueueSource, handler, matchesMarker }),
+        )
+        .find((candidate) => candidate !== undefined);
+  const routeConnected = operation
+    ? operationHandlers.length === 1
+    : Boolean(handoff && hasExpectedTypeWhenExplicit(handoff, item.type, matchesMarker));
   const issues: string[] = [];
   if (operation && operationHandlers.length !== 1) {
     issues.push(`${routeKey} operation is not connected to ${item.enqueueMarker}`);
   }
-  if (
-    !handoff ||
-    !hasExpectedTypeWhenExplicit(handoff, item.type, matchesMarker) ||
-    !hasOwnerCommandDiscriminator(ownerSource, item, containsMarker)
-  ) {
+  if (!routeConnected || !hasOwnerCommandDiscriminator(ownerSource, item, containsMarker)) {
     issues.push(
       `${routeKey} registered handler is not connected to ` +
         `${item.enqueueMarker} with AppInboxType.${item.type}`,

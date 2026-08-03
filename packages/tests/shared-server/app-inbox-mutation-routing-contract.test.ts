@@ -102,28 +102,6 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     );
   });
 
-  it('accepts an exact route installed by a directly called local construction helper', () => {
-    const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
-    const owner = `function registerConnectGroupPresenceRoute(
-  app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
-  authorization: GroupStateRouteAuthorization,
-): void {`;
-    const ownerWithHelper = `${owner}
-  installConnectGroupPresenceRoute(app, dependencies, authorization);
-}
-
-function installConnectGroupPresenceRoute(
-  app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
-  authorization: GroupStateRouteAuthorization,
-): void {`;
-    const mutated = source.replace(owner, ownerWithHelper);
-    expect(mutated).not.toBe(source);
-
-    expect(validateWithOverride(GROUP_PRESENCE_ROUTES, mutated)).toEqual([]);
-  });
-
   it('rejects a membership route constant swapped to the presence path', () => {
     const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');
     const mutated = source.replace(

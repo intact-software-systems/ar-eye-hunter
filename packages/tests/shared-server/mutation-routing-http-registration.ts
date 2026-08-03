@@ -1,9 +1,7 @@
 import {
   findRouteRegistration,
-  hasReachableAstNode,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
-import { hasConstructionReachableNode } from './mutation-routing-construction-reachability.ts';
 
 interface FindHttpRouteHandlerInput {
   readonly program: AstNode;
@@ -30,58 +28,20 @@ export function findExactHttpRouteHandler({
     return direct ? asNodes(direct.arguments)[1] : undefined;
   }
 
-  const registrationOwners = findNamedTopLevelFunctions(program, registrationMarker);
-  if (registrationOwners.length !== 1) return undefined;
-  const registrationOwner = registrationOwners[0]!;
-  const registrations = findAll(
-    program,
-    (node) =>
-      node.type === 'CallExpression' &&
-      readMemberName(asNode(node.callee)) === method &&
-      resolveModuleString(program, asNodes(node.arguments)[0]) === routePath,
-  ).filter((registration) =>
-    hasConstructionReachableNode(program, registrationOwner, registration),
-  );
-  if (registrations.length !== 1) return undefined;
-  return asNodes(registrations[0]?.arguments)[1];
-}
-
-export function readGroupStateRouteOperation(handler: AstNode): string | undefined {
-  const calls = findAll(
-    handler,
-    (node) =>
-      node.type === 'CallExpression' && readCallName(asNode(node.callee)) === 'toGroupStateCommand',
-  );
-  if (calls.length !== 1) return undefined;
-  const commandInput = asNodes(calls[0]?.arguments)[0];
-  if (commandInput?.type !== 'ObjectExpression') return undefined;
-  const operations = asNodes(commandInput.properties)
-    .filter(
-      (property) =>
-        property.type === 'ObjectProperty' && readName(asNode(property.key)) === 'operation',
-    )
-    .map((property) => readString(asNode(property.value)))
-    .filter(Boolean);
-  return operations.length === 1 ? operations[0] : undefined;
-}
-
-export function hasGroupStateTranslatorOperation(
-  program: AstNode,
-  operation: string,
-  expectedType: string,
-): boolean {
-  const cases = findAll(
-    program,
-    (node) => node.type === 'SwitchCase' && readString(asNode(node.test)) === operation,
-  );
-  return (
-    cases.length === 1 &&
-    hasReachableAstNode(
-      program,
-      cases[0]!,
-      (node) => readMemberPath(node) === `AppInboxType.${expectedType}`,
-    )
-  );
+  const owners = findNamedTopLevelFunctions(program, registrationMarker);
+  if (owners.length !== 1) return undefined;
+  const statements = readBlockStatements(asNode(owners[0]?.body));
+  if (statements.length !== 1 || statements[0]?.type !== 'ExpressionStatement') return undefined;
+  const registration = asNode(statements[0].expression);
+  if (
+    registration?.type !== 'CallExpression' ||
+    readMemberObject(registration) !== 'app' ||
+    readMemberName(asNode(registration.callee)) !== method ||
+    resolveModuleString(program, asNodes(registration.arguments)[0]) !== routePath
+  ) {
+    return undefined;
+  }
+  return asNodes(registration.arguments)[1];
 }
 
 export function isExactGroupStateRouteOperation(
@@ -90,11 +50,169 @@ export function isExactGroupStateRouteOperation(
   route: GroupStateRouteOperation,
 ): boolean {
   const operation = route.operationDiscriminant;
-  if (!operation) return false;
-  return (
-    readGroupStateRouteOperation(handler) === operation &&
-    hasGroupStateTranslatorOperation(translator, operation, route.type)
+  return Boolean(
+    operation &&
+    hasExactGroupRouteSubmission(handler, operation) &&
+    hasExactGroupTranslatorOperation(translator, operation, route.type),
   );
+}
+
+function hasExactGroupRouteSubmission(handler: AstNode, operation: string): boolean {
+  const handlerStatements = readBlockStatements(asNode(handler.body));
+  if (handlerStatements.length !== 1 || handlerStatements[0]?.type !== 'TryStatement') {
+    return false;
+  }
+  const tryStatements = readBlockStatements(asNode(handlerStatements[0].block));
+  const calls = readLiveSequentialCalls(tryStatements);
+  if (!calls) return false;
+  const submissions = calls.filter(
+    (call) => readMemberName(asNode(call.callee)) === 'processGroupAppInbox',
+  );
+  if (submissions.length !== 1) return false;
+  const commands = calls.filter(
+    (call) => readCallName(asNode(call.callee)) === 'toGroupStateCommand',
+  );
+  return (
+    commands.length === 1 &&
+    readOperationLiteral(commands[0]) === operation &&
+    isSubmittedCommand(submissions[0]!, commands[0]!, tryStatements)
+  );
+}
+
+function isSubmittedCommand(
+  submission: AstNode,
+  command: AstNode,
+  statements: readonly AstNode[],
+): boolean {
+  if (findCallsOutsideFunctions(submission.arguments).includes(command)) return true;
+  const binding = findCommandBinding(statements, command);
+  return Boolean(binding && hasIdentifierOutsideFunctions(submission.arguments, binding));
+}
+
+function findCommandBinding(statements: readonly AstNode[], command: AstNode): string | undefined {
+  for (const statement of statements) {
+    if (statement.type === 'ReturnStatement' || statement.type === 'ThrowStatement')
+      return undefined;
+    if (statement.type !== 'VariableDeclaration') continue;
+    const binding = asNodes(statement.declarations).find(
+      (declaration) => asNode(declaration.init) === command,
+    );
+    if (binding) return readName(asNode(binding.id)) || undefined;
+  }
+  return undefined;
+}
+
+function hasIdentifierOutsideFunctions(value: unknown, expectedName: string): boolean {
+  let found = false;
+  visitOutsideFunctions(value, (node) => {
+    if (node.type === 'Identifier' && readName(node) === expectedName) found = true;
+  });
+  return found;
+}
+
+function hasExactGroupTranslatorOperation(
+  program: AstNode,
+  operation: string,
+  expectedType: string,
+): boolean {
+  const translators = findNamedTopLevelFunctions(program, 'toGroupStateCommand');
+  if (translators.length !== 1) return false;
+  const statements = readBlockStatements(asNode(translators[0]?.body));
+  if (statements.length !== 1 || statements[0]?.type !== 'SwitchStatement') return false;
+  const cases = asNodes(statements[0].cases).filter(
+    (switchCase) => readString(asNode(switchCase.test)) === operation,
+  );
+  if (cases.length !== 1) return false;
+  const helperName = readSwitchHelperName(cases[0]!);
+  if (!helperName) return false;
+  const helpers = findNamedTopLevelFunctions(program, helperName);
+  if (helpers.length !== 1) return false;
+  const result = readLiveReturnObject(helpers[0]!);
+  return readObjectMemberPath(result, 'type') === `AppInboxType.${expectedType}`;
+}
+
+function readSwitchHelperName(switchCase: AstNode): string | undefined {
+  const consequent = asNodes(switchCase.consequent);
+  if (consequent.length !== 1 || consequent[0]?.type !== 'ReturnStatement') return undefined;
+  const returned = asNode(consequent[0].argument);
+  return returned?.type === 'CallExpression' ? readName(asNode(returned.callee)) : undefined;
+}
+
+function readLiveReturnObject(owner: AstNode): AstNode | undefined {
+  for (const statement of readBlockStatements(asNode(owner.body))) {
+    if (statement.type === 'ReturnStatement') {
+      const returned = asNode(statement.argument);
+      return returned?.type === 'ObjectExpression' ? returned : undefined;
+    }
+    if (statement.type === 'ThrowStatement') return undefined;
+    if (statement.type !== 'VariableDeclaration' && statement.type !== 'ExpressionStatement') {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function readLiveSequentialCalls(statements: readonly AstNode[]): readonly AstNode[] | undefined {
+  const calls: AstNode[] = [];
+  for (const statement of statements) {
+    if (statement.type === 'ReturnStatement') {
+      calls.push(...findCallsOutsideFunctions(statement.argument));
+      return calls;
+    }
+    if (statement.type === 'ThrowStatement') return calls;
+    if (statement.type !== 'VariableDeclaration' && statement.type !== 'ExpressionStatement') {
+      return undefined;
+    }
+    calls.push(...findCallsOutsideFunctions(statement));
+  }
+  return calls;
+}
+
+function findCallsOutsideFunctions(value: unknown): readonly AstNode[] {
+  const calls: AstNode[] = [];
+  visitOutsideFunctions(value, (node) => {
+    if (node.type === 'CallExpression' || node.type === 'OptionalCallExpression') calls.push(node);
+  });
+  return calls;
+}
+
+function visitOutsideFunctions(value: unknown, visitor: (node: AstNode) => void): void {
+  const visit = (current: unknown, isRoot = false): void => {
+    if (!current || typeof current !== 'object') return;
+    if (Array.isArray(current)) {
+      for (const child of current) visit(child);
+      return;
+    }
+    const node = current as AstNode;
+    if (!isRoot && isFunctionNode(node)) return;
+    visitor(node);
+    for (const [name, child] of Object.entries(node)) {
+      if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(name)) visit(child);
+    }
+  };
+  visit(value, true);
+}
+
+function readOperationLiteral(command: AstNode | undefined): string | undefined {
+  const input = asNodes(command?.arguments)[0];
+  if (input?.type !== 'ObjectExpression') return undefined;
+  const values = asNodes(input.properties)
+    .filter(
+      (property) =>
+        property.type === 'ObjectProperty' && readName(asNode(property.key)) === 'operation',
+    )
+    .map((property) => readString(asNode(property.value)))
+    .filter((value): value is string => value !== undefined);
+  return values.length === 1 ? values[0] : undefined;
+}
+
+function readObjectMemberPath(object: AstNode | undefined, propertyName: string): string {
+  if (object?.type !== 'ObjectExpression') return '';
+  const properties = asNodes(object.properties).filter(
+    (property) =>
+      property.type === 'ObjectProperty' && readName(asNode(property.key)) === propertyName,
+  );
+  return properties.length === 1 ? readMemberPath(asNode(properties[0]?.value)) : '';
 }
 
 function resolveModuleString(
@@ -110,18 +228,13 @@ function resolveModuleString(
     if (!name || resolving.has(name)) return undefined;
     const binding = findModuleConst(program, name);
     if (!binding) return undefined;
-    const nextResolving = new Set(resolving).add(name);
-    return resolveModuleString(program, asNode(binding.init), nextResolving);
+    return resolveModuleString(program, asNode(binding.init), new Set(resolving).add(name));
   }
-  if (value.type === 'TemplateLiteral') {
-    return resolveTemplateLiteral(program, value, resolving);
-  }
-  if (value.type === 'BinaryExpression' && value.operator === '+') {
-    const left = resolveModuleString(program, asNode(value.left), resolving);
-    const right = resolveModuleString(program, asNode(value.right), resolving);
-    return left === undefined || right === undefined ? undefined : `${left}${right}`;
-  }
-  return undefined;
+  if (value.type === 'TemplateLiteral') return resolveTemplateLiteral(program, value, resolving);
+  if (value.type !== 'BinaryExpression' || value.operator !== '+') return undefined;
+  const left = resolveModuleString(program, asNode(value.left), resolving);
+  const right = resolveModuleString(program, asNode(value.right), resolving);
+  return left === undefined || right === undefined ? undefined : `${left}${right}`;
 }
 
 function resolveTemplateLiteral(
@@ -167,10 +280,19 @@ function readTopLevelDeclaration(statement: AstNode): AstNode | undefined {
   return statement.type === 'ExportNamedDeclaration' ? asNode(statement.declaration) : statement;
 }
 
+function readBlockStatements(block: AstNode | undefined): readonly AstNode[] {
+  return block?.type === 'BlockStatement' ? asNodes(block.body) : [];
+}
+
 function readTemplateElement(node: AstNode | undefined): string | undefined {
   if (node?.type !== 'TemplateElement') return undefined;
   const value = asNode(node.value);
   return typeof value?.cooked === 'string' ? value.cooked : undefined;
+}
+
+function readMemberObject(call: AstNode): string {
+  const callee = asNode(call.callee);
+  return callee?.type === 'MemberExpression' ? readName(asNode(callee.object)) : '';
 }
 
 function readMemberPath(node: AstNode | undefined): string {
@@ -200,25 +322,15 @@ function readString(node: AstNode | undefined): string | undefined {
   return node && typeof node.value === 'string' ? node.value : undefined;
 }
 
-function findAll(value: unknown, predicate: (node: AstNode) => boolean): AstNode[] {
-  const found: AstNode[] = [];
-  visit(value, (node) => {
-    if (predicate(node)) found.push(node);
-  });
-  return found;
-}
-
-function visit(value: unknown, visitor: (node: AstNode) => void): void {
-  if (!value || typeof value !== 'object') return;
-  if (Array.isArray(value)) {
-    for (const child of value) visit(child, visitor);
-    return;
-  }
-  const node = value as AstNode;
-  if (typeof node.type === 'string') visitor(node);
-  for (const [key, child] of Object.entries(node)) {
-    if (!['loc', 'start', 'end', 'comments', 'tokens'].includes(key)) visit(child, visitor);
-  }
+function isFunctionNode(node: AstNode): boolean {
+  return [
+    'FunctionDeclaration',
+    'FunctionExpression',
+    'ArrowFunctionExpression',
+    'ObjectMethod',
+    'ClassMethod',
+    'ClassPrivateMethod',
+  ].includes(node.type);
 }
 
 function asNode(value: unknown): AstNode | undefined {
