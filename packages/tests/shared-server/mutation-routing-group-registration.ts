@@ -15,6 +15,43 @@ interface DirectRouteRegistration {
   readonly routePath: string;
 }
 
+interface DirectOwnerCall {
+  readonly argumentNames: readonly string[];
+  readonly ownerName: string;
+}
+
+const ROOT_FAMILY_CALLS = [
+  ['registerGroupStateReadRoutes', 'app', 'resolvedDependencies', 'authorization'],
+  ['registerGroupStateMutationRoutes', 'app', 'resolvedDependencies', 'authorization'],
+  ['registerGroupAdmissionRoutes', 'app', 'resolvedDependencies'],
+  ['registerGroupMembershipRoutes', 'app', 'resolvedDependencies', 'authorization'],
+  ['registerGroupPresenceRoutes', 'app', 'resolvedDependencies', 'authorization'],
+] as const;
+
+export function hasExactGroupRegistrationRoot(program: AstNode, rootOwnerName: string): boolean {
+  const roots = findExportedFunctions(program, rootOwnerName);
+  if (roots.length !== 1) return false;
+  const root = roots[0]!;
+  if (!sameNames(readParameterNames(root), ['app', 'dependencies'])) return false;
+  const statements = readBlockStatements(asNode(root.body));
+  if (statements.length !== 2 + ROOT_FAMILY_CALLS.length) return false;
+  if (
+    !hasExactConstCall(statements[0], 'resolvedDependencies', 'createGroupStateRouteDependencies', [
+      'dependencies',
+    ])
+  )
+    return false;
+  if (
+    !hasExactConstCall(statements[1], 'authorization', 'createGroupStateRouteAuthorization', [
+      'resolvedDependencies',
+    ])
+  )
+    return false;
+  return ROOT_FAMILY_CALLS.every(([name, ...argumentNames], index) =>
+    isExactDirectCall(statements[index + 2], name, argumentNames),
+  );
+}
+
 export function findDirectGroupRouteHandler({
   program,
   method,
@@ -24,9 +61,12 @@ export function findDirectGroupRouteHandler({
 }: FindGroupRouteHandlerInput): AstNode | undefined {
   const familyOwners = findExportedFunctions(program, familyOwnerName);
   if (familyOwners.length !== 1) return undefined;
-  const calledOwners = readDirectFamilyOwnerCalls(familyOwners[0]!);
-  if (!calledOwners || count(calledOwners, privateOwnerName) !== 1) return undefined;
-  if (!hasOnlyDirectRouteOwners(program, calledOwners)) return undefined;
+  const familyOwner = familyOwners[0]!;
+  const familyParameters = readParameterNames(familyOwner);
+  if (!sameNames(familyParameters, expectedFamilyParameters(familyOwnerName))) return undefined;
+  const calledOwners = readDirectFamilyOwnerCalls(familyOwner);
+  if (!calledOwners || countOwnerCalls(calledOwners, privateOwnerName) !== 1) return undefined;
+  if (!hasOnlyDirectRouteOwners(program, calledOwners, familyParameters)) return undefined;
   const exact = readAllDirectRegistrations(program).filter(
     (registration) => registration.method === method && registration.routePath === routePath,
   );
@@ -35,24 +75,93 @@ export function findDirectGroupRouteHandler({
     : undefined;
 }
 
-function readDirectFamilyOwnerCalls(owner: AstNode): readonly string[] | undefined {
-  const calledOwners: string[] = [];
+function readDirectFamilyOwnerCalls(owner: AstNode): readonly DirectOwnerCall[] | undefined {
+  const calledOwners: DirectOwnerCall[] = [];
   for (const statement of readBlockStatements(asNode(owner.body))) {
     if (statement.type !== 'ExpressionStatement') return undefined;
     const call = asNode(statement.expression);
     if (call?.type !== 'CallExpression') return undefined;
     const callee = asNode(call.callee);
     if (callee?.type !== 'Identifier') return undefined;
-    calledOwners.push(readName(callee));
+    const argumentNames = asNodes(call.arguments).map(readName);
+    if (argumentNames.some((name) => !name)) return undefined;
+    calledOwners.push({ argumentNames, ownerName: readName(callee) });
   }
   return calledOwners.length > 0 ? calledOwners : undefined;
 }
 
-function hasOnlyDirectRouteOwners(program: AstNode, ownerNames: readonly string[]): boolean {
-  return ownerNames.every((ownerName) => {
-    const owners = findTopLevelFunctions(program, ownerName);
-    return owners.length === 1 && readDirectRegistration(program, owners[0]!) !== undefined;
+function hasOnlyDirectRouteOwners(
+  program: AstNode,
+  calls: readonly DirectOwnerCall[],
+  familyParameters: readonly string[],
+): boolean {
+  return calls.every((call) => {
+    const owners = findTopLevelFunctions(program, call.ownerName);
+    if (owners.length !== 1) return false;
+    const parameters = readParameterNames(owners[0]!);
+    return (
+      parameters.every((name) => familyParameters.includes(name)) &&
+      sameNames(call.argumentNames, parameters) &&
+      readDirectRegistration(program, owners[0]!) !== undefined
+    );
   });
+}
+
+function hasExactConstCall(
+  statement: AstNode | undefined,
+  bindingName: string,
+  callName: string,
+  argumentNames: readonly string[],
+): boolean {
+  if (statement?.type !== 'VariableDeclaration' || statement.kind !== 'const') return false;
+  const declarations = asNodes(statement.declarations);
+  if (declarations.length !== 1 || readName(asNode(declarations[0]?.id)) !== bindingName)
+    return false;
+  const call = asNode(declarations[0]?.init);
+  return call?.type === 'CallExpression' && isExactCall(call, callName, argumentNames);
+}
+
+function isExactDirectCall(
+  statement: AstNode | undefined,
+  callName: string,
+  argumentNames: readonly string[],
+): boolean {
+  return (
+    statement?.type === 'ExpressionStatement' &&
+    isExactCall(asNode(statement.expression), callName, argumentNames)
+  );
+}
+
+function isExactCall(
+  call: AstNode | undefined,
+  callName: string,
+  argumentNames: readonly string[],
+): boolean {
+  return (
+    call?.type === 'CallExpression' &&
+    asNode(call.callee)?.type === 'Identifier' &&
+    readName(asNode(call.callee)) === callName &&
+    sameNames(asNodes(call.arguments).map(readName), argumentNames)
+  );
+}
+
+function expectedFamilyParameters(familyOwnerName: string): readonly string[] {
+  return familyOwnerName === 'registerGroupAdmissionRoutes'
+    ? ['app', 'dependencies']
+    : ['app', 'dependencies', 'authorization'];
+}
+
+function readParameterNames(owner: AstNode): readonly string[] {
+  return asNodes(owner.params).map((parameter) => {
+    const binding = parameter.type === 'AssignmentPattern' ? asNode(parameter.left) : parameter;
+    return readName(binding);
+  });
+}
+
+function sameNames(actual: readonly string[], expected: readonly string[]): boolean {
+  return (
+    actual.length === expected.length && actual.every((name, index) => name === expected[index])
+  );
 }
 
 function readAllDirectRegistrations(program: AstNode): readonly DirectRouteRegistration[] {
@@ -176,8 +285,8 @@ function readString(node: AstNode | undefined): string | undefined {
   return node && typeof node.value === 'string' ? node.value : undefined;
 }
 
-function count(values: readonly string[], expected: string): number {
-  return values.filter((value) => value === expected).length;
+function countOwnerCalls(calls: readonly DirectOwnerCall[], expected: string): number {
+  return calls.filter((call) => call.ownerName === expected).length;
 }
 
 function asNode(value: unknown): AstNode | undefined {

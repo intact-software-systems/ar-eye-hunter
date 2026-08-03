@@ -10,6 +10,7 @@ const PATHS = {
   ga: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
   gm: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
   gp: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
+  gr: 'apps/api-v1/src/group-state/register-group-state-routes.ts',
   gs: 'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
   gc: 'apps/api-v1/src/group-state/to-group-state-command.ts',
   t: 'apps/api-v1/src/routes/graph-topology-routes.ts',
@@ -24,6 +25,20 @@ const PATHS = {
   s: 'packages/shared-server/rallar-system/ws-system-topics.ts',
   d: 'packages/shared-server/crdt/RallarCrdtServer.ts',
 } as const;
+
+interface InventoryOwnerPathAliases {
+  readonly dispatchSource: string;
+  readonly owner: string;
+  readonly ownerSource: string;
+  readonly typeOwnerSource: string;
+}
+
+interface InventoryOwnerPaths {
+  readonly dispatchSourcePath?: string;
+  readonly ownerDispatchPath?: string;
+  readonly ownerSourcePath?: string;
+  readonly typeOwnerSourcePath?: string;
+}
 
 export function decodeMutationRouteInventory(rows: string): readonly MutationRouteInventoryEntry[] {
   return rows.trim().split('\n').map(toMutationRouteInventoryEntry);
@@ -44,19 +59,16 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     dispatchSource,
     operationDiscriminant,
     familyRegistrationMarker,
+    constructionRootSource,
+    constructionRootMarker,
   ] = row.split('\t');
   const sourcePath = PATHS[source as keyof typeof PATHS];
   const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
-  const ownerSourcePath =
-    MUTATION_ROUTE_OWNER_PATHS[ownerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS];
-  const ownerDispatchPath =
-    MUTATION_ROUTE_OWNER_DISPATCH_PATHS[owner as keyof typeof MUTATION_ROUTE_OWNER_DISPATCH_PATHS];
-  const typeOwnerSourcePath = typeOwnerSource
-    ? MUTATION_ROUTE_OWNER_PATHS[typeOwnerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
-    : ownerSourcePath;
-  const dispatchSourcePath = dispatchSource
-    ? MUTATION_ROUTE_OWNER_PATHS[dispatchSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
-    : ownerSourcePath;
+  const constructionRootSourcePath = constructionRootSource
+    ? PATHS[constructionRootSource as keyof typeof PATHS]
+    : undefined;
+  const { ownerSourcePath, ownerDispatchPath, typeOwnerSourcePath, dispatchSourcePath } =
+    resolveInventoryOwnerPaths({ dispatchSource, owner, ownerSource, typeOwnerSource });
   const appInboxType = AppInboxType[type as keyof typeof AppInboxType];
   if (
     !sourcePath ||
@@ -65,7 +77,8 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     !ownerDispatchPath ||
     !typeOwnerSourcePath ||
     !dispatchSourcePath ||
-    !appInboxType
+    !appInboxType ||
+    (Boolean(familyRegistrationMarker) && (!constructionRootSourcePath || !constructionRootMarker))
   ) {
     throw new Error(`Invalid mutation route inventory row: ${row}`);
   }
@@ -84,5 +97,30 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     dispatchSourcePath,
     operationDiscriminant,
     familyRegistrationMarker,
+    constructionRootSourcePath,
+    constructionRootMarker,
+  };
+}
+
+function resolveInventoryOwnerPaths({
+  dispatchSource,
+  owner,
+  ownerSource,
+  typeOwnerSource,
+}: InventoryOwnerPathAliases): InventoryOwnerPaths {
+  const ownerSourcePath =
+    MUTATION_ROUTE_OWNER_PATHS[ownerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS];
+  return {
+    ownerSourcePath,
+    ownerDispatchPath:
+      MUTATION_ROUTE_OWNER_DISPATCH_PATHS[
+        owner as keyof typeof MUTATION_ROUTE_OWNER_DISPATCH_PATHS
+      ],
+    typeOwnerSourcePath: typeOwnerSource
+      ? MUTATION_ROUTE_OWNER_PATHS[typeOwnerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
+      : ownerSourcePath,
+    dispatchSourcePath: dispatchSource
+      ? MUTATION_ROUTE_OWNER_PATHS[dispatchSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
+      : ownerSourcePath,
   };
 }

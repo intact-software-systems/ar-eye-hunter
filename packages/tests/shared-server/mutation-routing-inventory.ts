@@ -4,6 +4,7 @@ import { parse } from '@babel/parser';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import { findAstNode, type MutationRoutingAstNode } from './mutation-routing-call-graph.ts';
 import { findExactHttpRouteHandler } from './mutation-routing-http-registration.ts';
+import { hasExactGroupRegistrationRoot } from './mutation-routing-group-registration.ts';
 import { decodeMutationRouteInventory } from './mutation-routing-inventory-decoding.ts';
 import { findMutationRouteReachabilityIssues } from './mutation-routing-reachability.ts';
 import { MUTATION_ROUTE_INVENTORY_ROWS } from './mutation-routing-owner-inventory.ts';
@@ -23,6 +24,8 @@ export interface MutationRouteInventoryEntry {
   readonly dispatchSourcePath: string;
   readonly operationDiscriminant?: string;
   readonly familyRegistrationMarker?: string;
+  readonly constructionRootSourcePath?: string;
+  readonly constructionRootMarker?: string;
 }
 
 export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] =
@@ -40,6 +43,22 @@ interface AstMarkerCheckInput {
   readonly item: MutationRouteInventoryEntry;
   readonly sources: SourceReader;
 }
+
+const CANONICAL_INVENTORY_FIELDS = [
+  'owner',
+  'sourcePath',
+  'registrationMarker',
+  'enqueueSourcePath',
+  'enqueueMarker',
+  'ownerSourcePath',
+  'ownerDispatchPath',
+  'typeOwnerSourcePath',
+  'dispatchSourcePath',
+  'operationDiscriminant',
+  'familyRegistrationMarker',
+  'constructionRootSourcePath',
+  'constructionRootMarker',
+] as const;
 
 export function validateMutationRouteInventory(
   inventory: readonly MutationRouteInventoryEntry[],
@@ -64,19 +83,7 @@ export function validateMutationRouteInventory(
       issues.push(`Unknown mutation route: ${key(item)}`);
       continue;
     }
-    for (const field of [
-      'owner',
-      'sourcePath',
-      'registrationMarker',
-      'enqueueSourcePath',
-      'enqueueMarker',
-      'ownerSourcePath',
-      'ownerDispatchPath',
-      'typeOwnerSourcePath',
-      'dispatchSourcePath',
-      'operationDiscriminant',
-      'familyRegistrationMarker',
-    ] as const) {
+    for (const field of CANONICAL_INVENTORY_FIELDS) {
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
     }
     checkRegistration(issues, item, sources);
@@ -124,6 +131,9 @@ function checkRegistration(
   const [method, routePath] = item.entrypoint.split(' ');
   const program = sources.readProgram(issues, item.sourcePath, 'registration', item);
   if (!program) return;
+  const rootProgram = item.constructionRootSourcePath
+    ? sources.readProgram(issues, item.constructionRootSourcePath, 'registration root', item)
+    : undefined;
   const handler = findExactHttpRouteHandler({
     program,
     method: method.toLowerCase(),
@@ -131,7 +141,14 @@ function checkRegistration(
     registrationMarker: item.registrationMarker,
     familyRegistrationMarker: item.familyRegistrationMarker,
   });
-  if (!handler) {
+  const hasRoot =
+    !item.familyRegistrationMarker ||
+    Boolean(
+      rootProgram &&
+      item.constructionRootMarker &&
+      hasExactGroupRegistrationRoot(rootProgram, item.constructionRootMarker),
+    );
+  if (!handler || !hasRoot) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
   }
 }
