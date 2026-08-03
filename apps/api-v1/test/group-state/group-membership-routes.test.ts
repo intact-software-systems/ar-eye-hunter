@@ -5,18 +5,20 @@ import {
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
-import type {
-  GroupStateRouteAuthSession,
-  ProcessGroupAppInbox,
-} from '../../src/group-state/group-state-route-contracts.ts';
+import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
 
 import {
+  captureGroupStateRouteWrite,
   createGroupStateRouteAuthSession,
   createGroupStateRouteSnapshot,
   createGroupStateRouteTestDependencies,
   createGroupStateRouteTestRuntime,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestRuntime,
+  postGroupStateMutation,
+  putGroupStateMutation,
   TEST_GROUP_SCOPE,
-  toGroupStateWritten,
   withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
@@ -112,38 +114,38 @@ Deno.test('group membership routes retain every AppInbox envelope and self-servi
   const enqueued: unknown[] = [];
   const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
   const runtime = createGroupStateRouteTestRuntime({
-    processGroupAppInbox: captureGroupStateWrite(enqueued, snapshot),
+    processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
   });
 
   const responses = [
-    await requestGroupMutation(runtime.app, `${API_BASE}/members/bob/remove`, 'POST', {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/remove`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'remove-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/members/bob/ban`, 'POST', {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/ban`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'ban-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/members/bob/unban`, 'POST', {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/unban`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'unban-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/members/bob/role`, 'PUT', {
+    await putGroupStateMutation(runtime.app, `${API_BASE}/members/bob/role`, {
       role: 'admin',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'role-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/owner/transfer`, 'POST', {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/owner/transfer`, {
       newOwnerPrincipalId: 'bob',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'transfer-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/members/alice`, 'PUT', {
+    await putGroupStateMutation(runtime.app, `${API_BASE}/members/alice`, {
       status: 'active',
       role: 'admin',
       actorPrincipalId: 'forged-actor',
@@ -161,38 +163,12 @@ Deno.test('group membership routes retain every AppInbox envelope and self-servi
   );
 });
 
-function captureGroupStateWrite(
-  enqueued: unknown[],
-  snapshot: ReturnType<typeof createGroupStateRouteSnapshot>,
-): ProcessGroupAppInbox {
-  return <V, R>(
-    _authority: GroupStateRouteAuthSession,
-    entry: AppInboxEnqueueInput<V>,
-  ): Promise<R> => {
-    enqueued.push(entry);
-    return Promise.resolve(toGroupStateWritten(snapshot) as R);
-  };
-}
-
-async function requestGroupMutation(
-  app: ReturnType<typeof createGroupStateRouteTestRuntime>['app'],
-  path: string,
-  method: 'POST' | 'PUT',
-  body: Record<string, unknown>,
-): Promise<Response> {
-  return await app.request(path, {
-    method,
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
 Deno.test('group governance routes enqueue safe workflows with authenticated actors', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
-    const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
     const enqueued: AppInboxEnqueueInput<unknown>[] = [];
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {},
       processGroupAppInbox: <V, R>(
         _authority: GroupStateRouteAuthSession,

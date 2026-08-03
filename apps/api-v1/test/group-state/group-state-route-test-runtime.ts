@@ -45,6 +45,11 @@ export interface GroupStateRouteTestRuntime {
   readonly session: AuthSession & GroupStateRouteAuthSession;
 }
 
+export interface GroupStateRoutePostRequestWithHeaders {
+  readonly body: Record<string, unknown>;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
 export function createGroupStateRouteTestRuntime(
   input: GroupStateRouteTestRuntimeInput = {},
 ): GroupStateRouteTestRuntime {
@@ -63,6 +68,14 @@ export function createGroupStateRouteTestRuntime(
   return { app, session };
 }
 
+export function createPredecessorGroupStateRouteTestRuntime(
+  input: GroupStateRouteTestRuntimeInput = {},
+): GroupStateRouteTestRuntime {
+  const session = input.session ?? createPredecessorGroupStateRouteAuthSession('alice');
+  const processGroupAppInbox = input.processGroupAppInbox ?? rejectUnexpectedGroupMutation;
+  return createGroupStateRouteTestRuntime({ ...input, session, processGroupAppInbox });
+}
+
 export function createGroupStateRouteTestDependencies(
   input: GroupStateRouteTestRuntimeInput = {},
 ): ResolvedGroupStateRouteDependencies {
@@ -77,6 +90,14 @@ export function createGroupStateRouteTestDependencies(
   };
 }
 
+export function createPredecessorGroupStateRouteTestDependencies(
+  input: GroupStateRouteTestRuntimeInput = {},
+): ResolvedGroupStateRouteDependencies {
+  const session = input.session ?? createPredecessorGroupStateRouteAuthSession('alice');
+  const processGroupAppInbox = input.processGroupAppInbox ?? rejectUnexpectedGroupMutation;
+  return createGroupStateRouteTestDependencies({ ...input, session, processGroupAppInbox });
+}
+
 export function createGroupStateRouteAuthSession(
   clientId: string,
 ): AuthSession & GroupStateRouteAuthSession {
@@ -87,6 +108,19 @@ export function createGroupStateRouteAuthSession(
     sessionId: `${clientId}-session`,
     issuedAtEpochMs: 1,
     expiresAtEpochMs: 60_000,
+  };
+}
+
+export function createPredecessorGroupStateRouteAuthSession(
+  clientId: string,
+): AuthSession & GroupStateRouteAuthSession {
+  return {
+    clientId,
+    accessToken: 'token',
+    username: clientId,
+    sessionId: `${clientId}-session`,
+    issuedAtEpochMs: Date.now() - 1_000,
+    expiresAtEpochMs: Date.now() + 60_000,
   };
 }
 
@@ -129,6 +163,21 @@ export function createGroupStateRouteSnapshot(
     activeSessions: [],
     memberCount: activePrincipalIds.length,
     onlineMemberCount: 0,
+  };
+}
+
+export function createPredecessorGroupStateRouteSnapshot(
+  groupId: string,
+  activePrincipalIds: readonly string[] = ['alice'],
+): GroupSnapshot {
+  const snapshot = createGroupStateRouteSnapshot(groupId, activePrincipalIds);
+  const ownerPrincipalId = activePrincipalIds[0] ?? 'alice';
+  return {
+    ...snapshot,
+    members: snapshot.members.map((member) => ({
+      ...member,
+      role: member.principalId === ownerPrincipalId ? 'owner' : 'member',
+    })),
   };
 }
 
@@ -203,6 +252,55 @@ export function toGroupStateWritten(snapshot: GroupSnapshot): GroupStateWritten 
   };
 }
 
+export function captureGroupStateRouteWrite(
+  enqueued: unknown[],
+  snapshot: GroupSnapshot,
+): ProcessGroupAppInbox {
+  return <V, R>(
+    _authority: GroupStateRouteAuthSession,
+    entry: AppInboxEnqueueInput<V>,
+  ): Promise<R> => {
+    enqueued.push(entry);
+    return Promise.resolve(toGroupStateWritten(snapshot) as R);
+  };
+}
+
+export async function postGroupStateMutation(
+  app: Hono,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return await app.request(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function putGroupStateMutation(
+  app: Hono,
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  return await app.request(path, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function postGroupStateMutationWithHeaders(
+  app: Hono,
+  path: string,
+  request: GroupStateRoutePostRequestWithHeaders,
+): Promise<Response> {
+  return await app.request(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...request.headers },
+    body: JSON.stringify(request.body),
+  });
+}
+
 function createGroupStateRouteService(
   groupService: Partial<GroupStateRouteService> | undefined,
 ): GroupStateRouteService {
@@ -221,6 +319,9 @@ const defaultProcessGroupAppInbox: ProcessGroupAppInbox = <V, R>(
   _authority: GroupStateRouteAuthSession,
   _enqueue: AppInboxEnqueueInput<V>,
 ): Promise<R> => Promise.resolve(toGroupStateWritten(createGroupStateRouteSnapshot('room-1')) as R);
+
+const rejectUnexpectedGroupMutation: ProcessGroupAppInbox = () =>
+  Promise.reject(new Error('Unexpected group mutation'));
 
 function createGroupStateRouteMember(groupId: string, principalId: string): GroupMember {
   return {

@@ -29,6 +29,15 @@ export function registerGroupStateMutationRoutes(
   dependencies: ResolvedGroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
+  registerCreateGroupRoute(app, dependencies);
+  registerUpdateGroupRoute(app, dependencies, authorization);
+  registerAppointGroupDirectorRoute(app, dependencies);
+}
+
+function registerCreateGroupRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups',
     async (context) => {
@@ -57,7 +66,13 @@ export function registerGroupStateMutationRoutes(
       }
     },
   );
+}
 
+function registerUpdateGroupRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): void {
   app.put(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId',
     async (context) => {
@@ -88,7 +103,12 @@ export function registerGroupStateMutationRoutes(
       }
     },
   );
+}
 
+function registerAppointGroupDirectorRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/director/appoint',
     async (context) => {

@@ -19,6 +19,9 @@ import {
   createGroupStateRouteSnapshotWithMember,
   createGroupStateRouteTestDependencies,
   createGroupStateRouteTestRuntime,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestRuntime,
   withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
@@ -192,10 +195,10 @@ Deno.test(
 
 Deno.test('strict state read routes allow active group members and reject non-members', async () => {
   await withStrictGroupStateRouteReadAuth(true, async () => {
-    const memberSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
-    const nonMemberSnapshot = createGroupStateRouteSnapshot('room-2', ['bob']);
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const memberSnapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+    const nonMemberSnapshot = createPredecessorGroupStateRouteSnapshot('room-2', ['bob']);
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         readSnapshot: (ref: { groupId: string }) =>
           Promise.resolve(
@@ -222,8 +225,8 @@ Deno.test('strict state read routes allow active group members and reject non-me
 
 Deno.test('group snapshot reads probe durable state instead of trusting a warm cache', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
-    const staleSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
-    const currentSnapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
+    const staleSnapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+    const currentSnapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
     let cachedReadCount = 0;
     let currentReadCount = 0;
     const groupService = {
@@ -236,8 +239,8 @@ Deno.test('group snapshot reads probe durable state instead of trusting a warm c
         return Promise.resolve(currentSnapshot);
       },
     };
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService,
     });
 
@@ -260,8 +263,8 @@ Deno.test('strict group reads reject banned members for snapshots and events', a
       'alice',
       'banned',
     );
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         readSnapshot: () => Promise.resolve(bannedSnapshot),
         listEvents: () => Promise.reject(new Error('banned member read leaked')),
@@ -292,8 +295,8 @@ Deno.test('strict group reads use shared full-state visibility policy', async ()
       'invited',
     );
     const deletedSnapshot = createDeletedGroupStateRouteSnapshot('room-deleted', 'alice');
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         readSnapshot: (ref: { groupId: string }) =>
           Promise.resolve(

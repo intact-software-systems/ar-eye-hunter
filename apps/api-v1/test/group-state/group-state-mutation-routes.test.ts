@@ -1,14 +1,34 @@
-// deno-fmt-ignore-file
 import assert from 'node:assert/strict';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { GroupCreateAppInboxPayload, GroupUpdateAppInboxPayload } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { type AppInboxEnqueueInput, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type {
+  GroupCreateAppInboxPayload,
+  GroupUpdateAppInboxPayload,
+} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import {
+  type AppInboxEnqueueInput,
+  AppInboxType,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { readGroupStateRouteRequest } from '../../src/group-state/read-group-state-route-request.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
-import type { GroupStateRouteAuthSession, ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
-import { createGroupStateRouteAuthSession, createGroupStateRouteSnapshot, createGroupStateRouteTestDependencies, createGroupStateRouteTestRuntime, TEST_GROUP_SCOPE, toGroupStateWritten, withStrictGroupStateRouteReadAuth } from './group-state-route-test-runtime.ts';
+import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
+import {
+  captureGroupStateRouteWrite,
+  createGroupStateRouteAuthSession,
+  createGroupStateRouteSnapshot,
+  createGroupStateRouteTestDependencies,
+  createGroupStateRouteTestRuntime,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestRuntime,
+  postGroupStateMutation,
+  postGroupStateMutationWithHeaders,
+  putGroupStateMutation,
+  TEST_GROUP_SCOPE,
+  toGroupStateWritten,
+  withStrictGroupStateRouteReadAuth,
+} from './group-state-route-test-runtime.ts';
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
 const RANDOM_UUID_DESCRIPTOR_AT_MODULE_LOAD = Object.getOwnPropertyDescriptor(
   crypto,
@@ -124,10 +144,10 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
   const snapshot = createGroupStateRouteSnapshot('room-1');
   const runtime = createGroupStateRouteTestRuntime({
     groupService: { readSnapshot: () => Promise.resolve(snapshot) },
-    processGroupAppInbox: captureGroupStateWrite(enqueued, snapshot),
+    processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
   });
   const responses = [
-    await requestGroupMutation(runtime.app, API_BASE, 'POST', {
+    await postGroupStateMutation(runtime.app, API_BASE, {
       groupId: 'room/1',
       displayName: 'Room',
       kind: 'room',
@@ -136,13 +156,13 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
       actorSessionId: 'forged-session',
       requestId: 'create-body',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/room-2`, 'PUT', {
+    await putGroupStateMutation(runtime.app, `${API_BASE}/room-2`, {
       displayName: 'Renamed',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'update-body',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/room-3/director/appoint`, 'POST', {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/room-3/director/appoint`, {
       heartbeatTtlMs: 20,
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
@@ -163,21 +183,27 @@ Deno.test(
     const enqueued: unknown[] = [];
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
-      processGroupAppInbox: captureGroupStateWrite(enqueued, snapshot),
+      processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
     });
     await withRandomUuid('generated-request', async (readRandomCallCount) => {
-      const bodyResponse = await requestGroupMutation(runtime.app, API_BASE, 'POST', {
-        groupId: 'body-id-group',
-        displayName: 'Body',
-        kind: 'room',
-        requestId: 'body-request',
-      }, { 'Idempotency-Key': 'header-request' });
-      const headerResponse = await requestGroupMutation(runtime.app, API_BASE, 'POST', {
-        groupId: 'header-id-group',
-        displayName: 'Header',
-        kind: 'room',
-      }, { 'Idempotency-Key': 'header-request' });
-      const generatedResponse = await requestGroupMutation(runtime.app, API_BASE, 'POST', {
+      const bodyResponse = await postGroupStateMutationWithHeaders(runtime.app, API_BASE, {
+        body: {
+          groupId: 'body-id-group',
+          displayName: 'Body',
+          kind: 'room',
+          requestId: 'body-request',
+        },
+        headers: { 'Idempotency-Key': 'header-request' },
+      });
+      const headerResponse = await postGroupStateMutationWithHeaders(runtime.app, API_BASE, {
+        body: {
+          groupId: 'header-id-group',
+          displayName: 'Header',
+          kind: 'room',
+        },
+        headers: { 'Idempotency-Key': 'header-request' },
+      });
+      const generatedResponse = await postGroupStateMutation(runtime.app, API_BASE, {
         groupId: 'generated-id-group',
         displayName: 'Generated',
         kind: 'room',
@@ -223,7 +249,7 @@ Deno.test(
           resolveCompletion = () => resolve(toGroupStateWritten(snapshot) as R);
         }),
     });
-    const responsePromise = requestGroupMutation(runtime.app, API_BASE, 'POST', {
+    const responsePromise = postGroupStateMutation(runtime.app, API_BASE, {
       groupId: 'room-1',
       displayName: 'Room',
       kind: 'room',
@@ -250,7 +276,7 @@ Deno.test(
         return Promise.resolve(undefined as never);
       },
     });
-    const response = await requestGroupMutation(runtime.app, API_BASE, 'POST', {
+    const response = await postGroupStateMutation(runtime.app, API_BASE, {
       groupId: 'room-1',
       displayName: 'Room',
       kind: 'room',
@@ -271,7 +297,7 @@ Deno.test(
     const runtime = createGroupStateRouteTestRuntime({
       processGroupAppInbox: () => Promise.reject(failure),
     });
-    const response = await requestGroupMutation(runtime.app, API_BASE, 'POST', {
+    const response = await postGroupStateMutation(runtime.app, API_BASE, {
       groupId: 'room-1',
       displayName: 'Room',
       kind: 'room',
@@ -283,31 +309,6 @@ Deno.test(
     );
   },
 );
-function captureGroupStateWrite(
-  enqueued: unknown[],
-  snapshot: ReturnType<typeof createGroupStateRouteSnapshot>,
-): ProcessGroupAppInbox {
-  return <V, R>(
-    _authority: GroupStateRouteAuthSession,
-    entry: AppInboxEnqueueInput<V>,
-  ): Promise<R> => {
-    enqueued.push(entry);
-    return Promise.resolve(toGroupStateWritten(snapshot) as R);
-  };
-}
-async function requestGroupMutation(
-  app: ReturnType<typeof createGroupStateRouteTestRuntime>['app'],
-  path: string,
-  method: 'POST' | 'PUT',
-  body: Record<string, unknown>,
-  headers: Record<string, string> = {},
-): Promise<Response> {
-  return await app.request(path, {
-    method,
-    headers: { 'content-type': 'application/json', ...headers },
-    body: JSON.stringify(body),
-  });
-}
 async function withRandomUuid(
   value: string,
   action: (readCallCount: () => number) => Promise<void>,
@@ -333,13 +334,13 @@ async function withRandomUuid(
 }
 Deno.test('all non-presence group REST mutations reject malformed bodies before inbox enqueue', async () => {
   const processCalls: unknown[] = [];
-  const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+  const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
   const ownerSnapshot: GroupSnapshot = {
     ...snapshot,
     members: snapshot.members.map((member) => ({ ...member, role: 'owner' as const })),
   };
-  const { app } = createGroupStateRouteTestRuntime({
-    session: createGroupStateRouteAuthSession('alice'),
+  const { app } = createPredecessorGroupStateRouteTestRuntime({
+    session: createPredecessorGroupStateRouteAuthSession('alice'),
     groupService: {
       readSnapshot: () => Promise.resolve(ownerSnapshot),
     },

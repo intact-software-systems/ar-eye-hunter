@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {
   createGroupStateRouteSnapshot,
   createGroupStateRouteTestRuntime,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestRuntime,
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
@@ -142,6 +145,42 @@ Deno.test('group state route registration matches all 21 public method and path 
     const response = await requestRegisteredGroupStateRoute(runtime.app, expected);
     assert.equal(response.status, expected.status, `${expected.method} ${expected.path}`);
   }
+});
+
+Deno.test('moved group route auth retains predecessor token and timing shape', () => {
+  const before = Date.now();
+  const session = createPredecessorGroupStateRouteAuthSession('alice');
+  const after = Date.now();
+
+  assert.equal(session.accessToken, 'token');
+  assert.ok(session.issuedAtEpochMs >= before - 1_000);
+  assert.ok(session.issuedAtEpochMs <= after - 1_000);
+  assert.ok(session.expiresAtEpochMs >= before + 60_000);
+  assert.ok(session.expiresAtEpochMs <= after + 60_000);
+});
+
+Deno.test('moved group snapshots retain first-active-principal ownership', () => {
+  const snapshot = createPredecessorGroupStateRouteSnapshot('room-2', ['bob']);
+
+  assert.equal(snapshot.group.ownerPrincipalId, 'bob');
+  assert.equal(snapshot.members[0]?.role, 'owner');
+});
+
+Deno.test('moved group route runtime rejects unexpected mutations by default', async () => {
+  const { app } = createPredecessorGroupStateRouteTestRuntime();
+  const response = await app.request(API_BASE, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      groupId: 'room-2',
+      displayName: 'Room 2',
+      kind: 'room',
+      requestId: 'unexpected-mutation',
+    }),
+  });
+
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Unexpected group mutation/);
 });
 
 async function requestRegisteredGroupStateRoute(

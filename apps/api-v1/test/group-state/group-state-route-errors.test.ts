@@ -12,6 +12,9 @@ import {
   createGroupStateRouteAuthSession,
   createGroupStateRouteSnapshot,
   createGroupStateRouteTestRuntime,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestRuntime,
   withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
@@ -77,8 +80,8 @@ Deno.test('group route adapter preserves canonical AppInbox status code and mess
     denial: null,
     retry: null,
   });
-  const { app } = createGroupStateRouteTestRuntime({
-    session: createGroupStateRouteAuthSession('alice'),
+  const { app } = createPredecessorGroupStateRouteTestRuntime({
+    session: createPredecessorGroupStateRouteAuthSession('alice'),
     groupService: {},
     processGroupAppInbox: () => Promise.reject(toGroupAppInboxError(failure)),
   });
@@ -110,8 +113,8 @@ Deno.test('group route adapter preserves canonical AppInbox status code and mess
 
 Deno.test('group state routes return stable policy error codes when available', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         listSnapshots: () =>
           Promise.reject(
@@ -142,15 +145,15 @@ Deno.test('group state routes return stable policy error codes when available', 
 
 Deno.test('group mutation routes return stable lifecycle policy error codes', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
-    const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const ownerSnapshot: GroupSnapshot = {
       ...snapshot,
       members: snapshot.members.map((member) =>
         member.principalId === 'alice' ? { ...member, role: 'owner' as const } : member
       ),
     };
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         readSnapshot: () => Promise.resolve(ownerSnapshot),
       },
@@ -196,15 +199,15 @@ Deno.test('group route adapter reconstructs a legacy AppInbox policy denial with
     message: 'Invite required.',
     details: { groupId: 'room-1' },
   });
-  const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+  const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
   const ownerSnapshot: GroupSnapshot = {
     ...snapshot,
     members: snapshot.members.map((member) =>
       member.principalId === 'alice' ? { ...member, role: 'owner' as const } : member
     ),
   };
-  const { app } = createGroupStateRouteTestRuntime({
-    session: createGroupStateRouteAuthSession('alice'),
+  const { app } = createPredecessorGroupStateRouteTestRuntime({
+    session: createPredecessorGroupStateRouteAuthSession('alice'),
     groupService: {
       readSnapshot: () => Promise.resolve(ownerSnapshot),
     },

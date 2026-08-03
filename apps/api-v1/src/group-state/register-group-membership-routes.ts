@@ -34,6 +34,18 @@ export function registerGroupMembershipRoutes(
   dependencies: ResolvedGroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
+  registerRemoveGroupMemberRoute(app, dependencies);
+  registerBanGroupMemberRoute(app, dependencies);
+  registerUnbanGroupMemberRoute(app, dependencies);
+  registerSetGroupMemberRoleRoute(app, dependencies);
+  registerTransferGroupOwnershipRoute(app, dependencies);
+  registerUpsertSelfGroupMemberRoute(app, dependencies, authorization);
+}
+
+function registerRemoveGroupMemberRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     `${GROUP_MEMBER_PATH}/remove`,
     async (context) => {
@@ -66,7 +78,12 @@ export function registerGroupMembershipRoutes(
       }
     },
   );
+}
 
+function registerBanGroupMemberRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     `${GROUP_MEMBER_PATH}/ban`,
     async (context) => {
@@ -99,7 +116,12 @@ export function registerGroupMembershipRoutes(
       }
     },
   );
+}
 
+function registerUnbanGroupMemberRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     `${GROUP_MEMBER_PATH}/unban`,
     async (context) => {
@@ -132,7 +154,12 @@ export function registerGroupMembershipRoutes(
       }
     },
   );
+}
 
+function registerSetGroupMemberRoleRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.put(
     `${GROUP_MEMBER_PATH}/role`,
     async (context) => {
@@ -165,7 +192,12 @@ export function registerGroupMembershipRoutes(
       }
     },
   );
+}
 
+function registerTransferGroupOwnershipRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/owner/transfer',
     async (context) => {
@@ -196,7 +228,13 @@ export function registerGroupMembershipRoutes(
       }
     },
   );
+}
 
+function registerUpsertSelfGroupMemberRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): void {
   app.put(
     GROUP_MEMBER_PATH,
     async (context) => {

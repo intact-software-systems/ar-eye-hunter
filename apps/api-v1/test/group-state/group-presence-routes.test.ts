@@ -13,6 +13,9 @@ import {
   createGroupStateRouteSnapshot,
   createGroupStateRouteTestDependencies,
   createGroupStateRouteTestRuntime,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestRuntime,
   TEST_GROUP_SCOPE,
   withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
@@ -267,9 +270,9 @@ async function requestPresenceMutation(
 
 Deno.test('group REST presence lifecycle requires a valid generation before enqueue', async () => {
   const processCalls: unknown[] = [];
-  const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
-  const { app } = createGroupStateRouteTestRuntime({
-    session: createGroupStateRouteAuthSession('alice'),
+  const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+  const { app } = createPredecessorGroupStateRouteTestRuntime({
+    session: createPredecessorGroupStateRouteAuthSession('alice'),
     groupService: {
       readCurrentSnapshot: () => Promise.resolve(snapshot),
     },

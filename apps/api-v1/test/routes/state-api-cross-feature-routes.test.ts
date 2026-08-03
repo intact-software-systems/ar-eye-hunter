@@ -18,14 +18,15 @@ import {
 } from '../client-state/client-state-route-test-runtime.ts';
 import {
   createGroupStateRouteEvent,
-  createGroupStateRouteSnapshot,
-  createGroupStateRouteTestDependencies,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestDependencies,
 } from '../group-state/group-state-route-test-runtime.ts';
 
 Deno.test('state read routes hydrate process snapshot caches after successful client and group REST reads', async () => {
   await withStrictReadAuth(false, async () => {
     const clientSnapshot = createClientSnapshot('alice');
-    const groupSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const groupSnapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const hydrationInputs: unknown[] = [];
     const clientDeps = createClientRouteDeps({
       session: createAuthSession('alice'),
@@ -37,8 +38,8 @@ Deno.test('state read routes hydrate process snapshot caches after successful cl
         return Promise.resolve({ clientSnapshotCount: 1, groupSnapshotCount: 0 });
       },
     });
-    const groupDeps = createGroupStateRouteTestDependencies({
-      session: createAuthSession('alice'),
+    const groupDeps = createPredecessorGroupStateRouteTestDependencies({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         readSnapshot: () => Promise.resolve(groupSnapshot),
       },
@@ -87,8 +88,8 @@ Deno.test('state event page routes call paged services instead of full-history l
         listEventPage: () => Promise.resolve(clientPage),
       },
     });
-    const groupDeps = createGroupStateRouteTestDependencies({
-      session: createAuthSession('alice'),
+    const groupDeps = createPredecessorGroupStateRouteTestDependencies({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         listEvents: () => Promise.reject(new Error('full group history should not be loaded')),
         listEventPage: () => Promise.resolve(groupPage),
@@ -131,8 +132,8 @@ Deno.test('state event array routes call bounded recent services instead of full
         },
       },
     });
-    const groupDeps = createGroupStateRouteTestDependencies({
-      session: createAuthSession('alice'),
+    const groupDeps = createPredecessorGroupStateRouteTestDependencies({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {
         listEvents: () => Promise.reject(new Error('full group history should not be loaded')),
         listRecentEvents: (_ref, query) => {

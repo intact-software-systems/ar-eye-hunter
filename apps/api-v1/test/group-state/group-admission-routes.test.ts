@@ -1,11 +1,25 @@
-// deno-fmt-ignore-file
 import assert from 'node:assert/strict';
 import { Either } from '@shared/resilience/Either.ts';
-import { type AppInboxEnqueueInput, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import {
+  type AppInboxEnqueueInput,
+  AppInboxType,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
-import type { GroupStateRouteAuthSession, ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
-import { createGroupStateRouteAuthSession, createGroupStateRouteEvent, createGroupStateRouteSnapshot, createGroupStateRouteTestDependencies, createGroupStateRouteTestRuntime, TEST_GROUP_SCOPE, toGroupStateWritten, withStrictGroupStateRouteReadAuth } from './group-state-route-test-runtime.ts';
+import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
+import {
+  captureGroupStateRouteWrite,
+  createGroupStateRouteAuthSession,
+  createGroupStateRouteEvent,
+  createGroupStateRouteSnapshot,
+  createGroupStateRouteTestRuntime,
+  createPredecessorGroupStateRouteAuthSession,
+  createPredecessorGroupStateRouteSnapshot,
+  createPredecessorGroupStateRouteTestRuntime,
+  postGroupStateMutation,
+  TEST_GROUP_SCOPE,
+  withStrictGroupStateRouteReadAuth,
+} from './group-state-route-test-runtime.ts';
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
 Deno.test('group admission commands retain every authenticated AppInbox envelope', () => {
   const authSession = createGroupStateRouteAuthSession('alice');
@@ -102,35 +116,35 @@ Deno.test('group admission routes retain every AppInbox envelope and actor overr
   const enqueued: unknown[] = [];
   const snapshot = createGroupStateRouteSnapshot('room-1');
   const runtime = createGroupStateRouteTestRuntime({
-    processGroupAppInbox: captureGroupStateWrite(enqueued, snapshot),
+    processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
   });
   const responses = [
-    await requestGroupMutation(runtime.app, `${API_BASE}/join`, {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/join`, {
       inviteToken: 'invite-1',
       joinCode: 'code-1',
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'join-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/invites/accept`, {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/invites/accept`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'accept-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/join-code/rotate`, {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/join-code/rotate`, {
       joinCode: 'next-code',
       expiresAtEpochMs: 2000,
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'rotate-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/invites/bob`, {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/invites/bob`, {
       invitationExpiresAtEpochMs: 2000,
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'invite-request',
     }),
-    await requestGroupMutation(runtime.app, `${API_BASE}/invites/bob/revoke`, {
+    await postGroupStateMutation(runtime.app, `${API_BASE}/invites/bob/revoke`, {
       actorPrincipalId: 'forged-actor',
       actorSessionId: 'forged-session',
       requestId: 'revoke-request',
@@ -144,29 +158,12 @@ Deno.test('group admission routes retain every AppInbox envelope and actor overr
     '[{"type":"GROUP_JOIN","resourceId":"join-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"inviteToken":"invite-1","joinCode":"code-1","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"join-request"}}},{"type":"GROUP_INVITE_ACCEPT","resourceId":"accept-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"accept-request"}}},{"type":"GROUP_JOIN_CODE_ROTATE","resourceId":"rotate-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"joinCode":"next-code","expiresAtEpochMs":2000,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"rotate-request"}}},{"type":"GROUP_INVITE_CREATE","resourceId":"invite-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"invitationExpiresAtEpochMs":2000,"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"invite-request"}}},{"type":"GROUP_INVITE_REVOKE","resourceId":"revoke-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"revoke-request"}}}]',
   );
 });
-function captureGroupStateWrite(enqueued: unknown[], snapshot: ReturnType<typeof createGroupStateRouteSnapshot>): ProcessGroupAppInbox {
-  return <V, R>(_authority: GroupStateRouteAuthSession, entry: AppInboxEnqueueInput<V>): Promise<R> => {
-    enqueued.push(entry);
-    return Promise.resolve(toGroupStateWritten(snapshot) as R);
-  };
-}
-async function requestGroupMutation(
-  app: ReturnType<typeof createGroupStateRouteTestRuntime>['app'],
-  path: string,
-  body: Record<string, unknown>,
-): Promise<Response> {
-  return await app.request(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
 Deno.test('group join route enqueues explicit join intent with authenticated actor', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
-    const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const enqueued: AppInboxEnqueueInput<unknown>[] = [];
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {},
       processGroupAppInbox: <V, R>(
         _authority: GroupStateRouteAuthSession,
@@ -222,10 +219,10 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
 });
 Deno.test('group invite routes enqueue safe invite workflows with authenticated actors', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
-    const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const enqueued: AppInboxEnqueueInput<unknown>[] = [];
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {},
       processGroupAppInbox: <V, R>(
         _authority: GroupStateRouteAuthSession,
@@ -335,15 +332,15 @@ Deno.test('group invite routes enqueue safe invite workflows with authenticated 
 });
 Deno.test('group join-code route enqueues rotation workflow with authenticated actor', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
-    const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const responseBody = {
       joinCode: 'code-1',
       expiresAtEpochMs: 2_000,
       snapshot,
     };
     const enqueued: AppInboxEnqueueInput<unknown>[] = [];
-    const { app } = createGroupStateRouteTestRuntime({
-      session: createGroupStateRouteAuthSession('alice'),
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {},
       processGroupAppInbox: <V, R>(
         _authority: GroupStateRouteAuthSession,

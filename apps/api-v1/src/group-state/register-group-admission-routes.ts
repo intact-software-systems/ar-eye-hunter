@@ -32,6 +32,17 @@ export function registerGroupAdmissionRoutes(
   app: Hono,
   dependencies: ResolvedGroupStateRouteDependencies,
 ): void {
+  registerJoinGroupRoute(app, dependencies);
+  registerAcceptGroupInviteRoute(app, dependencies);
+  registerRotateGroupJoinCodeRoute(app, dependencies);
+  registerCreateGroupInviteRoute(app, dependencies);
+  registerRevokeGroupInviteRoute(app, dependencies);
+}
+
+function registerJoinGroupRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join',
     async (context) => {
@@ -62,7 +73,12 @@ export function registerGroupAdmissionRoutes(
       }
     },
   );
+}
 
+function registerAcceptGroupInviteRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/accept',
     async (context) => {
@@ -93,7 +109,12 @@ export function registerGroupAdmissionRoutes(
       }
     },
   );
+}
 
+function registerRotateGroupJoinCodeRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join-code/rotate',
     async (context) => {
@@ -124,7 +145,12 @@ export function registerGroupAdmissionRoutes(
       }
     },
   );
+}
 
+function registerCreateGroupInviteRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId',
     async (context) => {
@@ -157,7 +183,12 @@ export function registerGroupAdmissionRoutes(
       }
     },
   );
+}
 
+function registerRevokeGroupInviteRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+): void {
   app.post(
     `${GROUP_INVITE_PATH}/revoke`,
     async (context) => {

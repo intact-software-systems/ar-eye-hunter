@@ -32,6 +32,16 @@ export function registerGroupPresenceRoutes(
   dependencies: ResolvedGroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
+  registerConnectGroupPresenceRoute(app, dependencies, authorization);
+  registerHeartbeatGroupPresenceRoute(app, dependencies, authorization);
+  registerDisconnectGroupPresenceRoute(app, dependencies, authorization);
+}
+
+function registerConnectGroupPresenceRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): void {
   app.put(
     GROUP_PRESENCE_PATH,
     async (context) => {
@@ -70,7 +80,13 @@ export function registerGroupPresenceRoutes(
       }
     },
   );
+}
 
+function registerHeartbeatGroupPresenceRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): void {
   app.post(
     `${GROUP_PRESENCE_PATH}/heartbeat`,
     async (context) => {
@@ -109,7 +125,13 @@ export function registerGroupPresenceRoutes(
       }
     },
   );
+}
 
+function registerDisconnectGroupPresenceRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): void {
   app.post(
     `${GROUP_PRESENCE_PATH}/disconnect`,
     async (context) => {
