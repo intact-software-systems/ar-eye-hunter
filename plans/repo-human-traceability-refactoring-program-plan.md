@@ -90,10 +90,18 @@ feature `b579aa56bc656b12f3717f2b02c0e24de9244357` and tree
 `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`; default workflow
 `30741608017` attempt 1 succeeded for that exact SHA. The linked
 [server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
-is drafted and unapproved. It adds durable navigation and stronger guidance in
-PR A, then behavior-neutral protocol, transaction-owner, presence-decision,
-timing-inventory, and naming corrections in PR B. Both hardening PRs now precede
-the server's evidence ledger; the later API-v1 child remains gated.
+is complete through guidance/navigation PR #64 and behavior-neutral runtime PR
+#65. PR #64 feature `6ce2bcce85f3a03446c847f4b07689c1c0b1e70e` and tree
+`00d475e7d40bed7060567ee391ffe1041fba443a` passed Branch Release Gate
+`30748239173` attempt 1, then squash-merged as exact `main`
+`49237d8bb75d2239569aa4e3d43f8b88db799602` with the same tree; default workflow
+`30749273740` attempt 1 succeeded for that exact SHA. PR #65 feature
+`a7e429274a8776b8e1cc842da9c472a12feee224` and tree
+`c1cd8fd529efec6486acb34f0d79e084e33141d0` passed Branch Release Gate
+`30755181882` attempt 1, then squash-merged as exact `main`
+`5a6ffd385655af75b28aa22feb5a7103f87862a0` with the same tree; default workflow
+`30774354577` attempt 1 succeeded for that exact SHA. The separate server
+evidence-ledger publication is pending; the API-v1 child remains gated.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -113,7 +121,8 @@ Approved execution decision on 2026-07-28:
   may use one pull request with clearly separated commit series for those two
   passes.
 
-Publication and progress reconciliation on 2026-07-28:
+Publication and progress reconciliation, begun on 2026-07-28 and cumulatively
+updated through the current ledger:
 
 - The initial direct program-document publication resolved to
   `4ec117db1e09e00f86ed8f66cbf8adab1cdeb4a9`
@@ -183,8 +192,9 @@ Publication and progress reconciliation on 2026-07-28:
   `30694693554` attempt 1 passed for that feature SHA. It squash-merged as
   exact `main` SHA `06e0c5ab138c2ab55ac519b2244f727acd42d560`; **Run Hetzner
   Supported Distributed Manifests** run `30697799787` attempt 1 passed for
-  that exact SHA. The server implementation is published; the traceability QA
-  child and later evidence ledger remain pending.
+  that exact SHA. The server structure, traceability QA, and traceability
+  hardening implementations are complete; their separate evidence-ledger
+  publication remains pending.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -768,9 +778,9 @@ published. The
 [server traceability hardening plan](rallar-group-state-server-traceability-hardening-plan.md)
 adds a fifth child with durable navigation/guidance first and behavior-neutral
 protocol, transaction-owner, presence-decision, timing-inventory, semantic-
-ratchet, and naming work second. The server ledger waits for both hardening PRs
-so it describes the reviewed server result, not only the earlier structural and
-QA publications.
+ratchet, and naming work second. Its PR #64 and PR #65 envelopes are complete,
+so the pending server ledger now describes the reviewed server result, not only
+the earlier structural and QA publications.
 
 Acceptance requires that a human can start at `RallarRoomsFacade.create`, find
 the one room/group-state translation, continue to the API route and AppInbox,
@@ -1053,13 +1063,22 @@ to write, review, approve, execute, and hand off these child plans in order:
     `30741608017` attempt 1 success;
   - checker behavior, public/persisted contracts, and API-v1 organization stayed
     unchanged.
-- [ ] [Rallar group-state server traceability hardening](rallar-group-state-server-traceability-hardening-plan.md)
-  - state: drafted and unapproved; no implementation branch, goal, or PR exists;
+- [x] [Rallar group-state server traceability hardening](rallar-group-state-server-traceability-hardening-plan.md)
+  - state: PR #64 feature `6ce2bcce85f3a03446c847f4b07689c1c0b1e70e`, tree
+    `00d475e7d40bed7060567ee391ffe1041fba443a`, Branch Release Gate
+    `30748239173` attempt 1, resulting `main`
+    `49237d8bb75d2239569aa4e3d43f8b88db799602`, and default workflow
+    `30749273740` attempt 1 are complete; PR #65 feature
+    `a7e429274a8776b8e1cc842da9c472a12feee224`, tree
+    `c1cd8fd529efec6486acb34f0d79e084e33141d0`, Branch Release Gate
+    `30755181882` attempt 1, resulting `main`
+    `5a6ffd385655af75b28aa22feb5a7103f87862a0`, and default workflow
+    `30774354577` attempt 1 are complete;
   - PR A: human-traceability guidance and durable colocated navigation;
   - PR B: behavior-neutral discriminated protocol mapping, named transaction
     writer port, handler-owned presence transaction choice, closed timing
     inventory, semantic ratchets, and internal naming alignment;
-  - both PRs precede the pending server evidence ledger.
+  - the separate five-plan server evidence-ledger publication is pending.
 - [ ] `plans/api-v1-group-state-route-structure-plan.md`
   - route split and descriptive registration symbols;
   - request defaults and request-to-command translation;
@@ -1111,7 +1130,8 @@ implementation is published through PR #59 and exact resulting `main` SHA
 `06e0c5ab138c2ab55ac519b2244f727acd42d560`. Its traceability QA
 implementation is published through PR #61 and PR #62, ending at exact `main`
 `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5` with default workflow
-`30741608017` attempt 1 success. The traceability hardening child is drafted and
-unapproved; its guidance/navigation PR and behavior-neutral runtime PR now
-precede the server ledger. The API-v1 child remains unstarted and may not be
-drafted until the server ledger is `ledger-published`.
+`30741608017` attempt 1 success. The traceability hardening child is complete
+through PR #64 and PR #65, whose exact resulting-main workflows are
+`30749273740` and `30774354577`, both attempt 1 successes. The separate server
+evidence-ledger publication is pending. The API-v1 child remains unstarted and
+may not be drafted until that ledger is `ledger-published`.

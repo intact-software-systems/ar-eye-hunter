@@ -16,8 +16,9 @@ every runtime and public contract fixed while exposing the construction and
 AppInbox-to-result timelines through descriptive symbols, complete dependency
 registration, a focused inbox translation owner, an immutable transaction
 result, narrow handler capabilities, and an explicit timing adapter instead of
-dynamic service dispatch. The two PRs publish independently; the server
-child's later evidence ledger waits for both.
+dynamic service dispatch. The two PRs publish independently; after the
+completed hardening successor, the separate server evidence-ledger publication
+remains pending.
 
 **Tech Stack:** Markdown repo skills and plans, TypeScript 7.0.2, Vitest,
 `@babel/parser`, Deno, AppInbox, Git, and GitHub Actions.
@@ -64,8 +65,8 @@ child's later evidence ledger waits for both.
   separately approved governance child.
 - The linked
   [server traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md)
-  is a separately approved successor with two implementation PRs. The later
-  server evidence ledger waits for both hardening envelopes. The API-v1 child
+  is a separately approved successor with two completed implementation PRs. The
+  separate server evidence-ledger publication is pending. The API-v1 child
   remains blocked until that ledger is `ledger-published`.
 
 ---
@@ -78,8 +79,8 @@ feature `b579aa56bc656b12f3717f2b02c0e24de9244357` and tree
 `30739771277` attempt 1, then squash-merged as exact `main`
 `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`; default workflow
 `30741608017` attempt 1 succeeded for that exact SHA. The linked traceability
-hardening child is drafted and unapproved. The later server ledger remains
-pending.
+hardening child completed PR #64 and PR #65. The separate server-ledger
+publication remains pending.
 
 ## 1. Prerequisite And Scope Boundary
 
@@ -105,9 +106,12 @@ The QA planning and PR A prerequisite evidence is exact:
   `23aee4769fa49f623f8114073ea8c132e3f25671` plus the explicitly authorized
   Task 1 seven-owner test-tree and `package.json` registration amendment;
 - planning PR #60 published feature head
-  `8ccf9af6f97b6eb6df95d3f10286e8eca6d5a99e`; its squash result was
-  `2f7390c2b422a2b33f0ca781ecef8de9abd86a25`, tree
-  `25facef7df020b8021495449805d54429b45dc1e`;
+  `8ccf9af6f97b6eb6df95d3f10286e8eca6d5a99e`, frozen tree
+  `25facef7df020b8021495449805d54429b45dc1e`, and Branch Release Gate run
+  `30701430162`, attempt 1, success for that exact head; its squash result was
+  `2f7390c2b422a2b33f0ca781ecef8de9abd86a25` with the same tree, and **Run
+  Hetzner Supported Distributed Manifests** run `30702193681`, attempt 1,
+  succeeded for that exact resulting-main SHA;
 - the effective plan blob after the approved amendment and PR A merge is
   `13d0059c9fa1377bd15a1d384ad3c4a7137479f7`;
 - PR A #61 published feature head
@@ -1791,10 +1795,10 @@ never relabels or invalidates a frozen implementation tree.
       `30739771277` attempt 1, resulting `main`
       `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, and default workflow
       `30741608017` attempt 1.
-- [ ] The separately approved traceability hardening child published both
-      implementation envelopes.
+- [x] The separately approved traceability hardening child published both
+      implementation envelopes through PR #64 and PR #65.
 - [ ] Later server ledger reached `ledger-published`.
-- [ ] API-v1 remained unstarted throughout this QA child.
+- [x] API-v1 remained unstarted throughout this QA child.
 
 ## 13. Risks And Stop Conditions
 
@@ -1832,8 +1836,8 @@ never relabels or invalidates a frozen implementation tree.
 | PR B Task 10        | complete and independently accepted | Milestone `41ae45afa268d186e65dfe0188be7f146ee80f7e`, tree `c6373a00e686bae64f7bc5b3361798fbfb105f98`, Critical 0 / Important 0 / Minor 0.                                                                                                                                                                               |
 | PR B Task 11        | complete                            | Final candidate `b579aa56bc656b12f3717f2b02c0e24de9244357` and tree `3a7d80a3a9c522ba4954168be5f380aee04f871b` passed the governed comparison, final validation, and independent review recorded in PR #62's external evidence.                                                                                          |
 | PR B Task 12        | published                           | PR #62 exact feature head passed Branch Release Gate `30739771277` attempt 1, squash-merged as `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, and default workflow `30741608017` attempt 1 succeeded for that exact SHA.                                                                                                    |
-| Hardening successor | drafted; unapproved                 | [Hardening child](rallar-group-state-server-traceability-hardening-plan.md) defines sequential guidance/navigation and behavior-neutral runtime PRs. No implementation work exists.                                                                                                                                      |
-| Server later ledger | pending                             | Waits for both hardening implementation publication envelopes and separate authorization. No ledger branch or evidence exists.                                                                                                                                                                                           |
+| Hardening successor | complete                            | [Hardening child](rallar-group-state-server-traceability-hardening-plan.md) completed PR #64 and PR #65; the published envelopes are recorded in that child.                                                                                                                                                             |
+| Server later ledger | pending publication                 | Separately authorized five-plan ledger records the already-existing implementation envelopes only; its own future publication evidence remains external.                                                                                                                                                                 |
 | API-v1 child        | blocked and unstarted               | Waits for the server ledger to be `ledger-published`.                                                                                                                                                                                                                                                                    |
 
 ## 15. Planning Self-Review Record
