@@ -11,7 +11,14 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 
-import * as groupStateRoutes from '../../src/routes/group-state-routes.ts';
+import { registerGroupStateRoutes } from '../../src/group-state/register-group-state-routes.ts';
+import type {
+  GroupStateRouteAuthSession,
+  GroupStateRouteDependencies,
+  GroupStateRouteService,
+  ProcessGroupAppInbox,
+  ResolvedGroupStateRouteDependencies,
+} from '../../src/group-state/group-state-route-contracts.ts';
 
 export const TEST_GROUP_SCOPE: StateScope = {
   applicationId: 'app-1',
@@ -19,15 +26,15 @@ export const TEST_GROUP_SCOPE: StateScope = {
 };
 
 export interface GroupStateRouteTestRuntimeInput {
-  readonly session?: AuthSession & groupStateRoutes.GroupStateRouteAuthSession;
-  readonly groupService?: Partial<groupStateRoutes.GroupStateRouteService>;
-  readonly requireApiAuthSession?: groupStateRoutes.GroupStateRouteDependencies[
+  readonly session?: AuthSession & GroupStateRouteAuthSession;
+  readonly groupService?: Partial<GroupStateRouteService>;
+  readonly requireApiAuthSession?: GroupStateRouteDependencies[
     'requireApiAuthSession'
   ];
-  readonly processGroupAppInbox?: groupStateRoutes.GroupStateRouteDependencies[
+  readonly processGroupAppInbox?: GroupStateRouteDependencies[
     'processGroupAppInbox'
   ];
-  readonly hydrateStateSyncSnapshotCaches?: groupStateRoutes.GroupStateRouteDependencies[
+  readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteDependencies[
     'hydrateStateSyncSnapshotCaches'
   ];
   readonly installStateAuthentication?: boolean;
@@ -35,37 +42,44 @@ export interface GroupStateRouteTestRuntimeInput {
 
 export interface GroupStateRouteTestRuntime {
   readonly app: Hono;
-  readonly session: AuthSession & groupStateRoutes.GroupStateRouteAuthSession;
+  readonly session: AuthSession & GroupStateRouteAuthSession;
 }
 
 export function createGroupStateRouteTestRuntime(
   input: GroupStateRouteTestRuntimeInput = {},
 ): GroupStateRouteTestRuntime {
   const session = input.session ?? createGroupStateRouteAuthSession('alice');
+  const routeDependencies = createGroupStateRouteTestDependencies({ ...input, session });
+  const app = new Hono();
+
+  if (input.installStateAuthentication ?? true) {
+    app.use('/api/state/*', async (context, next) => {
+      await routeDependencies.requireApiAuthSession(context.req);
+      await next();
+    });
+  }
+
+  registerGroupStateRoutes(app, routeDependencies);
+  return { app, session };
+}
+
+export function createGroupStateRouteTestDependencies(
+  input: GroupStateRouteTestRuntimeInput = {},
+): ResolvedGroupStateRouteDependencies {
+  const session = input.session ?? createGroupStateRouteAuthSession('alice');
   const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
-  const routeDependencies: groupStateRoutes.GroupStateRouteDependencies = {
+  return {
     getGroupStateService: () => createGroupStateRouteService(input.groupService),
     requireApiAuthSession,
     processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
       (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
   };
-  const app = new Hono();
-
-  if (input.installStateAuthentication ?? true) {
-    app.use('/api/state/*', async (context, next) => {
-      await requireApiAuthSession(context.req);
-      await next();
-    });
-  }
-
-  groupStateRoutes.init(app, routeDependencies);
-  return { app, session };
 }
 
 export function createGroupStateRouteAuthSession(
   clientId: string,
-): AuthSession & groupStateRoutes.GroupStateRouteAuthSession {
+): AuthSession & GroupStateRouteAuthSession {
   return {
     clientId,
     accessToken: 'test-token',
@@ -118,6 +132,53 @@ export function createGroupStateRouteSnapshot(
   };
 }
 
+export function createGroupStateRouteSnapshotWithMember(
+  groupId: string,
+  principalId: string,
+  status: GroupMember['status'],
+): GroupSnapshot {
+  const snapshot = createGroupStateRouteSnapshot(groupId, status === 'active' ? [principalId] : []);
+  return {
+    ...snapshot,
+    members: [createGroupStateRouteMemberWithStatus(groupId, principalId, status)],
+    memberCount: status === 'active' ? 1 : 0,
+    onlineMemberCount: 0,
+  };
+}
+
+export function createDeletedGroupStateRouteSnapshot(
+  groupId: string,
+  principalId: string,
+): GroupSnapshot {
+  const snapshot = createGroupStateRouteSnapshot(groupId, [principalId]);
+  return {
+    ...snapshot,
+    group: {
+      ...snapshot.group,
+      status: 'deleted',
+      archived: null,
+      deleted: testAuditStamp(2),
+    },
+  };
+}
+
+export async function withStrictGroupStateRouteReadAuth(
+  enabled: boolean,
+  action: () => Promise<void>,
+): Promise<void> {
+  const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
+  Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', enabled ? 'true' : 'false');
+  try {
+    await action();
+  } finally {
+    if (previous === undefined) {
+      Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
+    } else {
+      Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', previous);
+    }
+  }
+}
+
 export function createGroupStateRouteEvent(eventId: string): GroupEvent {
   return {
     ...TEST_GROUP_SCOPE,
@@ -143,8 +204,8 @@ export function toGroupStateWritten(snapshot: GroupSnapshot): GroupStateWritten 
 }
 
 function createGroupStateRouteService(
-  groupService: Partial<groupStateRoutes.GroupStateRouteService> | undefined,
-): groupStateRoutes.GroupStateRouteService {
+  groupService: Partial<GroupStateRouteService> | undefined,
+): GroupStateRouteService {
   const readSnapshot = groupService?.readSnapshot ?? (() => Promise.resolve(undefined));
   return {
     listSnapshots: () => Promise.resolve([]),
@@ -153,11 +214,11 @@ function createGroupStateRouteService(
     listEvents: () => Promise.resolve([]),
     listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
     ...groupService,
-  } as groupStateRoutes.GroupStateRouteService;
+  } as GroupStateRouteService;
 }
 
-const defaultProcessGroupAppInbox: groupStateRoutes.ProcessGroupAppInbox = <V, R>(
-  _authority: groupStateRoutes.GroupStateRouteAuthSession,
+const defaultProcessGroupAppInbox: ProcessGroupAppInbox = <V, R>(
+  _authority: GroupStateRouteAuthSession,
   _enqueue: AppInboxEnqueueInput<V>,
 ): Promise<R> => Promise.resolve(toGroupStateWritten(createGroupStateRouteSnapshot('room-1')) as R);
 
@@ -176,6 +237,29 @@ function createGroupStateRouteMember(groupId: string, principalId: string): Grou
     invitedByPrincipalId: null,
     invitationExpiresAtEpochMs: null,
   };
+}
+
+function createGroupStateRouteMemberWithStatus(
+  groupId: string,
+  principalId: string,
+  status: GroupMember['status'],
+): GroupMember {
+  const auditStamp = testAuditStamp(1);
+  const joined = status === 'invited' ? null : auditStamp;
+  return {
+    ...TEST_GROUP_SCOPE,
+    groupId,
+    principalId,
+    role: 'member',
+    status,
+    joined,
+    updated: auditStamp,
+    left: status === 'left' ? auditStamp : null,
+    removed: status === 'removed' ? auditStamp : null,
+    banned: status === 'banned' ? auditStamp : null,
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
+  } as GroupMember;
 }
 
 function testAuditStamp(atEpochMs: number): AuditStamp {

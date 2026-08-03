@@ -3,13 +3,18 @@ import assert from 'node:assert/strict';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
-import * as groupStateRoutes from '../../src/routes/group-state-routes.ts';
+import type {
+  GroupStateRouteAuthSession,
+  ProcessGroupAppInbox,
+} from '../../src/group-state/group-state-route-contracts.ts';
 
 import {
   createGroupStateRouteAuthSession,
   createGroupStateRouteSnapshot,
+  createGroupStateRouteTestDependencies,
   createGroupStateRouteTestRuntime,
   TEST_GROUP_SCOPE,
+  withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE =
@@ -234,9 +239,9 @@ Deno.test('group presence route rejects a receipt before its cleanup read', asyn
   assert.equal(currentSnapshotReads, 0);
 });
 
-function capturePresenceReceipt(enqueued: unknown[]): groupStateRoutes.ProcessGroupAppInbox {
+function capturePresenceReceipt(enqueued: unknown[]): ProcessGroupAppInbox {
   return <V, R>(
-    _authority: groupStateRoutes.GroupStateRouteAuthSession,
+    _authority: GroupStateRouteAuthSession,
     entry: AppInboxEnqueueInput<V>,
   ): Promise<R> => {
     enqueued.push(entry);
@@ -259,3 +264,82 @@ async function requestPresenceMutation(
     body: JSON.stringify(body),
   });
 }
+
+Deno.test('group REST presence lifecycle requires a valid generation before enqueue', async () => {
+  const processCalls: unknown[] = [];
+  const snapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+  const { app } = createGroupStateRouteTestRuntime({
+    session: createGroupStateRouteAuthSession('alice'),
+    groupService: {
+      readCurrentSnapshot: () => Promise.resolve(snapshot),
+    },
+    processGroupAppInbox: (_authority, input) => {
+      processCalls.push(input);
+      return Promise.resolve({
+        outcome: 'applied',
+        causalRevision: snapshot.causalRevision,
+      } as never);
+    },
+  });
+  const session =
+    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/sessions/alice-session';
+  const malformed = [
+    { method: 'PUT', path: session, body: {} },
+    {
+      method: 'POST',
+      path: `${session}/heartbeat`,
+      body: { generationId: { forged: true } },
+    },
+    {
+      method: 'POST',
+      path: `${session}/heartbeat`,
+      body: { generationId: 'generation-1', lastHeartbeatAtEpochMs: -1 },
+    },
+    {
+      method: 'POST',
+      path: `${session}/disconnect`,
+      body: {
+        generationId: 'generation-1',
+        lastHeartbeatAtEpochMs: 2,
+        disconnectedAtEpochMs: 1,
+      },
+    },
+  ] as const;
+  for (const testCase of malformed) {
+    const response = await app.request(testCase.path, {
+      method: testCase.method,
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(testCase.body),
+    });
+    assert.equal(response.status, 400, testCase.path);
+    assert.match((await response.json()).error, /Group|group/);
+  }
+  assert.equal(processCalls.length, 0);
+
+  for (
+    const testCase of [
+      { method: 'PUT', path: session },
+      { method: 'POST', path: `${session}/heartbeat` },
+      { method: 'POST', path: `${session}/disconnect` },
+    ] as const
+  ) {
+    const response = await app.request(testCase.path, {
+      method: testCase.method,
+      headers: {
+        authorization: 'Bearer token',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        generationId: 'generation-1',
+        lastHeartbeatAtEpochMs: 1,
+        expiresAtEpochMs: 1,
+        ...(testCase.path.endsWith('/disconnect') ? { disconnectedAtEpochMs: 1 } : {}),
+      }),
+    });
+    assert.equal(response.status, 200, testCase.path);
+  }
+  assert.equal(processCalls.length, 3);
+});

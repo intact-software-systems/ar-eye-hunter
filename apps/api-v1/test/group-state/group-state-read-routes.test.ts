@@ -12,10 +12,14 @@ import {
 } from '../../src/group-state/register-group-state-read-routes.ts';
 
 import {
+  createDeletedGroupStateRouteSnapshot,
   createGroupStateRouteAuthSession,
   createGroupStateRouteEvent,
   createGroupStateRouteSnapshot,
+  createGroupStateRouteSnapshotWithMember,
+  createGroupStateRouteTestDependencies,
   createGroupStateRouteTestRuntime,
+  withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
@@ -185,3 +189,142 @@ Deno.test(
     assert.equal(listPageCalls, 1);
   },
 );
+
+Deno.test('strict state read routes allow active group members and reject non-members', async () => {
+  await withStrictGroupStateRouteReadAuth(true, async () => {
+    const memberSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const nonMemberSnapshot = createGroupStateRouteSnapshot('room-2', ['bob']);
+    const { app } = createGroupStateRouteTestRuntime({
+      session: createGroupStateRouteAuthSession('alice'),
+      groupService: {
+        readSnapshot: (ref: { groupId: string }) =>
+          Promise.resolve(
+            ref.groupId === 'room-1' ? memberSnapshot : nonMemberSnapshot,
+          ),
+      },
+    });
+
+    const allowed = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+      { headers: { authorization: 'Bearer token' } },
+    );
+    const denied = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-2',
+      { headers: { authorization: 'Bearer token' } },
+    );
+
+    assert.equal(allowed.status, 200);
+    assert.deepEqual(await allowed.json(), memberSnapshot);
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json()).code, 'group-policy-denied');
+  });
+});
+
+Deno.test('group snapshot reads probe durable state instead of trusting a warm cache', async () => {
+  await withStrictGroupStateRouteReadAuth(false, async () => {
+    const staleSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const currentSnapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
+    let cachedReadCount = 0;
+    let currentReadCount = 0;
+    const groupService = {
+      readSnapshot: () => {
+        cachedReadCount += 1;
+        return Promise.resolve(staleSnapshot);
+      },
+      readCurrentSnapshot: () => {
+        currentReadCount += 1;
+        return Promise.resolve(currentSnapshot);
+      },
+    };
+    const { app } = createGroupStateRouteTestRuntime({
+      session: createGroupStateRouteAuthSession('alice'),
+      groupService,
+    });
+
+    const response = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+      { headers: { authorization: 'Bearer token' } },
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), currentSnapshot);
+    assert.equal(cachedReadCount, 0);
+    assert.equal(currentReadCount, 1);
+  });
+});
+
+Deno.test('strict group reads reject banned members for snapshots and events', async () => {
+  await withStrictGroupStateRouteReadAuth(true, async () => {
+    const bannedSnapshot = createGroupStateRouteSnapshotWithMember(
+      'room-1',
+      'alice',
+      'banned',
+    );
+    const { app } = createGroupStateRouteTestRuntime({
+      session: createGroupStateRouteAuthSession('alice'),
+      groupService: {
+        readSnapshot: () => Promise.resolve(bannedSnapshot),
+        listEvents: () => Promise.reject(new Error('banned member read leaked')),
+        listEventPage: () => Promise.reject(new Error('banned member read leaked')),
+      },
+    });
+
+    const snapshotResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+      { headers: { authorization: 'Bearer token' } },
+    );
+    const eventsResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/events/page',
+      { headers: { authorization: 'Bearer token' } },
+    );
+
+    assert.equal(snapshotResponse.status, 403);
+    assert.equal(eventsResponse.status, 403);
+    assert.equal((await snapshotResponse.json()).code, 'member-banned');
+  });
+});
+
+Deno.test('strict group reads use shared full-state visibility policy', async () => {
+  await withStrictGroupStateRouteReadAuth(true, async () => {
+    const invitedSnapshot = createGroupStateRouteSnapshotWithMember(
+      'room-invited',
+      'alice',
+      'invited',
+    );
+    const deletedSnapshot = createDeletedGroupStateRouteSnapshot('room-deleted', 'alice');
+    const { app } = createGroupStateRouteTestRuntime({
+      session: createGroupStateRouteAuthSession('alice'),
+      groupService: {
+        readSnapshot: (ref: { groupId: string }) =>
+          Promise.resolve(
+            ref.groupId === 'room-deleted' ? deletedSnapshot : invitedSnapshot,
+          ),
+        listEventPage: () =>
+          Promise.resolve({
+            events: [createGroupStateRouteEvent('event-1')],
+            hasMore: false,
+          }),
+      },
+    });
+
+    const invitedSnapshotResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-invited',
+      { headers: { authorization: 'Bearer token' } },
+    );
+    const invitedEventsResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-invited/events/page',
+      { headers: { authorization: 'Bearer token' } },
+    );
+    const deletedSnapshotResponse = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-deleted',
+      { headers: { authorization: 'Bearer token' } },
+    );
+
+    assert.equal(invitedSnapshotResponse.status, 403);
+    assert.equal(invitedEventsResponse.status, 403);
+    assert.equal(deletedSnapshotResponse.status, 403);
+    assert.equal((await invitedSnapshotResponse.json()).code, 'group-policy-denied');
+    assert.equal((await invitedEventsResponse.json()).code, 'group-policy-denied');
+    assert.equal((await deletedSnapshotResponse.json()).code, 'group-deleted');
+  });
+});
