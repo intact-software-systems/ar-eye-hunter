@@ -1100,15 +1100,14 @@ resulting-main SHA for the changed-style comparison base, plus:
 ```bash
 test ! -e apps/api-v1/src/routes/group-state-routes.ts
 test ! -e apps/api-v1/src/routes/group-state-route-errors.ts
-rg -n --glob '*.{ts,tsx,mts,cts,js,mjs,cjs}' \
-  "['\"][^'\"]*routes/group-state-(routes|route-errors)(\\.ts)?['\"]" \
-  apps packages
+npx vitest run packages/tests/repo/api-v1-group-state-route-lineage-provenance.test.ts
 ```
 
-The final `rg` must exit 1 because it found no executable import/export module
-specifier for either compatibility path. A match blocks compatibility-file
-removal until reviewed. Historical Markdown prose is not active compatibility
-evidence and is deliberately outside this command.
+The focused test parses TypeScript source and fails for static imports,
+re-exports, dynamic `import()`, and `require()` calls that name either
+compatibility path. Comments, Markdown, and ordinary strings are not module
+specifiers and do not count as active compatibility evidence. A parsed module
+specifier blocks compatibility-file removal until reviewed.
 
 No performance command is required when the exact Section 9 exemption remains
 true. If it does not, execution stops for an amended performance protocol
