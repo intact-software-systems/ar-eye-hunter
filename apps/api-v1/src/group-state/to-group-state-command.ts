@@ -10,6 +10,11 @@ import {
 
 import type { GroupStateRouteCommandInput } from './group-state-route-contracts.ts';
 
+type GroupStateCommand<TType extends AuthenticatedGroupMutationEnqueue['type']> = Extract<
+  AuthenticatedGroupMutationEnqueue,
+  { type: TType }
+>;
+
 export function toGroupStateCommand(
   input: GroupStateRouteCommandInput,
 ): AuthenticatedGroupMutationEnqueue {
@@ -53,7 +58,7 @@ export function toGroupStateCommand(
 
 function toCreateGroupCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'create-group' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_CREATE }> {
+): GroupStateCommand<AppInboxType.GROUP_CREATE> {
   const request = {
     ...input.request,
     createdByPrincipalId: input.authSession.clientId,
@@ -76,7 +81,7 @@ function toCreateGroupCommand(
 
 function toUpdateGroupCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'update-group' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_UPDATE }> {
+): GroupStateCommand<AppInboxType.GROUP_UPDATE> {
   const request = withActor(input);
   validateGroupMutationRequest('updateGroup', request);
 
@@ -95,7 +100,7 @@ function toUpdateGroupCommand(
 
 function toAppointGroupDirectorCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'appoint-group-director' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_DIRECTOR_APPOINT }> {
+): GroupStateCommand<AppInboxType.GROUP_DIRECTOR_APPOINT> {
   const request = withActor(input);
   validateGroupMutationRequest('appointDirector', request);
 
@@ -114,7 +119,7 @@ function toAppointGroupDirectorCommand(
 
 function toJoinGroupCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'join-group' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_JOIN }> {
+): GroupStateCommand<AppInboxType.GROUP_JOIN> {
   const request = withActor(input);
   validateGroupMutationRequest('joinGroup', request);
 
@@ -129,7 +134,7 @@ function toJoinGroupCommand(
 
 function toAcceptGroupInviteCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'accept-group-invite' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_INVITE_ACCEPT }> {
+): GroupStateCommand<AppInboxType.GROUP_INVITE_ACCEPT> {
   const request = withActor(input);
   validateGroupMutationRequest('acceptGroupInvite', request);
 
@@ -144,7 +149,7 @@ function toAcceptGroupInviteCommand(
 
 function toRotateGroupJoinCodeCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'rotate-group-join-code' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_JOIN_CODE_ROTATE }> {
+): GroupStateCommand<AppInboxType.GROUP_JOIN_CODE_ROTATE> {
   const request = withActor(input);
   validateGroupMutationRequest('rotateGroupJoinCode', request);
 
@@ -159,7 +164,7 @@ function toRotateGroupJoinCodeCommand(
 
 function toCreateGroupInviteCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'create-group-invite' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_INVITE_CREATE }> {
+): GroupStateCommand<AppInboxType.GROUP_INVITE_CREATE> {
   const request = withActor(input);
   validateGroupMutationRequest('createGroupInvite', request);
 
@@ -179,7 +184,7 @@ function toCreateGroupInviteCommand(
 
 function toRevokeGroupInviteCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'revoke-group-invite' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_INVITE_REVOKE }> {
+): GroupStateCommand<AppInboxType.GROUP_INVITE_REVOKE> {
   const request = withActor(input);
   validateGroupMutationRequest('revokeGroupInvite', request);
 
@@ -199,7 +204,7 @@ function toRevokeGroupInviteCommand(
 
 function toRemoveGroupMemberCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'remove-group-member' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_MEMBER_REMOVE }> {
+): GroupStateCommand<AppInboxType.GROUP_MEMBER_REMOVE> {
   const request = withActor(input);
   validateGroupMutationRequest('removeGroupMember', request);
 
@@ -214,7 +219,7 @@ function toRemoveGroupMemberCommand(
 
 function toBanGroupMemberCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'ban-group-member' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_MEMBER_BAN }> {
+): GroupStateCommand<AppInboxType.GROUP_MEMBER_BAN> {
   const request = withActor(input);
   validateGroupMutationRequest('banGroupMember', request);
 
@@ -229,7 +234,7 @@ function toBanGroupMemberCommand(
 
 function toUnbanGroupMemberCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'unban-group-member' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_MEMBER_UNBAN }> {
+): GroupStateCommand<AppInboxType.GROUP_MEMBER_UNBAN> {
   const request = withActor(input);
   validateGroupMutationRequest('unbanGroupMember', request);
 
@@ -244,7 +249,7 @@ function toUnbanGroupMemberCommand(
 
 function toSetGroupMemberRoleCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'set-group-member-role' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_MEMBER_ROLE_SET }> {
+): GroupStateCommand<AppInboxType.GROUP_MEMBER_ROLE_SET> {
   const request = withActor(input);
   validateGroupMutationRequest('setGroupMemberRole', request);
 
@@ -259,7 +264,7 @@ function toSetGroupMemberRoleCommand(
 
 function toTransferGroupOwnershipCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'transfer-group-ownership' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_OWNERSHIP_TRANSFER }> {
+): GroupStateCommand<AppInboxType.GROUP_OWNERSHIP_TRANSFER> {
   const request = withActor(input);
   validateGroupMutationRequest('transferGroupOwnership', request);
 
@@ -274,7 +279,7 @@ function toTransferGroupOwnershipCommand(
 
 function toUpsertGroupMemberCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'upsert-group-member' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_MEMBER_UPSERT }> {
+): GroupStateCommand<AppInboxType.GROUP_MEMBER_UPSERT> {
   const requestWithActor = withActor(input);
   validateGroupMutationRequest('upsertMember', requestWithActor);
   const { role: _ignoredRole, ...request } = requestWithActor;
@@ -290,7 +295,7 @@ function toUpsertGroupMemberCommand(
 
 function toConnectGroupPresenceCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'connect-group-presence' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_PRESENCE_CONNECT }> {
+): GroupStateCommand<AppInboxType.GROUP_PRESENCE_CONNECT> {
   validateGroupPresenceMutationRequest('connectPresence', input.request);
   const request = withPresenceActor(input);
 
@@ -305,7 +310,7 @@ function toConnectGroupPresenceCommand(
 
 function toHeartbeatGroupPresenceCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'heartbeat-group-presence' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_PRESENCE_HEARTBEAT }> {
+): GroupStateCommand<AppInboxType.GROUP_PRESENCE_HEARTBEAT> {
   validateGroupPresenceMutationRequest('heartbeatPresence', input.request);
   const request = withPresenceActor(input);
 
@@ -320,7 +325,7 @@ function toHeartbeatGroupPresenceCommand(
 
 function toDisconnectGroupPresenceCommand(
   input: Extract<GroupStateRouteCommandInput, { operation: 'disconnect-group-presence' }>,
-): Extract<AuthenticatedGroupMutationEnqueue, { type: AppInboxType.GROUP_PRESENCE_DISCONNECT }> {
+): GroupStateCommand<AppInboxType.GROUP_PRESENCE_DISCONNECT> {
   validateGroupPresenceMutationRequest('disconnectPresence', input.request);
   const request = withPresenceActor(input);
 

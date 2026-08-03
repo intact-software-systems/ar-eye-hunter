@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "0a52ecee39181c7784fa6b777270f8a59bc33c00",
+      "source": {
+        "path": "apps/api-v1/src/routes/group-state-routes.ts",
+        "blob": "aced85e681666edde414be27b68278ddff53fc42"
+      },
+      "targets": [
+        "apps/api-v1/src/group-state/read-group-state-route-request.ts",
+        "apps/api-v1/src/group-state/register-group-presence-routes.ts"
+      ]
+    },
+    {
+      "mergeBase": "0a52ecee39181c7784fa6b777270f8a59bc33c00",
+      "source": {
+        "path": "apps/api-v1/src/routes/group-state-route-errors.ts",
+        "blob": "cd58fb90d1836c33be35f417a6a04376150a2327"
+      },
+      "targets": ["apps/api-v1/src/group-state/group-state-route-errors.ts"]
+    }
+  ]
+}
