@@ -2,10 +2,13 @@ import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-co
 import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.ts';
 import {
   findAstNode,
-  findRouteRegistration,
   hasReachableAstNode,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
+import {
+  findExactHttpRouteHandler,
+  isExactGroupStateRouteOperation,
+} from './mutation-routing-http-registration.ts';
 import {
   hasLiveAppInboxRegistration,
   type MutationRoutingProgramLoader,
@@ -37,10 +40,17 @@ export function findMutationRouteReachabilityIssues({
   if (handlers.length === 0) {
     return [`${routeKey} registered callback cannot be resolved`];
   }
-  const handoff = handlers
+  const operation = item.operationDiscriminant;
+  const operationHandlers = operation
+    ? handlers.filter((handler) => isExactGroupStateRouteOperation(handler, enqueueSource, item))
+    : handlers;
+  const handoff = operationHandlers
     .map((handler) => findReachableHandoff({ item, source, enqueueSource, handler, matchesMarker }))
     .find((candidate) => candidate !== undefined);
   const issues: string[] = [];
+  if (operation && operationHandlers.length !== 1) {
+    issues.push(`${routeKey} operation is not connected to ${item.enqueueMarker}`);
+  }
   if (
     !handoff ||
     !hasExpectedTypeWhenExplicit(handoff, item.type, matchesMarker) ||
@@ -97,17 +107,13 @@ function findRegisteredHandlers(
 ): readonly AstNode[] {
   if (item.transport === 'HTTP') {
     const [method, routePath] = item.entrypoint.split(' ');
-    const registration = findRouteRegistration(program, method.toLowerCase(), routePath);
-    if (registration) return asNodes(registration.arguments).slice(1, 2);
-    const namedRegistration = findFunctionLikes(program, item.registrationMarker);
-    return namedRegistration.flatMap((owner) =>
-      findAll(
-        owner,
-        (node) =>
-          node.type === 'CallExpression' &&
-          readMemberName(asNode(node.callee)) === method.toLowerCase(),
-      ).flatMap((call) => asNodes(call.arguments).slice(1, 2)),
-    );
+    const handler = findExactHttpRouteHandler({
+      program,
+      method: method.toLowerCase(),
+      routePath,
+      registrationMarker: item.registrationMarker,
+    });
+    return handler ? [handler] : [];
   }
   if (item.transport === 'MAINTENANCE') {
     const named = findFunctionLikes(program, item.registrationMarker);
