@@ -17,8 +17,8 @@ only. PR B preserves every observable and persisted contract while replacing
 repeated protocol assertions with a discriminated relationship, exposing the
 canonical transaction writer at the handler boundary, keeping presence commit
 selection in the handler, closing the timed-operation inventory, and aligning
-one internal computed-result name. The server evidence ledger waits for both
-implementation PRs.
+one internal computed-result name. Both implementation PRs are complete; the
+separate server evidence-ledger publication is pending.
 
 **Tech Stack:** Markdown, TypeScript 7.0.2, Vitest, Deno, AppInbox,
 PostgreSQL 16, the warning-only repository style checker, Git, and GitHub
@@ -73,10 +73,11 @@ Actions.
 
 Date: 2026-08-02
 
-Status: Approved planning plan. PR A Task 1 and Task 2 local work are complete;
-Task 3 review, validation, publication, and merge evidence remain pending. PR B,
-the server evidence ledger, and the API-v1 child are unstarted. After exact plan
-approval, this child plan is the current execution record.
+Status: Complete implementation record. Guidance/navigation PR #64 and
+behavior-neutral runtime PR #65 passed their exact publication, merge, and
+resulting-main workflow envelopes. The separately authorized five-plan server
+evidence-ledger publication is pending. The API-v1 child remains blocked and
+unstarted until that ledger reaches `ledger-published`.
 
 ## 1. Prerequisite And Scope Boundary
 
@@ -105,12 +106,16 @@ The planning envelope is also complete:
 - Branch Release Gate run `30742629944`, attempt 1, succeeded for that exact
   planning feature head;
 - resulting `main` SHA: `61356b7c72310864917005053d5a4c9f431ee91e`; and
+- resulting `main` tree: `c74ea92a13f38f49521a285d97e5a3eea4b99001`, the same
+  tree as the planning feature; and
 - **Run Hetzner Supported Distributed Manifests** run `30744279428`, attempt 1,
   succeeded for that exact resulting-main SHA.
 
-These completed planning facts authorize the existing local PR A Task 1 and
-Task 2 work. They do not record a PR A final head, tree, PR number, Branch
-Release Gate, merge, default workflow, ledger publication, or API-v1 start.
+At planning-publication time, these facts authorized PR A Task 1 and Task 2
+only. They did not record a PR A final head, tree, PR number, Branch Release
+Gate, merge, default workflow, ledger publication, or API-v1 start. The later
+completed PR A and PR B envelopes are now recorded in Section 12; the pending
+ledger's own future publication evidence remains external.
 
 This child addresses the remaining human-traceability findings after PR #62:
 
@@ -551,16 +556,16 @@ or new file solely for this rename.
 
 ### Task 3: Review And Publish PR A
 
-- [ ] Independently review guidance pressure, source-derived navigation,
+- [x] Independently review guidance pressure, source-derived navigation,
       checker isolation, test ownership, exact scope, and non-circular evidence;
       Critical 0 and Important 0 are required.
-- [ ] Resolve ordinary in-scope findings autonomously and rerun every invalidated
+- [x] Resolve ordinary in-scope findings autonomously and rerun every invalidated
       gate.
-- [ ] Run Section 7.2 on the final unchanged tree.
-- [ ] Freeze the exact tree/head, push non-forced, update the draft PR with
+- [x] Run Section 7.2 on the final unchanged tree.
+- [x] Freeze the exact tree/head, push non-forced, update the draft PR with
       current evidence, and require Branch Release Gate for that exact head.
-- [ ] Mark PR A ready and stop for the exact human merge decision.
-- [ ] After merge, verify the exact resulting `main` SHA and its successful
+- [x] Mark PR A ready and stop for the exact human merge decision.
+- [x] After merge, verify the exact resulting `main` SHA and its successful
       default workflow before Task 4.
 
 ### Task 4: Lock Protocol Translation Test-First
@@ -573,19 +578,19 @@ or new file solely for this rename.
 - Test: descriptor, operation-matrix, construction, and routing owners in
   Section 3.2
 
-- [ ] Start PR B from PR A's exact resulting-main SHA after its default workflow
+- [x] Start PR B from PR A's exact resulting-main SHA after its default workflow
       succeeds.
-- [ ] Capture all 17 existing descriptor mappings, property orders, defaults,
+- [x] Capture all 17 existing descriptor mappings, property orders, defaults,
       omissions, identity fields, volatile-value calls, and unsupported-type
       errors as predecessor GREEN.
-- [ ] Add compile-time RED cases proving one AppInbox type cannot receive another
+- [x] Add compile-time RED cases proving one AppInbox type cannot receive another
       type's payload, including distinct remove, ban, and unban payloads.
-- [ ] Implement `AuthenticatedGroupMutationPayloadByType`, its union, the
+- [x] Implement `AuthenticatedGroupMutationPayloadByType`, its union, the
       membership-only predicate, the narrowed translator input, and exhaustive
       switches.
-- [ ] Keep every public `AppGroupInboxService` method signature unchanged and
+- [x] Keep every public `AppGroupInboxService` method signature unchanged and
       preserve exact runtime error behavior.
-- [ ] Obtain a scoped independent review with Critical 0 / Important 0.
+- [x] Obtain a scoped independent review with Critical 0 / Important 0.
 
 ### Task 5: Make Transaction And Handler Ownership Directly Navigable
 
@@ -599,80 +604,80 @@ or new file solely for this rename.
 - Test: handler construction, transaction-result/failure, presence, retry, and
   operation owners in Section 3.2
 
-- [ ] Characterize active and inactive presence connect, ordinary mutation,
+- [x] Characterize active and inactive presence connect, ordinary mutation,
       retry, terminal failure, observation, wake, and caller-visible result.
-- [ ] Add the named transaction port beside the writer and make the writer its
+- [x] Add the named transaction port beside the writer and make the writer its
       canonical implementation.
-- [ ] Pass the writer, mutation service, lifecycle service, and snapshot observer
+- [x] Pass the writer, mutation service, lifecycle service, and snapshot observer
       as separately named handler responsibilities; remove
       `GroupStateInboxMutationOperations` and duplicated transaction signatures.
-- [ ] Make presence connect return `GroupPresenceConnectOutcome` without
+- [x] Make presence connect return `GroupPresenceConnectOutcome` without
       transaction callbacks.
-- [ ] Keep inactive-versus-active transaction choice visibly in
+- [x] Keep inactive-versus-active transaction choice visibly in
       `processGroupStateMutation`.
-- [ ] Prove durable JSON bytes/property order, committed-snapshot identity,
+- [x] Prove durable JSON bytes/property order, committed-snapshot identity,
       after-commit-only observation, wake timing, retry/callback counts,
       receipts/events/outbox, and rollback are unchanged.
-- [ ] Obtain a scoped independent review with Critical 0 / Important 0.
+- [x] Obtain a scoped independent review with Critical 0 / Important 0.
 
 ### Task 6: Close Timing And Naming Seams
 
 **Files:** timing, computed-result, direct consumers, README, and directly owned
 tests in Section 3.2.
 
-- [ ] Derive the exact current timing event matrix before editing.
-- [ ] Apply `GroupStateTimedOperation` to every timing operation field and prove
+- [x] Derive the exact current timing event matrix before editing.
+- [x] Apply `GroupStateTimedOperation` to every timing operation field and prove
       exhaustive compile-time/runtime inventory.
-- [ ] Simplify the optional `listRecentEvents` wrapper only if its method
-      presence, receiver, arguments, return/rejection identity, and timing event
-      remain exact.
-- [ ] Preserve all timing identity fields; do not enrich them in this child.
-- [ ] Rename `computeGroupMutationWrite` to
+- [x] Inspect the optional `listRecentEvents` wrapper and preserve it unchanged:
+      no simplification was necessary, and its method presence, receiver,
+      arguments, return/rejection identity, and timing event remain exact.
+- [x] Preserve all timing identity fields; do not enrich them in this child.
+- [x] Rename `computeGroupMutationWrite` to
       `computeGroupMutationWriteResult` and update direct consumers/tests without
       an alias or extra module.
-- [ ] Update the durable README to the exact final symbols.
-- [ ] Obtain a scoped independent review with Critical 0 / Important 0.
+- [x] Update the durable README to the exact final symbols.
+- [x] Obtain a scoped independent review with Critical 0 / Important 0.
 
 ### Task 7: Replace Superseded Syntax Assertions With Semantic Evidence
 
 **Files:** directly affected PR #62 semantic/ratchet tests in Section 3.2.
 
-- [ ] Inventory raw JSON, property-order, identity, error, retry, observation,
+- [x] Inventory raw JSON, property-order, identity, error, retry, observation,
       wake, operation-matrix, and source-string assertions before editing.
-- [ ] Retain every behavior assertion and independently written literal.
-- [ ] Replace only source-string checks for handler capability, transaction
+- [x] Retain every behavior assertion and independently written literal.
+- [x] Replace only source-string checks for handler capability, transaction
       result structure, protocol routing, and the computed-write symbol with
       compile-time assignability or runtime architecture assertions.
-- [ ] Retain exact-tree ratchets until the later ledger satisfies their existing
+- [x] Retain exact-tree ratchets until the later ledger satisfies their existing
       removal condition.
-- [ ] Prove no behavior case or assertion site is weakened or silently removed.
-- [ ] Obtain a scoped independent review with Critical 0 / Important 0.
+- [x] Prove no behavior case or assertion site is weakened or silently removed.
+- [x] Obtain a scoped independent review with Critical 0 / Important 0.
 
 ### Task 8: Review, Validate, Measure, And Publish PR B
 
-- [ ] Run a fresh whole-PR review across Tasks 4-7 for human call-path clarity,
+- [x] Run a fresh whole-PR review across Tasks 4-7 for human call-path clarity,
       public/persisted compatibility, AppInbox semantics, runtime cycles,
       module/function limits, source-test balance, and exact scope; require
       Critical 0 / Important 0.
-- [ ] Resolve ordinary in-scope findings test-first and rerun every invalidated
+- [x] Resolve ordinary in-scope findings test-first and rerun every invalidated
       gate.
-- [ ] Keep the PR B ratchet inventory synchronized with the exact changed and
+- [x] Keep the PR B ratchet inventory synchronized with the exact changed and
       mirrored test owners, keep navigation links aligned to current primary
       symbols, and resolve only behavior-neutral type-expression, function-size,
       and formatting findings found by the final review.
-- [ ] Run Section 7.3 on the final unchanged content tree.
-- [ ] Finish every content, review, evidence, and formatting edit before
+- [x] Run Section 7.3 on the final unchanged content tree.
+- [x] Finish every content, review, evidence, and formatting edit before
       creating the performance candidate.
-- [ ] Create one immutable local candidate commit and run the exact non-rerolled
+- [x] Create one immutable local candidate commit and run the exact non-rerolled
       A-B-B-A comparison in Section 7.4. The measured candidate must remain the
       final PR head.
-- [ ] Stop with exact evidence if an environment, correctness invariant, global
-      comparator, or child evaluator fails. Do not reroll, optimize outside
-      scope, or change a threshold.
-- [ ] If accepted, push the exact measured candidate non-forced; update the PR
+- [x] Preserve the non-reroll policy: no environment, correctness invariant,
+      unchanged global-comparator, or child-evaluator failure authorized a
+      reroll, scope expansion, or threshold change.
+- [x] Push the accepted exact measured candidate non-forced; update the PR
       with before/after timelines, internal contracts, compatibility evidence,
       warning dispositions, validation, artifacts, final SHA, and tree.
-- [ ] Require Branch Release Gate success for the exact head, mark PR B ready,
+- [x] Require Branch Release Gate success for the exact head, mark PR B ready,
       and stop for the exact human merge decision.
 
 ## 6. Compatibility And Invariant Matrix
@@ -848,26 +853,25 @@ The reciprocal hardening-child rows in the
 [execution plan](repo-human-traceability-program-execution-plan.md),
 [server structure child](rallar-group-state-server-structure-plan.md), and
 [server traceability QA child](rallar-group-state-server-traceability-qa-plan.md)
-are frozen historical planning-publication records. Under this plan's
-[Non-Circular Completion Evidence](#9-non-circular-completion-evidence)
-contract, they intentionally remain unchanged until the separately authorized
-later server ledger. Their earlier drafted/unapproved/no-implementation language
-is not current execution truth and must not be relied on for PR A status; after
-exact approval, this child plan is the current execution record.
+were frozen historical planning-publication records before this separately
+authorized ledger. This ledger reconciles their current-state rows without
+rewriting their labeled historical checkpoints. Their earlier
+drafted/unapproved/no-implementation language is not current execution truth
+and must not be relied on for PR A status.
 
-PR A's frozen tree may record completed Task 1-3 local facts but not its future
-final head, PR number, Branch Release Gate, merge SHA, or default workflow. PR B
-uses the same rule. Its performance artifacts remain external and uncommitted
-under `tmp/perf/`.
+PR A's frozen tree and PR B's frozen tree did not record their future final
+heads, PR numbers, Branch Release Gates, merge SHAs, or default workflows. Their
+completed publication envelopes now exist outside those frozen trees. PR B's
+performance artifacts remain external and uncommitted under `tmp/perf/`.
 
-After PR B merges and its exact resulting-main workflow succeeds, a separately
-authorized evidence-only branch may update the server structure plan, server QA
-plan, this plan, master program, and execution plan. That ledger may record
-already-existing PR #59, PR #61, PR #62, planning PR, PR A, and PR B envelopes.
-Its frozen tree may not record its own future tree, commit, PR, Branch Release
-Gate, merge SHA, or default workflow. Only after the ledger PR merges and the
-exact resulting-main workflow succeeds may the external handoff call the server
-work `ledger-published` and unblock the API-v1 child.
+After PR B merged and its exact resulting-main workflow succeeded, the
+separately authorized evidence-only branch updates the server structure plan,
+server QA plan, this plan, master program, and execution plan. That ledger
+records the already-existing PR #59, PR #60, PR #61, PR #62, PR #63, PR #64,
+and PR #65 envelopes. Its frozen tree may not record its own future tree,
+commit, PR, Branch Release Gate, merge SHA, or default workflow. Only after the
+ledger PR merges and the exact resulting-main workflow succeeds may the external
+handoff call the server work `ledger-published` and unblock the API-v1 child.
 
 ## 10. Acceptance Checklist
 
@@ -875,33 +879,33 @@ work `ledger-published` and unblock the API-v1 child.
 - [x] Planning PR #63 merged as
       `61356b7c72310864917005053d5a4c9f431ee91e` and its exact
       resulting-main workflow `30744279428` attempt 1 passed.
-- [ ] PR A guidance pressure tests failed before implementation and passed after.
-- [ ] PR A published the durable group-state navigation map with verified paths
+- [x] PR A guidance pressure tests failed before implementation and passed after.
+- [x] PR A published the durable group-state navigation map with verified paths
       and primary symbols.
-- [ ] PR A changed no checker behavior or production code.
-- [ ] PR A review has Critical 0 / Important 0 and all local/remote gates passed.
-- [ ] PR A merged and its exact resulting-main workflow passed.
-- [ ] All 17 authenticated type/payload relationships are discriminated and
+- [x] PR A changed no checker behavior or production code.
+- [x] PR A review has Critical 0 / Important 0 and all local/remote gates passed.
+- [x] PR A merged and its exact resulting-main workflow passed.
+- [x] All 17 authenticated type/payload relationships are discriminated and
       descriptor behavior remains exact.
-- [ ] The named transaction writer port leads directly to the canonical owner.
-- [ ] Handler dependencies are cohesive named responsibilities; the broad
+- [x] The named transaction writer port leads directly to the canonical owner.
+- [x] Handler dependencies are cohesive named responsibilities; the broad
       public service remains unchanged.
-- [ ] Presence connect returns a typed decision and the handler visibly owns
+- [x] Presence connect returns a typed decision and the handler visibly owns
       inactive and active transaction selection.
-- [ ] Durable bytes, private snapshot identity, observation, wake, retry,
+- [x] Durable bytes, private snapshot identity, observation, wake, retry,
       receipt, event, audience, outbox, and rollback behavior are unchanged.
-- [ ] The timed-operation type and runtime inventory are exhaustive with exact
+- [x] The timed-operation type and runtime inventory are exhaustive with exact
       timing-event behavior.
-- [ ] `computeGroupMutationWriteResult` is the only internal computed-write
+- [x] `computeGroupMutationWriteResult` is the only internal computed-write
       symbol and no alias/hop exists.
-- [ ] Superseded source-string assertions were replaced only where semantic
+- [x] Superseded source-string assertions were replaced only where semantic
       evidence is stronger; all behavior assertions remain.
-- [ ] PR B review has Critical 0 / Important 0 and every focused/completion gate
+- [x] PR B review has Critical 0 / Important 0 and every focused/completion gate
       passed on the exact unchanged candidate.
-- [ ] The one A-B-B-A comparison passed both unchanged evaluators without a
+- [x] The one A-B-B-A comparison passed both unchanged evaluators without a
       reroll or post-measurement content change.
-- [ ] PR B Branch Release Gate passed for its exact measured head.
-- [ ] PR B merged and its exact resulting-main workflow passed.
+- [x] PR B Branch Release Gate passed for its exact measured head.
+- [x] PR B merged and its exact resulting-main workflow passed.
 - [ ] Server later ledger reached `ledger-published` through separate
       authorization and publication.
 - [ ] API-v1 remained blocked until ledger publication.
@@ -924,14 +928,14 @@ work `ledger-published` and unblock the API-v1 child.
 
 ## 12. Progress Record
 
-| Milestone                 | State                                    | Evidence                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PR #62 prerequisite       | published                                | Feature `b579aa56bc656b12f3717f2b02c0e24de9244357`, tree `3a7d80a3a9c522ba4954168be5f380aee04f871b`, Branch Release Gate `30739771277` attempt 1 success, resulting `main` `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, default workflow `30741608017` attempt 1 success.                                                                                 |
-| Hardening child plan      | approved and published                   | Planning feature `477cf23c9e252f37b0a4f2cc9e1dc5943396eb3f`, tree `c74ea92a13f38f49521a285d97e5a3eea4b99001`, PR #63, approved plan blob `4ee1aca23ab50f94838cb3648432754b520a39f2`, Branch Release Gate `30742629944` attempt 1 success, resulting `main` `61356b7c72310864917005053d5a4c9f431ee91e`, default workflow `30744279428` attempt 1 success. |
-| PR A guidance/navigation  | local Tasks 1-2 complete; Task 3 pending | Task 1 accepted at `afe4760aaea04b29d8b9063f421903ec9c7f5f6f`; Task 2 accepted through `c80d1e0ac519e46d9b4f3cfe35854b6960761340`. No PR A final head/tree, PR number, Branch Release Gate, merge, or default-workflow fact is recorded.                                                                                                                 |
-| PR B runtime traceability | unstarted                                | Starts only after PR A merge/default-workflow evidence.                                                                                                                                                                                                                                                                                                  |
-| Server later ledger       | pending                                  | Waits for both hardening PR publication envelopes and separate ledger authorization.                                                                                                                                                                                                                                                                     |
-| API-v1 child              | blocked and unstarted                    | Waits for the server ledger to reach `ledger-published`.                                                                                                                                                                                                                                                                                                 |
+| Milestone                 | State                  | Evidence                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PR #62 prerequisite       | published              | Feature `b579aa56bc656b12f3717f2b02c0e24de9244357`, tree `3a7d80a3a9c522ba4954168be5f380aee04f871b`, Branch Release Gate `30739771277` attempt 1 success, resulting `main` `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5`, default workflow `30741608017` attempt 1 success.                                                                                                    |
+| Hardening child plan      | approved and published | Planning feature `477cf23c9e252f37b0a4f2cc9e1dc5943396eb3f`, tree `c74ea92a13f38f49521a285d97e5a3eea4b99001`, PR #63, approved plan blob `4ee1aca23ab50f94838cb3648432754b520a39f2`, Branch Release Gate `30742629944` attempt 1 success, resulting `main` `61356b7c72310864917005053d5a4c9f431ee91e` with the same tree, default workflow `30744279428` attempt 1 success. |
+| PR A guidance/navigation  | complete               | PR #64 feature `6ce2bcce85f3a03446c847f4b07689c1c0b1e70e`, tree `00d475e7d40bed7060567ee391ffe1041fba443a`, Branch Release Gate `30748239173` attempt 1 success, resulting `main` `49237d8bb75d2239569aa4e3d43f8b88db799602` with the same tree, default workflow `30749273740` attempt 1 success.                                                                          |
+| PR B runtime traceability | complete               | PR #65 feature `a7e429274a8776b8e1cc842da9c472a12feee224`, tree `c1cd8fd529efec6486acb34f0d79e084e33141d0`, Branch Release Gate `30755181882` attempt 1 success, resulting `main` `5a6ffd385655af75b28aa22feb5a7103f87862a0` with the same tree, default workflow `30774354577` attempt 1 success.                                                                          |
+| Server later ledger       | pending publication    | Separately authorized five-plan ledger records completed implementation envelopes only; its own future publication evidence remains external.                                                                                                                                                                                                                               |
+| API-v1 child              | blocked and unstarted  | Waits for the server ledger to reach `ledger-published`.                                                                                                                                                                                                                                                                                                                    |
 
 ## 13. Planning Self-Review Record
 
