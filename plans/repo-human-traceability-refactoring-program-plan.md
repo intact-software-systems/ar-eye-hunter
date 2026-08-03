@@ -101,7 +101,11 @@ is complete through guidance/navigation PR #64 and behavior-neutral runtime PR
 `30755181882` attempt 1, then squash-merged as exact `main`
 `5a6ffd385655af75b28aa22feb5a7103f87862a0` with the same tree; default workflow
 `30774354577` attempt 1 succeeded for that exact SHA. The separate server
-evidence-ledger publication is pending; the API-v1 child remains gated.
+evidence ledger was published through PR #66 and reached `ledger-published` at
+exact resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12` after
+workflow `30780849548` attempt 1 succeeded. The
+[API-v1 group-state route child](api-v1-group-state-route-structure-plan.md) is
+now drafted and unapproved; no implementation has begun.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -193,8 +197,15 @@ updated through the current ledger:
   exact `main` SHA `06e0c5ab138c2ab55ac519b2244f727acd42d560`; **Run Hetzner
   Supported Distributed Manifests** run `30697799787` attempt 1 passed for
   that exact SHA. The server structure, traceability QA, and traceability
-  hardening implementations are complete; their separate evidence-ledger
-  publication remains pending.
+  hardening implementations are complete.
+- Server evidence-ledger PR #66 published frozen tree
+  `111995e3a72eb246fd0b8028aada4fbeda65fe69` from feature SHA
+  `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`. Branch Release Gate run
+  `30778763061` attempt 1 passed for that feature SHA. It merged as exact
+  `main` SHA `04b041824073e50a4f1623ca9a71d0d02b770c12`; **Run Hetzner
+  Supported Distributed Manifests** run `30780849548` attempt 1 passed for
+  that exact SHA. The server structure, traceability QA, and traceability
+  hardening work is therefore `ledger-published`.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -779,8 +790,9 @@ published. The
 adds a fifth child with durable navigation/guidance first and behavior-neutral
 protocol, transaction-owner, presence-decision, timing-inventory, semantic-
 ratchet, and naming work second. Its PR #64 and PR #65 envelopes are complete,
-so the pending server ledger now describes the reviewed server result, not only
-the earlier structural and QA publications.
+and PR #66 published the resulting server evidence ledger. The linked
+[API-v1 route child](api-v1-group-state-route-structure-plan.md) now describes
+the final HTTP boundary needed to complete the pilot.
 
 Acceptance requires that a human can start at `RallarRoomsFacade.create`, find
 the one room/group-state translation, continue to the API route and AppInbox,
@@ -1048,7 +1060,9 @@ to write, review, approve, execute, and hand off these child plans in order:
     `c1ac6a57dad974d04264cbe1fa92313697256712` passed Branch Release Gate
     `30694693554` attempt 1, PR #59 squash-merged as `main`
     `06e0c5ab138c2ab55ac519b2244f727acd42d560`, and default workflow
-    `30697799787` attempt 1 succeeded; later ledger remains pending;
+    `30697799787` attempt 1 succeeded; later ledger PR #66 merged as
+    `04b041824073e50a4f1623ca9a71d0d02b770c12` and reached
+    `ledger-published` after workflow `30780849548` attempt 1 succeeded;
   - exact move map for group-state service, mutation, persistence, presence,
     snapshot, and AppInbox files;
   - split of topology and RTC RTT ownership from `AppGroupInboxService`;
@@ -1078,8 +1092,9 @@ to write, review, approve, execute, and hand off these child plans in order:
   - PR B: behavior-neutral discriminated protocol mapping, named transaction
     writer port, handler-owned presence transaction choice, closed timing
     inventory, semantic ratchets, and internal naming alignment;
-  - the separate five-plan server evidence-ledger publication is pending.
-- [ ] `plans/api-v1-group-state-route-structure-plan.md`
+  - the separate five-plan server evidence ledger was published through PR #66.
+- [ ] [API-v1 group-state route structure](api-v1-group-state-route-structure-plan.md)
+  - state: drafted and unapproved; implementation has not begun;
   - route split and descriptive registration symbols;
   - request defaults and request-to-command translation;
   - API-v1 composition changes needed by group-state only;
@@ -1133,5 +1148,9 @@ implementation is published through PR #61 and PR #62, ending at exact `main`
 `30741608017` attempt 1 success. The traceability hardening child is complete
 through PR #64 and PR #65, whose exact resulting-main workflows are
 `30749273740` and `30774354577`, both attempt 1 successes. The separate server
-evidence-ledger publication is pending. The API-v1 child remains unstarted and
-may not be drafted until that ledger is `ledger-published`.
+evidence ledger was published through PR #66 at feature
+`6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree
+`111995e3a72eb246fd0b8028aada4fbeda65fe69`, resulting `main`
+`04b041824073e50a4f1623ca9a71d0d02b770c12`, and default workflow
+`30780849548` attempt 1 success. The API-v1 child is now drafted and unapproved;
+no implementation has begun.
