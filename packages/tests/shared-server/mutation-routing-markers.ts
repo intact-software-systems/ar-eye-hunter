@@ -3,21 +3,23 @@ export const ROUTING_SOURCE_MARKERS = {
     'processClientAppInbox',
     'AppInboxType.CLIENT_PRINCIPAL_UPSERT',
   ],
-  'apps/api-v1/src/routes/group-state-routes.ts': [
-    'processAuthenticatedEntryUntilCompletion',
+  'apps/api-v1/src/group-state/register-group-state-routes.ts': [
+    'registerGroupStateRoutes',
+    'registerGroupStateMutationRoutes',
+    'registerGroupAdmissionRoutes',
+    'registerGroupMembershipRoutes',
+    'registerGroupPresenceRoutes',
+  ],
+  'apps/api-v1/src/group-state/to-group-state-command.ts': [
+    'toGroupStateCommand',
     'AppInboxType.GROUP_CREATE',
   ],
   'apps/api-v1/src/routes/graph-topology-routes.ts': [
     'processAuthenticatedEntryUntilCompletionResult',
     'AppInboxType.TOPOLOGY_RECONFIGURE',
   ],
-  'apps/api-v1/src/routes/config-route.ts': [
-    'AppAuthInboxService',
-    'readAppAuthInbox',
-  ],
-  'apps/api-v1/src/routes/crdt-admin-routes.ts': [
-    'processAdminMutationUntilCompletion',
-  ],
+  'apps/api-v1/src/routes/config-route.ts': ['AppAuthInboxService', 'readAppAuthInbox'],
+  'apps/api-v1/src/routes/crdt-admin-routes.ts': ['processAdminMutationUntilCompletion'],
   'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts': [
     'AppInboxType.TOPOLOGY_RECONFIGURE',
     'appAdmin.pruneExpired',
@@ -31,12 +33,8 @@ export const ROUTING_SOURCE_MARKERS = {
     'requireWsAuthSession',
     'enqueueAuthorisedWsClientConnect',
   ],
-  'packages/shared-server/crdt/RallarCrdtServer.ts': [
-    'mutationIngress.enqueueUpdate',
-  ],
-  'packages/shared-server/rallar-system/ws-system-topics.ts': [
-    'enqueueRtcRttMutation',
-  ],
+  'packages/shared-server/crdt/RallarCrdtServer.ts': ['mutationIngress.enqueueUpdate'],
+  'packages/shared-server/rallar-system/ws-system-topics.ts': ['enqueueRtcRttMutation'],
   'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts': [
     'enqueueClientSessionDisconnect',
     'enqueueGroupSessionCleanup',

@@ -1,0 +1,156 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { MUTATION_ROUTE_INVENTORY } from '../shared-server/mutation-routing-inventory.ts';
+
+const approvedBase = '0a52ecee39181c7784fa6b777270f8a59bc33c00';
+const groupStateSourceRoot = 'apps/api-v1/src/group-state';
+const commandSourcePath = `${groupStateSourceRoot}/to-group-state-command.ts`;
+const registrationSourceByType = new Map<AppInboxType, string>([
+  [AppInboxType.GROUP_CREATE, 'register-group-state-mutation-routes.ts'],
+  [AppInboxType.GROUP_UPDATE, 'register-group-state-mutation-routes.ts'],
+  [AppInboxType.GROUP_DIRECTOR_APPOINT, 'register-group-state-mutation-routes.ts'],
+  [AppInboxType.GROUP_JOIN, 'register-group-admission-routes.ts'],
+  [AppInboxType.GROUP_INVITE_CREATE, 'register-group-admission-routes.ts'],
+  [AppInboxType.GROUP_INVITE_REVOKE, 'register-group-admission-routes.ts'],
+  [AppInboxType.GROUP_INVITE_ACCEPT, 'register-group-admission-routes.ts'],
+  [AppInboxType.GROUP_JOIN_CODE_ROTATE, 'register-group-admission-routes.ts'],
+  [AppInboxType.GROUP_MEMBER_REMOVE, 'register-group-membership-routes.ts'],
+  [AppInboxType.GROUP_MEMBER_BAN, 'register-group-membership-routes.ts'],
+  [AppInboxType.GROUP_MEMBER_UNBAN, 'register-group-membership-routes.ts'],
+  [AppInboxType.GROUP_MEMBER_ROLE_SET, 'register-group-membership-routes.ts'],
+  [AppInboxType.GROUP_OWNERSHIP_TRANSFER, 'register-group-membership-routes.ts'],
+  [AppInboxType.GROUP_MEMBER_UPSERT, 'register-group-membership-routes.ts'],
+  [AppInboxType.GROUP_PRESENCE_CONNECT, 'register-group-presence-routes.ts'],
+  [AppInboxType.GROUP_PRESENCE_HEARTBEAT, 'register-group-presence-routes.ts'],
+  [AppInboxType.GROUP_PRESENCE_DISCONNECT, 'register-group-presence-routes.ts'],
+]);
+const familyRegistrars = [
+  'registerGroupStateReadRoutes',
+  'registerGroupStateMutationRoutes',
+  'registerGroupAdmissionRoutes',
+  'registerGroupMembershipRoutes',
+  'registerGroupPresenceRoutes',
+] as const;
+const compatibilityPaths = [
+  'apps/api-v1/src/routes/group-state-routes.ts',
+  'apps/api-v1/src/routes/group-state-route-errors.ts',
+] as const;
+
+describe('API-v1 group-state route structure', () => {
+  it('maps every HTTP mutation to one canonical registrar and command translator', () => {
+    const groupHttpEntries = MUTATION_ROUTE_INVENTORY.filter(
+      (entry) => entry.transport === 'HTTP' && registrationSourceByType.has(entry.type),
+    );
+
+    expect(groupHttpEntries).toHaveLength(17);
+    expect(new Set(groupHttpEntries.map((entry) => entry.type))).toHaveLength(17);
+    expect(new Set(groupHttpEntries.map((entry) => entry.entrypoint))).toHaveLength(17);
+    for (const entry of groupHttpEntries) {
+      expect(entry.sourcePath).toBe(
+        `${groupStateSourceRoot}/${registrationSourceByType.get(entry.type)}`,
+      );
+      expect(entry.enqueueSourcePath).toBe(commandSourcePath);
+      expect(entry.enqueueMarker).toBe(`AppInboxType.${entry.type}`);
+    }
+  });
+
+  it('installs each cohesive route family once from the canonical registrar', () => {
+    const source = read('apps/api-v1/src/group-state/register-group-state-routes.ts');
+
+    for (const registrar of familyRegistrars) {
+      expect(count(source, `import { ${registrar} }`), registrar).toBe(1);
+      expect(count(source, `${registrar}(`), registrar).toBe(1);
+    }
+  });
+
+  it('keeps old route paths as direct one-hop compatibility exports only', () => {
+    expect(read(compatibilityPaths[0])).toBe(
+      "export { registerGroupStateRoutes as init } from '../group-state/register-group-state-routes.ts';\n" +
+        "export { toGroupAppInboxError } from '../group-state/group-state-route-errors.ts';\n" +
+        'export type {\n' +
+        '  GroupStateRouteAuthSession,\n' +
+        '  GroupStateRouteDependencies,\n' +
+        '  GroupStateRouteService,\n' +
+        '  ProcessGroupAppInbox,\n' +
+        "} from '../group-state/group-state-route-contracts.ts';\n",
+    );
+    expect(read(compatibilityPaths[1])).toBe(
+      'export {\n' +
+        '  toGroupAppInboxError,\n' +
+        '  toGroupStateErrorResponse,\n' +
+        "} from '../group-state/group-state-route-errors.ts';\n",
+    );
+    expect(readActiveOldPathImports()).toEqual([]);
+  });
+
+  it('keeps protected API, consumer, server, and middleware production unchanged', () => {
+    const changedPaths = readChangedPaths();
+    const protectedChanges = changedPaths.filter(isProtectedPath);
+
+    expect(protectedChanges).toEqual([]);
+  });
+});
+
+function read(relativePath: string): string {
+  return readFileSync(relativePath, 'utf8');
+}
+
+function count(source: string, value: string): number {
+  return source.split(value).length - 1;
+}
+
+function readActiveOldPathImports(): readonly string[] {
+  const oldPathPattern = /(?:routes\/group-state-routes|routes\/group-state-route-errors)/;
+  return readTypeScriptPaths(['apps', 'packages'])
+    .filter(
+      (filePath) => !compatibilityPaths.includes(filePath as (typeof compatibilityPaths)[number]),
+    )
+    .filter((filePath) => {
+      const source = read(filePath);
+      return source
+        .split(/\r?\n/)
+        .some((line) => /\b(?:from|import)\b/.test(line) && oldPathPattern.test(line));
+    });
+}
+
+function readTypeScriptPaths(roots: readonly string[]): readonly string[] {
+  const paths: string[] = [];
+  for (const root of roots) {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      const entryPath = path.posix.join(root, entry.name);
+      if (entry.isDirectory()) {
+        paths.push(...readTypeScriptPaths([entryPath]));
+      } else if (/\.(?:ts|tsx|mts)$/.test(entry.name)) {
+        paths.push(entryPath);
+      }
+    }
+  }
+  return paths.toSorted();
+}
+
+function readChangedPaths(): readonly string[] {
+  return execFileSync('git', ['diff', '--name-only', approvedBase, '--'], {
+    encoding: 'utf8',
+  })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+}
+
+function isProtectedPath(filePath: string): boolean {
+  return (
+    filePath === 'apps/api-v1/resources/api-v1-openapi.yaml' ||
+    filePath === 'apps/api-v1/src/middleware.ts' ||
+    filePath === 'apps/api-v1/src/middleware-contract.ts' ||
+    filePath === 'packages/shared/api/group-types.ts' ||
+    filePath === 'packages/shared/api/state-types.ts' ||
+    filePath === 'packages/shared-web/browser/api-integration.ts' ||
+    filePath.startsWith('packages/shared-test/black-box-runner/') ||
+    (filePath.startsWith('packages/shared-server/') && filePath.endsWith('.ts'))
+  );
+}

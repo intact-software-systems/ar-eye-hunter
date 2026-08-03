@@ -31,7 +31,11 @@ export interface MutationRouteInventoryEntry {
 
 const PATHS = {
   c: 'apps/api-v1/src/routes/client-state-routes.ts',
-  g: 'apps/api-v1/src/routes/group-state-routes.ts',
+  ga: 'apps/api-v1/src/group-state/register-group-admission-routes.ts',
+  gm: 'apps/api-v1/src/group-state/register-group-membership-routes.ts',
+  gp: 'apps/api-v1/src/group-state/register-group-presence-routes.ts',
+  gs: 'apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
+  gc: 'apps/api-v1/src/group-state/to-group-state-command.ts',
   t: 'apps/api-v1/src/routes/graph-topology-routes.ts',
   a: 'apps/api-v1/src/routes/config-route.ts',
   w: 'apps/api-v1/src/routes/ws-routes.ts',
@@ -204,7 +208,14 @@ function checkRegistration(
   const [method, routePath] = item.entrypoint.split(' ');
   const program = sources.readProgram(issues, item.sourcePath, 'registration', item);
   if (!program) return;
-  if (findRouteRegistration(program, method.toLowerCase(), routePath) === undefined) {
+  const exactRegistration = findRouteRegistration(program, method.toLowerCase(), routePath);
+  const namedRegistration = someNode(
+    program,
+    (node) =>
+      node.type === 'FunctionDeclaration' &&
+      readIdentifier(asNode(node.id)) === item.registrationMarker,
+  );
+  if (!exactRegistration && !namedRegistration) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
   }
 }
@@ -331,26 +342,16 @@ function hasDirectExactMarker(program: AstNode, marker: string): boolean {
   );
 }
 
-function hasClassMethod(program: AstNode, method: string): boolean {
+function hasOwnerCallable(program: AstNode, method: string): boolean {
   return someNode(
     program,
     (node) =>
-      (node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') &&
-      readIdentifier(asNode(node.key)) === method,
-  );
-}
-
-function hasOwnerCallable(program: AstNode, method: string): boolean {
-  return (
-    hasClassMethod(program, method) ||
-    someNode(
-      program,
-      (node) =>
-        (node.type === 'FunctionDeclaration' && readIdentifier(asNode(node.id)) === method) ||
-        (node.type === 'ImportSpecifier' &&
-          (readIdentifier(asNode(node.local)) === method ||
-            readIdentifier(asNode(node.imported)) === method)),
-    )
+      ((node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') &&
+        readIdentifier(asNode(node.key)) === method) ||
+      (node.type === 'FunctionDeclaration' && readIdentifier(asNode(node.id)) === method) ||
+      (node.type === 'ImportSpecifier' &&
+        (readIdentifier(asNode(node.local)) === method ||
+          readIdentifier(asNode(node.imported)) === method)),
   );
 }
 

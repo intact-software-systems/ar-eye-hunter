@@ -98,7 +98,16 @@ function findRegisteredHandlers(
   if (item.transport === 'HTTP') {
     const [method, routePath] = item.entrypoint.split(' ');
     const registration = findRouteRegistration(program, method.toLowerCase(), routePath);
-    return registration ? asNodes(registration.arguments).slice(1, 2) : [];
+    if (registration) return asNodes(registration.arguments).slice(1, 2);
+    const namedRegistration = findFunctionLikes(program, item.registrationMarker);
+    return namedRegistration.flatMap((owner) =>
+      findAll(
+        owner,
+        (node) =>
+          node.type === 'CallExpression' &&
+          readMemberName(asNode(node.callee)) === method.toLowerCase(),
+      ).flatMap((call) => asNodes(call.arguments).slice(1, 2)),
+    );
   }
   if (item.transport === 'MAINTENANCE') {
     const named = findFunctionLikes(program, item.registrationMarker);
