@@ -7,8 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const mergeBase = '0a52ecee39181c7784fa6b777270f8a59bc33c00';
-const manifestPath = 'plans/repo-style-lineages/api-v1-group-state-route-structure.json';
-const provenancePath = 'plans/repo-style-lineages/api-v1-group-state-route-structure-provenance.md';
+const lineageArtifactPath = 'plans/repo-style-lineages/api-v1-group-state-route-structure';
 const paths = {
   route: 'apps/api-v1/src/routes/group-state-routes.ts',
   errors: 'apps/api-v1/src/routes/group-state-route-errors.ts',
@@ -32,7 +31,6 @@ const exclusions = {
   presence: '1-46, 82-91, 127-136, 172-173',
   error: 'none',
 } as const;
-const acceptedDisposition = 'inherited and accepted for PR A; Task 7 owns any alignment';
 const lineages = [
   [paths.route, 'aced85e681666edde414be27b68278ddff53fc42', [paths.request, paths.presence]],
   [paths.errors, 'cd58fb90d1836c33be35f417a6a04376150a2327', [paths.error]],
@@ -59,11 +57,6 @@ const compatibilityContents = new Map<string, string>([
       "} from '../group-state/group-state-route-errors.ts';\n",
   ],
 ]);
-const provenanceCompatibility = [
-  [paths.route, 'a89164e9e36e885dd330b319e589057bd88dd6d2fe90eb63abb626b4f6971665'],
-  [paths.errors, '2d2d138be4decdc938c61641353289f61fd590fd363927d7187ee07779e89869'],
-] as const;
-
 describe('API-v1 group-state route structural-lineage provenance', () => {
   it('keeps the exact authorized merge-base lineage inventory and source blobs', () => {
     expect(readManifest()).toEqual({
@@ -78,7 +71,7 @@ describe('API-v1 group-state route structural-lineage provenance', () => {
   });
   it('binds exact regions, findings, compatibility contents, and parsed provenance', () => {
     validateContentBoundEvidence(evidence, compatibilityContents);
-    validateProvenance(read(provenancePath));
+    validateProvenance(read(`${lineageArtifactPath}-provenance.md`));
   });
   it('fails closed for changed content, ordered prose inventory, and finding ownership', () => {
     const changedPath = structuredClone(evidence);
@@ -110,13 +103,16 @@ describe('API-v1 group-state route structural-lineage provenance', () => {
     expect(() => validateContentBoundEvidence(evidence, changedCompatibility)).toThrow(
       'compatibility content',
     );
-    for (const fixture of provenanceFixtures(read(provenancePath))) {
+    for (const fixture of provenanceFixtures(read(`${lineageArtifactPath}-provenance.md`))) {
       expect(() => validateProvenance(fixture)).toThrow('provenance inventory');
     }
     const reordered = structuredClone(readManifest()) as unknown as { lineages: unknown[] };
     reordered.lineages.reverse();
     expect(reordered).not.toEqual(readManifest());
   });
+});
+
+describe('API-v1 group-state route executable compatibility references', () => {
   it('recognizes executable compatibility specifiers in TypeScript and JavaScript only', () => {
     const entries = ['fixture.ts', 'fixture.js'].map(compatibilityFixture);
     expect(activeCompatibilitySpecifiers(entries)).toEqual(
@@ -201,9 +197,12 @@ function expectedProvenance() {
       row.targetHash,
       row.excluded,
       row.finding,
-      acceptedDisposition,
+      'inherited and accepted for PR A; Task 7 owns any alignment',
     ]),
-    compatibility: provenanceCompatibility,
+    compatibility: [
+      [paths.route, 'a89164e9e36e885dd330b319e589057bd88dd6d2fe90eb63abb626b4f6971665'],
+      [paths.errors, '2d2d138be4decdc938c61641353289f61fd590fd363927d7187ee07779e89869'],
+    ],
   };
 }
 function parseEvidence(table: string) {
@@ -339,7 +338,7 @@ function sourcePaths(roots: readonly string[]): readonly string[] {
   );
 }
 function readManifest() {
-  return JSON.parse(read(manifestPath));
+  return JSON.parse(read(`${lineageArtifactPath}.json`));
 }
 function read(filePath: string): string {
   return readFileSync(path.join(repoRoot, filePath), 'utf8');
