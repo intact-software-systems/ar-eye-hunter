@@ -392,7 +392,6 @@ function asNode(value: unknown): AstNode | undefined {
     ? (value as AstNode)
     : undefined;
 }
-
 function asNodes(value: unknown): readonly AstNode[] {
   return Array.isArray(value)
     ? value.map(asNode).filter((node): node is AstNode => node !== undefined)
