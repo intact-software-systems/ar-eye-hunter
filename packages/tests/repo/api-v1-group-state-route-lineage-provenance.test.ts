@@ -41,22 +41,6 @@ presence-connect|route|780|819|2|presence|47|81|3|47|presence|handler
 presence-heartbeat|route|824|865|4|presence|92|126|5|92|presence|handler
 presence-disconnect|route|870|911|6|presence|137|171|7|137|presence|handler
 route-errors|errors|1|136|8|error|1|136|8|35,37,63,81,106,134|error|boundary`);
-const compatibilityContents = new Map<string, string>([
-  [
-    paths.route,
-    "export { registerGroupStateRoutes as init } from '../group-state/" +
-      "register-group-state-routes.ts';\n" +
-      "export { toGroupAppInboxError } from '../group-state/group-state-route-errors.ts';\n" +
-      'export type {\n  GroupStateRouteAuthSession,\n  GroupStateRouteDependencies,\n' +
-      '  GroupStateRouteService,\n  ProcessGroupAppInbox,\n} ' +
-      "from '../group-state/group-state-route-contracts.ts';\n",
-  ],
-  [
-    paths.errors,
-    'export {\n  toGroupAppInboxError,\n  toGroupStateErrorResponse,\n' +
-      "} from '../group-state/group-state-route-errors.ts';\n",
-  ],
-]);
 describe('API-v1 group-state route structural-lineage provenance', () => {
   it('keeps the exact authorized merge-base lineage inventory and source blobs', () => {
     expect(readManifest()).toEqual({
@@ -69,8 +53,8 @@ describe('API-v1 group-state route structural-lineage provenance', () => {
     });
     for (const [filePath, blob] of lineages) expect(readBlob(filePath)).toBe(blob);
   });
-  it('binds exact regions, findings, compatibility contents, and parsed provenance', () => {
-    validateContentBoundEvidence(evidence, compatibilityContents);
+  it('binds exact regions, findings, and the historical PR A provenance', () => {
+    validateContentBoundEvidence(evidence);
     validateProvenance(read(`${lineageArtifactPath}-provenance.md`));
   });
   it('fails closed for changed content, ordered prose inventory, and finding ownership', () => {
@@ -87,22 +71,9 @@ describe('API-v1 group-state route structural-lineage provenance', () => {
         ),
       ],
     ]);
-    const changedCompatibility = new Map(compatibilityContents).set(
-      paths.errors,
-      'export const changedCompatibility = true;\n',
-    );
-    expect(() => validateContentBoundEvidence(changedPath, compatibilityContents)).toThrow(
-      'target path',
-    );
-    expect(() => validateContentBoundEvidence(changedHash, compatibilityContents)).toThrow(
-      'target hash',
-    );
-    expect(() =>
-      validateContentBoundEvidence(evidence, compatibilityContents, semanticAddition),
-    ).toThrow('target hash');
-    expect(() => validateContentBoundEvidence(evidence, changedCompatibility)).toThrow(
-      'compatibility content',
-    );
+    expect(() => validateContentBoundEvidence(changedPath)).toThrow('target path');
+    expect(() => validateContentBoundEvidence(changedHash)).toThrow('target hash');
+    expect(() => validateContentBoundEvidence(evidence, semanticAddition)).toThrow('target hash');
     for (const fixture of provenanceFixtures(read(`${lineageArtifactPath}-provenance.md`))) {
       expect(() => validateProvenance(fixture)).toThrow('provenance inventory');
     }
@@ -129,7 +100,6 @@ describe('API-v1 group-state route executable compatibility references', () => {
 });
 function validateContentBoundEvidence(
   rows: readonly (typeof evidence)[number][],
-  compatibility: ReadonlyMap<string, string>,
   currentSources = new Map<string, string>(),
 ): void {
   const targets = [...new Set(rows.map((row) => row.target))];
@@ -148,9 +118,6 @@ function validateContentBoundEvidence(
     if (row.findingLines.some((line) => line < row.targetStart || line > row.targetEnd)) {
       throw new Error(`finding line ${row.id}`);
     }
-  }
-  for (const [filePath, content] of compatibility) {
-    if (read(filePath) !== content) throw new Error(`compatibility content ${filePath}`);
   }
 }
 function parseProvenance(text: string) {

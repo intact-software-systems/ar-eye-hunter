@@ -91,43 +91,46 @@ Deno.test(
   },
 );
 
-Deno.test('canonical group list reads filter snapshots with strict-read authorization', async () => {
-  const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-  const allowedSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
-  const deniedSnapshot = createGroupStateRouteSnapshot('room-2', ['bob']);
-  const app = new Hono();
-  const dependencies = createGroupStateRouteDependencies({
-    getGroupStateService: () => ({
-      listSnapshots: () => Promise.resolve([allowedSnapshot, deniedSnapshot]),
-      readSnapshot: () => Promise.resolve(undefined),
-      readCurrentSnapshot: () => Promise.resolve(undefined),
-      listEvents: () => Promise.resolve([]),
-      listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-    }),
-    requireApiAuthSession: () => Promise.resolve(createGroupStateRouteAuthSession('alice')),
-    hydrateStateSyncSnapshotCaches: () =>
-      Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 1 }),
-  });
-  registerGroupStateReadRoutes(
-    app,
-    dependencies,
-    createGroupStateRouteAuthorization(dependencies),
-  );
+Deno.test(
+  'canonical group list reads filter snapshots with strict-read authorization',
+  async () => {
+    const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
+    const allowedSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
+    const deniedSnapshot = createGroupStateRouteSnapshot('room-2', ['bob']);
+    const app = new Hono();
+    const dependencies = createGroupStateRouteDependencies({
+      getGroupStateService: () => ({
+        listSnapshots: () => Promise.resolve([allowedSnapshot, deniedSnapshot]),
+        readSnapshot: () => Promise.resolve(undefined),
+        readCurrentSnapshot: () => Promise.resolve(undefined),
+        listEvents: () => Promise.resolve([]),
+        listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
+      }),
+      requireApiAuthSession: () => Promise.resolve(createGroupStateRouteAuthSession('alice')),
+      hydrateStateSyncSnapshotCaches: () =>
+        Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 1 }),
+    });
+    registerGroupStateReadRoutes(
+      app,
+      dependencies,
+      createGroupStateRouteAuthorization(dependencies),
+    );
 
-  Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', 'true');
-  try {
-    const response = await app.request(API_BASE.replace('/room-1', ''));
+    Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', 'true');
+    try {
+      const response = await app.request(API_BASE.replace('/room-1', ''));
 
-    assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), [allowedSnapshot]);
-  } finally {
-    if (previous === undefined) {
-      Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
-    } else {
-      Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', previous);
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), [allowedSnapshot]);
+    } finally {
+      if (previous === undefined) {
+        Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
+      } else {
+        Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', previous);
+      }
     }
-  }
-});
+  },
+);
 
 Deno.test(
   'group point reads retain normal, missing, and non-blocking cache cleanup exits',
@@ -193,35 +196,38 @@ Deno.test(
   },
 );
 
-Deno.test('strict state read routes allow active group members and reject non-members', async () => {
-  await withStrictGroupStateRouteReadAuth(true, async () => {
-    const memberSnapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
-    const nonMemberSnapshot = createPredecessorGroupStateRouteSnapshot('room-2', ['bob']);
-    const { app } = createPredecessorGroupStateRouteTestRuntime({
-      session: createPredecessorGroupStateRouteAuthSession('alice'),
-      groupService: {
-        readSnapshot: (ref: { groupId: string }) =>
-          Promise.resolve(
-            ref.groupId === 'room-1' ? memberSnapshot : nonMemberSnapshot,
-          ),
-      },
+Deno.test(
+  'strict state read routes allow active group members and reject non-members',
+  async () => {
+    await withStrictGroupStateRouteReadAuth(true, async () => {
+      const memberSnapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+      const nonMemberSnapshot = createPredecessorGroupStateRouteSnapshot('room-2', ['bob']);
+      const { app } = createPredecessorGroupStateRouteTestRuntime({
+        session: createPredecessorGroupStateRouteAuthSession('alice'),
+        groupService: {
+          readSnapshot: (ref: { groupId: string }) =>
+            Promise.resolve(
+              ref.groupId === 'room-1' ? memberSnapshot : nonMemberSnapshot,
+            ),
+        },
+      });
+
+      const allowed = await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+        { headers: { authorization: 'Bearer token' } },
+      );
+      const denied = await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-2',
+        { headers: { authorization: 'Bearer token' } },
+      );
+
+      assert.equal(allowed.status, 200);
+      assert.deepEqual(await allowed.json(), memberSnapshot);
+      assert.equal(denied.status, 403);
+      assert.equal((await denied.json()).code, 'group-policy-denied');
     });
-
-    const allowed = await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
-      { headers: { authorization: 'Bearer token' } },
-    );
-    const denied = await app.request(
-      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-2',
-      { headers: { authorization: 'Bearer token' } },
-    );
-
-    assert.equal(allowed.status, 200);
-    assert.deepEqual(await allowed.json(), memberSnapshot);
-    assert.equal(denied.status, 403);
-    assert.equal((await denied.json()).code, 'group-policy-denied');
-  });
-});
+  },
+);
 
 Deno.test('group snapshot reads probe durable state instead of trusting a warm cache', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {

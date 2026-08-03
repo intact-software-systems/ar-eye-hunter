@@ -8,8 +8,12 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+import type {
+  AppInboxEnqueueInput,
+} from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type {
+  GroupStateWritten,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 
 import { registerGroupStateRoutes } from '../../src/group-state/register-group-state-routes.ts';
 import type {

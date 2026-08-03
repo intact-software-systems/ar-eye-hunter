@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
+
 import { Either } from '@shared/resilience/Either.ts';
 import {
   type AppInboxEnqueueInput,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+
+import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
-import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
 import {
   captureGroupStateRouteWrite,
   createGroupStateRouteAuthSession,
@@ -20,7 +22,10 @@ import {
   TEST_GROUP_SCOPE,
   withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
+
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
+const GROUP_INVITE_ROUTE_TEST_NAME = 'group invite routes enqueue safe invite workflows ' +
+  'with authenticated actors';
 Deno.test('group admission commands retain every authenticated AppInbox envelope', () => {
   const authSession = createGroupStateRouteAuthSession('alice');
   const commands = [
@@ -166,7 +171,7 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
       session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {},
       processGroupAppInbox: <V, R>(
-        _authority: GroupStateRouteAuthSession,
+        _authority: Parameters<ProcessGroupAppInbox>[0],
         input: AppInboxEnqueueInput<V>,
       ): Promise<R> => {
         enqueued.push(input);
@@ -217,7 +222,7 @@ Deno.test('group join route enqueues explicit join intent with authenticated act
     });
   });
 });
-Deno.test('group invite routes enqueue safe invite workflows with authenticated actors', async () => {
+Deno.test(GROUP_INVITE_ROUTE_TEST_NAME, async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {
     const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
     const enqueued: AppInboxEnqueueInput<unknown>[] = [];
@@ -225,7 +230,7 @@ Deno.test('group invite routes enqueue safe invite workflows with authenticated 
       session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {},
       processGroupAppInbox: <V, R>(
-        _authority: GroupStateRouteAuthSession,
+        _authority: Parameters<ProcessGroupAppInbox>[0],
         input: AppInboxEnqueueInput<V>,
       ): Promise<R> => {
         enqueued.push(input);
@@ -343,7 +348,7 @@ Deno.test('group join-code route enqueues rotation workflow with authenticated a
       session: createPredecessorGroupStateRouteAuthSession('alice'),
       groupService: {},
       processGroupAppInbox: <V, R>(
-        _authority: GroupStateRouteAuthSession,
+        _authority: Parameters<ProcessGroupAppInbox>[0],
         input: AppInboxEnqueueInput<V>,
       ): Promise<R> => {
         enqueued.push(input);

@@ -1,18 +1,21 @@
 import assert from 'node:assert/strict';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type {
   GroupCreateAppInboxPayload,
   GroupUpdateAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
+
 import {
   type AppInboxEnqueueInput,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { readGroupStateRouteRequest } from '../../src/group-state/read-group-state-route-request.ts';
+
+import {
+  readGroupStateRouteRequest,
+} from '../../src/group-state/read-group-state-route-request.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
 import { toGroupStateResponse } from '../../src/group-state/to-group-state-response.ts';
-import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
 import {
   captureGroupStateRouteWrite,
   createGroupStateRouteAuthSession,
@@ -29,12 +32,10 @@ import {
   toGroupStateWritten,
   withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
+
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
-const RANDOM_UUID_DESCRIPTOR_AT_MODULE_LOAD = Object.getOwnPropertyDescriptor(
-  crypto,
-  'randomUUID',
-);
-const RANDOM_UUID_AT_MODULE_LOAD = crypto.randomUUID;
+const randomUuidDescriptor = Object.getOwnPropertyDescriptor(crypto, 'randomUUID');
+const randomUuidAtModuleLoad = crypto.randomUUID;
 Deno.test('canonical group request reader retains body request ID precedence', async () => {
   const request = await readGroupStateRouteRequest<{ requestId?: string; name: string }>({
     req: {
@@ -227,9 +228,9 @@ Deno.test(
   () => {
     assert.deepEqual(
       Object.getOwnPropertyDescriptor(crypto, 'randomUUID'),
-      RANDOM_UUID_DESCRIPTOR_AT_MODULE_LOAD,
+      randomUuidDescriptor,
     );
-    assert.equal(crypto.randomUUID, RANDOM_UUID_AT_MODULE_LOAD);
+    assert.equal(crypto.randomUUID, randomUuidAtModuleLoad);
     assert.notEqual(crypto.randomUUID(), 'generated-request');
   },
 );
@@ -241,7 +242,7 @@ Deno.test(
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const runtime = createGroupStateRouteTestRuntime({
       processGroupAppInbox: <V, R>(
-        _authority: GroupStateRouteAuthSession,
+        _authority: Parameters<ProcessGroupAppInbox>[0],
         _entry: AppInboxEnqueueInput<V>,
       ): Promise<R> =>
         new Promise((resolve) => {
@@ -332,64 +333,68 @@ async function withRandomUuid(
     }
   }
 }
-Deno.test('all non-presence group REST mutations reject malformed bodies before inbox enqueue', async () => {
-  const processCalls: unknown[] = [];
-  const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
-  const ownerSnapshot: GroupSnapshot = {
-    ...snapshot,
-    members: snapshot.members.map((member) => ({ ...member, role: 'owner' as const })),
-  };
-  const { app } = createPredecessorGroupStateRouteTestRuntime({
-    session: createPredecessorGroupStateRouteAuthSession('alice'),
-    groupService: {
-      readSnapshot: () => Promise.resolve(ownerSnapshot),
-    },
-    processGroupAppInbox: (_authority, input) => {
-      processCalls.push(input);
-      return Promise.reject(new Error('Malformed request reached group inbox'));
-    },
-  });
-  const base = '/api/state/apps/app-1/workspaces/workspace-1/groups';
-  const group = `${base}/room-1`;
-  const cases = [
-    { method: 'POST', path: base, body: { displayName: 7, kind: 'room', groupId: 'room-2' } },
-    { method: 'PUT', path: group, body: { status: 'unknown' } },
-    { method: 'POST', path: `${group}/director/appoint`, body: { heartbeatTtlMs: 0 } },
-    { method: 'POST', path: `${group}/join`, body: { inviteToken: 7 } },
-    { method: 'POST', path: `${group}/invites/accept`, body: { reason: 7 } },
-    {
-      method: 'POST',
-      path: `${group}/join-code/rotate`,
-      body: { joinCode: '', expiresAtEpochMs: 0 },
-    },
-    {
-      method: 'POST',
-      path: `${group}/invites/bob`,
-      body: { invitationExpiresAtEpochMs: -1 },
-    },
-    { method: 'POST', path: `${group}/invites/bob/revoke`, body: { traceId: 7 } },
-    { method: 'POST', path: `${group}/members/bob/remove`, body: { reason: {} } },
-    { method: 'POST', path: `${group}/members/bob/ban`, body: { requestId: {} } },
-    { method: 'POST', path: `${group}/members/bob/unban`, body: { traceId: [] } },
-    { method: 'PUT', path: `${group}/members/bob/role`, body: { role: 'superuser' } },
-    { method: 'POST', path: `${group}/owner/transfer`, body: { newOwnerPrincipalId: '' } },
-    {
-      method: 'PUT',
-      path: `${group}/members/alice`,
-      body: { status: 'active', invitationExpiresAtEpochMs: -1 },
-    },
-  ] as const;
-  for (const testCase of cases) {
-    const response = await app.request(testCase.path, {
-      method: testCase.method,
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
+Deno.test(
+  'all non-presence group REST mutations reject malformed bodies before inbox ' +
+    'enqueue',
+  async () => {
+    const processCalls: unknown[] = [];
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+    const ownerSnapshot = {
+      ...snapshot,
+      members: snapshot.members.map((member) => ({ ...member, role: 'owner' as const })),
+    };
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
+      groupService: {
+        readSnapshot: () => Promise.resolve(ownerSnapshot),
       },
-      body: JSON.stringify(testCase.body),
+      processGroupAppInbox: (_authority, input) => {
+        processCalls.push(input);
+        return Promise.reject(new Error('Malformed request reached group inbox'));
+      },
     });
-    assert.equal(response.status, 400, `${testCase.method} ${testCase.path}`);
-    assert.match((await response.json()).error, /Group|group/);
-  }
-  assert.equal(processCalls.length, 0);
-});
+    const base = '/api/state/apps/app-1/workspaces/workspace-1/groups';
+    const group = `${base}/room-1`;
+    const cases = [
+      { method: 'POST', path: base, body: { displayName: 7, kind: 'room', groupId: 'room-2' } },
+      { method: 'PUT', path: group, body: { status: 'unknown' } },
+      { method: 'POST', path: `${group}/director/appoint`, body: { heartbeatTtlMs: 0 } },
+      { method: 'POST', path: `${group}/join`, body: { inviteToken: 7 } },
+      { method: 'POST', path: `${group}/invites/accept`, body: { reason: 7 } },
+      {
+        method: 'POST',
+        path: `${group}/join-code/rotate`,
+        body: { joinCode: '', expiresAtEpochMs: 0 },
+      },
+      {
+        method: 'POST',
+        path: `${group}/invites/bob`,
+        body: { invitationExpiresAtEpochMs: -1 },
+      },
+      { method: 'POST', path: `${group}/invites/bob/revoke`, body: { traceId: 7 } },
+      { method: 'POST', path: `${group}/members/bob/remove`, body: { reason: {} } },
+      { method: 'POST', path: `${group}/members/bob/ban`, body: { requestId: {} } },
+      { method: 'POST', path: `${group}/members/bob/unban`, body: { traceId: [] } },
+      { method: 'PUT', path: `${group}/members/bob/role`, body: { role: 'superuser' } },
+      { method: 'POST', path: `${group}/owner/transfer`, body: { newOwnerPrincipalId: '' } },
+      {
+        method: 'PUT',
+        path: `${group}/members/alice`,
+        body: { status: 'active', invitationExpiresAtEpochMs: -1 },
+      },
+    ] as const;
+    for (const testCase of cases) {
+      const response = await app.request(testCase.path, {
+        method: testCase.method,
+        headers: {
+          authorization: 'Bearer token',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(testCase.body),
+      });
+      assert.equal(response.status, 400, `${testCase.method} ${testCase.path}`);
+      assert.match((await response.json()).error, /Group|group/);
+    }
+    assert.equal(processCalls.length, 0);
+  },
+);

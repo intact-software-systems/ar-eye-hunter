@@ -190,18 +190,21 @@ const GROUP_OPERATION_CONTRACTS: readonly GroupOperationContract[] = [
   },
 ];
 
-Deno.test('group OpenAPI retains every route method, request, and success response contract', async () => {
-  const response = await installSwaggerRoutes(new Hono()).request('/api/openapi.json');
-  const document = await response.json() as OpenApiDocument;
+Deno.test(
+  'group OpenAPI retains every route method, request, and success response contract',
+  async () => {
+    const response = await installSwaggerRoutes(new Hono()).request('/api/openapi.json');
+    const document = await response.json() as OpenApiDocument;
 
-  for (const expected of GROUP_OPERATION_CONTRACTS) {
-    const operation = document.paths[expected.path]?.[expected.method];
-    assert.ok(operation, `${expected.method.toUpperCase()} ${expected.path}`);
-    assert.deepEqual(operation.security, [{ bearerAuth: [], clientIdHeader: [] }]);
-    assertOpenApiRequestSchema(operation, expected);
-    assertOpenApiResponseSchema(operation, expected);
-  }
-});
+    for (const expected of GROUP_OPERATION_CONTRACTS) {
+      const operation = document.paths[expected.path]?.[expected.method];
+      assert.ok(operation, `${expected.method.toUpperCase()} ${expected.path}`);
+      assert.deepEqual(operation.security, [{ bearerAuth: [], clientIdHeader: [] }]);
+      assertOpenApiRequestSchema(operation, expected);
+      assertOpenApiResponseSchema(operation, expected);
+    }
+  },
+);
 
 function assertOpenApiRequestSchema(
   operation: OpenApiOperation,

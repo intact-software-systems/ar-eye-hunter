@@ -4,8 +4,11 @@ import {
   type AppInboxEnqueueInput,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
+
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
-import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
+import type {
+  GroupStateRouteAuthSession,
+} from '../../src/group-state/group-state-route-contracts.ts';
 
 import {
   captureGroupStateRouteWrite,
@@ -110,58 +113,61 @@ Deno.test('group membership commands retain governance and self-service envelope
   );
 });
 
-Deno.test('group membership routes retain every AppInbox envelope and self-service omission', async () => {
-  const enqueued: unknown[] = [];
-  const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
-  const runtime = createGroupStateRouteTestRuntime({
-    processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
-  });
+Deno.test(
+  'group membership routes retain every AppInbox envelope and self-service omission',
+  async () => {
+    const enqueued: unknown[] = [];
+    const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
+    const runtime = createGroupStateRouteTestRuntime({
+      processGroupAppInbox: captureGroupStateRouteWrite(enqueued, snapshot),
+    });
 
-  const responses = [
-    await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/remove`, {
-      actorPrincipalId: 'forged-actor',
-      actorSessionId: 'forged-session',
-      requestId: 'remove-request',
-    }),
-    await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/ban`, {
-      actorPrincipalId: 'forged-actor',
-      actorSessionId: 'forged-session',
-      requestId: 'ban-request',
-    }),
-    await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/unban`, {
-      actorPrincipalId: 'forged-actor',
-      actorSessionId: 'forged-session',
-      requestId: 'unban-request',
-    }),
-    await putGroupStateMutation(runtime.app, `${API_BASE}/members/bob/role`, {
-      role: 'admin',
-      actorPrincipalId: 'forged-actor',
-      actorSessionId: 'forged-session',
-      requestId: 'role-request',
-    }),
-    await postGroupStateMutation(runtime.app, `${API_BASE}/owner/transfer`, {
-      newOwnerPrincipalId: 'bob',
-      actorPrincipalId: 'forged-actor',
-      actorSessionId: 'forged-session',
-      requestId: 'transfer-request',
-    }),
-    await putGroupStateMutation(runtime.app, `${API_BASE}/members/alice`, {
-      status: 'active',
-      role: 'admin',
-      actorPrincipalId: 'forged-actor',
-      actorSessionId: 'forged-session',
-      requestId: 'upsert-request',
-    }),
-  ];
+    const responses = [
+      await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/remove`, {
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'remove-request',
+      }),
+      await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/ban`, {
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'ban-request',
+      }),
+      await postGroupStateMutation(runtime.app, `${API_BASE}/members/bob/unban`, {
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'unban-request',
+      }),
+      await putGroupStateMutation(runtime.app, `${API_BASE}/members/bob/role`, {
+        role: 'admin',
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'role-request',
+      }),
+      await postGroupStateMutation(runtime.app, `${API_BASE}/owner/transfer`, {
+        newOwnerPrincipalId: 'bob',
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'transfer-request',
+      }),
+      await putGroupStateMutation(runtime.app, `${API_BASE}/members/alice`, {
+        status: 'active',
+        role: 'admin',
+        actorPrincipalId: 'forged-actor',
+        actorSessionId: 'forged-session',
+        requestId: 'upsert-request',
+      }),
+    ];
 
-  for (const response of responses) {
-    assert.equal(response.status, 200);
-  }
-  assert.equal(
-    JSON.stringify(enqueued),
-    '[{"type":"GROUP_MEMBER_REMOVE","resourceId":"remove-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"remove-request"}}},{"type":"GROUP_MEMBER_BAN","resourceId":"ban-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"ban-request"}}},{"type":"GROUP_MEMBER_UNBAN","resourceId":"unban-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"unban-request"}}},{"type":"GROUP_MEMBER_ROLE_SET","resourceId":"role-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"role":"admin","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"role-request"}}},{"type":"GROUP_OWNERSHIP_TRANSFER","resourceId":"transfer-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"newOwnerPrincipalId":"bob","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"transfer-request"}}},{"type":"GROUP_MEMBER_UPSERT","resourceId":"upsert-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"alice","request":{"status":"active","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"upsert-request"}}}]',
-  );
-});
+    for (const response of responses) {
+      assert.equal(response.status, 200);
+    }
+    assert.equal(
+      JSON.stringify(enqueued),
+      '[{"type":"GROUP_MEMBER_REMOVE","resourceId":"remove-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"remove-request"}}},{"type":"GROUP_MEMBER_BAN","resourceId":"ban-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"ban-request"}}},{"type":"GROUP_MEMBER_UNBAN","resourceId":"unban-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"unban-request"}}},{"type":"GROUP_MEMBER_ROLE_SET","resourceId":"role-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"bob","request":{"role":"admin","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"role-request"}}},{"type":"GROUP_OWNERSHIP_TRANSFER","resourceId":"transfer-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","request":{"newOwnerPrincipalId":"bob","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"transfer-request"}}},{"type":"GROUP_MEMBER_UPSERT","resourceId":"upsert-request","contextId":"app-1:workspace-1:room-1","senderId":"alice","data":{"scope":{"applicationId":"app-1","workspaceId":"workspace-1"},"groupId":"room-1","principalId":"alice","request":{"status":"active","actorPrincipalId":"alice","actorSessionId":"alice-session","requestId":"upsert-request"}}}]',
+    );
+  },
+);
 
 Deno.test('group governance routes enqueue safe workflows with authenticated actors', async () => {
   await withStrictGroupStateRouteReadAuth(false, async () => {

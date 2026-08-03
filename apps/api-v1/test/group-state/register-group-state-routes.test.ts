@@ -9,6 +9,8 @@ import {
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
+const GROUP_STATE_ROUTE_BASE = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
+const GROUP_ROUTE_PATH = `${GROUP_STATE_ROUTE_BASE}/:groupId`;
 
 interface GroupStateRouteMatch {
   readonly method: 'GET' | 'POST' | 'PUT';
@@ -101,51 +103,57 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
   },
 ];
 
-Deno.test('group state route registration retains all 21 Hono handlers in predecessor order', () => {
-  const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false });
-  const registeredRoutes = (runtime.app as unknown as {
-    readonly routes: readonly { readonly method: string; readonly path: string }[];
-  }).routes.map((route) => `${route.method} ${route.path}`);
+Deno.test(
+  'group state route registration retains all 21 Hono handlers in predecessor order',
+  () => {
+    const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false });
+    const registeredRoutes = (runtime.app as unknown as {
+      readonly routes: readonly { readonly method: string; readonly path: string }[];
+    }).routes.map((route) => `${route.method} ${route.path}`);
 
-  assert.deepEqual(registeredRoutes, [
-    'GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups',
-    'GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId',
-    'GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/events',
-    'GET /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/events/page',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups',
-    'PUT /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/director/appoint',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/accept',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join-code/rotate',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId/revoke',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/remove',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/ban',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/unban',
-    'PUT /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId/role',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/owner/transfer',
-    'PUT /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/members/:principalId',
-    'PUT /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId/heartbeat',
-    'POST /api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId/disconnect',
-  ]);
-});
+    assert.deepEqual(registeredRoutes, [
+      `GET ${GROUP_STATE_ROUTE_BASE}`,
+      `GET ${GROUP_ROUTE_PATH}`,
+      `GET ${GROUP_ROUTE_PATH}/events`,
+      `GET ${GROUP_ROUTE_PATH}/events/page`,
+      `POST ${GROUP_STATE_ROUTE_BASE}`,
+      `PUT ${GROUP_ROUTE_PATH}`,
+      `POST ${GROUP_ROUTE_PATH}/director/appoint`,
+      `POST ${GROUP_ROUTE_PATH}/join`,
+      `POST ${GROUP_ROUTE_PATH}/invites/accept`,
+      `POST ${GROUP_ROUTE_PATH}/join-code/rotate`,
+      `POST ${GROUP_ROUTE_PATH}/invites/:principalId`,
+      `POST ${GROUP_ROUTE_PATH}/invites/:principalId/revoke`,
+      `POST ${GROUP_ROUTE_PATH}/members/:principalId/remove`,
+      `POST ${GROUP_ROUTE_PATH}/members/:principalId/ban`,
+      `POST ${GROUP_ROUTE_PATH}/members/:principalId/unban`,
+      `PUT ${GROUP_ROUTE_PATH}/members/:principalId/role`,
+      `POST ${GROUP_ROUTE_PATH}/owner/transfer`,
+      `PUT ${GROUP_ROUTE_PATH}/members/:principalId`,
+      `PUT ${GROUP_ROUTE_PATH}/sessions/:sessionId`,
+      `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/heartbeat`,
+      `POST ${GROUP_ROUTE_PATH}/sessions/:sessionId/disconnect`,
+    ]);
+  },
+);
 
-Deno.test('group state route registration matches all 21 public method and path contracts', async () => {
-  const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
-  const runtime = createGroupStateRouteTestRuntime({
-    groupService: {
-      readSnapshot: () => Promise.resolve(snapshot),
-      readCurrentSnapshot: () => Promise.resolve(snapshot),
-    },
-  });
+Deno.test(
+  'group state route registration matches all 21 public method and path contracts',
+  async () => {
+    const snapshot = createGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
+    const runtime = createGroupStateRouteTestRuntime({
+      groupService: {
+        readSnapshot: () => Promise.resolve(snapshot),
+        readCurrentSnapshot: () => Promise.resolve(snapshot),
+      },
+    });
 
-  for (const expected of GROUP_STATE_ROUTE_MATCHES) {
-    const response = await requestRegisteredGroupStateRoute(runtime.app, expected);
-    assert.equal(response.status, expected.status, `${expected.method} ${expected.path}`);
-  }
-});
+    for (const expected of GROUP_STATE_ROUTE_MATCHES) {
+      const response = await requestRegisteredGroupStateRoute(runtime.app, expected);
+      assert.equal(response.status, expected.status, `${expected.method} ${expected.path}`);
+    }
+  },
+);
 
 Deno.test('moved group route auth retains predecessor token and timing shape', () => {
   const before = Date.now();
