@@ -10,6 +10,7 @@ interface FindHttpRouteHandlerInput {
   readonly routePath: string;
   readonly registrationMarker: string;
   readonly familyRegistrationMarker?: string;
+  readonly familyPrivateOwnerNames?: readonly string[];
 }
 
 interface GroupStateRouteOperation {
@@ -23,6 +24,7 @@ export function findExactHttpRouteHandler({
   routePath,
   registrationMarker,
   familyRegistrationMarker,
+  familyPrivateOwnerNames,
 }: FindHttpRouteHandlerInput): AstNode | undefined {
   if (!familyRegistrationMarker) {
     const direct = findRouteRegistration(program, method, routePath);
@@ -34,6 +36,7 @@ export function findExactHttpRouteHandler({
     routePath,
     privateOwnerName: registrationMarker,
     familyOwnerName: familyRegistrationMarker,
+    familyPrivateOwnerNames,
   });
 }
 

@@ -14,6 +14,36 @@ const PRIVATE_PRESENCE_CALL =
   '  registerConnectGroupPresenceRoute(app, dependencies, authorization);';
 
 describe('group HTTP mutation route construction', () => {
+  it('rejects a canonical family name rebound to a different imported family', () => {
+    const source = readFileSync(ROOT_ROUTES, 'utf8');
+    const mutated = source
+      .replace(
+        "import { registerGroupMembershipRoutes } from './register-group-membership-routes.ts';\n",
+        '',
+      )
+      .replace(
+        "import { registerGroupPresenceRoutes } from './register-group-presence-routes.ts';",
+        `import {
+  registerGroupPresenceRoutes,
+  registerGroupPresenceRoutes as registerGroupMembershipRoutes,
+} from './register-group-presence-routes.ts';`,
+      );
+    expectInvalid(ROOT_ROUTES, source, mutated);
+  });
+
+  it('rejects an uninventoryed live private owner and route in a family', () => {
+    const source = readFileSync(PRESENCE_ROUTES, 'utf8');
+    const mutated = source.replace(
+      PRIVATE_PRESENCE_CALL,
+      `${PRIVATE_PRESENCE_CALL}\n  registerUnexpectedGroupRoute(app);`,
+    ).concat(`
+function registerUnexpectedGroupRoute(app: Hono): void {
+  app.get('/api/state/unexpected-group-route', async () => new Response(null));
+}
+`);
+    expectInvalid(PRESENCE_ROUTES, source, mutated);
+  });
+
   it('rejects a family removed from the exported root', () => {
     const source = readFileSync(ROOT_ROUTES, 'utf8');
     const mutated = source.replace(

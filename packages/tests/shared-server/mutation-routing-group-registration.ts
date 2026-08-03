@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import type { MutationRoutingAstNode as AstNode } from './mutation-routing-call-graph.ts';
 
 interface FindGroupRouteHandlerInput {
@@ -6,6 +8,15 @@ interface FindGroupRouteHandlerInput {
   readonly routePath: string;
   readonly privateOwnerName: string;
   readonly familyOwnerName: string;
+  readonly familyPrivateOwnerNames?: readonly string[];
+}
+
+interface GroupRegistrationRootContract {
+  readonly familyOwnerName: string;
+  readonly familySourcePath: string;
+  readonly program: AstNode;
+  readonly rootOwnerName: string;
+  readonly rootSourcePath: string;
 }
 
 interface DirectRouteRegistration {
@@ -21,14 +32,57 @@ interface DirectOwnerCall {
 }
 
 const ROOT_FAMILY_CALLS = [
-  ['registerGroupStateReadRoutes', 'app', 'resolvedDependencies', 'authorization'],
-  ['registerGroupStateMutationRoutes', 'app', 'resolvedDependencies', 'authorization'],
-  ['registerGroupAdmissionRoutes', 'app', 'resolvedDependencies'],
-  ['registerGroupMembershipRoutes', 'app', 'resolvedDependencies', 'authorization'],
-  ['registerGroupPresenceRoutes', 'app', 'resolvedDependencies', 'authorization'],
+  [
+    'registerGroupStateReadRoutes',
+    './register-group-state-read-routes.ts',
+    'app',
+    'resolvedDependencies',
+    'authorization',
+  ],
+  [
+    'registerGroupStateMutationRoutes',
+    './register-group-state-mutation-routes.ts',
+    'app',
+    'resolvedDependencies',
+    'authorization',
+  ],
+  [
+    'registerGroupAdmissionRoutes',
+    './register-group-admission-routes.ts',
+    'app',
+    'resolvedDependencies',
+  ],
+  [
+    'registerGroupMembershipRoutes',
+    './register-group-membership-routes.ts',
+    'app',
+    'resolvedDependencies',
+    'authorization',
+  ],
+  [
+    'registerGroupPresenceRoutes',
+    './register-group-presence-routes.ts',
+    'app',
+    'resolvedDependencies',
+    'authorization',
+  ],
 ] as const;
 
-export function hasExactGroupRegistrationRoot(program: AstNode, rootOwnerName: string): boolean {
+export function hasExactGroupRegistrationRoot({
+  familyOwnerName,
+  familySourcePath,
+  program,
+  rootOwnerName,
+  rootSourcePath,
+}: GroupRegistrationRootContract): boolean {
+  const familyContract = ROOT_FAMILY_CALLS.find(([name]) => name === familyOwnerName);
+  if (
+    !familyContract ||
+    familyContract[1] !== relativeImportPath(rootSourcePath, familySourcePath)
+  ) {
+    return false;
+  }
+  if (!hasExactRootFamilyImports(program)) return false;
   const roots = findExportedFunctions(program, rootOwnerName);
   if (roots.length !== 1) return false;
   const root = roots[0]!;
@@ -47,7 +101,7 @@ export function hasExactGroupRegistrationRoot(program: AstNode, rootOwnerName: s
     ])
   )
     return false;
-  return ROOT_FAMILY_CALLS.every(([name, ...argumentNames], index) =>
+  return ROOT_FAMILY_CALLS.every(([name, , ...argumentNames], index) =>
     isExactDirectCall(statements[index + 2], name, argumentNames),
   );
 }
@@ -58,6 +112,7 @@ export function findDirectGroupRouteHandler({
   routePath,
   privateOwnerName,
   familyOwnerName,
+  familyPrivateOwnerNames,
 }: FindGroupRouteHandlerInput): AstNode | undefined {
   const familyOwners = findExportedFunctions(program, familyOwnerName);
   if (familyOwners.length !== 1) return undefined;
@@ -66,6 +121,14 @@ export function findDirectGroupRouteHandler({
   if (!sameNames(familyParameters, expectedFamilyParameters(familyOwnerName))) return undefined;
   const calledOwners = readDirectFamilyOwnerCalls(familyOwner);
   if (!calledOwners || countOwnerCalls(calledOwners, privateOwnerName) !== 1) return undefined;
+  if (
+    familyPrivateOwnerNames &&
+    !sameNames(
+      calledOwners.map((call) => call.ownerName),
+      familyPrivateOwnerNames,
+    )
+  )
+    return undefined;
   if (!hasOnlyDirectRouteOwners(program, calledOwners, familyParameters)) return undefined;
   const exact = readAllDirectRegistrations(program).filter(
     (registration) => registration.method === method && registration.routePath === routePath,
@@ -73,6 +136,38 @@ export function findDirectGroupRouteHandler({
   return exact.length === 1 && exact[0]?.ownerName === privateOwnerName
     ? exact[0].handler
     : undefined;
+}
+
+function hasExactRootFamilyImports(program: AstNode): boolean {
+  return ROOT_FAMILY_CALLS.every(([name, sourcePath]) =>
+    hasExactNamedImport(program, name, sourcePath),
+  );
+}
+
+function hasExactNamedImport(
+  program: AstNode,
+  expectedName: string,
+  expectedSourcePath: string,
+): boolean {
+  const bindings = asNodes(program.body).flatMap((statement) => {
+    if (statement.type !== 'ImportDeclaration') return [];
+    const sourcePath = readString(asNode(statement.source));
+    return asNodes(statement.specifiers)
+      .filter((specifier) => readName(asNode(specifier.local)) === expectedName)
+      .map((specifier) => ({ sourcePath, specifier }));
+  });
+  if (bindings.length !== 1) return false;
+  const binding = bindings[0]!;
+  return (
+    binding.sourcePath === expectedSourcePath &&
+    binding.specifier.type === 'ImportSpecifier' &&
+    readName(asNode(binding.specifier.imported)) === expectedName
+  );
+}
+
+function relativeImportPath(rootSourcePath: string, familySourcePath: string): string {
+  const relative = path.posix.relative(path.posix.dirname(rootSourcePath), familySourcePath);
+  return relative.startsWith('.') ? relative : `./${relative}`;
 }
 
 function readDirectFamilyOwnerCalls(owner: AstNode): readonly DirectOwnerCall[] | undefined {

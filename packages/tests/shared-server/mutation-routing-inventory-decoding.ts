@@ -59,17 +59,17 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     dispatchSource,
     operationDiscriminant,
     familyRegistrationMarker,
-    constructionRootSource,
+    rootSource,
     constructionRootMarker,
+    familyOwnerOrderText,
   ] = row.split('\t');
   const sourcePath = PATHS[source as keyof typeof PATHS];
   const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
-  const constructionRootSourcePath = constructionRootSource
-    ? PATHS[constructionRootSource as keyof typeof PATHS]
-    : undefined;
+  const rootSourcePath = rootSource ? PATHS[rootSource as keyof typeof PATHS] : undefined;
   const { ownerSourcePath, ownerDispatchPath, typeOwnerSourcePath, dispatchSourcePath } =
     resolveInventoryOwnerPaths({ dispatchSource, owner, ownerSource, typeOwnerSource });
   const appInboxType = AppInboxType[type as keyof typeof AppInboxType];
+  const familyOwnerOrder = familyOwnerOrderText ? Number(familyOwnerOrderText) : undefined;
   if (
     !sourcePath ||
     !enqueueSourcePath ||
@@ -78,7 +78,8 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     !typeOwnerSourcePath ||
     !dispatchSourcePath ||
     !appInboxType ||
-    (Boolean(familyRegistrationMarker) && (!constructionRootSourcePath || !constructionRootMarker))
+    (Boolean(familyRegistrationMarker) &&
+      (!rootSourcePath || !constructionRootMarker || !Number.isInteger(familyOwnerOrder)))
   ) {
     throw new Error(`Invalid mutation route inventory row: ${row}`);
   }
@@ -97,8 +98,9 @@ function toMutationRouteInventoryEntry(row: string): MutationRouteInventoryEntry
     dispatchSourcePath,
     operationDiscriminant,
     familyRegistrationMarker,
-    constructionRootSourcePath,
+    constructionRootSourcePath: rootSourcePath,
     constructionRootMarker,
+    familyOwnerOrder,
   };
 }
 

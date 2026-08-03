@@ -26,6 +26,7 @@ export interface MutationRouteInventoryEntry {
   readonly familyRegistrationMarker?: string;
   readonly constructionRootSourcePath?: string;
   readonly constructionRootMarker?: string;
+  readonly familyOwnerOrder?: number;
 }
 
 export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] =
@@ -58,6 +59,7 @@ const CANONICAL_INVENTORY_FIELDS = [
   'familyRegistrationMarker',
   'constructionRootSourcePath',
   'constructionRootMarker',
+  'familyOwnerOrder',
 ] as const;
 
 export function validateMutationRouteInventory(
@@ -140,17 +142,36 @@ function checkRegistration(
     routePath,
     registrationMarker: item.registrationMarker,
     familyRegistrationMarker: item.familyRegistrationMarker,
+    familyPrivateOwnerNames: readCanonicalFamilyPrivateOwners(item),
   });
   const hasRoot =
     !item.familyRegistrationMarker ||
     Boolean(
       rootProgram &&
       item.constructionRootMarker &&
-      hasExactGroupRegistrationRoot(rootProgram, item.constructionRootMarker),
+      item.constructionRootSourcePath &&
+      hasExactGroupRegistrationRoot({
+        program: rootProgram,
+        rootOwnerName: item.constructionRootMarker,
+        rootSourcePath: item.constructionRootSourcePath,
+        familyOwnerName: item.familyRegistrationMarker,
+        familySourcePath: item.sourcePath,
+      }),
     );
   if (!handler || !hasRoot) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
   }
+}
+
+function readCanonicalFamilyPrivateOwners(
+  item: MutationRouteInventoryEntry,
+): readonly string[] | undefined {
+  if (!item.familyRegistrationMarker) return undefined;
+  return MUTATION_ROUTE_INVENTORY.filter(
+    (candidate) => candidate.familyRegistrationMarker === item.familyRegistrationMarker,
+  )
+    .toSorted((left, right) => (left.familyOwnerOrder ?? -1) - (right.familyOwnerOrder ?? -1))
+    .map((candidate) => candidate.registrationMarker);
 }
 
 function checkAstMarker({
