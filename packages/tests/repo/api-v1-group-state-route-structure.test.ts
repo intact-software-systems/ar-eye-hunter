@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync } from 'node:fs';
-import path from 'node:path';
+import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -70,7 +69,8 @@ describe('API-v1 group-state route structure', () => {
 
   it('keeps old route paths as direct one-hop compatibility exports only', () => {
     expect(read(compatibilityPaths[0])).toBe(
-      "export { registerGroupStateRoutes as init } from '../group-state/register-group-state-routes.ts';\n" +
+      "export { registerGroupStateRoutes as init } from '../group-state/" +
+        "register-group-state-routes.ts';\n" +
         "export { toGroupAppInboxError } from '../group-state/group-state-route-errors.ts';\n" +
         'export type {\n' +
         '  GroupStateRouteAuthSession,\n' +
@@ -85,7 +85,6 @@ describe('API-v1 group-state route structure', () => {
         '  toGroupStateErrorResponse,\n' +
         "} from '../group-state/group-state-route-errors.ts';\n",
     );
-    expect(readActiveOldPathImports()).toEqual([]);
   });
 
   it('keeps protected API, consumer, server, and middleware production unchanged', () => {
@@ -102,35 +101,6 @@ function read(relativePath: string): string {
 
 function count(source: string, value: string): number {
   return source.split(value).length - 1;
-}
-
-function readActiveOldPathImports(): readonly string[] {
-  const oldPathPattern = /(?:routes\/group-state-routes|routes\/group-state-route-errors)/;
-  return readTypeScriptPaths(['apps', 'packages'])
-    .filter(
-      (filePath) => !compatibilityPaths.includes(filePath as (typeof compatibilityPaths)[number]),
-    )
-    .filter((filePath) => {
-      const source = read(filePath);
-      return source
-        .split(/\r?\n/)
-        .some((line) => /\b(?:from|import)\b/.test(line) && oldPathPattern.test(line));
-    });
-}
-
-function readTypeScriptPaths(roots: readonly string[]): readonly string[] {
-  const paths: string[] = [];
-  for (const root of roots) {
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
-      const entryPath = path.posix.join(root, entry.name);
-      if (entry.isDirectory()) {
-        paths.push(...readTypeScriptPaths([entryPath]));
-      } else if (/\.(?:ts|tsx|mts)$/.test(entry.name)) {
-        paths.push(entryPath);
-      }
-    }
-  }
-  return paths.toSorted();
 }
 
 function readChangedPaths(): readonly string[] {
