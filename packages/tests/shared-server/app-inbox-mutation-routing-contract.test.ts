@@ -76,6 +76,54 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     );
   });
 
+  it('rejects an exact route registered only from a request-time callback', () => {
+    const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
+    const liveRegistration = `  app.put(
+    GROUP_PRESENCE_PATH,
+    async (context) => {`;
+    const lateRegistration = `  app.put(
+    \`\${GROUP_PRESENCE_PATH}/wrong\`,
+    async (context) => {
+      app.put(
+        '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId',
+        async (lateContext) =>
+          toGroupStateCommand({
+            operation: 'connect-group-presence',
+            authSession: lateContext,
+          }),
+      );`;
+    const mutated = source.replace(liveRegistration, lateRegistration);
+    expect(mutated).not.toBe(source);
+
+    expect(validateWithOverride(GROUP_PRESENCE_ROUTES, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_PRESENCE_CONNECT registration is absent'),
+      ]),
+    );
+  });
+
+  it('accepts an exact route installed by a directly called local construction helper', () => {
+    const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
+    const owner = `function registerConnectGroupPresenceRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): void {`;
+    const ownerWithHelper = `${owner}
+  installConnectGroupPresenceRoute(app, dependencies, authorization);
+}
+
+function installConnectGroupPresenceRoute(
+  app: Hono,
+  dependencies: ResolvedGroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): void {`;
+    const mutated = source.replace(owner, ownerWithHelper);
+    expect(mutated).not.toBe(source);
+
+    expect(validateWithOverride(GROUP_PRESENCE_ROUTES, mutated)).toEqual([]);
+  });
+
   it('rejects a membership route constant swapped to the presence path', () => {
     const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');
     const mutated = source.replace(

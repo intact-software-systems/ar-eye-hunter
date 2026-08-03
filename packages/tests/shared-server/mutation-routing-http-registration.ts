@@ -3,6 +3,7 @@ import {
   hasReachableAstNode,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
+import { hasConstructionReachableNode } from './mutation-routing-construction-reachability.ts';
 
 interface FindHttpRouteHandlerInput {
   readonly program: AstNode;
@@ -39,7 +40,7 @@ export function findExactHttpRouteHandler({
       readMemberName(asNode(node.callee)) === method &&
       resolveModuleString(program, asNodes(node.arguments)[0]) === routePath,
   ).filter((registration) =>
-    hasReachableAstNode(program, registrationOwner, (node) => node === registration),
+    hasConstructionReachableNode(program, registrationOwner, registration),
   );
   if (registrations.length !== 1) return undefined;
   return asNodes(registrations[0]?.arguments)[1];
