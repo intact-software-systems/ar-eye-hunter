@@ -112,6 +112,7 @@ function findRegisteredHandlers(
       method: method.toLowerCase(),
       routePath,
       registrationMarker: item.registrationMarker,
+      namedOwnerRequired: item.operationDiscriminant !== undefined,
     });
     return handler ? [handler] : [];
   }

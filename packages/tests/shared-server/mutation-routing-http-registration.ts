@@ -1,5 +1,4 @@
 import {
-  findAstNode,
   findRouteRegistration,
   hasReachableAstNode,
   type MutationRoutingAstNode as AstNode,
@@ -10,6 +9,7 @@ interface FindHttpRouteHandlerInput {
   readonly method: string;
   readonly routePath: string;
   readonly registrationMarker: string;
+  readonly namedOwnerRequired: boolean;
 }
 
 interface GroupStateRouteOperation {
@@ -22,16 +22,25 @@ export function findExactHttpRouteHandler({
   method,
   routePath,
   registrationMarker,
+  namedOwnerRequired,
 }: FindHttpRouteHandlerInput): AstNode | undefined {
-  const direct = findRouteRegistration(program, method, routePath);
-  if (direct) return asNodes(direct.arguments)[1];
+  if (!namedOwnerRequired) {
+    const direct = findRouteRegistration(program, method, routePath);
+    return direct ? asNodes(direct.arguments)[1] : undefined;
+  }
 
-  const registrationOwner = findNamedFunction(program, registrationMarker);
-  if (!registrationOwner) return undefined;
+  const registrationOwners = findNamedTopLevelFunctions(program, registrationMarker);
+  if (registrationOwners.length !== 1) return undefined;
+  const registrationOwner = registrationOwners[0]!;
   const registrations = findAll(
-    registrationOwner,
-    (node) => node.type === 'CallExpression' && readMemberName(asNode(node.callee)) === method,
-  ).filter((call) => resolveModuleString(program, asNodes(call.arguments)[0]) === routePath);
+    program,
+    (node) =>
+      node.type === 'CallExpression' &&
+      readMemberName(asNode(node.callee)) === method &&
+      resolveModuleString(program, asNodes(node.arguments)[0]) === routePath,
+  ).filter((registration) =>
+    hasReachableAstNode(program, registrationOwner, (node) => node === registration),
+  );
   if (registrations.length !== 1) return undefined;
   return asNodes(registrations[0]?.arguments)[1];
 }
@@ -144,11 +153,17 @@ function findModuleConst(program: AstNode, name: string): AstNode | undefined {
   return undefined;
 }
 
-function findNamedFunction(program: AstNode, name: string): AstNode | undefined {
-  return findAstNode(
-    program,
-    (node) => node.type === 'FunctionDeclaration' && readName(asNode(node.id)) === name,
-  );
+function findNamedTopLevelFunctions(program: AstNode, name: string): readonly AstNode[] {
+  return asNodes(program.body)
+    .map(readTopLevelDeclaration)
+    .filter(
+      (node): node is AstNode =>
+        node?.type === 'FunctionDeclaration' && readName(asNode(node.id)) === name,
+    );
+}
+
+function readTopLevelDeclaration(statement: AstNode): AstNode | undefined {
+  return statement.type === 'ExportNamedDeclaration' ? asNode(statement.declaration) : statement;
 }
 
 function readTemplateElement(node: AstNode | undefined): string | undefined {

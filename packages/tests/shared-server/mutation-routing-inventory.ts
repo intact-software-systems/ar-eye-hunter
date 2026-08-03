@@ -127,6 +127,7 @@ function checkRegistration(
     method: method.toLowerCase(),
     routePath,
     registrationMarker: item.registrationMarker,
+    namedOwnerRequired: item.operationDiscriminant !== undefined,
   });
   if (!handler) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);

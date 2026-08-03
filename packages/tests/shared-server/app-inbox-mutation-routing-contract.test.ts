@@ -49,6 +49,33 @@ describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
     );
   });
 
+  it('rejects a dead exact registration masking the live named route owner', () => {
+    const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
+    const wrongLiveRoute = source.replace(
+      '    GROUP_PRESENCE_PATH,',
+      '    `${GROUP_PRESENCE_PATH}/wrong`,',
+    );
+    expect(wrongLiveRoute).not.toBe(source);
+    const mutated = `${wrongLiveRoute}
+function deadCorrectPresenceRegistration(app: Hono): void {
+  app.put(
+    '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId',
+    async (context) =>
+      toGroupStateCommand({
+        operation: 'connect-group-presence',
+        authSession: context,
+      }),
+  );
+}
+`;
+
+    expect(validateWithOverride(GROUP_PRESENCE_ROUTES, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('GROUP_PRESENCE_CONNECT registration is absent'),
+      ]),
+    );
+  });
+
   it('rejects a membership route constant swapped to the presence path', () => {
     const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');
     const mutated = source.replace(
