@@ -916,6 +916,10 @@ tests may be added only to the PR A target test owners in Section 3.5.
 - [ ] Prove OpenAPI, shared-web API integration, black-box workbench/recipes,
       shared DTOs, server production, and middleware production are unchanged.
 - [ ] Record the PR A one-hop compatibility consumers and removal condition.
+- [ ] Keep the temporary exact-base structure ratchet owned by this child and
+      remove or replace it after both implementation PR resulting-main
+      workflows and the later ledger are published, when semantic coverage owns
+      the same loss risk.
 - [ ] Independently review navigation accuracy, semantic ratchets, public
       compatibility, and mutation reachability with Critical 0 and Important 0.
 
@@ -927,6 +931,10 @@ tests may be added only to the PR A target test owners in Section 3.5.
       generic owners; and extra hops.
 - [ ] Require Critical 0 and Important 0 and resolve ordinary in-scope findings
       test-first.
+- [ ] Reconcile the exact-base changed-style review with the two-row lineage
+      manifest/provenance audit for mechanically inherited findings and named
+      AppInbox-discriminated translator output contracts for all 17 helpers;
+      do not grant lineage capacity to semantically new code.
 - [ ] Run Section 12.2 on one final unchanged tree.
 - [ ] Freeze the exact tree/commit, push non-forced, update one draft PR A with
       the read-first map and exact evidence, and require Branch Release Gate for
@@ -1043,7 +1051,8 @@ npx vitest run \
   packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts \
   packages/tests/shared-server/mutation-route-owner-*.test.ts \
   packages/tests/repo/group-state-navigation-map-integrity.test.ts \
-  packages/tests/repo/api-v1-group-state-route-structure.test.ts
+  packages/tests/repo/api-v1-group-state-route-structure.test.ts \
+  packages/tests/repo/api-v1-group-state-route-lineage-provenance.test.ts
 npx vitest run packages/tests/shared-server/group-state
 npx tsc -p packages/shared/tsconfig.json --noEmit
 npx tsc -p packages/shared-web/tsconfig.json --noEmit
@@ -1069,6 +1078,9 @@ npx prettier --check \
   packages/shared-server/rallar-system/group-state/README.md \
   packages/tests/repo/api-v1-group-state-route-structure.test.ts \
   packages/tests/repo/group-state-navigation-map-integrity.test.ts \
+  packages/tests/repo/api-v1-group-state-route-lineage-provenance.test.ts \
+  plans/repo-style-lineages/api-v1-group-state-route-structure.json \
+  plans/repo-style-lineages/api-v1-group-state-route-structure-provenance.md \
   plans/api-v1-group-state-route-structure-plan.md
 git diff --check
 npm run test:unit
@@ -1088,14 +1100,16 @@ resulting-main SHA for the changed-style comparison base, plus:
 ```bash
 test ! -e apps/api-v1/src/routes/group-state-routes.ts
 test ! -e apps/api-v1/src/routes/group-state-route-errors.ts
-rg -n "routes/group-state-(routes|route-errors)" \
-  apps packages package.json .agents docs \
-  --glob '!plans/**'
+npx vitest run packages/tests/repo/api-v1-group-state-route-lineage-provenance.test.ts
 ```
 
-The final `rg` must exit 1 because it found no active non-plan reference. A
-match blocks compatibility-file removal until reviewed. Historical plans remain
-unchanged and are deliberately excluded.
+The focused test parses supported TypeScript and JavaScript source (`ts`,
+`tsx`, `mts`, `cts`, `js`, `mjs`, and `cjs`) and fails for static imports,
+re-exports, dynamic `import()`, and `require()` calls that name either
+compatibility path, extensionless or with `.ts`. Comments, Markdown, and
+ordinary strings are not module specifiers and do not count as active
+compatibility evidence. A parsed module specifier blocks compatibility-file
+removal until reviewed.
 
 No performance command is required when the exact Section 9 exemption remains
 true. If it does not, execution stops for an amended performance protocol
@@ -1148,6 +1162,9 @@ implementation tree as having contained future evidence.
 - [ ] The final mirrored production/test trees match Section 3.
 - [ ] PR A's two temporary re-export files are direct, one-hop, and executable-
       logic-free.
+- [ ] The exact-base lineage manifest/provenance ratchet contains only
+      mechanically inherited findings, and each of the 17 translator helpers
+      has an AppInbox-discriminated named output contract.
 - [ ] PR A review has Critical 0 and Important 0; all local and remote gates
       pass for its exact head.
 - [ ] PR A merged and its exact resulting-main workflow succeeded before PR B.
@@ -1182,14 +1199,14 @@ implementation tree as having contained future evidence.
 
 ## 16. Progress Record
 
-| Milestone                    | State               | Evidence                                                                                                                                                                                                                                                                        |
-| ---------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server prerequisite ledger   | `ledger-published`  | PR #66 feature `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree `111995e3a72eb246fd0b8028aada4fbeda65fe69`, Branch Release Gate `30778763061` attempt 1 success, resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12`, default workflow `30780849548` attempt 1 success. |
-| API-v1 child plan            | drafted, unapproved | This plan records inspected current owners, exact target trees, move map, traces, compatibility, tasks, validation, and human decisions. Planning publication evidence remains future/external.                                                                                 |
-| PR A structure               | not started         | Waits for exact plan approval, planning merge, and planning default workflow.                                                                                                                                                                                                   |
-| PR B code-standard alignment | not started         | Waits for PR A merge and exact resulting-main default workflow.                                                                                                                                                                                                                 |
-| API-v1 child later ledger    | not started         | Requires separate authorization after both implementation PRs are complete.                                                                                                                                                                                                     |
-| Complete pilot evaluation    | blocked             | Begins only after this child later reaches `ledger-published`.                                                                                                                                                                                                                  |
+| Milestone                    | State                           | Evidence                                                                                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server prerequisite ledger   | `ledger-published`              | PR #66 feature `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree `111995e3a72eb246fd0b8028aada4fbeda65fe69`, Branch Release Gate `30778763061` attempt 1 success, resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12`, default workflow `30780849548` attempt 1 success. |
+| API-v1 child plan            | drafted, unapproved             | This plan records inspected current owners, exact target trees, move map, traces, compatibility, tasks, validation, and human decisions. Planning publication evidence remains future/external.                                                                                 |
+| PR A structure               | pre-Task 6 amendment authorized | Exact base `0a52ecee39181c7784fa6b777270f8a59bc33c00`; amendment starts from `073d3493e4708b77c6403bc54b035f7dc8ef1dfa` / tree `b836c8a8b85f7f311212cc8e66092c35381962c2` and reconciles only the exact-base changed-style findings before final freeze.                        |
+| PR B code-standard alignment | not started                     | Waits for PR A merge and exact resulting-main default workflow.                                                                                                                                                                                                                 |
+| API-v1 child later ledger    | not started                     | Requires separate authorization after both implementation PRs are complete.                                                                                                                                                                                                     |
+| Complete pilot evaluation    | blocked                         | Begins only after this child later reaches `ledger-published`.                                                                                                                                                                                                                  |
 
 ## 17. Planning Self-Review Record
 

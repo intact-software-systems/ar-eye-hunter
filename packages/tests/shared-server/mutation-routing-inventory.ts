@@ -2,17 +2,12 @@ import { readFileSync } from 'node:fs';
 import { parse } from '@babel/parser';
 
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import {
-  findAstNode,
-  findRouteRegistration,
-  type MutationRoutingAstNode,
-} from './mutation-routing-call-graph.ts';
+import { findAstNode, type MutationRoutingAstNode } from './mutation-routing-call-graph.ts';
+import { findExactHttpRouteHandler } from './mutation-routing-http-registration.ts';
+import { hasExactGroupRegistrationRoot } from './mutation-routing-group-registration.ts';
+import { decodeMutationRouteInventory } from './mutation-routing-inventory-decoding.ts';
 import { findMutationRouteReachabilityIssues } from './mutation-routing-reachability.ts';
-import {
-  MUTATION_ROUTE_INVENTORY_ROWS,
-  MUTATION_ROUTE_OWNER_DISPATCH_PATHS,
-  MUTATION_ROUTE_OWNER_PATHS,
-} from './mutation-routing-owner-inventory.ts';
+import { MUTATION_ROUTE_INVENTORY_ROWS } from './mutation-routing-owner-inventory.ts';
 
 export interface MutationRouteInventoryEntry {
   readonly transport: 'HTTP' | 'WS_INBOX' | 'WS_LIFECYCLE' | 'MAINTENANCE';
@@ -27,27 +22,15 @@ export interface MutationRouteInventoryEntry {
   readonly ownerDispatchPath: string;
   readonly typeOwnerSourcePath: string;
   readonly dispatchSourcePath: string;
+  readonly operationDiscriminant?: string;
+  readonly familyRegistrationMarker?: string;
+  readonly constructionRootSourcePath?: string;
+  readonly constructionRootMarker?: string;
+  readonly familyOwnerOrder?: number;
 }
 
-const PATHS = {
-  c: 'apps/api-v1/src/routes/client-state-routes.ts',
-  g: 'apps/api-v1/src/routes/group-state-routes.ts',
-  t: 'apps/api-v1/src/routes/graph-topology-routes.ts',
-  a: 'apps/api-v1/src/routes/config-route.ts',
-  w: 'apps/api-v1/src/routes/ws-routes.ts',
-  ad: 'apps/api-v1/src/routes/admin-operations-routes.ts',
-  cr: 'apps/api-v1/src/routes/crdt-admin-routes.ts',
-  ag: 'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts',
-  rq: 'apps/api-v1/src/services/request-auth-service.ts',
-  l: 'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
-  e: 'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',
-  s: 'packages/shared-server/rallar-system/ws-system-topics.ts',
-  d: 'packages/shared-server/crdt/RallarCrdtServer.ts',
-} as const;
-
-export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] = decodeInventory(
-  MUTATION_ROUTE_INVENTORY_ROWS,
-);
+export const MUTATION_ROUTE_INVENTORY: readonly MutationRouteInventoryEntry[] =
+  decodeMutationRouteInventory(MUTATION_ROUTE_INVENTORY_ROWS);
 
 export interface MutationRouteValidationOptions {
   readonly sourceOverrides?: ReadonlyMap<string, string>;
@@ -61,6 +44,23 @@ interface AstMarkerCheckInput {
   readonly item: MutationRouteInventoryEntry;
   readonly sources: SourceReader;
 }
+
+const CANONICAL_INVENTORY_FIELDS = [
+  'owner',
+  'sourcePath',
+  'registrationMarker',
+  'enqueueSourcePath',
+  'enqueueMarker',
+  'ownerSourcePath',
+  'ownerDispatchPath',
+  'typeOwnerSourcePath',
+  'dispatchSourcePath',
+  'operationDiscriminant',
+  'familyRegistrationMarker',
+  'constructionRootSourcePath',
+  'constructionRootMarker',
+  'familyOwnerOrder',
+] as const;
 
 export function validateMutationRouteInventory(
   inventory: readonly MutationRouteInventoryEntry[],
@@ -85,17 +85,7 @@ export function validateMutationRouteInventory(
       issues.push(`Unknown mutation route: ${key(item)}`);
       continue;
     }
-    for (const field of [
-      'owner',
-      'sourcePath',
-      'registrationMarker',
-      'enqueueSourcePath',
-      'enqueueMarker',
-      'ownerSourcePath',
-      'ownerDispatchPath',
-      'typeOwnerSourcePath',
-      'dispatchSourcePath',
-    ] as const) {
+    for (const field of CANONICAL_INVENTORY_FIELDS) {
       if (item[field] !== canonical[field]) issues.push(`${key(item)} has incorrect ${field}`);
     }
     checkRegistration(issues, item, sources);
@@ -121,67 +111,6 @@ export function validateMutationRouteInventory(
   return issues;
 }
 
-function decodeInventory(rows: string): readonly MutationRouteInventoryEntry[] {
-  return rows
-    .trim()
-    .split('\n')
-    .map((row) => {
-      const [
-        transport,
-        entrypoint,
-        type,
-        source,
-        registrationMarker,
-        enqueueSource,
-        enqueueMarker,
-        ownerSource,
-        owner,
-        typeOwnerSource,
-        dispatchSource,
-      ] = row.split('\t');
-      const sourcePath = PATHS[source as keyof typeof PATHS];
-      const enqueueSourcePath = PATHS[enqueueSource as keyof typeof PATHS];
-      const ownerSourcePath =
-        MUTATION_ROUTE_OWNER_PATHS[ownerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS];
-      const ownerDispatchPath =
-        MUTATION_ROUTE_OWNER_DISPATCH_PATHS[
-          owner as keyof typeof MUTATION_ROUTE_OWNER_DISPATCH_PATHS
-        ];
-      const typeOwnerSourcePath = typeOwnerSource
-        ? MUTATION_ROUTE_OWNER_PATHS[typeOwnerSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
-        : ownerSourcePath;
-      const dispatchSourcePath = dispatchSource
-        ? MUTATION_ROUTE_OWNER_PATHS[dispatchSource as keyof typeof MUTATION_ROUTE_OWNER_PATHS]
-        : ownerSourcePath;
-      const appInboxType = AppInboxType[type as keyof typeof AppInboxType];
-      if (
-        !sourcePath ||
-        !enqueueSourcePath ||
-        !ownerSourcePath ||
-        !ownerDispatchPath ||
-        !typeOwnerSourcePath ||
-        !dispatchSourcePath ||
-        !appInboxType
-      ) {
-        throw new Error(`Invalid mutation route inventory row: ${row}`);
-      }
-      return {
-        transport: transport as MutationRouteInventoryEntry['transport'],
-        entrypoint,
-        type: appInboxType,
-        owner,
-        sourcePath,
-        registrationMarker,
-        enqueueSourcePath,
-        enqueueMarker,
-        ownerSourcePath,
-        ownerDispatchPath,
-        typeOwnerSourcePath,
-        dispatchSourcePath,
-      };
-    });
-}
-
 function key(item: MutationRouteInventoryEntry): string {
   return `${item.transport}:${item.entrypoint}:${item.type}`;
 }
@@ -204,9 +133,45 @@ function checkRegistration(
   const [method, routePath] = item.entrypoint.split(' ');
   const program = sources.readProgram(issues, item.sourcePath, 'registration', item);
   if (!program) return;
-  if (findRouteRegistration(program, method.toLowerCase(), routePath) === undefined) {
+  const rootProgram = item.constructionRootSourcePath
+    ? sources.readProgram(issues, item.constructionRootSourcePath, 'registration root', item)
+    : undefined;
+  const handler = findExactHttpRouteHandler({
+    program,
+    method: method.toLowerCase(),
+    routePath,
+    registrationMarker: item.registrationMarker,
+    familyRegistrationMarker: item.familyRegistrationMarker,
+    familyPrivateOwnerNames: readCanonicalFamilyPrivateOwners(item),
+  });
+  const hasRoot =
+    !item.familyRegistrationMarker ||
+    Boolean(
+      rootProgram &&
+      item.constructionRootMarker &&
+      item.constructionRootSourcePath &&
+      hasExactGroupRegistrationRoot({
+        program: rootProgram,
+        rootOwnerName: item.constructionRootMarker,
+        rootSourcePath: item.constructionRootSourcePath,
+        familyOwnerName: item.familyRegistrationMarker,
+        familySourcePath: item.sourcePath,
+      }),
+    );
+  if (!handler || !hasRoot) {
     issues.push(`${key(item)} registration is absent from ${item.sourcePath}`);
   }
+}
+
+function readCanonicalFamilyPrivateOwners(
+  item: MutationRouteInventoryEntry,
+): readonly string[] | undefined {
+  if (!item.familyRegistrationMarker) return undefined;
+  return MUTATION_ROUTE_INVENTORY.filter(
+    (candidate) => candidate.familyRegistrationMarker === item.familyRegistrationMarker,
+  )
+    .toSorted((left, right) => (left.familyOwnerOrder ?? -1) - (right.familyOwnerOrder ?? -1))
+    .map((candidate) => candidate.registrationMarker);
 }
 
 function checkAstMarker({
@@ -331,26 +296,16 @@ function hasDirectExactMarker(program: AstNode, marker: string): boolean {
   );
 }
 
-function hasClassMethod(program: AstNode, method: string): boolean {
+function hasOwnerCallable(program: AstNode, method: string): boolean {
   return someNode(
     program,
     (node) =>
-      (node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') &&
-      readIdentifier(asNode(node.key)) === method,
-  );
-}
-
-function hasOwnerCallable(program: AstNode, method: string): boolean {
-  return (
-    hasClassMethod(program, method) ||
-    someNode(
-      program,
-      (node) =>
-        (node.type === 'FunctionDeclaration' && readIdentifier(asNode(node.id)) === method) ||
-        (node.type === 'ImportSpecifier' &&
-          (readIdentifier(asNode(node.local)) === method ||
-            readIdentifier(asNode(node.imported)) === method)),
-    )
+      ((node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') &&
+        readIdentifier(asNode(node.key)) === method) ||
+      (node.type === 'FunctionDeclaration' && readIdentifier(asNode(node.id)) === method) ||
+      (node.type === 'ImportSpecifier' &&
+        (readIdentifier(asNode(node.local)) === method ||
+          readIdentifier(asNode(node.imported)) === method)),
   );
 }
 

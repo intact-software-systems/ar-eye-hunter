@@ -10,37 +10,42 @@ invocation so it is not a second runtime specification.
 1. [initialise](../../../../apps/api-v1/src/middleware.ts) composes the API-v1
    runtime, cache, durable group service, presence-summary worker, and queue
    readers.
-2. [defaultProcessGroupAppInbox](../../../../apps/api-v1/src/routes/group-state-routes.ts)
-   is the HTTP group-mutation caller that folds the AppInbox result into a
-   route result.
-3. [AppGroupInboxService](../services/AppGroupInboxService.ts) owns
+2. [registerGroupStateRoutes](../../../../apps/api-v1/src/group-state/register-group-state-routes.ts)
+   is the API-v1 construction entry that installs the five cohesive route
+   families once.
+3. [toGroupStateCommand](../../../../apps/api-v1/src/group-state/to-group-state-command.ts)
+   is the canonical HTTP request-to-AppInbox command boundary for all 17
+   authenticated group mutations.
+4. [defaultProcessGroupAppInbox](../../../../apps/api-v1/src/group-state/create-group-state-route-dependencies.ts)
+   is the HTTP group-mutation caller that waits for AppInbox completion.
+5. [AppGroupInboxService](../services/AppGroupInboxService.ts) owns
    authenticated enqueue preparation and group-message handler registration.
-4. [isAuthenticatedGroupMutationEnqueue](./inbox/group-state-inbox-contracts.ts)
+6. [isAuthenticatedGroupMutationEnqueue](./inbox/group-state-inbox-contracts.ts)
    establishes the existing authenticated type-to-payload relationship by
    checking only the inbox type.
-5. [toGroupMutationDescriptor](./inbox/to-group-mutation-descriptor.ts) is the
+7. [toGroupMutationDescriptor](./inbox/to-group-mutation-descriptor.ts) is the
    canonical request-to-mutation-descriptor translation used during enqueue
    preparation.
-6. [GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts) owns the
+8. [GroupStateInboxHandler](./inbox/group-state-inbox-handler.ts) owns the
    group mutation handler's commit-return boundary and after-commit snapshot
    observation.
-7. [createGroupStateService](./group-state-service.ts) constructs the durable
+9. [createGroupStateService](./group-state-service.ts) constructs the durable
    group-state read, compute, validate, and write operations.
-8. [writeGroupMutation](./mutation/write/write-group-mutation.ts) owns the
-   first aggregate or presence-session conditional guard and transaction-local
-   event, receipt, and outbox writes.
-9. [processGroupPresenceConnect](./presence/group-presence-service.ts) owns
-   the connect-specific generation high-water decision and returns only an
-   inactive or ready-to-commit result.
-10. [processGroupSessionCleanup](./presence/group-presence-service.ts) owns
+10. [writeGroupMutation](./mutation/write/write-group-mutation.ts) owns the
+    first aggregate or presence-session conditional guard and transaction-local
+    event, receipt, and outbox writes.
+11. [processGroupPresenceConnect](./presence/group-presence-service.ts) owns
+    the connect-specific generation high-water decision and returns only an
+    inactive or ready-to-commit result.
+12. [processGroupSessionCleanup](./presence/group-presence-service.ts) owns
     WebSocket-close cleanup preparation and its one transaction for all affected
     group mutations.
-11. [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts)
+13. [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts)
     owns downstream summary convergence, its queue transaction, and post-commit
     wake.
-12. [createCachedGroupStateService](./snapshot/cached-group-state-service.ts)
+14. [createCachedGroupStateService](./snapshot/cached-group-state-service.ts)
     is the composition adapter for durable authority and cache reads.
-13. [GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts)
+15. [GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts)
     owns local snapshot observation, freshness checks, and durable read-through.
 
 ## Construction And Registration
@@ -69,6 +74,15 @@ invocation is therefore only possible after the repositories, transaction
 writer, handlers, summary worker, and queue-reader callbacks have been made
 available by this composition path.
 
+The API-v1 [createRallarServer](../../../../apps/api-v1/src/create-rallar-server.ts)
+composition later calls
+[registerGroupStateRoutes](../../../../apps/api-v1/src/group-state/register-group-state-routes.ts).
+That registrar resolves the route dependencies and
+[createGroupStateRouteAuthorization](../../../../apps/api-v1/src/group-state/group-state-route-authorization.ts)
+before it installs the read, aggregate, admission, membership, and presence
+registrars in predecessor order. HTTP callbacks can first run only after that
+registration call returns with all required dependencies already resolved.
+
 [AppInboxService](../services/AppInboxService.ts) owns the generic queue
 callback boundary through `onStateMessage`: it validates the stored command
 identity, starts its transaction-finalization state, calls the registered
@@ -89,9 +103,21 @@ the group handler uses.
 
 ### Authenticated aggregate, membership, heartbeat, and disconnect mutations
 
-1. An HTTP route calls
-   [defaultProcessGroupAppInbox](../../../../apps/api-v1/src/routes/group-state-routes.ts),
-   which calls `AppGroupInboxService.processAuthenticatedEntryUntilCompletion`.
+1. The aggregate
+   [registerGroupStateMutationRoutes](../../../../apps/api-v1/src/group-state/register-group-state-mutation-routes.ts),
+   admission
+   [registerGroupAdmissionRoutes](../../../../apps/api-v1/src/group-state/register-group-admission-routes.ts),
+   membership
+   [registerGroupMembershipRoutes](../../../../apps/api-v1/src/group-state/register-group-membership-routes.ts),
+   or presence
+   [registerGroupPresenceRoutes](../../../../apps/api-v1/src/group-state/register-group-presence-routes.ts)
+   callback authenticates and reads the request through
+   [readGroupStateRouteRequest](../../../../apps/api-v1/src/group-state/read-group-state-route-request.ts).
+   It calls
+   [toGroupStateCommand](../../../../apps/api-v1/src/group-state/to-group-state-command.ts),
+   then `processGroupAppInbox`, whose production default is
+   [defaultProcessGroupAppInbox](../../../../apps/api-v1/src/group-state/create-group-state-route-dependencies.ts).
+   That owner calls `AppGroupInboxService.processAuthenticatedEntryUntilCompletion`.
 2. [AppGroupInboxService](../services/AppGroupInboxService.ts) rejects a
    non-authenticated group type through
    [isAuthenticatedGroupMutationEnqueue](./inbox/group-state-inbox-contracts.ts),
@@ -127,7 +153,9 @@ the group handler uses.
    transaction returns.
 7. Only after that commit-return does `commitMutation` observe a committed
    snapshot through the cache and call the optional queue wake. The durable
-   result is then read by AppInbox and folded by the HTTP route. Missing or
+   result is then read by AppInbox and adapted by
+   [toGroupStateResponse](../../../../apps/api-v1/src/group-state/to-group-state-response.ts)
+   before the registering HTTP route returns it. Missing or
    failed persisted results and policy or authority errors exit through the
    AppInbox result/classification boundary, not a direct route mutation.
 8. A retryable transaction failure is rethrown to
@@ -208,30 +236,28 @@ result.
 
 ### HTTP snapshot, query, and event reads
 
-[init](../../../../apps/api-v1/src/routes/group-state-routes.ts) registers the
+[registerGroupStateReadRoutes](../../../../apps/api-v1/src/group-state/register-group-state-read-routes.ts)
+registers the
 list-snapshot, single-snapshot, array-event, and paged-event HTTP routes. For
-strict reads it uses
-[readStrictReadAuthSession](../../../../apps/api-v1/src/routes/group-state-routes.ts);
+strict reads it uses the owner created by
+[createGroupStateRouteAuthorization](../../../../apps/api-v1/src/group-state/group-state-route-authorization.ts);
 the list route filters snapshots with
 [canReadGroupSnapshot](../group-policy.ts), while the single-snapshot and event
-routes use
-[assertCanReadGroupState](../../../../apps/api-v1/src/routes/group-state-routes.ts)
-or
-[assertCanReadGroupRef](../../../../apps/api-v1/src/routes/group-state-routes.ts).
+routes call that same authorization owner's named read checks.
 
 The canonical durable query owners are assembled by
 [createQueryOperations](./group-state-service.ts): `listSnapshots`,
 `readSnapshot`, `listEvents`, `listRecentEvents`, and `listEventPage` delegate
 to the group-state repository. The list and single-snapshot successes call
-[hydrateGroupSnapshots](../../../../apps/api-v1/src/routes/group-state-routes.ts)
+[hydrateGroupSnapshots](../../../../apps/api-v1/src/group-state/register-group-state-read-routes.ts)
 before returning JSON. A missing single snapshot returns that route's explicit
 404; an absent snapshot during event authorization throws a not-found error.
 The array event route uses
-[listRecentGroupEventsForArrayRoute](../../../../apps/api-v1/src/routes/group-state-routes.ts)
+[listRecentGroupEventsForArrayRoute](../../../../apps/api-v1/src/group-state/register-group-state-read-routes.ts)
 to prefer the service's canonical recent-event query and otherwise filter its
 canonical event list; the page route calls `listEventPage` directly. Every
 thrown authorization, not-found, query, or parsing failure exits through
-[toGroupStateErrorResponse](../../../../apps/api-v1/src/routes/group-state-route-errors.ts).
+[toGroupStateErrorResponse](../../../../apps/api-v1/src/group-state/group-state-route-errors.ts).
 
 [createTimedGroupStateService](./group-state-service-timing.ts) times every
 asynchronous `GroupStateService` operation in its closed
@@ -269,3 +295,20 @@ For browser or protocol routing, begin from the linked API composition and
 route owner above. The compatibility modules under `rallar-system/services/`
 re-export group-state capabilities; they are not alternate implementation
 owners.
+
+## API-v1 PR A Compatibility Interval
+
+Before this route move, repository consumers of the old API-v1 route paths were
+`create-rallar-server.ts`, the mixed route test, this navigation map and its
+integrity test, and the mutation-routing inventory. PR A moves each of those
+active consumers to the canonical `apps/api-v1/src/group-state/` owners.
+
+For one resulting-main interval, `apps/api-v1/src/routes/group-state-routes.ts`
+and `apps/api-v1/src/routes/group-state-route-errors.ts` remain direct one-hop,
+named re-exports with no executable logic. PR B removes them only after PR A's
+exact resulting-main workflow succeeds, no active repository import remains,
+the canonical route tests and Deno check pass, navigation and mutation evidence
+name only canonical paths, the paths are confirmed absent from package exports,
+and independent review confirms that removal changes no HTTP or runtime
+behavior. If a live consumer remains, its exact path and a later removal
+condition must be recorded instead of adding another compatibility hop.

@@ -19,37 +19,67 @@ const navigationSourceLinks = [
   },
   {
     symbol: 'defaultProcessGroupAppInbox',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-routes.ts',
+    sourcePath: '../../../../apps/api-v1/src/group-state/create-group-state-route-dependencies.ts',
     declaration: 'async function defaultProcessGroupAppInbox',
   },
   {
-    symbol: 'init',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-routes.ts',
-    declaration: 'export function init(',
+    symbol: 'registerGroupStateRoutes',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-state-routes.ts',
+    declaration: 'export function registerGroupStateRoutes(',
   },
   {
-    symbol: 'readStrictReadAuthSession',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-routes.ts',
-    declaration: 'async function readStrictReadAuthSession',
+    symbol: 'registerGroupStateMutationRoutes',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-state-mutation-routes.ts',
+    declaration: 'export function registerGroupStateMutationRoutes(',
   },
   {
-    symbol: 'assertCanReadGroupRef',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-routes.ts',
-    declaration: 'async function assertCanReadGroupRef',
+    symbol: 'registerGroupAdmissionRoutes',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-admission-routes.ts',
+    declaration: 'export function registerGroupAdmissionRoutes(',
   },
   {
-    symbol: 'assertCanReadGroupState',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-routes.ts',
-    declaration: 'async function assertCanReadGroupState',
+    symbol: 'registerGroupMembershipRoutes',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-membership-routes.ts',
+    declaration: 'export function registerGroupMembershipRoutes(',
+  },
+  {
+    symbol: 'registerGroupPresenceRoutes',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-presence-routes.ts',
+    declaration: 'export function registerGroupPresenceRoutes(',
+  },
+  {
+    symbol: 'registerGroupStateReadRoutes',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-state-read-routes.ts',
+    declaration: 'export function registerGroupStateReadRoutes(',
+  },
+  {
+    symbol: 'createGroupStateRouteAuthorization',
+    sourcePath: '../../../../apps/api-v1/src/group-state/group-state-route-authorization.ts',
+    declaration: 'export function createGroupStateRouteAuthorization(',
+  },
+  {
+    symbol: 'readGroupStateRouteRequest',
+    sourcePath: '../../../../apps/api-v1/src/group-state/read-group-state-route-request.ts',
+    declaration: 'export async function readGroupStateRouteRequest',
+  },
+  {
+    symbol: 'toGroupStateCommand',
+    sourcePath: '../../../../apps/api-v1/src/group-state/to-group-state-command.ts',
+    declaration: 'export function toGroupStateCommand(',
+  },
+  {
+    symbol: 'toGroupStateResponse',
+    sourcePath: '../../../../apps/api-v1/src/group-state/to-group-state-response.ts',
+    declaration: 'export function toGroupStateResponse(',
   },
   {
     symbol: 'hydrateGroupSnapshots',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-routes.ts',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-state-read-routes.ts',
     declaration: 'function hydrateGroupSnapshots',
   },
   {
     symbol: 'listRecentGroupEventsForArrayRoute',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-routes.ts',
+    sourcePath: '../../../../apps/api-v1/src/group-state/register-group-state-read-routes.ts',
     declaration: 'async function listRecentGroupEventsForArrayRoute',
   },
   {
@@ -184,7 +214,7 @@ const navigationSourceLinks = [
   },
   {
     symbol: 'toGroupStateErrorResponse',
-    sourcePath: '../../../../apps/api-v1/src/routes/group-state-route-errors.ts',
+    sourcePath: '../../../../apps/api-v1/src/group-state/group-state-route-errors.ts',
     declaration: 'export function toGroupStateErrorResponse',
   },
   {

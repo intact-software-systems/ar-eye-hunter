@@ -1,5 +1,4 @@
 import { parse } from '@babel/parser';
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -8,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
 import {
   expectedGroupStateTestTree,
-  prBChangedTypeScriptOwners,
   readRuntimeCycles,
   reviewedPredecessorFunctionSizes,
   taskNineLayoutProductionOwners,
@@ -200,10 +198,8 @@ describe('authoritative group-state server source ratchet', () => {
     expect(oversizedFunctions).toEqual(reviewedPredecessorFunctionSizes);
   });
 
-  it('keeps every PR B changed module and function within physical-line limits', () => {
-    expect(readPrBChangedTypeScriptOwners()).toEqual([...prBChangedTypeScriptOwners]);
-
-    const sources = readSources(prBChangedTypeScriptOwners);
+  it('keeps every persistent ratcheted module and function within physical-line limits', () => {
+    const sources = readRecursiveSizeRatchetedSources();
     const oversizedModules = sources
       .filter(({ raw }) => raw.trimEnd().split(/\r?\n/).length > 400)
       .map(({ file, raw }) => ({
@@ -319,19 +315,22 @@ function readRepoSource(relativePath: string): string {
   return readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
-function readPrBChangedTypeScriptOwners(): readonly string[] {
-  const base = 'a7a5f488cd185a7f2cc6bd814c319f97d5401d03';
-  const tracked = execFileSync('git', ['diff', '--name-only', base, '--', '*.ts', '*.mts'], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  const untracked = execFileSync(
-    'git',
-    ['ls-files', '--others', '--exclude-standard', '--', '*.ts', '*.mts'],
-    { cwd: repoRoot, encoding: 'utf8' },
+function readRecursiveSizeRatchetedSources(): readonly {
+  readonly file: string;
+  readonly raw: string;
+}[] {
+  const allowancePaths = [
+    ...taskNineReviewedPredecessorModuleSizes.map(({ filePath }) => filePath),
+    ...taskNineReviewedPredecessorFunctionSizes.map(({ filePath }) => filePath),
+  ];
+  const sourceByCanonicalPath = new Map(
+    [
+      ...readProductionSources(),
+      ...readSources(taskSixTestOwners),
+      ...readSources(allowancePaths),
+    ].map((source) => [path.resolve(source.file), source]),
   );
-
-  return [...new Set([...tracked.split('\n'), ...untracked.split('\n')].filter(Boolean))].sort();
+  return [...sourceByCanonicalPath.values()];
 }
 
 function readRelativeFileTree(directoryPath: string, prefix = ''): readonly string[] {

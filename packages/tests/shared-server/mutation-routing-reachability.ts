@@ -2,10 +2,13 @@ import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-co
 import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.ts';
 import {
   findAstNode,
-  findRouteRegistration,
   hasReachableAstNode,
   type MutationRoutingAstNode as AstNode,
 } from './mutation-routing-call-graph.ts';
+import {
+  findExactHttpRouteHandler,
+  isExactGroupStateRouteOperation,
+} from './mutation-routing-http-registration.ts';
 import {
   hasLiveAppInboxRegistration,
   type MutationRoutingProgramLoader,
@@ -37,15 +40,25 @@ export function findMutationRouteReachabilityIssues({
   if (handlers.length === 0) {
     return [`${routeKey} registered callback cannot be resolved`];
   }
-  const handoff = handlers
-    .map((handler) => findReachableHandoff({ item, source, enqueueSource, handler, matchesMarker }))
-    .find((candidate) => candidate !== undefined);
+  const operation = item.operationDiscriminant;
+  const operationHandlers = operation
+    ? handlers.filter((handler) => isExactGroupStateRouteOperation(handler, enqueueSource, item))
+    : handlers;
+  const handoff = operation
+    ? undefined
+    : operationHandlers
+        .map((handler) =>
+          findReachableHandoff({ item, source, enqueueSource, handler, matchesMarker }),
+        )
+        .find((candidate) => candidate !== undefined);
+  const routeConnected = operation
+    ? operationHandlers.length === 1
+    : Boolean(handoff && hasExpectedTypeWhenExplicit(handoff, item.type, matchesMarker));
   const issues: string[] = [];
-  if (
-    !handoff ||
-    !hasExpectedTypeWhenExplicit(handoff, item.type, matchesMarker) ||
-    !hasOwnerCommandDiscriminator(ownerSource, item, containsMarker)
-  ) {
+  if (operation && operationHandlers.length !== 1) {
+    issues.push(`${routeKey} operation is not connected to ${item.enqueueMarker}`);
+  }
+  if (!routeConnected || !hasOwnerCommandDiscriminator(ownerSource, item, containsMarker)) {
     issues.push(
       `${routeKey} registered handler is not connected to ` +
         `${item.enqueueMarker} with AppInboxType.${item.type}`,
@@ -97,8 +110,14 @@ function findRegisteredHandlers(
 ): readonly AstNode[] {
   if (item.transport === 'HTTP') {
     const [method, routePath] = item.entrypoint.split(' ');
-    const registration = findRouteRegistration(program, method.toLowerCase(), routePath);
-    return registration ? asNodes(registration.arguments).slice(1, 2) : [];
+    const handler = findExactHttpRouteHandler({
+      program,
+      method: method.toLowerCase(),
+      routePath,
+      registrationMarker: item.registrationMarker,
+      familyRegistrationMarker: item.familyRegistrationMarker,
+    });
+    return handler ? [handler] : [];
   }
   if (item.transport === 'MAINTENANCE') {
     const named = findFunctionLikes(program, item.registrationMarker);
@@ -373,7 +392,6 @@ function asNode(value: unknown): AstNode | undefined {
     ? (value as AstNode)
     : undefined;
 }
-
 function asNodes(value: unknown): readonly AstNode[] {
   return Array.isArray(value)
     ? value.map(asNode).filter((node): node is AstNode => node !== undefined)

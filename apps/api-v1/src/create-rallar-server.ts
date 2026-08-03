@@ -47,7 +47,7 @@ import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
 import * as clientStateRoutes from './routes/client-state-routes.ts';
-import * as groupStateRoutes from './routes/group-state-routes.ts';
+import * as groupStateRoutes from './group-state/register-group-state-routes.ts';
 import * as spaStatisticsRoutes from './routes/spa-statistics-routes.ts';
 import * as graphTopologyRoutes from './routes/graph-topology-routes.ts';
 import * as crdtAdminRoutes from './routes/crdt-admin-routes.ts';
@@ -344,7 +344,7 @@ export function createRallarServer(
             getClientStateService: () => middleware.clientStateService,
           }),
         (app) =>
-          groupStateRoutes.init(app, {
+          groupStateRoutes.registerGroupStateRoutes(app, {
             getGroupStateService: () => middleware.groupStateService,
           }),
         (app) =>
