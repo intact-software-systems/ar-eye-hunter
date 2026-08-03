@@ -77,8 +77,10 @@ GitHub Actions.
 
 Date: 2026-08-03
 
-Status: Drafted and unapproved. Planning publication is pending. No API-v1
-implementation branch or goal exists, and no production code has changed.
+Status: Approved. Planning PR #67 and PR A #68 are complete; PR B Task 7 is
+accepted on draft PR #69. Task 8's final whole-review, unchanged-tree gates,
+freeze, Branch Release Gate, ready transition, merge, and resulting-main
+workflow remain pending.
 
 ## 1. Prerequisite Evidence And Approval Boundary
 
@@ -780,6 +782,17 @@ If implementation changes any of those facts or affects a transaction-facing
 or concurrency-domain owner, execution stops for a plan amendment and an exact
 performance decision. It may not silently inherit the pure-move exemption.
 
+Pre-freeze re-evaluation from PR A resulting `main`
+`4d616edc649fe30ebf0fca48db4ab683d9c512e3` to the accepted Task 7 head
+`40f5898cad386beeb4474f893d48ca2bf51eeb9e` finds exactly two production/runtime
+changes: deletion of `apps/api-v1/src/routes/group-state-routes.ts` and
+`apps/api-v1/src/routes/group-state-route-errors.ts`. Both deleted modules were
+executable-logic-free direct compatibility re-exports. No production code at or
+below AppInbox changed; no call, awaited completion point, serialization,
+asynchronous hop, retry, or concurrency behavior changed. The pure-move
+performance exemption therefore remains applicable. This is Task 7 evidence,
+not Task 8 final-gate or final-freeze evidence.
+
 ## 10. Implementation Tasks
 
 ### Task 0: Publish And Approve This Child Plan
@@ -790,17 +803,17 @@ performance decision. It may not silently inherit the pure-move exemption.
 - Modify: `plans/repo-human-traceability-refactoring-program-plan.md`
 - Modify: `plans/repo-human-traceability-program-execution-plan.md`
 
-- [ ] Verify the exact PR #66 ledger envelope and start from exact `main`
+- [x] Verify the exact PR #66 ledger envelope and start from exact `main`
       `04b041824073e50a4f1623ca9a71d0d02b770c12` and tree
       `111995e3a72eb246fd0b8028aada4fbeda65fe69`.
-- [ ] Add this exact plan and reciprocal master/execution links without
+- [x] Add this exact plan and reciprocal master/execution links without
       rewriting completed governance, browser, or server history.
-- [ ] Mark this child drafted and unapproved and preserve the non-circular
+- [x] Mark this child drafted and unapproved and preserve the non-circular
       evidence contract.
-- [ ] Run Section 12.1 on one unchanged planning tree.
-- [ ] Publish one non-default draft planning PR and require Branch Release Gate
+- [x] Run Section 12.1 on one unchanged planning tree.
+- [x] Publish one non-default draft planning PR and require Branch Release Gate
       success for its exact final planning commit.
-- [ ] Stop for human approval or revision of the exact plan Git blob. Do not
+- [x] Stop for human approval or revision of the exact plan Git blob. Do not
       create an implementation goal or branch before approval and planning
       merge/default-workflow evidence.
 
@@ -809,20 +822,20 @@ performance decision. It may not silently inherit the pure-move exemption.
 **Files:** current production/tests from Sections 3.1 and 3.4; characterization
 tests may be added only to the PR A target test owners in Section 3.5.
 
-- [ ] Start PR A from the planning PR's exact resulting-main SHA only after its
+- [x] Start PR A from the planning PR's exact resulting-main SHA only after its
       default workflow succeeds; create one child-specific goal.
-- [ ] Record current construction and registration order, including the exact
+- [x] Record current construction and registration order, including the exact
       route installer array position and all 21 Hono registrations.
-- [ ] Capture every existing test name, fixture, raw literal, `assert` site,
+- [x] Capture every existing test name, fixture, raw literal, `assert` site,
       OpenAPI group path/method/security/schema row, and black-box group recipe
       before moving a test.
-- [ ] Add test-first all-17 AppInbox characterization: exact type/payload pair,
+- [x] Add test-first all-17 AppInbox characterization: exact type/payload pair,
       scope, IDs, request fields, actor overrides, omissions, and raw property
       order.
-- [ ] Add exact normal, early, failed, and cleanup/after-commit trace evidence
+- [x] Add exact normal, early, failed, and cleanup/after-commit trace evidence
       for aggregate, admission, membership, presence, read, and event families.
-- [ ] Prove current request-ID precedence and volatile invocation count.
-- [ ] Obtain an independent characterization review with Critical 0 and
+- [x] Prove current request-ID precedence and volatile invocation count.
+- [x] Obtain an independent characterization review with Critical 0 and
       Important 0 before production movement.
 
 ### Task 2: Establish Read, Authorization, Dependency, And Error Owners
@@ -838,14 +851,14 @@ tests may be added only to the PR A target test owners in Section 3.5.
 - Create/move directly owned tests from Section 3.5
 - Modify the two old route files only into the approved direct re-exports
 
-- [ ] Move bodies before aligning style; preserve order and error text.
-- [ ] Resolve defaults once during registration and pass mandatory dependencies
+- [x] Move bodies before aligning style; preserve order and error text.
+- [x] Resolve defaults once during registration and pass mandatory dependencies
       to route owners.
-- [ ] Keep environment lookup timing and route-level auth duplication exact.
-- [ ] Keep current/durable read method selection, policy checks, cache
+- [x] Keep environment lookup timing and route-level auth duplication exact.
+- [x] Keep current/durable read method selection, policy checks, cache
       hydration, event fallback, and page reads exact.
-- [ ] Move error behavior without adding an error class or generic responder.
-- [ ] Run the exact read/error/auth focused suites and independently review the
+- [x] Move error behavior without adding an error class or generic responder.
+- [x] Run the exact read/error/auth focused suites and independently review the
       cohort with Critical 0 and Important 0.
 
 ### Task 3: Establish The Command And Response Boundaries
@@ -857,20 +870,20 @@ tests may be added only to the PR A target test owners in Section 3.5.
 - Create/move the exact route-family tests from Section 3.5
 - Update only the shared internal contracts required by these owners
 
-- [ ] Define one discriminated internal input covering exactly the current 17
+- [x] Define one discriminated internal input covering exactly the current 17
       HTTP mutation operations and no server maintenance/WS operation.
-- [ ] Move validation, authenticated actor/creator projection, context ID, and
+- [x] Move validation, authenticated actor/creator projection, context ID, and
       exact AppInbox envelope construction into `toGroupStateCommand`.
-- [ ] Make the switch exhaustive without changing unsupported-runtime behavior.
-- [ ] Prove every field, omission, spread override, request identity, random
+- [x] Make the switch exhaustive without changing unsupported-runtime behavior.
+- [x] Prove every field, omission, spread override, request identity, random
       invocation, payload type, and raw property order with independent
       literals.
-- [ ] Move written-result, join-code, and presence-receipt adaptation into
+- [x] Move written-result, join-code, and presence-receipt adaptation into
       `toGroupStateResponse`; retain `context.json` and the visible status in
       each route.
-- [ ] Prove exact error/rejection text, response JSON/order, and snapshot
+- [x] Prove exact error/rejection text, response JSON/order, and snapshot
       identity.
-- [ ] Independently review the cohort with Critical 0 and Important 0.
+- [x] Independently review the cohort with Critical 0 and Important 0.
 
 ### Task 4: Split And Register The Five Route Families
 
@@ -883,16 +896,16 @@ tests may be added only to the PR A target test owners in Section 3.5.
 - Split: the mixed predecessor test into the exact final tree in Section 3.5
 - Modify: `package.json` only for active test path registration
 
-- [ ] Register the five families in exact predecessor order.
-- [ ] Keep parsing, auth/authorization, translation, submission/read, response,
+- [x] Register the five families in exact predecessor order.
+- [x] Keep parsing, auth/authorization, translation, submission/read, response,
       and catch/error sequence visible in each route handler.
-- [ ] Preserve all existing client cases during the required test-only
+- [x] Preserve all existing client cases during the required test-only
       extraction; preserve the three cross-feature cases intact.
-- [ ] Ensure every moved/new test file and general fixture function meets the
+- [x] Ensure every moved/new test file and general fixture function meets the
       hard size limits without a generic test runtime or dependency bag.
-- [ ] Run all five route-family suites, the extracted client/cross-feature
+- [x] Run all five route-family suites, the extracted client/cross-feature
       suites, `rallar-server.test.ts`, and the OpenAPI focus.
-- [ ] Independently review registration, test ownership, and exact diff scope
+- [x] Independently review registration, test ownership, and exact diff scope
       with Critical 0 and Important 0.
 
 ### Task 5: Reconcile Navigation, Mutation Routing, And Consumers
@@ -906,41 +919,41 @@ tests may be added only to the PR A target test owners in Section 3.5.
 - Modify: directly owned mutation-route tests only when an exact path/symbol
   assertion requires it
 
-- [ ] Update the durable navigation map to the new construction/runtime owners
+- [x] Update the durable navigation map to the new construction/runtime owners
       without rewriting server behavior.
-- [ ] Update all 17 HTTP inventory rows to their exact canonical registration
+- [x] Update all 17 HTTP inventory rows to their exact canonical registration
       and command-translation sources; retain server dispatch owners unchanged.
-- [ ] Prove `registerGroupStateRoutes` installs every route once, every mutation
+- [x] Prove `registerGroupStateRoutes` installs every route once, every mutation
       type reaches exactly one canonical HTTP registration, and old active
       imports do not reappear.
-- [ ] Prove OpenAPI, shared-web API integration, black-box workbench/recipes,
+- [x] Prove OpenAPI, shared-web API integration, black-box workbench/recipes,
       shared DTOs, server production, and middleware production are unchanged.
-- [ ] Record the PR A one-hop compatibility consumers and removal condition.
-- [ ] Keep the temporary exact-base structure ratchet owned by this child and
+- [x] Record the PR A one-hop compatibility consumers and removal condition.
+- [x] Keep the temporary exact-base structure ratchet owned by this child and
       remove or replace it after both implementation PR resulting-main
       workflows and the later ledger are published, when semantic coverage owns
       the same loss risk.
-- [ ] Independently review navigation accuracy, semantic ratchets, public
+- [x] Independently review navigation accuracy, semantic ratchets, public
       compatibility, and mutation reachability with Critical 0 and Important 0.
 
 ### Task 6: Freeze, Review, And Publish PR A
 
-- [ ] Review the complete PR A from its exact base for hidden behavior,
+- [x] Review the complete PR A from its exact base for hidden behavior,
       compatibility, authentication, OpenAPI, AppInbox, server, persistence,
       or test changes; runtime cycles; lost assertions; file/function limits;
       generic owners; and extra hops.
-- [ ] Require Critical 0 and Important 0 and resolve ordinary in-scope findings
+- [x] Require Critical 0 and Important 0 and resolve ordinary in-scope findings
       test-first.
-- [ ] Reconcile the exact-base changed-style review with the two-row lineage
+- [x] Reconcile the exact-base changed-style review with the two-row lineage
       manifest/provenance audit for mechanically inherited findings and named
       AppInbox-discriminated translator output contracts for all 17 helpers;
       do not grant lineage capacity to semantically new code.
-- [ ] Run Section 12.2 on one final unchanged tree.
-- [ ] Freeze the exact tree/commit, push non-forced, update one draft PR A with
+- [x] Run Section 12.2 on one final unchanged tree.
+- [x] Freeze the exact tree/commit, push non-forced, update one draft PR A with
       the read-first map and exact evidence, and require Branch Release Gate for
       that exact SHA.
-- [ ] Mark PR A ready and stop for the human merge decision.
-- [ ] After human merge, verify exact resulting-main SHA and successful default
+- [x] Mark PR A ready and stop for the human merge decision.
+- [x] After human merge, verify exact resulting-main SHA and successful default
       workflow before PR B.
 
 ### Task 7: Align The Moved Code Without Changing Behavior
@@ -948,20 +961,20 @@ tests may be added only to the PR A target test owners in Section 3.5.
 **Files:** only new/moved API-v1 group-state production/tests, the exact active
 navigation/ratchet evidence, and the two temporary compatibility files.
 
-- [ ] Start PR B from PR A's exact resulting-main SHA after its default
+- [x] Start PR B from PR A's exact resulting-main SHA after its default
       workflow succeeds; reuse the child goal.
-- [ ] Add the API-v1 group-state source/style ratchet test-first as temporary
+- [x] Add the API-v1 group-state source/style ratchet test-first as temporary
       supplementary evidence with this child as owner and later ledger as
       removal decision point.
-- [ ] Align descriptive names, imports, named inputs/interfaces, file ordering,
+- [x] Align descriptive names, imports, named inputs/interfaces, file ordering,
       100-column guidance, 60-line general functions, and 400-line modules.
-- [ ] Preserve route sequence, fields, object order, defaults, errors, calls,
+- [x] Preserve route sequence, fields, object order, defaults, errors, calls,
       results, identity, and side effects exactly.
-- [ ] Apply Section 7.2. Remove the two temporary re-export files only if every
+- [x] Apply Section 7.2. Remove the two temporary re-export files only if every
       removal condition passes; otherwise stop for exact human review.
-- [ ] Replace no semantic test with a source-string check. Keep source/layout
+- [x] Replace no semantic test with a source-string check. Keep source/layout
       ratchets supplementary.
-- [ ] Independently review PR B with Critical 0 and Important 0.
+- [x] Independently review PR B with Critical 0 and Important 0.
 
 ### Task 8: Freeze, Validate, And Publish PR B
 
@@ -1141,35 +1154,35 @@ implementation tree as having contained future evidence.
 
 ## 14. Acceptance Checklist
 
-- [ ] Human approved this exact plan Git blob.
-- [ ] Planning PR merged and its exact resulting-main workflow succeeded.
-- [ ] All 21 current HTTP routes and all 17 AppInbox mutation mappings were
+- [x] Human approved this exact plan Git blob.
+- [x] Planning PR merged and its exact resulting-main workflow succeeded.
+- [x] All 21 current HTTP routes and all 17 AppInbox mutation mappings were
       characterized before movement.
-- [ ] Construction/registration and request/runtime timelines remain distinct.
-- [ ] `registerGroupStateRoutes` is the one descriptive registration entry.
-- [ ] Every target filename matches its primary symbol and owns one cohesive
+- [x] Construction/registration and request/runtime timelines remain distinct.
+- [x] `registerGroupStateRoutes` is the one descriptive registration entry.
+- [x] Every target filename matches its primary symbol and owns one cohesive
       boundary.
-- [ ] Request-ID precedence, actor overrides, validation order, raw property
+- [x] Request-ID precedence, actor overrides, validation order, raw property
       order, and volatile invocation points are exact.
-- [ ] Authentication, strict reads, route authorization, and error responses
+- [x] Authentication, strict reads, route authorization, and error responses
       are exact.
-- [ ] AppInbox remains the only mutation entry; transaction/retry/persistence
+- [x] AppInbox remains the only mutation entry; transaction/retry/persistence
       ownership is unchanged.
-- [ ] OpenAPI, shared DTOs, browser consumers, black-box recipes, public
+- [x] OpenAPI, shared DTOs, browser consumers, black-box recipes, public
       contracts, and persisted contracts are unchanged.
-- [ ] Every predecessor test case, fixture, literal, expectation, and assertion
+- [x] Every predecessor test case, fixture, literal, expectation, and assertion
       site remains, including the three intact cross-feature cases.
-- [ ] The final mirrored production/test trees match Section 3.
-- [ ] PR A's two temporary re-export files are direct, one-hop, and executable-
+- [x] The final mirrored production/test trees match Section 3.
+- [x] PR A's two temporary re-export files are direct, one-hop, and executable-
       logic-free.
-- [ ] The exact-base lineage manifest/provenance ratchet contains only
+- [x] The exact-base lineage manifest/provenance ratchet contains only
       mechanically inherited findings, and each of the 17 translator helpers
       has an AppInbox-discriminated named output contract.
-- [ ] PR A review has Critical 0 and Important 0; all local and remote gates
+- [x] PR A review has Critical 0 and Important 0; all local and remote gates
       pass for its exact head.
-- [ ] PR A merged and its exact resulting-main workflow succeeded before PR B.
-- [ ] PR B removed the temporary files only after every Section 7.2 condition.
-- [ ] Every new/moved module and materially changed general function meets the
+- [x] PR A merged and its exact resulting-main workflow succeeded before PR B.
+- [x] PR B removed the temporary files only after every Section 7.2 condition.
+- [x] Every new/moved module and materially changed general function meets the
       hard size limits without extra hops.
 - [ ] PR B review has Critical 0 and Important 0; all local and remote gates
       pass for its exact head.
@@ -1199,14 +1212,14 @@ implementation tree as having contained future evidence.
 
 ## 16. Progress Record
 
-| Milestone                    | State                           | Evidence                                                                                                                                                                                                                                                                        |
-| ---------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Server prerequisite ledger   | `ledger-published`              | PR #66 feature `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree `111995e3a72eb246fd0b8028aada4fbeda65fe69`, Branch Release Gate `30778763061` attempt 1 success, resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12`, default workflow `30780849548` attempt 1 success. |
-| API-v1 child plan            | drafted, unapproved             | This plan records inspected current owners, exact target trees, move map, traces, compatibility, tasks, validation, and human decisions. Planning publication evidence remains future/external.                                                                                 |
-| PR A structure               | pre-Task 6 amendment authorized | Exact base `0a52ecee39181c7784fa6b777270f8a59bc33c00`; amendment starts from `073d3493e4708b77c6403bc54b035f7dc8ef1dfa` / tree `b836c8a8b85f7f311212cc8e66092c35381962c2` and reconciles only the exact-base changed-style findings before final freeze.                        |
-| PR B code-standard alignment | not started                     | Waits for PR A merge and exact resulting-main default workflow.                                                                                                                                                                                                                 |
-| API-v1 child later ledger    | not started                     | Requires separate authorization after both implementation PRs are complete.                                                                                                                                                                                                     |
-| Complete pilot evaluation    | blocked                         | Begins only after this child later reaches `ledger-published`.                                                                                                                                                                                                                  |
+| Milestone                    | State                                | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server prerequisite ledger   | `ledger-published`                   | PR #66 feature `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree `111995e3a72eb246fd0b8028aada4fbeda65fe69`, Branch Release Gate `30778763061` attempt 1 success, resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12`, default workflow `30780849548` attempt 1 success.                                                                                                                                                                                                                                                                |
+| API-v1 child plan            | approved; planning complete          | Approved plan blob `00a8efe0e6124ec9882360c1328045cde781b726` plus its authorized PR A amendments remains the scope. Planning PR #67 feature `228f49088b9413aae506086f422849d0d0161554`, tree `0cd117101c165b0bb971e0e1809bf91ca5501461`, resulting `main` `0a52ecee39181c7784fa6b777270f8a59bc33c00`, and default workflow `30785324305` attempt 1 succeeded.                                                                                                                                                                                 |
+| PR A structure               | complete; PR #68 merged              | Exact base `0a52ecee39181c7784fa6b777270f8a59bc33c00`; feature `cb9f074db23135de682a19108282b95f71b5e54e`, tree `8126969737977c901dc56a35b3b523a9209a4fa7`, Branch Release Gate `30815005047` attempt 1 succeeded, resulting `main` `4d616edc649fe30ebf0fca48db4ab683d9c512e3` has the same tree, and default workflow `30818878869` attempt 1 succeeded for that SHA.                                                                                                                                                                         |
+| PR B code-standard alignment | Task 7 accepted; final gates pending | Draft PR #69 contains accepted commits `d59e92d7ab58c1f99b688d0683c8030450f24594`, `790df98cec5b680d139bc2f10b584cecfdff5663`, and `40f5898cad386beeb4474f893d48ca2bf51eeb9e`; accepted Task 7 tree `1b54096447421bc8bb35d2bd73c13fc5b5dbae57`; independent review `task-7-rereview-2.md` is Critical 0, Important 0, Minor 0. Focused results and ratchet semantics remain in `task-7-report.md`. Task 8 final whole-review, unchanged-tree gates, freeze, Branch Release Gate, ready transition, merge, and default workflow remain pending. |
+| API-v1 child later ledger    | not started                          | Requires separate authorization after both implementation PRs are complete.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Complete pilot evaluation    | blocked                              | Begins only after this child later reaches `ledger-published`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## 17. Planning Self-Review Record
 
