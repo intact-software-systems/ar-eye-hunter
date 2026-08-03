@@ -190,50 +190,53 @@ Deno.test('group mutation routes return stable lifecycle policy error codes', as
   });
 });
 
-Deno.test('group route adapter reconstructs a legacy AppInbox policy denial with details', async () => {
-  const toGroupError = toGroupAppInboxError;
-  assert.ok(toGroupError);
-  const failure = JSON.stringify({
-    error: 'Forbidden: Invite required.',
-    code: 'group-invite-required',
-    message: 'Invite required.',
-    details: { groupId: 'room-1' },
-  });
-  const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
-  const ownerSnapshot: GroupSnapshot = {
-    ...snapshot,
-    members: snapshot.members.map((member) =>
-      member.principalId === 'alice' ? { ...member, role: 'owner' as const } : member
-    ),
-  };
-  const { app } = createPredecessorGroupStateRouteTestRuntime({
-    session: createPredecessorGroupStateRouteAuthSession('alice'),
-    groupService: {
-      readSnapshot: () => Promise.resolve(ownerSnapshot),
-    },
-    processGroupAppInbox: () => Promise.reject(toGroupError(failure)),
-  });
-
-  const response = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
-    {
-      method: 'PUT',
-      headers: {
-        authorization: 'Bearer token',
-        'content-type': 'application/json',
+Deno.test(
+  'group route adapter reconstructs a legacy AppInbox policy denial with details',
+  async () => {
+    const toGroupError = toGroupAppInboxError;
+    assert.ok(toGroupError);
+    const failure = JSON.stringify({
+      error: 'Forbidden: Invite required.',
+      code: 'group-invite-required',
+      message: 'Invite required.',
+      details: { groupId: 'room-1' },
+    });
+    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+    const ownerSnapshot: GroupSnapshot = {
+      ...snapshot,
+      members: snapshot.members.map((member) =>
+        member.principalId === 'alice' ? { ...member, role: 'owner' as const } : member
+      ),
+    };
+    const { app } = createPredecessorGroupStateRouteTestRuntime({
+      session: createPredecessorGroupStateRouteAuthSession('alice'),
+      groupService: {
+        readSnapshot: () => Promise.resolve(ownerSnapshot),
       },
-      body: JSON.stringify({
-        requestId: 'legacy-group-denial',
-        displayName: 'Renamed',
-      }),
-    },
-  );
+      processGroupAppInbox: () => Promise.reject(toGroupError(failure)),
+    });
 
-  assert.equal(response.status, 403);
-  assert.deepEqual(await response.json(), {
-    error: 'Forbidden: Invite required.',
-    code: 'group-invite-required',
-    message: 'Invite required.',
-    details: { groupId: 'room-1' },
-  });
-});
+    const response = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1',
+      {
+        method: 'PUT',
+        headers: {
+          authorization: 'Bearer token',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          requestId: 'legacy-group-denial',
+          displayName: 'Renamed',
+        }),
+      },
+    );
+
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      error: 'Forbidden: Invite required.',
+      code: 'group-invite-required',
+      message: 'Invite required.',
+      details: { groupId: 'room-1' },
+    });
+  },
+);

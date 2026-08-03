@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -67,24 +67,8 @@ describe('API-v1 group-state route structure', () => {
     }
   });
 
-  it('keeps old route paths as direct one-hop compatibility exports only', () => {
-    expect(read(compatibilityPaths[0])).toBe(
-      "export { registerGroupStateRoutes as init } from '../group-state/" +
-        "register-group-state-routes.ts';\n" +
-        "export { toGroupAppInboxError } from '../group-state/group-state-route-errors.ts';\n" +
-        'export type {\n' +
-        '  GroupStateRouteAuthSession,\n' +
-        '  GroupStateRouteDependencies,\n' +
-        '  GroupStateRouteService,\n' +
-        '  ProcessGroupAppInbox,\n' +
-        "} from '../group-state/group-state-route-contracts.ts';\n",
-    );
-    expect(read(compatibilityPaths[1])).toBe(
-      'export {\n' +
-        '  toGroupAppInboxError,\n' +
-        '  toGroupStateErrorResponse,\n' +
-        "} from '../group-state/group-state-route-errors.ts';\n",
-    );
+  it('removes the temporary compatibility modules after canonical consumers migrate', () => {
+    expect(compatibilityPaths.filter(existsSync)).toEqual([]);
   });
 
   it('keeps protected API, consumer, server, and middleware production unchanged', () => {
