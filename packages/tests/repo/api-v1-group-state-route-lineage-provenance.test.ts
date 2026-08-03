@@ -120,12 +120,12 @@ describe('API-v1 group-state route executable compatibility references', () => {
         fixtureOperations.map(([, specifier]) => `${filePath}: ${specifier}`),
       ),
     );
-    expect(activeCompatibilitySpecifiers()).toEqual([]);
     const importEquals = "import x = require('../routes/group-state-route-errors.ts');";
     expect(moduleSpecifiers(importEquals, 'fixture.cts')).toEqual([legacyErrorsSpecifier]);
     expect(() => moduleSpecifiers('x', 'fixture.jsx')).toThrow('unsupported source extension');
     expect(() => moduleSpecifiers('import(', 'fixture.ts')).toThrow();
   });
+  it('finds no active imports', () => expect(activeCompatibilitySpecifiers()).toEqual([]), 15_000);
 });
 function validateContentBoundEvidence(
   rows: readonly (typeof evidence)[number][],
