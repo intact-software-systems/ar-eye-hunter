@@ -109,13 +109,17 @@ describe('API-v1 group-state route source/style ratchet inventory', () => {
     ]).toEqual([]);
   });
 
-  it('keeps moved production and test functions concise with named inputs after three parameters', () => {
-    const violations = [...ratchetedProductionPaths, ...ratchetedTestPaths].flatMap((filePath) =>
-      readFunctionStyleViolations(filePath, read(filePath)),
-    );
+  it(
+    'keeps moved production and test functions concise with named inputs ' +
+      'after three parameters',
+    () => {
+      const violations = [...ratchetedProductionPaths, ...ratchetedTestPaths].flatMap((filePath) =>
+        readFunctionStyleViolations(filePath, read(filePath)),
+      );
 
-    expect(violations).toEqual([]);
-  });
+      expect(violations).toEqual([]);
+    },
+  );
 });
 
 function read(filePath: string): string {
