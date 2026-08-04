@@ -34,12 +34,14 @@ import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
 import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
+import { computeClientMutation } from '../client-state/mutation/compute/compute-client-mutation.ts';
 import {
     assertNeverClientMutationComputed,
+} from '../client-state/mutation/compute/compute-client-mutation-result.ts';
+import {
     ClientMutationIdempotencyConflictError,
-    computeClientMutation,
     validateClientMutation,
-} from './client-state-mutations.ts';
+} from '../client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientMutationRejectedError } from '../client-state/client-state-validation-primitives.ts';
 import type {
     ClientMutationCommand,

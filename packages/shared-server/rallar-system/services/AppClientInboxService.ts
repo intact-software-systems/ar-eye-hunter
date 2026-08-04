@@ -45,7 +45,9 @@ import type {
     ClientMutationCommandInput,
     ClientMutationComputed,
 } from '../client-state/mutation/client-mutation-contracts.ts';
-import { validateClientMutationAuthorityPolicy } from './client-state-mutations.ts';
+import {
+    validateClientMutationAuthorityPolicy,
+} from '../client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import {
@@ -123,9 +125,7 @@ export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
     reason: string;
 }>;
 
-export type ClientExpiredSessionsAppInboxPayload = Readonly<{
-    atEpochMs: number;
-}>;
+export type ClientExpiredSessionsAppInboxPayload = Readonly<{ atEpochMs: number }>;
 export class AppClientInboxService extends AppInboxService {
     constructor(
         public override readonly inbox: InboxQueueReader,

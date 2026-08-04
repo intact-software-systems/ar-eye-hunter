@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const navigationPath = 'packages/shared-server/rallar-system/client-state/README.md';
 const architecturePath = 'packages/shared-server/architecture.md';
-const commandCohortLinks = [
+const prACohortLinks = [
+  ['./client-state-contract-validation.ts', 'function validateClientPrincipal('],
+  ['./client-mutation-receipt-validation.ts', 'function validateClientMutationReceipt('],
+  ['./client-state-semantic-equality.ts', 'function sameClientPrincipalState('],
   ['./client-state-validation-primitives.ts', 'class ClientMutationRejectedError'],
   ['./mutation/client-mutation-contracts.ts', 'type ClientMutationCommand ='],
   ['./mutation/client-mutation-command.ts', 'function toClientMutationCommand('],
@@ -27,17 +30,62 @@ const commandCohortLinks = [
     './mutation/command-validation/validate-client-mutation-request.ts',
     'function validateClientMutationRequest(',
   ],
+  ['./mutation/compute/compute-client-mutation.ts', 'function computeClientMutation('],
+  ['./mutation/compute/compute-client-mutation-result.ts', 'function computeClientMutationResult('],
+  ['./mutation/compute/compute-client-mutation-state.ts', 'function bumpClientPrincipal('],
+  [
+    './mutation/compute/compute-client-principal-mutation.ts',
+    'function computeClientPrincipalMutation(',
+  ],
+  [
+    './mutation/compute/compute-client-instance-mutation.ts',
+    'function computeClientInstanceMutation(',
+  ],
+  ['./mutation/compute/compute-client-session-connect.ts', 'function computeClientSessionConnect('],
+  [
+    './mutation/compute/compute-client-session-heartbeat.ts',
+    'function computeClientSessionHeartbeat(',
+  ],
+  [
+    './mutation/compute/compute-client-session-disconnect.ts',
+    'function computeClientSessionDisconnect(',
+  ],
+  ['./mutation/compute/compute-client-session-expiry.ts', 'function computeClientSessionExpiry('],
+  [
+    './mutation/result-validation/validate-client-mutation-read.ts',
+    'function validateClientMutationRead(',
+  ],
+  [
+    './mutation/result-validation/validate-client-mutation-authority-policy.ts',
+    'function validateClientMutationAuthorityPolicy(',
+  ],
+  [
+    './mutation/result-validation/validate-client-mutation-result.ts',
+    'function validateClientMutationResult(',
+  ],
+  ['./mutation/result-validation/validate-client-mutation.ts', 'function validateClientMutation('],
 ] as const;
 
 describe('client-state navigation map integrity', () => {
-  it('links every command/validation owner to its named primary symbol', () => {
+  it('links every PR A owner to its named primary symbol', () => {
     const readme = read(navigationPath);
-    for (const [target, declaration] of commandCohortLinks) {
+    for (const [target, declaration] of prACohortLinks) {
       expect(readme, target).toContain(`](${target})`);
       const resolved = path.resolve(path.dirname(absolute(navigationPath)), target);
       expect(existsSync(resolved), target).toBe(true);
       expect(readFileSync(resolved, 'utf8'), declaration).toContain(declaration);
     }
+  });
+
+  it('records the direct compute and result-validation path', () => {
+    const readme = read(navigationPath);
+    expect(readTimeline(readme, 'PR A compute and result timeline')).toEqual([
+      'computeClientMutation validates the command, persisted facts, and stable read before making a decision.',
+      'An existing idempotency record exits as exact replay or exact hash conflict before operation-family dispatch.',
+      'The exhaustive operation switch calls exactly one named principal, instance, connect, heartbeat, disconnect, or expiry owner.',
+      'The family owner makes the pure state decision and delegates shared audit, revision, candidate, snapshot, event, receipt, state-sync, and outbox construction to the named compute-state and compute-result owners.',
+      'validateClientMutation validates the command, facts, computed result, stable read, durable authority, identities, conditional guards, causal generation, and exact outbox before the unchanged write phase.',
+    ]);
   });
 
   it('records the current and cohort target mutation timelines', () => {

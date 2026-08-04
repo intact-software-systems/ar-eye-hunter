@@ -1,6 +1,6 @@
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 
-import { isClientJsonObject } from '../services/client-state-semantic-equality.ts';
+import { isClientJsonObject } from './client-state-semantic-equality.ts';
 
 export class ClientMutationRejectedError extends Error {
   readonly code = 'client-mutation-rejected';

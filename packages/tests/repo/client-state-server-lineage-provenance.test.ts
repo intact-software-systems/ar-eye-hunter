@@ -12,14 +12,15 @@ const mutationsSource = 'packages/shared-server/rallar-system/services/client-st
 const serviceSource = 'packages/shared-server/rallar-system/services/client-state-service.ts';
 const primitivesTarget =
   'packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
-const semanticEqualityOwner = {
+const semanticEqualitySource = {
   path: 'packages/shared-server/rallar-system/services/client-state-semantic-equality.ts',
   blob: 'de169149cb606f9ba9009545a8efd2f50746688c',
-  region: '74-77',
 } as const;
+const semanticEqualityPredicateRegion = '74-77';
 
 const sourceBlobs = [
   { path: mutationsSource, blob: '9ed11050c1391422202e3cabe5b8798d1a430d0a' },
+  semanticEqualitySource,
   { path: serviceSource, blob: 'f135573261f340948c3b846b94230095e137ca25' },
   {
     path: 'packages/shared-server/rallar-system/services/client-mutation-authority.ts',
@@ -96,6 +97,134 @@ const expectedEvidence = [
     'import-path glue; no inherited capacity',
     'boundary.unknown:liveSession',
   ),
+  evidence(
+    'contract-validation',
+    mutationsSource,
+    '2286-2298,2300-2352,2354-2387,2389-2456,2458-2470,2615-2641,2643-2665',
+    'packages/shared-server/rallar-system/client-state/client-state-contract-validation.ts',
+    'export modifiers, shared lower-level naming, and helper splits; no inherited capacity',
+    'boundary.unknown:client-contract-validation-boundaries',
+  ),
+  evidence(
+    'receipt-validation',
+    mutationsSource,
+    '2569-2613,2673-2687',
+    'packages/shared-server/rallar-system/client-state/client-mutation-receipt-validation.ts',
+    'export modifiers and receipt helper splits; no inherited capacity',
+    'boundary.unknown:receipt-idempotency-validation-boundaries',
+  ),
+  evidence(
+    'compute-dispatcher',
+    mutationsSource,
+    '829-869',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts',
+    'direct family imports and named-input syntax; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-principal',
+    mutationsSource,
+    '1114-1126,1560-1604',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-principal-mutation.ts',
+    'direct shared-owner imports and named-input syntax; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-instance',
+    mutationsSource,
+    '1128-1160,1634-1654',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-instance-mutation.ts',
+    'direct shared-owner imports and named-input syntax; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-connect',
+    mutationsSource,
+    '1162-1227,1656-1713',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-connect.ts',
+    'named generation tuple input and direct shared-owner imports; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-heartbeat',
+    mutationsSource,
+    '1229-1265',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-heartbeat.ts',
+    'direct shared-owner imports and named-input syntax; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-disconnect',
+    mutationsSource,
+    '1267-1311',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-disconnect.ts',
+    'direct shared-owner imports and named-input syntax; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-expiry',
+    mutationsSource,
+    '1313-1345',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-expiry.ts',
+    'current-session predicate extraction and named-input syntax; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-result',
+    mutationsSource,
+    '1347-1558,1738-1760',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation-result.ts',
+    'named inputs and cohesive result-construction helpers; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'compute-state',
+    mutationsSource,
+    '1606-1632,1715-1736,1762-1827',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation-state.ts',
+    'named inputs and cohesive state-construction helpers; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'validate-read',
+    mutationsSource,
+    '980-1050,2472-2482',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-read.ts',
+    'scope helper splits and direct lower-level validators; no inherited capacity',
+    'boundary.unknown:stable-read-boundaries',
+  ),
+  evidence(
+    'validate-authority',
+    mutationsSource,
+    '1052-1112',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts',
+    'issued/system helper split; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'validate-result',
+    mutationsSource,
+    '2689-2822',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-result.ts',
+    'outcome helper splits and direct lower-level validators; no inherited capacity',
+    'boundary.unknown:computed-result-boundaries',
+  ),
+  evidence(
+    'validate-mutation',
+    mutationsSource,
+    '278-290,871-978',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts',
+    'named-input syntax and invariant helper splits; no inherited capacity',
+    'none',
+  ),
+  evidence(
+    'semantic-equality',
+    semanticEqualitySource.path,
+    '1-78',
+    'packages/shared-server/rallar-system/client-state/client-state-semantic-equality.ts',
+    'canonical import path and formatting; no inherited capacity',
+    'boundary.unknown:json-semantic-equality',
+  ),
 ] as const;
 
 describe('client-state server structural-lineage provenance', () => {
@@ -108,28 +237,28 @@ describe('client-state server structural-lineage provenance', () => {
         targets: targetsBySource[source.path as keyof typeof targetsBySource],
       })),
     });
-    for (const source of [...sourceBlobs, semanticEqualityOwner]) {
+    for (const source of sourceBlobs) {
       expect(readBaseBlob(source.path), source.path).toBe(source.blob);
     }
     validateEvidence(readRegions());
   });
 
-  it('keeps the JSON-object predicate in its current semantic-equality owner', () => {
+  it('keeps the JSON-object predicate in its canonical semantic-equality owner', () => {
     const primitives = read(primitivesTarget);
     expect(primitives).toContain(
-      "import { isClientJsonObject } from '../services/client-state-semantic-equality.ts';",
+      "import { isClientJsonObject } from './client-state-semantic-equality.ts';",
     );
     expect(primitives).not.toContain('function isJsonObject(');
     expect(
-      hashRegions(readBaseSource(semanticEqualityOwner.path), semanticEqualityOwner.region),
+      hashRegions(readBaseSource(semanticEqualitySource.path), semanticEqualityPredicateRegion),
     ).toBe('3cb57e0bb4be500115f8a7f051b819b8f18b76cf89de7e0322a8ea041c9570f8');
   });
 
-  it('keeps prose synchronized with the exact evidence and retained owner', () => {
+  it('keeps prose synchronized with the exact evidence and canonical owner', () => {
     const provenance = read(`${artifactRoot}-provenance.md`);
     expect(provenance).toContain(`Merge base: \`${mergeBase}\``);
     expect(provenance).toContain(
-      `Retained semantic-equality owner: \`${semanticEqualityOwner.path}:74-77\``,
+      'Canonical semantic-equality owner: `packages/shared-server/rallar-system/client-state/client-state-semantic-equality.ts`',
     );
     for (const region of readRegions(provenance)) {
       expect(provenance, region.id).toContain(`### ${region.id}`);
@@ -309,10 +438,28 @@ interface EvidenceRegion {
 const targetsBySource = {
   [mutationsSource]: [
     'packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts',
+    'packages/shared-server/rallar-system/client-state/client-state-contract-validation.ts',
+    'packages/shared-server/rallar-system/client-state/client-mutation-receipt-validation.ts',
     'packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts',
     'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts',
     'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts',
     'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-principal-mutation.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-instance-mutation.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-connect.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-heartbeat.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-disconnect.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-expiry.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation-result.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation-state.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-read.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-result.ts',
+    'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts',
+  ],
+  [semanticEqualitySource.path]: [
+    'packages/shared-server/rallar-system/client-state/client-state-semantic-equality.ts',
   ],
   [serviceSource]: [
     'packages/shared-server/rallar-system/client-state/mutation/client-mutation-command.ts',

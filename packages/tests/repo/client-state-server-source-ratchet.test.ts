@@ -7,6 +7,9 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const expectedCohortFiles = [
   'README.md',
+  'client-state-contract-validation.ts',
+  'client-mutation-receipt-validation.ts',
+  'client-state-semantic-equality.ts',
   'client-state-validation-primitives.ts',
   'mutation/validate-client-expired-session-authority.ts',
   'mutation/client-mutation-authority.ts',
@@ -15,9 +18,22 @@ const expectedCohortFiles = [
   'mutation/command-validation/validate-client-mutation-command.ts',
   'mutation/command-validation/validate-client-mutation-operation-input.ts',
   'mutation/command-validation/validate-client-mutation-request.ts',
+  'mutation/compute/compute-client-instance-mutation.ts',
+  'mutation/compute/compute-client-mutation-result.ts',
+  'mutation/compute/compute-client-mutation-state.ts',
+  'mutation/compute/compute-client-mutation.ts',
+  'mutation/compute/compute-client-principal-mutation.ts',
+  'mutation/compute/compute-client-session-connect.ts',
+  'mutation/compute/compute-client-session-disconnect.ts',
+  'mutation/compute/compute-client-session-expiry.ts',
+  'mutation/compute/compute-client-session-heartbeat.ts',
+  'mutation/result-validation/validate-client-mutation-authority-policy.ts',
+  'mutation/result-validation/validate-client-mutation-read.ts',
+  'mutation/result-validation/validate-client-mutation-result.ts',
+  'mutation/result-validation/validate-client-mutation.ts',
 ] as const;
 
-describe('client-state server command source ratchet', () => {
+describe('client-state server PR A source ratchet', () => {
   it('keeps the cohort modules within the mechanical size limits', () => {
     for (const filePath of expectedCohortFiles.filter((value) => value.endsWith('.ts'))) {
       const source = read(`packages/shared-server/rallar-system/client-state/${filePath}`);

@@ -9,10 +9,35 @@
       },
       "targets": [
         "packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts",
+        "packages/shared-server/rallar-system/client-state/client-state-contract-validation.ts",
+        "packages/shared-server/rallar-system/client-state/client-mutation-receipt-validation.ts",
         "packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts",
         "packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts",
         "packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts",
-        "packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts"
+        "packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-principal-mutation.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-instance-mutation.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-connect.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-heartbeat.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-disconnect.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-session-expiry.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation-result.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation-state.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-read.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-result.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts"
+      ]
+    },
+    {
+      "mergeBase": "39b2b7e6312507addfb4629c9d84ab476e83c362",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/client-state-semantic-equality.ts",
+        "blob": "de169149cb606f9ba9009545a8efd2f50746688c"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/client-state/client-state-semantic-equality.ts"
       ]
     },
     {

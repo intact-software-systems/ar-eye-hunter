@@ -12,6 +12,7 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/client-state-mutations.ts',
   'packages/shared-server/rallar-system/services/client-mutation-authority.ts',
   'packages/shared-server/rallar-system/services/client-expired-state-authority.ts',
+  'packages/shared-server/rallar-system/services/client-state-semantic-equality.ts',
 ] as const;
 
 describe('client-state server command ownership', () => {
@@ -54,6 +55,7 @@ describe('client-state server command ownership', () => {
         compatibilityPaths[3],
         '../client-state/mutation/validate-client-expired-session-authority.ts',
       ],
+      [compatibilityPaths[4], '../client-state/client-state-semantic-equality.ts'],
     ]);
     for (const [filePath, owner] of expected) {
       const source = read(filePath);
@@ -92,6 +94,10 @@ describe('client-state server command ownership', () => {
     }
     for (const declaration of [
       'class ClientMutationRejectedError',
+      'class ClientMutationIdempotencyConflictError',
+      'function computeClientMutation(',
+      'function validateClientMutation(',
+      'function validateClientMutationAuthorityPolicy(',
       'function validateClientMutationCommand(',
       'function validateClientMutationRequest(',
       'type ClientMutationCommand =',
@@ -101,6 +107,12 @@ describe('client-state server command ownership', () => {
     expect(service).toContain("from '../client-state/mutation/client-mutation-command.ts';");
     expect(mutations).toContain(
       "from '../client-state/mutation/command-validation/validate-client-mutation-command.ts';",
+    );
+    expect(mutations).toContain(
+      "from '../client-state/mutation/compute/compute-client-mutation.ts';",
+    );
+    expect(mutations).toContain(
+      "from '../client-state/mutation/result-validation/validate-client-mutation.ts';",
     );
   });
 });

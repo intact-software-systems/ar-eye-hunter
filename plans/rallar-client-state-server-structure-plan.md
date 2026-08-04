@@ -105,6 +105,20 @@ rule. The executor records the factual refinement in this plan before the
 affected PR freezes, reruns invalidated gates, and stops if any locked rule
 would change.
 
+Task 2 used this authority for two private, behavior-neutral refinements. The
+shared entity, event, audit, actor, and runtime-entry validators moved to
+`client-state/client-state-contract-validation.ts`; receipt and idempotency-record
+validators moved to `client-state/client-mutation-receipt-validation.ts`. The
+two lower-level owners remain below both the transitional persisted wrappers and
+canonical result validation. This
+avoids a legacy-to-canonical runtime cycle and duplicate validators without
+moving persistence normalization, persisted identity checks, codecs, keys, or
+repositories. Shared pure audit/actor/default-principal/revision/candidate state
+construction moved to `mutation/compute/compute-client-mutation-state.ts`; this
+keeps `compute-client-mutation-result.ts` cohesive and below 400 lines while the
+six family owners retain direct named call paths. Both refinements are private,
+acyclic, and behavior-neutral.
+
 ## 2. Current Evidence And Human Navigation Baseline
 
 ### 2.1 Current concentrated ownership
@@ -342,6 +356,8 @@ shared-server implementation owners must move to direct canonical imports.
 packages/shared-server/rallar-system/
   client-state/
     README.md
+    client-state-contract-validation.ts
+    client-mutation-receipt-validation.ts
     client-presence-state.ts
     client-state-semantic-equality.ts
     client-state-service-contracts.ts
@@ -366,6 +382,7 @@ packages/shared-server/rallar-system/
       compute/
         compute-client-instance-mutation.ts
         compute-client-mutation-result.ts
+        compute-client-mutation-state.ts
         compute-client-mutation.ts
         compute-client-principal-mutation.ts
         compute-client-session-connect.ts
@@ -433,12 +450,15 @@ does not route the package surface through a compatibility file.
 | `client-state-service.ts`                  | `createClientStateService` and visible service composition                                              |
 | `client-state-service-timing.ts`           | `createTimedClientStateService` with a closed operation-name inventory                                  |
 | `client-state-validation-primitives.ts`    | generic record/key/scalar/audit validation shared downward without a persistence-to-mutation dependency |
+| `client-state-contract-validation.ts`      | shared client entity/event/audit/actor/runtime-entry validation below persistence and mutation callers  |
+| `client-mutation-receipt-validation.ts`    | shared receipt and idempotency-record validation below persisted wrappers and result validation         |
 | `app-client-inbox-service.ts`              | public `AppClientInboxService`, constructor registration, and public enqueue/completion methods         |
 | `client-state-inbox-handler.ts`            | later runtime ordinary, authorized-WS, and expiry processing with transaction/exit ownership visible    |
 | `authenticated-client-mutation-ingress.ts` | ingress read and durable issued-session/system authority checks                                         |
 | `client-mutation-command.ts`               | request/payload-to-command projection and canonical command hashing                                     |
 | `client-mutation-contracts.ts`             | exact command, read, computed, receipt, idempotency, and fact types                                     |
 | `compute-client-mutation.ts`               | exhaustive operation-family dispatcher                                                                  |
+| `compute-client-mutation-state.ts`         | shared pure audit, actor, default-principal, revision, required-state, and child-candidate construction |
 | family compute files                       | the named principal, instance, connect, heartbeat, disconnect, or expiry decision                       |
 | `read-client-mutation.ts`                  | stable authority/idempotency/aggregate/child read phase                                                 |
 | `validate-client-mutation.ts`              | top-level post-compute invariant validation                                                             |
@@ -458,20 +478,20 @@ dependency bags.
 
 ### 4.3 Exact current-to-target production map
 
-| Current source                                         | Target owner(s)                                                                                                                                                                   |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `services/client-state-mutations.ts`                   | `mutation/client-mutation-contracts.ts`; `client-state-validation-primitives.ts`; command-validation; compute; result-validation; persistence codec/validation; semantic equality |
-| `services/client-state-service.ts`                     | service contracts/factory/timing; mutation command/read/write; exact result projection                                                                                            |
-| `services/AppClientInboxService.ts`                    | inbox contracts, public service, authenticated ingress, and runtime handler                                                                                                       |
-| `repositories/ClientStateRepository.ts`                | persistence contracts, repository, reads, snapshot repository, snapshot assembly, codec/validation, namespaces, and storage keys                                                  |
-| `services/authorised-ws-client-app-inbox.ts`           | `inbox/authorised-ws-client-app-inbox.ts`                                                                                                                                         |
-| `services/client-expired-state-authority.ts`           | `mutation/validate-client-expired-session-authority.ts`                                                                                                                           |
-| `services/client-mutation-authority.ts`                | `mutation/client-mutation-authority.ts`                                                                                                                                           |
-| `services/client-state-semantic-equality.ts`           | `client-state/client-state-semantic-equality.ts`                                                                                                                                  |
-| `client-presence-state.ts`                             | `client-state/client-presence-state.ts`                                                                                                                                           |
-| `client-state-storage-keys.ts`                         | `client-state/persistence/client-state-storage-keys.ts`                                                                                                                           |
-| `services/cached-client-state-service.ts`              | `client-state/snapshot/cached-client-state-service.ts`                                                                                                                            |
-| `services/client-state-snapshot-read-through-cache.ts` | `client-state/snapshot/client-state-snapshot-read-through-cache.ts`                                                                                                               |
+| Current source                                         | Target owner(s)                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/client-state-mutations.ts`                   | `mutation/client-mutation-contracts.ts`; `client-state-validation-primitives.ts`; `client-state-contract-validation.ts`; `client-mutation-receipt-validation.ts`; command-validation; compute (including private compute-state refinement); result-validation; persistence codec/validation; semantic equality |
+| `services/client-state-service.ts`                     | service contracts/factory/timing; mutation command/read/write; exact result projection                                                                                                                                                                                                                         |
+| `services/AppClientInboxService.ts`                    | inbox contracts, public service, authenticated ingress, and runtime handler                                                                                                                                                                                                                                    |
+| `repositories/ClientStateRepository.ts`                | persistence contracts, repository, reads, snapshot repository, snapshot assembly, codec/validation, namespaces, and storage keys                                                                                                                                                                               |
+| `services/authorised-ws-client-app-inbox.ts`           | `inbox/authorised-ws-client-app-inbox.ts`                                                                                                                                                                                                                                                                      |
+| `services/client-expired-state-authority.ts`           | `mutation/validate-client-expired-session-authority.ts`                                                                                                                                                                                                                                                        |
+| `services/client-mutation-authority.ts`                | `mutation/client-mutation-authority.ts`                                                                                                                                                                                                                                                                        |
+| `services/client-state-semantic-equality.ts`           | `client-state/client-state-semantic-equality.ts`                                                                                                                                                                                                                                                               |
+| `client-presence-state.ts`                             | `client-state/client-presence-state.ts`                                                                                                                                                                                                                                                                        |
+| `client-state-storage-keys.ts`                         | `client-state/persistence/client-state-storage-keys.ts`                                                                                                                                                                                                                                                        |
+| `services/cached-client-state-service.ts`              | `client-state/snapshot/cached-client-state-service.ts`                                                                                                                                                                                                                                                         |
+| `services/client-state-snapshot-read-through-cache.ts` | `client-state/snapshot/client-state-snapshot-read-through-cache.ts`                                                                                                                                                                                                                                            |
 
 Each old path contains only direct named re-export statements to the exact
 canonical owner or owners listed above. It contains no executable logic,

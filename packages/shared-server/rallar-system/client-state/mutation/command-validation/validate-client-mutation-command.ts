@@ -37,7 +37,7 @@ export function validateClientMutationCommand(
   });
 }
 
-function validateClientMutationFacts(facts: unknown): void {
+export function validateClientMutationFacts(facts: unknown): void {
   const value = requirePlainRecord(facts, 'Client mutation facts');
   requireExactKeys(
     value,

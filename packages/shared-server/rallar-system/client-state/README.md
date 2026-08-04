@@ -2,12 +2,15 @@
 
 This directory is the canonical owner map for client-state server code. The
 map follows executable imports and declarations; it is navigation evidence,
-not a second runtime contract. PR A currently owns command construction and
-validation here. The unchanged compute, result, persistence, service, and inbox
-owners remain at their legacy paths until their named cohorts move them.
+not a second runtime contract. PR A owns command construction, command and result
+validation, semantic equality, and the pure compute families here. The unchanged
+persistence, service, and inbox owners remain at their legacy paths until PR B.
 
 ## Command and validation owners
 
+- [`validateClientPrincipal` and shared client contract validation](./client-state-contract-validation.ts)
+- [`validateClientMutationReceipt` and idempotency-record validation](./client-mutation-receipt-validation.ts)
+- [`sameClientPrincipalState` and semantic equality](./client-state-semantic-equality.ts)
 - [`ClientMutationRejectedError` and generic validation primitives](./client-state-validation-primitives.ts)
 - [`ClientMutationCommand` and the exact mutation contracts](./mutation/client-mutation-contracts.ts)
 - [`toClientMutationCommand` and request-to-command projection](./mutation/client-mutation-command.ts)
@@ -17,10 +20,27 @@ owners remain at their legacy paths until their named cohorts move them.
 - [`validateClientMutationOperationInput`](./mutation/command-validation/validate-client-mutation-operation-input.ts)
 - [`validateClientMutationRequest`](./mutation/command-validation/validate-client-mutation-request.ts)
 
+## Compute and result owners
+
+- [`computeClientMutation` exhaustive operation dispatcher](./mutation/compute/compute-client-mutation.ts)
+- [`computeClientMutationResult` result, snapshot, event, receipt, state-sync, and outbox construction](./mutation/compute/compute-client-mutation-result.ts)
+- [`bumpClientPrincipal` and shared audit, actor, state, revision, and candidate construction](./mutation/compute/compute-client-mutation-state.ts)
+- [`computeClientPrincipalMutation`](./mutation/compute/compute-client-principal-mutation.ts)
+- [`computeClientInstanceMutation`](./mutation/compute/compute-client-instance-mutation.ts)
+- [`computeClientSessionConnect`](./mutation/compute/compute-client-session-connect.ts)
+- [`computeClientSessionHeartbeat`](./mutation/compute/compute-client-session-heartbeat.ts)
+- [`computeClientSessionDisconnect`](./mutation/compute/compute-client-session-disconnect.ts)
+- [`computeClientSessionExpiry`](./mutation/compute/compute-client-session-expiry.ts)
+- [`validateClientMutationRead`](./mutation/result-validation/validate-client-mutation-read.ts)
+- [`validateClientMutationAuthorityPolicy`](./mutation/result-validation/validate-client-mutation-authority-policy.ts)
+- [`validateClientMutationResult`](./mutation/result-validation/validate-client-mutation-result.ts)
+- [`validateClientMutation`](./mutation/result-validation/validate-client-mutation.ts)
+
 Compatibility callers can continue using the existing named exports from
 `services/client-state-service.ts`, `services/client-state-mutations.ts`,
 `services/client-mutation-authority.ts`, and
-`services/client-expired-state-authority.ts`. Canonical owners never import
+`services/client-expired-state-authority.ts`. Semantic-equality callers can use
+`services/client-state-semantic-equality.ts`. Canonical owners never import
 those compatibility paths.
 
 ## Construction, registration, and enqueue timeline
@@ -73,17 +93,31 @@ raw request
 
 Validation order, error instances and messages, optional-versus-null fields,
 collection cloning, defaults, deterministic expiry IDs, and the command hash
-boundary are unchanged. Compute/result and semantic-equality ownership are
-deliberately outside this command/validation cohort.
+boundary are unchanged.
+
+## PR A compute and result timeline
+
+```text
+1. computeClientMutation validates the command, persisted facts, and stable read before making a decision.
+2. An existing idempotency record exits as exact replay or exact hash conflict before operation-family dispatch.
+3. The exhaustive operation switch calls exactly one named principal, instance, connect, heartbeat, disconnect, or expiry owner.
+4. The family owner makes the pure state decision and delegates shared audit, revision, candidate, snapshot, event, receipt, state-sync, and outbox construction to the named compute-state and compute-result owners.
+5. validateClientMutation validates the command, facts, computed result, stable read, durable authority, identities, conditional guards, causal generation, and exact outbox before the unchanged write phase.
+```
+
+The functional core performs no repository read, write, transaction, retry,
+clock, random-ID, observation, or queue-wake operation. Each processing retry
+receives a fresh command/read pair from the unchanged stateful service and
+AppInbox shells.
 
 ## Cohort boundary and next owners
 
-- Pure compute and result validation remain in
-  `services/client-state-mutations.ts` for the next PR A cohort.
 - Persistence contracts, codecs, repositories, and storage keys remain for PR
-  B. `ClientMutationIdempotencyRecord` is temporarily re-exported with the
-  mutation contracts so existing signatures compile; PR B owns its final move
-  to `client-state-persistence-contracts.ts`.
+  B. Their existing normalization and persisted identity wrappers remain in
+  `services/client-state-mutations.ts`. `ClientMutationIdempotencyRecord` is
+  temporarily re-exported with the mutation contracts so existing signatures
+  compile; PR B owns its final move to
+  `client-state-persistence-contracts.ts`.
 - Service composition, AppInbox handling, reads, writes, timing, snapshots, and
   cache ownership remain for PR B.
 - Compatibility-only source removal and mechanical warning alignment remain
