@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "39b2b7e6312507addfb4629c9d84ab476e83c362",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/client-state-mutations.ts",
+        "blob": "9ed11050c1391422202e3cabe5b8798d1a430d0a"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts",
+        "packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts"
+      ]
+    },
+    {
+      "mergeBase": "39b2b7e6312507addfb4629c9d84ab476e83c362",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/client-state-service.ts",
+        "blob": "f135573261f340948c3b846b94230095e137ca25"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/client-state/mutation/client-mutation-command.ts"
+      ]
+    },
+    {
+      "mergeBase": "39b2b7e6312507addfb4629c9d84ab476e83c362",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/client-mutation-authority.ts",
+        "blob": "d78b95a44701090f8108167e4e5223436a0a1ad3"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts"
+      ]
+    },
+    {
+      "mergeBase": "39b2b7e6312507addfb4629c9d84ab476e83c362",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/client-expired-state-authority.ts",
+        "blob": "d503ffc5e572c7474f7db9cb6cab615ffe62c555"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/client-state/mutation/validate-client-expired-session-authority.ts"
+      ]
+    }
+  ]
+}

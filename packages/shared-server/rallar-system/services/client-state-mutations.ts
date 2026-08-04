@@ -3,36 +3,86 @@ import type {
     ClientEvent,
     ClientInstance,
     ClientInstanceRef,
-    ClientPlatform,
-    ClientPresenceState,
     ClientPrincipal,
     ClientPrincipalRef,
-    ClientPrincipalStatus,
     ClientSession,
     ClientSessionRef,
     ClientSnapshot,
-    ClientTransport,
 } from '@shared/api/client-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
-import { validateClientExpiredSessionAuthority } from './client-expired-state-authority.ts';
 import {
-    isClientJsonObject as isJsonObject,
+    ClientMutationRejectedError,
+    rejectClientMutation as reject,
+    requireAllowedKeys,
+    requireBoolean,
+    requireEnum,
+    requireExactKeys,
+    requireJsonRecord,
+    requireJsonValue,
+    requireNonEmptyString,
+    requireNullableEnum,
+    requireNullableNonEmptyString,
+    requireNullableString,
+    requireNullableStringArray,
+    requireNullableTimestamp,
+    requirePlainRecord,
+    requirePositiveSafeInteger,
+    requireSha256,
+    requireString,
+    requireStringArray,
+    requireTimestamp,
+    validateClientPrincipalRef as validatePrincipalRef,
+} from '../client-state/client-state-validation-primitives.ts';
+// prettier-ignore
+import {
+  validateClientExpiredSessionAuthority,
+} from '../client-state/mutation/validate-client-expired-session-authority.ts';
+import type {
+    ClientMutationAuthority,
+    ClientMutationCommand,
+    ClientMutationCommandInput,
+    ClientMutationComputed,
+    ClientMutationComputedAppliedWrite,
+    ClientMutationComputedNonPersistedNoOp,
+    ClientMutationComputedPersistedNoOp,
+    ClientMutationComputedWrite,
+    ClientMutationFacts,
+    ClientMutationIdempotencyRecord,
+    ClientMutationIssuedSessionAuthority,
+    ClientMutationOperation,
+    ClientMutationRead,
+    ClientMutationReceipt,
+    ClientMutationSystemAuthority,
+    ConditionalCandidate,
+    NullableActorInput,
+} from '../client-state/mutation/client-mutation-contracts.ts';
+// prettier-ignore
+import {
+  validateClientMutationCommand,
+} from '../client-state/mutation/command-validation/validate-client-mutation-command.ts';
+// prettier-ignore
+import {
+  validateClientMutationRequest,
+} from '../client-state/mutation/command-validation/validate-client-mutation-request.ts';
+import {
+    CLIENT_EVENT_TYPES,
+    CLIENT_INSTANCE_STATUSES,
+    CLIENT_MUTATION_OPERATIONS,
+    CLIENT_PLATFORMS,
+    CLIENT_PRESENCE_STATES,
+    CLIENT_PRINCIPAL_STATUSES,
+    CLIENT_SESSION_STATUSES,
+    CLIENT_TRANSPORTS,
+} from '../client-state/mutation/command-validation/validate-client-mutation-operation-input.ts';
+import {
     sameClientInstanceState as sameInstanceState,
     sameClientPrincipalRef as samePrincipalRef,
     sameClientPrincipalState as samePrincipalState,
     sameClientSessionState as sameSessionState,
 } from './client-state-semantic-equality.ts';
-import type {
-    ConnectClientSessionRequest,
-    DisconnectClientSessionRequest,
-    HeartbeatClientSessionRequest,
-    UpsertClientInstanceRequest,
-    UpsertClientPrincipalRequest,
-} from '@shared/api/state-types.ts';
 import {
     computeClientStateSyncEntries,
     type ComputedClientStateSync,
@@ -41,239 +91,33 @@ import {
     compareClientStateInstanceStorageKeys,
     compareClientStateSessionStorageKeys,
 } from '../client-state-storage-keys.ts';
-import type { PersistedAuthSession } from '../repositories/AuthSessionRepository.ts';
 
-type NullableActorInput = Readonly<{
-    actorPrincipalId: string | null;
-    actorSessionId: string | null;
-    reason: string | null;
-    traceId: string | null;
-}>;
-
-export type ClientMutationOperation =
-    | 'upsertPrincipal'
-    | 'upsertInstance'
-    | 'connectSession'
-    | 'connectAuthorisedWsSession'
-    | 'heartbeatSession'
-    | 'disconnectSession'
-    | 'disconnectAuthorisedWsSession'
-    | 'expireSession';
-
-export type ClientMutationIssuedSessionAuthority = Readonly<{
-    kind: 'issued-session';
-    version: 1;
-    principalId: string;
-    sessionId: string;
-    sessionIssuedAtEpochMs: number;
-    sessionExpiresAtEpochMs: number;
-    applicationId: string;
-    workspaceId: string;
-    operation: Exclude<ClientMutationOperation, 'expireSession'>;
-}>;
-
-export type ClientMutationSystemAuthority = Readonly<{
-    kind: 'system';
-    version: 1;
-    serviceId: string;
-    operation: 'expireSession';
-}>;
-
-export type ClientMutationAuthority =
-    | ClientMutationIssuedSessionAuthority
-    | ClientMutationSystemAuthority;
-
-type ClientMutationCommandBase = Readonly<{
-    aggregateRef: ClientPrincipalRef;
-    commandId: string;
-    requestId: string | null;
-    facts: ClientMutationFacts;
-    authority: ClientMutationAuthority;
-}>;
-
-export type ClientMutationCommand =
-    | (ClientMutationCommandBase & Readonly<{
-        operation: 'upsertPrincipal';
-        input: NullableActorInput & Readonly<{
-            username: string;
-            displayName: string | null;
-            avatarUrl: string | null;
-            status: ClientPrincipalStatus | null;
-            authProvider: string | null;
-            externalSubjectId: string | null;
-            roles: readonly string[] | null;
-            metadata: Readonly<Record<string, unknown>> | null;
-            lastSeenAtEpochMs: number | null;
-        }>;
-    }>)
-    | (ClientMutationCommandBase & Readonly<{
-        operation: 'upsertInstance';
-        clientInstanceId: string;
-        input: NullableActorInput & Readonly<{
-            status: ClientInstance['status'] | null;
-            platform: ClientPlatform | null;
-            deviceLabel: string | null;
-            appVersion: string | null;
-            userAgent: string | null;
-            capabilities: readonly string[] | null;
-        }>;
-    }>)
-    | (ClientMutationCommandBase & Readonly<{
-        operation: 'connectSession' | 'connectAuthorisedWsSession';
-        clientInstanceId: string;
-        sessionId: string;
-        input: NullableActorInput & Readonly<{
-            generationId: string;
-            presenceState: ClientPresenceState | null;
-            transport: ClientTransport | null;
-            connectionId: string | null;
-            authenticatedAtEpochMs: number | null;
-            connectedAtEpochMs: number | null;
-            lastHeartbeatAtEpochMs: number | null;
-            expiresAtEpochMs: number | null;
-            instancePlatform: ClientPlatform | null;
-            instanceUserAgent: string | null;
-            instanceCapabilities: readonly string[] | null;
-            principalUsername: string | null;
-            principalDisplayName: string | null;
-            principalRoles: readonly string[] | null;
-        }>;
-    }>)
-    | (ClientMutationCommandBase & Readonly<{
-        operation: 'heartbeatSession';
-        clientInstanceId: string;
-        sessionId: string;
-        input: NullableActorInput & Readonly<{
-            generationId: string;
-            presenceState: ClientPresenceState | null;
-            lastHeartbeatAtEpochMs: number | null;
-            expiresAtEpochMs: number | null;
-        }>;
-    }>)
-    | (ClientMutationCommandBase & Readonly<{
-        operation: 'disconnectSession' | 'disconnectAuthorisedWsSession';
-        clientInstanceId: string;
-        sessionId: string;
-        input: NullableActorInput & Readonly<{
-            generationId: string;
-            disconnectedAtEpochMs: number | null;
-            lastHeartbeatAtEpochMs: number | null;
-            expiresAtEpochMs: number | null;
-        }>;
-    }>)
-    | (ClientMutationCommandBase & Readonly<{
-        operation: 'expireSession';
-        clientInstanceId: string;
-        sessionId: string;
-        input: NullableActorInput & Readonly<{
-            generationId: string;
-            generationVersion: number;
-            observedExpiresAtEpochMs: number;
-            expiresAtEpochMs: number;
-        }>;
-    }>);
-
-export type ClientMutationReceipt = Readonly<{
-    commandId: string;
-    requestId: string | null;
-    commandHash: string;
-    aggregateRef: ClientPrincipalRef;
-    outcome: 'applied' | 'no-op';
-    attemptCount: number;
-    acceptedStorageRevision: number | null;
-    stateRevision: number;
-    snapshotVersion: number;
-    presenceVersion: number;
-    eventId: string | null;
-    outboxIds: readonly string[];
-}>;
-
-export type ClientMutationIdempotencyRecord = Readonly<{
-    requestId: string;
-    commandHash: string;
-    receipt: ClientMutationReceipt;
-}>;
-
-export type ClientMutationRead = Readonly<{
-    authoritySession: PersistedAuthSession | null;
-    idempotency: RuntimeStateEntryValue<ClientMutationIdempotencyRecord> | null;
-    principal: RuntimeStateEntryValue<ClientPrincipal> | null;
-    instance: RuntimeStateEntryValue<ClientInstance> | null;
-    session: RuntimeStateEntryValue<ClientSession> | null;
-    expiredSessionEntry: RuntimeStateEntry | null;
-    snapshot: ClientSnapshot | null;
-    receiptEvent: ClientEvent | null;
-}>;
-
-export type ClientMutationFacts = Readonly<{
-    nowEpochMs: number;
-    serviceId: string;
-    eventId: string;
-    commandHash: string;
-    attemptCount: number;
-    expireAtEpochMs: number;
-}>;
-
-export type ClientMutationCommandInput = ClientMutationCommand extends infer Command
-    ? Command extends ClientMutationCommand
-        ? Omit<Command, 'facts' | 'authority'>
-        : never
-    : never;
-
-type ConditionalCandidate<T> =
-    | Readonly<{ operation: 'none' }>
-    | Readonly<{ operation: 'insert'; value: T }>
-    | Readonly<{ operation: 'update'; value: T; expectedRevision: number }>;
-
-export type ClientMutationComputedPersistedNoOp = Readonly<{
-    outcome: 'no-op';
-    persistIdempotency: true;
-    aggregateRef: ClientPrincipalRef;
-    idempotency: ClientMutationIdempotencyRecord;
-    receipt: ClientMutationReceipt;
-    snapshot: ClientSnapshot;
-    event: null;
-}>;
-
-export type ClientMutationComputedNonPersistedNoOp = Readonly<{
-    outcome: 'no-op';
-    persistIdempotency: false;
-    receipt: ClientMutationReceipt;
-    snapshot: ClientSnapshot;
-    event: null;
-}>;
-
-export type ClientMutationComputedAppliedWrite = Readonly<{
-    outcome: 'write';
-    principal: Exclude<ConditionalCandidate<ClientPrincipal>, { operation: 'none' }>;
-    instance: ConditionalCandidate<ClientInstance>;
-    session: ConditionalCandidate<ClientSession>;
-    event: ClientEvent;
-    snapshot: ClientSnapshot;
-    receipt: ClientMutationReceipt;
-    idempotency: ClientMutationIdempotencyRecord | null;
-    stateSync: readonly ComputedClientStateSync[];
-    outboxEntries: readonly ResourceEntry[];
-}>;
-
-export type ClientMutationComputedWrite =
-    ClientMutationComputedAppliedWrite | ClientMutationComputedPersistedNoOp;
-
-export type ClientMutationComputed =
-    | Readonly<{
-        outcome: 'replay';
-        receipt: ClientMutationReceipt;
-        snapshot: ClientSnapshot;
-        event: ClientEvent | null;
-    }>
-    | ClientMutationComputedPersistedNoOp
-    | ClientMutationComputedNonPersistedNoOp
-    | Readonly<{
-        outcome: 'idempotency-conflict';
-        existingCommandHash: string;
-        receivedCommandHash: string;
-    }>
-    | ClientMutationComputedAppliedWrite;
+export type {
+    ClientMutationAuthority,
+    ClientMutationCommand,
+    ClientMutationCommandInput,
+    ClientMutationComputed,
+    ClientMutationComputedAppliedWrite,
+    ClientMutationComputedNonPersistedNoOp,
+    ClientMutationComputedPersistedNoOp,
+    ClientMutationComputedWrite,
+    ClientMutationFacts,
+    ClientMutationIdempotencyRecord,
+    ClientMutationIssuedSessionAuthority,
+    ClientMutationOperation,
+    ClientMutationRead,
+    ClientMutationReceipt,
+    ClientMutationSystemAuthority,
+} from '../client-state/mutation/client-mutation-contracts.ts';
+export { ClientMutationRejectedError } from '../client-state/client-state-validation-primitives.ts';
+// prettier-ignore
+export {
+  validateClientMutationCommand,
+} from '../client-state/mutation/command-validation/validate-client-mutation-command.ts';
+// prettier-ignore
+export {
+  validateClientMutationRequest,
+} from '../client-state/mutation/command-validation/validate-client-mutation-request.ts';
 
 export class ClientMutationIdempotencyConflictError extends Error {
     readonly code = 'client-mutation-idempotency-conflict';
@@ -286,326 +130,6 @@ export class ClientMutationIdempotencyConflictError extends Error {
     ) {
         super(`Client mutation command differs for request ${commandId}`);
         this.name = 'ClientMutationIdempotencyConflictError';
-    }
-}
-
-export class ClientMutationRejectedError extends Error {
-    readonly code = 'client-mutation-rejected';
-    readonly status = 400;
-
-    constructor(message: string) {
-        super(message);
-        this.name = 'ClientMutationRejectedError';
-    }
-}
-
-export function validateClientMutationCommand(
-    command: unknown,
-): asserts command is ClientMutationCommand {
-    const value = requirePlainRecord(command, 'Client mutation command');
-    const operation = value.operation;
-    if (!CLIENT_MUTATION_OPERATIONS.has(operation as string)) {
-        reject('Client mutation command operation is invalid');
-    }
-    requireNonEmptyString(value.commandId, 'Client mutation commandId');
-    requireNullableNonEmptyString(value.requestId, 'Client mutation requestId');
-    validatePrincipalRef(value.aggregateRef, 'Client mutation aggregateRef');
-    validateClientMutationFacts(value.facts);
-    validateClientMutationAuthority(value.authority);
-    const input = requirePlainRecord(value.input, 'Client mutation input');
-    validateActorInput(input);
-
-    switch (operation) {
-        case 'upsertPrincipal':
-            requireExactKeys(value, COMMAND_BASE_KEYS, 'Client principal command');
-            requireExactKeys(input, PRINCIPAL_INPUT_KEYS, 'Client principal input');
-            requireNonEmptyString(input.username, 'Client principal username');
-            requireNullableString(input.displayName, 'Client principal displayName');
-            requireNullableString(input.avatarUrl, 'Client principal avatarUrl');
-            requireNullableEnum(
-                input.status,
-                CLIENT_PRINCIPAL_STATUSES,
-                'Client principal status',
-            );
-            requireNullableString(input.authProvider, 'Client principal authProvider');
-            requireNullableString(
-                input.externalSubjectId,
-                'Client principal externalSubjectId',
-            );
-            requireNullableStringArray(input.roles, 'Client principal roles');
-            requireNullableJsonRecord(input.metadata, 'Client principal metadata');
-            requireNullableTimestamp(
-                input.lastSeenAtEpochMs,
-                'Client principal lastSeenAtEpochMs',
-            );
-            return;
-        case 'upsertInstance':
-            requireExactKeys(value, INSTANCE_COMMAND_KEYS, 'Client instance command');
-            requireNonEmptyString(value.clientInstanceId, 'Client instance id');
-            requireExactKeys(input, INSTANCE_INPUT_KEYS, 'Client instance input');
-            requireNullableEnum(
-                input.status,
-                CLIENT_INSTANCE_STATUSES,
-                'Client instance status',
-            );
-            requireNullableEnum(
-                input.platform,
-                CLIENT_PLATFORMS,
-                'Client instance platform',
-            );
-            requireNullableString(input.deviceLabel, 'Client instance deviceLabel');
-            requireNullableString(input.appVersion, 'Client instance appVersion');
-            requireNullableString(input.userAgent, 'Client instance userAgent');
-            requireNullableStringArray(
-                input.capabilities,
-                'Client instance capabilities',
-            );
-            return;
-        case 'connectSession':
-        case 'connectAuthorisedWsSession':
-            validateSessionCommandRoot(value);
-            requireExactKeys(input, CONNECT_INPUT_KEYS, 'Client connect input');
-            validateGenerationId(input.generationId);
-            requireNullableEnum(
-                input.presenceState,
-                CLIENT_PRESENCE_STATES,
-                'Client connect presenceState',
-            );
-            requireNullableEnum(
-                input.transport,
-                CLIENT_TRANSPORTS,
-                'Client connect transport',
-            );
-            requireNullableNonEmptyString(
-                input.connectionId,
-                'Client connect connectionId',
-            );
-            for (const field of CONNECT_TIMESTAMP_FIELDS) {
-                requireNullableTimestamp(input[field], `Client connect ${field}`);
-            }
-            requireNullableEnum(
-                input.instancePlatform,
-                CLIENT_PLATFORMS,
-                'Client connect instancePlatform',
-            );
-            requireNullableString(
-                input.instanceUserAgent,
-                'Client connect instanceUserAgent',
-            );
-            requireNullableStringArray(
-                input.instanceCapabilities,
-                'Client connect instanceCapabilities',
-            );
-            requireNullableNonEmptyString(
-                input.principalUsername,
-                'Client connect principalUsername',
-            );
-            requireNullableNonEmptyString(
-                input.principalDisplayName,
-                'Client connect principalDisplayName',
-            );
-            requireNullableStringArray(
-                input.principalRoles,
-                'Client connect principalRoles',
-            );
-            validateConnectTimestampOrder(input);
-            return;
-        case 'heartbeatSession': {
-            validateSessionCommandRoot(value);
-            requireExactKeys(input, HEARTBEAT_INPUT_KEYS, 'Client heartbeat input');
-            validateGenerationId(input.generationId);
-            requireNullableEnum(
-                input.presenceState,
-                CLIENT_PRESENCE_STATES,
-                'Client heartbeat presenceState',
-            );
-            requireNullableTimestamp(
-                input.lastHeartbeatAtEpochMs,
-                'Client heartbeat lastHeartbeatAtEpochMs',
-            );
-            requireNullableTimestamp(
-                input.expiresAtEpochMs,
-                'Client heartbeat expiresAtEpochMs',
-            );
-            validateHeartbeatTimestampOrder(input);
-            return;
-        }
-        case 'disconnectSession':
-        case 'disconnectAuthorisedWsSession': {
-            validateSessionCommandRoot(value);
-            requireExactKeys(input, DISCONNECT_INPUT_KEYS, 'Client disconnect input');
-            validateGenerationId(input.generationId);
-            for (const field of DISCONNECT_TIMESTAMP_FIELDS) {
-                requireNullableTimestamp(input[field], `Client disconnect ${field}`);
-            }
-            validateDisconnectTimestampOrder(input);
-            return;
-        }
-        case 'expireSession':
-            validateSessionCommandRoot(value);
-            requireExactKeys(input, EXPIRY_INPUT_KEYS, 'Client expiry input');
-            validateGenerationId(input.generationId);
-            requirePositiveSafeInteger(
-                input.generationVersion,
-                'Client expiry generationVersion',
-            );
-            requireTimestamp(
-                input.observedExpiresAtEpochMs,
-                'Client expiry observedExpiresAtEpochMs',
-            );
-            requireTimestamp(input.expiresAtEpochMs, 'Client expiry expiresAtEpochMs');
-            if (input.expiresAtEpochMs < input.observedExpiresAtEpochMs) {
-                reject('Client expiry expiresAtEpochMs must not predate observedExpiresAtEpochMs');
-            }
-            return;
-    }
-}
-
-export function validateClientMutationRequest(
-    operation: 'upsertPrincipal',
-    request: unknown,
-): asserts request is UpsertClientPrincipalRequest;
-export function validateClientMutationRequest(
-    operation: 'upsertInstance',
-    request: unknown,
-): asserts request is UpsertClientInstanceRequest;
-export function validateClientMutationRequest(
-    operation: 'connectSession',
-    request: unknown,
-): asserts request is ConnectClientSessionRequest;
-export function validateClientMutationRequest(
-    operation: 'heartbeatSession',
-    request: unknown,
-): asserts request is HeartbeatClientSessionRequest;
-export function validateClientMutationRequest(
-    operation: 'disconnectSession',
-    request: unknown,
-): asserts request is DisconnectClientSessionRequest;
-export function validateClientMutationRequest(
-    operation:
-        | 'upsertPrincipal'
-        | 'upsertInstance'
-        | 'connectSession'
-        | 'heartbeatSession'
-        | 'disconnectSession',
-    request: unknown,
-): void {
-    const value = requirePlainRecord(request, `Client ${operation} request`);
-    validateOptionalActorInput(value);
-    switch (operation) {
-        case 'upsertPrincipal':
-            requireAllowedKeys(
-                value,
-                ['username'],
-                RAW_PRINCIPAL_REQUEST_KEYS,
-                'Client upsertPrincipal request',
-            );
-            requireNonEmptyString(value.username, 'Client principal username');
-            requireOptionalString(value.displayName, 'Client principal displayName');
-            requireOptionalString(value.avatarUrl, 'Client principal avatarUrl');
-            requireOptionalEnum(
-                value.status,
-                CLIENT_PRINCIPAL_STATUSES,
-                'Client principal status',
-            );
-            requireOptionalString(value.authProvider, 'Client principal authProvider');
-            requireOptionalString(
-                value.externalSubjectId,
-                'Client principal externalSubjectId',
-            );
-            if (value.roles !== undefined) requireStringArray(value.roles, 'Client principal roles');
-            if (value.metadata !== undefined) {
-                requireJsonRecord(value.metadata, 'Client principal metadata');
-            }
-            requireOptionalTimestamp(
-                value.lastSeenAtEpochMs,
-                'Client principal lastSeenAtEpochMs',
-            );
-            return;
-        case 'upsertInstance':
-            requireAllowedKeys(
-                value,
-                [],
-                RAW_INSTANCE_REQUEST_KEYS,
-                'Client upsertInstance request',
-            );
-            requireOptionalEnum(
-                value.status,
-                CLIENT_INSTANCE_STATUSES,
-                'Client instance status',
-            );
-            requireOptionalEnum(
-                value.platform,
-                CLIENT_PLATFORMS,
-                'Client instance platform',
-            );
-            for (const field of ['deviceLabel', 'appVersion', 'userAgent'] as const) {
-                requireOptionalString(value[field], `Client instance ${field}`);
-            }
-            if (value.capabilities !== undefined) {
-                requireStringArray(value.capabilities, 'Client instance capabilities');
-            }
-            return;
-        case 'connectSession':
-            requireAllowedKeys(
-                value,
-                ['generationId'],
-                RAW_CONNECT_REQUEST_KEYS,
-                'Client connectSession request',
-            );
-            validateGenerationId(value.generationId);
-            requireOptionalEnum(
-                value.presenceState,
-                CLIENT_PRESENCE_STATES,
-                'Client connect presenceState',
-            );
-            requireOptionalEnum(
-                value.transport,
-                CLIENT_TRANSPORTS,
-                'Client connect transport',
-            );
-            requireOptionalNonEmptyString(value.connectionId, 'Client connect connectionId');
-            for (const field of CONNECT_TIMESTAMP_FIELDS) {
-                requireOptionalTimestamp(value[field], `Client connect ${field}`);
-            }
-            validateConnectTimestampOrder(value);
-            return;
-        case 'heartbeatSession':
-            requireAllowedKeys(
-                value,
-                ['generationId'],
-                RAW_HEARTBEAT_REQUEST_KEYS,
-                'Client heartbeatSession request',
-            );
-            validateGenerationId(value.generationId);
-            requireOptionalEnum(
-                value.presenceState,
-                CLIENT_PRESENCE_STATES,
-                'Client heartbeat presenceState',
-            );
-            requireOptionalTimestamp(
-                value.lastHeartbeatAtEpochMs,
-                'Client heartbeat lastHeartbeatAtEpochMs',
-            );
-            requireOptionalTimestamp(
-                value.expiresAtEpochMs,
-                'Client heartbeat expiresAtEpochMs',
-            );
-            validateHeartbeatTimestampOrder(value);
-            return;
-        case 'disconnectSession':
-            requireAllowedKeys(
-                value,
-                ['generationId'],
-                RAW_DISCONNECT_REQUEST_KEYS,
-                'Client disconnectSession request',
-            );
-            validateGenerationId(value.generationId);
-            for (const field of DISCONNECT_TIMESTAMP_FIELDS) {
-                requireOptionalTimestamp(value[field], `Client disconnect ${field}`);
-            }
-            validateDisconnectTimestampOrder(value);
-            return;
     }
 }
 
@@ -1835,76 +1359,6 @@ function toOptional<K extends string, V>(
     return value === undefined ? {} : { [key]: value } as Record<K, V>;
 }
 
-const CLIENT_MUTATION_OPERATIONS = new Set([
-    'upsertPrincipal',
-    'upsertInstance',
-    'connectSession',
-    'connectAuthorisedWsSession',
-    'heartbeatSession',
-    'disconnectSession',
-    'disconnectAuthorisedWsSession',
-    'expireSession',
-]);
-const CLIENT_PRINCIPAL_STATUSES = new Set(['active', 'disabled', 'deleted']);
-const CLIENT_INSTANCE_STATUSES = new Set(['active', 'revoked', 'retired']);
-const CLIENT_SESSION_STATUSES = new Set(['active', 'disconnected', 'expired']);
-const CLIENT_PRESENCE_STATES = new Set(['online', 'offline', 'away', 'busy']);
-const CLIENT_PLATFORMS = new Set([
-    'web', 'ios', 'android', 'desktop', 'server', 'unknown',
-]);
-const CLIENT_TRANSPORTS = new Set(['ws', 'http', 'rtc', 'unknown']);
-const CLIENT_EVENT_TYPES = new Set([
-    'principal-created', 'principal-updated', 'principal-disabled', 'principal-deleted',
-    'instance-registered', 'instance-updated', 'instance-revoked',
-    'session-authenticated', 'session-connected', 'session-heartbeat',
-    'session-disconnected', 'session-expired',
-]);
-const ACTOR_INPUT_KEYS = [
-    'actorPrincipalId', 'actorSessionId', 'reason', 'traceId',
-] as const;
-const COMMAND_BASE_KEYS = [
-    'operation', 'aggregateRef', 'commandId', 'requestId', 'authority', 'facts', 'input',
-] as const;
-const INSTANCE_COMMAND_KEYS = [...COMMAND_BASE_KEYS, 'clientInstanceId'] as const;
-const SESSION_COMMAND_KEYS = [...INSTANCE_COMMAND_KEYS, 'sessionId'] as const;
-const PRINCIPAL_INPUT_KEYS = [
-    'username', 'displayName', 'avatarUrl', 'status', 'authProvider',
-    'externalSubjectId', 'roles', 'metadata', 'lastSeenAtEpochMs',
-    ...ACTOR_INPUT_KEYS,
-] as const;
-const INSTANCE_INPUT_KEYS = [
-    'status', 'platform', 'deviceLabel', 'appVersion', 'userAgent', 'capabilities',
-    ...ACTOR_INPUT_KEYS,
-] as const;
-const CONNECT_INPUT_KEYS = [
-    'generationId', 'presenceState', 'transport', 'connectionId',
-    'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs', 'instancePlatform', 'instanceUserAgent',
-    'instanceCapabilities', 'principalUsername', 'principalDisplayName',
-    'principalRoles', ...ACTOR_INPUT_KEYS,
-] as const;
-const HEARTBEAT_INPUT_KEYS = [
-    'generationId', 'presenceState', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs',
-    ...ACTOR_INPUT_KEYS,
-] as const;
-const DISCONNECT_INPUT_KEYS = [
-    'generationId', 'disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs', ...ACTOR_INPUT_KEYS,
-] as const;
-const EXPIRY_INPUT_KEYS = [
-    'generationId', 'generationVersion', 'observedExpiresAtEpochMs',
-    'expiresAtEpochMs', ...ACTOR_INPUT_KEYS,
-] as const;
-const CONNECT_TIMESTAMP_FIELDS = [
-    'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs',
-] as const;
-const DISCONNECT_TIMESTAMP_FIELDS = [
-    'disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs',
-] as const;
-const RAW_ACTOR_KEYS = [
-    'actorPrincipalId', 'actorSessionId', 'reason', 'traceId', 'requestId',
-] as const;
 const CLIENT_AUDIT_PERSISTED_KEYS = [
     'atEpochMs', 'actor', 'reason', 'traceId', 'requestId',
     'byPrincipalId', 'bySessionId', 'byServiceId',
@@ -1932,294 +1386,6 @@ const CLIENT_EVENT_PERSISTED_KEYS = [
     'snapshotVersion', 'clientInstanceId', 'sessionId', 'occurredAtEpochMs',
     'actor', 'reason', 'traceId', 'requestId', 'payload',
 ] as const;
-const RAW_PRINCIPAL_REQUEST_KEYS = [
-    'username', 'displayName', 'avatarUrl', 'status', 'authProvider',
-    'externalSubjectId', 'roles', 'metadata', 'lastSeenAtEpochMs', ...RAW_ACTOR_KEYS,
-] as const;
-const RAW_INSTANCE_REQUEST_KEYS = [
-    'status', 'platform', 'deviceLabel', 'appVersion', 'userAgent', 'capabilities',
-    ...RAW_ACTOR_KEYS,
-] as const;
-const RAW_CONNECT_REQUEST_KEYS = [
-    'generationId', 'presenceState', 'transport', 'connectionId',
-    'authenticatedAtEpochMs', 'connectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs', ...RAW_ACTOR_KEYS,
-] as const;
-const RAW_HEARTBEAT_REQUEST_KEYS = [
-    'generationId', 'presenceState', 'lastHeartbeatAtEpochMs', 'expiresAtEpochMs',
-    ...RAW_ACTOR_KEYS,
-] as const;
-const RAW_DISCONNECT_REQUEST_KEYS = [
-    'generationId', 'disconnectedAtEpochMs', 'lastHeartbeatAtEpochMs',
-    'expiresAtEpochMs', ...RAW_ACTOR_KEYS,
-] as const;
-
-function validateConnectTimestampOrder(
-    input: Readonly<Record<string, unknown>>,
-): void {
-    const authenticatedAt = timestampValue(input.authenticatedAtEpochMs);
-    const connectedAt = timestampValue(input.connectedAtEpochMs);
-    const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
-    const expiresAt = timestampValue(input.expiresAtEpochMs);
-    if (authenticatedAt !== undefined && connectedAt !== undefined &&
-        authenticatedAt > connectedAt) {
-        reject('Client connect authenticatedAtEpochMs must not follow connectedAtEpochMs');
-    }
-    if (connectedAt !== undefined && heartbeatAt !== undefined &&
-        connectedAt > heartbeatAt) {
-        reject('Client connect lastHeartbeatAtEpochMs must not predate connectedAtEpochMs');
-    }
-    if (heartbeatAt !== undefined && expiresAt !== undefined && heartbeatAt > expiresAt) {
-        reject('Client connect expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
-    }
-}
-
-function validateHeartbeatTimestampOrder(
-    input: Readonly<Record<string, unknown>>,
-): void {
-    const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
-    const expiresAt = timestampValue(input.expiresAtEpochMs);
-    if (heartbeatAt !== undefined && expiresAt !== undefined && expiresAt < heartbeatAt) {
-        reject('Client heartbeat expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
-    }
-}
-
-function validateDisconnectTimestampOrder(
-    input: Readonly<Record<string, unknown>>,
-): void {
-    const disconnectedAt = timestampValue(input.disconnectedAtEpochMs);
-    const heartbeatAt = timestampValue(input.lastHeartbeatAtEpochMs);
-    const expiresAt = timestampValue(input.expiresAtEpochMs);
-    if (disconnectedAt !== undefined && heartbeatAt !== undefined &&
-        disconnectedAt < heartbeatAt) {
-        reject('Client disconnect disconnectedAtEpochMs must not predate lastHeartbeatAtEpochMs');
-    }
-    if (expiresAt !== undefined && heartbeatAt !== undefined && expiresAt < heartbeatAt) {
-        reject('Client disconnect expiresAtEpochMs must not predate lastHeartbeatAtEpochMs');
-    }
-}
-
-function timestampValue(value: unknown): number | undefined {
-    return typeof value === 'number' ? value : undefined;
-}
-
-function reject(message: string): never {
-    throw new ClientMutationRejectedError(message);
-}
-
-function requirePlainRecord(
-    value: unknown,
-    label: string,
-): Readonly<Record<string, unknown>> {
-    if (!isJsonObject(value)) reject(`${label} must be a plain object`);
-    const prototype = Object.getPrototypeOf(value);
-    if (prototype !== Object.prototype && prototype !== null) {
-        reject(`${label} must be a plain object`);
-    }
-    return value;
-}
-
-function requireExactKeys(
-    value: Readonly<Record<string, unknown>>,
-    keys: readonly string[],
-    label: string,
-): void {
-    const expected = new Set(keys);
-    for (const key of keys) {
-        if (!Object.prototype.hasOwnProperty.call(value, key)) {
-            reject(`${label}.${key} is required`);
-        }
-    }
-    for (const key of Object.keys(value)) {
-        if (!expected.has(key)) reject(`${label}.${key} is not allowed`);
-    }
-}
-
-function requireAllowedKeys(
-    value: Readonly<Record<string, unknown>>,
-    required: readonly string[],
-    allowed: readonly string[],
-    label: string,
-): void {
-    const expected = new Set(allowed);
-    for (const key of required) {
-        if (!Object.prototype.hasOwnProperty.call(value, key)) {
-            reject(`${label}.${key} is required`);
-        }
-    }
-    for (const key of Object.keys(value)) {
-        if (!expected.has(key)) reject(`${label}.${key} is not allowed`);
-    }
-}
-
-function requireNonEmptyString(value: unknown, label: string): asserts value is string {
-    if (typeof value !== 'string' || value.trim().length === 0) {
-        reject(`${label} must be a non-empty string`);
-    }
-}
-
-function requireString(value: unknown, label: string): asserts value is string {
-    if (typeof value !== 'string') reject(`${label} must be a string`);
-}
-
-function requireBoolean(value: unknown, label: string): asserts value is boolean {
-    if (typeof value !== 'boolean') reject(`${label} must be a boolean`);
-}
-
-function requireNullableString(value: unknown, label: string): void {
-    if (value !== null) requireString(value, label);
-}
-
-function requireNullableNonEmptyString(value: unknown, label: string): void {
-    if (value !== null) requireNonEmptyString(value, label);
-}
-
-function requireOptionalString(value: unknown, label: string): void {
-    if (value !== undefined) requireString(value, label);
-}
-
-function requireOptionalNonEmptyString(value: unknown, label: string): void {
-    if (value !== undefined) requireNonEmptyString(value, label);
-}
-
-function requireTimestamp(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0 || Object.is(value, -0)) {
-        reject(`${label} must be a finite safe nonnegative integer`);
-    }
-}
-
-function requireNullableTimestamp(
-    value: unknown,
-    label: string,
-): asserts value is number | null {
-    if (value !== null) requireTimestamp(value, label);
-}
-
-function requireOptionalTimestamp(value: unknown, label: string): void {
-    if (value !== undefined) requireTimestamp(value, label);
-}
-
-function requirePositiveSafeInteger(
-    value: unknown,
-    label: string,
-): asserts value is number {
-    requireTimestamp(value, label);
-    if ((value as number) < 1) reject(`${label} must be at least 1`);
-}
-
-function requireEnum(value: unknown, allowed: ReadonlySet<string>, label: string): void {
-    if (typeof value !== 'string' || !allowed.has(value)) {
-        reject(`${label} has an invalid value`);
-    }
-}
-
-function requireNullableEnum(
-    value: unknown,
-    allowed: ReadonlySet<string>,
-    label: string,
-): void {
-    if (value !== null) requireEnum(value, allowed, label);
-}
-
-function requireOptionalEnum(
-    value: unknown,
-    allowed: ReadonlySet<string>,
-    label: string,
-): void {
-    if (value !== undefined) requireEnum(value, allowed, label);
-}
-
-function requireStringArray(
-    value: unknown,
-    label: string,
-): asserts value is readonly string[] {
-    if (!Array.isArray(value)) reject(`${label} must be an array`);
-    value.forEach((item, index) =>
-        requireNonEmptyString(item, `${label}[${index}]`)
-    );
-}
-
-function requireNullableStringArray(value: unknown, label: string): void {
-    if (value !== null) requireStringArray(value, label);
-}
-
-function requireJsonValue(value: unknown, label: string): void {
-    if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
-    if (typeof value === 'number') {
-        if (!Number.isFinite(value) || Object.is(value, -0)) {
-            reject(`${label} contains a non-JSON number`);
-        }
-        return;
-    }
-    if (Array.isArray(value)) {
-        value.forEach((item, index) => requireJsonValue(item, `${label}[${index}]`));
-        return;
-    }
-    const record = requirePlainRecord(value, label);
-    for (const [key, item] of Object.entries(record)) {
-        requireJsonValue(item, `${label}.${key}`);
-    }
-}
-
-function requireJsonRecord(value: unknown, label: string): void {
-    requirePlainRecord(value, label);
-    requireJsonValue(value, label);
-}
-
-function requireNullableJsonRecord(value: unknown, label: string): void {
-    if (value !== null) requireJsonRecord(value, label);
-}
-
-function validateGenerationId(value: unknown): void {
-    requireNonEmptyString(value, 'Client session generationId');
-}
-
-function validateActorInput(input: Readonly<Record<string, unknown>>): void {
-    requireNullableNonEmptyString(
-        input.actorPrincipalId,
-        'Client mutation actorPrincipalId',
-    );
-    requireNullableNonEmptyString(input.actorSessionId, 'Client mutation actorSessionId');
-    requireNullableString(input.reason, 'Client mutation reason');
-    requireNullableString(input.traceId, 'Client mutation traceId');
-}
-
-function validateOptionalActorInput(input: Readonly<Record<string, unknown>>): void {
-    requireOptionalNonEmptyString(
-        input.actorPrincipalId,
-        'Client request actorPrincipalId',
-    );
-    requireOptionalNonEmptyString(input.actorSessionId, 'Client request actorSessionId');
-    requireOptionalString(input.reason, 'Client request reason');
-    requireOptionalString(input.traceId, 'Client request traceId');
-    requireOptionalNonEmptyString(input.requestId, 'Client request requestId');
-}
-
-function validateSessionCommandRoot(value: Readonly<Record<string, unknown>>): void {
-    requireExactKeys(value, SESSION_COMMAND_KEYS, 'Client session command');
-    requireNonEmptyString(value.clientInstanceId, 'Client session clientInstanceId');
-    requireNonEmptyString(value.sessionId, 'Client session sessionId');
-}
-
-function validatePrincipalRef(
-    value: unknown,
-    label: string,
-    exact = true,
-): ClientPrincipalRef {
-    const ref = requirePlainRecord(value, label);
-    if (exact) {
-        requireExactKeys(ref, ['applicationId', 'workspaceId', 'principalId'], label);
-    }
-    requireNonEmptyString(ref.applicationId, `${label}.applicationId`);
-    requireNonEmptyString(ref.workspaceId, `${label}.workspaceId`);
-    requireNonEmptyString(ref.principalId, `${label}.principalId`);
-    return {
-        applicationId: ref.applicationId,
-        workspaceId: ref.workspaceId,
-        principalId: ref.principalId,
-    };
-}
-
 function normalizePersistedClientAudit(value: unknown, label: string): AuditStamp {
     const audit = requirePlainRecord(value, label);
     requireAllowedKeys(audit, [], CLIENT_AUDIT_PERSISTED_KEYS, label);
@@ -2412,7 +1578,7 @@ function validateSession(
     validatePrincipalRef(session, label, false);
     requireNonEmptyString(session.clientInstanceId, `${label}.clientInstanceId`);
     requireNonEmptyString(session.sessionId, `${label}.sessionId`);
-    validateGenerationId(session.generationId);
+    requireNonEmptyString(session.generationId, 'Client session generationId');
     requirePositiveSafeInteger(session.generationVersion, `${label}.generationVersion`);
     requireEnum(session.status, CLIENT_SESSION_STATUSES, `${label}.status`);
     requireEnum(session.presenceState, CLIENT_PRESENCE_STATES, `${label}.presenceState`);
@@ -2512,7 +1678,7 @@ function validateClientMutationAuthority(authority: unknown): void {
             'Client mutation issued-session authority',
         );
         if (value.version !== 1 || value.operation === 'expireSession' ||
-            !CLIENT_MUTATION_OPERATIONS.has(value.operation as string)) {
+            !CLIENT_MUTATION_OPERATIONS.has(value.operation as ClientMutationOperation)) {
             reject('Client mutation issued-session authority is invalid');
         }
         for (
@@ -2558,12 +1724,6 @@ function validateClientMutationAuthority(authority: unknown): void {
         return;
     }
     reject('Client mutation authority kind is invalid');
-}
-
-function requireSha256(value: unknown, label: string): void {
-    if (typeof value !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value)) {
-        reject(`${label} must be a canonical SHA-256 digest`);
-    }
 }
 
 function validateReceipt(value: unknown, label: string): void {

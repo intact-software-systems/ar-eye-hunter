@@ -355,7 +355,7 @@ packages/shared-server/rallar-system/
       authorised-ws-client-app-inbox.ts
       client-state-inbox-handler.ts
     mutation/
-      client-expired-session-authority.ts
+      validate-client-expired-session-authority.ts
       client-mutation-authority.ts
       client-mutation-command.ts
       client-mutation-contracts.ts
@@ -465,7 +465,7 @@ dependency bags.
 | `services/AppClientInboxService.ts`                    | inbox contracts, public service, authenticated ingress, and runtime handler                                                                                                       |
 | `repositories/ClientStateRepository.ts`                | persistence contracts, repository, reads, snapshot repository, snapshot assembly, codec/validation, namespaces, and storage keys                                                  |
 | `services/authorised-ws-client-app-inbox.ts`           | `inbox/authorised-ws-client-app-inbox.ts`                                                                                                                                         |
-| `services/client-expired-state-authority.ts`           | `mutation/client-expired-session-authority.ts`                                                                                                                                    |
+| `services/client-expired-state-authority.ts`           | `mutation/validate-client-expired-session-authority.ts`                                                                                                                           |
 | `services/client-mutation-authority.ts`                | `mutation/client-mutation-authority.ts`                                                                                                                                           |
 | `services/client-state-semantic-equality.ts`           | `client-state/client-state-semantic-equality.ts`                                                                                                                                  |
 | `client-presence-state.ts`                             | `client-state/client-presence-state.ts`                                                                                                                                           |
