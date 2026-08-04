@@ -2,141 +2,114 @@
 
 Merge base: `39b2b7e6312507addfb4629c9d84ab476e83c362`
 
-This inventory binds only mechanically moved PR A command/validation regions
-to the approved source blobs. Each target hash covers the complete target
-module so unreviewed semantic additions fail closed. The source ranges are
-inclusive, one-based lines from the recorded merge base. Every listed finding
-is inherited and accepted for PR A; later warning alignment remains outside
-this cohort.
+This inventory binds each complete command/validation target to exact,
+possibly discontiguous merge-base regions. Source regions contain only the
+symbols mechanically moved to that target. Target hashes cover the complete
+module, so additions or ownership drift fail closed. Import-path glue, exported
+owner modifiers, and type-only stage contracts are named exclusions and receive
+no inherited warning capacity. File-level length warnings remain with the
+transitional aggregate and are not assigned to these targets.
 
 ## Machine evidence
 
 ```text
-mutation-contracts|client-mutation-contracts.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|46|277|7f19b0e5519e912976f1eb14746d4922dc161e8351cea3ba969dd79446d4f88e|packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts|1|260|02b66466e91ba54cba22db0a9cccf4e1705f0504bcbd69fbead13c8a6e1694c1|file.length;boundary.unknown at line 105|inherited and accepted for PR A
-rejection-error|client-state-validation-primitives.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|292|300|4e577da1c2a9d116c8fafbfeae6edfc4ceb2fd1191523e2d06a602b1a8967700|packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts|1|197|19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a|file.length|inherited and accepted for PR A
-command-validation|validate-client-mutation-command.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|302|463|8bd1da90612e8924a10e2cf4957902c98cd903dacfa50b8d011a68d2eeb5dbcc|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts|1|116|9e4f9509f18fad829d51654f7fc5ca9d09a2f90b449fc7b933dc5727cb06f3a5|boundary.unknown at line 303|inherited and accepted for PR A
-request-validation|validate-client-mutation-request.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|464|611|239fe4241eb3529f3e2da594ae89fcf61f1c4752bdbb43d22e0129510f65ad81|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts|1|266|57bc057bdcd17fb08fd8e375789de4055d8843ca6b97a26aeb3a4913d1ac7e0d|boundary.unknown raw request overloads|inherited and accepted for PR A
-operation-input-constants-and-ordering|validate-client-mutation-operation-input.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|1838|2005|1f71c1b37828aec1e619b8fd1140411b4ea7e57d91d179534647db1007cbf69e|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts|1|332|472f4056d0f42801b2405a6ffc491d319ce639d8ad13cb53a5599314c0bedf41|file.length|inherited and accepted for PR A
-generic-validation-primitives|client-state-validation-primitives.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|2006|2172|0a826017179db265730ec6d62ad4bccfd634efb9cffcf2801b3ce235b12beb40|packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts|1|197|19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a|function.input-contract requireAllowedKeys at line 2038|inherited and accepted for PR A
-operation-input-actor-and-root-validation|validate-client-mutation-operation-input.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|2173|2202|49b1b065e329c727147fc555c1df3b9d4025965ef46780742fc081dfda3e976e|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts|1|332|472f4056d0f42801b2405a6ffc491d319ce639d8ad13cb53a5599314c0bedf41|file.length|inherited and accepted for PR A
-principal-reference-primitive|client-state-validation-primitives.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|2204|2221|f84a2f4822458118588e12e70ab1eb7c8f698fe4bf46768f166a7716fcc225cf|packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts|1|197|19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a|file.length|inherited and accepted for PR A
-command-facts-and-authority-validation|validate-client-mutation-command.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|2484|2562|dbce3c9d4dbfd97477ce212e279ca5a3e8daf8523591a1ba8b4ece5d54eff474|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts|1|116|9e4f9509f18fad829d51654f7fc5ca9d09a2f90b449fc7b933dc5727cb06f3a5|file.length|inherited and accepted for PR A
-sha256-validation-primitive|client-state-validation-primitives.ts|packages/shared-server/rallar-system/services/client-state-mutations.ts|2563|2567|2f537053593c5724b558e98c81f20dbce5f63f73314e5d8bc887f6b8135aa931|packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts|1|197|19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a|file.length|inherited and accepted for PR A
-command-projection-and-hashing|client-mutation-command.ts|packages/shared-server/rallar-system/services/client-state-service.ts|310|583|cb972e44bb217a6e66e42fdb2b0b5f9230debb46ffc6edf31b46bf16e1618bf6|packages/shared-server/rallar-system/client-state/mutation/client-mutation-command.ts|1|255|0f9c323a547537ae5d756cac16d81461527fa3e54986f4ca801edf30c62f5feb|function.input-contract projection family|inherited and accepted for PR A
-issued-and-system-authority-projection|client-mutation-authority.ts|packages/shared-server/rallar-system/services/client-mutation-authority.ts|1|37|c30b1b243bdc67d032fc5618f473b216bd5f2b06f53adfeeb5fdc8cc846be7ee|packages/shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts|1|36|b8a5024710bd832d263c86aed9755f95f8e06110a6ef6a4257cc9d25367afdcf|mechanical owner move|inherited and accepted for PR A
-expired-session-authority-validation|validate-client-expired-session-authority.ts|packages/shared-server/rallar-system/services/client-expired-state-authority.ts|1|27|6d63ede18e25f54194247900ec15e0ee18edc2d194688bd822e2d52681484240|packages/shared-server/rallar-system/client-state/mutation/validate-client-expired-session-authority.ts|1|31|3d2fb138ee44f5f8c360bf71df71067f83bcda7fb969deddc5821ea82f357c3c|line.width at line 3;boundary.unknown at line 10|inherited and accepted for PR A
+mutation-contracts|packages/shared-server/rallar-system/services/client-state-mutations.ts|46-277|7f19b0e5519e912976f1eb14746d4922dc161e8351cea3ba969dd79446d4f88e|packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts|1|260|02b66466e91ba54cba22db0a9cccf4e1705f0504bcbd69fbead13c8a6e1694c1|import-path and exported-owner glue; no inherited capacity|boundary.unknown:ClientMutationCommand.metadata|inherited and accepted for PR A
+validation-primitives|packages/shared-server/rallar-system/services/client-state-mutations.ts|292-300,2006-2171,2204-2221,2563-2567|f76bc3d3a03eebf750e73c8cfe1c1a99bfd7558da0f69c86f02b58358d9828a0|packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts|1|198|aa43354abe115288ccd0efea3d4b493f474d50370b8d3d5db27752c01125884f|import-path and exported-owner glue; no inherited capacity|function.input-contract:requireAllowedKeys;boundary.unknown:validation-boundary-parameters|inherited and accepted for PR A
+command-root-facts-authority-validation|packages/shared-server/rallar-system/services/client-state-mutations.ts|302-317,2484-2561|c5c0c359d23367e59d40ba9b4ffb9b83b670f2b681252adc36cba9158915ecfb|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts|1|116|9e4f9509f18fad829d51654f7fc5ca9d09a2f90b449fc7b933dc5727cb06f3a5|private helper declarations; no inherited capacity|boundary.unknown:command-facts-authority-boundaries|inherited and accepted for PR A
+operation-input-validation|packages/shared-server/rallar-system/services/client-state-mutations.ts|318-461,1838-1904,1957-2004,2173-2185,2198-2202|9ba310b97ce3e872fb249c2732b5c20c03b9b0143ed69cb73f8fb4e1f64a2a16|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts|1|332|472f4056d0f42801b2405a6ffc491d319ce639d8ad13cb53a5599314c0bedf41|type-only stage contract and helper declarations; no inherited capacity|boundary.unknown:generation-and-timestamp-boundaries|inherited and accepted for PR A
+request-validation|packages/shared-server/rallar-system/services/client-state-mutations.ts|464-610,1905-1907,1935-2004,2173-2175,2187-2196|670497b39193256b5aab5757c0b67dce7b3ad52ae9cda1e0f8452f23119fe4a1|packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts|1|266|57bc057bdcd17fb08fd8e375789de4055d8843ca6b97a26aeb3a4913d1ac7e0d|operation dispatcher and import-path glue; no inherited capacity|boundary.unknown:raw-request-and-timestamp-boundaries|inherited and accepted for PR A
+command-projection-and-hashing|packages/shared-server/rallar-system/services/client-state-service.ts|310-330,374-582|165dc587e93b3a20227b9c394c4a9a240b80e2f876976d817c21811b5c924f3b|packages/shared-server/rallar-system/client-state/mutation/client-mutation-command.ts|1|255|0f9c323a547537ae5d756cac16d81461527fa3e54986f4ca801edf30c62f5feb|import-path glue; no inherited capacity|function.input-contract:five-request-projections;function.output-contract:toExpiryCommandInput;function.output-contract:toActorInput|inherited and accepted for PR A
+issued-and-system-authority-projection|packages/shared-server/rallar-system/services/client-mutation-authority.ts|1-37|c30b1b243bdc67d032fc5618f473b216bd5f2b06f53adfeeb5fdc8cc846be7ee|packages/shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts|1|36|b8a5024710bd832d263c86aed9755f95f8e06110a6ef6a4257cc9d25367afdcf|import-path glue; no inherited capacity|none|inherited and accepted for PR A
+expired-session-authority-validation|packages/shared-server/rallar-system/services/client-expired-state-authority.ts|1-27|6d63ede18e25f54194247900ec15e0ee18edc2d194688bd822e2d52681484240|packages/shared-server/rallar-system/client-state/mutation/validate-client-expired-session-authority.ts|1|31|3d2fb138ee44f5f8c360bf71df71067f83bcda7fb969deddc5821ea82f357c3c|import-path glue; no inherited capacity|boundary.unknown:liveSession|inherited and accepted for PR A
 ```
 
 ### mutation-contracts
 
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:46-277`
-- Source hash: `7f19b0e5519e912976f1eb14746d4922dc161e8351cea3ba969dd79446d4f88e`
+- Source regions: `client-state-mutations.ts:46-277` (mutation command,
+  computed, read, facts, receipt, and idempotency contracts).
 - Target: `packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts`
-- Target hash: `02b66466e91ba54cba22db0a9cccf4e1705f0504bcbd69fbead13c8a6e1694c1`
-- Findings: `file.length`; `boundary.unknown at line 105`
+  lines `1-260`.
+- Findings: `boundary.unknown` remains owned by
+  `ClientMutationCommand.metadata`; the aggregate source length warning did not
+  move.
 
-### rejection-error
+### validation-primitives
 
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:292-300`
-- Source hash: `4e577da1c2a9d116c8fafbfeae6edfc4ceb2fd1191523e2d06a602b1a8967700`
+- Source regions: `client-state-mutations.ts:292-300,2006-2171,2204-2221,2563-2567`
+  (rejection error, generic validation boundaries, principal-ref validation,
+  and SHA-256 validation).
 - Target: `packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts`
-- Target hash: `19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a`
-- Findings: `file.length`
+  lines `1-198`.
+- Findings: inherited boundary-`unknown` parameters and the four-parameter
+  `requireAllowedKeys` input-contract warning. `ClientValidationRecord` derives
+  its type from `requirePlainRecord` and contributes no separate finding or
+  inherited capacity.
 
-### command-validation
+### command-root-facts-authority-validation
 
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:302-463`
-- Source hash: `8bd1da90612e8924a10e2cf4957902c98cd903dacfa50b8d011a68d2eeb5dbcc`
+- Source regions: `client-state-mutations.ts:302-317,2484-2561`.
 - Target: `packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts`
-- Target hash: `9e4f9509f18fad829d51654f7fc5ca9d09a2f90b449fc7b933dc5727cb06f3a5`
-- Findings: `boundary.unknown at line 303`
+  lines `1-116`.
+- Findings: inherited `boundary.unknown` at command, facts, and authority
+  validation boundaries. Operation-specific bodies are not assigned here.
+
+### operation-input-validation
+
+- Source regions: `client-state-mutations.ts:318-461,1838-1904,1957-2004,2173-2185,2198-2202`.
+- Target: `packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts`
+  lines `1-332`.
+- Findings: inherited `boundary.unknown` at generation and timestamp validation
+  boundaries. Persisted-key inventories at source lines `1908-1934` remain in
+  the legacy persistence-validation owner and are excluded.
 
 ### request-validation
 
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:464-611`
-- Source hash: `239fe4241eb3529f3e2da594ae89fcf61f1c4752bdbb43d22e0129510f65ad81`
+- Source regions: `client-state-mutations.ts:464-610,1905-1907,1935-2004,2173-2175,2187-2196`.
 - Target: `packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts`
-- Target hash: `57bc057bdcd17fb08fd8e375789de4055d8843ca6b97a26aeb3a4913d1ac7e0d`
-- Findings: inherited raw-request `boundary.unknown` sites
-
-### operation-input-constants-and-ordering
-
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:1838-2005`
-- Source hash: `1f71c1b37828aec1e619b8fd1140411b4ea7e57d91d179534647db1007cbf69e`
-- Target: `packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts`
-- Target hash: `472f4056d0f42801b2405a6ffc491d319ce639d8ad13cb53a5599314c0bedf41`
-- Findings: `file.length`
-
-### generic-validation-primitives
-
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:2006-2172`
-- Source hash: `0a826017179db265730ec6d62ad4bccfd634efb9cffcf2801b3ce235b12beb40`
-- Target: `packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts`
-- Target hash: `19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a`
-- Findings: `function.input-contract requireAllowedKeys at line 2038`
-
-### operation-input-actor-and-root-validation
-
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:2173-2202`
-- Source hash: `49b1b065e329c727147fc555c1df3b9d4025965ef46780742fc081dfda3e976e`
-- Target: `packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts`
-- Target hash: `472f4056d0f42801b2405a6ffc491d319ce639d8ad13cb53a5599314c0bedf41`
-- Findings: `file.length`
-
-### principal-reference-primitive
-
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:2204-2221`
-- Source hash: `f84a2f4822458118588e12e70ab1eb7c8f698fe4bf46768f166a7716fcc225cf`
-- Target: `packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts`
-- Target hash: `19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a`
-- Findings: `file.length`
-
-### command-facts-and-authority-validation
-
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:2484-2562`
-- Source hash: `dbce3c9d4dbfd97477ce212e279ca5a3e8daf8523591a1ba8b4ece5d54eff474`
-- Target: `packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts`
-- Target hash: `9e4f9509f18fad829d51654f7fc5ca9d09a2f90b449fc7b933dc5727cb06f3a5`
-- Findings: `file.length`
-
-### sha256-validation-primitive
-
-- Source: `packages/shared-server/rallar-system/services/client-state-mutations.ts:2563-2567`
-- Source hash: `2f537053593c5724b558e98c81f20dbce5f63f73314e5d8bc887f6b8135aa931`
-- Target: `packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts`
-- Target hash: `19c14d2de1d4ee315cd29deb4a1b9698b6906e49d545850d60b0ffae8717780a`
-- Findings: `file.length`
+  lines `1-266`.
+- Findings: inherited raw-request and timestamp `boundary.unknown` sites.
+  Persisted-key inventories are not included.
 
 ### command-projection-and-hashing
 
-- Source: `packages/shared-server/rallar-system/services/client-state-service.ts:310-583`
-- Source hash: `cb972e44bb217a6e66e42fdb2b0b5f9230debb46ffc6edf31b46bf16e1618bf6`
+- Source regions: `client-state-service.ts:310-330,374-582`.
 - Target: `packages/shared-server/rallar-system/client-state/mutation/client-mutation-command.ts`
-- Target hash: `0f9c323a547537ae5d756cac16d81461527fa3e54986f4ca801edf30c62f5feb`
-- Findings: inherited `function.input-contract` findings for the five public request projections
-- Scope correction: the approved worksheet assigned these functions to PR B,
-  but the tracked plan and Task 2 dispatch assign request/payload projection and
-  hashing to PR A. Signatures remain unchanged; alignment is deferred.
+  lines `1-255`.
+- Findings: inherited input-contract warnings for the five public request
+  projections and output-contract warnings for `toExpiryCommandInput` and
+  `toActorInput`.
+- The unmoved `requiresClientWrite`, `toClientMutationReceipt`, and
+  `toClientStateWritten` region at source lines `332-372` is excluded.
 
 ### issued-and-system-authority-projection
 
-- Source: `packages/shared-server/rallar-system/services/client-mutation-authority.ts:1-37`
-- Source hash: `c30b1b243bdc67d032fc5618f473b216bd5f2b06f53adfeeb5fdc8cc846be7ee`
+- Source region: `client-mutation-authority.ts:1-37`.
 - Target: `packages/shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts`
-- Target hash: `b8a5024710bd832d263c86aed9755f95f8e06110a6ef6a4257cc9d25367afdcf`
-- Findings: mechanical owner move
+  lines `1-36`.
+- Findings: none; only import-path glue is excluded from inherited capacity.
 
 ### expired-session-authority-validation
 
-- Source: `packages/shared-server/rallar-system/services/client-expired-state-authority.ts:1-27`
-- Source hash: `6d63ede18e25f54194247900ec15e0ee18edc2d194688bd822e2d52681484240`
+- Source region: `client-expired-state-authority.ts:1-27`.
 - Target: `packages/shared-server/rallar-system/client-state/mutation/validate-client-expired-session-authority.ts`
-- Target hash: `3d2fb138ee44f5f8c360bf71df71067f83bcda7fb969deddc5821ea82f357c3c`
-- Findings: `line.width at line 3`; `boundary.unknown at line 10`
+  lines `1-31`.
+- Findings: inherited `boundary.unknown` on `liveSession`. The source-only long
+  import line was reformatted and is not assigned to the target.
+
+## Retained semantic-equality owner
+
+Retained semantic-equality owner: `packages/shared-server/rallar-system/services/client-state-semantic-equality.ts:74-77`
+
+The validation primitives import `isClientJsonObject` from this existing owner.
+The former local predicate copy was removed; the type-only record alias derives
+from the moved `requirePlainRecord` boundary and receives no inherited finding
+capacity. This cohort does not move semantic-equality code. The merge-base owner blob is
+`de169149cb606f9ba9009545a8efd2f50746688c`; its exact region hash is
+`3cb57e0bb4be500115f8a7f051b819b8f18b76cf89de7e0322a8ea041c9570f8`.
 
 ## Compatibility files
 
-The authority compatibility paths contain only direct named one-hop exports.
-The mixed service and mutation paths retain unmoved compute/result/service code
-for later cohorts while re-exporting the moved public names directly from their
-canonical owners.
+The authority compatibility paths contain direct named one-hop exports. The
+mixed service and mutation paths retain unmoved compute, result, persistence,
+and service code for later cohorts while re-exporting moved public names from
+their canonical owners.

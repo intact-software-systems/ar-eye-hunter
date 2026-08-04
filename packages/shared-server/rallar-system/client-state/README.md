@@ -23,20 +23,38 @@ Compatibility callers can continue using the existing named exports from
 `services/client-expired-state-authority.ts`. Canonical owners never import
 those compatibility paths.
 
-## Current runtime timeline
+## Construction, registration, and enqueue timeline
 
 ```text
-HTTP, authorized WebSocket, or expiry producer
-  -> AppInboxService reserves the durable mutation
-  -> AppClientInboxService projects the enqueue payload
-  -> toClientMutationCommand validates and hashes the command
-  -> client-state-service read -> compute -> validate
-  -> transaction-bound write persists state, receipt, event, and outbox
-  -> AppInboxService commits, records the durable result, and wakes observers
+1. API composition creates the durable repositories, database, client-state service, timing sink, and queue-engine wake capability before constructing AppClientInboxService.
+2. RallarMiddleware creates InboxQueueReader and invokes the AppClientInboxService factory with the already-created queue reader and wake capability.
+3. AppInboxService constructs its transaction writer and stores the enqueue-time owning-queue wake capability before AppClientInboxService registers handlers.
+4. AppClientInboxService registers all eight client mutation callbacks through AppInboxService.onStateMessage; InboxQueueReader can dispatch a callback only after that registration.
+5. A route, authorized-WebSocket adapter, or maintenance producer first asks AppClientInboxService to validate ingress and project the payload or authority.
+6. AppInboxService serializes the command, durably reserves or reuses the AppInbox entry, validates command identity, and invokes the owning-queue wake at this enqueue boundary.
+7. A synchronous producer waits by polling the durable result; there is no post-commit queue wake in the client-state path.
 ```
 
-AppInbox remains the only incoming database-mutation entry. This cohort does
-not move or change its transaction, retry, result, or observation ownership.
+All constructor dependencies exist before `onStateMessage` exposes a callback
+to `InboxQueueReader`. AppInbox remains the only incoming database-mutation
+entry.
+
+## Runtime invocation and transaction timeline
+
+```text
+1. InboxQueueReader later claims the durable entry and invokes the registered AppClientInboxService callback once for that processing attempt.
+2. AppInboxService validates the durable command identity and begins attempt finalization before invoking the registered callback.
+3. AppClientInboxService projects the command, then runs client-state read, compute, and validate from fresh state for that attempt.
+4. AppInboxTransactionWriter owns the transaction; ClientStateService performs the first conditional write and the state, receipt, event, outbox, durable result, and reservation completion commit together.
+5. The committed result returns to AppClientInboxService.commitComputed, which observes the snapshot after commit; observation is not a queue wake.
+6. The registered callback returns the confirmed result, and a waiting producer reads the same durable result for its caller-visible outcome.
+7. A retryable failure leaves the entry for ResourceInbox retry; the next claimed attempt re-enters identity validation and the complete command/read/compute/validate path without repeating the original enqueue wake.
+```
+
+Terminal failures are durably finalized by the AppInbox transaction owner.
+Retryable failures unwind to the ResourceInbox retry policy; they do not reuse a
+stale read or computed candidate. This cohort does not move or change the
+transaction, retry, result, observation, or enqueue-wake implementations.
 
 ## PR A command and validation timeline
 

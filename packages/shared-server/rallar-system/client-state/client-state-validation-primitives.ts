@@ -1,6 +1,6 @@
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 
-export type ClientValidationRecord = Readonly<Record<string, unknown>>;
+import { isClientJsonObject } from '../services/client-state-semantic-equality.ts';
 
 export class ClientMutationRejectedError extends Error {
   readonly code = 'client-mutation-rejected';
@@ -16,14 +16,19 @@ export function rejectClientMutation(message: string): never {
   throw new ClientMutationRejectedError(message);
 }
 
-export function requirePlainRecord(value: unknown, label: string): ClientValidationRecord {
-  if (!isJsonObject(value)) rejectClientMutation(`${label} must be a plain object`);
+export function requirePlainRecord(
+  value: unknown,
+  label: string,
+): Readonly<Record<string, unknown>> {
+  if (!isClientJsonObject(value)) rejectClientMutation(`${label} must be a plain object`);
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) {
     rejectClientMutation(`${label} must be a plain object`);
   }
   return value;
 }
+
+export type ClientValidationRecord = ReturnType<typeof requirePlainRecord>;
 
 export function requireExactKeys(
   value: ClientValidationRecord,
@@ -190,8 +195,4 @@ export function validateClientPrincipalRef(
     workspaceId: ref.workspaceId,
     principalId: ref.principalId,
   };
-}
-
-function isJsonObject(value: unknown): value is ClientValidationRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
