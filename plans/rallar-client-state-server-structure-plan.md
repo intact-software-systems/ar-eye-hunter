@@ -127,39 +127,36 @@ directory.
 The repository checker is warning-only. The broad current `services` scan
 reports 290 default findings and 301 construction-detail findings; the broad
 `repositories` scan reports 89 default findings. Those totals include unrelated
-features and are not a client-state score. Execution must capture focused
-client-state findings by exact file before the first edit and give every
-finding one human disposition:
+features and are not a client-state score. Task 1 captured the focused findings
+on exact base `39b2b7e6312507addfb4629c9d84ab476e83c362` as 78 warning rows.
+The human approved the evidence-backed disposition and owner/rationale mapping
+for every row with no exceptions. The approved disposition categories are:
 
 - inherited and mechanically moved, with symbol/span provenance;
 - fixed behavior-neutrally in its owning PR;
 - retained boundary evidence, with rationale and owner; or
 - blocked because a behavior/public/persisted decision is required.
 
-An exit-zero checker result without that disposition is insufficient. No
-finding becomes globally blocking and no checker behavior changes in this
-child.
+The approved map assigns each row to its mechanically moved PR A or PR B owner,
+or to the existing owner of a retained boundary or compatibility constraint.
+It does not invent a code fix, behavior decision, or exception. An exit-zero
+checker result without the recorded mapping remains insufficient. No finding
+becomes globally blocking and no checker behavior changes in this child.
 
-### 2.3 Controlled navigation-time sample
+### 2.3 Navigation evidence protocol amendment
 
-Before PR A's first production edit, one human reviewer performs the following
-controlled sample on the exact planning-resulting-main tree:
+No valid controlled human navigation-time sample was collected on exact base
+`39b2b7e6312507addfb4629c9d84ab476e83c362`. The human explicitly waives the
+before/after timing comparison for this client-state child. No executor,
+reviewer, PR, handoff, or later ledger may fabricate elapsed times, wrong-file
+counts, compatibility-hop observations, unresolved-question counts, or human
+productivity/navigation-time claims for that base or a later tree.
 
-1. Start from the repository root with no plan or PR body open.
-2. Time, separately, finding and explaining the ordinary principal-upsert,
-   authorized-WebSocket-connect, expiry-maintenance, and snapshot-query paths.
-3. For each family, stop only after naming entry, registration owner, later
-   runtime invoker, translation, read, compute, validation, transaction/retry
-   owner, writes/outbox, after-commit effects, early/terminal exits, cleanup,
-   and caller-visible result.
-4. Record elapsed wall time, wrong files opened, compatibility-only hops, and
-   unresolved questions in the PR A external evidence envelope.
-5. Repeat the same exercise on the final PR C tree using the same reviewer,
-   instructions, repository-search tool, and cold starting context.
-
-This is a navigation sample, not a statistically representative productivity
-claim. The plan and later ledger may record the protocol and final immutable
-summary; raw chronological observations stay in PR/handoff evidence.
+The independently reviewed, source-derived traces for ordinary mutations,
+authorized WebSocket lifecycle, expiry maintenance, and query/snapshot/cache
+remain the qualitative baseline. PR A and final PR C review still require
+code-derived family traces and human review of the actual code and diff. Those
+qualitative traces are not a timing sample and must not be presented as one.
 
 ## 3. Current Production, Consumer, And Test Trees
 
@@ -898,10 +895,10 @@ or unrelated refactor is authorized.
 
 - Freeze exact production/test/consumer inventories, named cases, literals, and
   assertion sites.
-- Record all four current family traces and the controlled human navigation-time
-  sample from Section 2.3.
-- Capture focused warning-only findings by exact file and record human
-  disposition for each.
+- Record all four current source-derived family traces as the qualitative
+  baseline. Record the Section 2.3 sample waiver without invented values.
+- Capture focused warning-only findings by exact file and attach the human-
+  approved disposition and owner/rationale mapping for all 78 rows.
 - Freeze persistence JSON/key/ordering, AppInbox operation matrix, transaction,
   retry, idempotency, receipt/outbox, WebSocket generation, expiry, snapshot,
   error, timing, and public-return characterization tests.
@@ -965,8 +962,11 @@ or unrelated refactor is authorized.
   protocol, transaction, lifecycle, persistence, compatibility, and public
   boundaries.
 - Re-run canonical-import scans and reconcile every compatibility path.
-- Finalize README family traces and the repeat navigation-time sample.
-- Give every focused warning one final human disposition.
+- Finalize the code-derived README family traces; do not create or imply a
+  repeat navigation-time sample.
+- Reconcile each focused warning's implementation outcome against the approved
+  78-row mapping. Stop for a new human decision only if a row becomes blocked,
+  a new warning appears, or behavior/public/persisted scope would change.
 - Decide each supplementary ratchet's later-ledger removal/replacement owner.
 
 ### Task 7: Freeze, Review, And Publish PR C
@@ -986,9 +986,10 @@ or unrelated refactor is authorized.
 
 Only after PR C's exact resulting-main workflow succeeds may a separately
 authorized ledger branch update this plan, the master, and execution plan. The
-ledger records the planning and three implementation envelopes and the final
-navigation sample summary. It also decides every supplementary ratchet. It does
-not begin auth or another Wave 2 child.
+ledger records the planning and three implementation envelopes, the Section 2.3
+sample waiver, the final code-derived trace review, and the reconciled warning
+outcomes. It does not publish a navigation-time comparison. It also decides
+every supplementary ratchet. It does not begin auth or another Wave 2 child.
 
 ## 10. Fixed Correctness And Performance Protocol
 
@@ -1148,20 +1149,23 @@ if rg -n "rallar-system/(services/(AppClientInboxService|client-state-service|cl
 
 The active-import check is supplemented by an AST-based semantic ownership
 test; raw text alone is not removal evidence. Final PR C gates also include the
-repeat navigation sample and independent full family traces.
+independent full family traces and human review of the actual code and diff. No
+repeat navigation-time sample is required or permitted as completion evidence.
 
 ## 12. Human Review And Publication Gates
 
 Required human decisions are:
 
 1. approve or revise the exact planning blob;
-2. review the before navigation sample and stacked-PR scope before first code;
+2. review the qualitative source-derived baseline traces, the Section 2.3
+   sample waiver, the approved 78-row warning map, and stacked-PR scope before
+   first code;
 3. approve or reject exact PR A head/tree after its Branch Release Gate;
 4. verify PR A resulting-main workflow before PR B;
 5. approve or reject exact PR B head/tree and governed performance evidence;
 6. verify PR B resulting-main workflow before PR C;
-7. approve or reject exact PR C head/tree, final traces, warning dispositions,
-   navigation sample, and performance applicability;
+7. approve or reject exact PR C head/tree, final code-derived traces, warning-
+   outcome reconciliation, and performance applicability;
 8. verify PR C resulting-main workflow; and
 9. separately authorize, then merge and close, the non-circular ledger.
 
@@ -1195,7 +1199,8 @@ claimed for a changed runtime.
 
 - [ ] Human approved this exact plan Git blob.
 - [ ] Planning PR merged and its exact resulting-main workflow succeeded.
-- [ ] Before family traces and controlled navigation sample were recorded.
+- [ ] Before source-derived family traces and the Section 2.3 sample waiver were
+      recorded without invented navigation-time values.
 - [ ] The three-PR stacked decision remained independently reviewable.
 - [ ] Every predecessor public/deep path and package export remains compatible.
 - [ ] Canonical internal callers bypass compatibility-only wrappers.
@@ -1207,12 +1212,13 @@ claimed for a changed runtime.
       exact.
 - [ ] Authorized WebSocket and expiry behavior and concurrency are exact.
 - [ ] Semantic tests remain primary; every ratchet has owner/removal decision.
-- [ ] Every focused warning has a human disposition.
+- [ ] The approved disposition and owner/rationale mapping covers all 78
+      focused warning rows with no exceptions.
 - [ ] PR A review/gates and resulting-main workflow succeeded.
 - [ ] PR B review/gates, governed performance, and resulting-main workflow
       succeeded.
-- [ ] PR C review/gates, final navigation sample, and resulting-main workflow
-      succeeded.
+- [ ] PR C review/gates, final code-derived family traces, human merge review,
+      and resulting-main workflow succeeded.
 - [ ] The later ledger independently reached `ledger-published`.
 - [ ] API-v1 organization and every other Wave 2 domain remained unstarted.
 
