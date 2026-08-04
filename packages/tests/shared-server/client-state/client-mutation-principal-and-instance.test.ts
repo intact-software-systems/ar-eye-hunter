@@ -10,6 +10,7 @@ import {
   instanceCommand,
   instanceFrom,
   principalCommand,
+  principalFrom,
   readAfterWrite,
   requireWrite,
 } from './client-mutation-compute-test-fixtures.ts';
@@ -68,6 +69,52 @@ describe('client principal and instance mutation compute', () => {
       deviceLabel: 'Laptop',
       capabilities: ['rtc'],
     });
+  });
+
+  it('emits canonical principal property order from a valid noncanonical aggregate ref', async () => {
+    const canonical = await principalCommand('principal-property-order');
+    const command = {
+      ...canonical,
+      aggregateRef: {
+        workspaceId: canonical.aggregateRef.workspaceId,
+        applicationId: canonical.aggregateRef.applicationId,
+        principalId: canonical.aggregateRef.principalId,
+      },
+    } as typeof canonical;
+
+    const principal = principalFrom(
+      requireWrite(
+        computeClientPrincipalMutation({
+          command,
+          read: emptyRead(command),
+        }),
+      ),
+    );
+
+    expect(Object.keys(principal)).toEqual([
+      'applicationId',
+      'workspaceId',
+      'principalId',
+      'username',
+      'displayName',
+      'avatarUrl',
+      'authProvider',
+      'externalSubjectId',
+      'roles',
+      'metadata',
+      'snapshotVersion',
+      'profileVersion',
+      'presenceVersion',
+      'created',
+      'updated',
+      'lastSeenAtEpochMs',
+      'status',
+      'disabled',
+      'deleted',
+    ]);
+    expect(JSON.stringify(principal)).toMatch(
+      /^\{"applicationId":"app-1","workspaceId":"workspace-1","principalId":"alice",/,
+    );
   });
 
   it('keeps the legacy dispatcher as the canonical function identity', () => {

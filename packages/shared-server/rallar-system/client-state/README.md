@@ -12,7 +12,7 @@ persistence, service, and inbox owners remain at their legacy paths until PR B.
 - [`validateClientMutationReceipt` and idempotency-record validation](./client-mutation-receipt-validation.ts)
 - [`sameClientPrincipalState` and semantic equality](./client-state-semantic-equality.ts)
 - [`ClientMutationRejectedError` and generic validation primitives](./client-state-validation-primitives.ts)
-- [`ClientMutationCommand` and the exact mutation contracts](./mutation/client-mutation-contracts.ts)
+- [`ClientMutationCommand`, the exact mutation contracts, and shared closed inventories](./mutation/client-mutation-contracts.ts)
 - [`toClientMutationCommand` and request-to-command projection](./mutation/client-mutation-command.ts)
 - [`toClientMutationIssuedSessionAuthority`](./mutation/client-mutation-authority.ts)
 - [`validateClientExpiredSessionAuthority`](./mutation/validate-client-expired-session-authority.ts)
@@ -102,7 +102,8 @@ boundary are unchanged.
 2. An existing idempotency record exits as exact replay or exact hash conflict before operation-family dispatch.
 3. The exhaustive operation switch calls exactly one named principal, instance, connect, heartbeat, disconnect, or expiry owner.
 4. The family owner makes the pure state decision and delegates shared audit, revision, candidate, snapshot, event, receipt, state-sync, and outbox construction to the named compute-state and compute-result owners.
-5. validateClientMutation validates the command, facts, computed result, stable read, durable authority, identities, conditional guards, causal generation, and exact outbox before the unchanged write phase.
+5. validateClientMutation validates, in order, the command, facts, computed result, command identity, stable read, durable authority, and session identity; an idempotency conflict exits next, receipt identity follows, and non-write results then return.
+6. Writes continue through effectful result correlations, exact outbox validation, the principal guard, the session guard and causal generation, then the instance guard before the unchanged write phase.
 ```
 
 The functional core performs no repository read, write, transaction, retry,

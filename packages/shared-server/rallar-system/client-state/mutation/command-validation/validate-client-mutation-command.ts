@@ -10,11 +10,11 @@ import {
   validateClientPrincipalRef,
 } from '../../client-state-validation-primitives.ts';
 import type { ClientValidationRecord } from '../../client-state-validation-primitives.ts';
-import type { ClientMutationCommand } from '../client-mutation-contracts.ts';
 import {
   CLIENT_MUTATION_OPERATIONS,
-  validateClientMutationOperationInput,
-} from './validate-client-mutation-operation-input.ts';
+  type ClientMutationCommand,
+} from '../client-mutation-contracts.ts';
+import { validateClientMutationOperationInput } from './validate-client-mutation-operation-input.ts';
 
 export function validateClientMutationCommand(
   command: unknown,

@@ -84,7 +84,8 @@ describe('client-state navigation map integrity', () => {
       'An existing idempotency record exits as exact replay or exact hash conflict before operation-family dispatch.',
       'The exhaustive operation switch calls exactly one named principal, instance, connect, heartbeat, disconnect, or expiry owner.',
       'The family owner makes the pure state decision and delegates shared audit, revision, candidate, snapshot, event, receipt, state-sync, and outbox construction to the named compute-state and compute-result owners.',
-      'validateClientMutation validates the command, facts, computed result, stable read, durable authority, identities, conditional guards, causal generation, and exact outbox before the unchanged write phase.',
+      'validateClientMutation validates, in order, the command, facts, computed result, command identity, stable read, durable authority, and session identity; an idempotency conflict exits next, receipt identity follows, and non-write results then return.',
+      'Writes continue through effectful result correlations, exact outbox validation, the principal guard, the session guard and causal generation, then the instance guard before the unchanged write phase.',
     ]);
   });
 

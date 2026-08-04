@@ -48,6 +48,30 @@ describe('client-state server command ownership', () => {
     }
   });
 
+  it('keeps shared contract inventories below command validation', () => {
+    for (const filePath of [
+      `${canonicalRoot}/client-state-contract-validation.ts`,
+      `${canonicalRoot}/client-mutation-receipt-validation.ts`,
+      `${canonicalRoot}/client-state-validation-primitives.ts`,
+      `${canonicalRoot}/mutation/client-mutation-contracts.ts`,
+    ]) {
+      expect(importSpecifiers(read(filePath)), filePath).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/mutation\/command-validation\//)]),
+      );
+    }
+
+    const contracts = '../client-mutation-contracts.ts';
+    const operationInput = `${canonicalRoot}/mutation/command-validation/validate-client-mutation-operation-input.ts`;
+    for (const filePath of [
+      operationInput,
+      `${canonicalRoot}/mutation/command-validation/validate-client-mutation-command.ts`,
+      `${canonicalRoot}/mutation/command-validation/validate-client-mutation-request.ts`,
+    ]) {
+      expect(importSpecifiers(read(filePath)), filePath).toContain(contracts);
+    }
+    expect(exportSpecifiers(read(operationInput))).toContain(contracts);
+  });
+
   it('keeps moved compatibility exports named, one-hop, and executable-logic free', () => {
     const expected = new Map([
       [compatibilityPaths[2], '../client-state/mutation/client-mutation-authority.ts'],
@@ -148,6 +172,16 @@ function importSpecifiers(source: string): readonly string[] {
     }
     return [];
   });
+}
+
+function exportSpecifiers(source: string): readonly string[] {
+  const program = parse(source, {
+    sourceType: 'module',
+    plugins: ['typescript'],
+  }).program;
+  return program.body.flatMap((node) =>
+    node.type === 'ExportNamedDeclaration' && node.source ? [node.source.value] : [],
+  );
 }
 
 function sourceFiles(root: string): readonly string[] {

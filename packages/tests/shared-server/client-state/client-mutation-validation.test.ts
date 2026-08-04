@@ -79,6 +79,62 @@ describe('client mutation validation', () => {
     expect(legacyValidateClientMutationCommand).toBe(validateClientMutationCommand);
     expect(LegacyClientMutationRejectedError).toBe(ClientMutationRejectedError);
   });
+
+  it('keeps closed mutation inventories owned by the lower contract module', async () => {
+    const contracts =
+      (await import('@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts')) as Record<
+        string,
+        unknown
+      >;
+    const compatibility =
+      (await import('@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts')) as Record<
+        string,
+        unknown
+      >;
+
+    for (const [inventory, values] of [
+      [
+        'CLIENT_MUTATION_OPERATIONS',
+        [
+          'upsertPrincipal',
+          'upsertInstance',
+          'connectSession',
+          'connectAuthorisedWsSession',
+          'heartbeatSession',
+          'disconnectSession',
+          'disconnectAuthorisedWsSession',
+          'expireSession',
+        ],
+      ],
+      ['CLIENT_PRINCIPAL_STATUSES', ['active', 'disabled', 'deleted']],
+      ['CLIENT_INSTANCE_STATUSES', ['active', 'revoked', 'retired']],
+      ['CLIENT_SESSION_STATUSES', ['active', 'disconnected', 'expired']],
+      ['CLIENT_PRESENCE_STATES', ['online', 'offline', 'away', 'busy']],
+      ['CLIENT_PLATFORMS', ['web', 'ios', 'android', 'desktop', 'server', 'unknown']],
+      ['CLIENT_TRANSPORTS', ['ws', 'http', 'rtc', 'unknown']],
+      [
+        'CLIENT_EVENT_TYPES',
+        [
+          'principal-created',
+          'principal-updated',
+          'principal-disabled',
+          'principal-deleted',
+          'instance-registered',
+          'instance-updated',
+          'instance-revoked',
+          'session-authenticated',
+          'session-connected',
+          'session-heartbeat',
+          'session-disconnected',
+          'session-expired',
+        ],
+      ],
+    ] as const) {
+      expect(contracts[inventory], inventory).toBeDefined();
+      expect([...(contracts[inventory] as ReadonlySet<string>)], inventory).toEqual(values);
+      expect(compatibility[inventory], inventory).toBe(contracts[inventory]);
+    }
+  });
 });
 
 function expectRejected(action: () => void, message: string): void {

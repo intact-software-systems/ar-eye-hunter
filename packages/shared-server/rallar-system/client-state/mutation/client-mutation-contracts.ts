@@ -33,6 +33,37 @@ export type ClientMutationOperation =
   | 'disconnectAuthorisedWsSession'
   | 'expireSession';
 
+export const CLIENT_MUTATION_OPERATIONS = new Set<ClientMutationOperation>([
+  'upsertPrincipal',
+  'upsertInstance',
+  'connectSession',
+  'connectAuthorisedWsSession',
+  'heartbeatSession',
+  'disconnectSession',
+  'disconnectAuthorisedWsSession',
+  'expireSession',
+]);
+export const CLIENT_PRINCIPAL_STATUSES = new Set(['active', 'disabled', 'deleted']);
+export const CLIENT_INSTANCE_STATUSES = new Set(['active', 'revoked', 'retired']);
+export const CLIENT_SESSION_STATUSES = new Set(['active', 'disconnected', 'expired']);
+export const CLIENT_PRESENCE_STATES = new Set(['online', 'offline', 'away', 'busy']);
+export const CLIENT_PLATFORMS = new Set(['web', 'ios', 'android', 'desktop', 'server', 'unknown']);
+export const CLIENT_TRANSPORTS = new Set(['ws', 'http', 'rtc', 'unknown']);
+export const CLIENT_EVENT_TYPES = new Set([
+  'principal-created',
+  'principal-updated',
+  'principal-disabled',
+  'principal-deleted',
+  'instance-registered',
+  'instance-updated',
+  'instance-revoked',
+  'session-authenticated',
+  'session-connected',
+  'session-heartbeat',
+  'session-disconnected',
+  'session-expired',
+]);
+
 export type ClientMutationIssuedSessionAuthority = Readonly<{
   kind: 'issued-session';
   version: 1;

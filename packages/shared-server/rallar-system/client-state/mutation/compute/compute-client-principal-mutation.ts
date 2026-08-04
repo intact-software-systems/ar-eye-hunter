@@ -40,7 +40,9 @@ function toClientPrincipal(
   const audit = toClientAudit(command);
   const status = command.input.status ?? existing?.status ?? 'active';
   const base = {
-    ...command.aggregateRef,
+    applicationId: command.aggregateRef.applicationId,
+    workspaceId: command.aggregateRef.workspaceId,
+    principalId: command.aggregateRef.principalId,
     username: command.input.username,
     displayName: command.input.displayName ?? existing?.displayName ?? null,
     avatarUrl: command.input.avatarUrl ?? existing?.avatarUrl ?? null,

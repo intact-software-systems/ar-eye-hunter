@@ -113,7 +113,11 @@ two lower-level owners remain below both the transitional persisted wrappers and
 canonical result validation. This
 avoids a legacy-to-canonical runtime cycle and duplicate validators without
 moving persistence normalization, persisted identity checks, codecs, keys, or
-repositories. Shared pure audit/actor/default-principal/revision/candidate state
+repositories. Shared closed operation, entity, and event inventories moved to
+`mutation/client-mutation-contracts.ts`, below both shared contract validation
+and command validation; the former deep command-validation exports remain direct
+named compatibility exports of those same Set objects. Shared pure
+audit/actor/default-principal/revision/candidate state
 construction moved to `mutation/compute/compute-client-mutation-state.ts`; this
 keeps `compute-client-mutation-result.ts` cohesive and below 400 lines while the
 six family owners retain direct named call paths. Both refinements are private,
@@ -449,14 +453,14 @@ does not route the package surface through a compatibility file.
 | `client-state-service-contracts.ts`        | `ClientStateService`, its public input/result contracts, and cohesive narrow phase capabilities         |
 | `client-state-service.ts`                  | `createClientStateService` and visible service composition                                              |
 | `client-state-service-timing.ts`           | `createTimedClientStateService` with a closed operation-name inventory                                  |
-| `client-state-validation-primitives.ts`    | generic record/key/scalar/audit validation shared downward without a persistence-to-mutation dependency |
+| `client-state-validation-primitives.ts`    | generic record/key/scalar/JSON/principal-ref/digest validation shared downward                          |
 | `client-state-contract-validation.ts`      | shared client entity/event/audit/actor/runtime-entry validation below persistence and mutation callers  |
 | `client-mutation-receipt-validation.ts`    | shared receipt and idempotency-record validation below persisted wrappers and result validation         |
 | `app-client-inbox-service.ts`              | public `AppClientInboxService`, constructor registration, and public enqueue/completion methods         |
 | `client-state-inbox-handler.ts`            | later runtime ordinary, authorized-WS, and expiry processing with transaction/exit ownership visible    |
 | `authenticated-client-mutation-ingress.ts` | ingress read and durable issued-session/system authority checks                                         |
 | `client-mutation-command.ts`               | request/payload-to-command projection and canonical command hashing                                     |
-| `client-mutation-contracts.ts`             | exact command, read, computed, receipt, idempotency, and fact types                                     |
+| `client-mutation-contracts.ts`             | exact command, read, computed, receipt, idempotency, and fact types plus shared closed enum inventories |
 | `compute-client-mutation.ts`               | exhaustive operation-family dispatcher                                                                  |
 | `compute-client-mutation-state.ts`         | shared pure audit, actor, default-principal, revision, required-state, and child-candidate construction |
 | family compute files                       | the named principal, instance, connect, heartbeat, disconnect, or expiry decision                       |
@@ -510,6 +514,13 @@ shared API/runtime contracts
   -> inbox contracts/translation/handler/public AppClientInboxService
   -> middleware and application consumers
 ```
+
+During PR A, shared closed enum inventories live with the mutation contracts,
+so shared contract validation and command validation import a lower cohesive
+contract owner rather than importing through a command-validation stage. The
+legacy persistence wrappers remain independent from command validation. PR B
+moves persistence-owned contracts to their final lower owner without reversing
+that dependency direction.
 
 `ClientMutationIdempotencyRecord` is canonically owned by
 `client-state-persistence-contracts.ts` and re-exported where the existing

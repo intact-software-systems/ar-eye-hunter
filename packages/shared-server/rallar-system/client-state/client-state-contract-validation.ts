@@ -32,7 +32,7 @@ import {
   CLIENT_PRINCIPAL_STATUSES,
   CLIENT_SESSION_STATUSES,
   CLIENT_TRANSPORTS,
-} from './mutation/command-validation/validate-client-mutation-operation-input.ts';
+} from './mutation/client-mutation-contracts.ts';
 
 export function validateClientAudit(value: unknown, label: string): asserts value is AuditStamp {
   const audit = requirePlainRecord(value, label);

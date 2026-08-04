@@ -25,7 +25,7 @@ import {
   CLIENT_PRESENCE_STATES,
   CLIENT_PRINCIPAL_STATUSES,
   CLIENT_TRANSPORTS,
-} from './validate-client-mutation-operation-input.ts';
+} from '../client-mutation-contracts.ts';
 
 export function validateClientMutationRequest(
   operation: 'upsertPrincipal',

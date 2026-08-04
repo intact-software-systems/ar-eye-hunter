@@ -36,9 +36,9 @@ const expectedEvidence = [
   evidence(
     'mutation-contracts',
     mutationsSource,
-    '46-277',
+    '46-277,1838-1861',
     'packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts',
-    'import-path and exported-owner glue; no inherited capacity',
+    'import-path, export modifiers, and contract-owner formatting; no inherited capacity',
     'boundary.unknown:ClientMutationCommand.metadata',
   ),
   evidence(
@@ -54,15 +54,15 @@ const expectedEvidence = [
     mutationsSource,
     '302-317,2484-2561',
     'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts',
-    'private helper declarations; no inherited capacity',
+    'direct lower-contract imports and private helper declarations; no inherited capacity',
     'boundary.unknown:command-facts-authority-boundaries',
   ),
   evidence(
     'operation-input-validation',
     mutationsSource,
-    '318-461,1838-1904,1957-2004,2173-2185,2198-2202',
+    '318-461,1862-1904,1957-2004,2173-2185,2198-2202',
     'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts',
-    'type-only stage contract and helper declarations; no inherited capacity',
+    'direct compatibility exports, type-only stage contract, and helper declarations; no inherited capacity',
     'boundary.unknown:generation-and-timestamp-boundaries',
   ),
   evidence(
@@ -70,7 +70,7 @@ const expectedEvidence = [
     mutationsSource,
     '464-610,1905-1907,1935-2004,2173-2175,2187-2196',
     'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts',
-    'operation dispatcher and import-path glue; no inherited capacity',
+    'operation dispatcher and direct lower-contract imports; no inherited capacity',
     'boundary.unknown:raw-request-and-timestamp-boundaries',
   ),
   evidence(
@@ -102,7 +102,7 @@ const expectedEvidence = [
     mutationsSource,
     '2286-2298,2300-2352,2354-2387,2389-2456,2458-2470,2615-2641,2643-2665',
     'packages/shared-server/rallar-system/client-state/client-state-contract-validation.ts',
-    'export modifiers, shared lower-level naming, and helper splits; no inherited capacity',
+    'export modifiers, shared lower-level naming, direct contract-owner imports, and helper splits; no inherited capacity',
     'boundary.unknown:client-contract-validation-boundaries',
   ),
   evidence(
