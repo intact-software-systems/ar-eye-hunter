@@ -109,9 +109,18 @@ approved at Git blob `00a8efe0e6124ec9882360c1328045cde781b726` subject only to
 its recorded amendments. Structure PR #68 and code-standard alignment PR #69
 are implemented and published through exact resulting `main`
 `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3`; both implementation envelopes are
-green. The implementation is `complete`, and its separately authorized later
-evidence-ledger publication is pending. The API-v1 child is not yet
-`ledger-published`.
+green. Its evidence ledger was published through PR #70 at feature head
+`3ff182f65da7360974ad316033e4dad5eeeb8b12` and frozen tree
+`8f9502ff3da6a1934e49cbd6d8b6a7508e5e7695`. Branch Release Gate run
+`30861897688` attempt 1 passed for that feature head. PR #70 merged as exact
+`main` SHA `44d1c9ff74f2d1a837f49c3a6ed696491788cd8c`, and **Run Hetzner
+Supported Distributed Manifests** run `30864134072` attempt 1 passed for that
+exact SHA. The API-v1 child is therefore `ledger-published`. The human approved
+the pilot conclusions at exact master blob
+`4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution-plan blob
+`3dc5495f5ee21b615a44f4e65c92deee8b42a940`. The linked
+[authoritative client-state server child](rallar-client-state-server-structure-plan.md)
+is drafted for exact-blob human review. Its implementation remains unapproved.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -226,7 +235,14 @@ updated through the current ledger:
   exact `main` SHA `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3` with the same
   tree; **Run Hetzner Supported Distributed Manifests** run `30833235855`
   attempt 1 passed for that exact SHA. The API-v1 implementation is therefore
-  `complete`; its separate evidence-ledger publication is pending.
+  `complete`.
+- API-v1 evidence-ledger PR #70 published frozen tree
+  `8f9502ff3da6a1934e49cbd6d8b6a7508e5e7695` from feature SHA
+  `3ff182f65da7360974ad316033e4dad5eeeb8b12`. Branch Release Gate run
+  `30861897688` attempt 1 passed for that feature SHA. It merged as exact
+  `main` SHA `44d1c9ff74f2d1a837f49c3a6ed696491788cd8c`; **Run Hetzner
+  Supported Distributed Manifests** run `30864134072` attempt 1 passed for
+  that exact SHA. The API-v1 child is therefore `ledger-published`.
 
 ## 1. Why This Is A Program Instead Of One Refactor
 
@@ -819,6 +835,199 @@ Acceptance requires that a human can start at `RallarRoomsFacade.create`, find
 the one room/group-state translation, continue to the API route and AppInbox,
 then follow `read`, `compute`, `validate`, and `write` by matching filenames.
 
+#### 8.1.1 Pilot evaluation approved on 2026-08-04
+
+Verdict: the pilot materially improved human traceability, but the migration
+method must be tightened before reuse. The conclusion is based on the final
+trees, code-derived traces, warning-only checker output, review records,
+compatibility inventories, and green publication envelopes. The pilot did not
+capture a controlled before/after human navigation-time sample, so the verdict
+is structural and review-based rather than a measured claim about minutes
+saved.
+
+The final path is materially easier to locate and follow:
+
+1. Browser room ownership is colocated under `browser/rooms`; the feature entry
+   is `browser-rallar-rooms.ts`, and
+   `room-group-state-translation.ts` is the one named boundary from room product
+   inputs to authoritative group-state inputs.
+2. API-v1 registration starts at `registerGroupStateRoutes`, delegates to named
+   route-family registrars, and exposes parsing, request-to-command translation,
+   AppInbox completion, error translation, and response serialization as named
+   owners under `apps/api-v1/src/group-state`.
+3. Server queue entry starts at `AppGroupInboxService`, crosses the explicit
+   descriptor boundary, and later reaches
+   `GroupStateInboxHandler.processGroupStateMutation`. The mutation then follows
+   named `read`, `compute`, `validate`, transaction/write, durable-result,
+   after-commit observation, wake, and caller-result boundaries.
+4. The colocated server `group-state/README.md` separates construction and
+   registration from later queue invocation and documents ordinary mutation,
+   presence, snapshot/query, event, retry, early-exit, failure, and cleanup
+   families.
+
+The representative production trace followed during evaluation was:
+
+```text
+RallarRoomsFacade.create
+  -> createBrowserRallarRooms
+  -> createAndJoinRoom
+  -> createAndJoinStateGroup
+  -> createAndJoinStateGroupWithInput
+  -> toCreateGroupStateRequest
+  -> HTTP POST
+  -> registerGroupStateRoutes / registerGroupStateMutationRoutes
+  -> readGroupStateRouteRequest
+  -> toGroupStateCommand
+  -> processGroupAppInbox / defaultProcessGroupAppInbox
+  -> AppGroupInboxService.processAuthenticatedEntryUntilCompletion
+  -> later AppInbox delivery
+  -> GroupStateInboxHandler.processGroupStateMutation
+  -> read -> compute -> validate -> transaction/write
+  -> durable result -> confirmed-commit observation -> wake
+  -> toGroupStateResponse
+```
+
+The two `createAndJoinStateGroup` hops are the retained positional compatibility
+seam discussed below; the rest of the trace crosses named protocol, queue,
+transaction, side-effect, and response boundaries. Retry re-enters the server
+read/compute/validate path. Inactive presence, authorization/validation errors,
+transaction failure, missing durable result, and failed after-commit work are
+named early or terminal exits rather than implicit branches in a giant owner.
+
+The physical result supports that trace. The browser room feature now has 17
+TypeScript modules and no module above 399 lines; the server group-state feature
+has no TypeScript module above 387 lines; and API-v1 group-state has 13
+TypeScript modules and no module above 374 lines. The target feature directories
+have zero current layout-density, repeated-prefix, generic-filename,
+generic-route-registration, and server-vocabulary findings. These are supporting
+signals, not proof by themselves.
+
+The warning-only checker remains a guardrail rather than a success score. Its
+published repository default baseline was 4,613 findings; the current default
+scan reports 4,560. Current layout counts are 15 dense directories, 21 repeated
+feature-prefix clusters, 422 filename-style findings, 15 generic filenames, and
+10 generic route registrations, compared with the governance baselines of 16,
+22, 422, 15, and 11. Focused default scans still report 30 browser-room, 90
+server-group-state, and 10 API-v1-group-state findings; construction detail adds
+three browser and four server findings. The pilot therefore improved the active
+layout and prevented new debt without claiming a repository-wide cleanup or a
+warning-free target feature.
+
+The review history also shows the cost. Browser structure PR #53 changed 73
+files (`+10,774/-5,773`) and alignment PR #54 changed 24
+(`+1,981/-1,260`). Server structure PR #59 changed 301 files
+(`+40,935/-25,056`) and required the later PR #61/#62 QA and PR #64/#65
+hardening pairs. API structure PR #68 changed 50 files (`+8,067/-3,471`), and
+alignment PR #69 changed 16 (`+1,348/-1,088`). Every final implementation
+review recorded Critical 0 and Important 0, and the focused, repository,
+Branch Release Gate, and resulting-main workflows are green. That evidence
+supports behavior preservation, while the follow-up count demonstrates that the
+original server review unit was not adequately bounded for human review.
+
+Rules that helped most were:
+
+- feature-first ownership with descriptive filenames and matching primary
+  symbols;
+- one explicit translation boundary per protocol change;
+- separate construction/registration and runtime timelines plus family-level
+  code-derived traces;
+- named transaction, retry, durable-result, and after-commit ports;
+- structure and code-standard alignment in separately reviewable publication
+  stages;
+- semantic characterization, concurrency, black-box, compatibility, and
+  performance evidence before claiming behavior-neutrality;
+- direct one-hop compatibility limits with named consumers and removal
+  conditions;
+- warning-only checks combined with exact-base comparison and human disposition;
+- durable colocated navigation for a large feature; and
+- the non-circular implementation and later-ledger publication contract.
+
+The pilot also exposed rules and practices that created cost or indirection:
+
+- Treating the 400-line module and 60-line general-function limits as target
+  architecture encouraged small modules and occasional pass-through seams. They
+  must remain hard review thresholds, while cohesion and direct call paths decide
+  the split.
+- Exact approved target trees were too brittle. The server work required many
+  narrow plan amendments for behavior-neutral private ownership refinements.
+- Compatibility preservation sometimes left canonical internal callers routing
+  through legacy positional wrappers. Compatibility modules should serve legacy
+  imports only; new canonical callers should use the named-input owner directly.
+- Exact file, literal, case, and assertion-count ratchets protected large moves
+  but can ossify layout. They are supplementary and must be removed or replaced
+  by semantic ownership and call-path checks when their ledger removal condition
+  is reached.
+- PR #59 was too large for fast human review and required two later QA children.
+  A structure/alignment split alone is insufficient when one structure PR spans
+  several materially different control-flow families.
+- Chronological evidence made the child plans very large. Stable rules and
+  decisions belong in plans; run-by-run evidence belongs in PR and handoff
+  envelopes, with only final immutable facts reconciled into program records.
+- The governed performance protocol and its tolerated variance were settled too
+  late. Future mutation-path children must freeze the environment, comparison,
+  tolerance, no-reroll rule, and failure choices before the candidate is frozen.
+
+Remaining debt is explicit rather than silently treated as complete:
+
+- Browser compatibility remains at the old `rallar-rooms-facade.ts` path and in
+  the room workflow exports from `api-workflows.ts`. Their known public/deep
+  import consumers and breaking-release removal conditions remain authoritative.
+- The browser room feature now meets the durable-navigation threshold introduced
+  later in the pilot but has no colocated navigation map. A future browser
+  maintenance child should add one without reopening behavior.
+- Server direct one-hop compatibility remains at the approved old service,
+  mutation, repository, storage-key, presence, and snapshot-validation paths.
+  Each must be removed only by the child named in its existing removal condition.
+- The API-v1 service compatibility path remains for the later composition wave.
+  The temporary API-v1 source/style ratchet has reached its PR #70 ledger
+  decision point and now requires a separately reviewed removal-or-replacement
+  decision; persistent semantic route, lineage, and active-path checks remain.
+- Focused warning-only checks are not finding-free: boundary `unknown` findings,
+  several browser positional-input and pass-through findings, and small API route
+  handler-size findings still require human disposition. Zero layout findings
+  must not be reported as zero human-traceability debt.
+
+Before another child is approved, its plan must apply these migration-method
+changes:
+
+1. Capture a before trace and a controlled human navigation-time sample, then
+   define family-level target traces and the durable navigation owner before the
+   first structure edit.
+2. Split review and publication by cohesive control-flow family when the
+   predicted structure review exceeds approximately 100 changed files or 10,000
+   changed lines; record an explicit stacked-PR decision before implementation.
+3. Pre-authorize behavior-neutral private target-tree refinements inside locked
+   public, persistence, authority, transaction, and dependency-direction rules.
+4. Require canonical internal code to bypass compatibility-only wrappers and
+   require every wrapper to name consumers, an owner, and a removal milestone.
+5. Prefer semantic ownership, protocol, transaction, and exit-path tests. Give
+   every syntax or inventory ratchet an owner and a concrete ledger-time removal
+   or replacement decision.
+6. Require focused checker output to have an explicit human disposition, not
+   merely an exit-zero warning-only result.
+7. Fix the correctness and performance acceptance protocol before candidate
+   freeze, and keep chronological execution evidence outside the normative plan.
+
+The one recommended Wave 2 child is an **authoritative client-state server
+structure child**. It is the safest next feature because it already uses the
+same AppInbox and optimistic-concurrency architecture proven by the pilot, has
+concentrated ownership hotspots (`client-state-mutations.ts`,
+`AppClientInboxService.ts`, `client-state-service.ts`, and
+`ClientStateRepository.ts`), and has existing focused concurrency,
+idempotency, API, and black-box evidence. It is lower risk than auth
+(security/identity), topology or RTC (distributed liveness), CRDT (different
+convergence semantics), and admin (broad cross-domain authority).
+
+The linked
+[client-state server structure plan](rallar-client-state-server-structure-plan.md)
+is bounded to authoritative shared-server client-state entry, mutation,
+persistence, AppInbox ownership, mirrored tests, and durable navigation. API-v1
+callers are characterized and verified but not reorganized. The human approved
+these pilot conclusions at exact blobs
+`4172437a6ca3ef6008446a1797582b4e4b9406a9` and
+`3dc5495f5ee21b615a44f4e65c92deee8b42a940`; the new child is drafted and
+unapproved until a human approves its exact Git blob.
+
 ### Wave 2: Remaining authoritative mutation domains
 
 Migrate in this order because they already expose strong filename clusters and
@@ -1114,7 +1323,7 @@ to write, review, approve, execute, and hand off these child plans in order:
     writer port, handler-owned presence transaction choice, closed timing
     inventory, semantic ratchets, and internal naming alignment;
   - the separate five-plan server evidence ledger was published through PR #66.
-- [ ] [API-v1 group-state route structure](api-v1-group-state-route-structure-plan.md)
+- [x] [API-v1 group-state route structure](api-v1-group-state-route-structure-plan.md)
   - state: approved at Git blob
     `00a8efe0e6124ec9882360c1328045cde781b726` with its recorded amendments;
     structure tree `8126969737977c901dc56a35b3b523a9209a4fa7`, feature
@@ -1126,8 +1335,12 @@ to write, review, approve, execute, and hand off these child plans in order:
     `bcabb62072fa82759e21fc14f6e7efedd7adf00f`, Branch Release Gate
     `30825695539` attempt 2, PR #69, resulting `main`
     `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3`, and default workflow
-    `30833235855` attempt 1 are complete; implementation `complete`, separate
-    evidence-ledger publication pending;
+    `30833235855` attempt 1 are complete; evidence-ledger tree
+    `8f9502ff3da6a1934e49cbd6d8b6a7508e5e7695`, feature
+    `3ff182f65da7360974ad316033e4dad5eeeb8b12`, Branch Release Gate
+    `30861897688` attempt 1, PR #70, resulting `main`
+    `44d1c9ff74f2d1a837f49c3a6ed696491788cd8c`, and default workflow
+    `30864134072` attempt 1 success; API-v1 child `ledger-published`;
   - route split and descriptive registration symbols;
   - request defaults and request-to-command translation;
   - API-v1 composition changes needed by group-state only;
@@ -1188,6 +1401,15 @@ evidence ledger was published through PR #66 at feature
 `30780849548` attempt 1 success. The API-v1 child implementation is complete
 through PR #68 and PR #69, ending at exact resulting `main`
 `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3` with default workflow
-`30833235855` attempt 1 success. Its separately authorized evidence-ledger
-publication is pending, so the child is not yet `ledger-published` and pilot
-evaluation remains blocked.
+`30833235855` attempt 1 success. Evidence-ledger PR #70 published feature
+`3ff182f65da7360974ad316033e4dad5eeeb8b12` and tree
+`8f9502ff3da6a1934e49cbd6d8b6a7508e5e7695`, passed Branch Release Gate
+`30861897688` attempt 1, merged as exact `main`
+`44d1c9ff74f2d1a837f49c3a6ed696491788cd8c`, and passed default workflow
+`30864134072` attempt 1. The API-v1 child is `ledger-published`. The pilot
+evaluation conclusions were human-approved at exact master blob
+`4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution-plan blob
+`3dc5495f5ee21b615a44f4e65c92deee8b42a940`. The
+[authoritative client-state server child](rallar-client-state-server-structure-plan.md)
+is drafted with the seven approved migration-method corrections and awaits
+exact-blob human review. No Wave 2 implementation is approved by this record.
