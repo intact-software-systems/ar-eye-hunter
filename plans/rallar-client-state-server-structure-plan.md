@@ -1,8 +1,10 @@
 # Rallar Client-State Server Structure Implementation Plan
 
-**Status:** Drafted and unapproved on 2026-08-04. Planning and governance only;
-no implementation branch, implementation goal, production change, or future
-publication evidence is approved by this tree.
+**Status:** Approved at exact Git blob
+`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. PR A Tasks 1-2 are implemented
+and independently accepted; Task 3 review, completion gates, final publication,
+and human merge approval remain pending. PR B, PR C, and the later ledger have
+not begun, and this tree records no future publication evidence.
 
 **Program:**
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md)
@@ -978,7 +980,7 @@ A tree or publication envelope.
 **Status:** in progress. Focused Task 2 gates and `npm run build` pass. The
 unchanged temporary API-v1 group-state exact-base protected-path ratchet blocks
 `npm run test:unit` and therefore the first phase of `npm run test:ci` by
-classifying 14 planned client-state shared-server paths as protected. The
+classifying 31 planned client-state shared-server paths as protected. The
 master program records that ratchet as requiring a separately reviewed
 removal-or-replacement decision after its PR #70 ledger point; this child has
 not added an exemption or modified that ratchet.
