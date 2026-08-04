@@ -133,24 +133,33 @@ tree `8126969737977c901dc56a35b3b523a9209a4fa7` passed Branch Release Gate
 `620bb455688ee4f927dd662da0fce01a3c0c7bd9` passed Branch Release Gate
 `30825695539` attempt 2, then squash-merged as exact `main`
 `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3`; default workflow
-`30833235855` attempt 1 passed for that exact SHA. The implementation is
-`complete`; its separately authorized evidence-ledger publication is pending,
-and the child is not yet `ledger-published`.
+`30833235855` attempt 1 passed for that exact SHA. Evidence-ledger PR #70
+published feature `3ff182f65da7360974ad316033e4dad5eeeb8b12` and frozen tree
+`8f9502ff3da6a1934e49cbd6d8b6a7508e5e7695`; Branch Release Gate run
+`30861897688` attempt 1 passed. PR #70 merged as exact `main`
+`44d1c9ff74f2d1a837f49c3a6ed696491788cd8c`, and default workflow
+`30864134072` attempt 1 passed for that exact SHA. The API-v1 child is therefore
+`ledger-published`. The human approved the pilot conclusions at exact master
+blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and exact execution-plan blob
+`3dc5495f5ee21b615a44f4e65c92deee8b42a940`. The
+[authoritative client-state server child](rallar-client-state-server-structure-plan.md)
+is drafted for exact-blob human review; implementation remains unapproved.
 
 ## 1. Document Roles And Plan Graph
 
 The documents deliberately have different responsibilities:
 
-| Document                                                                                                    | Responsibility                                                                                                                           | Current state                                                                     |
-| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)                           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress.           | Published; approved for child-plan drafting.                                      |
-| This execution plan                                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                             | Published; human review remains pending.                                          |
-| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md)                 | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.                         | `ledger-published`; no further Wave 0 action pending.                             |
-| [Browser room/group-state translation child](rallar-room-group-state-translation-boundary-plan.md)          | Defines the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                               | `ledger-published` through PR #55; no further browser-child work is pending.      |
-| [Server group-state structure child](rallar-group-state-server-structure-plan.md)                           | Defines authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.                     | Structure, QA, and hardening work is `ledger-published` through PR #66.           |
-| [Server group-state traceability QA child](rallar-group-state-server-traceability-qa-plan.md)               | Defines post-PR #59 guidance/independent lineage governance and behavior-neutral runtime traceability corrections in two sequential PRs. | PR #61/#62 and the later PR #66 ledger are complete.                              |
-| [Server group-state traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md) | Adds durable navigation/guidance, then behavior-neutral protocol, transaction-owner, timing, presence-decision, and naming corrections.  | PR #64/#65 and the later PR #66 ledger are complete.                              |
-| [API-v1 group-state route structure child](api-v1-group-state-route-structure-plan.md)                      | Defines API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.                             | PR #68/#69 implementation complete; separate evidence-ledger publication pending. |
+| Document                                                                                                    | Responsibility                                                                                                                           | Current state                                                                |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)                           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress.           | Published; approved for child-plan drafting.                                 |
+| This execution plan                                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                             | Published; human review remains pending.                                     |
+| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md)                 | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.                         | `ledger-published`; no further Wave 0 action pending.                        |
+| [Browser room/group-state translation child](rallar-room-group-state-translation-boundary-plan.md)          | Defines the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                               | `ledger-published` through PR #55; no further browser-child work is pending. |
+| [Server group-state structure child](rallar-group-state-server-structure-plan.md)                           | Defines authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.                     | Structure, QA, and hardening work is `ledger-published` through PR #66.      |
+| [Server group-state traceability QA child](rallar-group-state-server-traceability-qa-plan.md)               | Defines post-PR #59 guidance/independent lineage governance and behavior-neutral runtime traceability corrections in two sequential PRs. | PR #61/#62 and the later PR #66 ledger are complete.                         |
+| [Server group-state traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md) | Adds durable navigation/guidance, then behavior-neutral protocol, transaction-owner, timing, presence-decision, and naming corrections.  | PR #64/#65 and the later PR #66 ledger are complete.                         |
+| [API-v1 group-state route structure child](api-v1-group-state-route-structure-plan.md)                      | Defines API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.                             | `ledger-published` through PR #70; no further API-v1 child work is pending.  |
+| [Client-state server structure child](rallar-client-state-server-structure-plan.md)                         | Defines authoritative client-state mutation, persistence, AppInbox, lifecycle, snapshot, test, and durable-navigation ownership.         | Drafted and unapproved; planning publication and exact-blob review pending.  |
 
 The dependency order is:
 
@@ -166,12 +175,15 @@ master program
                                 -> API-v1 group-state route structure
                                     -> API-v1 evidence ledger
                                         -> pilot evaluation
-                                            -> later feature child plans
+                                            -> client-state server structure
+                                                -> later feature child plans
 ```
 
-The API-v1 implementation path is complete through PR #68 and PR #69. Pilot
-evaluation remains blocked until the separately authorized non-circular API-v1
-evidence ledger reaches `ledger-published`.
+The API-v1 implementation path is complete through PR #68 and PR #69, and its
+evidence ledger is published through PR #70. The human approved the pilot
+evaluation conclusions at the exact blobs above. The client-state server child
+is now drafted, applies all seven approved method corrections, and awaits
+exact-blob human review. Its implementation is not approved by this record.
 
 ## 2. Child-Plan State Model
 
@@ -763,6 +775,91 @@ ask the human to approve or revise the pilot conclusions and authorize drafting
 the one recommended child plan.
 ```
 
+## 13.1 Prompt 10: Approve The Pilot Evaluation And Draft Client-State
+
+Use this prompt only after a human has reviewed the exact master-program blob
+containing the pilot evaluation. Revisions to the conclusions require another
+analysis-only pass before drafting.
+
+```text
+I approve the Repository Human Traceability pilot conclusions recorded in
+plans/repo-human-traceability-refactoring-program-plan.md at the exact Git blob
+named in this approval. I authorize drafting
+plans/rallar-client-state-server-structure-plan.md as the one next bounded Wave
+2 child. This is planning and governance work only; do not modify production
+code or execute the child plan.
+
+Start from freshly fetched origin/main. Read AGENTS.md, the master program, the
+execution plan, the governance child, all completed pilot child plans, the
+repository code standard, convergent-service guidance, realtime guidance,
+testing commands, and human style guide.
+
+Inspect the current authoritative shared-server client-state service,
+AppClientInbox entry, mutation phases, transaction/retry ownership, persistence
+repository and keys, idempotency, authorized WebSocket and expiry paths,
+public/compatibility exports, API-v1 callers, mirrored tests, concurrency tests,
+and representative black-box call paths. Characterize API-v1 callers but do not
+reorganize API-v1 in this child.
+
+Apply every pilot migration-method correction recorded in the approved
+evaluation: before/after family traces and a navigation-time sample; a durable
+colocated navigation owner; cohesive review-size and stacked-PR decisions;
+pre-authorized behavior-neutral private target-tree refinements inside locked
+contracts; canonical internal callers that bypass compatibility-only wrappers;
+semantic tests as primary evidence with owned ratchet removal conditions;
+explicit human disposition of focused warning-only findings; and a correctness
+and performance protocol fixed before candidate freeze.
+
+Define exact current and target trees, move and compatibility maps, construction
+and runtime timelines, transaction and exit boundaries, characterization-first
+tasks, review and publication gates, non-circular later-ledger evidence, and
+human approval points. Preserve all public and persisted contracts, AppInbox,
+transaction, retry, idempotency, receipt, outbox, storage-key, canonical-order,
+TypeScript 7.0.2, warning-only checker, dependency, workflow, and performance
+contracts.
+
+Update only the new child plan and reciprocal program planning records. Run
+Prettier, git diff checks, focused repository-governance tests, npm run
+test:unit, npm run test:ci, and npm run build. Publish one non-default draft
+planning PR, require Branch Release Gate for its exact final commit, and stop
+for approval of the exact child-plan Git blob.
+
+Do not implement client-state, modify production code, reorganize API-v1, begin
+auth/topology/RTC/CRDT/admin work, or publish another evidence ledger.
+```
+
+## 13.2 Prompt 11: Approve Or Revise The Client-State Child
+
+Use this prompt only after the planning PR has passed Branch Release Gate and
+the human has reviewed the exact child-plan Git blob. Replace each placeholder
+with existing verified evidence; do not predict the planning merge or workflow.
+
+```text
+I have reviewed plans/rallar-client-state-server-structure-plan.md at exact Git
+blob <exact-child-plan-blob> from planning PR <planning-pr>. I explicitly
+approve that exact revision for execution. This approval applies only to its
+three sequential behavior-neutral client-state implementation PRs and recorded
+private target-tree refinement authority. It does not approve a later plan
+revision, semantic/public/persisted/AppInbox change, checker change, performance
+threshold change, evidence ledger, API-v1 client-state reorganization, or
+another Wave 2 child.
+
+Fetch origin/main and verify the planning PR feature head, frozen tree, Branch
+Release Gate, exact resulting-main SHA, and successful Run Hetzner Supported
+Distributed Manifests for that SHA. After those facts are green, create one
+client-state child goal and the PR A branch named by the approved plan. Execute
+only Tasks 1 through 3 / PR A autonomously through characterization, the before
+navigation sample, test-first implementation, independent review, all local
+gates, publication, and Branch Release Gate. Mark PR A ready and stop for my
+exact merge decision.
+
+Preserve every locked public, persisted, authority, AppInbox, transaction,
+retry, idempotency, receipt, event, outbox, storage-key, ordering, timing,
+TypeScript, dependency, workflow, checker, and performance contract. Do not
+merge PR A, begin PR B, reorganize API-v1, publish the later ledger, or begin
+another child.
+```
+
 ## 14. Resuming Interrupted Work
 
 When a child plan is already approved and in progress, use this procedure rather
@@ -808,6 +905,8 @@ not start another child plan.
 | Server traceability QA child           | implementation published | [QA plan](rallar-group-state-server-traceability-qa-plan.md) published guidance/lineage PR #61 and runtime PR #62. PR #62 feature `b579aa56bc656b12f3717f2b02c0e24de9244357` / tree `3a7d80a3a9c522ba4954168be5f380aee04f871b` passed Branch Release Gate `30739771277` attempt 1; resulting `main` `f124f8c3ac57e5f3a92c47f767f8b7e2b19e6af5` passed default workflow `30741608017` attempt 1.                                                                                                                                                                                                                                                                                                               |
 | Server traceability hardening child    | ledger-published         | [Hardening plan](rallar-group-state-server-traceability-hardening-plan.md) records complete PR #64/#65 envelopes; ledger PR #66 feature `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree `111995e3a72eb246fd0b8028aada4fbeda65fe69`, Branch Release Gate `30778763061` attempt 1, resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12`, and default workflow `30780849548` attempt 1 completed the server ledger.                                                                                                                                                                                                                                                                                      |
 | API-v1 group-state implementation      | complete                 | [API-v1 plan](api-v1-group-state-route-structure-plan.md) was approved at blob `00a8efe0e6124ec9882360c1328045cde781b726` with recorded amendments. PR #68 feature `cb9f074db23135de682a19108282b95f71b5e54e` / tree `8126969737977c901dc56a35b3b523a9209a4fa7` passed Branch Release Gate `30815005047` attempt 1, merged as `4d616edc649fe30ebf0fca48db4ab683d9c512e3`, and passed default workflow `30818878869` attempt 1. PR #69 feature `bcabb62072fa82759e21fc14f6e7efedd7adf00f` / tree `620bb455688ee4f927dd662da0fce01a3c0c7bd9` passed Branch Release Gate `30825695539` attempt 2, merged as `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3`, and passed default workflow `30833235855` attempt 1.     |
-| API-v1 group-state evidence ledger     | publication pending      | Separate authorization exists to publish the completed PR #68/#69 envelopes. This ledger tree records no future ledger commit, PR, Branch Release Gate, merge, or resulting-main workflow fact.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Pilot child plans drafted and executed | implementation complete  | Governance, browser, and server children are `ledger-published`; the API-v1 implementation is complete and its separately authorized evidence-ledger publication is pending.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Pilot evaluated                        | pending                  | Requires all three pilot children to be complete.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| API-v1 group-state evidence ledger     | ledger-published         | PR #70 feature `3ff182f65da7360974ad316033e4dad5eeeb8b12`, frozen tree `8f9502ff3da6a1934e49cbd6d8b6a7508e5e7695`, and Branch Release Gate `30861897688` attempt 1 succeeded. It merged as exact `main` `44d1c9ff74f2d1a837f49c3a6ed696491788cd8c`; default workflow `30864134072` attempt 1 succeeded for that exact SHA.                                                                                                                                                                                                                                                                                                                                                                                    |
+| Pilot child plans drafted and executed | ledger-published         | Governance, browser, authoritative server, and API-v1 group-state child work has independently reached `ledger-published`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Pilot evaluated                        | approved                 | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution-plan blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`; the seven migration-method corrections govern the next child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Client-state server child plan         | drafted, unapproved      | [Client-state plan](rallar-client-state-server-structure-plan.md) defines the exact initial target, three-PR stack, locked invariants, before/after navigation sample, warning disposition, semantic/ratchet policy, and fixed performance protocol. Planning publication and exact-blob human review are pending.                                                                                                                                                                                                                                                                                                                                                                                            |
+| Other Wave 2 children                  | blocked                  | API-v1 client-state organization, auth, group topology, RTC/RTT, CRDT, and admin remain outside the drafted child and may not begin before its later ledger reaches `ledger-published`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
