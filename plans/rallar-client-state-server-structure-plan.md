@@ -917,12 +917,25 @@ or unrelated refactor is authorized.
 
 ### Task 0: Publish And Approve This Plan
 
+**Status:** complete. The human approved exact plan blob
+`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. Planning PR #71 feature
+`73bda0999be39248f486f038cccb06e99be39d1f` / tree
+`930c866e5adab6544f1cf263f5bfd674696f555d` passed Branch Release Gate
+`30869481618` attempt 1, merged as
+`39b2b7e6312507addfb4629c9d84ab476e83c362`, and passed Run Hetzner Supported
+Distributed Manifests `30871724277` attempt 1 for that exact main SHA.
+
 - Publish only this plan and reciprocal master/execution updates.
 - Require exact-blob human approval after planning Branch Release Gate.
 - After approval, create one child goal and PR A branch from the planning PR's
   exact resulting-main SHA.
 
 ### Task 1: Characterize Before Editing
+
+**Status:** complete. The human explicitly waived the missing controlled timing
+sample and approved the evidence-backed disposition and owner mapping for all
+78 warning rows. The independently reviewed source-derived traces remain
+qualitative evidence only. Review finished with Critical 0 and Important 0.
 
 - Freeze exact production/test/consumer inventories, named cases, literals, and
   assertion sites.
@@ -938,6 +951,15 @@ or unrelated refactor is authorized.
 
 ### Task 2: Implement PR A Test-First
 
+**Status:** implemented and independently accepted. The command/validation
+cohort was accepted at commit `383a762c4cf2ff4361953ff594973ceb2b29546a` /
+tree `bdbafb06edb44d52f13d009a92f79c72ade25ae0`; the compute/result cohort and
+its behavior-restoring review fix were accepted at commit
+`0058cb238d07c24cd30d10be1fff97a07dbe710b` / tree
+`4a425ffa1073faefa67239ad3bbd724baad1db4d`. Both scoped reviews finished with
+Critical 0 and Important 0. These are milestone facts, not the future final PR
+A tree or publication envelope.
+
 - Add semantic protocol/owner tests first and observe the expected failures.
 - Register the new persistent repository-governance owners in
   `npm run test:repo-governance`; the temporary source ratchet remains directly
@@ -952,6 +974,14 @@ or unrelated refactor is authorized.
 - Run scoped reviews after command/validation and compute/result cohorts.
 
 ### Task 3: Freeze, Review, And Publish PR A
+
+**Status:** in progress. Focused Task 2 gates and `npm run build` pass. The
+unchanged temporary API-v1 group-state exact-base protected-path ratchet blocks
+`npm run test:unit` and therefore the first phase of `npm run test:ci` by
+classifying 14 planned client-state shared-server paths as protected. The
+master program records that ratchet as requiring a separately reviewed
+removal-or-replacement decision after its PR #70 ledger point; this child has
+not added an exemption or modified that ratchet.
 
 - Run every PR A focused and completion gate in Section 11.
 - Require independent whole-PR review: Critical 0, Important 0.
@@ -1228,11 +1258,12 @@ claimed for a changed runtime.
 
 ## 14. Acceptance Checklist
 
-- [ ] Human approved this exact plan Git blob.
-- [ ] Planning PR merged and its exact resulting-main workflow succeeded.
-- [ ] Before source-derived family traces and the Section 2.3 sample waiver were
+- [x] Human approved this exact plan Git blob.
+- [x] Planning PR merged and its exact resulting-main workflow succeeded.
+- [x] Before source-derived family traces and the Section 2.3 sample waiver were
       recorded without invented navigation-time values.
-- [ ] The three-PR stacked decision remained independently reviewable.
+- [x] The three-PR stacked decision remained independently reviewable through
+      PR A's two scoped implementation cohorts.
 - [ ] Every predecessor public/deep path and package export remains compatible.
 - [ ] Canonical internal callers bypass compatibility-only wrappers.
 - [ ] Every request/command field, default, omission, clone, property order,
@@ -1243,7 +1274,7 @@ claimed for a changed runtime.
       exact.
 - [ ] Authorized WebSocket and expiry behavior and concurrency are exact.
 - [ ] Semantic tests remain primary; every ratchet has owner/removal decision.
-- [ ] The approved disposition and owner/rationale mapping covers all 78
+- [x] The approved disposition and owner/rationale mapping covers all 78
       focused warning rows with no exceptions.
 - [ ] PR A review/gates and resulting-main workflow succeeded.
 - [ ] PR B review/gates, governed performance, and resulting-main workflow
@@ -1272,15 +1303,15 @@ claimed for a changed runtime.
 
 ## 16. Progress Record
 
-| Milestone                  | State               | Evidence                                                                                                                                   |
-| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Pilot conclusions          | approved            | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`. |
-| Client-state child plan    | drafted; unapproved | This planning tree defines the bounded scope, three-PR decision, exact initial targets, locked protocols, and no future publication facts. |
-| PR A mutation core         | not started         | Requires exact plan-blob approval and planning resulting-main workflow.                                                                    |
-| PR B authoritative shell   | not started         | Requires PR A merge and exact resulting-main workflow.                                                                                     |
-| PR C alignment/final trace | not started         | Requires PR B merge and exact resulting-main workflow.                                                                                     |
-| Later evidence ledger      | not authorized      | Requires PR C merge and exact resulting-main workflow, then separate authorization.                                                        |
-| Other Wave 2 domains       | blocked             | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                            |
+| Milestone                  | State                      | Evidence                                                                                                                                    |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pilot conclusions          | approved                   | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.  |
+| Client-state child plan    | approved                   | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.          |
+| PR A mutation core         | implemented; gates pending | Task 1 and both Task 2 cohorts are independently accepted; Task 3 is blocked only by the separately governed stale API-v1 ratchet decision. |
+| PR B authoritative shell   | not started                | Requires PR A merge and exact resulting-main workflow.                                                                                      |
+| PR C alignment/final trace | not started                | Requires PR B merge and exact resulting-main workflow.                                                                                      |
+| Later evidence ledger      | not authorized             | Requires PR C merge and exact resulting-main workflow, then separate authorization.                                                         |
+| Other Wave 2 domains       | blocked                    | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                             |
 
 ## 17. Planning Self-Review Record
 
