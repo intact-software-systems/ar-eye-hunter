@@ -58,14 +58,14 @@ describe('client-state navigation map integrity', () => {
       'AppInboxService constructs its transaction writer and stores the enqueue-time owning-queue wake capability before AppClientInboxService registers handlers.',
       'AppClientInboxService registers all eight client mutation callbacks through AppInboxService.onStateMessage; InboxQueueReader can dispatch a callback only after that registration.',
       'A route, authorized-WebSocket adapter, or maintenance producer first asks AppClientInboxService to validate ingress and project the payload or authority.',
-      'AppInboxService serializes the command, durably reserves or reuses the AppInbox entry, validates command identity, and invokes the owning-queue wake at this enqueue boundary.',
+      'AppInboxService serializes the command, durably reserves or reuses the AppInbox entry, invokes the owning-queue wake immediately after persistence, then asserts matching command identity before returning the entry.',
       'A synchronous producer waits by polling the durable result; there is no post-commit queue wake in the client-state path.',
     ]);
     expect(readTimeline(readme, 'Runtime invocation and transaction timeline')).toEqual([
       'InboxQueueReader later claims the durable entry and invokes the registered AppClientInboxService callback once for that processing attempt.',
       'AppInboxService validates the durable command identity and begins attempt finalization before invoking the registered callback.',
       'AppClientInboxService projects the command, then runs client-state read, compute, and validate from fresh state for that attempt.',
-      'AppInboxTransactionWriter owns the transaction; ClientStateService performs the first conditional write and the state, receipt, event, outbox, durable result, and reservation completion commit together.',
+      'AppInboxTransactionWriter owns the transaction: ClientStateService performs the conditional state, receipt, event, and outbox writes; AppInboxTransactionWriter then writes the durable result, completes the reservation, and commits them together.',
       'The committed result returns to AppClientInboxService.commitComputed, which observes the snapshot after commit; observation is not a queue wake.',
       'The registered callback returns the confirmed result, and a waiting producer reads the same durable result for its caller-visible outcome.',
       'A retryable failure leaves the entry for ResourceInbox retry; the next claimed attempt re-enters identity validation and the complete command/read/compute/validate path without repeating the original enqueue wake.',
