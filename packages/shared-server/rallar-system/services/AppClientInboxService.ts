@@ -2,31 +2,31 @@ import type {
     ConnectClientSessionRequest,
     DisconnectClientSessionRequest,
     HeartbeatClientSessionRequest,
+    StateScope,
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest,
 } from '@shared/api/state-types.ts';
-import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import type {
-    ClientStateService,
-    ClientStateWritten,
-    RegisterAuthorisedWsClientInput,
+import {
+    type ClientStateService, type ClientStateWritten,
+    type RegisterAuthorisedWsClientInput,
+    requiresClientWrite,
+    toClientStateWritten,
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
-    requiresClientWrite,
     toClientMutationCommand,
-    toClientMutationIssuedSessionAuthority,
-    toClientMutationSystemAuthority,
-    toClientStateWritten,
-    toConnectCommandInput,
-    toDisconnectCommandInput,
+    toConnectCommandInput, toDisconnectCommandInput,
     toExpiryCommandInput,
     toHeartbeatCommandInput,
     toUpsertInstanceCommandInput,
     toUpsertPrincipalCommandInput,
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import {
+    toClientMutationIssuedSessionAuthority,
+    toClientMutationSystemAuthority,
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import {
     AppInboxEnqueueInput,
     AppInboxService,
@@ -44,8 +44,10 @@ import type {
     ClientMutationCommand,
     ClientMutationCommandInput,
     ClientMutationComputed,
-} from './client-state-mutations.ts';
-import { validateClientMutationAuthorityPolicy } from './client-state-mutations.ts';
+} from '../client-state/mutation/client-mutation-contracts.ts';
+import {
+    validateClientMutationAuthorityPolicy,
+} from '../client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import {
@@ -123,9 +125,7 @@ export type ClientAuthorisedWsSessionDisconnectAppInboxPayload = Readonly<{
     reason: string;
 }>;
 
-export type ClientExpiredSessionsAppInboxPayload = Readonly<{
-    atEpochMs: number;
-}>;
+export type ClientExpiredSessionsAppInboxPayload = Readonly<{ atEpochMs: number }>;
 export class AppClientInboxService extends AppInboxService {
     constructor(
         public override readonly inbox: InboxQueueReader,

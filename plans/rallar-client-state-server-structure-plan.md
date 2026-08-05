@@ -1,8 +1,10 @@
 # Rallar Client-State Server Structure Implementation Plan
 
-**Status:** Drafted and unapproved on 2026-08-04. Planning and governance only;
-no implementation branch, implementation goal, production change, or future
-publication evidence is approved by this tree.
+**Status:** Approved at exact Git blob
+`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. PR A Tasks 1-2 are implemented
+and independently accepted; Task 3 review, completion gates, final publication,
+and human merge approval remain pending. PR B, PR C, and the later ledger have
+not begun, and this tree records no future publication evidence.
 
 **Program:**
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md)
@@ -105,6 +107,24 @@ rule. The executor records the factual refinement in this plan before the
 affected PR freezes, reruns invalidated gates, and stops if any locked rule
 would change.
 
+Task 2 used this authority for two private, behavior-neutral refinements. The
+shared entity, event, audit, actor, and runtime-entry validators moved to
+`client-state/client-state-contract-validation.ts`; receipt and idempotency-record
+validators moved to `client-state/client-mutation-receipt-validation.ts`. The
+two lower-level owners remain below both the transitional persisted wrappers and
+canonical result validation. This
+avoids a legacy-to-canonical runtime cycle and duplicate validators without
+moving persistence normalization, persisted identity checks, codecs, keys, or
+repositories. Shared closed operation, entity, and event inventories moved to
+`mutation/client-mutation-contracts.ts`, below both shared contract validation
+and command validation; the former deep command-validation exports remain direct
+named compatibility exports of those same Set objects. Shared pure
+audit/actor/default-principal/revision/candidate state
+construction moved to `mutation/compute/compute-client-mutation-state.ts`; this
+keeps `compute-client-mutation-result.ts` cohesive and below 400 lines while the
+six family owners retain direct named call paths. Both refinements are private,
+acyclic, and behavior-neutral.
+
 ## 2. Current Evidence And Human Navigation Baseline
 
 ### 2.1 Current concentrated ownership
@@ -127,39 +147,36 @@ directory.
 The repository checker is warning-only. The broad current `services` scan
 reports 290 default findings and 301 construction-detail findings; the broad
 `repositories` scan reports 89 default findings. Those totals include unrelated
-features and are not a client-state score. Execution must capture focused
-client-state findings by exact file before the first edit and give every
-finding one human disposition:
+features and are not a client-state score. Task 1 captured the focused findings
+on exact base `39b2b7e6312507addfb4629c9d84ab476e83c362` as 78 warning rows.
+The human approved the evidence-backed disposition and owner/rationale mapping
+for every row with no exceptions. The approved disposition categories are:
 
 - inherited and mechanically moved, with symbol/span provenance;
 - fixed behavior-neutrally in its owning PR;
 - retained boundary evidence, with rationale and owner; or
 - blocked because a behavior/public/persisted decision is required.
 
-An exit-zero checker result without that disposition is insufficient. No
-finding becomes globally blocking and no checker behavior changes in this
-child.
+The approved map assigns each row to its mechanically moved PR A or PR B owner,
+or to the existing owner of a retained boundary or compatibility constraint.
+It does not invent a code fix, behavior decision, or exception. An exit-zero
+checker result without the recorded mapping remains insufficient. No finding
+becomes globally blocking and no checker behavior changes in this child.
 
-### 2.3 Controlled navigation-time sample
+### 2.3 Navigation evidence protocol amendment
 
-Before PR A's first production edit, one human reviewer performs the following
-controlled sample on the exact planning-resulting-main tree:
+No valid controlled human navigation-time sample was collected on exact base
+`39b2b7e6312507addfb4629c9d84ab476e83c362`. The human explicitly waives the
+before/after timing comparison for this client-state child. No executor,
+reviewer, PR, handoff, or later ledger may fabricate elapsed times, wrong-file
+counts, compatibility-hop observations, unresolved-question counts, or human
+productivity/navigation-time claims for that base or a later tree.
 
-1. Start from the repository root with no plan or PR body open.
-2. Time, separately, finding and explaining the ordinary principal-upsert,
-   authorized-WebSocket-connect, expiry-maintenance, and snapshot-query paths.
-3. For each family, stop only after naming entry, registration owner, later
-   runtime invoker, translation, read, compute, validation, transaction/retry
-   owner, writes/outbox, after-commit effects, early/terminal exits, cleanup,
-   and caller-visible result.
-4. Record elapsed wall time, wrong files opened, compatibility-only hops, and
-   unresolved questions in the PR A external evidence envelope.
-5. Repeat the same exercise on the final PR C tree using the same reviewer,
-   instructions, repository-search tool, and cold starting context.
-
-This is a navigation sample, not a statistically representative productivity
-claim. The plan and later ledger may record the protocol and final immutable
-summary; raw chronological observations stay in PR/handoff evidence.
+The independently reviewed, source-derived traces for ordinary mutations,
+authorized WebSocket lifecycle, expiry maintenance, and query/snapshot/cache
+remain the qualitative baseline. PR A and final PR C review still require
+code-derived family traces and human review of the actual code and diff. Those
+qualitative traces are not a timing sample and must not be presented as one.
 
 ## 3. Current Production, Consumer, And Test Trees
 
@@ -345,6 +362,8 @@ shared-server implementation owners must move to direct canonical imports.
 packages/shared-server/rallar-system/
   client-state/
     README.md
+    client-state-contract-validation.ts
+    client-mutation-receipt-validation.ts
     client-presence-state.ts
     client-state-semantic-equality.ts
     client-state-service-contracts.ts
@@ -358,7 +377,7 @@ packages/shared-server/rallar-system/
       authorised-ws-client-app-inbox.ts
       client-state-inbox-handler.ts
     mutation/
-      client-expired-session-authority.ts
+      validate-client-expired-session-authority.ts
       client-mutation-authority.ts
       client-mutation-command.ts
       client-mutation-contracts.ts
@@ -369,6 +388,7 @@ packages/shared-server/rallar-system/
       compute/
         compute-client-instance-mutation.ts
         compute-client-mutation-result.ts
+        compute-client-mutation-state.ts
         compute-client-mutation.ts
         compute-client-principal-mutation.ts
         compute-client-session-connect.ts
@@ -435,13 +455,16 @@ does not route the package surface through a compatibility file.
 | `client-state-service-contracts.ts`        | `ClientStateService`, its public input/result contracts, and cohesive narrow phase capabilities         |
 | `client-state-service.ts`                  | `createClientStateService` and visible service composition                                              |
 | `client-state-service-timing.ts`           | `createTimedClientStateService` with a closed operation-name inventory                                  |
-| `client-state-validation-primitives.ts`    | generic record/key/scalar/audit validation shared downward without a persistence-to-mutation dependency |
+| `client-state-validation-primitives.ts`    | generic record/key/scalar/JSON/principal-ref/digest validation shared downward                          |
+| `client-state-contract-validation.ts`      | shared client entity/event/audit/actor/runtime-entry validation below persistence and mutation callers  |
+| `client-mutation-receipt-validation.ts`    | shared receipt and idempotency-record validation below persisted wrappers and result validation         |
 | `app-client-inbox-service.ts`              | public `AppClientInboxService`, constructor registration, and public enqueue/completion methods         |
 | `client-state-inbox-handler.ts`            | later runtime ordinary, authorized-WS, and expiry processing with transaction/exit ownership visible    |
 | `authenticated-client-mutation-ingress.ts` | ingress read and durable issued-session/system authority checks                                         |
 | `client-mutation-command.ts`               | request/payload-to-command projection and canonical command hashing                                     |
-| `client-mutation-contracts.ts`             | exact command, read, computed, receipt, idempotency, and fact types                                     |
+| `client-mutation-contracts.ts`             | exact command, read, computed, receipt, idempotency, and fact types plus shared closed enum inventories |
 | `compute-client-mutation.ts`               | exhaustive operation-family dispatcher                                                                  |
+| `compute-client-mutation-state.ts`         | shared pure audit, actor, default-principal, revision, required-state, and child-candidate construction |
 | family compute files                       | the named principal, instance, connect, heartbeat, disconnect, or expiry decision                       |
 | `read-client-mutation.ts`                  | stable authority/idempotency/aggregate/child read phase                                                 |
 | `validate-client-mutation.ts`              | top-level post-compute invariant validation                                                             |
@@ -461,20 +484,20 @@ dependency bags.
 
 ### 4.3 Exact current-to-target production map
 
-| Current source                                         | Target owner(s)                                                                                                                                                                   |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `services/client-state-mutations.ts`                   | `mutation/client-mutation-contracts.ts`; `client-state-validation-primitives.ts`; command-validation; compute; result-validation; persistence codec/validation; semantic equality |
-| `services/client-state-service.ts`                     | service contracts/factory/timing; mutation command/read/write; exact result projection                                                                                            |
-| `services/AppClientInboxService.ts`                    | inbox contracts, public service, authenticated ingress, and runtime handler                                                                                                       |
-| `repositories/ClientStateRepository.ts`                | persistence contracts, repository, reads, snapshot repository, snapshot assembly, codec/validation, namespaces, and storage keys                                                  |
-| `services/authorised-ws-client-app-inbox.ts`           | `inbox/authorised-ws-client-app-inbox.ts`                                                                                                                                         |
-| `services/client-expired-state-authority.ts`           | `mutation/client-expired-session-authority.ts`                                                                                                                                    |
-| `services/client-mutation-authority.ts`                | `mutation/client-mutation-authority.ts`                                                                                                                                           |
-| `services/client-state-semantic-equality.ts`           | `client-state/client-state-semantic-equality.ts`                                                                                                                                  |
-| `client-presence-state.ts`                             | `client-state/client-presence-state.ts`                                                                                                                                           |
-| `client-state-storage-keys.ts`                         | `client-state/persistence/client-state-storage-keys.ts`                                                                                                                           |
-| `services/cached-client-state-service.ts`              | `client-state/snapshot/cached-client-state-service.ts`                                                                                                                            |
-| `services/client-state-snapshot-read-through-cache.ts` | `client-state/snapshot/client-state-snapshot-read-through-cache.ts`                                                                                                               |
+| Current source                                         | Target owner(s)                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/client-state-mutations.ts`                   | `mutation/client-mutation-contracts.ts`; `client-state-validation-primitives.ts`; `client-state-contract-validation.ts`; `client-mutation-receipt-validation.ts`; command-validation; compute (including private compute-state refinement); result-validation; persistence codec/validation; semantic equality |
+| `services/client-state-service.ts`                     | service contracts/factory/timing; mutation command/read/write; exact result projection                                                                                                                                                                                                                         |
+| `services/AppClientInboxService.ts`                    | inbox contracts, public service, authenticated ingress, and runtime handler                                                                                                                                                                                                                                    |
+| `repositories/ClientStateRepository.ts`                | persistence contracts, repository, reads, snapshot repository, snapshot assembly, codec/validation, namespaces, and storage keys                                                                                                                                                                               |
+| `services/authorised-ws-client-app-inbox.ts`           | `inbox/authorised-ws-client-app-inbox.ts`                                                                                                                                                                                                                                                                      |
+| `services/client-expired-state-authority.ts`           | `mutation/validate-client-expired-session-authority.ts`                                                                                                                                                                                                                                                        |
+| `services/client-mutation-authority.ts`                | `mutation/client-mutation-authority.ts`                                                                                                                                                                                                                                                                        |
+| `services/client-state-semantic-equality.ts`           | `client-state/client-state-semantic-equality.ts`                                                                                                                                                                                                                                                               |
+| `client-presence-state.ts`                             | `client-state/client-presence-state.ts`                                                                                                                                                                                                                                                                        |
+| `client-state-storage-keys.ts`                         | `client-state/persistence/client-state-storage-keys.ts`                                                                                                                                                                                                                                                        |
+| `services/cached-client-state-service.ts`              | `client-state/snapshot/cached-client-state-service.ts`                                                                                                                                                                                                                                                         |
+| `services/client-state-snapshot-read-through-cache.ts` | `client-state/snapshot/client-state-snapshot-read-through-cache.ts`                                                                                                                                                                                                                                            |
 
 Each old path contains only direct named re-export statements to the exact
 canonical owner or owners listed above. It contains no executable logic,
@@ -493,6 +516,13 @@ shared API/runtime contracts
   -> inbox contracts/translation/handler/public AppClientInboxService
   -> middleware and application consumers
 ```
+
+During PR A, shared closed enum inventories live with the mutation contracts,
+so shared contract validation and command validation import a lower cohesive
+contract owner rather than importing through a command-validation stage. The
+legacy persistence wrappers remain independent from command validation. PR B
+moves persistence-owned contracts to their final lower owner without reversing
+that dependency direction.
 
 `ClientMutationIdempotencyRecord` is canonically owned by
 `client-state-persistence-contracts.ts` and re-exported where the existing
@@ -889,6 +919,14 @@ or unrelated refactor is authorized.
 
 ### Task 0: Publish And Approve This Plan
 
+**Status:** complete. The human approved exact plan blob
+`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. Planning PR #71 feature
+`73bda0999be39248f486f038cccb06e99be39d1f` / tree
+`930c866e5adab6544f1cf263f5bfd674696f555d` passed Branch Release Gate
+`30869481618` attempt 1, merged as
+`39b2b7e6312507addfb4629c9d84ab476e83c362`, and passed Run Hetzner Supported
+Distributed Manifests `30871724277` attempt 1 for that exact main SHA.
+
 - Publish only this plan and reciprocal master/execution updates.
 - Require exact-blob human approval after planning Branch Release Gate.
 - After approval, create one child goal and PR A branch from the planning PR's
@@ -896,12 +934,17 @@ or unrelated refactor is authorized.
 
 ### Task 1: Characterize Before Editing
 
+**Status:** complete. The human explicitly waived the missing controlled timing
+sample and approved the evidence-backed disposition and owner mapping for all
+78 warning rows. The independently reviewed source-derived traces remain
+qualitative evidence only. Review finished with Critical 0 and Important 0.
+
 - Freeze exact production/test/consumer inventories, named cases, literals, and
   assertion sites.
-- Record all four current family traces and the controlled human navigation-time
-  sample from Section 2.3.
-- Capture focused warning-only findings by exact file and record human
-  disposition for each.
+- Record all four current source-derived family traces as the qualitative
+  baseline. Record the Section 2.3 sample waiver without invented values.
+- Capture focused warning-only findings by exact file and attach the human-
+  approved disposition and owner/rationale mapping for all 78 rows.
 - Freeze persistence JSON/key/ordering, AppInbox operation matrix, transaction,
   retry, idempotency, receipt/outbox, WebSocket generation, expiry, snapshot,
   error, timing, and public-return characterization tests.
@@ -909,6 +952,15 @@ or unrelated refactor is authorized.
   first production edit. Stop if a cohort is no longer independently reviewable.
 
 ### Task 2: Implement PR A Test-First
+
+**Status:** implemented and independently accepted. The command/validation
+cohort was accepted at commit `383a762c4cf2ff4361953ff594973ceb2b29546a` /
+tree `bdbafb06edb44d52f13d009a92f79c72ade25ae0`; the compute/result cohort and
+its behavior-restoring review fix were accepted at commit
+`0058cb238d07c24cd30d10be1fff97a07dbe710b` / tree
+`4a425ffa1073faefa67239ad3bbd724baad1db4d`. Both scoped reviews finished with
+Critical 0 and Important 0. These are milestone facts, not the future final PR
+A tree or publication envelope.
 
 - Add semantic protocol/owner tests first and observe the expected failures.
 - Register the new persistent repository-governance owners in
@@ -924,6 +976,11 @@ or unrelated refactor is authorized.
 - Run scoped reviews after command/validation and compute/result cohorts.
 
 ### Task 3: Freeze, Review, And Publish PR A
+
+**Status:** in progress. The sole Task 3 blocker—the stale temporary API-v1
+group-state exact-base protected-path ratchet—was resolved by its separately
+reviewed, human-authorized removal after PR #70 reached `ledger-published`.
+Final completion gates and publication remain pending.
 
 - Run every PR A focused and completion gate in Section 11.
 - Require independent whole-PR review: Critical 0, Important 0.
@@ -965,8 +1022,11 @@ or unrelated refactor is authorized.
   protocol, transaction, lifecycle, persistence, compatibility, and public
   boundaries.
 - Re-run canonical-import scans and reconcile every compatibility path.
-- Finalize README family traces and the repeat navigation-time sample.
-- Give every focused warning one final human disposition.
+- Finalize the code-derived README family traces; do not create or imply a
+  repeat navigation-time sample.
+- Reconcile each focused warning's implementation outcome against the approved
+  78-row mapping. Stop for a new human decision only if a row becomes blocked,
+  a new warning appears, or behavior/public/persisted scope would change.
 - Decide each supplementary ratchet's later-ledger removal/replacement owner.
 
 ### Task 7: Freeze, Review, And Publish PR C
@@ -986,9 +1046,10 @@ or unrelated refactor is authorized.
 
 Only after PR C's exact resulting-main workflow succeeds may a separately
 authorized ledger branch update this plan, the master, and execution plan. The
-ledger records the planning and three implementation envelopes and the final
-navigation sample summary. It also decides every supplementary ratchet. It does
-not begin auth or another Wave 2 child.
+ledger records the planning and three implementation envelopes, the Section 2.3
+sample waiver, the final code-derived trace review, and the reconciled warning
+outcomes. It does not publish a navigation-time comparison. It also decides
+every supplementary ratchet. It does not begin auth or another Wave 2 child.
 
 ## 10. Fixed Correctness And Performance Protocol
 
@@ -1148,20 +1209,23 @@ if rg -n "rallar-system/(services/(AppClientInboxService|client-state-service|cl
 
 The active-import check is supplemented by an AST-based semantic ownership
 test; raw text alone is not removal evidence. Final PR C gates also include the
-repeat navigation sample and independent full family traces.
+independent full family traces and human review of the actual code and diff. No
+repeat navigation-time sample is required or permitted as completion evidence.
 
 ## 12. Human Review And Publication Gates
 
 Required human decisions are:
 
 1. approve or revise the exact planning blob;
-2. review the before navigation sample and stacked-PR scope before first code;
+2. review the qualitative source-derived baseline traces, the Section 2.3
+   sample waiver, the approved 78-row warning map, and stacked-PR scope before
+   first code;
 3. approve or reject exact PR A head/tree after its Branch Release Gate;
 4. verify PR A resulting-main workflow before PR B;
 5. approve or reject exact PR B head/tree and governed performance evidence;
 6. verify PR B resulting-main workflow before PR C;
-7. approve or reject exact PR C head/tree, final traces, warning dispositions,
-   navigation sample, and performance applicability;
+7. approve or reject exact PR C head/tree, final code-derived traces, warning-
+   outcome reconciliation, and performance applicability;
 8. verify PR C resulting-main workflow; and
 9. separately authorize, then merge and close, the non-circular ledger.
 
@@ -1193,10 +1257,12 @@ claimed for a changed runtime.
 
 ## 14. Acceptance Checklist
 
-- [ ] Human approved this exact plan Git blob.
-- [ ] Planning PR merged and its exact resulting-main workflow succeeded.
-- [ ] Before family traces and controlled navigation sample were recorded.
-- [ ] The three-PR stacked decision remained independently reviewable.
+- [x] Human approved this exact plan Git blob.
+- [x] Planning PR merged and its exact resulting-main workflow succeeded.
+- [x] Before source-derived family traces and the Section 2.3 sample waiver were
+      recorded without invented navigation-time values.
+- [x] The three-PR stacked decision remained independently reviewable through
+      PR A's two scoped implementation cohorts.
 - [ ] Every predecessor public/deep path and package export remains compatible.
 - [ ] Canonical internal callers bypass compatibility-only wrappers.
 - [ ] Every request/command field, default, omission, clone, property order,
@@ -1207,12 +1273,13 @@ claimed for a changed runtime.
       exact.
 - [ ] Authorized WebSocket and expiry behavior and concurrency are exact.
 - [ ] Semantic tests remain primary; every ratchet has owner/removal decision.
-- [ ] Every focused warning has a human disposition.
+- [x] The approved disposition and owner/rationale mapping covers all 78
+      focused warning rows with no exceptions.
 - [ ] PR A review/gates and resulting-main workflow succeeded.
 - [ ] PR B review/gates, governed performance, and resulting-main workflow
       succeeded.
-- [ ] PR C review/gates, final navigation sample, and resulting-main workflow
-      succeeded.
+- [ ] PR C review/gates, final code-derived family traces, human merge review,
+      and resulting-main workflow succeeded.
 - [ ] The later ledger independently reached `ledger-published`.
 - [ ] API-v1 organization and every other Wave 2 domain remained unstarted.
 
@@ -1235,15 +1302,15 @@ claimed for a changed runtime.
 
 ## 16. Progress Record
 
-| Milestone                  | State               | Evidence                                                                                                                                   |
-| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Pilot conclusions          | approved            | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`. |
-| Client-state child plan    | drafted; unapproved | This planning tree defines the bounded scope, three-PR decision, exact initial targets, locked protocols, and no future publication facts. |
-| PR A mutation core         | not started         | Requires exact plan-blob approval and planning resulting-main workflow.                                                                    |
-| PR B authoritative shell   | not started         | Requires PR A merge and exact resulting-main workflow.                                                                                     |
-| PR C alignment/final trace | not started         | Requires PR B merge and exact resulting-main workflow.                                                                                     |
-| Later evidence ledger      | not authorized      | Requires PR C merge and exact resulting-main workflow, then separate authorization.                                                        |
-| Other Wave 2 domains       | blocked             | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                            |
+| Milestone                  | State                      | Evidence                                                                                                                                                                                                             |
+| -------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pilot conclusions          | approved                   | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                           |
+| Client-state child plan    | approved                   | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                   |
+| PR A mutation core         | implemented; gates pending | Task 1 and both Task 2 cohorts are independently accepted; the sole Task 3 blocker was resolved by the separately reviewed, human-authorized ratchet removal. Final completion gates and publication remain pending. |
+| PR B authoritative shell   | not started                | Requires PR A merge and exact resulting-main workflow.                                                                                                                                                               |
+| PR C alignment/final trace | not started                | Requires PR B merge and exact resulting-main workflow.                                                                                                                                                               |
+| Later evidence ledger      | not authorized             | Requires PR C merge and exact resulting-main workflow, then separate authorization.                                                                                                                                  |
+| Other Wave 2 domains       | blocked                    | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                      |
 
 ## 17. Planning Self-Review Record
 
