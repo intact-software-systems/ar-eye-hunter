@@ -49,7 +49,7 @@ import {
     createLegacyClientStateTestDriver as createClientStateService,
     failNextClientStateTestOutboxWrite,
     getClientStateTestOutbox,
-} from './client-state-phase-test-driver.ts';
+} from './client-state/client-state-test-runtime.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'app-1',

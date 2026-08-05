@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -14,13 +14,16 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/client-expired-state-authority.ts',
   'packages/shared-server/rallar-system/services/client-state-semantic-equality.ts',
   'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+  'packages/shared-server/rallar-system/services/cached-client-state-service.ts',
+  'packages/shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts',
 ] as const;
 const sharedServerCompatibilityImportPattern = new RegExp(
   [
     '(?:^|\\/)rallar-system\\/services\\/',
     '(?:AppClientInboxService|client-state-service|client-state-mutations|',
     'client-mutation-authority|client-expired-state-authority|',
-    'client-state-semantic-equality)\\.ts$',
+    'client-state-semantic-equality|cached-client-state-service|',
+    'client-state-snapshot-read-through-cache)\\.ts$',
   ].join(''),
 );
 const persistenceCompatibilityImportPattern = new RegExp(
@@ -40,6 +43,8 @@ const persistenceCanonicalPaths = [
   `${canonicalRoot}/persistence/assemble-client-state-snapshot.ts`,
   `${canonicalRoot}/persistence/client-state-snapshot-repository.ts`,
   `${canonicalRoot}/persistence/client-state-repository.ts`,
+  `${canonicalRoot}/snapshot/cached-client-state-service.ts`,
+  `${canonicalRoot}/snapshot/client-state-snapshot-read-through-cache.ts`,
 ] as const;
 const persistenceCompatibilityExports = new Map([
   [
@@ -67,10 +72,23 @@ const canonicalRepositoryConsumers = new Map([
     '../client-state/persistence/client-state-repository.ts',
   ],
   [
-    'packages/shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts',
-    '../client-state/persistence/client-state-repository.ts',
+    'packages/shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts',
+    '../persistence/client-state-repository.ts',
   ],
 ] as const);
+const finalClientStateTestOwners = [
+  'packages/tests/shared-server/client-state/client-state-snapshot-read-through-cache.test.ts',
+  'packages/tests/shared-server/client-state/client-state-test-driver-contracts.ts',
+  'packages/tests/shared-server/client-state/client-state-test-operations.ts',
+  'packages/tests/shared-server/client-state/client-state-test-runtime.ts',
+  'packages/tests/shared-server/client-state/client-state-test-transaction.ts',
+  'packages/tests/shared-server/client-state/postgres-client-mutation-test-driver.ts',
+] as const;
+const removedClientStateTestOwners = [
+  'packages/tests/shared-server/client-state-phase-test-driver.ts',
+  'packages/tests/shared-server/client-state-snapshot-read-through-cache.test.ts',
+  'packages/tests/shared-server/postgres-client-phase-driver.ts',
+] as const;
 
 describe('client-state source inventory', () => {
   it('includes literal and ordinary TypeScript suffix files while excluding other files', () => {
@@ -124,6 +142,17 @@ describe('client-state compatibility ownership', () => {
   });
 });
 
+describe('client-state test ownership', () => {
+  it('keeps query, cache, and mutation drivers at their final client-state owners', () => {
+    for (const filePath of finalClientStateTestOwners) {
+      expect(existsSync(path.join(repoRoot, filePath)), filePath).toBe(true);
+    }
+    for (const filePath of removedClientStateTestOwners) {
+      expect(existsSync(path.join(repoRoot, filePath)), filePath).toBe(false);
+    }
+  });
+});
+
 function assertCanonicalPersistenceOwnership(): void {
   const canonicalFiles = sourceFiles(canonicalRoot);
   expect(canonicalFiles).toEqual(expect.arrayContaining([...persistenceCanonicalPaths]));
@@ -149,6 +178,18 @@ function assertCanonicalPersistenceOwnership(): void {
   );
   expect(sharedServerModule).not.toContain(
     "export * from './rallar-system/repositories/ClientStateRepository.ts';",
+  );
+  expect(sharedServerModule).toContain(
+    "export * from './rallar-system/client-state/snapshot/cached-client-state-service.ts';",
+  );
+  expect(sharedServerModule).toContain(
+    "export * from './rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';",
+  );
+  expect(sharedServerModule).not.toContain(
+    "export * from './rallar-system/services/cached-client-state-service.ts';",
+  );
+  expect(sharedServerModule).not.toContain(
+    "export * from './rallar-system/services/client-state-snapshot-read-through-cache.ts';",
   );
 }
 
@@ -214,6 +255,8 @@ function assertMovedCompatibilityExports(): void {
       '../client-state/mutation/validate-client-expired-session-authority.ts',
     ],
     [compatibilityPaths[4], '../client-state/client-state-semantic-equality.ts'],
+    [compatibilityPaths[6], '../client-state/snapshot/cached-client-state-service.ts'],
+    [compatibilityPaths[7], '../client-state/snapshot/client-state-snapshot-read-through-cache.ts'],
   ]);
   for (const [filePath, owner] of expected) {
     const source = read(filePath);

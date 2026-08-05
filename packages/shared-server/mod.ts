@@ -63,8 +63,8 @@ export type {
   ClientStateWritten,
   RegisterAuthorisedWsClientInput,
 } from './rallar-system/client-state/client-state-service-contracts.ts';
-export * from './rallar-system/services/client-state-snapshot-read-through-cache.ts';
-export * from './rallar-system/services/cached-client-state-service.ts';
+export * from './rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+export * from './rallar-system/client-state/snapshot/cached-client-state-service.ts';
 export * from './rallar-system/services/cached-group-state-service.ts';
 export * from './rallar-system/services/auth-login-service.ts';
 export * from './rallar-system/services/auth-state-mutations.ts';

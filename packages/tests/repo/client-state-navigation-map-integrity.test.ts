@@ -101,6 +101,14 @@ const prBOrdinaryTransactionCohortLinks = [
   ['./inbox/app-client-inbox-service.ts', 'class AppClientInboxService'],
 ] as const;
 
+const prBQueryCacheCohortLinks = [
+  ['./snapshot/cached-client-state-service.ts', 'function createCachedClientStateService('],
+  [
+    './snapshot/client-state-snapshot-read-through-cache.ts',
+    'class ClientStateSnapshotReadThroughCache',
+  ],
+] as const;
+
 describe('client-state navigation map integrity', () => {
   it('links every PR A owner to its named primary symbol', () => {
     const readme = read(navigationPath);
@@ -125,6 +133,16 @@ describe('client-state navigation map integrity', () => {
   it('links every PR B ordinary transaction owner to its named primary symbol', () => {
     const readme = read(navigationPath);
     for (const [target, declaration] of prBOrdinaryTransactionCohortLinks) {
+      expect(readme, target).toContain(`](${target})`);
+      const resolved = path.resolve(path.dirname(absolute(navigationPath)), target);
+      expect(existsSync(resolved), target).toBe(true);
+      expect(readFileSync(resolved, 'utf8'), declaration).toContain(declaration);
+    }
+  });
+
+  it('links every PR B query and cache owner to its named primary symbol', () => {
+    const readme = read(navigationPath);
+    for (const [target, declaration] of prBQueryCacheCohortLinks) {
       expect(readme, target).toContain(`](${target})`);
       const resolved = path.resolve(path.dirname(absolute(navigationPath)), target);
       expect(existsSync(resolved), target).toBe(true);
@@ -163,6 +181,18 @@ describe('client-state navigation map integrity', () => {
       'listSnapshots performs the same before/after principal guard for a scoped aggregate list and falls back to an individual stable snapshot when a principal changes.',
       'Snapshot assembly filters logically active sessions, orders instances and sessions by canonical storage key, validates the authoritative snapshot, and returns the existing public shape.',
       'The existing repository write methods retain their namespaces, conditional writes, event-store use, and transaction-bound construction; mutation and AppInbox owners still call the same public repository surface.',
+    ]);
+  });
+
+  it('records the query, snapshot, event, and cache ownership timeline', () => {
+    const readme = read(navigationPath);
+    expect(readTimeline(readme, 'PR B query, snapshot, event, and cache timeline')).toEqual([
+      'API, admin, statistics, and state-sync callers invoke a named ClientStateService query or a snapshot-cache operation.',
+      'ClientStateRepository reads the durable aggregate, event page, or stable before-and-after snapshot through the canonical persistence owners.',
+      'Persistence decoding validates stored contracts and snapshot assembly preserves canonical instance and active-session ordering.',
+      'ClientStateSnapshotReadThroughCache may reuse only a presence-fresh snapshot that satisfies the requested minimum revision; otherwise it loads or refreshes durable state.',
+      'Cache observation preserves monotonic snapshot identity and conflict behavior, while CachedClientStateService observes explicit committed snapshots and list results.',
+      'The cache remains a latest-value view rather than mutation authority, and the unchanged snapshot, event, error, and caller result exits to the original consumer.',
     ]);
   });
 

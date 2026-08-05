@@ -133,6 +133,19 @@ or behavior. It does not replace the reserved
 `client-state/client-state-test-runtime.ts` target, which remains exclusively
 the later `client-state-phase-test-driver.ts` move.
 
+Task 4E uses the same authority to keep that 549-line driver cohesive and under
+the hard limits after its move. `client-state/client-state-test-runtime.ts`
+retains the exact canonical driver factory and exports;
+`client-state/client-state-test-driver-contracts.ts` owns its operation
+contract; `client-state/client-state-test-operations.ts` owns request-to-command
+projection for its principal, instance, session, authorised-WebSocket, expiry,
+and query operations; and `client-state/client-state-test-transaction.ts` owns
+the in-memory SQL transaction, event rollback, and outbox fixtures. These are
+direct test owners, not a generic runtime, dependency bag, compatibility layer,
+or production hop. They preserve the prior test-driver behavior and exported
+API while making every module at most 400 lines and every general function or
+callback at most 60 lines.
+
 ## 2. Current Evidence And Human Navigation Baseline
 
 ### 2.1 Current concentrated ownership
@@ -559,7 +572,10 @@ packages/tests/shared-server/client-state/
   client-mutation-validation.test.ts
   client-state-service-timing.test.ts
   client-state-snapshot-read-through-cache.test.ts
+  client-state-test-driver-contracts.ts
+  client-state-test-operations.ts
   client-state-test-runtime.ts
+  client-state-test-transaction.ts
   postgres-client-mutation-test-driver.ts
 packages/tests/repo/
   client-state-navigation-map-integrity.test.ts
@@ -605,15 +621,15 @@ may not be merged away, replaced by source-text checks, or weakened.
 
 ### 5.2 Test move map
 
-| Current test owner                                     | Target ownership                                                                                              |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `app-client-inbox-service.test.ts`                     | authentication, operation matrix, authorized-WS, expiry, and transaction/outbox tests                         |
-| `client-state-concurrency.test.ts`                     | command/request, validation, principal/instance, session lifecycle, concurrency, and transaction/outbox tests |
-| `client-state-service-idempotency.test.ts`             | idempotency, session lifecycle, timing, and expiry tests                                                      |
-| Task 4D expiry-only queue/results/parser/auth fixtures | `client-state/app-client-inbox-expiry-fixtures.ts`, directly owned only by `app-client-inbox-expiry.test.ts`  |
-| `client-state-phase-test-driver.ts`                    | `client-state/client-state-test-runtime.ts`                                                                   |
-| `postgres-client-phase-driver.ts`                      | `client-state/postgres-client-mutation-test-driver.ts`                                                        |
-| `client-state-snapshot-read-through-cache.test.ts`     | same-named client-state owner                                                                                 |
+| Current test owner                                     | Target ownership                                                                                                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app-client-inbox-service.test.ts`                     | authentication, operation matrix, authorized-WS, expiry, and transaction/outbox tests                                                             |
+| `client-state-concurrency.test.ts`                     | command/request, validation, principal/instance, session lifecycle, concurrency, and transaction/outbox tests                                     |
+| `client-state-service-idempotency.test.ts`             | idempotency, session lifecycle, timing, and expiry tests                                                                                          |
+| Task 4D expiry-only queue/results/parser/auth fixtures | `client-state/app-client-inbox-expiry-fixtures.ts`, directly owned only by `app-client-inbox-expiry.test.ts`                                      |
+| `client-state-phase-test-driver.ts`                    | `client-state/client-state-test-runtime.ts` plus its direct contract, operation-projection, and transaction/outbox owners recorded in Section 1.3 |
+| `postgres-client-phase-driver.ts`                      | `client-state/postgres-client-mutation-test-driver.ts`                                                                                            |
+| `client-state-snapshot-read-through-cache.test.ts`     | same-named client-state owner                                                                                                                     |
 
 The mixed PostgreSQL presence-expiry and AppInbox WebSocket-close suites stay at
 their current paths. They are persistent cross-family concurrency evidence and

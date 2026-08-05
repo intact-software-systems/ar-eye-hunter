@@ -10,7 +10,7 @@ import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import {
     createLegacyClientStateTestDriver as createClientStateService,
     getClientStateTestOutbox,
-} from './client-state-phase-test-driver.ts';
+} from './client-state/client-state-test-runtime.ts';
 
 const SCOPE: StateScope = {
     applicationId: 'app-1',

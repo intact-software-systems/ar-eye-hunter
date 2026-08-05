@@ -6,8 +6,8 @@ not a second runtime contract. PR A owns command construction, command and resul
 validation, semantic equality, and pure compute families. The Task 4A PR B
 cohort owns persistence and stable reads. Task 4B owns service composition,
 timing, mutation reads/writes, and the AppInbox transaction shell. Authorized
-WebSocket and expiry control flow is mechanically retained in that shell for
-its later independent review; snapshot-cache ownership remains at its legacy path.
+WebSocket, expiry, query, snapshot, event, and cache ownership now live in the
+same canonical feature tree without changing their behavior.
 
 ## Command and validation owners
 
@@ -81,6 +81,17 @@ The legacy `services/client-state-service.ts`, `services/AppClientInboxService.t
 and `services/authorised-ws-client-app-inbox.ts` paths remain direct named
 compatibility exports. The package `mod.ts` exports the canonical service and
 AppInbox owners directly.
+
+## Query, snapshot, event, and cache owners
+
+- [`createCachedClientStateService` and explicit committed-snapshot observation](./snapshot/cached-client-state-service.ts)
+- [`ClientStateSnapshotReadThroughCache` and durable read-through refresh](./snapshot/client-state-snapshot-read-through-cache.ts)
+
+The legacy `services/cached-client-state-service.ts` and
+`services/client-state-snapshot-read-through-cache.ts` paths remain direct
+named compatibility exports for API-v1 and deep consumers. The package
+`mod.ts` exports both canonical snapshot owners directly. The cache remains a
+latest-value projection; durable client-state repositories remain authoritative.
 
 ## Construction, registration, and enqueue timeline
 
@@ -162,11 +173,21 @@ AppInbox shells.
 6. The existing repository write methods retain their namespaces, conditional writes, event-store use, and transaction-bound construction; mutation and AppInbox owners still call the same public repository surface.
 ```
 
+## PR B query, snapshot, event, and cache timeline
+
+```text
+1. API, admin, statistics, and state-sync callers invoke a named ClientStateService query or a snapshot-cache operation.
+2. ClientStateRepository reads the durable aggregate, event page, or stable before-and-after snapshot through the canonical persistence owners.
+3. Persistence decoding validates stored contracts and snapshot assembly preserves canonical instance and active-session ordering.
+4. ClientStateSnapshotReadThroughCache may reuse only a presence-fresh snapshot that satisfies the requested minimum revision; otherwise it loads or refreshes durable state.
+5. Cache observation preserves monotonic snapshot identity and conflict behavior, while CachedClientStateService observes explicit committed snapshots and list results.
+6. The cache remains a latest-value view rather than mutation authority, and the unchanged snapshot, event, error, and caller result exits to the original consumer.
+```
+
 ## Cohort boundary and next owners
 
-- Snapshot-cache ownership remains for a later PR B cohort. Task 4B does not
-  reinterpret authorized-WebSocket or expiry behavior; it retains their exact
-  handler control flow while giving the ordinary transaction one canonical
-  transaction-selection owner.
+- Task 4's persistence, ordinary transaction, authorized-WebSocket, expiry,
+  and query/cache owners are now in their canonical feature locations without
+  reinterpreting their behavior.
 - Compatibility-only source removal and mechanical warning alignment remain
   for PR C.

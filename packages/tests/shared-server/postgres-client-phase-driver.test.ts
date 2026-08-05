@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import { createPostgresClientPhaseDriver } from './postgres-client-phase-driver.ts';
+import { createPostgresClientPhaseDriver } from './client-state/postgres-client-mutation-test-driver.ts';
 
 describe('Postgres client phase driver', () => {
     it('runs mutation reads through the supplied barrier-capable repository', async () => {

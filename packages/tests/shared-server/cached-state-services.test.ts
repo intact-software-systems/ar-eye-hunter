@@ -2,12 +2,36 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
+import {
+    createCachedClientStateService as createPackageCachedClientStateService,
+    createClientStateSnapshotReadThroughCache as createPackageClientStateSnapshotReadThroughCache,
+} from '@shared-server/mod.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import { createCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
+import { createCachedClientStateService } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
+import {
+    createClientStateSnapshotReadThroughCache,
+} from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+import {
+    createCachedClientStateService as createLegacyCachedClientStateService,
+} from '@shared-server/rallar-system/services/cached-client-state-service.ts';
+import {
+    createClientStateSnapshotReadThroughCache as createLegacyClientStateSnapshotReadThroughCache,
+} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 
 describe('cached state services', () => {
+    it('keeps client cache compatibility exports on the canonical factories', () => {
+        expect(createLegacyCachedClientStateService)
+            .toBe(createCachedClientStateService);
+        expect(createLegacyClientStateSnapshotReadThroughCache)
+            .toBe(createClientStateSnapshotReadThroughCache);
+        expect(createPackageCachedClientStateService)
+            .toBe(createCachedClientStateService);
+        expect(createPackageClientStateSnapshotReadThroughCache)
+            .toBe(createClientStateSnapshotReadThroughCache);
+    });
+
     it('does not expose a legacy direct group mutation from its durable dependency', () => {
         const durable = {
             ...createGroupPhaseService(),

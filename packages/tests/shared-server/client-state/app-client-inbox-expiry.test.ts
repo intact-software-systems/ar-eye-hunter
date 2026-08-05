@@ -24,7 +24,7 @@ import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxServ
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { createResilience } from '../app-auth-inbox-test-harness.ts';
-import { createClientStatePhaseTestDriver } from '../client-state-phase-test-driver.ts';
+import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
   ClientExpiryTestResourceInbox,
