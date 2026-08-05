@@ -105,6 +105,76 @@ snapshot-contracts|packages/shared-server/rallar-system/repositories/ClientState
 receipt-contracts|packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts|191-210|835cf42a672ba2230086f859ec955e163ce0b0d5aeb8449058ce470a0000cf63|packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts|16-35|97799547a0f89e14bc4526ca5e7f00fa47d3704badac6395b962b97ecfff212d|697d7bef8f749edc75466c63e837726cc590a87cdc389682770ca2af6a635f8c
 invariant-contracts|packages/shared-server/rallar-system/repositories/ClientStateRepository.ts|86-121,674-688|daf9bd94d7405cd0265d6e9379674becd9366a609d12100ed4a5018d72663a1b|packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts|37-80|f8ae05bc65484b6ff87fe46688ab09741f044d0ed26c11776035f861dbf890e7|697d7bef8f749edc75466c63e837726cc590a87cdc389682770ca2af6a635f8c
 `);
+const expectedStructuralLineageEntries = [
+  [
+    'packages/shared-server/rallar-system/client-state/client-state-service-contracts.ts',
+    'packages/shared-server/rallar-system/services/client-state-service.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/client-state-service.ts',
+    'packages/shared-server/rallar-system/services/client-state-service.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/client-state-service-timing.ts',
+    'packages/shared-server/rallar-system/services/client-state-service.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/mutation/read/read-client-mutation.ts',
+    'packages/shared-server/rallar-system/services/client-state-service.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
+    'packages/shared-server/rallar-system/services/client-state-service.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts',
+    'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts',
+    'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
+    'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
+    'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/client-presence-state.ts',
+    'packages/shared-server/rallar-system/client-presence-state.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts',
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts',
+    'packages/shared-server/rallar-system/services/client-state-mutations.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
+    'packages/shared-server/rallar-system/services/client-state-mutations.ts',
+  ],
+] as const;
 
 describe('client-state PR B persistence lineage provenance', () => {
   it('audits every manifest row against exact source and target regions', () => {
@@ -127,83 +197,8 @@ describe('client-state PR B persistence lineage provenance', () => {
     expect(manifestTargets).toEqual(structuralCapacityTargets);
     expect(new Set(manifestTargets).size).toBe(manifestTargets.length);
 
-    const structuralLineageByTargetPath = readStructuralLineageMap({
-      repoRoot,
-      mergeBase: prAResultingMain,
-      targetReference: 'WORKTREE',
-      targetCommit: readHeadCommit(),
-      renameByTargetPath: new Map(),
-    });
-    expect([...structuralLineageByTargetPath.entries()]).toEqual([
-      [
-        'packages/shared-server/rallar-system/client-state/client-state-service-contracts.ts',
-        'packages/shared-server/rallar-system/services/client-state-service.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/client-state-service.ts',
-        'packages/shared-server/rallar-system/services/client-state-service.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/client-state-service-timing.ts',
-        'packages/shared-server/rallar-system/services/client-state-service.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/mutation/read/read-client-mutation.ts',
-        'packages/shared-server/rallar-system/services/client-state-service.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
-        'packages/shared-server/rallar-system/services/client-state-service.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts',
-        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts',
-        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
-        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
-        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/client-presence-state.ts',
-        'packages/shared-server/rallar-system/client-presence-state.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
-        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
-        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
-        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',
-        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts',
-        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts',
-        'packages/shared-server/rallar-system/services/client-state-mutations.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
-        'packages/shared-server/rallar-system/services/client-state-mutations.ts',
-      ],
-    ]);
+    const structuralLineageByTargetPath = readCurrentStructuralLineageByTargetPath();
+    expect([...structuralLineageByTargetPath.entries()]).toEqual(expectedStructuralLineageEntries);
     for (const target of nonStructuralProvenanceTargets) {
       expect(structuralLineageByTargetPath.has(target), target).toBe(false);
     }
@@ -337,6 +332,16 @@ function readHeadCommit(): string {
     cwd: repoRoot,
     encoding: 'utf8',
   }).trim();
+}
+
+function readCurrentStructuralLineageByTargetPath(): ReadonlyMap<string, string> {
+  return readStructuralLineageMap({
+    repoRoot,
+    mergeBase: prAResultingMain,
+    targetReference: 'WORKTREE',
+    targetCommit: readHeadCommit(),
+    renameByTargetPath: new Map(),
+  });
 }
 
 function readBlob(filePath: string): string {

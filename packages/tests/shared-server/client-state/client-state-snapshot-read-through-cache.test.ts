@@ -15,6 +15,14 @@ import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
+interface CreateClientSnapshotFixtureInput {
+  readonly principalId: string;
+  readonly applicationId: string;
+  readonly workspaceId: string;
+  readonly snapshotVersion: number;
+  readonly expiresAtEpochMs?: number;
+}
+
 describe('ClientStateSnapshotReadThroughCache', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -25,7 +33,12 @@ describe('ClientStateSnapshotReadThroughCache', () => {
 
     const runtimeRepository = new FakeRuntimeStateRepository();
     const clientRepository = new ClientStateRepository(runtimeRepository);
-    const snapshot = createClientSnapshot('alice', 'app-1', 'workspace-a', 3);
+    const snapshot = createClientSnapshot({
+      principalId: 'alice',
+      applicationId: 'app-1',
+      workspaceId: 'workspace-a',
+      snapshotVersion: 3,
+    });
     await putClientSnapshot(clientRepository, snapshot);
 
     const readThroughCache = createClientStateSnapshotReadThroughCache({
@@ -47,8 +60,18 @@ describe('ClientStateSnapshotReadThroughCache', () => {
 
     const runtimeRepository = new FakeRuntimeStateRepository();
     const clientRepository = new ClientStateRepository(runtimeRepository);
-    const stale = createClientSnapshot('alice', 'app-1', 'workspace-a', 1);
-    const current = createClientSnapshot('alice', 'app-1', 'workspace-a', 4);
+    const stale = createClientSnapshot({
+      principalId: 'alice',
+      applicationId: 'app-1',
+      workspaceId: 'workspace-a',
+      snapshotVersion: 1,
+    });
+    const current = createClientSnapshot({
+      principalId: 'alice',
+      applicationId: 'app-1',
+      workspaceId: 'workspace-a',
+      snapshotVersion: 4,
+    });
     const readThroughCache = createClientStateSnapshotReadThroughCache({
       clientsRepository: clientRepository,
     });
@@ -76,8 +99,18 @@ describe('ClientStateSnapshotReadThroughCache', () => {
 
     const runtimeRepository = new FakeRuntimeStateRepository();
     const clientRepository = new ClientStateRepository(runtimeRepository);
-    const workspaceA = createClientSnapshot('alice', 'app-1', 'workspace-a', 1);
-    const workspaceB = createClientSnapshot('alice', 'app-1', 'workspace-b', 2);
+    const workspaceA = createClientSnapshot({
+      principalId: 'alice',
+      applicationId: 'app-1',
+      workspaceId: 'workspace-a',
+      snapshotVersion: 1,
+    });
+    const workspaceB = createClientSnapshot({
+      principalId: 'alice',
+      applicationId: 'app-1',
+      workspaceId: 'workspace-b',
+      snapshotVersion: 2,
+    });
     const readThroughCache = createClientStateSnapshotReadThroughCache({
       clientsRepository: clientRepository,
     });
@@ -119,7 +152,13 @@ describe('ClientStateSnapshotReadThroughCache', () => {
 
     const runtimeRepository = new FakeRuntimeStateRepository();
     const clientRepository = new ClientStateRepository(runtimeRepository);
-    const snapshot = createClientSnapshot('alice', 'app-1', 'workspace-a', 3, 1_000);
+    const snapshot = createClientSnapshot({
+      principalId: 'alice',
+      applicationId: 'app-1',
+      workspaceId: 'workspace-a',
+      snapshotVersion: 3,
+      expiresAtEpochMs: 1_000,
+    });
     const readThroughCache = createClientStateSnapshotReadThroughCache({
       clientsRepository: clientRepository,
     });
@@ -146,10 +185,20 @@ describe('ClientStateSnapshotReadThroughCache', () => {
     const readThroughCache = createClientStateSnapshotReadThroughCache({
       clientsRepository: clientRepository,
     });
-    const base = createClientSnapshot('alice', 'app-1', 'workspace-a', 1);
+    const base = createClientSnapshot({
+      principalId: 'alice',
+      applicationId: 'app-1',
+      workspaceId: 'workspace-a',
+      snapshotVersion: 1,
+    });
     const revisionTwo = { ...base, stateRevision: 2 };
     const revisionOne = {
-      ...createClientSnapshot('alice', 'app-1', 'workspace-a', 99),
+      ...createClientSnapshot({
+        principalId: 'alice',
+        applicationId: 'app-1',
+        workspaceId: 'workspace-a',
+        snapshotVersion: 99,
+      }),
       stateRevision: 1,
     };
 
@@ -195,14 +244,26 @@ async function putClientSnapshot(
   expect(sessions.every((result) => result.status === 'applied')).toBe(true);
 }
 
-function createClientSnapshot(
-  principalId: string,
-  applicationId: string,
-  workspaceId: string,
-  snapshotVersion: number,
-  expiresAtEpochMs = 4_000_000_000_000,
-): ClientSnapshot {
-  const principal: ClientPrincipal = {
+function createClientSnapshot(input: CreateClientSnapshotFixtureInput): ClientSnapshot {
+  const principal = createClientPrincipal(input);
+  const instance = createClientInstance(input);
+  const session = createClientSession(input, instance.clientInstanceId);
+
+  return {
+    stateRevision: input.snapshotVersion,
+    principal,
+    instances: [instance],
+    activeSessions: [session],
+    isOnline: true,
+    activeSessionCount: 1,
+    lastSeenAtEpochMs: input.snapshotVersion,
+  };
+}
+
+function createClientPrincipal(input: CreateClientSnapshotFixtureInput): ClientPrincipal {
+  const { applicationId, workspaceId, principalId, snapshotVersion } = input;
+
+  return {
     applicationId,
     workspaceId,
     principalId,
@@ -223,7 +284,12 @@ function createClientSnapshot(
     updated: audit(snapshotVersion),
     lastSeenAtEpochMs: snapshotVersion,
   };
-  const instance: ClientInstance = {
+}
+
+function createClientInstance(input: CreateClientSnapshotFixtureInput): ClientInstance {
+  const { applicationId, workspaceId, principalId, snapshotVersion } = input;
+
+  return {
     applicationId,
     workspaceId,
     principalId,
@@ -238,11 +304,19 @@ function createClientSnapshot(
     registered: audit(1),
     updated: audit(snapshotVersion),
   };
-  const session: ClientSession = {
+}
+
+function createClientSession(
+  input: CreateClientSnapshotFixtureInput,
+  clientInstanceId: string,
+): ClientSession {
+  const { applicationId, workspaceId, principalId, snapshotVersion } = input;
+
+  return {
     applicationId,
     workspaceId,
     principalId,
-    clientInstanceId: instance.clientInstanceId,
+    clientInstanceId,
     sessionId: `${principalId}-${workspaceId}-session`,
     generationId: `${principalId}-${workspaceId}-generation`,
     generationVersion: 1,
@@ -253,19 +327,9 @@ function createClientSnapshot(
     authenticatedAtEpochMs: 1,
     connectedAtEpochMs: 1,
     lastHeartbeatAtEpochMs: snapshotVersion,
-    expiresAtEpochMs,
+    expiresAtEpochMs: input.expiresAtEpochMs ?? 4_000_000_000_000,
     disconnectedAtEpochMs: null,
     disconnectReason: null,
-  };
-
-  return {
-    stateRevision: snapshotVersion,
-    principal,
-    instances: [instance],
-    activeSessions: [session],
-    isOnline: true,
-    activeSessionCount: 1,
-    lastSeenAtEpochMs: snapshotVersion,
   };
 }
 

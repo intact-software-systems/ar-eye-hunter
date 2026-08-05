@@ -33,11 +33,13 @@ const finalTestOwners = [
   'packages/tests/shared-server/client-state/client-state-public-compatibility.test.ts',
   'packages/tests/shared-server/client-state/client-state-service-timing.test.ts',
   'packages/tests/shared-server/client-state/client-state-service-test-fixtures.ts',
+  'packages/tests/shared-server/client-state/client-state-snapshot-read-through-cache.test.ts',
 ] as const;
 const lineageOwners = [
   'packages/tests/repo/client-state-server-lineage-provenance.test.ts',
   'packages/tests/repo/client-state-server-lineage-evidence.ts',
   'packages/tests/repo/client-state-server-mutation-lineage-inventory.ts',
+  'packages/tests/repo/client-state-server-persistence-lineage-provenance.test.ts',
 ] as const;
 
 describe('client-state server test ownership', () => {
@@ -57,9 +59,11 @@ describe('client-state server test ownership', () => {
   });
 
   it('keeps every moved general function and test callback within 60 physical lines', () => {
-    for (const filePath of [...finalTestOwners, ...lineageOwners]) {
-      expect(oversizedFunctions(read(filePath)), filePath).toEqual([]);
-    }
+    const findings = [...finalTestOwners, ...lineageOwners]
+      .map((filePath) => [filePath, oversizedFunctions(read(filePath))] as const)
+      .filter(([, fileFindings]) => fileFindings.length > 0);
+
+    expect(findings).toEqual([]);
   });
 
   it('keeps the supplementary source ratchet owned by PR C before ledger publication', () => {
