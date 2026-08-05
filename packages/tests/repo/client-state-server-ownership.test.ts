@@ -5,6 +5,8 @@ import path from 'node:path';
 import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
+import { exportedNames } from './client-state-server-export-surface-evidence.ts';
+
 const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/client-state';
 const compatibilityPaths = [
@@ -161,6 +163,28 @@ describe('client-state test ownership', () => {
       'getClientStateTestOutbox',
     ]);
   });
+
+  it.each([
+    ['const', 'export const extra = 1;', 'extra'],
+    ['let', 'export let extra = 1;', 'extra'],
+    ['var', 'export var extra = 1;', 'extra'],
+    ['class', 'export class Extra {}', 'Extra'],
+    ['type', 'export type Extra = string;', 'Extra'],
+    ['interface', 'export interface Extra {}', 'Extra'],
+    ['enum', 'export enum Extra { Value }', 'Extra'],
+    ['namespace', 'export namespace Extra {}', 'Extra'],
+    ['import-equals', "export import Extra = require('extra');", 'Extra'],
+  ])('recognizes an exported %s as an additional API symbol', (_kind, source, symbol) => {
+    expect(exportedNames(source)).toEqual([symbol]);
+  });
+
+  it.each([
+    'export default function named() {}',
+    "export * from './other.ts';",
+    'export const { extra } = { extra: 1 };',
+  ])('fails closed for unsupported export syntax: %s', (source) =>
+    expect(() => exportedNames(source)).toThrow(),
+  );
 });
 
 function assertCanonicalPersistenceOwnership(): void {
@@ -349,23 +373,6 @@ function importSpecifiers(source: string): readonly string[] {
     }
     return [];
   });
-}
-
-function exportedNames(source: string): readonly string[] {
-  const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
-  return program.body
-    .flatMap((node) => {
-      if (node.type !== 'ExportNamedDeclaration') return [];
-      if (node.declaration?.type === 'FunctionDeclaration' && node.declaration.id) {
-        return [node.declaration.id.name];
-      }
-      return node.specifiers.flatMap((specifier) =>
-        specifier.type === 'ExportSpecifier' && specifier.exported.type === 'Identifier'
-          ? [specifier.exported.name]
-          : [],
-      );
-    })
-    .sort();
 }
 
 function sourceFiles(root: string): readonly string[] {
