@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -41,6 +42,72 @@ const lineageOwners = [
   'packages/tests/repo/client-state-server-mutation-lineage-inventory.ts',
   'packages/tests/repo/client-state-server-persistence-lineage-provenance.test.ts',
 ] as const;
+// Permanent AST function-limit coverage. This exact-base inventory is the
+// supplementary PR B boundary: PR C may replace it only with broader active-tree
+// coverage, and the later ledger records that already-made retain/replace decision.
+const prBMateriallyChangedTestOwners = [
+  'packages/tests/repo/client-state-navigation-map-integrity.test.ts',
+  'packages/tests/repo/client-state-server-export-surface-evidence.ts',
+  'packages/tests/repo/client-state-server-lineage-evidence.ts',
+  'packages/tests/repo/client-state-server-lineage-provenance.test.ts',
+  'packages/tests/repo/client-state-server-mutation-lineage-inventory.ts',
+  'packages/tests/repo/client-state-server-ordinary-transaction-lineage-provenance.test.ts',
+  'packages/tests/repo/client-state-server-ownership.test.ts',
+  'packages/tests/repo/client-state-server-persistence-lineage-provenance.test.ts',
+  'packages/tests/repo/client-state-server-source-ratchet.test.ts',
+  'packages/tests/repo/client-state-server-test-ownership.test.ts',
+  'packages/tests/repo/rallar-group-state-owner-integrity.test.ts',
+  'packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts',
+  'packages/tests/shared-server/cached-state-services.test.ts',
+  'packages/tests/shared-server/client-state/app-client-inbox-authentication.test.ts',
+  'packages/tests/shared-server/client-state/app-client-inbox-authorised-ws.test.ts',
+  'packages/tests/shared-server/client-state/app-client-inbox-expiry-fixtures.ts',
+  'packages/tests/shared-server/client-state/app-client-inbox-expiry.test.ts',
+  'packages/tests/shared-server/client-state/app-client-inbox-mutation-test-harness.ts',
+  'packages/tests/shared-server/client-state/app-client-inbox-operation-matrix.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-authorised-ws-generation.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-command-and-request.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-concurrency-test-runtime.ts',
+  'packages/tests/shared-server/client-state/client-mutation-concurrency.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-idempotency.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-lifecycle-validation.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-persisted-state-validation.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-principal-and-instance.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-rollback-test-harness.ts',
+  'packages/tests/shared-server/client-state/client-mutation-session-lifecycle.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-session-replay.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-transaction-and-outbox.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-transaction-boundary-fixture.ts',
+  'packages/tests/shared-server/client-state/client-mutation-transaction-convergence.test.ts',
+  'packages/tests/shared-server/client-state/client-mutation-validation-test-fixtures.ts',
+  'packages/tests/shared-server/client-state/client-mutation-validation.test.ts',
+  'packages/tests/shared-server/client-state/client-state-public-compatibility.test.ts',
+  'packages/tests/shared-server/client-state/client-state-service-test-fixtures.ts',
+  'packages/tests/shared-server/client-state/client-state-service-timing.test.ts',
+  'packages/tests/shared-server/client-state/client-state-snapshot-read-through-cache.test.ts',
+  'packages/tests/shared-server/client-state/client-state-test-driver-contracts.ts',
+  'packages/tests/shared-server/client-state/client-state-test-operations.ts',
+  'packages/tests/shared-server/client-state/client-state-test-runtime.ts',
+  'packages/tests/shared-server/client-state/client-state-test-transaction.ts',
+  'packages/tests/shared-server/client-state/postgres-client-mutation-test-driver.ts',
+  'packages/tests/shared-server/mutation-route-owner-analysis.test.ts',
+  'packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts',
+  'packages/tests/shared-server/mutation-route-owner-provenance.test.ts',
+  'packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts',
+  'packages/tests/shared-server/mutation-routing-owner-inventory.ts',
+] as const;
+// These four files changed only one compatibility import path. Their pre-existing
+// oversized callbacks are outside PR B's material rewrite and remain historical debt.
+const prBImportPathOnlyTestOwners = [
+  'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
+  'packages/tests/shared-server/postgres-client-phase-driver.test.ts',
+  'packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts',
+  'packages/tests/shared-server/state-sync-event-replay-characterization.test.ts',
+] as const;
+const prBMateriallyChangedTestOwnerInventorySha256 =
+  '349d199e2265332c0ece6900b53156a4ac764da8b7de09687fb4b34dbce1497b';
+const prBLiveChangedTestOwnerInventorySha256 =
+  'c1b990871e983d054a661de2d8e5a38a48bc9a14be6ffeb43dc952f6705db073';
 
 describe('client-state server test ownership', () => {
   it('moves every mixed predecessor suite to behavior-named client-state owners', () => {
@@ -59,11 +126,24 @@ describe('client-state server test ownership', () => {
   });
 
   it('keeps every moved general function and test callback within 60 physical lines', () => {
-    const findings = [...finalTestOwners, ...lineageOwners]
+    const findings = prBMateriallyChangedTestOwners
       .map((filePath) => [filePath, oversizedFunctions(read(filePath))] as const)
       .filter(([, fileFindings]) => fileFindings.length > 0);
 
     expect(findings).toEqual([]);
+  });
+
+  it('covers the exact reviewed PR B materially changed test-owner inventory', () => {
+    const sortedOwners = [...prBMateriallyChangedTestOwners].sort();
+    expect(new Set(sortedOwners).size).toBe(49);
+    expect(createHash('sha256').update(sortedOwners.join('\n')).digest('hex')).toBe(
+      prBMateriallyChangedTestOwnerInventorySha256,
+    );
+    const allChangedOwners = [...sortedOwners, ...prBImportPathOnlyTestOwners].sort();
+    expect(new Set(allChangedOwners).size).toBe(53);
+    expect(createHash('sha256').update(allChangedOwners.join('\n')).digest('hex')).toBe(
+      prBLiveChangedTestOwnerInventorySha256,
+    );
   });
 
   it('keeps the supplementary source ratchet owned by PR C before ledger publication', () => {
