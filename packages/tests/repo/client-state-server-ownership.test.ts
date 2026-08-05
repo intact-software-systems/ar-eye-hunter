@@ -327,9 +327,9 @@ function assertPersistentGovernanceRegistration(): void {
   const ratchet = read('packages/tests/repo/client-state-server-source-ratchet.test.ts');
   expect(ratchet).toContain(
     [
-      'Owner: Task 4A persistence cohort; remove or replace in the PR C ledger after',
-      "// PR B's resulting-main workflow passes and the ledger records semantic owner coverage",
-      '// for every ratcheted canonical module.',
+      'Owner: Task 4A persistence cohort; PR C must decide whether to remove, replace,',
+      '// or retain this supplementary ratchet after PR B publication evidence exists.',
+      '// The separate later ledger records that already-made PR C decision.',
     ].join('\n'),
   );
 }

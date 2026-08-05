@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
@@ -15,6 +15,13 @@ import type {
 import type {
   ClientStateService,
 } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+
+import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import {
+  CLIENT_MUTATION_SERVICE_SCOPE,
+  createPublisher as createServicePublisher,
+} from './client-state-service-test-fixtures.ts';
+import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
 describe('client-state service timing', () => {
   it('preserves timed phase identities, results, rejections, and argument identities', async () => {
@@ -144,3 +151,40 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
   };
   return { calls, computedResult, events, readResult, service, writeFailure };
 }
+
+describe('client mutation service timing', () => {
+  it('records timing for client state service methods when a timing sink is supplied', async () => {
+    const timingEvents: RallarTimingEvent[] = [];
+    const service = createClientStateService({
+      runtimeRepository: new FakeRuntimeStateRepository(),
+      syncPublisher: createServicePublisher(),
+      now: () => 1_000,
+      serviceId: 'client-service',
+      timing: (event) => timingEvents.push(event),
+    });
+
+    await service.upsertPrincipal(CLIENT_MUTATION_SERVICE_SCOPE, 'alice', {
+      username: 'alice',
+      displayName: 'Alice',
+      actorPrincipalId: 'alice',
+      actorSessionId: 'alice-session',
+      requestId: 'upsert-alice-timed',
+    });
+
+    expect(timingEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          component: 'client-state-service',
+          operation: 'mutation.write',
+          status: 'ok',
+          serviceId: 'client-service',
+          requestId: 'upsert-alice-timed',
+          applicationId: CLIENT_MUTATION_SERVICE_SCOPE.applicationId,
+          workspaceId: CLIENT_MUTATION_SERVICE_SCOPE.workspaceId,
+          principalId: 'alice',
+        }),
+      ]),
+    );
+    expect(typeof timingEvents[0]?.durationMs).toBe('number');
+  });
+});

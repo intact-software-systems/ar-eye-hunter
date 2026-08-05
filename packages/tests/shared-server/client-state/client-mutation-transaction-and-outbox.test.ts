@@ -1,37 +1,30 @@
-import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { EnqueuedType } from '@shared/api/api-config.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { EntityStatus, type ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-// prettier-ignore
-import type {
-  AppInboxMessageContext,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-// prettier-ignore
-import {
-  AppInboxTransactionWriter,
-} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
-// prettier-ignore
-import {
-  ClientStateInboxHandler,
-} from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
-// prettier-ignore
-import {
-  toClientMutationIssuedSessionAuthority,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
-// prettier-ignore
-import {
-  toUpsertPrincipalCommandInput,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
-// prettier-ignore
-import type {
-  ClientMutationComputed,
-} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+  createAutoAuthorizingClientStateService,
+  createClientStateServiceStub,
+  createResilience,
+  issuedSession,
+  processAppInbox,
+  processAuthenticatedClientMutation,
+  readEntries,
+} from './app-client-inbox-mutation-test-harness.ts';
+import { createHandlerHarness } from './client-mutation-transaction-boundary-fixture.ts';
+import {
+  createRollbackHarness,
+  processRollbackMutation,
+} from './client-mutation-rollback-test-harness.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
 const EXPECTED_DURABLE_JSON =
@@ -96,118 +89,143 @@ describe('client mutation transaction and outbox', () => {
   });
 });
 
-interface HandlerHarness {
-  readonly actions: string[];
-  readonly committedSnapshot: object;
-  readonly context: AppInboxMessageContext;
-  readonly handler: ClientStateInboxHandler;
-  readonly observedSnapshots: object[];
-  readonly results: TestResourceInboxResults;
-}
+describe('client mutation AppInbox retry and rollback', () => {
+  it('restarts client phases from read after an AppInbox CAS conflict', async () => {
+    const harness = createRetryHarness();
 
-async function createHandlerHarness(
-  options: Readonly<{ failTransaction?: boolean }> = {},
-): Promise<HandlerHarness> {
-  const actions: string[] = [];
-  const observedSnapshots: object[] = [];
-  const committedSnapshot = { snapshotVersion: 4, stateRevision: 3 };
-  const queue = new InMemoryQueueBox();
-  const results = new TestResourceInboxResults();
-  const context = createReservedClientContext();
-  await queue.enqueue(context.entry);
-  const database = createAppInboxTestDatabase(queue, results, {
-    withTransaction: async (write) => {
-      if (options.failTransaction) throw new Error('injected transaction failure');
-      const result = await write();
-      actions.push('commit');
-      return result;
-    },
-  });
-  const handler = new ClientStateInboxHandler({
-    mutationService: {
-      read: async () => ({}) as never,
-      compute: () =>
-        ({
-          outcome: 'write',
-          snapshot: committedSnapshot,
-          event: { eventId: 'event-4' },
-        }) as never as ClientMutationComputed,
-      validate: () => undefined,
-      write: async () => {
-        actions.push('write');
-        return {} as never;
-      },
-    },
-    sessionGenerationLifecycle: {} as never,
-    expiryCandidates: { listExpiredSessionCandidates: async () => [] },
-    snapshotObserver: {
-      observeSnapshot: async (snapshot) => {
-        actions.push('observe');
-        observedSnapshots.push(snapshot);
-        return snapshot;
-      },
-    },
-    transactionWriter: new AppInboxTransactionWriter({
-      database,
-      serviceId: 'client-inbox-service',
-      nowEpochMs: () => 1_700_000_000_000,
-      toTimingDetails: () => ({}),
-    }),
-    serviceId: 'client-inbox-service',
-  });
-  return { actions, committedSnapshot, context, handler, observedSnapshots, results };
-}
-
-function createReservedClientContext(): AppInboxMessageContext {
-  const enqueue = {
-    type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-    topicId: 'app-inbox.client-state',
-    resourceId: 'client-transaction-result',
-    contextId: 'ar-eye-hunter/default/alice',
-    senderId: 'alice',
-    data: {},
-    authority: toClientMutationIssuedSessionAuthority(
+    const resultPromise = processAuthenticatedClientMutation(
+      harness.service,
       {
-        clientId: 'alice',
-        username: 'alice',
-        sessionId: 'alice-session',
-        accessTokenDigest: 'sha256:alice-session',
-        issuedAtEpochMs: 1_699_999_000_000,
-        expiresAtEpochMs: 1_700_001_000_000,
+        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        resourceId: 'retry-client-alice',
+        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
+        senderId: 'alice',
+        data: {
+          scope: SCOPE,
+          principalId: 'alice',
+          request: {
+            username: 'alice',
+            displayName: 'recomputed-successor',
+            actorPrincipalId: 'alice',
+            requestId: 'retry-client-alice',
+          },
+        },
       },
-      SCOPE,
-      'upsertPrincipal',
+      issuedSession('alice', 'alice-test-session'),
+    );
+
+    await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await resultPromise;
+
+    expect(harness.state.phases).toEqual([
+      'read',
+      'compute',
+      'validate',
+      'write-conflict',
+      'read',
+      'compute',
+      'validate',
+      'write-accepted',
+    ]);
+    expect(harness.state.serviceLocalSleeps).toEqual([]);
+    const [entry] = await readEntries(harness.queue);
+    expect(entry.dequeueAudit.attempts).toBe(2);
+  });
+
+  it('rolls back every client mutation surface when final WS outbox insertion fails', async () => {
+    const harness = await createRollbackHarness();
+    const result = await processRollbackMutation(harness);
+
+    expect(result.left).toContain('resource-inbox-invariant-corruption');
+    expect(harness.rollbackAssertions()).toBe(1);
+    expect((await harness.queue.getItem(harness.key))?.status).toBe(EntityStatus.FAILED);
+    expect(await harness.results.findByKey(harness.key)).toMatchObject({
+      status: EntityStatus.FAILED,
+    });
+  });
+});
+
+interface RetryHarnessState {
+  readonly phases: string[];
+  readonly serviceLocalSleeps: number[];
+  writeAttempt: number;
+  legacyAttempt: number;
+}
+
+function createRetryHarness() {
+  const queue = new TestResourceInbox();
+  const reader = new InboxQueueReader(queue);
+  const results = new TestResourceInboxResults();
+  const state: RetryHarnessState = {
+    phases: [],
+    serviceLocalSleeps: [],
+    writeAttempt: 0,
+    legacyAttempt: 0,
+  };
+  return {
+    queue,
+    reader,
+    state,
+    service: new AppClientInboxService(
+      reader,
+      queue as never,
+      results as never,
+      createAppInboxTestDatabase(queue, results),
+      createRetryClientState(state),
+      'server-12345678',
     ),
   };
-  const entry: ResourceEntry = {
-    key: {
-      topicId: enqueue.topicId,
-      resourceId: enqueue.resourceId,
-      contextId: enqueue.contextId,
-    },
-    resource: JSON.stringify(enqueue),
-    typeId: EnqueuedType.APP_INBOX,
-    audit: {
-      date: Temporal.PlainTime.from('12:00:00'),
-      createdBy: 'client-inbox-service',
-      createdTs: Temporal.PlainDateTime.from('2026-08-05T12:00:00'),
-      expiryTs: Temporal.Instant.from('2026-08-06T00:00:00Z'),
-    },
-    status: EntityStatus.RESERVED,
-    dequeueAudit: { attempts: 1 },
-  };
-  return { enqueue, message: { id: { ts: 1_700_000_000_000 } } as never, entry };
 }
 
-class TestResourceInboxResults {
-  private readonly entries = new Map<string, ResourceEntry>();
+function createRetryClientState(state: RetryHarnessState) {
+  return createClientStateServiceStub({
+    upsertPrincipal: vi.fn(async () => {
+      state.legacyAttempt += 1;
+      if (state.legacyAttempt === 1) throw new RuntimeStateWriteConflictError();
+      return { status: 'ok', result: { right: { accepted: true } } };
+    }),
+    read: vi.fn(async () => {
+      state.phases.push('read');
+      return { lifecycle: state.writeAttempt === 0 ? 'active' : 'disabled' };
+    }),
+    compute: vi.fn((_command, read) => {
+      state.phases.push('compute');
+      return {
+        outcome: 'write',
+        lifecycle: (read as { lifecycle: string }).lifecycle,
+        snapshot: { recomputed: true },
+        event: null,
+      };
+    }),
+    validate: vi.fn(() => state.phases.push('validate')),
+    write: vi.fn(async () => writeRetryResult(state)),
+    sleep: vi.fn(async (delayMs: number) => {
+      state.serviceLocalSleeps.push(delayMs);
+    }),
+  } as never);
+}
 
-  async replace(entry: ResourceEntry): Promise<ResourceEntry> {
-    this.entries.set(toKeyAsString(entry.key), entry);
-    return entry;
+function writeRetryResult(state: RetryHarnessState) {
+  state.writeAttempt += 1;
+  if (state.writeAttempt === 1) {
+    state.phases.push('write-conflict');
+    throw new RuntimeStateWriteConflictError();
   }
-
-  async findByKey(key: ResourceEntry['key']): Promise<ResourceEntry | undefined> {
-    return this.entries.get(toKeyAsString(key));
-  }
+  state.phases.push('write-accepted');
+  return {
+    commandId: 'retry-client-alice',
+    requestId: 'retry-client-alice',
+    commandHash: `sha256:${'a'.repeat(64)}`,
+    aggregateRef: { ...SCOPE, principalId: 'alice' },
+    outcome: 'no-op' as const,
+    attemptCount: 2,
+    acceptedStorageRevision: 0,
+    stateRevision: 1,
+    snapshotVersion: 1,
+    presenceVersion: 1,
+    eventId: null,
+    outboxIds: [],
+  };
 }

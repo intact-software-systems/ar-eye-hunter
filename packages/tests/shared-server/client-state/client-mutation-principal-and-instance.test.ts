@@ -14,6 +14,14 @@ import {
   readAfterWrite,
   requireWrite,
 } from './client-mutation-compute-test-fixtures.ts';
+import {
+  AggregateBarrierRepository,
+  CLIENT_MUTATION_BASE_EPOCH_MS as BASE_EPOCH_MS,
+  createService,
+  outboxFor,
+  snapshot,
+} from './client-mutation-concurrency-test-runtime.ts';
+import { CLIENT_MUTATION_TEST_SCOPE as SCOPE } from './client-mutation-validation-test-fixtures.ts';
 
 describe('client principal and instance mutation compute', () => {
   it('creates the exact principal candidate through its named family owner', async () => {
@@ -119,5 +127,72 @@ describe('client principal and instance mutation compute', () => {
 
   it('keeps the legacy dispatcher as the canonical function identity', () => {
     expect(legacyComputeClientMutation).toBe(computeClientMutation);
+  });
+});
+
+describe('client principal and instance persistence convergence', () => {
+  it('binds instance and session aggregate audit stamps to the command request id', async () => {
+    const runtime = new AggregateBarrierRepository();
+    await createService(runtime, BASE_EPOCH_MS).upsertPrincipal(SCOPE, 'alice', {
+      username: 'alice',
+      requestId: 'audit-seed',
+    });
+    await createService(runtime, BASE_EPOCH_MS + 1).upsertInstance(SCOPE, 'alice', 'browser', {
+      platform: 'web',
+      requestId: 'audit-instance',
+    });
+    expect((await snapshot(runtime, 'alice')).principal.updated.requestId).toBe('audit-instance');
+
+    await createService(runtime, BASE_EPOCH_MS + 2).connectSession(
+      SCOPE,
+      'alice',
+      'browser',
+      'session-a',
+      {
+        generationId: 'audit-generation',
+        connectedAtEpochMs: BASE_EPOCH_MS + 2,
+        requestId: 'audit-session',
+      },
+    );
+    expect((await snapshot(runtime, 'alice')).principal.updated.requestId).toBe('audit-session');
+  });
+
+  it('keeps principal profile and instance registration across an aggregate CAS race', async () => {
+    const runtime = new AggregateBarrierRepository();
+    const seed = createService(runtime, 1_000);
+    await seed.upsertPrincipal(SCOPE, 'alice', {
+      username: 'alice',
+      displayName: 'Before',
+      requestId: 'seed-principal',
+    });
+    const before = await snapshot(runtime, 'alice');
+    runtime.armPrincipalReadBarrier(2);
+
+    const [profile, instance] = await Promise.all([
+      createService(runtime, 2_000).upsertPrincipal(SCOPE, 'alice', {
+        username: 'alice',
+        displayName: 'After',
+        metadata: { theme: 'dark' },
+        requestId: 'profile-race',
+      }),
+      createService(runtime, 2_001).upsertInstance(SCOPE, 'alice', 'browser', {
+        platform: 'web',
+        deviceLabel: 'Laptop',
+        requestId: 'instance-race',
+      }),
+    ]);
+
+    expect(profile.result.right?.event?.eventType).toBe('principal-updated');
+    expect(instance.result.right?.event?.eventType).toBe('instance-registered');
+    const after = await snapshot(runtime, 'alice');
+    expect(after.principal).toMatchObject({
+      displayName: 'After',
+      metadata: { theme: 'dark' },
+    });
+    expect(after.instances).toEqual([
+      expect.objectContaining({ clientInstanceId: 'browser', deviceLabel: 'Laptop' }),
+    ]);
+    expect(after.stateRevision).toBe(before.stateRevision + 2);
+    expect(await outboxFor(runtime, ['profile-race', 'instance-race'])).toHaveLength(4);
   });
 });

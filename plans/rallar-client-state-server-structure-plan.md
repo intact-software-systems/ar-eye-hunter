@@ -1,10 +1,11 @@
 # Rallar Client-State Server Structure Implementation Plan
 
 **Status:** Approved at exact Git blob
-`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. PR A Tasks 1-2 are implemented
-and independently accepted; Task 3 review, completion gates, final publication,
-and human merge approval remain pending. PR B, PR C, and the later ledger have
-not begun, and this tree records no future publication evidence.
+`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. PR A Tasks 1-3 are complete,
+published, merged, and default-workflow verified. PR B Tasks 4A-4E reached
+their local milestone commits; the Task 5 whole-PR review-fix remains in
+progress. PR C and the later ledger have not begun, and this tree records no
+future PR B publication or later evidence.
 
 **Program:**
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md)
@@ -145,6 +146,17 @@ direct test owners, not a generic runtime, dependency bag, compatibility layer,
 or production hop. They preserve the prior test-driver behavior and exported
 API while making every module at most 400 lines and every general function or
 callback at most 60 lines.
+
+Task 5 uses the same authority to finish the predecessor test moves without
+retaining three mixed root owners. AppInbox authentication, operation,
+transaction, rollback, and public-compatibility cases use directly owned
+fixtures; concurrency, persistence-validation, lifecycle-validation, replay,
+authorized-WebSocket generation, and transaction-convergence cases use
+behavior-named owners. The 542-line lineage test is split into a test owner, an
+evidence helper, and an immutable inventory owner. These are test/evidence
+ownership refinements only: all predecessor cases, fixtures, literals,
+mutations, expectations, and assertion sites remain, and production is
+unchanged from the pre-review-fix Task 4E candidate.
 
 ## 2. Current Evidence And Human Navigation Baseline
 
@@ -562,14 +574,29 @@ packages/tests/shared-server/client-state/
   app-client-inbox-authorised-ws.test.ts
   app-client-inbox-expiry-fixtures.ts
   app-client-inbox-expiry.test.ts
+  app-client-inbox-mutation-test-harness.ts
   app-client-inbox-operation-matrix.test.ts
+  client-mutation-authorised-ws-generation.test.ts
   client-mutation-command-and-request.test.ts
+  client-mutation-compute-test-fixtures.ts
   client-mutation-concurrency.test.ts
+  client-mutation-concurrency-test-runtime.ts
   client-mutation-idempotency.test.ts
+  client-mutation-lifecycle-validation.test.ts
+  client-mutation-persisted-state-validation.test.ts
   client-mutation-principal-and-instance.test.ts
+  client-mutation-result-validation.test.ts
+  client-mutation-rollback-test-harness.ts
   client-mutation-session-lifecycle.test.ts
+  client-mutation-session-replay.test.ts
   client-mutation-transaction-and-outbox.test.ts
+  client-mutation-transaction-boundary-fixture.ts
+  client-mutation-transaction-convergence.test.ts
+  client-mutation-validation-test-fixtures.ts
   client-mutation-validation.test.ts
+  client-state-public-compatibility.test.ts
+  client-state-semantic-equality.test.ts
+  client-state-service-test-fixtures.ts
   client-state-service-timing.test.ts
   client-state-snapshot-read-through-cache.test.ts
   client-state-test-driver-contracts.ts
@@ -579,9 +606,15 @@ packages/tests/shared-server/client-state/
   postgres-client-mutation-test-driver.ts
 packages/tests/repo/
   client-state-navigation-map-integrity.test.ts
+  client-state-server-export-surface-evidence.ts
+  client-state-server-lineage-evidence.ts
   client-state-server-lineage-provenance.test.ts
+  client-state-server-mutation-lineage-inventory.ts
+  client-state-server-ordinary-transaction-lineage-provenance.test.ts
   client-state-server-ownership.test.ts
+  client-state-server-persistence-lineage-provenance.test.ts
   client-state-server-source-ratchet.test.ts
+  client-state-server-test-ownership.test.ts
 package.json                                  # register persistent repo-governance tests
 plans/repo-style-lineages/
   client-state-server-structure.json
@@ -623,9 +656,9 @@ may not be merged away, replaced by source-text checks, or weakened.
 
 | Current test owner                                     | Target ownership                                                                                                                                  |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app-client-inbox-service.test.ts`                     | authentication, operation matrix, authorized-WS, expiry, and transaction/outbox tests                                                             |
-| `client-state-concurrency.test.ts`                     | command/request, validation, principal/instance, session lifecycle, concurrency, and transaction/outbox tests                                     |
-| `client-state-service-idempotency.test.ts`             | idempotency, session lifecycle, timing, and expiry tests                                                                                          |
+| `app-client-inbox-service.test.ts`                     | authentication, operation matrix, authorized-WS, expiry, transaction/outbox, and public compatibility owners plus directly owned test harnesses   |
+| `client-state-concurrency.test.ts`                     | command/request, validation, principal/instance, session lifecycle, concurrency, persistence/lifecycle validation, and transaction/convergence    |
+| `client-state-service-idempotency.test.ts`             | idempotency, session replay/lifecycle, authorized-WebSocket generation, timing, and expiry owners plus directly owned fixtures                    |
 | Task 4D expiry-only queue/results/parser/auth fixtures | `client-state/app-client-inbox-expiry-fixtures.ts`, directly owned only by `app-client-inbox-expiry.test.ts`                                      |
 | `client-state-phase-test-driver.ts`                    | `client-state/client-state-test-runtime.ts` plus its direct contract, operation-projection, and transaction/outbox owners recorded in Section 1.3 |
 | `postgres-client-phase-driver.ts`                      | `client-state/postgres-client-mutation-test-driver.ts`                                                                                            |
@@ -650,11 +683,12 @@ Primary evidence must prove:
 - the README's linked paths and named primary symbols exist.
 
 The source inventory, exact case/assertion inventory, and structural-lineage
-manifest are temporary supplementary evidence owned by this child. The later
-ledger must decide, row by row, whether each is removed, replaced by semantic
-coverage, or retained with a new owner and reason. Historical debt capacity is
-allowed only for mechanically moved source with exact approved-base blob and
-source-symbol/span provenance. Semantically new code receives no allowance.
+manifest are temporary supplementary evidence owned by this child. PR C must
+decide, row by row, whether each is removed, replaced by semantic coverage, or
+retained with a new owner and reason. The separate later ledger records that
+already-made PR C decision. Historical debt capacity is allowed only for
+mechanically moved source with exact approved-base blob and source-symbol/span
+provenance. Semantically new code receives no allowance.
 
 ## 6. Current And Target Timelines And Family Traces
 
@@ -1003,10 +1037,16 @@ A tree or publication envelope.
 
 ### Task 3: Freeze, Review, And Publish PR A
 
-**Status:** in progress. The sole Task 3 blocker—the stale temporary API-v1
+**Status:** complete. The sole Task 3 blocker—the stale temporary API-v1
 group-state exact-base protected-path ratchet—was resolved by its separately
 reviewed, human-authorized removal after PR #70 reached `ledger-published`.
-Final completion gates and publication remain pending.
+PR #72 published exact feature head
+`1e90c412855ea942a8b678aedde3b1c975efd5e8` and frozen tree
+`e957db303770864fad04e6bb02b98cc03bcdc335`; Branch Release Gate run
+`30997710887`, attempt 1, succeeded. The resulting main SHA is
+`2fdba024bb347622727d337eb06fc13d2fe129fc` with the same tree, and Run Hetzner
+Supported Distributed Manifests run `31008375282`, attempt 1, succeeded for
+that exact SHA.
 
 - Run every PR A focused and completion gate in Section 11.
 - Require independent whole-PR review: Critical 0, Important 0.
@@ -1016,6 +1056,20 @@ Final completion gates and publication remain pending.
   workflow success is externally verified.
 
 ### Task 4: Implement PR B Test-First
+
+**Status:** local implementation milestones complete; Task 5 review-fix in
+progress. Accepted cohort milestones are Task 4A
+`8eab34026ee275dde4820e6cbb85c13ab2ecf4ac` / tree
+`126c31aa57c2ad9387177035170bdcbc39470bab`, Task 4B
+`e43ea59ac148572dede088e88bbc04cdfb05727c` / tree
+`16b39e73fcfaf31ddd5c12328ade2d980e56ee17`, Task 4C
+`48036c76b6a2b1243b3104a60b8551af7d7ae8ef` / tree
+`a8527d4664da4170efc6331feb2108f61ae0c7e0`, and Task 4D
+`e5d6b31ff1fedbb1e91b00ff6a06974b760a2a8a` / tree
+`77e4f21c44c4040f2307f5ed0db02356ed030bd1`. Task 4E review/fix rounds reached
+candidate `03beaefd22750243a1b03900ba98e776b70aa501` / tree
+`f772137e6776ae5dba38880e17bce5f277b8e740`. These are local milestone facts,
+not final PR B publication evidence.
 
 - Start from PR A's verified resulting-main SHA on a new non-default branch.
 - Establish persistence codec/validation, repository read/snapshot owners,
@@ -1031,6 +1085,18 @@ Final completion gates and publication remain pending.
   query/cache cohorts independently.
 
 ### Task 5: Freeze, Measure, Review, And Publish PR B
+
+**Status:** in progress. Whole-PR review of the Task 4E candidate reported the
+stale PR A/PR B plan record, three unfinished mixed test owners plus the
+oversized lineage owner, and circular ratchet-removal wording. The current
+review-fix is plan/test/evidence-only: it preserves the frozen predecessor case
+and assertion inventory—38 moved named cases / 171 `expect(...)` sites, and 84
+named cases / 346 sites in the complete client-state tree before and after—
+removes the three obsolete roots, keeps every changed module at most 400 lines
+and every general function/callback at most 60 lines, and makes PR C the ratchet
+decision point. Final review, completion gates, candidate freeze, performance,
+publication, and Branch Release Gate remain pending; this plan records none of
+those future facts.
 
 - Finish every content, plan-evidence, review-fix, and validation change before
   candidate freeze.
@@ -1053,7 +1119,8 @@ Final completion gates and publication remain pending.
 - Reconcile each focused warning's implementation outcome against the approved
   78-row mapping. Stop for a new human decision only if a row becomes blocked,
   a new warning appears, or behavior/public/persisted scope would change.
-- Decide each supplementary ratchet's later-ledger removal/replacement owner.
+- Decide whether each supplementary ratchet is removed, replaced, or retained,
+  and name the retained owner; the later ledger records that prior decision.
 
 ### Task 7: Freeze, Review, And Publish PR C
 
@@ -1074,8 +1141,9 @@ Only after PR C's exact resulting-main workflow succeeds may a separately
 authorized ledger branch update this plan, the master, and execution plan. The
 ledger records the planning and three implementation envelopes, the Section 2.3
 sample waiver, the final code-derived trace review, and the reconciled warning
-outcomes. It does not publish a navigation-time comparison. It also decides
-every supplementary ratchet. It does not begin auth or another Wave 2 child.
+outcomes and the supplementary-ratchet decisions already made in PR C. It does
+not publish a navigation-time comparison or make a new ratchet decision. It
+does not begin auth or another Wave 2 child.
 
 ## 10. Fixed Correctness And Performance Protocol
 
@@ -1174,14 +1242,15 @@ npm run build
 
 ```bash
 npx vitest run \
-  packages/tests/shared-server/client-state-concurrency.test.ts \
-  packages/tests/shared-server/client-state-service-idempotency.test.ts \
   packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts \
   packages/tests/shared-server/client-state
 npx vitest run \
   packages/tests/repo/client-state-navigation-map-integrity.test.ts \
   packages/tests/repo/client-state-server-lineage-provenance.test.ts \
-  packages/tests/repo/client-state-server-ownership.test.ts
+  packages/tests/repo/client-state-server-ownership.test.ts \
+  packages/tests/repo/client-state-server-persistence-lineage-provenance.test.ts \
+  packages/tests/repo/client-state-server-ordinary-transaction-lineage-provenance.test.ts \
+  packages/tests/repo/client-state-server-test-ownership.test.ts
 npx tsc -p packages/shared/tsconfig.json --noEmit
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 npm run test:repo-governance
@@ -1191,7 +1260,7 @@ npm run check:repo-style:layout-details
 npm run check:repo-style:construction-details
 npm run check:repo-style:output-contracts
 npm run check:repo-style:object-interfaces
-npm run check:repo-style:changed -- <planning-resulting-main-sha>
+npm run check:repo-style:changed -- 2fdba024bb347622727d337eb06fc13d2fe129fc
 npx prettier --check packages/shared-server/rallar-system/client-state packages/tests/shared-server/client-state packages/tests/repo/client-state-* plans/rallar-client-state-server-structure-plan.md
 git diff --check
 npm run test:unit
@@ -1199,8 +1268,9 @@ npm run test:ci
 npm run build
 ```
 
-The future exact planning-resulting-main SHA replaces the placeholder; this
-planning tree does not guess it.
+The changed-style base is PR A's verified resulting-main SHA. Historical PR A
+validation used its then-current owners; PR B reruns their complete semantic
+coverage from the final behavior-named client-state tree above.
 
 ### 11.3 PR B authoritative-shell and concurrency gates
 
@@ -1301,7 +1371,7 @@ claimed for a changed runtime.
 - [ ] Semantic tests remain primary; every ratchet has owner/removal decision.
 - [x] The approved disposition and owner/rationale mapping covers all 78
       focused warning rows with no exceptions.
-- [ ] PR A review/gates and resulting-main workflow succeeded.
+- [x] PR A review/gates and resulting-main workflow succeeded.
 - [ ] PR B review/gates, governed performance, and resulting-main workflow
       succeeded.
 - [ ] PR C review/gates, final code-derived family traces, human merge review,
@@ -1328,15 +1398,15 @@ claimed for a changed runtime.
 
 ## 16. Progress Record
 
-| Milestone                  | State                      | Evidence                                                                                                                                                                                                             |
-| -------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pilot conclusions          | approved                   | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                           |
-| Client-state child plan    | approved                   | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                   |
-| PR A mutation core         | implemented; gates pending | Task 1 and both Task 2 cohorts are independently accepted; the sole Task 3 blocker was resolved by the separately reviewed, human-authorized ratchet removal. Final completion gates and publication remain pending. |
-| PR B authoritative shell   | not started                | Requires PR A merge and exact resulting-main workflow.                                                                                                                                                               |
-| PR C alignment/final trace | not started                | Requires PR B merge and exact resulting-main workflow.                                                                                                                                                               |
-| Later evidence ledger      | not authorized             | Requires PR C merge and exact resulting-main workflow, then separate authorization.                                                                                                                                  |
-| Other Wave 2 domains       | blocked                    | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                      |
+| Milestone                  | State                  | Evidence                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pilot conclusions          | approved               | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                                                                                                                                                                        |
+| Client-state child plan    | approved               | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                                                                                                                                                                |
+| PR A mutation core         | complete               | PR #72 feature `1e90c412855ea942a8b678aedde3b1c975efd5e8` / tree `e957db303770864fad04e6bb02b98cc03bcdc335`; Branch Release Gate `30997710887` attempt 1 success; resulting main `2fdba024bb347622727d337eb06fc13d2fe129fc` / same tree; Run Hetzner Supported Distributed Manifests `31008375282` attempt 1 success.                                             |
+| PR B authoritative shell   | review-fix in progress | Tasks 4A-4D are independently accepted at the exact milestone commits above. Task 4E reached candidate `03beaefd22750243a1b03900ba98e776b70aa501` / tree `f772137e6776ae5dba38880e17bce5f277b8e740`; Task 5 plan/test/evidence review-fix remains pending. No final candidate, performance, publication, merge, or default-workflow evidence exists in this tree. |
+| PR C alignment/final trace | not started            | Requires PR B merge and exact resulting-main workflow.                                                                                                                                                                                                                                                                                                            |
+| Later evidence ledger      | not authorized         | Requires PR C merge and exact resulting-main workflow, then separate authorization. PR C makes each supplementary-ratchet decision; the later ledger records that prior decision.                                                                                                                                                                                 |
+| Other Wave 2 domains       | blocked                | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                                                                                                                                                                   |
 
 ## 17. Planning Self-Review Record
 

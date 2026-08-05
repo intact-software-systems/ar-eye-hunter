@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { computeClientSessionConnect } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-connect.ts';
 import { computeClientSessionDisconnect } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-disconnect.ts';
 import { computeClientSessionExpiry } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-expiry.ts';
 import { computeClientSessionHeartbeat } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-session-heartbeat.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+
+import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 import {
   connectCommand,
@@ -16,6 +20,24 @@ import {
   requireWrite,
   sessionFrom,
 } from './client-mutation-compute-test-fixtures.ts';
+import {
+  AggregateBarrierRepository,
+  CLIENT_MUTATION_BASE_EPOCH_MS as BASE_EPOCH_MS,
+  connect,
+  createService,
+  snapshot,
+} from './client-mutation-concurrency-test-runtime.ts';
+import {
+  CLIENT_MUTATION_TEST_SCOPE as SCOPE,
+  clientMutationPrincipalRef as principalRef,
+} from './client-mutation-validation-test-fixtures.ts';
+import {
+  CLIENT_MUTATION_SERVICE_SCOPE,
+  createPublisher as createServicePublisher,
+  seedConnectedSession,
+  toClientPrincipalRef,
+} from './client-state-service-test-fixtures.ts';
+import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
 describe('client session lifecycle compute', () => {
   it('routes connect and heartbeat directly to their named family owners', async () => {
@@ -96,3 +118,230 @@ describe('client session lifecycle compute', () => {
     });
   });
 });
+
+describe('client mutation durable session ordering', () => {
+  it('returns canonical durable ordering for same-principal websocket sessions', async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const service = createClientStateService({
+      runtimeRepository,
+      syncPublisher: createServicePublisher(),
+      now: () => 10_000,
+      serviceId: 'client-service',
+    });
+    const expiresAtEpochMs = Date.now() + 60_000;
+    const sessionZ: AuthSession = {
+      clientId: 'alice',
+      username: 'alice',
+      accessToken: 'token-z',
+      sessionId: 'ws-session-z',
+      expiresAtEpochMs,
+    };
+    const sessionA: AuthSession = {
+      ...sessionZ,
+      accessToken: 'token-a',
+      sessionId: 'ws-session-a',
+    };
+
+    await service.registerAuthorisedWsClientSession(sessionZ, 'generation-z', {
+      applicationId: CLIENT_MUTATION_SERVICE_SCOPE.applicationId,
+      workspaceId: CLIENT_MUTATION_SERVICE_SCOPE.workspaceId,
+      connectedAtEpochMs: 100,
+      expiresAtEpochMs,
+    });
+    const second = await service.registerAuthorisedWsClientSession(sessionA, 'generation-a', {
+      applicationId: CLIENT_MUTATION_SERVICE_SCOPE.applicationId,
+      workspaceId: CLIENT_MUTATION_SERVICE_SCOPE.workspaceId,
+      connectedAtEpochMs: 200,
+      expiresAtEpochMs,
+    });
+    const durable = await service.readSnapshot(toClientPrincipalRef('alice'));
+
+    expect(second.result.right?.snapshot).toEqual(durable);
+    expect(durable?.activeSessions.map((session) => session.sessionId)).toEqual([
+      'ws-session-a',
+      'ws-session-z',
+    ]);
+  });
+
+  it('advances causal state revision for a heartbeat-only snapshot change', async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    await seedConnectedSession(runtimeRepository, 'alice', 'alice-browser', 'session-1');
+    const repository = new ClientStateRepository(runtimeRepository);
+    const principalRef = toClientPrincipalRef('alice');
+    const before = await repository.readSnapshot(principalRef);
+    const beforeSession = before?.activeSessions[0];
+    if (!beforeSession) throw new Error('seed session missing');
+    const service = createClientStateService({
+      runtimeRepository,
+      syncPublisher: createServicePublisher(),
+      now: () => 2_000,
+      serviceId: 'client-service',
+    });
+
+    const written = await service.heartbeatSession(
+      CLIENT_MUTATION_SERVICE_SCOPE,
+      principalRef.principalId,
+      'alice-browser',
+      'session-1',
+      {
+        generationId: 'generation-session-1',
+        lastHeartbeatAtEpochMs: beforeSession.lastHeartbeatAtEpochMs + 1,
+        expiresAtEpochMs: beforeSession.expiresAtEpochMs + 1_000,
+        requestId: 'heartbeat-causal-revision',
+      },
+    );
+
+    expect(written.result.right?.event?.eventType).toBe('session-heartbeat');
+    expect(written.result.right?.snapshot.principal.snapshotVersion).toBe(
+      (before?.principal.snapshotVersion ?? 0) + 1,
+    );
+    expect(written.result.right?.snapshot.stateRevision).toBeGreaterThan(
+      before?.stateRevision ?? 0,
+    );
+  });
+});
+
+describe('client mutation session concurrency', () => {
+  it('rebases independent heartbeats and makes disconnect terminal for its generation', async () => {
+    const runtime = await expectIndependentHeartbeatRebase();
+    await runHeartbeatDisconnectRace(runtime);
+    await expectTerminalDisconnect(runtime);
+  });
+
+  it('keeps a reconnect when stale expiry races the reused session id', async () => {
+    const runtime = new AggregateBarrierRepository();
+    await connect(runtime, 'session-a', 'generation-1', BASE_EPOCH_MS, BASE_EPOCH_MS + 500);
+    const firstRead = runtime.armPrincipalReadBarrier(2, true);
+    const expiry = createService(runtime, BASE_EPOCH_MS + 1_000).expireExpiredSessions(
+      BASE_EPOCH_MS + 1_000,
+    );
+    await firstRead;
+    const reconnect = await createService(runtime, BASE_EPOCH_MS + 1_001).connectSession(
+      SCOPE,
+      'alice',
+      'browser',
+      'session-a',
+      {
+        generationId: 'generation-2',
+        connectionId: 'connection-2',
+        connectedAtEpochMs: BASE_EPOCH_MS + 1_001,
+        lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_001,
+        expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
+        requestId: 'reconnect-generation-2',
+      },
+    );
+    runtime.releasePrincipalReadBarrier();
+    await expiry;
+    expect(reconnect.result.right?.event?.eventType).toBe('session-connected');
+    const stored = await new ClientStateRepository(runtime).findSession({
+      ...principalRef('alice'),
+      clientInstanceId: 'browser',
+      sessionId: 'session-a',
+    });
+    expect(stored).toMatchObject({
+      status: 'active',
+      generationId: 'generation-2',
+      generationVersion: 2,
+      connectionId: 'connection-2',
+    });
+    expect(
+      (await new ClientStateRepository(runtime).listEvents(principalRef('alice'))).filter(
+        (event) => event.eventType === 'session-expired',
+      ),
+    ).toHaveLength(0);
+  });
+});
+
+async function expectIndependentHeartbeatRebase(): Promise<AggregateBarrierRepository> {
+  const runtime = new AggregateBarrierRepository();
+  await connect(runtime, 'session-a', 'generation-a', BASE_EPOCH_MS);
+  await connect(runtime, 'session-b', 'generation-b', BASE_EPOCH_MS + 100);
+  const before = await snapshot(runtime, 'alice');
+  runtime.armPrincipalReadBarrier(2);
+  await Promise.all([
+    createService(runtime, BASE_EPOCH_MS + 1_000).heartbeatSession(
+      SCOPE,
+      'alice',
+      'browser',
+      'session-a',
+      {
+        generationId: 'generation-a',
+        presenceState: 'away',
+        lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_000,
+        expiresAtEpochMs: BASE_EPOCH_MS + 20_000,
+        requestId: 'heartbeat-a',
+      },
+    ),
+    createService(runtime, BASE_EPOCH_MS + 1_001).heartbeatSession(
+      SCOPE,
+      'alice',
+      'browser',
+      'session-b',
+      {
+        generationId: 'generation-b',
+        presenceState: 'busy',
+        lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 1_001,
+        expiresAtEpochMs: BASE_EPOCH_MS + 20_001,
+        requestId: 'heartbeat-b',
+      },
+    ),
+  ]);
+  const afterHeartbeats = await snapshot(runtime, 'alice');
+  expect(afterHeartbeats.stateRevision).toBe(before.stateRevision + 2);
+  expect(afterHeartbeats.activeSessions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ sessionId: 'session-a', presenceState: 'away' }),
+      expect.objectContaining({ sessionId: 'session-b', presenceState: 'busy' }),
+    ]),
+  );
+  return runtime;
+}
+
+async function runHeartbeatDisconnectRace(runtime: AggregateBarrierRepository): Promise<void> {
+  runtime.armPrincipalReadBarrier(2);
+  await Promise.all([
+    createService(runtime, BASE_EPOCH_MS + 2_000).heartbeatSession(
+      SCOPE,
+      'alice',
+      'browser',
+      'session-a',
+      {
+        generationId: 'generation-a',
+        lastHeartbeatAtEpochMs: BASE_EPOCH_MS + 2_000,
+        expiresAtEpochMs: BASE_EPOCH_MS + 30_000,
+        requestId: 'heartbeat-before-disconnect',
+      },
+    ),
+    createService(runtime, BASE_EPOCH_MS + 2_001).disconnectSession(
+      SCOPE,
+      'alice',
+      'browser',
+      'session-a',
+      {
+        generationId: 'generation-a',
+        disconnectedAtEpochMs: BASE_EPOCH_MS + 2_001,
+        requestId: 'disconnect-terminal',
+      },
+    ),
+  ]);
+}
+
+async function expectTerminalDisconnect(runtime: AggregateBarrierRepository): Promise<void> {
+  const repository = new ClientStateRepository(runtime);
+  const stored = await repository.findSession({
+    ...principalRef('alice'),
+    clientInstanceId: 'browser',
+    sessionId: 'session-a',
+  });
+  expect(stored).toMatchObject({
+    status: 'disconnected',
+    generationId: 'generation-a',
+    generationVersion: 1,
+  });
+  expect(
+    (await repository.listEvents(principalRef('alice'))).filter(
+      (event) => event.requestId === 'disconnect-terminal',
+    ),
+  ).toHaveLength(1);
+  expect(runtime.locks).toEqual([]);
+}
