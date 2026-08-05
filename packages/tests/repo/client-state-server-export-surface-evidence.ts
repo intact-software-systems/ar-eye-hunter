@@ -4,6 +4,16 @@ type ProgramStatement = ReturnType<typeof parse>['program']['body'][number];
 type NamedExport = Extract<ProgramStatement, { type: 'ExportNamedDeclaration' }>;
 type ExportedDeclaration = NonNullable<NamedExport['declaration']>;
 
+export const failClosedExportFixtures = [
+  ['default', 'export default function named() {}'],
+  ['wildcard', "export * from './other.ts';"],
+  ['ts-export-assignment', 'export = value;'],
+  ['namespace-specifier', "export * as Extra from './other.ts';"],
+  ['destructured-binding', 'export const { extra } = { extra: 1 };'],
+  ['qualified-module-name', 'export namespace A.B {}'],
+  ['malformed-anonymous', 'export function () {}'],
+] as const;
+
 export function exportedNames(source: string): readonly string[] {
   const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
   return program.body.flatMap(exportedNamesFromStatement).sort();

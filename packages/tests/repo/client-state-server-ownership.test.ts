@@ -5,7 +5,10 @@ import path from 'node:path';
 import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
-import { exportedNames } from './client-state-server-export-surface-evidence.ts';
+import {
+  exportedNames,
+  failClosedExportFixtures,
+} from './client-state-server-export-surface-evidence.ts';
 
 const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/client-state';
@@ -109,7 +112,6 @@ describe('client-state source inventory', () => {
     }
   });
 });
-
 describe('client-state persistence ownership', () => {
   it('owns persistence, stable reads, and snapshots in the canonical client-state tree', () => {
     assertCanonicalPersistenceOwnership();
@@ -178,11 +180,19 @@ describe('client-state test ownership', () => {
     expect(exportedNames(source)).toEqual([symbol]);
   });
 
-  it.each([
-    'export default function named() {}',
-    "export * from './other.ts';",
-    'export const { extra } = { extra: 1 };',
-  ])('fails closed for unsupported export syntax: %s', (source) =>
+  it('retains direct evidence for every fail-closed export family', () => {
+    expect(failClosedExportFixtures.map(([family]) => family)).toEqual([
+      'default',
+      'wildcard',
+      'ts-export-assignment',
+      'namespace-specifier',
+      'destructured-binding',
+      'qualified-module-name',
+      'malformed-anonymous',
+    ]);
+  });
+
+  it.each(failClosedExportFixtures)('fails closed for %s export syntax', (_family, source) =>
     expect(() => exportedNames(source)).toThrow(),
   );
 });
