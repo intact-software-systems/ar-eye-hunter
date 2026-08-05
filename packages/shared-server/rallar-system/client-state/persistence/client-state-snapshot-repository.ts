@@ -11,14 +11,12 @@ import type {
   ClientSnapshot,
 } from '@shared/api/client-types.ts';
 
-import {
-  RuntimeStateJsonStore,
-  type RuntimeStateEntryValue,
-} from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
   RuntimeStateEntry,
   RuntimeStateRepositoryLike,
 } from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { ClientStateEventStore } from '../../repositories/StateEventStore.ts';
 import { readStableStateSnapshot } from '../../repositories/state-snapshot-read.ts';
 import { toClientPresenceState } from '../client-presence-state.ts';
 import {
@@ -26,35 +24,16 @@ import {
   toActiveClientSessions,
 } from './assemble-client-state-snapshot.ts';
 import {
-  ClientStateRepositoryInvariantCorruptionError,
   toLiveClientStateEntryValue,
   type ClientPrincipalSnapshotRead,
 } from './client-state-persistence-contracts.ts';
+import { ClientStateRepositoryReads } from './client-state-repository-reads.ts';
 import { clientStatePrincipalStorageKey } from './client-state-storage-keys.ts';
 
-export abstract class ClientStateSnapshotRepository extends RuntimeStateJsonStore {
-  constructor(repository: RuntimeStateRepositoryLike) {
-    super(repository);
+export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
+  constructor(repository: RuntimeStateRepositoryLike, events: ClientStateEventStore) {
+    super(repository, events);
   }
-
-  protected abstract findPrincipalEntry(
-    ref: ClientPrincipalRef,
-  ): Promise<RuntimeStateEntryValue<ClientPrincipal> | undefined>;
-
-  protected abstract listClientPrincipalEntries(
-    keyPrefix: string,
-    expected: ClientScope,
-  ): Promise<readonly RuntimeStateEntryValue<ClientPrincipal>[]>;
-
-  protected abstract listClientInstanceEntries(
-    keyPrefix?: string,
-    expected?: ClientScope | ClientPrincipalRef,
-  ): Promise<readonly RuntimeStateEntryValue<ClientInstance>[]>;
-
-  protected abstract listClientSessionEntries(
-    keyPrefix?: string,
-    expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef,
-  ): Promise<readonly RuntimeStateEntryValue<ClientSession>[]>;
 
   async listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]> {
     const keyPrefix = this.scopeChildPrefix(scope);
@@ -164,11 +143,7 @@ export abstract class ClientStateSnapshotRepository extends RuntimeStateJsonStor
     activeSessions: readonly ClientSession[],
     stateRevision: number,
   ): ClientSnapshot {
-    return assembleClientStateSnapshot(
-      { principal, instances, activeSessions, stateRevision },
-      (storageKey, message) =>
-        new ClientStateRepositoryInvariantCorruptionError(storageKey, message),
-    );
+    return assembleClientStateSnapshot({ principal, instances, activeSessions, stateRevision });
   }
 }
 

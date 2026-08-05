@@ -12,7 +12,7 @@ import {
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
+import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
 import { isClientSnapshotPresenceFresh, type RallarSnapshotPresenceClock, } from '../snapshot-presence.ts';
 
 const DEFAULT_TTL_MS = 60_000;

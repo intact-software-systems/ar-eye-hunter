@@ -10,10 +10,12 @@ import type {
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 
-import type {
-  RuntimeStateEntryRead,
-  RuntimeStateEntryValue,
+import {
+  RuntimeStateJsonStore,
+  type RuntimeStateEntryRead,
+  type RuntimeStateEntryValue,
 } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
 import type { ClientStateEventStore } from '../../repositories/StateEventStore.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../../state-event-listing.ts';
 import {
@@ -44,11 +46,15 @@ import {
   decodeClientPrincipalStorageKey,
   decodeClientSessionStorageKey,
 } from './client-state-storage-keys.ts';
-import { ClientStateSnapshotRepository } from './client-state-snapshot-repository.ts';
 import { validateClientMutationIdempotencyRecord } from './validate-persisted-client-state.ts';
 
-export abstract class ClientStateRepositoryReads extends ClientStateSnapshotRepository {
-  protected abstract readonly events: ClientStateEventStore;
+export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
+  protected readonly events: ClientStateEventStore;
+
+  constructor(repository: RuntimeStateRepositoryLike, events: ClientStateEventStore) {
+    super(repository);
+    this.events = events;
+  }
 
   async findIdempotentClientMutationReceipt(
     ref: ClientPrincipalRef,
@@ -72,7 +78,7 @@ export abstract class ClientStateRepositoryReads extends ClientStateSnapshotRepo
     return (await this.findPrincipalEntry(ref))?.value;
   }
 
-  override async findPrincipalEntry(
+  async findPrincipalEntry(
     ref: ClientPrincipalRef,
   ): Promise<RuntimeStateEntryValue<ClientPrincipal> | undefined> {
     const stored = await this.getEntryValue<unknown>(
@@ -190,7 +196,7 @@ export abstract class ClientStateRepositoryReads extends ClientStateSnapshotRepo
     };
   }
 
-  protected override async listClientPrincipalEntries(
+  protected async listClientPrincipalEntries(
     keyPrefix: string,
     expected: ClientScope,
   ): Promise<readonly RuntimeStateEntryValue<ClientPrincipal>[]> {
@@ -201,7 +207,7 @@ export abstract class ClientStateRepositoryReads extends ClientStateSnapshotRepo
     return stored.map((entry) => this.findPrincipalEntryValue(entry, expected));
   }
 
-  protected override async listClientInstanceEntries(
+  protected async listClientInstanceEntries(
     keyPrefix?: string,
     expected?: ClientScope | ClientPrincipalRef,
   ): Promise<readonly RuntimeStateEntryValue<ClientInstance>[]> {
@@ -209,7 +215,7 @@ export abstract class ClientStateRepositoryReads extends ClientStateSnapshotRepo
     return stored.map((entry) => this.toInstanceEntry(entry, expected));
   }
 
-  protected override async listClientSessionEntries(
+  protected async listClientSessionEntries(
     keyPrefix?: string,
     expected?: ClientScope | ClientPrincipalRef | ClientInstanceRef,
   ): Promise<readonly RuntimeStateEntryValue<ClientSession>[]> {

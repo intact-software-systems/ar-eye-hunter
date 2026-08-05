@@ -26,18 +26,13 @@ import type {
   RuntimeStateConditionalWriteResult,
   RuntimeStateRepositoryLike,
 } from '../../../runtime-state/RuntimeStateRepository.ts';
-import {
-  defaultClientStateEventStoreFor,
-  type ClientStateEventStore,
-} from '../../repositories/StateEventStore.ts';
+import { defaultClientStateEventStoreFor } from '../../repositories/StateEventStore.ts';
 import {
   type ClientMutationIdempotencyRecord,
   type ClientStateRepositoryOptions,
 } from './client-state-persistence-contracts.ts';
-import {
-  assertCanonicalClientStateIdempotencyRecord,
-  ClientStateRepositoryReads,
-} from './client-state-repository-reads.ts';
+import { assertCanonicalClientStateIdempotencyRecord } from './client-state-repository-reads.ts';
+import { ClientStateSnapshotRepository } from './client-state-snapshot-repository.ts';
 import {
   CLIENT_STATE_IDEMPOTENT_NAMESPACE,
   CLIENT_STATE_INSTANCES_NAMESPACE,
@@ -77,12 +72,9 @@ export function createTransactionBoundClientStateRepository(
   });
 }
 
-export class ClientStateRepository extends ClientStateRepositoryReads {
-  protected readonly events: ClientStateEventStore;
-
+export class ClientStateRepository extends ClientStateSnapshotRepository {
   constructor(repository: RuntimeStateRepositoryLike, options: ClientStateRepositoryOptions = {}) {
-    super(repository);
-    this.events = options.events ?? defaultClientStateEventStoreFor(repository);
+    super(repository, options.events ?? defaultClientStateEventStoreFor(repository));
   }
 
   async insertIdempotentClientStateWritten(

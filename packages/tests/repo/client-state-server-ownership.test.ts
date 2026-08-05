@@ -40,6 +40,22 @@ const persistenceCompatibilityExports = new Map([
     '../client-state/persistence/client-state-repository.ts',
   ],
 ] as const);
+const canonicalRepositoryOwner =
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+const canonicalRepositoryConsumers = new Map([
+  [
+    'packages/shared-server/postgres/rallar-system/createStateRepositories.ts',
+    '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/middleware/RallarMiddleware.ts',
+    '../client-state/persistence/client-state-repository.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts',
+    '../client-state/persistence/client-state-repository.ts',
+  ],
+] as const);
 
 describe('client-state source inventory', () => {
   it('includes literal and ordinary TypeScript suffix files while excluding other files', () => {
@@ -106,6 +122,38 @@ describe('client-state server command ownership', () => {
         );
       }
     }
+  });
+
+  it('keeps canonical shared-server consumers on the canonical repository owner', () => {
+    for (const [filePath, owner] of canonicalRepositoryConsumers) {
+      const imports = importSpecifiers(read(filePath));
+      expect(imports, filePath).toContain(owner);
+      expect(imports, filePath).not.toContain('../repositories/ClientStateRepository.ts');
+      expect(imports, filePath).not.toContain(
+        '@shared-server/rallar-system/repositories/ClientStateRepository.ts',
+      );
+    }
+  });
+
+  it('keeps concrete reads below snapshot assembly and the final write repository', () => {
+    const reads = read(`${canonicalRoot}/persistence/client-state-repository-reads.ts`);
+    const snapshots = read(`${canonicalRoot}/persistence/client-state-snapshot-repository.ts`);
+    const repository = read(canonicalRepositoryOwner);
+    const assembly = read(`${canonicalRoot}/persistence/assemble-client-state-snapshot.ts`);
+
+    expect(reads).toContain(
+      'export class ClientStateRepositoryReads extends RuntimeStateJsonStore',
+    );
+    expect(reads).not.toContain('abstract class ClientStateRepositoryReads');
+    expect(snapshots).toContain(
+      'export class ClientStateSnapshotRepository extends ClientStateRepositoryReads',
+    );
+    expect(snapshots).not.toContain('protected abstract');
+    expect(repository).toContain(
+      'export class ClientStateRepository extends ClientStateSnapshotRepository',
+    );
+    expect(assembly).not.toContain('invariantError');
+    expect(assembly).toContain('new ClientStateRepositoryInvariantCorruptionError(');
   });
 
   it('keeps the canonical command cohort acyclic and free of wildcard barrels', () => {
@@ -184,6 +232,10 @@ describe('client-state server command ownership', () => {
       expect(script).toContain(`packages/tests/repo/${fileName}`);
     }
     expect(script).not.toContain('client-state-server-source-ratchet.test.ts');
+    const ratchet = read('packages/tests/repo/client-state-server-source-ratchet.test.ts');
+    expect(ratchet).toContain(
+      "Owner: Task 4A persistence cohort; remove or replace in the PR C ledger after\n// PR B's resulting-main workflow passes and the ledger records semantic owner coverage\n// for every ratcheted canonical module.",
+    );
   });
 
   it('removes moved declarations from the transitional mixed compatibility owners', () => {

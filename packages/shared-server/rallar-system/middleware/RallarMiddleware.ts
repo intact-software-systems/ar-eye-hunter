@@ -14,7 +14,7 @@ import {
 } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { initialiseServerCacheRepositories } from '../cache-repositories.ts';
-import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
+import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import type { AppClientInboxService } from '../services/AppClientInboxService.ts';
 import type { AppGroupInboxService } from '../services/AppGroupInboxService.ts';

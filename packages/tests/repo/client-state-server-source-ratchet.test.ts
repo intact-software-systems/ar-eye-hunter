@@ -5,6 +5,9 @@ import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
+// Owner: Task 4A persistence cohort; remove or replace in the PR C ledger after
+// PR B's resulting-main workflow passes and the ledger records semantic owner coverage
+// for every ratcheted canonical module.
 const expectedCohortFiles = [
   'README.md',
   'client-state-contract-validation.ts',

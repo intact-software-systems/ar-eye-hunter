@@ -1,6 +1,6 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 // prettier-ignore
 import {
     GroupStateRepository,

@@ -50,6 +50,8 @@ const prBPersistenceLineages = [
     '9681469561f33b48cd5320dc7ad013c715c19ebe',
     [
       'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts',
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
       'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
       'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
       'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',

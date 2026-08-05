@@ -216,16 +216,15 @@ The legacy service path is a direct named one-hop export. The source blob is
 
 ## PR B persistence source evidence
 
-The following predecessor records constrain the PR B persistence move. Each
-source record is exact; it grants inherited-warning review capacity only to the
-listed mechanically moved persistence behavior. New imports, named exports,
-module boundaries, and helper splits receive no historical-debt allowance.
-
-- `packages/shared-server/rallar-system/client-presence-state.ts@60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27`, lines `1-13`, is the sole predecessor for `packages/shared-server/rallar-system/client-state/client-presence-state.ts`.
-- `packages/shared-server/rallar-system/client-state-storage-keys.ts@677e87f18f06c450b4b412e1ae438ea5b9d850c3`, lines `1-56`, is the sole predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts`.
-- `packages/shared-server/rallar-system/repositories/ClientStateRepository.ts@9681469561f33b48cd5320dc7ad013c715c19ebe`, persistence regions `63-727,729-835`, is the predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts`, `packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts`, `packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts`, `packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts`, and `packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts`.
-- `packages/shared-server/rallar-system/services/client-state-mutations.ts@e4c8219a22ba6e3d47e3b139d44546b1fda436f0`, persisted-codec and validation regions `612-827,1898-1934,2667-2687`, is the predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts` and `packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts`.
-- `packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts@b5e091fe588f88fa63eadf1d4c24d7c04aa3df00`, receipt and idempotency contract region `188-214`, is the predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts`.
+The exact machine-verifiable mixed-source source and target evidence is in
+`plans/repo-style-lineages/client-state-server-persistence-provenance.md`.
+The final canonical repository owner is
+`packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts`.
+It covers `packages/shared-server/rallar-system/client-presence-state.ts@60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27`,
+`packages/shared-server/rallar-system/client-state-storage-keys.ts@677e87f18f06c450b4b412e1ae438ea5b9d850c3`,
+`packages/shared-server/rallar-system/repositories/ClientStateRepository.ts@9681469561f33b48cd5320dc7ad013c715c19ebe`,
+`packages/shared-server/rallar-system/services/client-state-mutations.ts@e4c8219a22ba6e3d47e3b139d44546b1fda436f0`,
+and `packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts@b5e091fe588f88fa63eadf1d4c24d7c04aa3df00`.
 
 The legacy `client-presence-state.ts`, `client-state-storage-keys.ts`, and
 `repositories/ClientStateRepository.ts` modules remain direct named one-hop

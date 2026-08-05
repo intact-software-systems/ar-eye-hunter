@@ -13,6 +13,7 @@ import {
   compareClientStateSessionStorageKeys,
   clientStatePrincipalStorageKey,
 } from './client-state-storage-keys.ts';
+import { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
 
 export type ClientStateSnapshotAssemblyInput = Readonly<{
   principal: ClientPrincipal;
@@ -34,7 +35,6 @@ export function toActiveClientSessions(
 
 export function assembleClientStateSnapshot(
   input: ClientStateSnapshotAssemblyInput,
-  invariantError: (storageKey: string, message: string) => Error,
 ): ClientSnapshot {
   const snapshot: ClientSnapshot = {
     stateRevision: input.stateRevision,
@@ -52,7 +52,7 @@ export function assembleClientStateSnapshot(
     validateAuthoritativeClientSnapshot(snapshot, input.principal);
     return snapshot;
   } catch (error) {
-    throw invariantError(
+    throw new ClientStateRepositoryInvariantCorruptionError(
       clientStatePrincipalStorageKey(input.principal),
       error instanceof Error ? error.message : 'Stored client-state value is invalid',
     );
