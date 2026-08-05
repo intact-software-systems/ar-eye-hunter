@@ -16,6 +16,7 @@ const performanceGateRequirements = [
   'comparative result gate',
 ] as const;
 const lockFreeAuthoritativeWritePaths = [
+  'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
   'packages/shared-server/rallar-system/client-state/client-state-service.ts',
   'packages/shared-server/rallar-system/group-state/group-state-service.ts',
   'packages/shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts',

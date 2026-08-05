@@ -13,10 +13,10 @@ import {
     normalizePersistedGroupEvent,
     validatePersistedGroupEvent,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import {
-    normalizePersistedClientEvent,
-    validatePersistedClientEvent,
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import { normalizePersistedClientEvent } from
+    '@shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts';
+import { validatePersistedClientEvent } from
+    '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
 
 type ClientStateEventRow = Readonly<{
     event_id: string;

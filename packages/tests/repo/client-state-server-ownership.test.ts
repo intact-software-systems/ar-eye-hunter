@@ -13,7 +13,10 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/client-mutation-authority.ts',
   'packages/shared-server/rallar-system/services/client-expired-state-authority.ts',
   'packages/shared-server/rallar-system/services/client-state-semantic-equality.ts',
+  'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
 ] as const;
+const sharedServerCompatibilityImportPattern =
+  /(?:^|\/)rallar-system\/services\/(?:AppClientInboxService|client-state-service|client-state-mutations|client-mutation-authority|client-expired-state-authority|client-state-semantic-equality)\.ts$/;
 const persistenceCanonicalPaths = [
   `${canonicalRoot}/client-presence-state.ts`,
   `${canonicalRoot}/persistence/client-state-persistence-contracts.ts`,
@@ -162,19 +165,25 @@ describe('client-state server command ownership', () => {
 
     const sharedServerModule = read('packages/shared-server/mod.ts');
     expect(sharedServerModule).toContain(
+      "export { createClientStateService } from './rallar-system/client-state/client-state-service.ts';",
+    );
+    expect(sharedServerModule).toMatch(
+      /export\s*\{\s*AppClientInboxService,?\s*\}\s*from '\.\/rallar-system\/client-state\/inbox\/app-client-inbox-service\.ts';/,
+    );
+    expect(sharedServerModule).not.toContain(
       "export * from './rallar-system/client-state/client-state-service.ts';",
     );
-    expect(sharedServerModule).toContain(
-      "export * from './rallar-system/client-state/inbox/app-client-inbox-service.ts';",
+    expect(sharedServerModule).not.toContain(
+      "export * from './rallar-system/client-state/inbox/app-client-inbox-contracts.ts';",
     );
   });
 
-  it('keeps canonical owners independent from legacy compatibility paths', () => {
-    for (const filePath of sourceFiles(canonicalRoot)) {
+  it('keeps every shared-server implementation independent from legacy compatibility paths', () => {
+    for (const filePath of sourceFiles('packages/shared-server')) {
       const source = read(filePath);
       for (const specifier of importSpecifiers(source)) {
         expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
-          /(?:^|\/)services\/(?:client-state-service|client-state-mutations|client-mutation-authority|client-expired-state-authority)\.ts$/,
+          sharedServerCompatibilityImportPattern,
         );
       }
     }
