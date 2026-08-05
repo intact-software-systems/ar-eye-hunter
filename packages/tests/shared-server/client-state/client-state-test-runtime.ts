@@ -19,7 +19,7 @@ import {
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
   defaultClientStateEventStoreFor,
-  type ClientStateEventStore,
+  type InMemoryClientStateEventStore,
 } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 
@@ -44,7 +44,7 @@ const MAX_TEST_MUTATION_ATTEMPTS = 8;
 type ClientMutationInput = Parameters<typeof toClientMutationCommand>[0];
 interface ClientStateTestExecutorInput {
   readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-  readonly eventStore: ClientStateEventStore;
+  readonly eventStore: InMemoryClientStateEventStore;
   readonly authSessions: AuthSessionRepository;
   readonly service: ClientStateService;
   readonly serviceId: string;
