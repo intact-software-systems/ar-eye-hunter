@@ -977,13 +977,10 @@ A tree or publication envelope.
 
 ### Task 3: Freeze, Review, And Publish PR A
 
-**Status:** in progress. Focused Task 2 gates and `npm run build` pass. The
-unchanged temporary API-v1 group-state exact-base protected-path ratchet blocks
-`npm run test:unit` and therefore the first phase of `npm run test:ci` by
-classifying 31 planned client-state shared-server paths as protected. The
-master program records that ratchet as requiring a separately reviewed
-removal-or-replacement decision after its PR #70 ledger point; this child has
-not added an exemption or modified that ratchet.
+**Status:** in progress. The sole Task 3 blocker—the stale temporary API-v1
+group-state exact-base protected-path ratchet—was resolved by its separately
+reviewed, human-authorized removal after PR #70 reached `ledger-published`.
+Final completion gates and publication remain pending.
 
 - Run every PR A focused and completion gate in Section 11.
 - Require independent whole-PR review: Critical 0, Important 0.
@@ -1305,15 +1302,15 @@ claimed for a changed runtime.
 
 ## 16. Progress Record
 
-| Milestone                  | State                      | Evidence                                                                                                                                    |
-| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pilot conclusions          | approved                   | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.  |
-| Client-state child plan    | approved                   | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.          |
-| PR A mutation core         | implemented; gates pending | Task 1 and both Task 2 cohorts are independently accepted; Task 3 is blocked only by the separately governed stale API-v1 ratchet decision. |
-| PR B authoritative shell   | not started                | Requires PR A merge and exact resulting-main workflow.                                                                                      |
-| PR C alignment/final trace | not started                | Requires PR B merge and exact resulting-main workflow.                                                                                      |
-| Later evidence ledger      | not authorized             | Requires PR C merge and exact resulting-main workflow, then separate authorization.                                                         |
-| Other Wave 2 domains       | blocked                    | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                             |
+| Milestone                  | State                      | Evidence                                                                                                                                                                                                             |
+| -------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pilot conclusions          | approved                   | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                           |
+| Client-state child plan    | approved                   | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                   |
+| PR A mutation core         | implemented; gates pending | Task 1 and both Task 2 cohorts are independently accepted; the sole Task 3 blocker was resolved by the separately reviewed, human-authorized ratchet removal. Final completion gates and publication remain pending. |
+| PR B authoritative shell   | not started                | Requires PR A merge and exact resulting-main workflow.                                                                                                                                                               |
+| PR C alignment/final trace | not started                | Requires PR B merge and exact resulting-main workflow.                                                                                                                                                               |
+| Later evidence ledger      | not authorized             | Requires PR C merge and exact resulting-main workflow, then separate authorization.                                                                                                                                  |
+| Other Wave 2 domains       | blocked                    | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                      |
 
 ## 17. Planning Self-Review Record
 

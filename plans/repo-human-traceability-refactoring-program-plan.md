@@ -979,9 +979,10 @@ Remaining debt is explicit rather than silently treated as complete:
   mutation, repository, storage-key, presence, and snapshot-validation paths.
   Each must be removed only by the child named in its existing removal condition.
 - The API-v1 service compatibility path remains for the later composition wave.
-  The temporary API-v1 source/style ratchet has reached its PR #70 ledger
-  decision point and now requires a separately reviewed removal-or-replacement
-  decision; persistent semantic route, lineage, and active-path checks remain.
+  The temporary API-v1 source/style ratchet was human-authorized for removal
+  after PR #70 reached `ledger-published`; the separately reviewed decision now
+  satisfies its removal condition. Persistent semantic route, lineage, and
+  active-path owners remain.
 - Focused warning-only checks are not finding-free: boundary `unknown` findings,
   several browser positional-input and pass-through findings, and small API route
   handler-size findings still require human disposition. Zero layout findings

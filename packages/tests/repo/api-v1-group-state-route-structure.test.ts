@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
@@ -6,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import { MUTATION_ROUTE_INVENTORY } from '../shared-server/mutation-routing-inventory.ts';
 
-const approvedBase = '0a52ecee39181c7784fa6b777270f8a59bc33c00';
 const groupStateSourceRoot = 'apps/api-v1/src/group-state';
 const commandSourcePath = `${groupStateSourceRoot}/to-group-state-command.ts`;
 const registrationSourceByType = new Map<AppInboxType, string>([
@@ -70,13 +68,6 @@ describe('API-v1 group-state route structure', () => {
   it('removes the temporary compatibility modules after canonical consumers migrate', () => {
     expect(compatibilityPaths.filter(existsSync)).toEqual([]);
   });
-
-  it('keeps protected API, consumer, server, and middleware production unchanged', () => {
-    const changedPaths = readChangedPaths();
-    const protectedChanges = changedPaths.filter(isProtectedPath);
-
-    expect(protectedChanges).toEqual([]);
-  });
 });
 
 function read(relativePath: string): string {
@@ -85,26 +76,4 @@ function read(relativePath: string): string {
 
 function count(source: string, value: string): number {
   return source.split(value).length - 1;
-}
-
-function readChangedPaths(): readonly string[] {
-  return execFileSync('git', ['diff', '--name-only', approvedBase, '--'], {
-    encoding: 'utf8',
-  })
-    .trim()
-    .split('\n')
-    .filter(Boolean);
-}
-
-function isProtectedPath(filePath: string): boolean {
-  return (
-    filePath === 'apps/api-v1/resources/api-v1-openapi.yaml' ||
-    filePath === 'apps/api-v1/src/middleware.ts' ||
-    filePath === 'apps/api-v1/src/middleware-contract.ts' ||
-    filePath === 'packages/shared/api/group-types.ts' ||
-    filePath === 'packages/shared/api/state-types.ts' ||
-    filePath === 'packages/shared-web/browser/api-integration.ts' ||
-    filePath.startsWith('packages/shared-test/black-box-runner/') ||
-    (filePath.startsWith('packages/shared-server/') && filePath.endsWith('.ts'))
-  );
 }

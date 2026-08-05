@@ -77,11 +77,11 @@ GitHub Actions.
 
 Date: 2026-08-03
 
-Status: Approved. Planning PR #67, structure PR #68, and code-standard
-alignment PR #69 are complete. The implementation reached exact resulting
-`main` `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3` and passed its exact
-resulting-main workflow. The separately authorized later evidence-ledger
-publication is pending; this child is not yet `ledger-published`.
+Status: Approved. Planning PR #67, structure PR #68, code-standard alignment
+PR #69, and later evidence-ledger PR #70 are complete; this child is
+`ledger-published`. A separately reviewed human decision satisfied this exact
+temporary structure ratchet's existing removal condition. Persistent semantic
+coverage remains the route, lineage, and active-path owners.
 
 ## 1. Prerequisite Evidence And Approval Boundary
 
@@ -932,10 +932,10 @@ tests may be added only to the PR A target test owners in Section 3.5.
 - [x] Prove OpenAPI, shared-web API integration, black-box workbench/recipes,
       shared DTOs, server production, and middleware production are unchanged.
 - [x] Record the PR A one-hop compatibility consumers and removal condition.
-- [x] Keep the temporary exact-base structure ratchet owned by this child and
-      remove or replace it after both implementation PR resulting-main
-      workflows and the later ledger are published, when semantic coverage owns
-      the same loss risk.
+- [x] The separately reviewed human decision satisfied this temporary exact-base
+      structure ratchet's existing removal condition after PR #70 reached
+      `ledger-published`; preserve semantic route, lineage, and active-path
+      coverage.
 - [x] Independently review navigation accuracy, semantic ratchets, public
       compatibility, and mutation reachability with Critical 0 and Important 0.
 
@@ -1003,10 +1003,10 @@ navigation/ratchet evidence, and the two temporary compatibility files.
       authorized.
 - [x] Record completed PR A and PR B implementation envelopes without recording
       the ledger's own future facts inside its tree.
-- [ ] Publish the ledger through its own branch, draft PR, validation, Branch
+- [x] Publish the ledger through its own branch, draft PR, validation, Branch
       Release Gate, human merge, and exact resulting-main workflow.
-- [ ] Only the external final envelope may call this child
-      `ledger-published` and unlock pilot evaluation.
+- [x] The external final envelope calls this child `ledger-published` and
+      unlocks pilot evaluation.
 
 ## 11. Independent Human Review Points
 
@@ -1190,7 +1190,7 @@ implementation tree as having contained future evidence.
 - [x] PR B review has Critical 0 and Important 0; all local and remote gates
       pass for its exact head.
 - [x] PR B merged and its exact resulting-main workflow succeeded.
-- [ ] The later evidence ledger independently reached `ledger-published`.
+- [x] The later evidence ledger independently reached `ledger-published`.
 - [x] No Wave 2 or broader Wave 3 child began during this child.
 
 ## 15. Risks And Stop Conditions
@@ -1215,14 +1215,14 @@ implementation tree as having contained future evidence.
 
 ## 16. Progress Record
 
-| Milestone                    | State                           | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Server prerequisite ledger   | `ledger-published`              | PR #66 feature `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree `111995e3a72eb246fd0b8028aada4fbeda65fe69`, Branch Release Gate `30778763061` attempt 1 success, resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12`, default workflow `30780849548` attempt 1 success.                                                                                                                                                                                                                                                            |
-| API-v1 child plan            | approved; planning complete     | Approved plan blob `00a8efe0e6124ec9882360c1328045cde781b726` plus its authorized PR A amendments remains the scope. Planning PR #67 feature `228f49088b9413aae506086f422849d0d0161554`, tree `0cd117101c165b0bb971e0e1809bf91ca5501461`, resulting `main` `0a52ecee39181c7784fa6b777270f8a59bc33c00`, and default workflow `30785324305` attempt 1 succeeded.                                                                                                                                                                             |
-| PR A structure               | complete; PR #68 merged         | Exact base `0a52ecee39181c7784fa6b777270f8a59bc33c00`; feature `cb9f074db23135de682a19108282b95f71b5e54e`, tree `8126969737977c901dc56a35b3b523a9209a4fa7`, Branch Release Gate `30815005047` attempt 1 succeeded, resulting `main` `4d616edc649fe30ebf0fca48db4ab683d9c512e3` has the same tree, and default workflow `30818878869` attempt 1 succeeded for that SHA.                                                                                                                                                                     |
-| PR B code-standard alignment | complete; PR #69 merged         | Frozen feature `bcabb62072fa82759e21fc14f6e7efedd7adf00f` and tree `620bb455688ee4f927dd662da0fce01a3c0c7bd9`; final review Critical 0, Important 0, Minor 0; every Section 12.3 local gate passed; Branch Release Gate `30825695539` attempt 2 succeeded; resulting `main` `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3` has the same tree; default workflow `30833235855` attempt 1 succeeded for that exact SHA. The mutation-path/concurrency classification remained unchanged and the approved pure-move performance exemption applied. |
-| API-v1 child later ledger    | publication pending; authorized | Separate authorization followed PR B's exact successful resulting-main workflow. This tree records the completed implementation envelopes and no future ledger tree, commit, PR, Branch Release Gate, merge, or default-workflow fact.                                                                                                                                                                                                                                                                                                     |
-| Complete pilot evaluation    | blocked                         | Begins only after this child later reaches `ledger-published`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Milestone                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Server prerequisite ledger   | `ledger-published`          | PR #66 feature `6e2ea5e4c727f431743e0ad6eab55a0fc9d9af1b`, tree `111995e3a72eb246fd0b8028aada4fbeda65fe69`, Branch Release Gate `30778763061` attempt 1 success, resulting `main` `04b041824073e50a4f1623ca9a71d0d02b770c12`, default workflow `30780849548` attempt 1 success.                                                                                                                                                                                                                                                            |
+| API-v1 child plan            | approved; planning complete | Approved plan blob `00a8efe0e6124ec9882360c1328045cde781b726` plus its authorized PR A amendments remains the scope. Planning PR #67 feature `228f49088b9413aae506086f422849d0d0161554`, tree `0cd117101c165b0bb971e0e1809bf91ca5501461`, resulting `main` `0a52ecee39181c7784fa6b777270f8a59bc33c00`, and default workflow `30785324305` attempt 1 succeeded.                                                                                                                                                                             |
+| PR A structure               | complete; PR #68 merged     | Exact base `0a52ecee39181c7784fa6b777270f8a59bc33c00`; feature `cb9f074db23135de682a19108282b95f71b5e54e`, tree `8126969737977c901dc56a35b3b523a9209a4fa7`, Branch Release Gate `30815005047` attempt 1 succeeded, resulting `main` `4d616edc649fe30ebf0fca48db4ab683d9c512e3` has the same tree, and default workflow `30818878869` attempt 1 succeeded for that SHA.                                                                                                                                                                     |
+| PR B code-standard alignment | complete; PR #69 merged     | Frozen feature `bcabb62072fa82759e21fc14f6e7efedd7adf00f` and tree `620bb455688ee4f927dd662da0fce01a3c0c7bd9`; final review Critical 0, Important 0, Minor 0; every Section 12.3 local gate passed; Branch Release Gate `30825695539` attempt 2 succeeded; resulting `main` `cff66107dfa13c47e117d9e1dbcfb8f6ae747ea3` has the same tree; default workflow `30833235855` attempt 1 succeeded for that exact SHA. The mutation-path/concurrency classification remained unchanged and the approved pure-move performance exemption applied. |
+| API-v1 child later ledger    | `ledger-published`          | PR #70 feature `3ff182f65da7360974ad316033e4dad5eeeb8b12`, tree `8f9502ff3da6a1934e49cbd6d8b6a7508e5e7695`, Branch Release Gate `30861897688` attempt 1 success, resulting `main` `44d1c9ff74f2d1a837f49c3a6ed696491788cd8c`, and default workflow `30864134072` attempt 1 success. A separately reviewed human decision satisfies this temporary ratchet's removal condition; persistent semantic route, lineage, and active-path owners remain.                                                                                          |
+| Complete pilot evaluation    | completed; published        | API-v1 child later ledger PR #70 is `ledger-published`; the pilot evaluation conclusions were human-approved at master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution-plan blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                                                                                                                                                                                                                                                 |
 
 ## 17. Planning Self-Review Record
 
