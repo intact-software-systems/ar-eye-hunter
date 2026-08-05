@@ -1377,7 +1377,8 @@ claimed for a changed runtime.
 - [x] Persisted JSON, namespaces, keys, validation, snapshots, and ordering are
       exact.
 - [x] Authorized WebSocket and expiry behavior and concurrency are exact.
-- [x] Semantic tests remain primary; every ratchet has owner/removal decision.
+- [x] Semantic tests remain primary; every ratchet has a named current owner,
+      a PR C decision point, and a later-ledger recording point.
 - [x] The approved disposition and owner/rationale mapping covers all 78
       focused warning rows with no exceptions.
 - [x] PR A review/gates and resulting-main workflow succeeded.
