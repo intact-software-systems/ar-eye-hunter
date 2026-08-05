@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const mergeBase = '39b2b7e6312507addfb4629c9d84ab476e83c362';
+const prAResultingMain = '2fdba024bb347622727d337eb06fc13d2fe129fc';
 const artifactRoot = 'plans/repo-style-lineages/client-state-server-structure';
+const persistenceManifestPath = 'plans/repo-style-lineages/client-state-server-persistence.json';
 const mutationsSource = 'packages/shared-server/rallar-system/services/client-state-mutations.ts';
 const serviceSource = 'packages/shared-server/rallar-system/services/client-state-service.ts';
 const primitivesTarget =
@@ -30,6 +32,45 @@ const sourceBlobs = [
     path: 'packages/shared-server/rallar-system/services/client-expired-state-authority.ts',
     blob: 'd503ffc5e572c7474f7db9cb6cab615ffe62c555',
   },
+] as const;
+
+const prBPersistenceLineages = [
+  [
+    'packages/shared-server/rallar-system/client-presence-state.ts',
+    '60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27',
+    ['packages/shared-server/rallar-system/client-state/client-presence-state.ts'],
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state-storage-keys.ts',
+    '677e87f18f06c450b4b412e1ae438ea5b9d850c3',
+    ['packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts'],
+  ],
+  [
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+    '9681469561f33b48cd5320dc7ad013c715c19ebe',
+    [
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
+      'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts',
+    ],
+  ],
+  [
+    'packages/shared-server/rallar-system/services/client-state-mutations.ts',
+    'e4c8219a22ba6e3d47e3b139d44546b1fda436f0',
+    [
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts',
+      'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
+    ],
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts',
+    'b5e091fe588f88fa63eadf1d4c24d7c04aa3df00',
+    [
+      'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
+    ],
+  ],
 ] as const;
 
 const expectedEvidence = [
@@ -267,6 +308,26 @@ describe('client-state server structural-lineage provenance', () => {
     }
   });
 
+  it('records the exact PR B persistence predecessor blobs and owners', () => {
+    const provenance = read(`${artifactRoot}-provenance.md`);
+    expect(JSON.parse(read(persistenceManifestPath))).toEqual({
+      version: 1,
+      lineages: prBPersistenceLineages.map(([path, blob, targets]) => ({
+        mergeBase: prAResultingMain,
+        source: { path, blob },
+        targets,
+      })),
+    });
+    for (const [sourcePath, sourceBlob] of prBPersistenceLineages) {
+      expect(readPrAResultingBlob(sourcePath), sourcePath).toBe(sourceBlob);
+      expect(provenance, sourcePath).toContain(`${sourcePath}@${sourceBlob}`);
+    }
+    expect(provenance).toContain('## PR B persistence source evidence');
+    expect(provenance).toContain(
+      '`packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts`',
+    );
+  });
+
   it('fails closed for content, ownership, inventory, findings, and semantic additions', () => {
     const regions = readRegions();
     const wrongTarget = structuredClone(regions);
@@ -279,10 +340,16 @@ describe('client-state server structural-lineage provenance', () => {
     const wrongFinding = structuredClone(regions);
     wrongFinding[0].findings = ['file.length:wrong-owner'];
     const semanticAddition = new Map([
-      [regions[0].target, `${read(regions[0].target)}\nexport const semanticAddition = true;\n`],
+      [
+        regions[0].target,
+        `${readPrAResultingTarget(regions[0].target)}\nexport const semanticAddition = true;\n`,
+      ],
     ]);
     const changedContent = new Map([
-      [regions[1].target, read(regions[1].target).replace('must be a string', 'must be text')],
+      [
+        regions[1].target,
+        readPrAResultingTarget(regions[1].target).replace('must be a string', 'must be text'),
+      ],
     ]);
 
     for (const [fixture, message] of [
@@ -311,7 +378,7 @@ function validateEvidence(
     if (hashRegions(readBaseSource(region.source), region.sourceRegions) !== region.sourceHash) {
       throw new Error(`source hash ${region.id}`);
     }
-    const target = targetOverrides.get(region.target) ?? read(region.target);
+    const target = targetOverrides.get(region.target) ?? readPrAResultingTarget(region.target);
     if (hashRegions(target, `${region.targetStart}-${region.targetEnd}`) !== region.targetHash) {
       throw new Error(`target hash ${region.id}`);
     }
@@ -405,6 +472,20 @@ function readBaseSource(filePath: string): string {
     cwd: repoRoot,
     encoding: 'utf8',
   });
+}
+
+function readPrAResultingTarget(filePath: string): string {
+  return execFileSync('git', ['show', `${prAResultingMain}:${filePath}`], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+}
+
+function readPrAResultingBlob(filePath: string): string {
+  return execFileSync('git', ['rev-parse', `${prAResultingMain}:${filePath}`], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  }).trim();
 }
 
 function hashRegions(source: string, regions: string): string {

@@ -4,7 +4,19 @@ import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-
 import {
     ClientStateRepository,
     ClientStateRepositoryInvariantCorruptionError,
+} from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import {
+    ClientStateRepository as compatibilityClientStateRepository,
 } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import {
+    clientStateInstanceStorageKey,
+    clientStatePrincipalStorageKey,
+    clientStateSessionStorageKey,
+    decodeClientPrincipalStorageKey,
+} from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+import {
+    clientStatePrincipalStorageKey as compatibilityClientStatePrincipalStorageKey,
+} from '@shared-server/rallar-system/client-state-storage-keys.ts';
 import {
     ClientMutationIdempotencyConflictError,
     createClientStateService as createClientMutationService,
@@ -46,6 +58,27 @@ const SCOPE: StateScope = {
 const BASE_EPOCH_MS = Date.now();
 
 describe('convergent client state', () => {
+    it('keeps canonical encoded keys and compatibility repository identities stable', () => {
+        const principal = {
+            applicationId: 'app:/%',
+            workspaceId: '_',
+            principalId: 'alice smith',
+        };
+        const principalKey = clientStatePrincipalStorageKey(principal);
+
+        expect(principalKey).toBe('app=app%3A%2F%25:ws=_:principal=alice%20smith');
+        expect(decodeClientPrincipalStorageKey(principalKey)).toEqual(principal);
+        expect(compatibilityClientStatePrincipalStorageKey(principal)).toBe(principalKey);
+        expect(clientStateInstanceStorageKey({ ...principal, clientInstanceId: 'web/1' }))
+            .toBe(`${principalKey}:instance=web%2F1`);
+        expect(clientStateSessionStorageKey({
+            ...principal,
+            clientInstanceId: 'web/1',
+            sessionId: 'session:1',
+        })).toBe(`${principalKey}:instance=web%2F1:session=session%3A1`);
+        expect(compatibilityClientStateRepository).toBe(ClientStateRepository);
+    });
+
     it('reads the principal guard and snapshot from one stable aggregate observation', async () => {
         const runtime = new PrincipalChangeAfterFirstReadRepository();
         await connect(runtime, 'session-a', 'generation-a', BASE_EPOCH_MS);

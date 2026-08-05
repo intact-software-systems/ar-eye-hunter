@@ -14,6 +14,32 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/client-expired-state-authority.ts',
   'packages/shared-server/rallar-system/services/client-state-semantic-equality.ts',
 ] as const;
+const persistenceCanonicalPaths = [
+  `${canonicalRoot}/client-presence-state.ts`,
+  `${canonicalRoot}/persistence/client-state-persistence-contracts.ts`,
+  `${canonicalRoot}/persistence/client-state-runtime-namespaces.ts`,
+  `${canonicalRoot}/persistence/client-state-storage-keys.ts`,
+  `${canonicalRoot}/persistence/validate-persisted-client-state.ts`,
+  `${canonicalRoot}/persistence/client-state-persistence-codec.ts`,
+  `${canonicalRoot}/persistence/client-state-repository-reads.ts`,
+  `${canonicalRoot}/persistence/assemble-client-state-snapshot.ts`,
+  `${canonicalRoot}/persistence/client-state-snapshot-repository.ts`,
+  `${canonicalRoot}/persistence/client-state-repository.ts`,
+] as const;
+const persistenceCompatibilityExports = new Map([
+  [
+    'packages/shared-server/rallar-system/client-presence-state.ts',
+    './client-state/client-presence-state.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state-storage-keys.ts',
+    './client-state/persistence/client-state-storage-keys.ts',
+  ],
+  [
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+    '../client-state/persistence/client-state-repository.ts',
+  ],
+] as const);
 
 describe('client-state source inventory', () => {
   it('includes literal and ordinary TypeScript suffix files while excluding other files', () => {
@@ -34,6 +60,43 @@ describe('client-state source inventory', () => {
 });
 
 describe('client-state server command ownership', () => {
+  it('owns persistence, stable reads, and snapshots in the canonical client-state tree', () => {
+    const canonicalFiles = sourceFiles(canonicalRoot);
+    expect(canonicalFiles).toEqual(expect.arrayContaining(persistenceCanonicalPaths));
+
+    for (const filePath of persistenceCanonicalPaths) {
+      const source = read(filePath);
+      for (const specifier of importSpecifiers(source)) {
+        expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
+          /(?:^|\/)rallar-system\/(?:client-presence-state|client-state-storage-keys|repositories\/ClientStateRepository)\.ts$/,
+        );
+        expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
+          /(?:^|\/)client-state\/(?:mutation|inbox)\//,
+        );
+        expect(specifier, `${filePath}: ${specifier}`).not.toMatch(/(?:^|\/)services\//);
+      }
+    }
+
+    for (const [filePath, owner] of persistenceCompatibilityExports) {
+      const source = read(filePath);
+      const program = parse(source, {
+        sourceType: 'module',
+        plugins: ['typescript'],
+      }).program;
+      expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
+      expect(importSpecifiers(source)).toEqual([owner]);
+      expect(source).not.toContain('export *');
+    }
+
+    const sharedServerModule = read('packages/shared-server/mod.ts');
+    expect(sharedServerModule).toContain(
+      "export * from './rallar-system/client-state/persistence/client-state-repository.ts';",
+    );
+    expect(sharedServerModule).not.toContain(
+      "export * from './rallar-system/repositories/ClientStateRepository.ts';",
+    );
+  });
+
   it('keeps canonical owners independent from legacy compatibility paths', () => {
     for (const filePath of sourceFiles(canonicalRoot)) {
       const source = read(filePath);

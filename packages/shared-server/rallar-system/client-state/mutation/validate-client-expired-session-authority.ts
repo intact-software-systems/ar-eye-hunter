@@ -4,7 +4,7 @@ import {
   validateRuntimeStateExpiredAuthority,
 } from '@shared-server/runtime-state/RuntimeStateExpiredEntry.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { clientStateSessionStorageKey } from '../../client-state-storage-keys.ts';
+import { clientStateSessionStorageKey } from '../persistence/client-state-storage-keys.ts';
 
 export function validateClientExpiredSessionAuthority(
   input: Readonly<{

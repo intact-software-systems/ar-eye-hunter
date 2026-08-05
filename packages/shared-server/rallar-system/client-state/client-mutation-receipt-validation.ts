@@ -14,7 +14,7 @@ import {
 import type {
   ClientMutationIdempotencyRecord,
   ClientMutationReceipt,
-} from './mutation/client-mutation-contracts.ts';
+} from './persistence/client-state-persistence-contracts.ts';
 
 export function validateClientMutationReceipt(value: unknown, label: string): void {
   const receipt = requirePlainRecord(value, label);

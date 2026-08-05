@@ -31,9 +31,19 @@ const expectedCohortFiles = [
   'mutation/result-validation/validate-client-mutation-read.ts',
   'mutation/result-validation/validate-client-mutation-result.ts',
   'mutation/result-validation/validate-client-mutation.ts',
+  'client-presence-state.ts',
+  'persistence/client-state-persistence-contracts.ts',
+  'persistence/client-state-runtime-namespaces.ts',
+  'persistence/client-state-storage-keys.ts',
+  'persistence/validate-persisted-client-state.ts',
+  'persistence/client-state-persistence-codec.ts',
+  'persistence/client-state-repository-reads.ts',
+  'persistence/assemble-client-state-snapshot.ts',
+  'persistence/client-state-snapshot-repository.ts',
+  'persistence/client-state-repository.ts',
 ] as const;
 
-describe('client-state server PR A source ratchet', () => {
+describe('client-state server source ratchet', () => {
   it('keeps the cohort modules within the mechanical size limits', () => {
     for (const filePath of expectedCohortFiles.filter((value) => value.endsWith('.ts'))) {
       const source = read(`packages/shared-server/rallar-system/client-state/${filePath}`);

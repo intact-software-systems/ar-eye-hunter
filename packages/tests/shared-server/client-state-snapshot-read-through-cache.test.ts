@@ -10,7 +10,7 @@ import {
     findClientStateSnapshotByRef,
     findClientStateSnapshotByPrincipalId,
 } from '@shared/repository/client-state-snapshots-repository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import {
     createClientStateSnapshotReadThroughCache,
 } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';

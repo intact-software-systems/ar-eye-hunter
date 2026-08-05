@@ -3,8 +3,9 @@
 This directory is the canonical owner map for client-state server code. The
 map follows executable imports and declarations; it is navigation evidence,
 not a second runtime contract. PR A owns command construction, command and result
-validation, semantic equality, and the pure compute families here. The unchanged
-persistence, service, and inbox owners remain at their legacy paths until PR B.
+validation, semantic equality, and pure compute families. This PR B cohort owns
+persistence and stable reads. Service, AppInbox, authorized-WebSocket, expiry,
+and snapshot cache ownership remain at their legacy paths until later PR B cohorts.
 
 ## Command and validation owners
 
@@ -42,6 +43,24 @@ Compatibility callers can continue using the existing named exports from
 `services/client-expired-state-authority.ts`. Semantic-equality callers can use
 `services/client-state-semantic-equality.ts`. Canonical owners never import
 those compatibility paths.
+
+## Persistence and stable-read owners
+
+- [`toClientPresenceState`](./client-presence-state.ts)
+- [`ClientMutationIdempotencyRecord` and repository persistence contracts](./persistence/client-state-persistence-contracts.ts)
+- [`CLIENT_STATE_PRINCIPALS_NAMESPACE` and the exact runtime namespaces](./persistence/client-state-runtime-namespaces.ts)
+- [`clientStatePrincipalStorageKey`, decoding, and canonical ordering](./persistence/client-state-storage-keys.ts)
+- [`validatePersistedClientPrincipal` and corruption-failing persisted validation](./persistence/validate-persisted-client-state.ts)
+- [`normalizePersistedClientPrincipal` and persisted defaults](./persistence/client-state-persistence-codec.ts)
+- [`ClientStateRepositoryReads` and aggregate/child/event/idempotency reads](./persistence/client-state-repository-reads.ts)
+- [`assembleClientStateSnapshot` and canonical snapshot ordering](./persistence/assemble-client-state-snapshot.ts)
+- [`ClientStateSnapshotRepository` and stable before/after aggregate guards](./persistence/client-state-snapshot-repository.ts)
+- [`ClientStateRepository` and transaction-bound repository construction](./persistence/client-state-repository.ts)
+
+The legacy `client-presence-state.ts`, `client-state-storage-keys.ts`, and
+`repositories/ClientStateRepository.ts` paths are direct named one-hop exports
+to these owners. The package `mod.ts` exports the canonical repository owner
+directly.
 
 ## Construction, registration, and enqueue timeline
 
@@ -111,15 +130,21 @@ clock, random-ID, observation, or queue-wake operation. Each processing retry
 receives a fresh command/read pair from the unchanged stateful service and
 AppInbox shells.
 
+## PR B persistence and stable-read timeline
+
+```text
+1. ClientStateRepository constructs one RuntimeStateJsonStore-backed canonical repository with the existing event-store selection.
+2. Read owners decode the canonical storage key, validate the persisted value against its decoded scope, and fail closed with ClientStateRepositoryInvariantCorruptionError on corruption.
+3. readPrincipalSnapshot reads the principal before and after its child instances and sessions; equal principal revisions assemble one canonical snapshot, while changed principals retry through readStableStateSnapshot.
+4. listSnapshots performs the same before/after principal guard for a scoped aggregate list and falls back to an individual stable snapshot when a principal changes.
+5. Snapshot assembly filters logically active sessions, orders instances and sessions by canonical storage key, validates the authoritative snapshot, and returns the existing public shape.
+6. The existing repository write methods retain their namespaces, conditional writes, event-store use, and transaction-bound construction; mutation and AppInbox owners still call the same public repository surface.
+```
+
 ## Cohort boundary and next owners
 
-- Persistence contracts, codecs, repositories, and storage keys remain for PR
-  B. Their existing normalization and persisted identity wrappers remain in
-  `services/client-state-mutations.ts`. `ClientMutationIdempotencyRecord` is
-  temporarily re-exported with the mutation contracts so existing signatures
-  compile; PR B owns its final move to
-  `client-state-persistence-contracts.ts`.
-- Service composition, AppInbox handling, reads, writes, timing, snapshots, and
-  cache ownership remain for PR B.
+- Service composition, AppInbox handling, mutation reads/writes, timing,
+  authorized-WebSocket, expiry, and snapshot-cache ownership remain for later
+  PR B cohorts.
 - Compatibility-only source removal and mechanical warning alignment remain
   for PR C.

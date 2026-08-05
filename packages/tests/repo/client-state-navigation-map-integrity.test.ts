@@ -66,10 +66,42 @@ const prACohortLinks = [
   ['./mutation/result-validation/validate-client-mutation.ts', 'function validateClientMutation('],
 ] as const;
 
+const prBPersistenceCohortLinks = [
+  ['./client-presence-state.ts', 'function toClientPresenceState('],
+  [
+    './persistence/client-state-persistence-contracts.ts',
+    'class ClientStateRepositoryInvariantCorruptionError',
+  ],
+  ['./persistence/client-state-runtime-namespaces.ts', 'const CLIENT_STATE_PRINCIPALS_NAMESPACE'],
+  ['./persistence/client-state-storage-keys.ts', 'function clientStatePrincipalStorageKey('],
+  [
+    './persistence/validate-persisted-client-state.ts',
+    'function validatePersistedClientPrincipal(',
+  ],
+  [
+    './persistence/client-state-persistence-codec.ts',
+    'function normalizePersistedClientPrincipal(',
+  ],
+  ['./persistence/client-state-repository-reads.ts', 'class ClientStateRepositoryReads'],
+  ['./persistence/assemble-client-state-snapshot.ts', 'function assembleClientStateSnapshot('],
+  ['./persistence/client-state-snapshot-repository.ts', 'class ClientStateSnapshotRepository'],
+  ['./persistence/client-state-repository.ts', 'class ClientStateRepository'],
+] as const;
+
 describe('client-state navigation map integrity', () => {
   it('links every PR A owner to its named primary symbol', () => {
     const readme = read(navigationPath);
     for (const [target, declaration] of prACohortLinks) {
+      expect(readme, target).toContain(`](${target})`);
+      const resolved = path.resolve(path.dirname(absolute(navigationPath)), target);
+      expect(existsSync(resolved), target).toBe(true);
+      expect(readFileSync(resolved, 'utf8'), declaration).toContain(declaration);
+    }
+  });
+
+  it('links every PR B persistence owner to its named primary symbol', () => {
+    const readme = read(navigationPath);
+    for (const [target, declaration] of prBPersistenceCohortLinks) {
       expect(readme, target).toContain(`](${target})`);
       const resolved = path.resolve(path.dirname(absolute(navigationPath)), target);
       expect(existsSync(resolved), target).toBe(true);
@@ -97,6 +129,18 @@ describe('client-state navigation map integrity', () => {
     expect(readme).toContain('AppInboxService');
     expect(readme).toContain('validateClientMutationCommand');
     expect(readme).toContain('toClientMutationCommand');
+  });
+
+  it('records the persistence stable-read ownership timeline', () => {
+    const readme = read(navigationPath);
+    expect(readTimeline(readme, 'PR B persistence and stable-read timeline')).toEqual([
+      'ClientStateRepository constructs one RuntimeStateJsonStore-backed canonical repository with the existing event-store selection.',
+      'Read owners decode the canonical storage key, validate the persisted value against its decoded scope, and fail closed with ClientStateRepositoryInvariantCorruptionError on corruption.',
+      'readPrincipalSnapshot reads the principal before and after its child instances and sessions; equal principal revisions assemble one canonical snapshot, while changed principals retry through readStableStateSnapshot.',
+      'listSnapshots performs the same before/after principal guard for a scoped aggregate list and falls back to an individual stable snapshot when a principal changes.',
+      'Snapshot assembly filters logically active sessions, orders instances and sessions by canonical storage key, validates the authoritative snapshot, and returns the existing public shape.',
+      'The existing repository write methods retain their namespaces, conditional writes, event-store use, and transaction-bound construction; mutation and AppInbox owners still call the same public repository surface.',
+    ]);
   });
 
   it('keeps enqueue wake before later invocation and post-commit observation', () => {

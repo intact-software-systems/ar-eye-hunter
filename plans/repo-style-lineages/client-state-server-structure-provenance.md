@@ -214,10 +214,22 @@ The legacy service path is a direct named one-hop export. The source blob is
 `74-77` has region hash
 `3cb57e0bb4be500115f8a7f051b819b8f18b76cf89de7e0322a8ea041c9570f8`.
 
-## Compatibility and deferred persistence
+## PR B persistence source evidence
 
-Moved names remain direct named one-hop exports. The transitional
-`services/client-state-mutations.ts` retains only current persistence
-normalization, persisted-slot identity checks, and the exported persisted
-idempotency wrapper for PR B. No persistence key, codec, repository, AppInbox,
-transaction, retry, timing, or API-v1 behavior moved in this cohort.
+The following predecessor records constrain the PR B persistence move. Each
+source record is exact; it grants inherited-warning review capacity only to the
+listed mechanically moved persistence behavior. New imports, named exports,
+module boundaries, and helper splits receive no historical-debt allowance.
+
+- `packages/shared-server/rallar-system/client-presence-state.ts@60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27`, lines `1-13`, is the sole predecessor for `packages/shared-server/rallar-system/client-state/client-presence-state.ts`.
+- `packages/shared-server/rallar-system/client-state-storage-keys.ts@677e87f18f06c450b4b412e1ae438ea5b9d850c3`, lines `1-56`, is the sole predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts`.
+- `packages/shared-server/rallar-system/repositories/ClientStateRepository.ts@9681469561f33b48cd5320dc7ad013c715c19ebe`, persistence regions `63-727,729-835`, is the predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts`, `packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts`, `packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts`, `packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts`, and `packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts`.
+- `packages/shared-server/rallar-system/services/client-state-mutations.ts@e4c8219a22ba6e3d47e3b139d44546b1fda436f0`, persisted-codec and validation regions `612-827,1898-1934,2667-2687`, is the predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts` and `packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts`.
+- `packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts@b5e091fe588f88fa63eadf1d4c24d7c04aa3df00`, receipt and idempotency contract region `188-214`, is the predecessor for `packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts`.
+
+The legacy `client-presence-state.ts`, `client-state-storage-keys.ts`, and
+`repositories/ClientStateRepository.ts` modules remain direct named one-hop
+compatibility exports. The transitional `services/client-state-mutations.ts`
+is a direct named compatibility surface for its relocated persistence exports.
+No AppInbox, transaction, retry, timing, API-v1, mutation read/write, or
+snapshot-cache behavior moves in this cohort.

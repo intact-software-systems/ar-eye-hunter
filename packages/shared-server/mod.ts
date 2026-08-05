@@ -11,7 +11,7 @@ export * from './rallar-system/middleware/RallarMiddleware.ts';
 export * from './rallar-system/cache-repositories.ts';
 export * from './rallar-system/repositories/AuthSessionRepository.ts';
 export * from './rallar-system/repositories/AuthUserRepository.ts';
-export * from './rallar-system/repositories/ClientStateRepository.ts';
+export * from './rallar-system/client-state/persistence/client-state-repository.ts';
 export * from './rallar-system/repositories/GroupStateRepository.ts';
 export * from './rallar-system/repositories/GroupTopologyConfigRepository.ts';
 export * from './rallar-system/repositories/RtcRttRepository.ts';

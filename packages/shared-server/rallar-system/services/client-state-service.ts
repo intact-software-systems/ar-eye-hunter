@@ -24,7 +24,7 @@ import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceI
 import {
     ClientStateRepository,
     createTransactionBoundClientStateRepository,
-} from '../repositories/ClientStateRepository.ts';
+} from '../client-state/persistence/client-state-repository.ts';
 import { StateSnapshotReadConflictError } from '../repositories/state-snapshot-read.ts';
 import {
     type ClientSessionExpiryCandidate,
