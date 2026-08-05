@@ -110,6 +110,8 @@ function canCreateSqlStateEventRepository(
         !isRuntimeStateRepositoryLike(input);
 }
 
-function isRuntimeStateRepositoryLike(input: RuntimeStateRepositoryLike | PSqlSql): input is RuntimeStateRepositoryLike {
+function isRuntimeStateRepositoryLike(
+    input: RuntimeStateRepositoryLike | PSqlSql,
+): input is RuntimeStateRepositoryLike {
     return typeof (input as RuntimeStateRepositoryLike).findEntry === 'function';
 }

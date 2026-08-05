@@ -10,6 +10,13 @@ Only the named target regions are mechanically moved behavior. Imports,
 exports, constructor hierarchy, adapter wiring, and any code outside those
 regions are new PR B code with no inherited-warning capacity.
 
+The storage-key and persistence-contract targets have mixed predecessor
+sources, so this document retains their complete region and full-file proof.
+They are deliberately absent from the structural lineage manifest: that
+manifest grants changed-style capacity only to unique target-to-source
+mappings. The provenance test invokes the active changed-style gate and
+asserts that neither target is present in its structural-capacity map.
+
 ## Machine evidence
 
 ```text

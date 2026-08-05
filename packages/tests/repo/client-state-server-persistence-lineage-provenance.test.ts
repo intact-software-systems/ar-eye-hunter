@@ -1,9 +1,11 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { readStructuralLineageMap } from '../../../scripts/repo-style-check/structural-lineage.mjs';
 
 const repoRoot = process.cwd();
 const prAResultingMain = '2fdba024bb347622727d337eb06fc13d2fe129fc';
@@ -21,6 +23,20 @@ const canonicalTargets = [
   'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
   'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
 ] as const;
+const structuralCapacityTargets = [
+  'packages/shared-server/rallar-system/client-state/client-presence-state.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
+] as const;
+const nonStructuralProvenanceTargets = [
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts',
+  'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
+] as const;
 
 const expectedManifest = {
   version: 1,
@@ -31,19 +47,10 @@ const expectedManifest = {
       ['packages/shared-server/rallar-system/client-state/client-presence-state.ts'],
     ),
     lineage(
-      'packages/shared-server/rallar-system/client-state-storage-keys.ts',
-      '677e87f18f06c450b4b412e1ae438ea5b9d850c3',
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts',
-      ],
-    ),
-    lineage(
       'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
       '9681469561f33b48cd5320dc7ad013c715c19ebe',
       [
         'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts',
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
         'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
         'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
         'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',
@@ -58,15 +65,30 @@ const expectedManifest = {
         'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
       ],
     ),
-    lineage(
-      'packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts',
-      'b5e091fe588f88fa63eadf1d4c24d7c04aa3df00',
-      [
-        'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
-      ],
-    ),
   ],
 };
+const expectedSourceBlobByPath = new Map([
+  [
+    'packages/shared-server/rallar-system/client-presence-state.ts',
+    '60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state-storage-keys.ts',
+    '677e87f18f06c450b4b412e1ae438ea5b9d850c3',
+  ],
+  [
+    'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+    '9681469561f33b48cd5320dc7ad013c715c19ebe',
+  ],
+  [
+    'packages/shared-server/rallar-system/services/client-state-mutations.ts',
+    'e4c8219a22ba6e3d47e3b139d44546b1fda436f0',
+  ],
+  [
+    'packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts',
+    'b5e091fe588f88fa63eadf1d4c24d7c04aa3df00',
+  ],
+]);
 
 const expectedEvidence = parseEvidence(`
 presence|packages/shared-server/rallar-system/client-presence-state.ts|1-13|313054037da652cdb036bf545c20da0bb44248792bd6910f4849b4d36607f19b|packages/shared-server/rallar-system/client-state/client-presence-state.ts|3-7|ceefccbb1ea20963abea667758cf84ff0e5f1b37988830a7572994b1ac3c6e5d|cc9c3db7e46aa1d6a18b2610b42b256628bbcd191f46f80f0d1c8b20e0d87b06
@@ -97,6 +119,87 @@ describe('client-state PR B persistence lineage provenance', () => {
       evidence.filter((entry) => entry.target.endsWith('client-state-persistence-contracts.ts')),
     ).toHaveLength(3);
     validateEvidence(evidence);
+  });
+
+  it('grants changed-style capacity only to unique structural targets', () => {
+    const manifest = JSON.parse(read(manifestPath)) as PersistenceManifest;
+    const manifestTargets = manifest.lineages.flatMap((lineage) => lineage.targets);
+    expect(manifestTargets).toEqual(structuralCapacityTargets);
+    expect(new Set(manifestTargets).size).toBe(manifestTargets.length);
+
+    const structuralLineageByTargetPath = readStructuralLineageMap({
+      repoRoot,
+      mergeBase: prAResultingMain,
+      targetReference: 'WORKTREE',
+      targetCommit: readHeadCommit(),
+      renameByTargetPath: new Map(),
+    });
+    expect([...structuralLineageByTargetPath.entries()]).toEqual([
+      [
+        'packages/shared-server/rallar-system/client-state/client-presence-state.ts',
+        'packages/shared-server/rallar-system/client-presence-state.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
+        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
+        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
+        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',
+        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts',
+        'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts',
+        'packages/shared-server/rallar-system/services/client-state-mutations.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
+        'packages/shared-server/rallar-system/services/client-state-mutations.ts',
+      ],
+    ]);
+    for (const target of nonStructuralProvenanceTargets) {
+      expect(structuralLineageByTargetPath.has(target), target).toBe(false);
+    }
+  });
+
+  it('passes the active changed-style gate without capacity for mixed-source targets', () => {
+    const result = spawnSync(
+      process.execPath,
+      ['scripts/check-changed-repo-style.mjs', prAResultingMain],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
+  it('registers this provenance suite adjacent to the client-state governance tests', () => {
+    const testRepoGovernance = JSON.parse(read('package.json')).scripts[
+      'test:repo-governance'
+    ] as string;
+
+    expect(testRepoGovernance).toContain(
+      [
+        'packages/tests/repo/client-state-server-lineage-provenance.test.ts',
+        'packages/tests/repo/client-state-server-persistence-lineage-provenance.test.ts',
+        'packages/tests/repo/client-state-server-ownership.test.ts',
+      ].join(' '),
+    );
   });
 
   it('fails closed for altered region content and semantic additions', () => {
@@ -171,13 +274,12 @@ function validateEvidence(
   if (JSON.stringify(evidence) !== JSON.stringify(expectedEvidence)) {
     throw new Error('exact evidence inventory');
   }
-  const manifest = JSON.parse(read(manifestPath)) as PersistenceManifest;
   for (const entry of evidence) {
-    const source = manifest.lineages.find((lineage) => lineage.source.path === entry.source);
-    if (!source || !source.targets.includes(entry.target)) {
-      throw new Error(`manifest ownership ${entry.id}`);
+    const sourceBlob = expectedSourceBlobByPath.get(entry.source);
+    if (sourceBlob === undefined) {
+      throw new Error(`unknown source ${entry.id}`);
     }
-    if (readBlob(entry.source) !== source.source.blob) {
+    if (readBlob(entry.source) !== sourceBlob) {
       throw new Error(`source blob ${entry.id}`);
     }
     if (hashRegions(readSource(entry.source), entry.sourceRegions) !== entry.sourceHash) {
@@ -191,6 +293,13 @@ function validateEvidence(
       throw new Error(`target file hash ${entry.id}`);
     }
   }
+}
+
+function readHeadCommit(): string {
+  return execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  }).trim();
 }
 
 function readBlob(filePath: string): string {

@@ -41,17 +41,10 @@ const prBPersistenceLineages = [
     ['packages/shared-server/rallar-system/client-state/client-presence-state.ts'],
   ],
   [
-    'packages/shared-server/rallar-system/client-state-storage-keys.ts',
-    '677e87f18f06c450b4b412e1ae438ea5b9d850c3',
-    ['packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts'],
-  ],
-  [
     'packages/shared-server/rallar-system/repositories/ClientStateRepository.ts',
     '9681469561f33b48cd5320dc7ad013c715c19ebe',
     [
       'packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts',
-      'packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts',
-      'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
       'packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts',
       'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts',
       'packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts',
@@ -64,13 +57,6 @@ const prBPersistenceLineages = [
     [
       'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts',
       'packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts',
-    ],
-  ],
-  [
-    'packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts',
-    'b5e091fe588f88fa63eadf1d4c24d7c04aa3df00',
-    [
-      'packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts',
     ],
   ],
 ] as const;

@@ -12,23 +12,11 @@
     {
       "mergeBase": "2fdba024bb347622727d337eb06fc13d2fe129fc",
       "source": {
-        "path": "packages/shared-server/rallar-system/client-state-storage-keys.ts",
-        "blob": "677e87f18f06c450b4b412e1ae438ea5b9d850c3"
-      },
-      "targets": [
-        "packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts"
-      ]
-    },
-    {
-      "mergeBase": "2fdba024bb347622727d337eb06fc13d2fe129fc",
-      "source": {
         "path": "packages/shared-server/rallar-system/repositories/ClientStateRepository.ts",
         "blob": "9681469561f33b48cd5320dc7ad013c715c19ebe"
       },
       "targets": [
         "packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts",
-        "packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts",
-        "packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts",
         "packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts",
         "packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts",
         "packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts",
@@ -44,16 +32,6 @@
       "targets": [
         "packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts",
         "packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts"
-      ]
-    },
-    {
-      "mergeBase": "2fdba024bb347622727d337eb06fc13d2fe129fc",
-      "source": {
-        "path": "packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts",
-        "blob": "b5e091fe588f88fa63eadf1d4c24d7c04aa3df00"
-      },
-      "targets": [
-        "packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts"
       ]
     }
   ]

@@ -218,6 +218,11 @@ The legacy service path is a direct named one-hop export. The source blob is
 
 The exact machine-verifiable mixed-source source and target evidence is in
 `plans/repo-style-lineages/client-state-server-persistence-provenance.md`.
+Its storage-key and persistence-contract records are nonstructural evidence:
+the active manifest omits both mixed-source targets so neither receives
+changed-style capacity. The dedicated provenance suite verifies that the
+active checker accepts the unique-target manifest and grants no capacity to
+either target.
 The final canonical repository owner is
 `packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts`.
 It covers `packages/shared-server/rallar-system/client-presence-state.ts@60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27`,
