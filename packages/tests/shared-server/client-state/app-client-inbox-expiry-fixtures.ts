@@ -13,14 +13,14 @@ import {
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
-export class ClientStateTestResourceInbox extends InMemoryQueueBox {
+export class ClientExpiryTestResourceInbox extends InMemoryQueueBox {
   async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
     const entry = await this.getItem(key);
     return entry !== undefined && statuses.includes(entry.status);
   }
 }
 
-export class ClientStateTestResourceInboxResults {
+export class ClientExpiryTestResourceInboxResults {
   private readonly data = new Map<string, ResourceEntry>();
 
   async replace(entry: ResourceEntry): Promise<ResourceEntry> {
@@ -31,7 +31,9 @@ export class ClientStateTestResourceInboxResults {
   async writeIfAbsentOrReplaceExpired(entry: ResourceEntry): Promise<ResourceEntry> {
     const key = toKeyAsString(entry.key);
     const existing = this.data.get(key);
-    if (existing !== undefined && !isExpiredResourceEntry(existing)) return existing;
+    if (existing !== undefined && !isExpiredResourceEntry(existing)) {
+      return existing;
+    }
     this.data.set(key, entry);
     return entry;
   }
@@ -42,14 +44,14 @@ export class ClientStateTestResourceInboxResults {
   }
 }
 
-export async function readClientStateTestEntries(
-  queue: ClientStateTestResourceInbox,
+export async function readClientExpiryTestEntries(
+  queue: ClientExpiryTestResourceInbox,
 ): Promise<ResourceEntry[]> {
   const entries = await Promise.all((await queue.getAllKeys()).map((key) => queue.getItem(key)));
   return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
 }
 
-export function listActiveClientStateTestEntries(
+export function listActiveClientExpiryTestEntries(
   entries: readonly ResourceEntry[],
 ): ResourceEntry[] {
   return entries.filter((entry) =>
@@ -57,12 +59,12 @@ export function listActiveClientStateTestEntries(
   );
 }
 
-export function readClientStateTestEnqueueData<V>(entry: ResourceEntry): V {
+export function readClientExpiryTestEnqueueData<V>(entry: ResourceEntry): V {
   const message = JSON.parse(entry.resource) as { payload: { resource: string } };
   return (JSON.parse(message.payload.resource) as { data: V }).data;
 }
 
-export async function createClientStateTestIssuedAuthority(
+export async function createClientExpiryTestIssuedAuthority(
   runtimeRepository: FakeRuntimeStateRepository,
   clientId: string,
   sessionId: string,
