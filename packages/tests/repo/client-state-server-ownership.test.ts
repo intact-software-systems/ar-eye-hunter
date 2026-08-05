@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { parse } from '@babel/parser';
@@ -14,6 +14,24 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/client-expired-state-authority.ts',
   'packages/shared-server/rallar-system/services/client-state-semantic-equality.ts',
 ] as const;
+
+describe('client-state source inventory', () => {
+  it('includes literal and ordinary TypeScript suffix files while excluding other files', () => {
+    const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'client-state-ownership-'));
+    try {
+      for (const fileName of ['.ts', 'canonical.ts', 'notes.txt']) {
+        writeFileSync(path.join(fixtureRoot, fileName), '');
+      }
+
+      expect(sourceFiles(fixtureRoot)).toEqual([
+        path.posix.join(fixtureRoot, '.ts'),
+        path.posix.join(fixtureRoot, 'canonical.ts'),
+      ]);
+    } finally {
+      rmSync(fixtureRoot, { force: true, recursive: true });
+    }
+  });
+});
 
 describe('client-state server command ownership', () => {
   it('keeps canonical owners independent from legacy compatibility paths', () => {
@@ -185,10 +203,13 @@ function exportSpecifiers(source: string): readonly string[] {
 }
 
 function sourceFiles(root: string): readonly string[] {
-  const output = execFileSync('rg', ['--files', root, '-g', '*.ts'], {
-    encoding: 'utf8',
-  }).trim();
-  return output ? output.split('\n') : [];
+  return readdirSync(root, { withFileTypes: true })
+    .flatMap((entry) => {
+      const filePath = path.posix.join(root, entry.name);
+      if (entry.isDirectory()) return sourceFiles(filePath);
+      return entry.isFile() && entry.name.endsWith('.ts') ? [filePath] : [];
+    })
+    .sort();
 }
 
 function read(filePath: string): string {
