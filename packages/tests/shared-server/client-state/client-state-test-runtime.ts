@@ -63,10 +63,7 @@ interface LegacyClientStateTestDriverDependencies {
   readonly sleep?: unknown;
 }
 
-export type {
-  ClientStatePhaseTestDriver,
-  ClientStateTestAuthorisedWsInput,
-} from './client-state-test-driver-contracts.ts';
+export type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
 export { failNextClientStateTestOutboxWrite, getClientStateTestOutbox };
 
 export function createClientStatePhaseTestDriver(

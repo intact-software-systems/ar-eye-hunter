@@ -151,6 +151,16 @@ describe('client-state test ownership', () => {
       expect(existsSync(path.join(repoRoot, filePath)), filePath).toBe(false);
     }
   });
+
+  it('keeps the canonical phase-test runtime on its exact five-symbol API', () => {
+    expect(exportedNames(read(finalClientStateTestOwners[3]))).toEqual([
+      'ClientStatePhaseTestDriver',
+      'createClientStatePhaseTestDriver',
+      'createLegacyClientStateTestDriver',
+      'failNextClientStateTestOutboxWrite',
+      'getClientStateTestOutbox',
+    ]);
+  });
 });
 
 function assertCanonicalPersistenceOwnership(): void {
@@ -339,6 +349,23 @@ function importSpecifiers(source: string): readonly string[] {
     }
     return [];
   });
+}
+
+function exportedNames(source: string): readonly string[] {
+  const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
+  return program.body
+    .flatMap((node) => {
+      if (node.type !== 'ExportNamedDeclaration') return [];
+      if (node.declaration?.type === 'FunctionDeclaration' && node.declaration.id) {
+        return [node.declaration.id.name];
+      }
+      return node.specifiers.flatMap((specifier) =>
+        specifier.type === 'ExportSpecifier' && specifier.exported.type === 'Identifier'
+          ? [specifier.exported.name]
+          : [],
+      );
+    })
+    .sort();
 }
 
 function sourceFiles(root: string): readonly string[] {
