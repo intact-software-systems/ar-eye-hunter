@@ -15,8 +15,20 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/client-state-semantic-equality.ts',
   'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
 ] as const;
-const sharedServerCompatibilityImportPattern =
-  /(?:^|\/)rallar-system\/services\/(?:AppClientInboxService|client-state-service|client-state-mutations|client-mutation-authority|client-expired-state-authority|client-state-semantic-equality)\.ts$/;
+const sharedServerCompatibilityImportPattern = new RegExp(
+  [
+    '(?:^|\\/)rallar-system\\/services\\/',
+    '(?:AppClientInboxService|client-state-service|client-state-mutations|',
+    'client-mutation-authority|client-expired-state-authority|',
+    'client-state-semantic-equality)\\.ts$',
+  ].join(''),
+);
+const persistenceCompatibilityImportPattern = new RegExp(
+  [
+    '(?:^|\\/)rallar-system\\/(?:client-presence-state|',
+    'client-state-storage-keys|repositories\\/ClientStateRepository)\\.ts$',
+  ].join(''),
+);
 const persistenceCanonicalPaths = [
   `${canonicalRoot}/client-presence-state.ts`,
   `${canonicalRoot}/persistence/client-state-persistence-contracts.ts`,
@@ -28,18 +40,6 @@ const persistenceCanonicalPaths = [
   `${canonicalRoot}/persistence/assemble-client-state-snapshot.ts`,
   `${canonicalRoot}/persistence/client-state-snapshot-repository.ts`,
   `${canonicalRoot}/persistence/client-state-repository.ts`,
-] as const;
-const ordinaryTransactionCanonicalPaths = [
-  `${canonicalRoot}/client-state-service-contracts.ts`,
-  `${canonicalRoot}/client-state-service.ts`,
-  `${canonicalRoot}/client-state-service-timing.ts`,
-  `${canonicalRoot}/mutation/read/read-client-mutation.ts`,
-  `${canonicalRoot}/mutation/write/write-client-mutation.ts`,
-  `${canonicalRoot}/inbox/app-client-inbox-contracts.ts`,
-  `${canonicalRoot}/inbox/authenticated-client-mutation-ingress.ts`,
-  `${canonicalRoot}/inbox/authorised-ws-client-app-inbox.ts`,
-  `${canonicalRoot}/inbox/client-state-inbox-handler.ts`,
-  `${canonicalRoot}/inbox/app-client-inbox-service.ts`,
 ] as const;
 const persistenceCompatibilityExports = new Map([
   [
@@ -90,270 +90,196 @@ describe('client-state source inventory', () => {
   });
 });
 
-describe('client-state server command ownership', () => {
+describe('client-state persistence ownership', () => {
   it('owns persistence, stable reads, and snapshots in the canonical client-state tree', () => {
-    const canonicalFiles = sourceFiles(canonicalRoot);
-    expect(canonicalFiles).toEqual(expect.arrayContaining(persistenceCanonicalPaths));
-
-    for (const filePath of persistenceCanonicalPaths) {
-      const source = read(filePath);
-      for (const specifier of importSpecifiers(source)) {
-        expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
-          /(?:^|\/)rallar-system\/(?:client-presence-state|client-state-storage-keys|repositories\/ClientStateRepository)\.ts$/,
-        );
-        expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
-          /(?:^|\/)client-state\/(?:mutation|inbox)\//,
-        );
-        expect(specifier, `${filePath}: ${specifier}`).not.toMatch(/(?:^|\/)services\//);
-      }
-    }
-
-    for (const [filePath, owner] of persistenceCompatibilityExports) {
-      const source = read(filePath);
-      const program = parse(source, {
-        sourceType: 'module',
-        plugins: ['typescript'],
-      }).program;
-      expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
-      expect(importSpecifiers(source)).toContain(owner);
-      expect(source).not.toContain('export *');
-    }
-
-    const sharedServerModule = read('packages/shared-server/mod.ts');
-    expect(sharedServerModule).toContain(
-      "export * from './rallar-system/client-state/persistence/client-state-repository.ts';",
-    );
-    expect(sharedServerModule).not.toContain(
-      "export * from './rallar-system/repositories/ClientStateRepository.ts';",
-    );
-  });
-
-  it('owns the service, ordinary transaction, and AppInbox shell in the canonical client-state tree', () => {
-    const canonicalFiles = sourceFiles(canonicalRoot);
-    expect(canonicalFiles).toEqual(expect.arrayContaining(ordinaryTransactionCanonicalPaths));
-
-    const service = read(`${canonicalRoot}/client-state-service.ts`);
-    const handler = read(`${canonicalRoot}/inbox/client-state-inbox-handler.ts`);
-    const inboxService = read(`${canonicalRoot}/inbox/app-client-inbox-service.ts`);
-    const timedService = read(`${canonicalRoot}/client-state-service-timing.ts`);
-
-    expect(service).toContain('export function createClientStateService(');
-    expect(handler).toContain('writeMutationWithAfterCommitResult');
-    expect(handler).toContain('committedSnapshots');
-    expect(inboxService).toContain('export class AppClientInboxService extends AppInboxService');
-    expect(timedService).toContain('export function createTimedClientStateService(');
-
-    for (const [compatibilityPath, owner] of [
-      [
-        'packages/shared-server/rallar-system/services/client-state-service.ts',
-        '../client-state/client-state-service.ts',
-      ],
-      [
-        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
-        '../client-state/inbox/app-client-inbox-service.ts',
-      ],
-    ] as const) {
-      const source = read(compatibilityPath);
-      const program = parse(source, {
-        sourceType: 'module',
-        plugins: ['typescript'],
-      }).program;
-      expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
-      expect(importSpecifiers(source)).toContain(owner);
-      expect(source).not.toContain('export *');
-    }
-
-    const sharedServerModule = read('packages/shared-server/mod.ts');
-    expect(sharedServerModule).toContain(
-      "export { createClientStateService } from './rallar-system/client-state/client-state-service.ts';",
-    );
-    expect(sharedServerModule).toMatch(
-      /export\s*\{\s*AppClientInboxService,?\s*\}\s*from '\.\/rallar-system\/client-state\/inbox\/app-client-inbox-service\.ts';/,
-    );
-    expect(sharedServerModule).not.toContain(
-      "export * from './rallar-system/client-state/client-state-service.ts';",
-    );
-    expect(sharedServerModule).not.toContain(
-      "export * from './rallar-system/client-state/inbox/app-client-inbox-contracts.ts';",
-    );
-  });
-
-  it('keeps every shared-server implementation independent from legacy compatibility paths', () => {
-    for (const filePath of sourceFiles('packages/shared-server')) {
-      const source = read(filePath);
-      for (const specifier of importSpecifiers(source)) {
-        expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
-          sharedServerCompatibilityImportPattern,
-        );
-      }
-    }
+    assertCanonicalPersistenceOwnership();
   });
 
   it('keeps canonical shared-server consumers on the canonical repository owner', () => {
-    for (const [filePath, owner] of canonicalRepositoryConsumers) {
-      const imports = importSpecifiers(read(filePath));
-      expect(imports, filePath).toContain(owner);
-      expect(imports, filePath).not.toContain('../repositories/ClientStateRepository.ts');
-      expect(imports, filePath).not.toContain(
-        '@shared-server/rallar-system/repositories/ClientStateRepository.ts',
-      );
-    }
+    assertCanonicalRepositoryConsumers();
   });
 
   it('keeps concrete reads below snapshot assembly and the final write repository', () => {
-    const reads = read(`${canonicalRoot}/persistence/client-state-repository-reads.ts`);
-    const snapshots = read(`${canonicalRoot}/persistence/client-state-snapshot-repository.ts`);
-    const repository = read(canonicalRepositoryOwner);
-    const assembly = read(`${canonicalRoot}/persistence/assemble-client-state-snapshot.ts`);
-
-    expect(reads).toContain(
-      'export class ClientStateRepositoryReads extends RuntimeStateJsonStore',
-    );
-    expect(reads).not.toContain('abstract class ClientStateRepositoryReads');
-    expect(snapshots).toContain(
-      'export class ClientStateSnapshotRepository extends ClientStateRepositoryReads',
-    );
-    expect(snapshots).not.toContain('protected abstract');
-    expect(repository).toContain(
-      'export class ClientStateRepository extends ClientStateSnapshotRepository',
-    );
-    expect(assembly).not.toContain('invariantError');
-    expect(assembly).toContain('new ClientStateRepositoryInvariantCorruptionError(');
-  });
-
-  it('keeps the canonical command cohort acyclic and free of wildcard barrels', () => {
-    const files = sourceFiles(canonicalRoot);
-    const canonicalFiles = new Set(files);
-    const graph = new Map(
-      files.map((filePath) => [
-        filePath,
-        importSpecifiers(read(filePath))
-          .filter((specifier) => specifier.startsWith('.'))
-          .map((specifier) =>
-            path.posix.normalize(path.posix.join(path.posix.dirname(filePath), specifier)),
-          )
-          .filter((target) => canonicalFiles.has(target)),
-      ]),
-    );
-
-    for (const filePath of files) {
-      expect(read(filePath), filePath).not.toContain('export *');
-      expect(() => visitImportGraph(filePath, graph, [], new Set())).not.toThrow();
-    }
-  });
-
-  it('keeps shared contract inventories below command validation', () => {
-    for (const filePath of [
-      `${canonicalRoot}/client-state-contract-validation.ts`,
-      `${canonicalRoot}/client-mutation-receipt-validation.ts`,
-      `${canonicalRoot}/client-state-validation-primitives.ts`,
-      `${canonicalRoot}/mutation/client-mutation-contracts.ts`,
-    ]) {
-      expect(importSpecifiers(read(filePath)), filePath).not.toEqual(
-        expect.arrayContaining([expect.stringMatching(/mutation\/command-validation\//)]),
-      );
-    }
-
-    const contracts = '../client-mutation-contracts.ts';
-    const operationInput = `${canonicalRoot}/mutation/command-validation/validate-client-mutation-operation-input.ts`;
-    for (const filePath of [
-      operationInput,
-      `${canonicalRoot}/mutation/command-validation/validate-client-mutation-command.ts`,
-      `${canonicalRoot}/mutation/command-validation/validate-client-mutation-request.ts`,
-    ]) {
-      expect(importSpecifiers(read(filePath)), filePath).toContain(contracts);
-    }
-    expect(exportSpecifiers(read(operationInput))).toContain(contracts);
-  });
-
-  it('keeps moved compatibility exports named, one-hop, and executable-logic free', () => {
-    const expected = new Map([
-      [compatibilityPaths[2], '../client-state/mutation/client-mutation-authority.ts'],
-      [
-        compatibilityPaths[3],
-        '../client-state/mutation/validate-client-expired-session-authority.ts',
-      ],
-      [compatibilityPaths[4], '../client-state/client-state-semantic-equality.ts'],
-    ]);
-    for (const [filePath, owner] of expected) {
-      const source = read(filePath);
-      const program = parse(source, {
-        sourceType: 'module',
-        plugins: ['typescript'],
-      }).program;
-      expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
-      expect(importSpecifiers(source)).toEqual([owner]);
-      expect(source).not.toContain('export *');
-    }
-  });
-
-  it('registers persistent governance without registering the temporary ratchet', () => {
-    const script = JSON.parse(read('package.json')).scripts['test:repo-governance'] as string;
-    for (const fileName of [
-      'client-state-navigation-map-integrity.test.ts',
-      'client-state-server-lineage-provenance.test.ts',
-      'client-state-server-ownership.test.ts',
-    ]) {
-      expect(script).toContain(`packages/tests/repo/${fileName}`);
-    }
-    expect(script).not.toContain('client-state-server-source-ratchet.test.ts');
-    const ratchet = read('packages/tests/repo/client-state-server-source-ratchet.test.ts');
-    expect(ratchet).toContain(
-      "Owner: Task 4A persistence cohort; remove or replace in the PR C ledger after\n// PR B's resulting-main workflow passes and the ledger records semantic owner coverage\n// for every ratcheted canonical module.",
-    );
-  });
-
-  it('removes moved declarations from the transitional mixed compatibility owners', () => {
-    const service = read(compatibilityPaths[0]);
-    const mutations = read(compatibilityPaths[1]);
-    for (const declaration of [
-      'function toClientMutationCommand(',
-      'function toUpsertPrincipalCommandInput(',
-      'function toConnectCommandInput(',
-      'function toExpiryCommandInput(',
-    ]) {
-      expect(service, declaration).not.toContain(declaration);
-    }
-    for (const declaration of [
-      'class ClientMutationRejectedError',
-      'class ClientMutationIdempotencyConflictError',
-      'function computeClientMutation(',
-      'function validateClientMutation(',
-      'function validateClientMutationAuthorityPolicy(',
-      'function validateClientMutationCommand(',
-      'function validateClientMutationRequest(',
-      'type ClientMutationCommand =',
-    ]) {
-      expect(mutations, declaration).not.toContain(declaration);
-    }
-    expect(service).toContain("from '../client-state/mutation/client-mutation-command.ts';");
-    expect(mutations).toContain(
-      "from '../client-state/mutation/command-validation/validate-client-mutation-command.ts';",
-    );
-    expect(mutations).toContain(
-      "from '../client-state/mutation/compute/compute-client-mutation.ts';",
-    );
-    expect(mutations).toContain(
-      "from '../client-state/mutation/result-validation/validate-client-mutation.ts';",
-    );
+    assertRepositoryReadOwnership();
   });
 });
 
-function visitImportGraph(
-  filePath: string,
-  graph: ReadonlyMap<string, readonly string[]>,
-  stack: readonly string[],
-  complete: Set<string>,
-): void {
-  if (stack.includes(filePath)) {
-    throw new Error(`Canonical client-state import cycle: ${[...stack, filePath].join(' -> ')}`);
+describe('client-state module graph ownership', () => {
+  it('keeps every shared-server implementation independent from legacy compatibility paths', () => {
+    assertSharedServerCompatibilityIndependence();
+  });
+});
+
+describe('client-state compatibility ownership', () => {
+  it('keeps moved compatibility exports named, one-hop, and executable-logic free', () => {
+    assertMovedCompatibilityExports();
+  });
+
+  it('registers persistent governance without registering the temporary ratchet', () => {
+    assertPersistentGovernanceRegistration();
+  });
+
+  it('removes moved declarations from the transitional mixed compatibility owners', () => {
+    assertTransitionalCompatibilityDeclarationsRemoved();
+  });
+});
+
+function assertCanonicalPersistenceOwnership(): void {
+  const canonicalFiles = sourceFiles(canonicalRoot);
+  expect(canonicalFiles).toEqual(expect.arrayContaining([...persistenceCanonicalPaths]));
+
+  for (const filePath of persistenceCanonicalPaths) {
+    const source = read(filePath);
+    for (const specifier of importSpecifiers(source)) {
+      expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
+        persistenceCompatibilityImportPattern,
+      );
+      expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
+        /(?:^|\/)client-state\/(?:mutation|inbox)\//,
+      );
+      expect(specifier, `${filePath}: ${specifier}`).not.toMatch(/(?:^|\/)services\//);
+    }
   }
-  if (complete.has(filePath)) return;
-  const nextStack = [...stack, filePath];
-  for (const dependency of graph.get(filePath) ?? []) {
-    visitImportGraph(dependency, graph, nextStack, complete);
+
+  assertPersistenceCompatibilityExports();
+
+  const sharedServerModule = read('packages/shared-server/mod.ts');
+  expect(sharedServerModule).toContain(
+    "export * from './rallar-system/client-state/persistence/client-state-repository.ts';",
+  );
+  expect(sharedServerModule).not.toContain(
+    "export * from './rallar-system/repositories/ClientStateRepository.ts';",
+  );
+}
+
+function assertPersistenceCompatibilityExports(): void {
+  for (const [filePath, owner] of persistenceCompatibilityExports) {
+    const source = read(filePath);
+    const program = parse(source, {
+      sourceType: 'module',
+      plugins: ['typescript'],
+    }).program;
+    expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
+    expect(importSpecifiers(source)).toContain(owner);
+    expect(source).not.toContain('export *');
   }
-  complete.add(filePath);
+}
+
+function assertSharedServerCompatibilityIndependence(): void {
+  for (const filePath of sourceFiles('packages/shared-server')) {
+    const source = read(filePath);
+    for (const specifier of importSpecifiers(source)) {
+      expect(specifier, `${filePath}: ${specifier}`).not.toMatch(
+        sharedServerCompatibilityImportPattern,
+      );
+    }
+  }
+}
+
+function assertCanonicalRepositoryConsumers(): void {
+  for (const [filePath, owner] of canonicalRepositoryConsumers) {
+    const imports = importSpecifiers(read(filePath));
+    expect(imports, filePath).toContain(owner);
+    expect(imports, filePath).not.toContain('../repositories/ClientStateRepository.ts');
+    expect(imports, filePath).not.toContain(
+      '@shared-server/rallar-system/repositories/ClientStateRepository.ts',
+    );
+  }
+}
+
+function assertRepositoryReadOwnership(): void {
+  const reads = read(`${canonicalRoot}/persistence/client-state-repository-reads.ts`);
+  const snapshots = read(`${canonicalRoot}/persistence/client-state-snapshot-repository.ts`);
+  const repository = read(canonicalRepositoryOwner);
+  const assembly = read(`${canonicalRoot}/persistence/assemble-client-state-snapshot.ts`);
+
+  expect(reads).toContain('export class ClientStateRepositoryReads extends RuntimeStateJsonStore');
+  expect(reads).not.toContain('abstract class ClientStateRepositoryReads');
+  expect(snapshots).toContain(
+    'export class ClientStateSnapshotRepository extends ClientStateRepositoryReads',
+  );
+  expect(snapshots).not.toContain('protected abstract');
+  expect(repository).toContain(
+    'export class ClientStateRepository extends ClientStateSnapshotRepository',
+  );
+  expect(assembly).not.toContain('invariantError');
+  expect(assembly).toContain('new ClientStateRepositoryInvariantCorruptionError(');
+}
+
+function assertMovedCompatibilityExports(): void {
+  const expected = new Map([
+    [compatibilityPaths[2], '../client-state/mutation/client-mutation-authority.ts'],
+    [
+      compatibilityPaths[3],
+      '../client-state/mutation/validate-client-expired-session-authority.ts',
+    ],
+    [compatibilityPaths[4], '../client-state/client-state-semantic-equality.ts'],
+  ]);
+  for (const [filePath, owner] of expected) {
+    const source = read(filePath);
+    const program = parse(source, {
+      sourceType: 'module',
+      plugins: ['typescript'],
+    }).program;
+    expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
+    expect(importSpecifiers(source)).toEqual([owner]);
+    expect(source).not.toContain('export *');
+  }
+}
+
+function assertPersistentGovernanceRegistration(): void {
+  const script = JSON.parse(read('package.json')).scripts['test:repo-governance'] as string;
+  for (const fileName of [
+    'client-state-navigation-map-integrity.test.ts',
+    'client-state-server-lineage-provenance.test.ts',
+    'client-state-server-ownership.test.ts',
+  ]) {
+    expect(script).toContain(`packages/tests/repo/${fileName}`);
+  }
+  expect(script).not.toContain('client-state-server-source-ratchet.test.ts');
+  const ratchet = read('packages/tests/repo/client-state-server-source-ratchet.test.ts');
+  expect(ratchet).toContain(
+    [
+      'Owner: Task 4A persistence cohort; remove or replace in the PR C ledger after',
+      "// PR B's resulting-main workflow passes and the ledger records semantic owner coverage",
+      '// for every ratcheted canonical module.',
+    ].join('\n'),
+  );
+}
+
+function assertTransitionalCompatibilityDeclarationsRemoved(): void {
+  const service = read(compatibilityPaths[0]);
+  const mutations = read(compatibilityPaths[1]);
+  for (const declaration of [
+    'function toClientMutationCommand(',
+    'function toUpsertPrincipalCommandInput(',
+    'function toConnectCommandInput(',
+    'function toExpiryCommandInput(',
+  ]) {
+    expect(service, declaration).not.toContain(declaration);
+  }
+  for (const declaration of [
+    'class ClientMutationRejectedError',
+    'class ClientMutationIdempotencyConflictError',
+    'function computeClientMutation(',
+    'function validateClientMutation(',
+    'function validateClientMutationAuthorityPolicy(',
+    'function validateClientMutationCommand(',
+    'function validateClientMutationRequest(',
+    'type ClientMutationCommand =',
+  ]) {
+    expect(mutations, declaration).not.toContain(declaration);
+  }
+  expect(service).toContain("from '../client-state/mutation/client-mutation-command.ts';");
+  expect(mutations).toContain(
+    "from '../client-state/mutation/command-validation/validate-client-mutation-command.ts';",
+  );
+  expect(mutations).toContain(
+    "from '../client-state/mutation/compute/compute-client-mutation.ts';",
+  );
+  expect(mutations).toContain(
+    "from '../client-state/mutation/result-validation/validate-client-mutation.ts';",
+  );
 }
 
 function importSpecifiers(source: string): readonly string[] {
@@ -370,16 +296,6 @@ function importSpecifiers(source: string): readonly string[] {
     }
     return [];
   });
-}
-
-function exportSpecifiers(source: string): readonly string[] {
-  const program = parse(source, {
-    sourceType: 'module',
-    plugins: ['typescript'],
-  }).program;
-  return program.body.flatMap((node) =>
-    node.type === 'ExportNamedDeclaration' && node.source ? [node.source.value] : [],
-  );
 }
 
 function sourceFiles(root: string): readonly string[] {
