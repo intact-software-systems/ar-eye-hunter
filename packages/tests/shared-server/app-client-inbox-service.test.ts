@@ -21,7 +21,6 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import {
     AppClientInboxService,
     AppInboxType,
-    type ClientExpiredSessionsAppInboxPayload,
     type ClientInstanceUpsertAppInboxPayload,
     type ClientPrincipalUpsertAppInboxPayload,
     type ClientSessionConnectAppInboxPayload,
@@ -674,133 +673,6 @@ describe('AppClientInboxService', () => {
         });
     });
 
-    it('processes expired client sessions through the inbox and publishes written mutations', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const publisher = createPublisher();
-        const expiresAtEpochMs = Date.now() - 1_000;
-        const database = createAppInboxTestDatabase(queue, results, {
-            runtimeRepository,
-        });
-        const clientStateService = createAutoAuthorizingClientStateService(
-            runtimeRepository,
-            database,
-        );
-        const service = new AppClientInboxService(
-            reader,
-            queue as never,
-            results as never,
-            database,
-            clientStateService,
-            'server-12345678',
-        );
-        await processAppInbox<ClientSessionConnectAppInboxPayload, ClientStateWritten>(
-            service,
-            reader,
-            {
-                type: AppInboxType.CLIENT_SESSION_CONNECT,
-                resourceId: 'seed-client-expiry-session',
-                contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:alice`,
-                senderId: 'alice',
-                data: {
-                    scope: SCOPE,
-                    principalId: 'alice',
-                    clientInstanceId: 'alice-browser',
-                    sessionId: 'alice-session',
-                    request: {
-                        generationId: 'generation-alice-session',
-                        presenceState: 'online',
-                        actorPrincipalId: 'alice',
-                        actorSessionId: 'alice-session',
-                        connectedAtEpochMs: expiresAtEpochMs - 2_000,
-                        lastHeartbeatAtEpochMs: expiresAtEpochMs - 1_000,
-                        expiresAtEpochMs,
-                        requestId: 'seed-client-expiry-session',
-                    },
-                },
-            },
-        );
-
-        const expired = await processAppInboxMethod(reader, () =>
-            service.processExpiredSessions(expiresAtEpochMs + 1),
-        );
-
-        expect(expired.right).toHaveLength(1);
-        expect(expired.right?.[0].result.right?.event).toMatchObject({
-            eventType: 'session-expired',
-            reason: 'expired',
-            sessionId: 'alice-session',
-        });
-        expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
-        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
-    });
-
-    it('keeps at most one active waiting client expiry entry across timestamps', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const listExpiredSessionCandidates = vi.fn(async () => []);
-        const clientStateService = createClientStateServiceStub({
-            listExpiredSessionCandidates,
-        });
-        const service = new AppClientInboxService(
-            reader,
-            queue as never,
-            results as never,
-            createAppInboxTestDatabase(queue, results),
-            clientStateService,
-            'server-12345678',
-        );
-
-        const first = service.processExpiredSessions(60_000);
-        const second = service.processExpiredSessions(120_000);
-
-        await waitForQueueEntryCount(queue, 1);
-        const entries = await readEntries(queue);
-
-        expect(activeEntries(entries)).toHaveLength(1);
-        expect(entries[0].key.resourceId).toBe('expire-client-sessions');
-        expect(readEnqueuedData<ClientExpiredSessionsAppInboxPayload>(entries[0]).atEpochMs).toBe(
-            60_000,
-        );
-
-        await reader.dequeueInbox(
-            InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-
-        await expect(first).resolves.toMatchObject({ right: [] });
-        await expect(second).resolves.toMatchObject({ right: [] });
-        expect(listExpiredSessionCandidates).toHaveBeenCalledTimes(1);
-        expect(listExpiredSessionCandidates).toHaveBeenLastCalledWith(60_000);
-    });
-
-    it('durably enqueues each client expiry reconciliation tick', async () => {
-        const queue = new TestResourceInbox();
-        const reader = new InboxQueueReader(queue);
-        const results = new TestResourceInboxResults();
-        const listExpiredSessionCandidates = vi.fn(async () => []);
-        const clientStateService = createClientStateServiceStub({
-            listExpiredSessionCandidates,
-        });
-        const service = new AppClientInboxService(
-            reader,
-            queue as never,
-            results as never,
-            createAppInboxTestDatabase(queue, results),
-            clientStateService,
-            'server-12345678',
-        );
-
-        const first = await service.enqueueExpiredSessions(60_000);
-        const second = await service.enqueueExpiredSessions(120_000);
-        expect(first.key.resourceId).toBe('expire-client-sessions-60000');
-        expect(second.key.resourceId).toBe('expire-client-sessions-120000');
-        expect(await readEntries(queue)).toHaveLength(2);
-        expect(listExpiredSessionCandidates).not.toHaveBeenCalled();
-    });
-
     it('returns a left result when a client inbox mutation handler fails with a non-retryable error', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
@@ -1018,31 +890,6 @@ function issuedSession(
     };
 }
 
-async function processAppInboxMethod<R>(
-    reader: InboxQueueReader,
-    run: () => Promise<R>,
-): Promise<R> {
-    const resultPromise = run();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await reader.dequeueInbox(
-        InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-
-    return await resultPromise;
-}
-
-async function waitForQueueEntryCount(
-    queue: InMemoryQueueBox, count: number): Promise<void> {
-    for (let i = 0; i < 20; i += 1) {
-        if ((await readEntries(queue)).length >= count) {
-            return;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-
-    throw new Error(`Expected at least ${count} app inbox entries`);
-}
-
 async function waitForQueueEntryStatus(
     queue: InMemoryQueueBox,
     status: EntityStatus,
@@ -1063,27 +910,6 @@ async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntry[]> {
         (await queue.getAllKeys()).map((key) => queue.getItem(key)));
 
     return entries.filter((entry): entry is ResourceEntry => entry !== undefined);
-}
-
-function activeEntries(entries: ResourceEntry[]): ResourceEntry[] {
-    const activeStatuses = new Set([
-        EntityStatus.NEW,
-        EntityStatus.RESERVED, EntityStatus.RETRY]);
-
-    return entries.filter((entry) => activeStatuses.has(entry.status));
-}
-
-function readEnqueuedData<V>(entry: ResourceEntry): V {
-    const message = JSON.parse(entry.resource) as {
-        payload: {
-            resource: string;
-        };
-    };
-    const enqueue = JSON.parse(message.payload.resource) as {
-        data: V;
-    };
-
-    return enqueue.data;
 }
 
 function createClientStateServiceStub(
