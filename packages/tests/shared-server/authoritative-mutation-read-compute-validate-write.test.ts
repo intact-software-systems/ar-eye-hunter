@@ -31,14 +31,18 @@ const sharedValidationPrimitiveNames = [
 const sources = {
   appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
   appAuth: read(`${serviceRoot}/AppAuthInboxService.ts`),
-  appClient: read(`${serviceRoot}/AppClientInboxService.ts`),
+  appClient: read(
+    'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
+  ),
   appCrdt: read(`${serviceRoot}/AppCrdtInboxService.ts`),
   appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
   topologyHandler: read(`${topologyInboxRoot}/topology-app-inbox-handler.ts`),
   rtcHandler: read(`${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`),
   groupHandler: read(`${groupStateRoot}/inbox/group-state-inbox-handler.ts`),
   groupService: read(`${groupStateRoot}/group-state-service.ts`),
-  client: read(`${serviceRoot}/client-state-service.ts`),
+  client: read(
+    'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
+  ),
   group: read(`${groupStateRoot}/mutation/write/write-group-mutation.ts`),
   topologyConfig: read(`${serviceRoot}/group-topology-management-service.ts`),
   topologyWorker: read(`${serviceRoot}/RtcTopologyOutboxWork.ts`),
@@ -48,7 +52,9 @@ const sources = {
 
 const trackedRuntimeSource = [
   `${serviceRoot}/AppInboxService.ts`,
-  `${serviceRoot}/client-state-service.ts`,
+  'packages/shared-server/rallar-system/client-state/client-state-service.ts',
+  'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
+  'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
   `${serviceRoot}/group-state-service.ts`,
   `${groupStateRoot}/group-mutation-authority.ts`,
   `${groupStateRoot}/group-mutation-command.ts`,
@@ -190,9 +196,9 @@ describe('authoritative mutation read/compute/validate/write contract', { timeou
       source: sources.appClient,
       owner: 'processCommand',
       calls: [
-        'this.clientStateService.read(command)',
-        'this.clientStateService.compute(command, read)',
-        'this.clientStateService.validate(command, read, computed)',
+        'this.dependencies.mutationService.read(command)',
+        'this.dependencies.mutationService.compute(command, read)',
+        'this.dependencies.mutationService.validate(command, read, computed)',
         'this.commitComputed(context, computed)',
       ],
     },

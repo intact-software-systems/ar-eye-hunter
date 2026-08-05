@@ -3,9 +3,11 @@
 This directory is the canonical owner map for client-state server code. The
 map follows executable imports and declarations; it is navigation evidence,
 not a second runtime contract. PR A owns command construction, command and result
-validation, semantic equality, and pure compute families. This PR B cohort owns
-persistence and stable reads. Service, AppInbox, authorized-WebSocket, expiry,
-and snapshot cache ownership remain at their legacy paths until later PR B cohorts.
+validation, semantic equality, and pure compute families. The Task 4A PR B
+cohort owns persistence and stable reads. Task 4B owns service composition,
+timing, mutation reads/writes, and the AppInbox transaction shell. Authorized
+WebSocket and expiry control flow is mechanically retained in that shell for
+its later independent review; snapshot-cache ownership remains at its legacy path.
 
 ## Command and validation owners
 
@@ -62,13 +64,31 @@ The legacy `client-presence-state.ts`, `client-state-storage-keys.ts`, and
 to these owners. The package `mod.ts` exports the canonical repository owner
 directly.
 
+## Service, ordinary transaction, and inbox owners
+
+- [`ClientStateService` and its narrow mutation capability](./client-state-service-contracts.ts)
+- [`createClientStateService` and explicit repository composition](./client-state-service.ts)
+- [`createTimedClientStateService` and the closed timing operation inventory](./client-state-service-timing.ts)
+- [`readClientMutation` and the stable authority/idempotency read phase](./mutation/read/read-client-mutation.ts)
+- [`writeClientMutation` and the ordered conditional state, receipt, event, and final outbox writes](./mutation/write/write-client-mutation.ts)
+- [`CLIENT_STATE_INBOX_REGISTRATION_TYPES` and the exact eight payload contracts](./inbox/app-client-inbox-contracts.ts)
+- [`readClientMutationAuthority` and authenticated ingress validation](./inbox/authenticated-client-mutation-ingress.ts)
+- [`toAuthorisedWsClientConnectEnqueue` and lifecycle enqueue translation](./inbox/authorised-ws-client-app-inbox.ts)
+- [`ClientStateInboxHandler` and visible ordinary, WebSocket, and expiry transaction selection](./inbox/client-state-inbox-handler.ts)
+- [`AppClientInboxService` and public enqueue/completion methods](./inbox/app-client-inbox-service.ts)
+
+The legacy `services/client-state-service.ts`, `services/AppClientInboxService.ts`,
+and `services/authorised-ws-client-app-inbox.ts` paths remain direct named
+compatibility exports. The package `mod.ts` exports the canonical service and
+AppInbox owners directly.
+
 ## Construction, registration, and enqueue timeline
 
 ```text
-1. API composition creates the durable repositories, database, client-state service, timing sink, and queue-engine wake capability before constructing AppClientInboxService.
-2. RallarMiddleware creates InboxQueueReader and invokes the AppClientInboxService factory with the already-created queue reader and wake capability.
-3. AppInboxService constructs its transaction writer and stores the enqueue-time owning-queue wake capability before AppClientInboxService registers handlers.
-4. AppClientInboxService registers all eight client mutation callbacks through AppInboxService.onStateMessage; InboxQueueReader can dispatch a callback only after that registration.
+1. API composition creates the durable repositories, database, canonical client-state service, timing sink, and queue-engine wake capability before constructing AppClientInboxService.
+2. RallarMiddleware creates InboxQueueReader and invokes the canonical AppClientInboxService factory with the already-created queue reader and wake capability.
+3. AppInboxService constructs its transaction writer and stores the enqueue-time owning-queue wake capability before AppClientInboxService constructs ClientStateInboxHandler.
+4. AppClientInboxService passes that existing writer and every required service capability to ClientStateInboxHandler, then registers the same eight callbacks through AppInboxService.onStateMessage in their established order.
 5. A route, authorized-WebSocket adapter, or maintenance producer first asks AppClientInboxService to validate ingress and project the payload or authority.
 6. AppInboxService serializes the command, durably reserves or reuses the AppInbox entry, invokes the owning-queue wake immediately after persistence, then asserts matching command identity before returning the entry.
 7. A synchronous producer waits by polling the durable result; there is no post-commit queue wake in the client-state path.
@@ -83,11 +103,12 @@ entry.
 ```text
 1. InboxQueueReader later claims the durable entry and invokes the registered AppClientInboxService callback once for that processing attempt.
 2. AppInboxService validates the durable command identity and begins attempt finalization before invoking the registered callback.
-3. AppClientInboxService projects the command, then runs client-state read, compute, and validate from fresh state for that attempt.
-4. AppInboxTransactionWriter owns the transaction: ClientStateService performs the conditional state, receipt, event, and outbox writes; AppInboxTransactionWriter then writes the durable result, completes the reservation, and commits them together.
-5. The committed result returns to AppClientInboxService.commitComputed, which observes the snapshot after commit; observation is not a queue wake.
-6. The registered callback returns the confirmed result, and a waiting producer reads the same durable result for its caller-visible outcome.
-7. A retryable failure leaves the entry for ResourceInbox retry; the next claimed attempt re-enters identity validation and the complete command/read/compute/validate path without repeating the original enqueue wake.
+3. AppClientInboxService delegates to ClientStateInboxHandler, which projects the command then visibly runs client-state read, compute, and validate from fresh state for that attempt.
+4. ClientStateInboxHandler selects the ordinary, inactive WebSocket, active WebSocket, missing-session disconnect, or expiry transaction path; AppInboxTransactionWriter owns the transaction and receives the exact durable result separately from private committed snapshots.
+5. ClientStateService performs the conditional state, receipt, event, and final outbox writes; AppInboxTransactionWriter writes the byte-compatible durable result, completes the reservation, and commits them together.
+6. The writer returns only after confirmed commit, then ClientStateInboxHandler observes its private committed snapshots; observation is not a queue wake.
+7. The registered callback returns the confirmed result, and a waiting producer reads the same durable result for its caller-visible outcome.
+8. A retryable failure leaves the entry for ResourceInbox retry; the next claimed attempt re-enters identity validation and the complete command/read/compute/validate path without repeating the original enqueue wake.
 ```
 
 Terminal failures are durably finalized by the AppInbox transaction owner.
@@ -143,8 +164,9 @@ AppInbox shells.
 
 ## Cohort boundary and next owners
 
-- Service composition, AppInbox handling, mutation reads/writes, timing,
-  authorized-WebSocket, expiry, and snapshot-cache ownership remain for later
-  PR B cohorts.
+- Snapshot-cache ownership remains for a later PR B cohort. Task 4B does not
+  reinterpret authorized-WebSocket or expiry behavior; it retains their exact
+  handler control flow while giving the ordinary transaction one canonical
+  transaction-selection owner.
 - Compatibility-only source removal and mechanical warning alignment remain
   for PR C.

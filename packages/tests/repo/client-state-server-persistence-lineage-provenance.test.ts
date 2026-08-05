@@ -136,6 +136,42 @@ describe('client-state PR B persistence lineage provenance', () => {
     });
     expect([...structuralLineageByTargetPath.entries()]).toEqual([
       [
+        'packages/shared-server/rallar-system/client-state/client-state-service-contracts.ts',
+        'packages/shared-server/rallar-system/services/client-state-service.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/client-state-service.ts',
+        'packages/shared-server/rallar-system/services/client-state-service.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/client-state-service-timing.ts',
+        'packages/shared-server/rallar-system/services/client-state-service.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/mutation/read/read-client-mutation.ts',
+        'packages/shared-server/rallar-system/services/client-state-service.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
+        'packages/shared-server/rallar-system/services/client-state-service.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts',
+        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts',
+        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
+        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
+        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+      ],
+      [
         'packages/shared-server/rallar-system/client-state/client-presence-state.ts',
         'packages/shared-server/rallar-system/client-presence-state.ts',
       ],
@@ -186,7 +222,7 @@ describe('client-state PR B persistence lineage provenance', () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('PASS: no new repository style findings');
-  });
+  }, 15_000);
 
   it('registers this provenance suite adjacent to the client-state governance tests', () => {
     const testRepoGovernance = JSON.parse(read('package.json')).scripts[
@@ -198,6 +234,7 @@ describe('client-state PR B persistence lineage provenance', () => {
         'packages/tests/repo/client-state-server-lineage-provenance.test.ts',
         'packages/tests/repo/client-state-server-persistence-lineage-provenance.test.ts',
         'packages/tests/repo/client-state-server-ownership.test.ts',
+        'packages/tests/repo/client-state-server-ordinary-transaction-lineage-provenance.test.ts',
       ].join(' '),
     );
   });

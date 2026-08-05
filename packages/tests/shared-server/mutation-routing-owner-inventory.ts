@@ -4,7 +4,8 @@ const GROUP_ITEM_ROUTE = `${GROUP_ROUTE}/:groupId`;
 const TOPOLOGY_ROUTE = `${GROUP_ITEM_ROUTE}/topology`;
 
 export const MUTATION_ROUTE_OWNER_PATHS = {
-  C: 'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+  C: 'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
+  X: 'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
   G: 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
   I: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts',
   H: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
@@ -23,6 +24,10 @@ export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
   'AppClientInboxService.processAuthorisedWsDisconnect': 'processAuthorisedWsDisconnect',
   'AppClientInboxService.processCommand': 'processCommand',
   'AppClientInboxService.processExpiredSessionCommands': 'processExpiredSessionCommands',
+  'ClientStateInboxHandler.processAuthorisedWsConnect': 'handler.processAuthorisedWsConnect',
+  'ClientStateInboxHandler.processAuthorisedWsDisconnect': 'handler.processAuthorisedWsDisconnect',
+  'ClientStateInboxHandler.processCommand': 'handler.processCommand',
+  'ClientStateInboxHandler.processExpiredSessionCommands': 'handler.processExpiredSessionCommands',
   'AppCrdtInboxService.processCommand': 'processCommand',
   'GroupStateInboxHandler.processGroupStateMutation':
     'groupStateInboxHandler.processGroupStateMutation',
@@ -32,15 +37,15 @@ export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
 } as const;
 
 export const MUTATION_ROUTE_INVENTORY_ROWS = `
-HTTP\tPUT ${CLIENT_ROUTE}/:principalId/principal\tCLIENT_PRINCIPAL_UPSERT\tc\t/clients/:principalId/principal\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId\tCLIENT_INSTANCE_UPSERT\tc\t/instances/:clientInstanceId\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId\tCLIENT_SESSION_CONNECT\tc\t/sessions/:sessionId\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/heartbeat\tCLIENT_SESSION_HEARTBEAT\tc\t/sessions/:sessionId/heartbeat\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
-HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/disconnect\tCLIENT_SESSION_DISCONNECT\tc\t/sessions/:sessionId/disconnect\tc\tprocessClientAppInbox\tC\tAppClientInboxService.processCommand
+HTTP\tPUT ${CLIENT_ROUTE}/:principalId/principal\tCLIENT_PRINCIPAL_UPSERT\tc\t/clients/:principalId/principal\tc\tprocessClientAppInbox\tX\tClientStateInboxHandler.processCommand\tC\tC
+HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId\tCLIENT_INSTANCE_UPSERT\tc\t/instances/:clientInstanceId\tc\tprocessClientAppInbox\tX\tClientStateInboxHandler.processCommand\tC\tC
+HTTP\tPUT ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId\tCLIENT_SESSION_CONNECT\tc\t/sessions/:sessionId\tc\tprocessClientAppInbox\tX\tClientStateInboxHandler.processCommand\tC\tC
+HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/heartbeat\tCLIENT_SESSION_HEARTBEAT\tc\t/sessions/:sessionId/heartbeat\tc\tprocessClientAppInbox\tX\tClientStateInboxHandler.processCommand\tC\tC
+HTTP\tPOST ${CLIENT_ROUTE}/:principalId/instances/:clientInstanceId/sessions/:sessionId/disconnect\tCLIENT_SESSION_DISCONNECT\tc\t/sessions/:sessionId/disconnect\tc\tprocessClientAppInbox\tX\tClientStateInboxHandler.processCommand\tC\tC
 HTTP\tGET /api/ws/:sessionId upgrade\tAUTH_WS_TICKET_CONSUME\tw\t'/api/ws/:sessionId'\trq\trequireSharedWsAuthSession\tA\tAppAuthInboxService.processCommand
-HTTP\tGET /api/ws/:sessionId upgrade\tCLIENT_AUTHORISED_WS_CONNECT\tw\t'/api/ws/:sessionId'\tw\tenqueueAuthorisedWsClientConnect\tC\tAppClientInboxService.processAuthorisedWsConnect
-WS_LIFECYCLE\twebsocket onClose\tCLIENT_AUTHORISED_WS_DISCONNECT\tl\tonClose:\tl\tenqueueClientSessionDisconnect\tC\tAppClientInboxService.processAuthorisedWsDisconnect
-MAINTENANCE\tclient session expiry reconciliation\tCLIENT_EXPIRED_SESSIONS\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredSessions\tC\tAppClientInboxService.processExpiredSessionCommands
+HTTP\tGET /api/ws/:sessionId upgrade\tCLIENT_AUTHORISED_WS_CONNECT\tw\t'/api/ws/:sessionId'\tw\tenqueueAuthorisedWsClientConnect\tX\tClientStateInboxHandler.processAuthorisedWsConnect\tC\tC
+WS_LIFECYCLE\twebsocket onClose\tCLIENT_AUTHORISED_WS_DISCONNECT\tl\tonClose:\tl\tenqueueClientSessionDisconnect\tX\tClientStateInboxHandler.processAuthorisedWsDisconnect\tC\tC
+MAINTENANCE\tclient session expiry reconciliation\tCLIENT_EXPIRED_SESSIONS\te\tenqueuePresenceExpiryReconciliation\te\tenqueueExpiredSessions\tX\tClientStateInboxHandler.processExpiredSessionCommands\tC\tC
 HTTP\tPOST /api/auth/register\tAUTH_USER_REGISTER\ta\t'/api/auth/register'\ta\tregisterUser\tA\tAppAuthInboxService.processCommand
 HTTP\tPOST /api/auth/login\tAUTH_SESSION_ISSUE\ta\t'/api/auth/login'\ta\tissueSession\tA\tAppAuthInboxService.processCommand
 HTTP\tPOST /api/auth/logout\tAUTH_SESSION_LOGOUT\ta\t'/api/auth/logout'\ta\tlogoutSession\tA\tAppAuthInboxService.processCommand

@@ -16,7 +16,7 @@ const performanceGateRequirements = [
   'comparative result gate',
 ] as const;
 const lockFreeAuthoritativeWritePaths = [
-  'packages/shared-server/rallar-system/services/client-state-service.ts',
+  'packages/shared-server/rallar-system/client-state/client-state-service.ts',
   'packages/shared-server/rallar-system/group-state/group-state-service.ts',
   'packages/shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts',
   'packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts',
@@ -61,10 +61,13 @@ describe('group-state owner integrity', () => {
       'packages/shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts',
     );
     const clientService = readRepo(
-      'packages/shared-server/rallar-system/services/client-state-service.ts',
+      'packages/shared-server/rallar-system/client-state/client-state-service.ts',
     );
     const appClientInbox = readRepo(
-      'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+      'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
+    );
+    const clientInboxHandler = readRepo(
+      'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
     );
     const groupInboxHandler = readRepo(
       'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
@@ -98,13 +101,18 @@ describe('group-state owner integrity', () => {
       'compute: (command, read)',
       'validate: (command, read, computed)',
       'write: async (transaction, computed)',
-      'new ResourceInboxRepository(transaction)',
+      'await writeClientMutation(',
     ]);
     expectAll(appClientInbox, [
-      'this.clientStateService.read(command)',
-      'this.clientStateService.compute(command, read)',
-      'this.clientStateService.validate(command, read, computed)',
-      'this.writeMutation(context',
+      'this.registerClientStateMessages()',
+      'this.handler.processCommand(',
+      'this.handler.processAuthorisedWsConnect(',
+    ]);
+    expectAll(clientInboxHandler, [
+      'this.dependencies.mutationService.read(command)',
+      'this.dependencies.mutationService.compute(command, read)',
+      'this.dependencies.mutationService.validate(command, read, computed)',
+      'this.dependencies.transactionWriter.writeMutationWithAfterCommitResult(',
     ]);
   });
 

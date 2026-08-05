@@ -26,6 +26,18 @@ const persistenceCanonicalPaths = [
   `${canonicalRoot}/persistence/client-state-snapshot-repository.ts`,
   `${canonicalRoot}/persistence/client-state-repository.ts`,
 ] as const;
+const ordinaryTransactionCanonicalPaths = [
+  `${canonicalRoot}/client-state-service-contracts.ts`,
+  `${canonicalRoot}/client-state-service.ts`,
+  `${canonicalRoot}/client-state-service-timing.ts`,
+  `${canonicalRoot}/mutation/read/read-client-mutation.ts`,
+  `${canonicalRoot}/mutation/write/write-client-mutation.ts`,
+  `${canonicalRoot}/inbox/app-client-inbox-contracts.ts`,
+  `${canonicalRoot}/inbox/authenticated-client-mutation-ingress.ts`,
+  `${canonicalRoot}/inbox/authorised-ws-client-app-inbox.ts`,
+  `${canonicalRoot}/inbox/client-state-inbox-handler.ts`,
+  `${canonicalRoot}/inbox/app-client-inbox-service.ts`,
+] as const;
 const persistenceCompatibilityExports = new Map([
   [
     'packages/shared-server/rallar-system/client-presence-state.ts',
@@ -100,7 +112,7 @@ describe('client-state server command ownership', () => {
         plugins: ['typescript'],
       }).program;
       expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
-      expect(importSpecifiers(source)).toEqual([owner]);
+      expect(importSpecifiers(source)).toContain(owner);
       expect(source).not.toContain('export *');
     }
 
@@ -110,6 +122,50 @@ describe('client-state server command ownership', () => {
     );
     expect(sharedServerModule).not.toContain(
       "export * from './rallar-system/repositories/ClientStateRepository.ts';",
+    );
+  });
+
+  it('owns the service, ordinary transaction, and AppInbox shell in the canonical client-state tree', () => {
+    const canonicalFiles = sourceFiles(canonicalRoot);
+    expect(canonicalFiles).toEqual(expect.arrayContaining(ordinaryTransactionCanonicalPaths));
+
+    const service = read(`${canonicalRoot}/client-state-service.ts`);
+    const handler = read(`${canonicalRoot}/inbox/client-state-inbox-handler.ts`);
+    const inboxService = read(`${canonicalRoot}/inbox/app-client-inbox-service.ts`);
+    const timedService = read(`${canonicalRoot}/client-state-service-timing.ts`);
+
+    expect(service).toContain('export function createClientStateService(');
+    expect(handler).toContain('writeMutationWithAfterCommitResult');
+    expect(handler).toContain('committedSnapshots');
+    expect(inboxService).toContain('export class AppClientInboxService extends AppInboxService');
+    expect(timedService).toContain('export function createTimedClientStateService(');
+
+    for (const [compatibilityPath, owner] of [
+      [
+        'packages/shared-server/rallar-system/services/client-state-service.ts',
+        '../client-state/client-state-service.ts',
+      ],
+      [
+        'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
+        '../client-state/inbox/app-client-inbox-service.ts',
+      ],
+    ] as const) {
+      const source = read(compatibilityPath);
+      const program = parse(source, {
+        sourceType: 'module',
+        plugins: ['typescript'],
+      }).program;
+      expect(program.body.every((node) => node.type === 'ExportNamedDeclaration')).toBe(true);
+      expect(importSpecifiers(source)).toContain(owner);
+      expect(source).not.toContain('export *');
+    }
+
+    const sharedServerModule = read('packages/shared-server/mod.ts');
+    expect(sharedServerModule).toContain(
+      "export * from './rallar-system/client-state/client-state-service.ts';",
+    );
+    expect(sharedServerModule).toContain(
+      "export * from './rallar-system/client-state/inbox/app-client-inbox-service.ts';",
     );
   });
 

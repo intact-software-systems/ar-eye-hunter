@@ -88,6 +88,19 @@ const prBPersistenceCohortLinks = [
   ['./persistence/client-state-repository.ts', 'class ClientStateRepository'],
 ] as const;
 
+const prBOrdinaryTransactionCohortLinks = [
+  ['./client-state-service-contracts.ts', 'type ClientStateService ='],
+  ['./client-state-service.ts', 'function createClientStateService('],
+  ['./client-state-service-timing.ts', 'function createTimedClientStateService('],
+  ['./mutation/read/read-client-mutation.ts', 'function readClientMutation('],
+  ['./mutation/write/write-client-mutation.ts', 'function writeClientMutation('],
+  ['./inbox/app-client-inbox-contracts.ts', 'const CLIENT_STATE_INBOX_REGISTRATION_TYPES'],
+  ['./inbox/authenticated-client-mutation-ingress.ts', 'function readClientMutationAuthority<'],
+  ['./inbox/authorised-ws-client-app-inbox.ts', 'function toAuthorisedWsClientConnectEnqueue('],
+  ['./inbox/client-state-inbox-handler.ts', 'class ClientStateInboxHandler'],
+  ['./inbox/app-client-inbox-service.ts', 'class AppClientInboxService'],
+] as const;
+
 describe('client-state navigation map integrity', () => {
   it('links every PR A owner to its named primary symbol', () => {
     const readme = read(navigationPath);
@@ -102,6 +115,16 @@ describe('client-state navigation map integrity', () => {
   it('links every PR B persistence owner to its named primary symbol', () => {
     const readme = read(navigationPath);
     for (const [target, declaration] of prBPersistenceCohortLinks) {
+      expect(readme, target).toContain(`](${target})`);
+      const resolved = path.resolve(path.dirname(absolute(navigationPath)), target);
+      expect(existsSync(resolved), target).toBe(true);
+      expect(readFileSync(resolved, 'utf8'), declaration).toContain(declaration);
+    }
+  });
+
+  it('links every PR B ordinary transaction owner to its named primary symbol', () => {
+    const readme = read(navigationPath);
+    for (const [target, declaration] of prBOrdinaryTransactionCohortLinks) {
       expect(readme, target).toContain(`](${target})`);
       const resolved = path.resolve(path.dirname(absolute(navigationPath)), target);
       expect(existsSync(resolved), target).toBe(true);
@@ -146,10 +169,10 @@ describe('client-state navigation map integrity', () => {
   it('keeps enqueue wake before later invocation and post-commit observation', () => {
     const readme = read(navigationPath);
     expect(readTimeline(readme, 'Construction, registration, and enqueue timeline')).toEqual([
-      'API composition creates the durable repositories, database, client-state service, timing sink, and queue-engine wake capability before constructing AppClientInboxService.',
-      'RallarMiddleware creates InboxQueueReader and invokes the AppClientInboxService factory with the already-created queue reader and wake capability.',
-      'AppInboxService constructs its transaction writer and stores the enqueue-time owning-queue wake capability before AppClientInboxService registers handlers.',
-      'AppClientInboxService registers all eight client mutation callbacks through AppInboxService.onStateMessage; InboxQueueReader can dispatch a callback only after that registration.',
+      'API composition creates the durable repositories, database, canonical client-state service, timing sink, and queue-engine wake capability before constructing AppClientInboxService.',
+      'RallarMiddleware creates InboxQueueReader and invokes the canonical AppClientInboxService factory with the already-created queue reader and wake capability.',
+      'AppInboxService constructs its transaction writer and stores the enqueue-time owning-queue wake capability before AppClientInboxService constructs ClientStateInboxHandler.',
+      'AppClientInboxService passes that existing writer and every required service capability to ClientStateInboxHandler, then registers the same eight callbacks through AppInboxService.onStateMessage in their established order.',
       'A route, authorized-WebSocket adapter, or maintenance producer first asks AppClientInboxService to validate ingress and project the payload or authority.',
       'AppInboxService serializes the command, durably reserves or reuses the AppInbox entry, invokes the owning-queue wake immediately after persistence, then asserts matching command identity before returning the entry.',
       'A synchronous producer waits by polling the durable result; there is no post-commit queue wake in the client-state path.',
@@ -157,9 +180,10 @@ describe('client-state navigation map integrity', () => {
     expect(readTimeline(readme, 'Runtime invocation and transaction timeline')).toEqual([
       'InboxQueueReader later claims the durable entry and invokes the registered AppClientInboxService callback once for that processing attempt.',
       'AppInboxService validates the durable command identity and begins attempt finalization before invoking the registered callback.',
-      'AppClientInboxService projects the command, then runs client-state read, compute, and validate from fresh state for that attempt.',
-      'AppInboxTransactionWriter owns the transaction: ClientStateService performs the conditional state, receipt, event, and outbox writes; AppInboxTransactionWriter then writes the durable result, completes the reservation, and commits them together.',
-      'The committed result returns to AppClientInboxService.commitComputed, which observes the snapshot after commit; observation is not a queue wake.',
+      'AppClientInboxService delegates to ClientStateInboxHandler, which projects the command then visibly runs client-state read, compute, and validate from fresh state for that attempt.',
+      'ClientStateInboxHandler selects the ordinary, inactive WebSocket, active WebSocket, missing-session disconnect, or expiry transaction path; AppInboxTransactionWriter owns the transaction and receives the exact durable result separately from private committed snapshots.',
+      'ClientStateService performs the conditional state, receipt, event, and final outbox writes; AppInboxTransactionWriter writes the byte-compatible durable result, completes the reservation, and commits them together.',
+      'The writer returns only after confirmed commit, then ClientStateInboxHandler observes its private committed snapshots; observation is not a queue wake.',
       'The registered callback returns the confirmed result, and a waiting producer reads the same durable result for its caller-visible outcome.',
       'A retryable failure leaves the entry for ResourceInbox retry; the next claimed attempt re-enters identity validation and the complete command/read/compute/validate path without repeating the original enqueue wake.',
     ]);

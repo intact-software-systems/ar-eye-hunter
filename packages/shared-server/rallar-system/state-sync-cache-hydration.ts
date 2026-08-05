@@ -3,7 +3,7 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import type { ClientStateService } from './services/client-state-service.ts';
+import type { ClientStateService } from './client-state/client-state-service-contracts.ts';
 import type { GroupStateService } from './services/group-state-service.ts';
 
 export type StateSyncCacheHydrationInput = Readonly<{
