@@ -22,7 +22,7 @@ import { hashAuthSecret as hashRepositoryAuthSecret } from '@shared-server/ralla
 
 const credentialSecret = 'auth-task-one-secret-0123456789abcdef';
 
-describe('auth credentials and login', () => {
+describe('auth credential compatibility', () => {
   it('catches compatibility exports that no longer resolve to the canonical runtime owners', () => {
     expect(createCompatibilityCredentialIssuer).toBe(createHmacAuthCredentialIssuer);
     expect(authenticateCompatibilityAuthUser).toBe(authenticateAuthUser);
@@ -33,7 +33,9 @@ describe('auth credentials and login', () => {
     expect(hashRepositoryAuthSecret).toBe(hashAuthSecret);
     expect(hashPublicAuthSecret).toBe(hashAuthSecret);
   });
+});
 
+describe('auth credential issuer', () => {
   it('catches a credential issuer that changes the locked HMAC domain, purpose, or identity', async () => {
     const issuer = createHmacAuthCredentialIssuer(credentialSecret);
 
@@ -47,7 +49,9 @@ describe('auth credentials and login', () => {
       '3m0dlqbcWOvUtYop1Ca97r2Ts4LiYiMuxgV9cskZByM',
     );
   });
+});
 
+describe('auth registration', () => {
   it('catches registration that changes password metadata or emits an incomplete user', async () => {
     const registered = await prepareAuthUserRegistration(
       { username: '  Alice  ', password: 'secret', displayName: ' Alice Example ' },
@@ -69,7 +73,9 @@ describe('auth credentials and login', () => {
     expect(registered.passwordHash).not.toContain('secret');
     expect(registered.passwordSalt).not.toBe('');
   });
+});
 
+describe('auth registered login', () => {
   it('catches login that bypasses registered password proof or exposes credentials', async () => {
     const registered = await prepareAuthUserRegistration(
       { username: 'Alice', password: 'secret' },
@@ -97,6 +103,33 @@ describe('auth credentials and login', () => {
     await expect(
       authenticateAuthUser({ username: 'alice', password: 'wrong' }, { userRepository }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('auth login accessor evaluation order', () => {
+  it('catches wrong-password login that reads revision before predecessor password rejection', async () => {
+    const registered = await prepareAuthUserRegistration(
+      { username: 'active-user', password: 'secret' },
+      { clientId: 'client-1', capturedAtEpochMs: 1_000 },
+    );
+    const reads: string[] = [];
+    const userRepository = {
+      findByNormalizedUsernameEntry: async () => ({
+        get value() {
+          reads.push('value');
+          return registered;
+        },
+        get entry() {
+          reads.push('revision');
+          throw new Error('Wrong-password authentication must not read revision');
+        },
+      }),
+    } as unknown as LoginAuthUserOptions['userRepository'];
+
+    await expect(
+      authenticateAuthUser({ username: 'active-user', password: 'wrong' }, { userRepository }),
+    ).resolves.toBeUndefined();
+    expect(reads).toEqual(['value', 'value']);
   });
 
   it('catches disabled login that reads password or revision before predecessor status evaluation', async () => {
