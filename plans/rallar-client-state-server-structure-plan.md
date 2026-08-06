@@ -1,12 +1,14 @@
 # Rallar Client-State Server Structure Implementation Plan
 
 **Status:** Approved at exact Git blob
-`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. PR A Tasks 1-3 are complete,
-published, merged, and default-workflow verified. PR B Tasks 4A-4E and the
-Task 5 whole-PR review/fix waves are locally complete and independently
-accepted; final unchanged-tree gates, candidate freeze, governed performance,
-publication, and Branch Release Gate remain pending. PR C and the later ledger
-have not begun, and this tree records no future PR B publication or later
+`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`. PR A Tasks 1-3 and PR B Tasks
+4-5 are complete, published, merged, and default-workflow verified. PR C Task 6
+is complete and independently accepted at
+`31b4ad70140ba2802e2d5dd86b6260ea8d1e06de` / tree
+`4a8c4cc8133c55773d2821c6ff416e35cc48937d`; Task 7 final unchanged-tree
+gates, whole-child review, governed performance, publication, and Branch
+Release Gate remain pending. The later ledger has not begun, and this tree
+records no future PR C candidate, push, PR number, workflow, merge, or ledger
 evidence.
 
 **Program:**
@@ -1091,21 +1093,24 @@ evidence.
 
 ### Task 5: Freeze, Measure, Review, And Publish PR B
 
-**Status:** review/fix complete; final gates and publication pending. Whole-PR
-review of the Task 4E candidate reported the stale PR A/PR B plan record, three
-unfinished mixed test owners plus the oversized lineage owner, circular
-ratchet-removal wording, and incomplete hard-limit coverage. The accepted
-plan/test/evidence-only fixes preserve the frozen predecessor inventory—38
-moved literal-named cases / 171 `expect(...)` sites, and 84 literal-named cases
-plus one joined-name case / 85 total cases / 346 sites in the complete
-client-state tree before and after—remove the three obsolete roots, keep every
-materially changed module at most 400 lines and every general function/callback
-at most 60 lines, and make PR C the ratchet decision point. Independent review
-accepted exact commit `12a8c632bb7e2e16a9fbe807dfade4850eb78376` / tree
+**Status:** complete. Whole-PR review of the Task 4E candidate reported the
+stale PR A/PR B plan record, three unfinished mixed test owners plus the
+oversized lineage owner, circular ratchet-removal wording, and incomplete
+hard-limit coverage. The accepted plan/test/evidence-only fixes preserve the
+frozen predecessor inventory—38 moved literal-named cases / 171 `expect(...)`
+sites, and 84 literal-named cases plus one joined-name case / 85 total cases /
+346 sites in the complete client-state tree before and after—remove the three
+obsolete roots, keep every materially changed module at most 400 lines and
+every general function/callback at most 60 lines, and make PR C the ratchet
+decision point. Independent review accepted exact commit
+`12a8c632bb7e2e16a9fbe807dfade4850eb78376` / tree
 `c1edfc693c74f0c464b534abd9c6539d2b6b0da7` with Critical 0, Important 0, and
-Minor 0. Final unchanged-tree gates, candidate freeze, performance,
-publication, and Branch Release Gate remain pending; this plan records none of
-those future facts.
+Minor 0. PR #73 published feature head
+`2dc7d8226e0b08026d992d72ee104bb9f638ed2a` / tree
+`3d5d4a90f66c290ed0c4c362fc6b200acc3788f3`; Branch Release Gate run
+`31069282516` attempt 1 succeeded. The resulting main SHA is
+`21a807c7d303adbf10e3289468323b1ea6b0b01f`, and Run Hetzner Supported
+Distributed Manifests run `31072851821` attempt 1 succeeded for that exact SHA.
 
 - Finish every content, plan-evidence, review-fix, and validation change before
   candidate freeze.
@@ -1116,6 +1121,15 @@ those future facts.
 - PR C waits for PR B's exact resulting-main workflow.
 
 ### Task 6: Implement PR C Alignment Test-First
+
+**Status:** complete and independently accepted. Task 6 and its three review
+fix rounds finished at `31b4ad70140ba2802e2d5dd86b6260ea8d1e06de` / tree
+`4a8c4cc8133c55773d2821c6ff416e35cc48937d`. The complete focused command
+passed 27 files / 155 tests, repository governance passed 263 tests, the final
+focused warning inventory is exactly 63 approved findings, and the final
+scoped review reported Critical 0 and Important 0. These are local Task 6
+facts, not a future Task 7 candidate, performance, publication, or workflow
+envelope.
 
 - Add the temporary source/style ratchet before alignment.
 - Align only new/materially rewritten client-state production and test files.
@@ -1132,6 +1146,11 @@ those future facts.
   and name the retained owner; the later ledger records that prior decision.
 
 ### Task 7: Freeze, Review, And Publish PR C
+
+**Status:** candidate preparation, final gates, governed performance,
+whole-child review, publication, and Branch Release Gate pending. No future PR
+C commit, push, PR number, release run, merge, resulting-main workflow, or
+later-ledger fact is recorded here.
 
 - Run all Section 11 final gates on the unchanged tree.
 - Reconfirm that PR C is alignment-only and does not invalidate the PR B
@@ -1217,7 +1236,8 @@ optimization, threshold changes, rerolls, or a different candidate.
 
 PR B's comparison validates only its exact candidate runtime. Before PR C
 freezes, compare every production/runtime and benchmark-harness blob with PR
-B's exact resulting-main tree:
+B's exact resulting-main tree
+`21a807c7d303adbf10e3289468323b1ea6b0b01f`:
 
 - If they are byte-identical, record the exact blob comparison and apply the
   PR B result without rerunning measurements.
@@ -1304,7 +1324,8 @@ is unavailable, stop with exact evidence; do not skip or silently substitute.
 
 ### 11.4 PR C and final child gates
 
-Run all PR A and PR B commands against PR B's exact resulting-main base, plus:
+Run all PR A and PR B commands against PR B's exact resulting-main base
+`21a807c7d303adbf10e3289468323b1ea6b0b01f`, plus:
 
 ```bash
 npx vitest run packages/tests/repo/client-state-server-source-ratchet.test.ts
@@ -1382,7 +1403,7 @@ claimed for a changed runtime.
 - [x] The approved disposition and owner/rationale mapping covers all 78
       focused warning rows with no exceptions.
 - [x] PR A review/gates and resulting-main workflow succeeded.
-- [ ] PR B review/gates, governed performance, and resulting-main workflow
+- [x] PR B review/gates, governed performance, and resulting-main workflow
       succeeded.
 - [ ] PR C review/gates, final code-derived family traces, human merge review,
       and resulting-main workflow succeeded.
@@ -1408,15 +1429,15 @@ claimed for a changed runtime.
 
 ## 16. Progress Record
 
-| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pilot conclusions          | approved            | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                                                                                                                                                                             |
-| Client-state child plan    | approved            | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                                                                                                                                                                     |
-| PR A mutation core         | complete            | PR #72 feature `1e90c412855ea942a8b678aedde3b1c975efd5e8` / tree `e957db303770864fad04e6bb02b98cc03bcdc335`; Branch Release Gate `30997710887` attempt 1 success; resulting main `2fdba024bb347622727d337eb06fc13d2fe129fc` / same tree; Run Hetzner Supported Distributed Manifests `31008375282` attempt 1 success.                                                  |
-| PR B authoritative shell   | final gates pending | Tasks 4A-4E are independently accepted at the exact milestone commits above. Task 5 whole-PR review/fix was accepted at `12a8c632bb7e2e16a9fbe807dfade4850eb78376` / tree `c1edfc693c74f0c464b534abd9c6539d2b6b0da7` with Critical 0, Important 0, and Minor 0. No final candidate, performance, publication, merge, or default-workflow evidence exists in this tree. |
-| PR C alignment/final trace | not started         | Requires PR B merge and exact resulting-main workflow.                                                                                                                                                                                                                                                                                                                 |
-| Later evidence ledger      | not authorized      | Requires PR C merge and exact resulting-main workflow, then separate authorization. PR C makes each supplementary-ratchet decision; the later ledger records that prior decision.                                                                                                                                                                                      |
-| Other Wave 2 domains       | blocked             | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                                                                                                                                                                        |
+| Milestone                  | State           | Evidence                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pilot conclusions          | approved        | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                                                                                                                                                                                          |
+| Client-state child plan    | approved        | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                                                                                                                                                                                  |
+| PR A mutation core         | complete        | PR #72 feature `1e90c412855ea942a8b678aedde3b1c975efd5e8` / tree `e957db303770864fad04e6bb02b98cc03bcdc335`; Branch Release Gate `30997710887` attempt 1 success; resulting main `2fdba024bb347622727d337eb06fc13d2fe129fc` / same tree; Run Hetzner Supported Distributed Manifests `31008375282` attempt 1 success.                                                               |
+| PR B authoritative shell   | complete        | PR #73 feature `2dc7d8226e0b08026d992d72ee104bb9f638ed2a` / tree `3d5d4a90f66c290ed0c4c362fc6b200acc3788f3`; Branch Release Gate `31069282516` attempt 1 success; resulting main `21a807c7d303adbf10e3289468323b1ea6b0b01f`; Run Hetzner Supported Distributed Manifests `31072851821` attempt 1 success.                                                                           |
+| PR C alignment/final trace | Task 6 complete | Task 6 and its review fixes are accepted through `31b4ad70140ba2802e2d5dd86b6260ea8d1e06de` / tree `4a8c4cc8133c55773d2821c6ff416e35cc48937d`; 27 files / 155 focused tests and 263 governance tests passed; final scoped review reported Critical 0 / Important 0. Task 7 final gates, governed performance, whole-child review, publication, and remote workflows remain pending. |
+| Later evidence ledger      | not authorized  | Requires PR C merge and exact resulting-main workflow, then separate authorization. PR C makes each supplementary-ratchet decision; the later ledger records that prior decision.                                                                                                                                                                                                   |
+| Other Wave 2 domains       | blocked         | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                                                                                                                                                                                     |
 
 ## 17. Planning Self-Review Record
 
