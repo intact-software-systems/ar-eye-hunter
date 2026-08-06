@@ -154,15 +154,13 @@ describe('client-state server source/style ratchet', () => {
     ).toEqual([]);
   });
 
-  it('keeps cache-key ownership with the shared repository contract', () => {
+  it('keeps the public cache-key wrapper at the shared-server compatibility boundary', () => {
     const cache = read(
       'packages/shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts',
     );
 
-    expect(cache).not.toContain('function toClientStateSnapshotRepositoryKey(');
-    expect(cache).toContain(
-      "toClientStateSnapshotRepositoryKey,\n} from '@shared/repository/client-state-snapshots-repository.ts';",
-    );
+    expect(cache).toContain('export function toClientStateSnapshotRepositoryKey(');
+    expect(cache).toContain('toSharedClientStateSnapshotRepositoryKey(ref);');
   });
 
   it('keeps one-use named contracts private to their canonical owners', () => {

@@ -115,10 +115,12 @@ client-state route child changes it.
 | `services/cached-client-state-service.ts`              | `client-state/snapshot/cached-client-state-service.ts`               | A breaking release or separately approved consumer migration.                               |
 | `services/client-state-snapshot-read-through-cache.ts` | `client-state/snapshot/client-state-snapshot-read-through-cache.ts`  | A breaking release or separately approved consumer migration.                               |
 
-`toClientStateSnapshotRepositoryKey` is re-exported directly from the shared
-snapshot repository contract by the package and legacy cache path. The
-client-state cache imports that owner directly; it does not retain a duplicate
-pass-through helper.
+The canonical shared-server cache retains its predecessor public
+`toClientStateSnapshotRepositoryKey` wrapper around the shared repository key
+owner. The package and legacy cache paths expose that same shared-server
+wrapper, whose function identity remains distinct from the shared binding while
+producing the exact same key. Task 1 retained this one-call compatibility
+boundary until a separately approved public migration removes it.
 
 ## Construction, registration, and enqueue timeline
 

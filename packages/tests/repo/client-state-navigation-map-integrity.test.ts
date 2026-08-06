@@ -339,7 +339,10 @@ describe('client-state navigation map integrity', () => {
 
   it('names the implemented target handler construction and ordinary entry', () => {
     const plan = read(planPath);
-    expect(plan).toContain('-> new ClientStateInboxHandler(...)');
+    expect(plan).toContain(`-> new AppClientInboxService(existing public constructor preserved)
+  -> AppInboxService constructs AppInboxTransactionWriter
+  -> AppClientInboxService constructs new ClientStateInboxHandler(...)
+  -> register the same eight AppInbox types in predecessor order`);
     expect(plan).toContain('-> ClientStateInboxHandler.processCommand');
     expect(plan).toContain(
       '-> tryRunInIntervals immediately invokes enqueuePresenceExpiryReconciliation',
@@ -357,11 +360,9 @@ describe('client-state navigation map integrity', () => {
 function absolute(filePath: string): string {
   return path.join(repoRoot, filePath);
 }
-
 function read(filePath: string): string {
   return readFileSync(absolute(filePath), 'utf8');
 }
-
 function readTimeline(readme: string, heading: string): readonly string[] {
   const section = readme.match(
     new RegExp(

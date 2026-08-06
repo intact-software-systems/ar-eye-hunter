@@ -4,7 +4,7 @@ import { readClientStateRevision, readClientVersion } from '@shared/api/group-cl
 import {
   findClientStateSnapshotByRef,
   observeClientStateSnapshot,
-  toClientStateSnapshotRepositoryKey,
+  toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey,
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
@@ -14,8 +14,6 @@ import {
   isClientSnapshotPresenceFresh,
   type RallarSnapshotPresenceClock,
 } from '../../snapshot-presence.ts';
-
-export { toClientStateSnapshotRepositoryKey };
 
 const DEFAULT_TTL_MS = 60_000;
 
@@ -163,6 +161,10 @@ export function createClientStateSnapshotReadThroughCache(
   options: ClientStateSnapshotReadThroughCacheOptions,
 ): ClientStateSnapshotReadThroughCache {
   return new ClientStateSnapshotReadThroughCache(options);
+}
+
+export function toClientStateSnapshotRepositoryKey(ref: ClientPrincipalRef): string {
+  return toSharedClientStateSnapshotRepositoryKey(ref);
 }
 
 function fromClientStateSnapshotRepositoryKey(key: string): ClientPrincipalRef {

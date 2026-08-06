@@ -719,8 +719,9 @@ invocation occurs only when the queue reader dispatches a reserved entry.
 API-v1 middleware composition (organization unchanged)
   -> create runtime repository, event store, lifecycle, cache, and timing
   -> createClientStateService(named input)
-  -> new ClientStateInboxHandler(...)
   -> new AppClientInboxService(existing public constructor preserved)
+  -> AppInboxService constructs AppInboxTransactionWriter
+  -> AppClientInboxService constructs new ClientStateInboxHandler(...)
   -> register the same eight AppInbox types in predecessor order
   -> expose the same public service/enqueue/completion surface
 ```
@@ -1130,11 +1131,16 @@ Distributed Manifests run `31072851821` attempt 1 succeeded for that exact SHA.
 **Status:** complete and independently accepted. Task 6 and its three review
 fix rounds finished at `31b4ad70140ba2802e2d5dd86b6260ea8d1e06de` / tree
 `4a8c4cc8133c55773d2821c6ff416e35cc48937d`. The complete focused command
-passed 27 files / 155 tests, repository governance passed 263 tests, the final
-focused warning inventory is exactly 63 approved findings, and the final
-scoped review reported Critical 0 and Important 0. These are local Task 6
-facts, not a future Task 7 candidate, performance, publication, or workflow
-envelope.
+passed 27 files / 155 tests, repository governance passed 263 tests, and the
+final focused default warning inventory is exactly 63 approved findings. The
+restored predecessor public cache-key wrapper makes the focused construction-
+details inventory exactly 64 and the broad construction-details inventory
+exactly 4,772; the broad default inventory remains exactly 4,567. The added row
+is solely Task 1's already human-reviewed public compatibility wrapper. Exactly
+10 production/runtime blobs differ from PR B resulting main after restoring
+that predecessor implementation. The final scoped review reported Critical 0
+and Important 0. These are local Task 6 and review-fix facts, not a future Task
+7 performance, publication, or workflow envelope.
 
 - Add the temporary source/style ratchet before alignment.
 - Align only new/materially rewritten client-state production and test files.
