@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest';
+
+import { requireApiAuthSession } from '@shared-server/http/request-auth-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
+
+import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+
+describe('auth request proof', () => {
+  it('catches a proof owner that exposes plaintext instead of the session digest', async () => {
+    const persisted = {
+      clientId: 'client-1',
+      username: 'alice',
+      sessionId: 'session-1',
+      accessTokenDigest: 'digest-1',
+      issuedAtEpochMs: 1_000,
+      expiresAtEpochMs: 2_000,
+    } as const;
+
+    await expect(
+      authSessionProofSecret({ ...persisted, accessToken: 'plaintext-access-token' }, persisted),
+    ).resolves.toBe('digest-1');
+  });
+
+  it('catches request authorization that skips bearer parsing or the client-id match', async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const repository = new AuthSessionRepository(runtimeRepository);
+    await repository.putSession({
+      clientId: 'client-1',
+      username: 'alice',
+      sessionId: 'session-1',
+      accessToken: 'token-1',
+      issuedAtEpochMs: 1_000,
+      expiresAtEpochMs: Date.now() + 60_000,
+    });
+
+    await expect(
+      requireApiAuthSession(authRequest('token-1', 'client-1'), repository),
+    ).resolves.toMatchObject({ sessionId: 'session-1' });
+    await expect(
+      requireApiAuthSession(authRequest('token-1', 'client-2'), repository),
+    ).rejects.toThrow('Unauthorized: Access token does not match x-client-id');
+    await expect(requireApiAuthSession(authRequest('', 'client-1'), repository)).rejects.toThrow(
+      'Unauthorized: Missing bearer token',
+    );
+  });
+});
+
+function authRequest(
+  accessToken: string,
+  clientId: string,
+): {
+  readonly header: (name: string) => string | undefined;
+} {
+  return {
+    header(name) {
+      if (name === 'authorization') return accessToken ? `Bearer ${accessToken}` : undefined;
+      return name === 'x-client-id' ? clientId : undefined;
+    },
+  };
+}

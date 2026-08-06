@@ -160,6 +160,10 @@ behavior-neutrally resolved, retained boundary evidence, or blocked on a semanti
 decision. A human must disposition every row. Exit zero alone is insufficient and no finding
 becomes globally blocking.
 
+On 2026-08-06, the human reviewed and approved all 49 proposed dispositions and owner mappings
+in the ignored Task 1 report at SHA-256
+`804ef9174a91cd33e2d080671657ee3e8d6597c9b65531f1b8c32d93f62dd899`, with no exceptions.
+
 ### 2.3 Controlled human navigation sample
 
 Before PR A changes production, a human performs one controlled sample on the exact verified
@@ -200,6 +204,12 @@ PR C repeats the same sample on its final unchanged tree. The comparison is desc
 must not claim causality or statistical significance. Missing human observations may be waived
 only by a separate explicit human amendment and may never be fabricated from code-derived
 traces.
+
+For the Task 1 before sample, the human supplied that explicit waiver on 2026-08-06 because no
+valid controlled sample was collected. No elapsed times, wrong-file counts, compatibility hops,
+unresolved questions, or other human observations exist for that sample. The code-derived family
+traces remain qualitative baseline evidence only and support no human-productivity or
+navigation-time claim.
 
 ## 3. Exact Current Trees And Consumers
 
@@ -330,7 +340,7 @@ packages/shared-server/rallar-system/auth/
   auth-mutation-service.ts
   credentials/
     auth-credential-issuer.ts
-    auth-secret-digest.ts
+    hash-auth-secret.ts
   inbox/
     app-auth-inbox-service.ts
     auth-app-inbox-routing.ts
@@ -397,12 +407,12 @@ compatibility owners are removed after active-import tests prove no repository c
 
 | Target file                                                | Primary owner                                                                                                        |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `auth-mutation-service.ts`                                 | `createAuthMutationService` and `AuthMutationService` composition                                                    |
+| `auth-mutation-service.ts`                                 | primary `AuthMutationService` declaration followed by `createAuthMutationService` composition                        |
 | `inbox/app-auth-inbox-service.ts`                          | public `AppAuthInboxService` enqueue/completion surface and registration                                             |
 | `inbox/auth-inbox-handler.ts`                              | `AuthInboxHandler.processAuthMutation` runtime phase/transaction sequence                                            |
 | `inbox/auth-app-inbox-routing.ts`                          | `toAuthAppInboxType`, `toAuthCommandContextId`, and `toAuthCommandSenderId`                                          |
 | `credentials/auth-credential-issuer.ts`                    | `AuthCredentialIssuer` and HMAC credential derivation                                                                |
-| `credentials/auth-secret-digest.ts`                        | `hashAuthSecret` only                                                                                                |
+| `credentials/hash-auth-secret.ts`                          | `hashAuthSecret` only                                                                                                |
 | `login/authenticate-auth-user.ts`                          | registered/static credential authentication and constant-time comparison                                             |
 | `login/prepare-auth-user-registration.ts`                  | username/password/display-name validation and PBKDF2 user construction                                               |
 | `mutation/auth-mutation-contracts.ts`                      | `AuthMutationCommand`, `AuthMutationRead`, `AuthMutationComputed`, `AuthMutationResult`, and public-result contracts |
@@ -468,7 +478,7 @@ line-limit-only forwarding helper is rejected.
 | `repositories/AuthUserRepository.ts`         | `persistence/auth-user-repository.ts`; old path becomes one-hop compatibility                                        |
 | `repositories/auth-legacy-compatibility.ts`  | `persistence/auth-legacy-compatibility.ts`                                                                           |
 | `repositories/auth-persistence-contracts.ts` | `persistence/auth-persistence-contracts.ts`                                                                          |
-| `repositories/auth-secret-digest.ts`         | `credentials/auth-secret-digest.ts`                                                                                  |
+| `repositories/auth-secret-digest.ts`         | `credentials/hash-auth-secret.ts`                                                                                    |
 | `repositories/auth-session-persistence.ts`   | `persistence/auth-session-persistence.ts`                                                                            |
 | `repositories/auth-session-types.ts`         | `persistence/auth-session-types.ts`                                                                                  |
 | `repositories/auth-storage-keys.ts`          | `persistence/auth-storage-keys.ts`                                                                                   |
@@ -731,7 +741,7 @@ reorganized.
 | registered/static login and password proof                 | `login/authenticate-auth-user.ts`                      |
 | registration validation and password hashing               | `login/prepare-auth-user-registration.ts`              |
 | HMAC plaintext derivation                                  | `credentials/auth-credential-issuer.ts`                |
-| SHA-256 secret digest                                      | `credentials/auth-secret-digest.ts`                    |
+| SHA-256 secret digest                                      | `credentials/hash-auth-secret.ts`                      |
 | read/facts/compute/validate/write                          | matching phase and family files under `mutation/`      |
 | public credential reconstruction                           | `mutation/to-auth-mutation-public-result.ts`           |
 | user index persistence                                     | `persistence/auth-user-repository.ts`                  |
@@ -858,15 +868,15 @@ Any such need stops for separate explicit human approval.
 human sample, all 49 warning dispositions, public/persisted/security inventory, and PR cohort
 assignment.
 
-- [ ] Verify planning approval, resulting-main/default-workflow evidence, clean non-default PR A
+- [x] Verify planning approval, resulting-main/default-workflow evidence, clean non-default PR A
       branch `codex/rallar-auth-server-mutation-core`, and protected-plan hash.
-- [ ] Capture the exact 27-file source/blob/line/function/export/import inventory and all 49
+- [x] Capture the exact 27-file source/blob/line/function/export/import inventory and all 49
       focused warning rows; map every row to owner, rationale, and PR.
-- [ ] Record the Section 2.3 human sample on the same base; do not infer human observations.
-- [ ] Add RED semantic tests for seven command variants, credential secrecy, strict codecs,
+- [x] Record the Section 2.3 human waiver on the same base without inferring observations.
+- [x] Add RED semantic tests for seven command variants, credential secrecy, strict codecs,
       login, replay/no-op, security exits, operation ownership, compatibility, and navigation.
-- [ ] Obtain explicit human approval of the navigation sample and warning disposition, then an
-      independent Task 1 review with Critical 0 and Important 0.
+- [x] Record the explicit human sample waiver and approval of all 49 warning dispositions.
+- [ ] Obtain an independent Task 1 review with Critical 0 and Important 0.
 
 ### Task 2: Implement PR A Mutation And Login Core Test-First
 
@@ -1192,8 +1202,8 @@ changed tree.
 
 - [ ] Human approved this exact auth child plan Git blob.
 - [ ] Planning PR merged and its exact resulting-main workflow succeeded.
-- [ ] Controlled before/after human samples were honestly recorded or separately waived.
-- [ ] Every focused warning row received explicit human owner/rationale disposition.
+- [x] Controlled before/after human samples were honestly recorded or separately waived.
+- [x] Every focused warning row received explicit human owner/rationale disposition.
 - [ ] Three implementation PRs remained independently reviewable.
 - [ ] Every target filename matches its primary symbol and every owner is cohesive/direct.
 - [ ] Canonical auth callers bypass compatibility-only wrappers.
