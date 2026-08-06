@@ -4,7 +4,7 @@ import type {
     AuthMutationCommand,
     AuthMutationPublicResult,
     AuthMutationResult,
-} from './auth-state-contracts.ts';
+} from '../auth/mutation/auth-mutation-contracts.ts';
 
 export async function toAuthMutationPublicResult(
     command: AuthMutationCommand,

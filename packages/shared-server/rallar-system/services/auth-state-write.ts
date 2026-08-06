@@ -9,9 +9,9 @@ import type {
     AuthMutationComputed,
     AuthMutationRead,
     AuthMutationResult,
-} from './auth-state-contracts.ts';
+} from '../auth/mutation/auth-mutation-contracts.ts';
+import { requireIssueSessionLifecycle } from '../auth/sessions/require-auth-session-lifecycle.ts';
 import { requireAuthTicket } from './auth-state-validation-shared.ts';
-import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
 
 export async function writeAuthMutation(
     transaction: PSqlTransactionSql,
@@ -132,7 +132,7 @@ export async function writeAuthMutation(
 async function writeSession(
     repository: AuthSessionRepository,
     computed: AuthComputedSession,
-    read: import('./auth-state-contracts.ts').AuthSessionEntries,
+    read: import('../auth/mutation/auth-mutation-contracts.ts').AuthSessionEntries,
 ): Promise<void> {
     requireConditionalWrite(await repository.insertSessionByTokenDigest(
         computed.session,

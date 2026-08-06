@@ -1,7 +1,43 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
+import type {
+  AuthMutationCommand,
+  AuthMutationResult,
+} from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { decodeAuthMutationCommand } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
 import { decodeAuthMutationResult } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-result.ts';
+
+type AuthMutationResultVariant = AuthMutationResult extends Readonly<{ requestId: string }> &
+  infer Variant
+  ? Variant
+  : never;
+
+type AuthMutationResultDiscriminant<T = AuthMutationResultVariant> =
+  T extends Readonly<{ registeredAtEpochMs: number }>
+    ? 'registeredAtEpochMs'
+    : T extends Readonly<{ loggedOut: boolean }>
+      ? 'loggedOut'
+      : T extends Readonly<{ kind: infer Kind }>
+        ? Kind
+        : never;
+
+type ExpectedAuthMutationDiscriminant =
+  | 'register-user'
+  | 'issue-session'
+  | 'logout-session'
+  | 'issue-ws-ticket'
+  | 'consume-ws-ticket'
+  | 'issue-agent-tickets'
+  | 'consume-agent-ticket';
+
+type ExpectedAuthMutationResultDiscriminant =
+  | 'registeredAtEpochMs'
+  | 'loggedOut'
+  | 'session-issued'
+  | 'ws-ticket-issued'
+  | 'ws-ticket-consumed'
+  | 'agent-tickets-issued'
+  | 'agent-ticket-consumed';
 
 const user = {
   clientId: 'client-1',
@@ -174,6 +210,11 @@ const [
 ] = resultFixtures;
 
 describe('auth command and durable-result codecs', () => {
+  it('catches a contract that drops or adds a command or durable-result discriminant', () => {
+    expectTypeOf<AuthMutationCommand['kind']>().toEqualTypeOf<ExpectedAuthMutationDiscriminant>();
+    expectTypeOf<AuthMutationResultDiscriminant>().toEqualTypeOf<ExpectedAuthMutationResultDiscriminant>();
+  });
+
   it('catches a decoder that drops any of the seven command discriminants', () => {
     for (const command of commandFixtures) {
       const decoded = decodeAuthMutationCommand(command);

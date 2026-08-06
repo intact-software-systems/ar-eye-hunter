@@ -3,8 +3,8 @@ import type {
     AuthMutationRead,
     ConsumeAuthAgentTicketCommand,
     IssueAuthAgentTicketsCommand,
-} from './auth-state-contracts.ts';
-import { AuthMutationRejectedError } from './auth-state-errors.ts';
+} from '../auth/mutation/auth-mutation-contracts.ts';
+import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/RuntimeStateExpiredEntry.ts';
 import { authTicketDigestKey } from '../repositories/auth-storage-keys.ts';
 import {

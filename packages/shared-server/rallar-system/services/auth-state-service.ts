@@ -3,8 +3,8 @@ import type {
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import { AuthUserRepository } from '../repositories/AuthUserRepository.ts';
+import type { AuthMutationService } from '../auth/mutation/auth-mutation-contracts.ts';
 import { computeAuthMutation } from './auth-state-compute.ts';
-import type { AuthMutationService } from './auth-state-contracts.ts';
 import { readAuthMutation } from './auth-state-read.ts';
 import { validateAuthMutation } from './auth-state-validate.ts';
 import { writeAuthMutation } from './auth-state-write.ts';

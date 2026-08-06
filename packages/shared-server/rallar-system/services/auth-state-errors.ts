@@ -1,13 +1,5 @@
 import { hashAuthSecret } from '../repositories/AuthSessionRepository.ts';
-
-export class AuthMutationRejectedError extends Error {
-    readonly code = 'auth-mutation-rejected';
-
-    constructor(message: string, readonly status = 409) {
-        super(message);
-        this.name = 'AuthMutationRejectedError';
-    }
-}
+import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 
 export async function requireMatchingCredentialDigest(
     credential: string,

@@ -9,8 +9,8 @@ import type {
     AuthMutationCommand,
     AuthMutationRead,
     AuthSessionEntries,
-} from './auth-state-contracts.ts';
-import { AuthMutationRejectedError } from './auth-state-errors.ts';
+} from '../auth/mutation/auth-mutation-contracts.ts';
+import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 
 export function equalAuthJson(left: unknown, right: unknown): boolean {
     return JSON.stringify(left) === JSON.stringify(right);

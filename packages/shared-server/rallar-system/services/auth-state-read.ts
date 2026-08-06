@@ -10,7 +10,7 @@ import type {
     AuthMutationFacts,
     AuthMutationRead,
     AuthSessionEntries,
-} from './auth-state-contracts.ts';
+} from '../auth/mutation/auth-mutation-contracts.ts';
 import { requireMatchingCredentialDigest } from './auth-state-errors.ts';
 
 export async function captureAuthMutationFacts(

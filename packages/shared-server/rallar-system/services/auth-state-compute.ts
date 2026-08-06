@@ -8,7 +8,7 @@ import {
     type PersistedAuthSession,
 } from '../repositories/AuthSessionRepository.ts';
 import type { AuthUser } from '../repositories/AuthUserRepository.ts';
-import { toAppQueueCreatedBy } from './app-inbox-queue-key.ts';
+import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 import type {
     AuthComputedSession,
     AuthMutationCommand,
@@ -17,9 +17,9 @@ import type {
     AuthMutationRead,
     AuthMutationResult,
     LogoutAuthSessionCommand,
-} from './auth-state-contracts.ts';
-import { AuthMutationRejectedError } from './auth-state-errors.ts';
-import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
+} from '../auth/mutation/auth-mutation-contracts.ts';
+import { requireIssueSessionLifecycle } from '../auth/sessions/require-auth-session-lifecycle.ts';
+import { toAppQueueCreatedBy } from './app-inbox-queue-key.ts';
 import {
     equalAuthJson,
     requireAuthTicket,

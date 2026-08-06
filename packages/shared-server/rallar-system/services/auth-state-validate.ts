@@ -7,9 +7,9 @@ import type {
     IssueAuthWsTicketCommand,
     LogoutAuthSessionCommand,
     RegisterAuthUserCommand,
-} from './auth-state-contracts.ts';
-import { AuthMutationRejectedError } from './auth-state-errors.ts';
-import { requireIssueSessionLifecycle } from './auth-session-lifecycle.ts';
+} from '../auth/mutation/auth-mutation-contracts.ts';
+import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
+import { requireIssueSessionLifecycle } from '../auth/sessions/require-auth-session-lifecycle.ts';
 import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/RuntimeStateExpiredEntry.ts';
 import { authTicketDigestKey } from '../repositories/auth-storage-keys.ts';
 import {

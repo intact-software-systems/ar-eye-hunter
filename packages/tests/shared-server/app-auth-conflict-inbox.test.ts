@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import { captureAuthMutationFacts, type ConsumeAuthWsTicketCommand, createAuthMutationService, decodeAuthMutationCommand } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
+import { captureAuthMutationFacts, type ConsumeAuthWsTicketCommand, createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -181,16 +181,4 @@ describe('AppAuthInboxService architecture', () => {
         },
         15_000,
     );
-
-    it('strictly rejects plaintext or extra auth command fields', () => {
-        expect(() =>
-            decodeAuthMutationCommand({
-                version: 1,
-                kind: 'consume-agent-ticket',
-                requestId: 'consume-1',
-                capturedAtEpochMs: 1_000,
-                ticketDigest: 'digest',
-                ticket: 'plaintext',
-            })
-        ).toThrow(/fields|plaintext/u);
-    });});
+});

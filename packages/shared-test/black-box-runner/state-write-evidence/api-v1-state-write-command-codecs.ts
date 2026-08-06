@@ -5,7 +5,7 @@ import { validateRtcRttMeasurement } from
 import { AppInboxType } from
     '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import { decodeAuthMutationCommand } from
-    '@shared-server/rallar-system/services/auth-state-codecs.ts';
+    '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
 import { decodeCrdtMutationCommand } from
     '@shared-server/rallar-system/services/crdt-mutation-codec.ts';
 

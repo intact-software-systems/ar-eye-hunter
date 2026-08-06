@@ -4,7 +4,7 @@ import {
     AuthUserRepository,
     normalizeUsername,
 } from '../repositories/AuthUserRepository.ts';
-import type { IssueAuthSessionCommand } from './auth-state-mutations.ts';
+import type { IssueAuthSessionCommand } from '../auth/mutation/auth-mutation-contracts.ts';
 
 export type AuthenticatedUserIdentity = Readonly<{
     clientId: string;
