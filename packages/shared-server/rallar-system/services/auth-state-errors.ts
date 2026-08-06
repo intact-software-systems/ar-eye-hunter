@@ -1,4 +1,4 @@
-import { hashAuthSecret } from '../repositories/AuthSessionRepository.ts';
+import { hashAuthSecret } from '../auth/credentials/hash-auth-secret.ts';
 import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 
 export async function requireMatchingCredentialDigest(

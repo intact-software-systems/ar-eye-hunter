@@ -6,10 +6,29 @@ import {
   type LoginAuthUserOptions,
 } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import { prepareAuthUserRegistration } from '@shared-server/rallar-system/auth/login/prepare-auth-user-registration.ts';
+import { createHmacAuthCredentialIssuer as createCompatibilityCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
+import {
+  authenticateAuthUser as authenticateCompatibilityAuthUser,
+  prepareAuthUserRegistration as prepareCompatibilityAuthUserRegistration,
+} from '@shared-server/rallar-system/services/auth-login-service.ts';
+import {
+  authenticateAuthUser as authenticatePublicAuthUser,
+  createHmacAuthCredentialIssuer as createPublicCredentialIssuer,
+  prepareAuthUserRegistration as preparePublicAuthUserRegistration,
+} from '@shared-server/mod.ts';
 
 const credentialSecret = 'auth-task-one-secret-0123456789abcdef';
 
 describe('auth credentials and login', () => {
+  it('catches compatibility exports that no longer resolve to the canonical runtime owners', () => {
+    expect(createCompatibilityCredentialIssuer).toBe(createHmacAuthCredentialIssuer);
+    expect(authenticateCompatibilityAuthUser).toBe(authenticateAuthUser);
+    expect(prepareCompatibilityAuthUserRegistration).toBe(prepareAuthUserRegistration);
+    expect(createPublicCredentialIssuer).toBe(createHmacAuthCredentialIssuer);
+    expect(authenticatePublicAuthUser).toBe(authenticateAuthUser);
+    expect(preparePublicAuthUserRegistration).toBe(prepareAuthUserRegistration);
+  });
+
   it('catches a credential issuer that changes the locked HMAC domain, purpose, or identity', async () => {
     const issuer = createHmacAuthCredentialIssuer(credentialSecret);
 

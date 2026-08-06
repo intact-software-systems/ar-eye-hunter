@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { requireApiAuthSession } from '@shared-server/http/request-auth-service.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';

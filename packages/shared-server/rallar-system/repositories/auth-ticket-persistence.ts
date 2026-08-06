@@ -17,7 +17,7 @@ import {
     type PersistedWebSocketTicket,
 } from './auth-persistence-contracts.ts';
 import { readBoundedLegacyAuthPage } from './auth-legacy-compatibility.ts';
-import { hashAuthSecret } from './auth-secret-digest.ts';
+import { hashAuthSecret } from '../auth/credentials/hash-auth-secret.ts';
 import type { IssuedAgentSessionTicket, IssuedWebSocketTicket } from './auth-session-types.ts';
 import {
     AGENT_SESSION_TICKETS_NAMESPACE,

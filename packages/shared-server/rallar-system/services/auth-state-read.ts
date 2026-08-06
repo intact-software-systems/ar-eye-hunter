@@ -4,7 +4,7 @@ import {
     type PersistedAgentSessionTicket,
 } from '../repositories/AuthSessionRepository.ts';
 import { AuthUserRepository } from '../repositories/AuthUserRepository.ts';
-import type { AuthCredentialIssuer } from './auth-credential-issuer.ts';
+import type { AuthCredentialIssuer } from '../auth/credentials/auth-credential-issuer.ts';
 import type {
     AuthMutationCommand,
     AuthMutationFacts,

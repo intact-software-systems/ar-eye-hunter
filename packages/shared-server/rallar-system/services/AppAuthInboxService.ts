@@ -20,8 +20,9 @@ import { decodeAuthMutationResult } from '../auth/mutation/decode-auth-mutation-
 import {
     captureAuthMutationFacts,
 } from './auth-state-mutations.ts';
-import type { AuthCredentialIssuer } from './auth-credential-issuer.ts';
-import { hashAuthSecret, type IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
+import type { AuthCredentialIssuer } from '../auth/credentials/auth-credential-issuer.ts';
+import { hashAuthSecret } from '../auth/credentials/hash-auth-secret.ts';
+import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import { toAppQueueKey } from './app-inbox-queue-key.ts';
 import type {
     AgentSessionTicketResponse,
@@ -37,7 +38,7 @@ import {
     toAuthCommandContextId,
     toAuthCommandSenderId,
 } from './auth-app-inbox-routing.ts';
-import { toAuthMutationPublicResult } from './auth-state-public-results.ts';
+import { toAuthMutationPublicResult } from '../auth/mutation/to-auth-mutation-public-result.ts';
 
 export { toAuthAppInboxType } from './auth-app-inbox-routing.ts';
 
