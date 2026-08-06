@@ -120,7 +120,14 @@ the pilot conclusions at exact master blob
 `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution-plan blob
 `3dc5495f5ee21b615a44f4e65c92deee8b42a940`. The linked
 [authoritative client-state server child](rallar-client-state-server-structure-plan.md)
-is drafted for exact-blob human review. Its implementation remains unapproved.
+was approved at exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`.
+Planning PR #71 and implementation PRs #72, #73, and #74 are complete, merged,
+and exact-default-workflow verified. The final implementation feature
+`b57b6797e30139a6e77e669fb2c85291d40d9de7` / tree
+`b61e02f0ddb3f22d4f68948f5c227b49c9bcdcf7` merged as exact `main`
+`df9ab8d27de17c29b927c9ed9fcce9251ba7e62a`; workflow `31095762444`
+attempt 1 succeeded for that exact SHA. The implementation is complete and its
+separately authorized evidence-ledger publication is pending.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -983,6 +990,12 @@ Remaining debt is explicit rather than silently treated as complete:
   after PR #70 reached `ledger-published`; the separately reviewed decision now
   satisfies its removal condition. Persistent semantic route, lineage, and
   active-path owners remain.
+- The client-state PR C source/style inventory, PR A and PR B exact-tree lineage
+  assertions, and fixed test-owner hash have explicit retirement or replacement
+  decisions. This evidence-only ledger records those already-published
+  decisions verbatim but executes none of the source, test, manifest,
+  assertion, hash-removal, or replacement work and does not reschedule or
+  report any of it as complete.
 - Focused warning-only checks are not finding-free: boundary `unknown` findings,
   several browser positional-input and pass-through findings, and small API route
   handler-size findings still require human disposition. Zero layout findings
@@ -1026,8 +1039,13 @@ persistence, AppInbox ownership, mirrored tests, and durable navigation. API-v1
 callers are characterized and verified but not reorganized. The human approved
 these pilot conclusions at exact blobs
 `4172437a6ca3ef6008446a1797582b4e4b9406a9` and
-`3dc5495f5ee21b615a44f4e65c92deee8b42a940`; the new child is drafted and
-unapproved until a human approves its exact Git blob.
+`3dc5495f5ee21b615a44f4e65c92deee8b42a940`; approved the child at exact blob
+`71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; and merged its three
+behavior-neutral implementation PRs after their exact gates passed. The
+implementation is complete through resulting `main`
+`df9ab8d27de17c29b927c9ed9fcce9251ba7e62a`. Its separate evidence ledger is
+authorized but not yet published, so auth and the remaining Wave 2 children
+stay blocked.
 
 ### Wave 2: Remaining authoritative mutation domains
 
@@ -1346,6 +1364,31 @@ to write, review, approve, execute, and hand off these child plans in order:
   - request defaults and request-to-command translation;
   - API-v1 composition changes needed by group-state only;
   - OpenAPI, route, and black-box compatibility checks.
+- [x] [Rallar client-state server structure](rallar-client-state-server-structure-plan.md)
+  - state: approved at exact Git blob
+    `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 feature
+    `73bda0999be39248f486f038cccb06e99be39d1f` / tree
+    `930c866e5adab6544f1cf263f5bfd674696f555d`, Branch Release Gate
+    `30869481618` attempt 1, resulting `main`
+    `39b2b7e6312507addfb4629c9d84ab476e83c362`, and default workflow
+    `30871724277` attempt 1 succeeded;
+  - PR A #72 feature `1e90c412855ea942a8b678aedde3b1c975efd5e8` / tree
+    `e957db303770864fad04e6bb02b98cc03bcdc335`, Branch Release Gate
+    `30997710887` attempt 1, resulting `main`
+    `2fdba024bb347622727d337eb06fc13d2fe129fc`, and default workflow
+    `31008375282` attempt 1 succeeded;
+  - PR B #73 feature `2dc7d8226e0b08026d992d72ee104bb9f638ed2a` / tree
+    `3d5d4a90f66c290ed0c4c362fc6b200acc3788f3`, Branch Release Gate
+    `31069282516` attempt 1, resulting `main`
+    `21a807c7d303adbf10e3289468323b1ea6b0b01f`, and default workflow
+    `31072851821` attempt 1 succeeded;
+  - PR C #74 feature `b57b6797e30139a6e77e669fb2c85291d40d9de7` / tree
+    `b61e02f0ddb3f22d4f68948f5c227b49c9bcdcf7`, Branch Release Gate
+    `31091742579` attempt 1, resulting `main`
+    `df9ab8d27de17c29b927c9ed9fcce9251ba7e62a`, and default workflow
+    `31095762444` attempt 1 succeeded;
+  - implementation complete; separately authorized evidence-ledger publication
+    pending under the non-circular contract.
 
 Only after the pilot is `verified` should the program copy its migration method
 to client-state, auth, topology, RTC, and CRDT. Adjust the method when the pilot
@@ -1412,5 +1455,9 @@ evaluation conclusions were human-approved at exact master blob
 `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution-plan blob
 `3dc5495f5ee21b615a44f4e65c92deee8b42a940`. The
 [authoritative client-state server child](rallar-client-state-server-structure-plan.md)
-is drafted with the seven approved migration-method corrections and awaits
-exact-blob human review. No Wave 2 implementation is approved by this record.
+was approved at exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`.
+Planning PR #71 and implementation PRs #72-#74 are complete through exact
+resulting `main` `df9ab8d27de17c29b927c9ed9fcce9251ba7e62a`; default workflow
+`31095762444` attempt 1 succeeded. The implementation is complete and its
+separate evidence ledger is authorized but not yet published. No later Wave 2
+implementation is approved by this record.
