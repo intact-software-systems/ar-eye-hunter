@@ -1,7 +1,7 @@
 // prettier-ignore
 import type {
   ClientAuthorisedWsSessionConnectAppInboxPayload,
-} from '../../services/AppClientInboxService.ts';
+} from '../../client-state/inbox/app-client-inbox-contracts.ts';
 
 export interface GroupPresenceSessionCleanupAppInboxPayload {
   readonly connection: ClientAuthorisedWsSessionConnectAppInboxPayload;

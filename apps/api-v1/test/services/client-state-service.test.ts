@@ -13,7 +13,7 @@ import type {
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
   createLegacyClientStateTestDriver as createClientStateService,
-} from '../../../../packages/tests/shared-server/client-state-phase-test-driver.ts';
+} from '../../../../packages/tests/shared-server/client-state/client-state-test-runtime.ts';
 import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
 
 const TEST_SCOPE: StateScope = {

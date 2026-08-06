@@ -25,7 +25,7 @@ import {
 import {
     createClientStatePhaseTestDriver,
     failNextClientStateTestOutboxWrite,
-} from './client-state-phase-test-driver.ts';
+} from './client-state/client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };

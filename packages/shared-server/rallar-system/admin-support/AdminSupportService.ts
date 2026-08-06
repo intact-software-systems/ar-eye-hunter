@@ -32,7 +32,7 @@ import type {
   RallarCrdtIntegrityReport,
 } from '@shared/crdt/mod.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
-import type { ClientStateService } from '../services/client-state-service.ts';
+import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
 import type { GroupStateService } from '../services/group-state-service.ts';
 import {
   nowMs,

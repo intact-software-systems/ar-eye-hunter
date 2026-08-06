@@ -15,7 +15,7 @@ import {
     canUpdateGroupSnapshot,
     GroupPolicyDeniedError,
 } from '../group-policy.ts';
-import type { ClientStateService } from '../services/client-state-service.ts';
+import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
 import type { GroupStateService } from '../services/group-state-service.ts';
 import {
     listRecentStateEvents,

@@ -110,10 +110,10 @@ function deadCorrectMutationMarker(): void {
     const byType = new Map(MUTATION_ROUTE_INVENTORY.map((entry) => [entry.type, entry]));
 
     expect(byType.get(AppInboxType.CLIENT_AUTHORISED_WS_CONNECT)?.owner).toBe(
-      'AppClientInboxService.processAuthorisedWsConnect',
+      'ClientStateInboxHandler.processAuthorisedWsConnect',
     );
     expect(byType.get(AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT)?.owner).toBe(
-      'AppClientInboxService.processAuthorisedWsDisconnect',
+      'ClientStateInboxHandler.processAuthorisedWsDisconnect',
     );
   });
 
@@ -123,7 +123,7 @@ function deadCorrectMutationMarker(): void {
     const mutations = [
       { ...first, entrypoint: `${first.entrypoint}/wrong` },
       { ...first, type: second.type },
-      { ...first, owner: 'AppClientInboxService.processAuthorisedWsConnect' },
+      { ...first, owner: 'ClientStateInboxHandler.processAuthorisedWsConnect' },
       { ...first, enqueueMarker: 'readSnapshot' },
       { ...first, sourcePath: 'apps/api-v1/src/routes/ws-routes.ts' },
     ];

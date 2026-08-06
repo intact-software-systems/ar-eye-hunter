@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "2fdba024bb347622727d337eb06fc13d2fe129fc",
+      "source": {
+        "path": "packages/shared-server/rallar-system/client-presence-state.ts",
+        "blob": "60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27"
+      },
+      "targets": ["packages/shared-server/rallar-system/client-state/client-presence-state.ts"]
+    },
+    {
+      "mergeBase": "2fdba024bb347622727d337eb06fc13d2fe129fc",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/ClientStateRepository.ts",
+        "blob": "9681469561f33b48cd5320dc7ad013c715c19ebe"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/client-state/persistence/client-state-runtime-namespaces.ts",
+        "packages/shared-server/rallar-system/client-state/persistence/client-state-repository-reads.ts",
+        "packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts",
+        "packages/shared-server/rallar-system/client-state/persistence/client-state-snapshot-repository.ts",
+        "packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts"
+      ]
+    },
+    {
+      "mergeBase": "2fdba024bb347622727d337eb06fc13d2fe129fc",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/client-state-mutations.ts",
+        "blob": "e4c8219a22ba6e3d47e3b139d44546b1fda436f0"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts",
+        "packages/shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts"
+      ]
+    }
+  ]
+}

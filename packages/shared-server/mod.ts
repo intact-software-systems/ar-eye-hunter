@@ -11,7 +11,7 @@ export * from './rallar-system/middleware/RallarMiddleware.ts';
 export * from './rallar-system/cache-repositories.ts';
 export * from './rallar-system/repositories/AuthSessionRepository.ts';
 export * from './rallar-system/repositories/AuthUserRepository.ts';
-export * from './rallar-system/repositories/ClientStateRepository.ts';
+export * from './rallar-system/client-state/persistence/client-state-repository.ts';
 export * from './rallar-system/repositories/GroupStateRepository.ts';
 export * from './rallar-system/repositories/GroupTopologyConfigRepository.ts';
 export * from './rallar-system/repositories/RtcRttRepository.ts';
@@ -21,15 +21,69 @@ export * from './rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 export * from './rallar-system/repositories/StateEventStore.ts';
 export * from './rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 export * from './rallar-system/pubsub/RtcTopologyClusterTransport.ts';
-export * from './rallar-system/services/client-state-service.ts';
-export * from './rallar-system/services/client-state-snapshot-read-through-cache.ts';
-export * from './rallar-system/services/cached-client-state-service.ts';
+// prettier-ignore
+export {
+  ClientMutationRejectedError,
+} from './rallar-system/client-state/client-state-validation-primitives.ts';
+export {
+  toClientMutationIssuedSessionAuthority,
+  toClientMutationSystemAuthority,
+} from './rallar-system/client-state/mutation/client-mutation-authority.ts';
+export {
+  toClientMutationCommand,
+  toConnectCommandInput,
+  toDisconnectCommandInput,
+  toExpiryCommandInput,
+  toHeartbeatCommandInput,
+  toUpsertInstanceCommandInput,
+  toUpsertPrincipalCommandInput,
+} from './rallar-system/client-state/mutation/client-mutation-command.ts';
+// prettier-ignore
+export {
+  ClientMutationIdempotencyConflictError,
+} from './rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+export { createClientStateService } from './rallar-system/client-state/client-state-service.ts';
+export {
+  requiresClientWrite,
+  toClientMutationReceipt,
+  toClientStateWritten,
+} from './rallar-system/client-state/client-state-service-contracts.ts';
+// prettier-ignore
+export type {
+  ClientMutationPersistedFacts,
+} from './rallar-system/client-state/mutation/client-mutation-command.ts';
+// prettier-ignore
+export type {
+  ClientMutationReceipt,
+} from './rallar-system/client-state/mutation/client-mutation-contracts.ts';
+export type {
+  ClientMutationWritten,
+  ClientStateService,
+  ClientStateServiceDependencies,
+  ClientStateWritten,
+  RegisterAuthorisedWsClientInput,
+} from './rallar-system/client-state/client-state-service-contracts.ts';
+export * from './rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+export * from './rallar-system/client-state/snapshot/cached-client-state-service.ts';
 export * from './rallar-system/services/cached-group-state-service.ts';
 export * from './rallar-system/services/auth-login-service.ts';
 export * from './rallar-system/services/auth-state-mutations.ts';
 export * from './rallar-system/services/auth-credential-issuer.ts';
 export * from './rallar-system/services/AppAuthInboxService.ts';
-export * from './rallar-system/services/AppClientInboxService.ts';
+// prettier-ignore
+export {
+  AppClientInboxService,
+} from './rallar-system/client-state/inbox/app-client-inbox-service.ts';
+export type {
+  ClientAuthorisedWsSessionConnectAppInboxPayload,
+  ClientAuthorisedWsSessionDisconnectAppInboxPayload,
+  ClientExpiredSessionsAppInboxPayload,
+  ClientInstanceUpsertAppInboxPayload,
+  ClientPrincipalUpsertAppInboxPayload,
+  ClientSessionConnectAppInboxPayload,
+  ClientSessionDisconnectAppInboxPayload,
+  ClientSessionHeartbeatAppInboxPayload,
+} from './rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 export * from './rallar-system/services/AppGroupInboxService.ts';
 export * from './rallar-system/services/AppInboxService.ts';
 export * from './rallar-system/services/AppOutboxService.ts';

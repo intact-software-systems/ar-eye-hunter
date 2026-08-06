@@ -5,6 +5,9 @@ import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
+// Owner: Task 4A persistence cohort; PR C must decide whether to remove, replace,
+// or retain this supplementary ratchet after PR B publication evidence exists.
+// The separate later ledger records that already-made PR C decision.
 const expectedCohortFiles = [
   'README.md',
   'client-state-contract-validation.ts',
@@ -31,9 +34,19 @@ const expectedCohortFiles = [
   'mutation/result-validation/validate-client-mutation-read.ts',
   'mutation/result-validation/validate-client-mutation-result.ts',
   'mutation/result-validation/validate-client-mutation.ts',
+  'client-presence-state.ts',
+  'persistence/client-state-persistence-contracts.ts',
+  'persistence/client-state-runtime-namespaces.ts',
+  'persistence/client-state-storage-keys.ts',
+  'persistence/validate-persisted-client-state.ts',
+  'persistence/client-state-persistence-codec.ts',
+  'persistence/client-state-repository-reads.ts',
+  'persistence/assemble-client-state-snapshot.ts',
+  'persistence/client-state-snapshot-repository.ts',
+  'persistence/client-state-repository.ts',
 ] as const;
 
-describe('client-state server PR A source ratchet', () => {
+describe('client-state server source ratchet', () => {
   it('keeps the cohort modules within the mechanical size limits', () => {
     for (const filePath of expectedCohortFiles.filter((value) => value.endsWith('.ts'))) {
       const source = read(`packages/shared-server/rallar-system/client-state/${filePath}`);

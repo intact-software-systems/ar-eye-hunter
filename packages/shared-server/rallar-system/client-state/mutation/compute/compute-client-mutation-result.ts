@@ -8,7 +8,7 @@ import type {
 import {
   compareClientStateInstanceStorageKeys,
   compareClientStateSessionStorageKeys,
-} from '../../../client-state-storage-keys.ts';
+} from '../../persistence/client-state-storage-keys.ts';
 import {
   computeClientStateSyncEntries,
   type ComputedClientStateSync,

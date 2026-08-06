@@ -25,7 +25,7 @@ import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { GroupMutationReceipt } from "@shared-server/rallar-system/services/group-state-mutations.ts";
 import { AppInboxType } from "@shared-server/rallar-system/services/AppInboxService.ts";
-import { createPostgresClientPhaseDriver } from "./postgres-client-phase-driver.ts";
+import { createPostgresClientPhaseDriver } from "./client-state/postgres-client-mutation-test-driver.ts";
 import {
   createPostgresAppInboxTestAuthority as testAuthority,
   createPostgresAppInboxWorkerRuntime,

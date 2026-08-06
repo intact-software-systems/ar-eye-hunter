@@ -1,6 +1,6 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 // prettier-ignore
 import {
     GroupStateRepository,
@@ -110,6 +110,8 @@ function canCreateSqlStateEventRepository(
         !isRuntimeStateRepositoryLike(input);
 }
 
-function isRuntimeStateRepositoryLike(input: RuntimeStateRepositoryLike | PSqlSql): input is RuntimeStateRepositoryLike {
+function isRuntimeStateRepositoryLike(
+    input: RuntimeStateRepositoryLike | PSqlSql,
+): input is RuntimeStateRepositoryLike {
     return typeof (input as RuntimeStateRepositoryLike).findEntry === 'function';
 }

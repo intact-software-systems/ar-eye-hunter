@@ -14,7 +14,8 @@ const GROUP_TYPES =
 const AUTH_OWNER = 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
 const CRDT_TYPES = 'packages/shared-server/rallar-system/services/crdt-mutation-contracts.ts';
-const CLIENT_OWNER = 'packages/shared-server/rallar-system/services/AppClientInboxService.ts';
+const CLIENT_OWNER =
+  'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
 describe('Mutation route owner registration collections contracts', () => {
   it.each([

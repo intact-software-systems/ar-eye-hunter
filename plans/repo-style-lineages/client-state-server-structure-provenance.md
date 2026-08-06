@@ -214,10 +214,26 @@ The legacy service path is a direct named one-hop export. The source blob is
 `74-77` has region hash
 `3cb57e0bb4be500115f8a7f051b819b8f18b76cf89de7e0322a8ea041c9570f8`.
 
-## Compatibility and deferred persistence
+## PR B persistence source evidence
 
-Moved names remain direct named one-hop exports. The transitional
-`services/client-state-mutations.ts` retains only current persistence
-normalization, persisted-slot identity checks, and the exported persisted
-idempotency wrapper for PR B. No persistence key, codec, repository, AppInbox,
-transaction, retry, timing, or API-v1 behavior moved in this cohort.
+The exact machine-verifiable mixed-source source and target evidence is in
+`plans/repo-style-lineages/client-state-server-persistence-provenance.md`.
+Its storage-key and persistence-contract records are nonstructural evidence:
+the active manifest omits both mixed-source targets so neither receives
+changed-style capacity. The dedicated provenance suite verifies that the
+active checker accepts the unique-target manifest and grants no capacity to
+either target.
+The final canonical repository owner is
+`packages/shared-server/rallar-system/client-state/persistence/client-state-repository.ts`.
+It covers `packages/shared-server/rallar-system/client-presence-state.ts@60b0ecdd48e29ba4bbd3735e48ec3ad9a0741a27`,
+`packages/shared-server/rallar-system/client-state-storage-keys.ts@677e87f18f06c450b4b412e1ae438ea5b9d850c3`,
+`packages/shared-server/rallar-system/repositories/ClientStateRepository.ts@9681469561f33b48cd5320dc7ad013c715c19ebe`,
+`packages/shared-server/rallar-system/services/client-state-mutations.ts@e4c8219a22ba6e3d47e3b139d44546b1fda436f0`,
+and `packages/shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts@b5e091fe588f88fa63eadf1d4c24d7c04aa3df00`.
+
+The legacy `client-presence-state.ts`, `client-state-storage-keys.ts`, and
+`repositories/ClientStateRepository.ts` modules remain direct named one-hop
+compatibility exports. The transitional `services/client-state-mutations.ts`
+is a direct named compatibility surface for its relocated persistence exports.
+No AppInbox, transaction, retry, timing, API-v1, mutation read/write, or
+snapshot-cache behavior moves in this cohort.

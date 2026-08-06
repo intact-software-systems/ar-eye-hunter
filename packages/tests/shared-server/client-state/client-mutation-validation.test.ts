@@ -3,10 +3,22 @@ import { describe, expect, it } from 'vitest';
 import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
 import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import {
   ClientMutationRejectedError as LegacyClientMutationRejectedError,
   validateClientMutationCommand as legacyValidateClientMutationCommand,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+
+import { deepFreeze } from './client-mutation-concurrency-test-runtime.ts';
+import {
+  clientMutationPrincipalRef as principalRef,
+  emptyClientMutationRead,
+  validAuthority,
+  validAuthoritySession,
+  validFacts,
+} from './client-mutation-validation-test-fixtures.ts';
 
 describe('client mutation validation', () => {
   it('preserves request validation order and exact rejection details', () => {
@@ -162,3 +174,48 @@ function validFacts() {
     expireAtEpochMs: 2_000,
   };
 }
+
+describe('client mutation computation determinism', () => {
+  it('keeps pure compute and validation deterministic and side-effect free', () => {
+    const command: ClientMutationCommand = deepFreeze({
+      operation: 'upsertPrincipal',
+      aggregateRef: principalRef('alice'),
+      commandId: 'pure-command',
+      requestId: 'pure-command',
+      authority: validAuthority('upsertPrincipal'),
+      facts: validFacts(),
+      input: {
+        username: 'alice',
+        displayName: 'Alice',
+        avatarUrl: null,
+        status: null,
+        authProvider: null,
+        externalSubjectId: null,
+        roles: [],
+        metadata: {},
+        lastSeenAtEpochMs: null,
+        actorPrincipalId: null,
+        actorSessionId: null,
+        reason: null,
+        traceId: null,
+      },
+    });
+    const read: ClientMutationRead = deepFreeze({
+      authoritySession: validAuthoritySession(),
+      idempotency: null,
+      principal: null,
+      instance: null,
+      session: null,
+      expiredSessionEntry: null,
+      snapshot: null,
+      receiptEvent: null,
+    });
+    const first = computeClientMutation({ command, read });
+    const second = computeClientMutation({ command, read });
+    validateClientMutation({ command, read, computed: first });
+    validateClientMutation({ command, read, computed: second });
+    expect(second).toEqual(first);
+    expect(command).toEqual(deepFreeze(structuredClone(command)));
+    expect(read).toEqual(deepFreeze(structuredClone(read)));
+  });
+});

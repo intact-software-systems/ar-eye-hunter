@@ -14,11 +14,11 @@ import {
 } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { initialiseServerCacheRepositories } from '../cache-repositories.ts';
-import type { ClientStateRepository } from '../repositories/ClientStateRepository.ts';
+import type { ClientStateRepository } from '../client-state/persistence/client-state-repository.ts';
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
-import type { AppClientInboxService } from '../services/AppClientInboxService.ts';
+import type { AppClientInboxService } from '../client-state/inbox/app-client-inbox-service.ts';
 import type { AppGroupInboxService } from '../services/AppGroupInboxService.ts';
-import type { ClientStateService } from '../services/client-state-service.ts';
+import type { ClientStateService } from '../client-state/client-state-service-contracts.ts';
 import type { GroupStateService } from '../services/group-state-service.ts';
 import type { RallarSnapshotPresenceClock } from '../snapshot-presence.ts';
 import type { RtcTopologyPublicationRepository } from '../repositories/RtcTopologyPublicationRepository.ts';

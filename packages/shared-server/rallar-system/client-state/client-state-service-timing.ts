@@ -1,0 +1,122 @@
+import type { ClientMutationCommand } from './mutation/client-mutation-contracts.ts';
+import type { ClientStateService } from './client-state-service-contracts.ts';
+import {
+  nowMs,
+  type RallarTimingEventInput,
+  type RallarTimingSink,
+  recordRallarTiming,
+  timeRallarAsync,
+} from '../services/timing.ts';
+
+type ClientStateServiceOperation =
+  'mutation.read' | 'mutation.compute' | 'mutation.validate' | 'mutation.write';
+
+interface CreateTimedClientStateServiceInput {
+  readonly service: ClientStateService;
+  readonly timing: RallarTimingSink | undefined;
+  readonly serviceId: string;
+}
+
+export function createTimedClientStateService(
+  input: CreateTimedClientStateServiceInput,
+): ClientStateService {
+  if (!input.timing) return input.service;
+  return {
+    ...input.service,
+    read: (command) => timeClientMutationRead(input, command, () => input.service.read(command)),
+    compute: (command, read) =>
+      timeClientMutationSync(input, 'mutation.compute', command, () =>
+        input.service.compute(command, read),
+      ),
+    validate: (command, read, computed) =>
+      timeClientMutationSync(input, 'mutation.validate', command, () =>
+        input.service.validate(command, read, computed),
+      ),
+    write: (transaction, computed) =>
+      timeClientMutationWrite(input, computed, () => input.service.write(transaction, computed)),
+  };
+}
+
+export type ClientStateServiceTimingFactory = typeof createTimedClientStateService;
+
+function timeClientMutationRead<T>(
+  input: CreateTimedClientStateServiceInput,
+  command: ClientMutationCommand,
+  action: () => Promise<T>,
+): Promise<T> {
+  return timeRallarAsync(
+    input.timing,
+    {
+      component: 'client-state-service',
+      operation: 'mutation.read',
+      serviceId: input.serviceId,
+      requestId: command.requestId ?? undefined,
+      ...command.aggregateRef,
+    },
+    action,
+  );
+}
+
+function timeClientMutationSync<T>(
+  input: CreateTimedClientStateServiceInput,
+  operation: Extract<ClientStateServiceOperation, 'mutation.compute' | 'mutation.validate'>,
+  command: ClientMutationCommand,
+  action: () => T,
+): T {
+  const startedAt = nowMs();
+  try {
+    const result = action();
+    recordRallarTiming(
+      input.timing,
+      toMutationTiming(operation, command, input.serviceId),
+      'ok',
+      nowMs() - startedAt,
+    );
+    return result;
+  } catch (error) {
+    recordRallarTiming(
+      input.timing,
+      toMutationTiming(operation, command, input.serviceId),
+      'error',
+      nowMs() - startedAt,
+      error,
+    );
+    throw error;
+  }
+}
+
+function timeClientMutationWrite<T>(
+  input: CreateTimedClientStateServiceInput,
+  computed: Parameters<ClientStateService['write']>[1],
+  action: () => Promise<T>,
+): Promise<T> {
+  return timeRallarAsync(
+    input.timing,
+    {
+      component: 'client-state-service',
+      operation: 'mutation.write',
+      serviceId: input.serviceId,
+      requestId: computed.receipt.requestId ?? undefined,
+      ...computed.receipt.aggregateRef,
+    },
+    action,
+  );
+}
+
+function toMutationTiming(
+  operation: ClientStateServiceOperation,
+  command: ClientMutationCommand,
+  serviceId: string,
+): RallarTimingEventInput {
+  return {
+    component: 'client-state-service',
+    operation,
+    serviceId,
+    requestId: command.requestId ?? undefined,
+    ...command.aggregateRef,
+    details: {
+      attempt: command.facts.attemptCount,
+      mutationOperation: command.operation,
+    },
+  };
+}

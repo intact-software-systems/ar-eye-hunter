@@ -15,6 +15,15 @@ import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeState
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
 import type { PersistedAuthSession } from '../../repositories/AuthSessionRepository.ts';
 import type { ComputedClientStateSync } from '../../state-sync-publisher.ts';
+import type {
+  ClientMutationIdempotencyRecord,
+  ClientMutationReceipt,
+} from '../persistence/client-state-persistence-contracts.ts';
+
+export type {
+  ClientMutationIdempotencyRecord,
+  ClientMutationReceipt,
+} from '../persistence/client-state-persistence-contracts.ts';
 
 export type NullableActorInput = Readonly<{
   actorPrincipalId: string | null;
@@ -187,27 +196,6 @@ export type ClientMutationCommand =
             expiresAtEpochMs: number;
           }>;
       }>);
-
-export type ClientMutationReceipt = Readonly<{
-  commandId: string;
-  requestId: string | null;
-  commandHash: string;
-  aggregateRef: ClientPrincipalRef;
-  outcome: 'applied' | 'no-op';
-  attemptCount: number;
-  acceptedStorageRevision: number | null;
-  stateRevision: number;
-  snapshotVersion: number;
-  presenceVersion: number;
-  eventId: string | null;
-  outboxIds: readonly string[];
-}>;
-
-export type ClientMutationIdempotencyRecord = Readonly<{
-  requestId: string;
-  commandHash: string;
-  receipt: ClientMutationReceipt;
-}>;
 
 export type ClientMutationRead = Readonly<{
   authoritySession: PersistedAuthSession | null;

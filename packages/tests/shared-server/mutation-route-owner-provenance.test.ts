@@ -75,19 +75,19 @@ function deadWsHandoff(enqueueRtcRttMutation: (...args: never[]) => unknown): vo
 
   it('rejects a lifecycle type dispatched to the wrong owner with a dead correct call', () => {
     const item = requireEntry(AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT, 'WS_LIFECYCLE');
-    const source = readFileSync(item.ownerSourcePath, 'utf8');
-    const live = 'await this.processAuthorisedWsDisconnect(input, context)';
+    const source = readFileSync(item.dispatchSourcePath, 'utf8');
+    const live = 'await this.handler.processAuthorisedWsDisconnect(input, context)';
     const mutated =
-      source.replace(live, 'await this.processAuthorisedWsConnect(input, context)') +
+      source.replace(live, 'await this.handler.processAuthorisedWsConnect(input, context)') +
       `
 class DeadLifecycleOwner {
-  process(): void { void this.processAuthorisedWsDisconnect; }
-  private processAuthorisedWsDisconnect(): void {}
+  process(): void { void this.handler.processAuthorisedWsDisconnect; }
+  private readonly handler = { processAuthorisedWsDisconnect(): void {} };
 }
 `;
     expect(source).toContain(live);
 
-    expect(validateWithOverride(item.ownerSourcePath, mutated)).toEqual(
+    expect(validateWithOverride(item.dispatchSourcePath, mutated)).toEqual(
       expect.arrayContaining([expect.stringContaining('owner dispatch is not connected')]),
     );
   });
