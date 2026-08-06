@@ -168,6 +168,8 @@ function validateAgentTicketCommandFields(ticket: Readonly<Record<string, unknow
 }
 
 function validateAgentTicketCommandLifecycle(ticket: Readonly<Record<string, unknown>>): void {
+  const issuedAtEpochMs = ticket.issuedAtEpochMs as number;
+  const sessionExpiresAtEpochMs = ticket.sessionExpiresAtEpochMs as number;
   decodePersistedAgentSessionTicket({
     ticketDigest: ticket.ticketDigest,
     accessTokenDigest: ticket.accessTokenDigest,
@@ -177,7 +179,7 @@ function validateAgentTicketCommandLifecycle(ticket: Readonly<Record<string, unk
     issuedAtEpochMs: ticket.issuedAtEpochMs,
     expiresAtEpochMs: ticket.ticketExpiresAtEpochMs,
   });
-  if ((ticket.issuedAtEpochMs as number) >= (ticket.sessionExpiresAtEpochMs as number)) {
+  if (issuedAtEpochMs >= sessionExpiresAtEpochMs) {
     throw new TypeError('Auth agent session lifecycle is invalid');
   }
 }

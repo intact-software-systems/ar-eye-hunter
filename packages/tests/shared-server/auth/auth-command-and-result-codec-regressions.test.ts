@@ -4,6 +4,68 @@ import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mut
 import { decodeAuthMutationCommand } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts';
 import { decodeAuthMutationResult } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-result.ts';
 
+const validDurableResults = [
+  {
+    requestId: 'register-request',
+    clientId: 'client-1',
+    username: 'alice',
+    displayName: null,
+    registeredAtEpochMs: 1_000,
+  },
+  { requestId: 'logout-request', loggedOut: true },
+  {
+    requestId: 'session-request',
+    kind: 'session-issued',
+    clientId: 'client-1',
+    username: 'alice',
+    sessionId: 'session-1',
+    accessTokenDigest: 'digest-1',
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs: 2_000,
+  },
+  {
+    requestId: 'ws-issue-request',
+    kind: 'ws-ticket-issued',
+    ticketDigest: 'ticket-digest',
+    sessionId: 'session-1',
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs: 2_000,
+  },
+  {
+    requestId: 'ws-consume-request',
+    kind: 'ws-ticket-consumed',
+    clientId: 'client-1',
+    username: 'alice',
+    sessionId: 'session-1',
+    accessTokenDigest: 'digest-1',
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs: 2_000,
+  },
+  {
+    requestId: 'agent-consume-request',
+    kind: 'agent-ticket-consumed',
+    clientId: 'client-1',
+    username: 'alice',
+    sessionId: 'session-1',
+    accessTokenDigest: 'digest-1',
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs: 2_000,
+  },
+  {
+    requestId: 'agent-issue-request',
+    kind: 'agent-tickets-issued',
+    tickets: [
+      {
+        agentId: 'agent-1',
+        ticketDigest: 'ticket-digest',
+        sessionId: 'agent-session-1',
+        issuedAtEpochMs: 1_000,
+        expiresAtEpochMs: 2_000,
+      },
+    ],
+  },
+];
+
 describe('auth command and durable-result codec regressions', () => {
   it('preserves the exact auth mutation rejection error contract', () => {
     expect(new AuthMutationRejectedError('rejected')).toMatchObject({
@@ -21,85 +83,76 @@ describe('auth command and durable-result codec regressions', () => {
   });
 
   it('strictly decodes every durable auth result variant', () => {
-    const valid = [
-      {
-        requestId: 'register-request',
-        clientId: 'client-1',
-        username: 'alice',
-        displayName: null,
-        registeredAtEpochMs: 1_000,
-      },
-      { requestId: 'logout-request', loggedOut: true },
-      {
-        requestId: 'session-request',
-        kind: 'session-issued',
-        clientId: 'client-1',
-        username: 'alice',
-        sessionId: 'session-1',
-        accessTokenDigest: 'digest-1',
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: 2_000,
-      },
-      {
-        requestId: 'ws-issue-request',
-        kind: 'ws-ticket-issued',
-        ticketDigest: 'ticket-digest',
-        sessionId: 'session-1',
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: 2_000,
-      },
-      {
-        requestId: 'ws-consume-request',
-        kind: 'ws-ticket-consumed',
-        clientId: 'client-1',
-        username: 'alice',
-        sessionId: 'session-1',
-        accessTokenDigest: 'digest-1',
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: 2_000,
-      },
-      {
-        requestId: 'agent-consume-request',
-        kind: 'agent-ticket-consumed',
-        clientId: 'client-1',
-        username: 'alice',
-        sessionId: 'session-1',
-        accessTokenDigest: 'digest-1',
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: 2_000,
-      },
-      {
-        requestId: 'agent-issue-request',
-        kind: 'agent-tickets-issued',
-        tickets: [
-          {
-            agentId: 'agent-1',
-            ticketDigest: 'ticket-digest',
-            sessionId: 'agent-session-1',
-            issuedAtEpochMs: 1_000,
-            expiresAtEpochMs: 2_000,
-          },
-        ],
-      },
-    ];
-    for (const result of valid) {
+    for (const result of validDurableResults) {
       expect(decodeAuthMutationResult(result)).toEqual(result);
     }
+  });
+
+  it('strictly rejects every malformed durable auth result variant', () => {
     for (const invalid of [
-      Object.fromEntries(Object.entries(valid[0]).filter(([key]) => key !== 'requestId')),
+      Object.fromEntries(
+        Object.entries(validDurableResults[0]).filter(([key]) => key !== 'requestId'),
+      ),
       { loggedOut: true },
-      { ...valid[2], accessToken: 'plaintext-token' },
-      { ...valid[2], unexpected: true },
+      { ...validDurableResults[2], accessToken: 'plaintext-token' },
+      { ...validDurableResults[2], unexpected: true },
       {
         kind: 'agent-tickets-issued',
-        tickets: [{ ...valid[6].tickets![0], ticket: 'x' }],
+        tickets: [{ ...validDurableResults[6].tickets![0], ticket: 'x' }],
       },
       { kind: 'agent-tickets-issued', tickets: [null] },
-      { ...valid[3], expiresAtEpochMs: Number.NaN },
+      { ...validDurableResults[3], expiresAtEpochMs: Number.NaN },
       Object.create({ kind: 'session-issued' }),
     ]) {
       expect(() => decodeAuthMutationResult(invalid)).toThrow(TypeError);
     }
+  });
+
+  it('captures agent-session lifecycle values before persisted-ticket decoding', () => {
+    let ticketDigestReadCount = 0;
+    let persistedTicketReadStarted = false;
+    const ticket = {
+      agentId: 'agent-1',
+      sessionId: 'agent-session-1',
+      accessTokenDigest: 'agent-access-token-digest',
+      get ticketDigest() {
+        ticketDigestReadCount += 1;
+        if (ticketDigestReadCount === 2) persistedTicketReadStarted = true;
+        return 'agent-ticket-digest';
+      },
+      clientId: 'client-1',
+      username: 'alice',
+      issuedAtEpochMs: 1_000,
+      get sessionExpiresAtEpochMs() {
+        return persistedTicketReadStarted ? 1_000 : 2_000;
+      },
+      ticketExpiresAtEpochMs: 1_500,
+    };
+    const command = {
+      version: 1,
+      kind: 'issue-agent-tickets',
+      requestId: 'accessor-agent-ticket-command',
+      capturedAtEpochMs: 1_000,
+      authority: {
+        clientId: 'client-1',
+        username: 'alice',
+        sessionId: 'session-1',
+        accessTokenDigest: 'authority-access-token-digest',
+        issuedAtEpochMs: 1_000,
+        expiresAtEpochMs: 3_000,
+      },
+      tickets: [ticket],
+    };
+
+    expect(decodeAuthMutationCommand(command)).toEqual({
+      ...command,
+      tickets: [
+        {
+          ...ticket,
+          sessionExpiresAtEpochMs: 1_000,
+        },
+      ],
+    });
   });
 
   it('requires an exact registered-user authority on session issuance commands', () => {
