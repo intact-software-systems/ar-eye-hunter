@@ -15,11 +15,13 @@ const canonicalTestRoot = 'packages/tests/shared-server/client-state';
 // until the separate later ledger removes it after PR C resulting-main workflow
 // and the listed semantic ownership evidence are both published.
 const preservedPublicParameterCompatibility = new Set([
+  'inbox/app-client-inbox-service.ts:constructor',
   'mutation/client-mutation-command.ts:toUpsertPrincipalCommandInput',
   'mutation/client-mutation-command.ts:toUpsertInstanceCommandInput',
   'mutation/client-mutation-command.ts:toConnectCommandInput',
   'mutation/client-mutation-command.ts:toHeartbeatCommandInput',
   'mutation/client-mutation-command.ts:toDisconnectCommandInput',
+  'persistence/client-state-repository.ts:insertIdempotentClientStateWritten',
 ]);
 const approvedDirectImportLineWidths = new Set([
   'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts:7:line-width',
@@ -44,6 +46,52 @@ describe('client-state server source/style ratchet fixtures', () => {
       'fixture.ts:2:toFixture:parameters',
       'fixture.ts:3:longFixture:function-length',
     ]);
+  });
+
+  it('detects positional inputs on every supported function form', () => {
+    const source = [
+      'function declarationFixture(a, b, c, d) {}',
+      'const arrowFixture = (a, b, c, d) => {};',
+      'const expression = function expressionFixture(a, b, c, d) {};',
+      'const objectFixture = { method(a, b, c, d) {} };',
+      'class ClassFixture { method(a, b, c, d) {} }',
+    ].join('\n');
+
+    expect(readStyleViolations('fixture.ts', source)).toEqual([
+      'fixture.ts:1:declarationFixture:parameters',
+      'fixture.ts:2:arrowFixture:parameters',
+      'fixture.ts:3:expressionFixture:parameters',
+      'fixture.ts:4:method:parameters',
+      'fixture.ts:5:method:parameters',
+    ]);
+  });
+
+  it.each([
+    ['arrow function', ['const arrowFixture = () => {', ...fixtureLines(59), '};']],
+    [
+      'function expression',
+      ['const expression = function expressionFixture() {', ...fixtureLines(59), '};'],
+    ],
+    [
+      'object method',
+      ['const objectFixture = {', '  method() {', ...fixtureLines(59), '  },', '};'],
+    ],
+    ['class method', ['class ClassFixture {', '  method() {', ...fixtureLines(59), '  }', '}']],
+  ])('detects an overlong %s', (_label, lines) => {
+    const violations = readStyleViolations('fixture.ts', lines.join('\n'));
+    expect(violations.some((violation) => violation.endsWith(':function-length'))).toBe(true);
+  });
+
+  it('accepts concise named-input forms for every supported function form', () => {
+    const source = [
+      'function declarationFixture(input: unknown): void {}',
+      'const arrowFixture = (input: unknown): void => {};',
+      'const expression = function expressionFixture(input: unknown): void {};',
+      'const objectFixture = { method(input: unknown): void {} };',
+      'class ClassFixture { method(input: unknown): void {} }',
+    ].join('\n');
+
+    expect(readStyleViolations('fixture.ts', source)).toEqual([]);
   });
 });
 
@@ -90,7 +138,25 @@ describe('client-state server source/style ratchet', () => {
       "toClientStateSnapshotRepositoryKey,\n} from '@shared/repository/client-state-snapshots-repository.ts';",
     );
   });
+
+  it('keeps one-use named contracts private to their canonical owners', () => {
+    const validationPrimitives = read(
+      'packages/shared-server/rallar-system/client-state/client-state-validation-primitives.ts',
+    );
+    const commandConstruction = read(
+      'packages/shared-server/rallar-system/client-state/mutation/client-mutation-command.ts',
+    );
+
+    expect(validationPrimitives).toContain('interface RequireAllowedKeysInput {');
+    expect(validationPrimitives).not.toContain('export interface RequireAllowedKeysInput {');
+    expect(commandConstruction).toContain('type ClientExpiryCommandInput = Extract<');
+    expect(commandConstruction).not.toContain('export type ClientExpiryCommandInput = Extract<');
+  });
 });
+
+function fixtureLines(count: number): readonly string[] {
+  return Array.from({ length: count }, () => '    // fixture line');
+}
 
 function readRatchetedSources(): readonly { readonly filePath: string; readonly source: string }[] {
   return [canonicalProductionRoot, canonicalTestRoot]
@@ -128,8 +194,8 @@ function readStyleViolations(filePath: string, source: string): readonly string[
   const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
 
   visit(program, undefined, (node, parent) => {
-    if (node.type !== 'FunctionDeclaration' || isDescribeCallback(parent)) return;
-    const name = functionNodeName(node);
+    if (isDescribeCallback(parent)) return;
+    const name = functionNodeName(node, parent);
     const line = node.loc.start.line;
     if (node.loc.end.line - line + 1 > maximumFunctionLines) {
       functionViolations.push(`${filePath}:${line}:${name}:function-length`);
@@ -199,9 +265,13 @@ function isDescribeCallback(parent: Record<string, unknown> | undefined): boolea
   return parent?.type === 'CallExpression' && callee?.name === 'describe';
 }
 
-function functionNodeName(node: FunctionNode): string {
+function functionNodeName(node: FunctionNode, parent: Record<string, unknown> | undefined): string {
   if (typeof node.id?.name === 'string') return node.id.name;
   if (typeof node.key?.name === 'string') return node.key.name;
+  const variableId = parent?.id as { readonly name?: unknown } | undefined;
+  if (parent?.type === 'VariableDeclarator' && typeof variableId?.name === 'string') {
+    return variableId.name;
+  }
   return '<callback>';
 }
 

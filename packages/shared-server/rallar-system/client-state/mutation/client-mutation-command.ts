@@ -27,10 +27,7 @@ import {
 
 export type ClientMutationPersistedFacts = Omit<ClientMutationFacts, 'commandHash'>;
 
-export type ClientExpiryCommandInput = Extract<
-  ClientMutationCommandInput,
-  { operation: 'expireSession' }
->;
+type ClientExpiryCommandInput = Extract<ClientMutationCommandInput, { operation: 'expireSession' }>;
 
 interface ClientMutationActorInput {
   readonly actorPrincipalId: string | null;

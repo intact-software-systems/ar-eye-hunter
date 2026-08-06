@@ -109,6 +109,77 @@ const prBQueryCacheCohortLinks = [
   ],
 ] as const;
 
+const expectedCompatibilityRows = [
+  {
+    compatibilityPath: 'client-presence-state.ts',
+    canonicalOwner: 'client-state/client-presence-state.ts',
+    removalCondition:
+      'Internal direct-import proof plus no external/deep consumer, or a breaking release.',
+  },
+  {
+    compatibilityPath: 'client-state-storage-keys.ts',
+    canonicalOwner: 'client-state/persistence/client-state-storage-keys.ts',
+    removalCondition:
+      'Internal direct-import proof plus no external/deep consumer, or a breaking release.',
+  },
+  {
+    compatibilityPath: 'repositories/ClientStateRepository.ts',
+    canonicalOwner: 'client-state/persistence/client-state-repository.ts',
+    removalCondition: 'A breaking release or separately approved public migration.',
+  },
+  {
+    compatibilityPath: 'services/client-state-service.ts',
+    canonicalOwner: 'client-state/client-state-service.ts',
+    removalCondition:
+      'A breaking release or separately approved consumer migration proving no active import.',
+  },
+  {
+    compatibilityPath: 'services/AppClientInboxService.ts',
+    canonicalOwner: 'client-state/inbox/app-client-inbox-service.ts',
+    removalCondition: 'A breaking release or separately approved consumer migration.',
+  },
+  {
+    compatibilityPath: 'services/client-state-mutations.ts',
+    canonicalOwner: 'client-state/mutation/* and canonical validation owners',
+    removalCondition:
+      'All internal callers migrate and a separately approved API/public removal completes.',
+  },
+  {
+    compatibilityPath: 'services/authorised-ws-client-app-inbox.ts',
+    canonicalOwner: 'client-state/inbox/authorised-ws-client-app-inbox.ts',
+    removalCondition:
+      'The future API-v1 client-state route child migrates its callers and proves no other import.',
+  },
+  {
+    compatibilityPath: 'services/client-mutation-authority.ts',
+    canonicalOwner: 'client-state/mutation/client-mutation-authority.ts',
+    removalCondition:
+      'All internal callers migrate and an active-import scan proves no external consumer.',
+  },
+  {
+    compatibilityPath: 'services/client-expired-state-authority.ts',
+    canonicalOwner: 'client-state/mutation/validate-client-expired-session-authority.ts',
+    removalCondition:
+      'Canonical internal import proof and an active-import scan proving no external consumer.',
+  },
+  {
+    compatibilityPath: 'services/client-state-semantic-equality.ts',
+    canonicalOwner: 'client-state/client-state-semantic-equality.ts',
+    removalCondition:
+      'Canonical internal import proof and an active-import scan proving no external consumer.',
+  },
+  {
+    compatibilityPath: 'services/cached-client-state-service.ts',
+    canonicalOwner: 'client-state/snapshot/cached-client-state-service.ts',
+    removalCondition: 'A breaking release or separately approved consumer migration.',
+  },
+  {
+    compatibilityPath: 'services/client-state-snapshot-read-through-cache.ts',
+    canonicalOwner: 'client-state/snapshot/client-state-snapshot-read-through-cache.ts',
+    removalCondition: 'A breaking release or separately approved consumer migration.',
+  },
+] as const;
+
 describe('client-state navigation map integrity', () => {
   it('links every PR A owner to its named primary symbol', () => {
     const readme = read(navigationPath);
@@ -173,25 +244,7 @@ describe('client-state navigation map integrity', () => {
   });
 
   it('lists every retained compatibility path with its direct canonical owner', () => {
-    const readme = read(navigationPath);
-
-    for (const path of [
-      'client-presence-state.ts',
-      'client-state-storage-keys.ts',
-      'repositories/ClientStateRepository.ts',
-      'services/client-state-service.ts',
-      'services/AppClientInboxService.ts',
-      'services/client-state-mutations.ts',
-      'services/authorised-ws-client-app-inbox.ts',
-      'services/client-mutation-authority.ts',
-      'services/client-expired-state-authority.ts',
-      'services/client-state-semantic-equality.ts',
-      'services/cached-client-state-service.ts',
-      'services/client-state-snapshot-read-through-cache.ts',
-    ]) {
-      expect(readme).toContain(`\`${path}\``);
-    }
-    expect(readme).toContain('compatibility path is removed only by its listed condition.');
+    expect(readCompatibilityRows(read(navigationPath))).toEqual(expectedCompatibilityRows);
   });
 
   it('keeps source-derived traces separate from an unavailable navigation-time sample', () => {
@@ -270,4 +323,29 @@ function readTimeline(readme: string, heading: string): readonly string[] {
   )?.[1];
   if (!section) throw new Error(`Missing structured timeline: ${heading}`);
   return section.split('\n').map((line) => line.replace(/^\d+\. /, ''));
+}
+
+function readCompatibilityRows(readme: string): readonly {
+  readonly compatibilityPath: string;
+  readonly canonicalOwner: string;
+  readonly removalCondition: string;
+}[] {
+  const section = readme.match(
+    /^## Compatibility paths and removal conditions\n\n[\s\S]+?\n\n(\| Compatibility path[\s\S]+?)\n\n/m,
+  )?.[1];
+  if (!section) throw new Error('Missing compatibility path table');
+
+  return section
+    .split('\n')
+    .slice(2)
+    .map((row) => row.slice(1, -1).split('|').map(toCompatibilityCell))
+    .map(([compatibilityPath, canonicalOwner, removalCondition]) => ({
+      compatibilityPath,
+      canonicalOwner,
+      removalCondition,
+    }));
+}
+
+function toCompatibilityCell(value: string): string {
+  return value.trim().replaceAll('`', '');
 }

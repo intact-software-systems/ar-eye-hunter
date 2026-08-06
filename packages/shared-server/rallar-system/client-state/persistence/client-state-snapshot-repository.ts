@@ -1,12 +1,9 @@
 import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-views.ts';
 import type {
-  ClientInstance,
   ClientInstanceRef,
   ClientPresenceSnapshot,
-  ClientPrincipal,
   ClientPrincipalRef,
   ClientScope,
-  ClientSession,
   ClientSessionRef,
   ClientSnapshot,
 } from '@shared/api/client-types.ts';
@@ -56,12 +53,12 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
         if (!before || before.entry.revision !== stored.entry.revision) {
           return await this.readSnapshot(stored.value);
         }
-        return this.toSnapshot(
-          stored.value,
-          instancesByPrincipalId.get(stored.value.principalId) ?? [],
-          activeSessionsByPrincipalId.get(stored.value.principalId) ?? [],
-          stored.entry.revision + 1,
-        );
+        return assembleClientStateSnapshot({
+          principal: stored.value,
+          instances: instancesByPrincipalId.get(stored.value.principalId) ?? [],
+          activeSessions: activeSessionsByPrincipalId.get(stored.value.principalId) ?? [],
+          stateRevision: stored.entry.revision + 1,
+        });
       }),
     );
     return snapshots.filter((snapshot): snapshot is ClientSnapshot => snapshot !== undefined);
@@ -119,12 +116,12 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
       },
       assemble: (stored, instances, activeSessions) => ({
         principal: stored,
-        snapshot: this.toSnapshot(
-          stored.value,
+        snapshot: assembleClientStateSnapshot({
+          principal: stored.value,
           instances,
           activeSessions,
-          stored.entry.revision + 1,
-        ),
+          stateRevision: stored.entry.revision + 1,
+        }),
       }),
     });
   }
@@ -135,15 +132,6 @@ export class ClientStateSnapshotRepository extends ClientStateRepositoryReads {
   ): Promise<RuntimeStateEntryValue<T> | undefined> {
     void namespace;
     return await toLiveClientStateEntryValue<T>(entry);
-  }
-
-  private toSnapshot(
-    principal: ClientPrincipal,
-    instances: readonly ClientInstance[],
-    activeSessions: readonly ClientSession[],
-    stateRevision: number,
-  ): ClientSnapshot {
-    return assembleClientStateSnapshot({ principal, instances, activeSessions, stateRevision });
   }
 }
 

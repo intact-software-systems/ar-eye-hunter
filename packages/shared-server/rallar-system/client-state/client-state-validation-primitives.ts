@@ -30,7 +30,7 @@ export function requirePlainRecord(
 
 export type ClientValidationRecord = ReturnType<typeof requirePlainRecord>;
 
-export interface RequireAllowedKeysInput {
+interface RequireAllowedKeysInput {
   readonly value: ClientValidationRecord;
   readonly required: readonly string[];
   readonly allowed: readonly string[];
