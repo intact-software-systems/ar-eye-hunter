@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import {
   authenticateAuthUser,
   type LoginAuthUserOptions,
@@ -14,8 +15,10 @@ import {
 import {
   authenticateAuthUser as authenticatePublicAuthUser,
   createHmacAuthCredentialIssuer as createPublicCredentialIssuer,
+  hashAuthSecret as hashPublicAuthSecret,
   prepareAuthUserRegistration as preparePublicAuthUserRegistration,
 } from '@shared-server/mod.ts';
+import { hashAuthSecret as hashRepositoryAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 
 const credentialSecret = 'auth-task-one-secret-0123456789abcdef';
 
@@ -27,6 +30,8 @@ describe('auth credentials and login', () => {
     expect(createPublicCredentialIssuer).toBe(createHmacAuthCredentialIssuer);
     expect(authenticatePublicAuthUser).toBe(authenticateAuthUser);
     expect(preparePublicAuthUserRegistration).toBe(prepareAuthUserRegistration);
+    expect(hashRepositoryAuthSecret).toBe(hashAuthSecret);
+    expect(hashPublicAuthSecret).toBe(hashAuthSecret);
   });
 
   it('catches a credential issuer that changes the locked HMAC domain, purpose, or identity', async () => {
@@ -92,5 +97,36 @@ describe('auth credentials and login', () => {
     await expect(
       authenticateAuthUser({ username: 'alice', password: 'wrong' }, { userRepository }),
     ).resolves.toBeUndefined();
+  });
+
+  it('catches disabled login that reads password or revision before predecessor status evaluation', async () => {
+    const reads: string[] = [];
+    const userRepository = {
+      findByNormalizedUsernameEntry: async () => ({
+        get value() {
+          reads.push('value');
+          return {
+            get status() {
+              reads.push('status');
+              return 'disabled';
+            },
+          };
+        },
+        get entry() {
+          reads.push('revision');
+          return { revision: 7 };
+        },
+      }),
+    } as unknown as LoginAuthUserOptions['userRepository'];
+    const loginRequest = {
+      username: 'disabled-user',
+      get password() {
+        reads.push('password');
+        return 'secret';
+      },
+    };
+
+    await expect(authenticateAuthUser(loginRequest, { userRepository })).resolves.toBeUndefined();
+    expect(reads).toEqual(['value', 'status']);
   });
 });

@@ -35,31 +35,24 @@ export async function authenticateAuthUser(
   const registeredUser =
     await options.userRepository.findByNormalizedUsernameEntry(normalizedUsername);
   if (registeredUser) {
-    return await authenticateRegisteredUser(loginRequest.password, registeredUser.value, {
-      revision: registeredUser.entry.revision,
-    });
+    if (
+      registeredUser.value.status !== 'active' ||
+      !(await verifyPassword(loginRequest.password, registeredUser.value))
+    ) {
+      return undefined;
+    }
+    return {
+      clientId: registeredUser.value.clientId,
+      username: registeredUser.value.username,
+      authority: {
+        kind: 'registered-user',
+        clientId: registeredUser.value.clientId,
+        normalizedUsername: registeredUser.value.normalizedUsername,
+        userRevision: registeredUser.entry.revision,
+      },
+    };
   }
   return authenticateStaticClient(loginRequest, options.staticClients ?? []);
-}
-
-async function authenticateRegisteredUser(
-  password: string,
-  user: AuthUser,
-  entry: Readonly<{ revision: number }>,
-): Promise<AuthenticatedUserIdentity | undefined> {
-  if (user.status !== 'active' || !(await verifyPassword(password, user))) {
-    return undefined;
-  }
-  return {
-    clientId: user.clientId,
-    username: user.username,
-    authority: {
-      kind: 'registered-user',
-      clientId: user.clientId,
-      normalizedUsername: user.normalizedUsername,
-      userRevision: entry.revision,
-    },
-  };
 }
 
 function authenticateStaticClient(

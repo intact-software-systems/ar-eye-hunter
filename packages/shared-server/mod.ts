@@ -10,6 +10,7 @@ export * from './app-data/RallarServerAppData.ts';
 export * from './rallar-system/middleware/RallarMiddleware.ts';
 export * from './rallar-system/cache-repositories.ts';
 export * from './rallar-system/repositories/AuthSessionRepository.ts';
+export { hashAuthSecret } from './rallar-system/auth/credentials/hash-auth-secret.ts';
 export * from './rallar-system/repositories/AuthUserRepository.ts';
 export * from './rallar-system/client-state/persistence/client-state-repository.ts';
 export * from './rallar-system/repositories/GroupStateRepository.ts';
