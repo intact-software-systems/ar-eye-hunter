@@ -6,7 +6,8 @@
 
 **Started:** 2026-08-06
 
-**Status:** Phase 0 active; roadmap locally drafted and awaiting human review
+**Status:** Phase 0 evidence-reconciled; Phase 1 launch envelope awaiting human
+approval
 
 **Human owner:** Product/technical owner
 
@@ -70,16 +71,16 @@ passed. Their completion handoff supplies exact evidence to the coordinator.
 
 ## 3. State Model
 
-| State            | Meaning                                                                                             |
-| ---------------- | --------------------------------------------------------------------------------------------------- |
-| `not-started`    | No authorized work is active.                                                                       |
-| `ready`          | Prerequisites are verified and a concern-specific plan defines the work.                            |
-| `in-progress`    | Authorized work is executing.                                                                       |
-| `local-complete` | Scoped local work and required local checks passed, but publication evidence is incomplete.         |
-| `published`      | The change is on the intended branch/default branch; required remote evidence may still be pending. |
-| `verified`       | Exact required local, branch, merge, and default-branch evidence is recorded.                       |
-| `blocked`        | A named prerequisite, conflict, or human decision prevents progress.                                |
-| `deferred`       | The human explicitly removed the item from the current phase.                                       |
+| State            | Meaning                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `not-started`    | No authorized work is active.                                                                                    |
+| `ready`          | Prerequisites are verified and a concern-specific plan defines the work.                                         |
+| `in-progress`    | Authorized work is executing.                                                                                    |
+| `local-complete` | Scoped local work and required local checks passed, but publication evidence is incomplete.                      |
+| `published`      | The change is on the intended branch/default branch; required remote evidence may still be pending.              |
+| `verified`       | Exact required local and every applicable branch, merge or direct-main, and default-branch evidence is recorded. |
+| `blocked`        | A named prerequisite, conflict, or human decision prevents progress.                                             |
+| `deferred`       | The human explicitly removed the item from the current phase.                                                    |
 
 Only `verified` satisfies a cross-program publication gate. A plan's own state
 model remains authoritative when it is more specific, such as the human
@@ -87,19 +88,21 @@ program's `ledger-published` state.
 
 ## 4. Reconciled Starting Point
 
-**Local reconciliation:** 2026-08-06 at `main`
-`254e8a05a962abb4f8df49da80d761ab3d922d56`.
+**Local reconciliation:** 2026-08-06 on
+`codex/phase-0-architecture-rtc-roadmap`, based on current `origin/main`
+`61e708708f94328f095f1f1fa5690747bb933476` (tree
+`32fad7c720dcc1eb462f6b486ff64db4f687f67e`).
 
-| Program                    | State                                             | Current evidence                                                                                                                                                                                                                                                                                   | Next required action                                                                                                                                                         |
-| -------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Human traceability         | `published`, external ledger verification pending | Client-state PRs #72-#74 are recorded complete. Ledger PR #75 is visible as resulting local/remote `main` commit `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`; the authoritative plans intentionally still say `publication pending` because they cannot predict the ledger's own external envelope. | Verify PR #75 Branch Release Gate and the exact resulting-main default workflow. Then record whether the child is `ledger-published` before selecting the next Wave 2 child. |
-| Ontology                   | plan `published`; implementation `not-started`    | The implementation plan is tracked on `main` at commit `254e8a05a962abb4f8df49da80d761ab3d922d56`. Tasks 1-7 define the pilot; Tasks 8-9 require a later human go/no-go.                                                                                                                           | Verify the plan commit's applicable default-branch workflow, bind human implementation approval to the exact plan blob/revision, then reserve Task 1 paths.                  |
-| RTC performance            | `not-started`                                     | Existing focused harnesses and `scripts/perf/README.md` provide measurement building blocks; no RTC performance program plan exists yet.                                                                                                                                                           | Draft and approve the RTC performance baseline plan. Do not optimize production code.                                                                                        |
-| Cross-program coordination | `in-progress`                                     | This design and roadmap are present in the working tree.                                                                                                                                                                                                                                           | Validate, review, and publish the two coordination documents without claiming unobserved future gates.                                                                       |
+| Program                    | State                                                                                  | Current evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Next required action                                                                                                                                                |
+| -------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Human traceability         | client state `verified` / `ledger-published`; auth child externally approved and ready | Ledger [PR #75](https://github.com/intact-software-systems/ar-eye-hunter/pull/75) merged feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d` at frozen tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`; Branch Release Gate [run 31097790516](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31097790516), attempt 2, succeeded. Resulting `main` `6b75cfc5ec61f81b465be9072b746d24ecdb5f22` has the same tree; Run Hetzner Supported Distributed Manifests [31100952224](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31100952224), attempt 1, succeeded. PR #76's [external closure record](https://github.com/intact-software-systems/ar-eye-hunter/pull/76#issuecomment-5205571315) identifies approved auth-plan blob `123990bceac9732660e1113101addd5b194d8347` and releases PR A while PR B/C remain blocked. | Human-program owner reconciles its intentionally non-circular local plans. This coordinator holds Task 1/PR A until the cross-program Phase 1 envelope is approved. |
+| Ontology                   | plan `verified`; implementation `not-started`                                          | Plan commit `254e8a05a962abb4f8df49da80d761ab3d922d56`, tree `f99eb14639261d200375761e8a8c7ba44d680ed3`, and unchanged plan blob `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37` are on `main`. Run Hetzner Supported Distributed Manifests [31103071755](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31103071755), attempt 1, succeeded. No PR was discovered; publication does not itself authorize implementation.                                                                                                                                                                                                                                                                                                                                                                                                                          | Human approves or rejects Task 1 only against exact blob `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37`, then the coordinator activates its reservation.                |
+| RTC performance            | plan `human-review`; execution `not-started`                                           | [RTC performance baseline plan](../docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md), proposed exact blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d`, inventories production paths and harness limits and defines fixed workloads, environments, gates, reproducibility, artifacts, hypotheses, hotspot selection, and overlap rules. No benchmark was executed and no production path changed.                                                                                                                                                                                                                                                                                                                                                                                                                                            | Human accepts or revises `RTC-B01` through `RTC-B06` against that exact blob; `RTC-B07` remains a separate remote-run decision.                                     |
+| Cross-program coordination | published draft; reconciliation `in-progress`                                          | The original design and roadmap were published directly on `main` at `92f3f4f3fb6ea0bbadbf006cd3483e618726f001`, tree `0e99e4bb796a03249bba4ea5c384c6fd3228ec2e`; Run Hetzner Supported Distributed Manifests [31106191379](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31106191379), attempt 1, succeeded. No PR was discovered and human review is not evidenced.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Review this reconciliation and launch envelope; publish the Phase 0 update without predicting its own external evidence.                                            |
 
-No human-traceability child after client-state is authorized by this table. No
-ontology implementation task is authorized merely because its plan is
-published.
+The auth child is already approved by its external closure record, but this
+Phase 0 coordinator does not start or advance it. No ontology implementation
+task is authorized merely because its plan is published.
 
 ## 5. Work Routing And Reservations
 
@@ -126,12 +129,12 @@ One agent at a time owns:
 The coordinator records a temporary reservation here before parallel work
 starts:
 
-| Reservation            | Owner               | State                      | Release condition                                                                             |
-| ---------------------- | ------------------- | -------------------------- | --------------------------------------------------------------------------------------------- |
-| Coordination documents | Roadmap coordinator | active                     | Coordination docs are published or handed off                                                 |
-| Ontology Task 1 paths  | unassigned          | pending                    | Exact plan approval and applicable plan-publication evidence are recorded                     |
-| RTC baseline-plan file | unassigned          | ready after roadmap review | Baseline-plan draft is handed back for human review                                           |
-| Next human child       | unassigned          | blocked                    | Client-state ledger reaches verified `ledger-published` and the human approves the next child |
+| Reservation            | Owner                                                                | State                    | Release condition                                                                                                                                                                        |
+| ---------------------- | -------------------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coordination documents | Roadmap coordinator                                                  | active                   | Phase 0 update is published or handed off                                                                                                                                                |
+| Ontology Task 1 paths  | unassigned                                                           | pending                  | Human approves Task 1 against exact plan blob `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37`                                                                                                 |
+| RTC Phase 1 baseline   | unassigned                                                           | pending                  | Human accepts exact plan blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d` and the initial measurement reservation                                                                         |
+| Next human child       | Human-program coordinator or assigned human-traceability track owner | ready, held for Phase 0D | External closure approved auth plan blob `123990bceac9732660e1113101addd5b194d8347`; cross-program launch approval records the reservation, and this coordinator does not edit its plans |
 
 ## 6. Phase 0 — Establish Control And Measurement Design
 
@@ -152,9 +155,12 @@ interleavable before adding ontology code or optimizing RTC production paths.
 - [x] Define change routing, path reservations, states, and phase gates.
 - [x] Reconcile local Git history through current `main`.
 - [x] Run document formatting and diff checks.
+- [x] Publish the original coordination draft on `main` at
+      `92f3f4f3fb6ea0bbadbf006cd3483e618726f001` and verify its named
+      default-branch workflow.
 - [ ] Obtain human review of the roadmap content.
-- [ ] Publish through the repository's required plan-document process and record
-      the exact external evidence after it exists.
+- [ ] Publish this Phase 0 reconciliation through the repository's plan-document
+      process and record its external evidence outside the candidate itself.
 
 **State:** `in-progress`.
 
@@ -165,17 +171,47 @@ coordinator.
 
 **Steps:**
 
-- [ ] Verify ledger PR #75's feature commit/tree, Branch Release Gate, resulting
+- [x] Verify ledger PR #75's feature commit/tree, Branch Release Gate, resulting
       `main` commit, and default-branch workflow.
-- [ ] If all required evidence is green, record client-state as
+- [x] Because all named evidence is green, record client-state as
       `ledger-published` in the appropriate coordination/evidence record.
-- [ ] Verify the applicable default-branch workflow for ontology-plan commit
+- [x] Verify the applicable default-branch workflow for ontology-plan commit
       `254e8a05a962abb4f8df49da80d761ab3d922d56`.
-- [ ] Record failures as failures with exact run/job/step; do not diagnose or
+- [x] Record failures as failures with exact run/job/step; do not diagnose or
       relabel them inside this task.
 
-**State:** `in-progress`; local publish facts are known, remote envelopes are
-not yet recorded here.
+**Verified ancillary failures:**
+
+- Client-state Branch Release Gate
+  [run 31097790516, attempt 1](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31097790516/attempts/1)
+  failed in job `Release Gate / Release Gate`, step `Run root CI suite`, when
+  unchanged test `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts:196`
+  observed `FAILED` instead of expected `RETRY`. Attempt 2 succeeded for the
+  same exact feature tree without a content change.
+- Client-state resulting-main Deploy Web + API
+  [run 31100952064](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31100952064),
+  attempt 1, failed at job `92614114557`; job name
+  `Enforce Cloudflare main-only branch controls`; failed step 4,
+  `Disable feature-branch Workers and Pages builds`.
+- Ontology-plan Deploy Web + API
+  [run 31103071859](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31103071859),
+  attempt 1, failed at job `92621232924`, the same named job and step.
+- The client-state commit also reported failed Deno Deploy contexts for
+  [rallar-bb-server](https://console.deno.com/intact-software-systems/rallar-bb-server/builds/tfmf3m7yxd4e),
+  [rallar-server](https://console.deno.com/intact-software-systems/rallar-server/builds/cme3jtjx2bgz),
+  and
+  [relic-hunters](https://console.deno.com/intact-software-systems/relic-hunters/builds/g4xhx17cxgsz).
+- The ontology-plan commit also reported failed Deno Deploy contexts for
+  [rallar-bb-server](https://console.deno.com/intact-software-systems/rallar-bb-server/builds/aeamg6v3sayp),
+  [rallar-server](https://console.deno.com/intact-software-systems/rallar-server/builds/bm16tz9b0yh3),
+  and
+  [relic-hunters](https://console.deno.com/intact-software-systems/relic-hunters/builds/8g1vnjcxm4d0).
+
+These failures are not relabelled and remain unresolved. They do not replace
+the roadmap's explicitly named successful default-branch publication workflow.
+
+**State:** `verified` for the required Phase 0 publication envelopes; ancillary
+deployment failures recorded.
 
 ### Task 0C: Draft the RTC performance baseline plan
 
@@ -184,25 +220,25 @@ not yet recorded here.
 
 **Required contents:**
 
-- [ ] Inventory current RTC/realtime production paths and consumers before
+- [x] Inventory current RTC/realtime production paths and consumers before
       proposing changes.
-- [ ] Inventory relevant existing harnesses under `scripts/perf/**` and state
+- [x] Inventory relevant existing harnesses under `scripts/perf/**` and state
       what each can and cannot prove.
-- [ ] Define representative environments and fixed workloads for connection
+- [x] Define representative environments and fixed workloads for connection
       setup, signaling, data-channel queueing, topology/RTT, multicast, reconnect,
       and long-running retention/cleanup where applicable.
-- [ ] Define correctness checks, warmup, sample count, noise handling, captured
+- [x] Define correctness checks, warmup, sample count, noise handling, captured
       runtime/commit/configuration, and before/after comparison rules.
-- [ ] Define hotspot selection criteria and stop conditions.
-- [ ] Separate instrumentation, baseline capture, structural refactoring, and
+- [x] Define hotspot selection criteria and stop conditions.
+- [x] Separate instrumentation, baseline capture, structural refactoring, and
       optimization into independently reviewable tasks.
-- [ ] Keep generated profiles under `tmp/perf/` and define the small durable
+- [x] Keep generated profiles under `tmp/perf/` and define the small durable
       summary that may be reviewed or published.
-- [ ] Map candidate production paths against active and planned human-readability
+- [x] Map candidate production paths against active and planned human-readability
       children so overlapping write sets are serialized.
 
-**State:** `not-started`. This task may proceed while Task 0B waits on remote
-evidence because it is plan-only and has a separate write set.
+**State:** `human-review`. The plan is drafted and no baseline, production
+change, or optimization has started.
 
 ### Task 0D: Approve the Phase 1 launch envelope
 
@@ -215,7 +251,136 @@ The human reviews one concise launch record containing:
 - the first three write reservations; and
 - any known shared-path serialization.
 
-**State:** `blocked` on Tasks 0A-0C and required human decisions.
+**State:** `human-review`. Tasks 0B-0C are reconciled; Task 0A human review and
+the decisions in the launch envelope remain open.
+
+### Phase 1 launch envelope for human approval
+
+Approval applies only to the exact items below. It starts no work by itself;
+the coordinator records each approved cross-program reservation, while the
+assigned concern-specific track owner activates and updates its own work.
+
+#### Ontology Task 1 approval revision
+
+- Plan:
+  `docs/superpowers/plans/2026-08-05-rallar-ontologies-implementation-plan.md`
+- Exact plan blob: `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37`.
+- Publication commit/tree:
+  `254e8a05a962abb4f8df49da80d761ab3d922d56` /
+  `f99eb14639261d200375761e8a8c7ba44d680ed3`.
+- Approval scope: Task 1 only, creating
+  `packages/shared/ontology/rallar-ontology-contracts.ts`,
+  `rallar-domain-ontology-contracts.ts`,
+  `rallar-realtime-ontology-contracts.ts`,
+  `rallar-ontology-registry.ts`, `packages/shared/ontology/mod.ts`, and
+  `packages/tests/shared/rallar-ontology-registry.test.ts`.
+- Locked behavior: additive opt-in metadata contracts/registry only; no import
+  into runtime paths, no packet/payload/authority/routing/validation change, and
+  no shared package barrel change.
+
+#### RTC baseline acceptance set
+
+Accept `RTC-B01` through `RTC-B06` from
+[the RTC baseline plan](../docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md):
+
+**Exact proposed RTC plan blob:**
+`50614b299cfc9b1d85aafb1e32537e56f512ff3d`.
+
+1. deterministic signaling/ICE/listener counters;
+2. data-channel replacement, drain, close, and error lifecycle;
+3. star/tree/mesh topology, RTT shape/current repository filtering, and
+   inactive-state characterization;
+4. multicast serialization and group/cache/heartbeat coordination;
+5. raw native Chromium connection/data-channel lifecycle; and
+6. local three-browser memory, receiver-observed phase timings, reconnect, and
+   bounded 100-cycle Rallar retention indicators.
+
+The fixed inputs, sample counts, correctness gates, environment fingerprints,
+noise rules, artifact contract, and stop conditions in that plan are part of
+the acceptance. Postgres is conditional when the candidate call path uses
+database-backed admission/topology/persistence. Remote `RTC-B07` is not accepted
+by this envelope and needs a separate cost/fleet/artifact decision.
+
+#### Client-state ledger and proposed human child
+
+Client-state is `verified` here and `ledger-published` in the authoritative
+human-program model, based on PR #75 and the exact successful gates in Section 4. The coordinator made no human-plan edit.
+
+The proposed next child is
+`plans/rallar-auth-server-structure-plan.md` at exact blob
+`123990bceac9732660e1113101addd5b194d8347`. Its planning envelope is verified:
+
+- [PR #76](https://github.com/intact-software-systems/ar-eye-hunter/pull/76)
+  feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`, frozen tree
+  `aa82a21c85d7a6504aaa1a203aaabfe439d90af5`;
+- Branch Release Gate
+  [run 31103489838](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31103489838),
+  attempt 2, success. Its
+  [attempt-1 evidence record](https://github.com/intact-software-systems/ar-eye-hunter/pull/76#issuecomment-5205255673)
+  records failure in job `Release Gate / Release Gate`, step
+  `Run root CI suite`, when unchanged
+  `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts:196` observed
+  `FAILED` instead of expected `RETRY`; no content changed before attempt 2; and
+- resulting `main` `61e708708f94328f095f1f1fa5690747bb933476`, tree
+  `32fad7c720dcc1eb462f6b486ff64db4f687f67e`, with Run Hetzner Supported
+  Distributed Manifests
+  [31106485616](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31106485616),
+  attempt 1, success.
+
+The exact
+[external closure record](https://github.com/intact-software-systems/ar-eye-hunter/pull/76#issuecomment-5205571315),
+created by repository account `intact-software-systems` at
+`2026-08-06T13:53:26Z`, identifies blob
+`123990bceac9732660e1113101addd5b194d8347` as approved, states it remains
+byte-identical on resulting `main`, releases PR A, and keeps PR B, PR C, and the
+later ledger blocked.
+
+The entire auth child plan at exact blob
+`123990bceac9732660e1113101addd5b194d8347` is already externally approved.
+Initial activation is Task 1 characterization only. After Task 1's required
+human sample/warning approval and independent review, the first implementation
+cohort is PR A mutation/login core. PR B and PR C remain inactive behind their
+predecessor publication and human merge gates. The human-program coordinator or
+assigned human-traceability track owner, not this roadmap coordinator, activates
+and updates that child.
+
+#### Initial write reservations after approval
+
+| Reservation                  | Proposed owner                                                       | Exact initial write set                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Serialization rule                                                                                                                                                                                     |
+| ---------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Ontology Task 1              | Ontology track owner                                                 | The six Task 1 paths listed above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | No package barrel, public snapshot, runtime, generated artifact, or root-script edit.                                                                                                                  |
+| RTC instrumentation/baseline | RTC performance owner                                                | RTC plan/progress; `scripts/perf/README.md`; `scripts/perf/{rtc-baseline-envelope,rtc-data-channel-drain-bench,rtc-rtt-repository-filter-bench}.ts`; measurement-only `scripts/perf/rtc-data-channel-browser-soak.mjs`; the 16 accepted existing harnesses enumerated exactly in baseline-plan Section 10; `packages/tests/repo/rtc-performance-baseline-contract.test.ts`; measurement-only `tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts`; its two named existing coverage/script-gate tests; and ignored `tmp/perf/rtc-baseline/**` | No production RTC path or root script. Serialize full-stack/remote runs with auth work.                                                                                                                |
+| Human auth Task 1            | Human-program coordinator or assigned human-traceability track owner | `plans/rallar-auth-server-structure-plan.md`, ignored `tmp/repo-human-traceability/auth/task-1-report.md`, RED semantic tests under `packages/tests/shared-server/auth/**`, and navigation/ownership tests matching `packages/tests/repo/auth-server-*.test.ts`; Task 1 produces the exact later PR-cohort assignment                                                                                                                                                                                                                                                        | No production auth move in Task 1. PR A activates only after its sample/warning/review gate; PR B/C stay inactive. Synthetic RTC may run in parallel; service-backed RTC waits for a stable auth tree. |
+
+#### Human-program owner handoff (read only)
+
+The master human-refactoring plan's early status header still says client-state
+ledger publication is pending, while its later authoritative progress records
+correctly say `ledger-published`. Its auth records also remain
+drafted/unapproved despite PR #76's external approved-blob closure. The
+human-program owner must reconcile both internal contradictions and record the
+verified PR #76 planning envelope under its own non-circular protocol. The
+roadmap coordinator will not edit or advance either human master/execution plan
+or the auth child.
+
+#### Unresolved human decisions
+
+1. Approve this reconciled roadmap content and Phase 0 exit, or request a named
+   revision.
+2. Approve ontology Task 1 only against blob
+   `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37`, or leave it blocked.
+3. Accept RTC workloads `RTC-B01` through `RTC-B06` and their initial
+   measurement reservation against exact RTC plan blob
+   `50614b299cfc9b1d85aafb1e32537e56f512ff3d`, or name exact changes.
+4. Confirm the already approved auth child at blob
+   `123990bceac9732660e1113101addd5b194d8347` as the selected human track for
+   this cross-program launch, select a different child, or intentionally hold
+   the track. If selected, Task 1 activates first; PR A follows its own
+   sample/warning/review gate and PR B/C remain inactive.
+5. Decide separately whether Phase 1 may use Postgres when conditionally
+   required and/or run remote `RTC-B07` on Hetzner.
+6. Decide whether the recorded Deploy Web + API and Deno Deploy failures need a
+   separate operations owner before any affected release claim.
 
 ### Phase 0 exit gate
 
@@ -245,7 +410,7 @@ Tasks 2-5 branch from it.
 **Exit:** Task 1 focused/full gates and exact branch/default publication evidence
 are verified.
 
-**Current state:** `blocked` on Phase 0D.
+**Current state:** `human-review` in Phase 0D; no source work authorized.
 
 ### Track 1B: Human-traceability continuation
 
@@ -259,7 +424,9 @@ program's approval authorizes that child.
 **Exit:** the approved interval reaches the state required by its own child
 plan; the roadmap records only cross-program consequences.
 
-**Current state:** `blocked` on Task 0B and human selection.
+**Current state:** auth plan externally approved and `ready`, but held by this
+Phase 0 task until the cross-program launch envelope is approved. No human plan
+or source work is started here.
 
 ### Track 1C: RTC baseline execution
 
@@ -272,7 +439,8 @@ confidence, not file size or intuition.
 
 **Exit:** reproducible baseline and one human-accepted candidate vertical slice.
 
-**Current state:** `blocked` on Task 0C approval.
+**Current state:** plan drafted; `human-review` in Phase 0D. No instrumentation,
+baseline capture, or optimization is authorized yet.
 
 ### Phase 1 exit gate
 
@@ -332,24 +500,25 @@ cannot be reviewed independently.
 
 ## 10. Live Phase 0 Progress
 
-| Item                      | Owner                     | State         | Evidence/blocker                                                                | Next action                                                    |
-| ------------------------- | ------------------------- | ------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| 0A coordination design    | Roadmap coordinator       | `in-progress` | Draft exists in working tree                                                    | Validate and present for human review                          |
-| 0A live roadmap           | Roadmap coordinator       | `in-progress` | Draft exists in working tree                                                    | Validate and present for human review                          |
-| 0B client ledger envelope | Roadmap coordinator       | `in-progress` | PR #75 merge commit visible; remote run evidence not recorded                   | Verify exact branch/default workflows                          |
-| 0B ontology plan envelope | Roadmap coordinator       | `in-progress` | Plan commit visible at current `main`; applicable default workflow not recorded | Verify exact workflow and bind approval revision               |
-| 0C RTC baseline plan      | Unassigned                | `not-started` | Existing harnesses available                                                    | Assign after roadmap review; use performance-analysis workflow |
-| 0D Phase 1 launch         | Human owner + coordinator | `blocked`     | Needs validated Phase 0 records                                                 | Review the launch envelope                                     |
+| Item                      | Owner                     | State          | Evidence/blocker                                                                                                                      | Next action                                      |
+| ------------------------- | ------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 0A coordination design    | Roadmap coordinator       | `published`    | Original draft at `92f3f4f3...`; named default workflow `31106191379` succeeded; human review not evidenced                           | Human reviews the reconciled content             |
+| 0A live roadmap           | Roadmap coordinator       | `in-progress`  | Reconciliation prepared on `codex/phase-0-architecture-rtc-roadmap`; candidate publication evidence must remain external/non-circular | Publish draft update and preserve exact evidence |
+| 0B client ledger envelope | Roadmap coordinator       | `verified`     | PR #75, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5...`, default run `31100952224` success                  | None; preserve ancillary failures                |
+| 0B ontology plan envelope | Roadmap coordinator       | `verified`     | Commit `254e8a05...`, plan blob `9267a16a...`, default run `31103071755` success; implementation remains unauthorized                 | Human decides exact Task 1 approval              |
+| 0C RTC baseline plan      | RTC planning agent        | `human-review` | Fixed plan drafted; no benchmark or production change executed                                                                        | Human accepts or revises `RTC-B01`-`RTC-B06`     |
+| 0D Phase 1 launch         | Human owner + coordinator | `human-review` | Exact ontology, RTC, ledger, auth-child, reservation, overlap, and unresolved-decision envelope is above                              | Human approves or revises the envelope           |
 
 ## 11. Immediate Next Actions
 
-1. Validate these two coordination documents.
-2. Have the human review their ownership, phases, and Phase 0 scope.
-3. Assign one evidence reconciliation task and one independent RTC baseline-plan
-   task; they may run in parallel.
-4. Update this roadmap once with verified results.
-5. Present the exact ontology Task 1 approval envelope and Phase 1 reservations
-   to the human.
+1. Publish the two-file Phase 0 candidate on its non-default branch and retain
+   the exact Branch Release Gate/PR evidence outside the candidate.
+2. Send the read-only human-plan discrepancy and PR #76 planning envelope to
+   the human-program owner; do not edit its plans.
+3. Have the human approve or revise the Phase 1 launch envelope above.
+4. If approved, activate only the selected reservations and track owners.
+5. Stop before any Phase 1 implementation, instrumentation, baseline capture,
+   ontology work, human refactor, or RTC optimization.
 
 Do not start ontology source implementation or production RTC optimization from
 this roadmap alone.
