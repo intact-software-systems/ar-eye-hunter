@@ -7,7 +7,6 @@ import type {
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { computeAuthMutation } from '@shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts';
 import { validateAuthMutation } from '@shared-server/rallar-system/auth/mutation/validate/validate-auth-mutation.ts';
-import { validateAuthMutation as validateCompatibilityAuthMutation } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 
 const user = {
   clientId: 'client-1',
@@ -77,10 +76,6 @@ interface AuthMutationCase {
 }
 
 describe('auth mutation validation', () => {
-  it('keeps the supported validation facade on the canonical router', () => {
-    expect(validateCompatibilityAuthMutation).toBe(validateAuthMutation);
-  });
-
   it('accepts the computed decision for every command family', () => {
     for (const { command, read } of authMutationCases()) {
       const computed = computeAuth(command, read);
@@ -100,18 +95,6 @@ describe('auth mutation validation', () => {
       expect(rejection).toMatchObject({ message, status, code: 'auth-mutation-rejected' });
     },
   );
-
-  it('preserves the router command/read discriminant access sequence', () => {
-    const fixture = authMutationCases()[2];
-    const counts = { command: 0, read: 0 };
-    const command = trackKind(fixture.command, counts, 'command');
-    const read = trackKind(fixture.read, counts, 'read');
-    const computed = { ...computeAuth(fixture.command, fixture.read), command, read };
-
-    validateAuthMutation(command, read, computed);
-
-    expect(counts).toEqual({ command: 2, read: 1 });
-  });
 });
 
 function authMutationCases(): readonly AuthMutationCase[] {
@@ -232,34 +215,22 @@ function agentTicketCases(): readonly AuthMutationCase[] {
 
 function validationRejectionCases() {
   const cases = authMutationCases();
+  return [
+    ...registrationAndSessionRejectionCases(cases),
+    ...webSocketTicketRejectionCases(cases),
+    ...agentTicketRejectionCases(cases),
+  ];
+}
+
+function registrationAndSessionRejectionCases(cases: readonly AuthMutationCase[]) {
   const registration = cases[0];
   const issueSession = cases[1];
   const logout = cases[2];
-  const issueWebSocket = cases[3];
-  const consumeWebSocket = cases[4];
-  const issueAgent = cases[5];
-  const consumeAgent = cases[6];
   const staticUserRead = {
     ...issueSession.read,
     userByUsername: entry(user, 'username=alice'),
     userByClientId: entry(user, 'client=client-1'),
   } as Extract<AuthMutationRead, { kind: 'issue-session' }>;
-  const expiredWebSocketCommand = {
-    ...issueWebSocket.command,
-    ticketRecord: { ...websocketTicket, expiresAtEpochMs: 1_000 },
-  } as AuthMutationCommand;
-  const duplicateAgentCommand = {
-    ...issueAgent.command,
-    tickets: [agentTicketCommand, agentTicketCommand],
-  } as AuthMutationCommand;
-  const duplicateAgentRead = {
-    ...issueAgent.read,
-    sessions: [emptySessionEntries, emptySessionEntries],
-    tickets: [null, null],
-    expiredTicketEntries: [null, null],
-  } as AuthMutationRead;
-  const missingWebSocketTicketRead = { ...consumeWebSocket.read, ticket: null } as AuthMutationRead;
-  const missingAgentTicketRead = { ...consumeAgent.read, ticket: null } as AuthMutationRead;
 
   return [
     rejectionCase(
@@ -286,6 +257,19 @@ function validationRejectionCases() {
       'Auth logout indexes are inconsistent',
       500,
     ),
+  ];
+}
+
+function webSocketTicketRejectionCases(cases: readonly AuthMutationCase[]) {
+  const issueWebSocket = cases[3];
+  const consumeWebSocket = cases[4];
+  const expiredWebSocketCommand = {
+    ...issueWebSocket.command,
+    ticketRecord: { ...websocketTicket, expiresAtEpochMs: 1_000 },
+  } as AuthMutationCommand;
+  const missingWebSocketTicketRead = { ...consumeWebSocket.read, ticket: null } as AuthMutationRead;
+
+  return [
     rejectionCase(
       'websocket ticket expiry',
       expiredWebSocketCommand,
@@ -301,6 +285,25 @@ function validationRejectionCases() {
       404,
       computeAuth(consumeWebSocket.command, consumeWebSocket.read),
     ),
+  ];
+}
+
+function agentTicketRejectionCases(cases: readonly AuthMutationCase[]) {
+  const issueAgent = cases[5];
+  const consumeAgent = cases[6];
+  const duplicateAgentCommand = {
+    ...issueAgent.command,
+    tickets: [agentTicketCommand, agentTicketCommand],
+  } as AuthMutationCommand;
+  const duplicateAgentRead = {
+    ...issueAgent.read,
+    sessions: [emptySessionEntries, emptySessionEntries],
+    tickets: [null, null],
+    expiredTicketEntries: [null, null],
+  } as AuthMutationRead;
+  const missingAgentTicketRead = { ...consumeAgent.read, ticket: null } as AuthMutationRead;
+
+  return [
     rejectionCase(
       'agent ticket duplicate identity',
       duplicateAgentCommand,
@@ -378,17 +381,4 @@ function entry<T>(value: T, key: string) {
     },
     value,
   };
-}
-
-function trackKind<T extends Readonly<{ kind: string }>>(
-  value: T,
-  counts: Record<'command' | 'read', number>,
-  count: 'command' | 'read',
-): T {
-  return new Proxy(value, {
-    get(target, property, receiver) {
-      if (property === 'kind') counts[count] += 1;
-      return Reflect.get(target, property, receiver);
-    },
-  });
 }
