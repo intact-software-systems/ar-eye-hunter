@@ -67,6 +67,10 @@ export type {
 export * from './rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 export * from './rallar-system/client-state/snapshot/cached-client-state-service.ts';
 export * from './rallar-system/services/cached-group-state-service.ts';
+export {
+  createAuthMutationService,
+  type AuthMutationService,
+} from './rallar-system/auth/auth-mutation-service.ts';
 export * from './rallar-system/auth/login/authenticate-auth-user.ts';
 export * from './rallar-system/auth/login/prepare-auth-user-registration.ts';
 export * from './rallar-system/services/auth-state-mutations.ts';

@@ -8,7 +8,6 @@ import type {
 } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
 import type {
@@ -213,22 +212,4 @@ export type AuthMutationComputed = Readonly<{
   agentTickets: readonly PersistedAgentSessionTicket[];
   logoutOutbox: ResourceEntry | null;
   outcome: 'write' | 'replay' | 'no-op';
-}>;
-
-export type AuthMutationService = Readonly<{
-  read(command: AuthMutationCommand): Promise<AuthMutationRead>;
-  compute(
-    command: AuthMutationCommand,
-    read: AuthMutationRead,
-    facts: AuthMutationFacts,
-  ): AuthMutationComputed;
-  validate(
-    command: AuthMutationCommand,
-    read: AuthMutationRead,
-    computed: AuthMutationComputed,
-  ): void;
-  write(
-    transaction: PSqlTransactionSql,
-    computed: AuthMutationComputed,
-  ): Promise<AuthMutationResult>;
 }>;

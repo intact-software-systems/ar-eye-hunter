@@ -8,18 +8,18 @@ import { type AppInboxMessageContext, AppInboxType } from './app-inbox-contracts
 import { type AppInboxFailure, toTerminalAppInboxFailure } from './app-inbox-failure.ts';
 import { toAppInboxErrorCode } from './app-inbox-error-classification.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { AuthMutationService } from '../auth/auth-mutation-service.ts';
 import type {
     AuthMutationCommand,
     AuthMutationPublicResult,
     AuthMutationResult,
-    AuthMutationService,
     IssueAuthSessionCommand,
 } from '../auth/mutation/auth-mutation-contracts.ts';
 import { decodeAuthMutationCommand } from '../auth/mutation/decode-auth-mutation-command.ts';
 import { decodeAuthMutationResult } from '../auth/mutation/decode-auth-mutation-result.ts';
 import {
     captureAuthMutationFacts,
-} from './auth-state-mutations.ts';
+} from '../auth/mutation/read/capture-auth-mutation-facts.ts';
 import type { AuthCredentialIssuer } from '../auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '../auth/credentials/hash-auth-secret.ts';
 import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
