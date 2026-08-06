@@ -66,6 +66,14 @@ describe('client-state server source/style ratchet fixtures', () => {
     ]);
   });
 
+  it('detects excess parameters on a private class method', () => {
+    const source = ['class ClassFixture {', '  #privateMethod(a, b, c, d) {}', '}'].join('\n');
+
+    expect(readStyleViolations('fixture.ts', source)).toEqual([
+      'fixture.ts:2:#privateMethod:parameters',
+    ]);
+  });
+
   it.each([
     ['arrow function', ['const arrowFixture = () => {', ...fixtureLines(59), '};']],
     [
@@ -82,6 +90,20 @@ describe('client-state server source/style ratchet fixtures', () => {
     expect(violations.some((violation) => violation.endsWith(':function-length'))).toBe(true);
   });
 
+  it('detects an overlong private class method', () => {
+    const source = [
+      'class ClassFixture {',
+      '  #privateMethod() {',
+      ...fixtureLines(59),
+      '  }',
+      '}',
+    ].join('\n');
+
+    expect(readStyleViolations('fixture.ts', source)).toEqual([
+      'fixture.ts:2:#privateMethod:function-length',
+    ]);
+  });
+
   it('accepts concise named-input forms for every supported function form', () => {
     const source = [
       'function declarationFixture(input: unknown): void {}',
@@ -90,6 +112,12 @@ describe('client-state server source/style ratchet fixtures', () => {
       'const objectFixture = { method(input: unknown): void {} };',
       'class ClassFixture { method(input: unknown): void {} }',
     ].join('\n');
+
+    expect(readStyleViolations('fixture.ts', source)).toEqual([]);
+  });
+
+  it('accepts a concise named-input private class method', () => {
+    const source = 'class ClassFixture { #privateMethod(input: unknown): void {} }';
 
     expect(readStyleViolations('fixture.ts', source)).toEqual([]);
   });
@@ -247,12 +275,15 @@ interface FunctionNode extends Record<string, unknown> {
   };
   readonly params: readonly unknown[];
   readonly id?: { readonly name?: string };
-  readonly key?: { readonly name?: string };
+  readonly key?: {
+    readonly name?: string;
+    readonly id?: { readonly name?: string };
+  };
 }
 
 function isFunctionNode(value: Record<string, unknown>): value is FunctionNode {
   return (
-    /(?:Function(?:Declaration|Expression)|ArrowFunctionExpression|ObjectMethod|ClassMethod)$/.test(
+    /(?:Function(?:Declaration|Expression)|ArrowFunctionExpression|ObjectMethod|Class(?:Method|PrivateMethod))$/.test(
       String(value.type),
     ) &&
     Array.isArray(value.params) &&
@@ -268,6 +299,7 @@ function isDescribeCallback(parent: Record<string, unknown> | undefined): boolea
 function functionNodeName(node: FunctionNode, parent: Record<string, unknown> | undefined): string {
   if (typeof node.id?.name === 'string') return node.id.name;
   if (typeof node.key?.name === 'string') return node.key.name;
+  if (typeof node.key?.id?.name === 'string') return `#${node.key.id.name}`;
   const variableId = parent?.id as { readonly name?: unknown } | undefined;
   if (parent?.type === 'VariableDeclarator' && typeof variableId?.name === 'string') {
     return variableId.name;
