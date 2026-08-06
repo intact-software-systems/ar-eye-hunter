@@ -807,7 +807,11 @@ no-orphan convergence remain exact.
 
 ```text
 initPresenceExpiryReconciliation timer
-  -> enqueuePresenceExpiryReconciliation
+  -> tryRunInIntervals immediately invokes enqueuePresenceExpiryReconciliation
+  -> the first successful client/group enqueue resolves initialization and
+     retains the next interval
+  -> a producer failure before AppInbox entry retries with tryRunInIntervals
+     backoff; initialization exposes no cancellation or cleanup handle
   -> AppClientInboxService.enqueueExpiredSessions
   -> later CLIENT_EXPIRED_SESSIONS handler
   -> listExpiredSessionCandidates
@@ -815,6 +819,7 @@ initPresenceExpiryReconciliation timer
   -> one AppInbox transaction writes every required successor
   -> confirmed commit -> observe each applied snapshot in order
   -> durable result; enqueue-time queue wake and completion remain owned by AppInbox
+  -> later ResourceInbox retry re-enters candidate discovery and mutation phases
 ```
 
 At-most-one active waiting expiry entry, expiry authority, stale generation,

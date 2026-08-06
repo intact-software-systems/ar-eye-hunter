@@ -7,6 +7,7 @@ const repoRoot = process.cwd();
 const navigationPath = 'packages/shared-server/rallar-system/client-state/README.md';
 const architecturePath = 'packages/shared-server/architecture.md';
 const planPath = 'plans/rallar-client-state-server-structure-plan.md';
+const expiryReconciliationPath = '../group-state/presence/reconcile-expired-group-presence.ts';
 const prACohortLinks = [
   ['./client-state-contract-validation.ts', 'function validateClientPrincipal('],
   ['./client-mutation-receipt-validation.ts', 'function validateClientMutationReceipt('],
@@ -106,14 +107,9 @@ const prBOrdinaryTransactionCohortLinks = [
   ['./inbox/client-state-inbox-handler.ts', 'private async writeInactiveGeneration('],
   ['./inbox/client-state-inbox-handler.ts', 'async processAuthorisedWsDisconnect('],
   ['./inbox/client-state-inbox-handler.ts', 'private async writeMissingSessionDisconnect('],
-  [
-    '../group-state/presence/reconcile-expired-group-presence.ts',
-    'export async function initPresenceExpiryReconciliation(',
-  ],
-  [
-    '../group-state/presence/reconcile-expired-group-presence.ts',
-    'export async function enqueuePresenceExpiryReconciliation(',
-  ],
+  [expiryReconciliationPath, 'export async function initPresenceExpiryReconciliation('],
+  [expiryReconciliationPath, 'export async function enqueuePresenceExpiryReconciliation('],
+  ['../../../shared/resilience/TryWith.ts', 'export function tryRunInIntervals<'],
   ['./inbox/app-client-inbox-service.ts', 'private registerExpiredClientSessions(): void'],
   ['./inbox/client-state-inbox-handler.ts', 'async processExpiredSessionCommands('],
   ['./inbox/client-state-inbox-handler.ts', 'private async computeExpiredSessionMutations('],
@@ -331,12 +327,13 @@ describe('client-state navigation map integrity', () => {
 
   it('records the expiry-maintenance entry, decisions, and exits', () => {
     expect(readTimeline(read(navigationPath), 'Expiry maintenance family')).toEqual([
-      'initPresenceExpiryReconciliation schedules enqueuePresenceExpiryReconciliation, which enqueues client expiry and returns after enqueue rather than processing completion.',
+      'initPresenceExpiryReconciliation delegates to tryRunInIntervals, which invokes enqueuePresenceExpiryReconciliation immediately.',
+      'The initialization promise resolves after the first successful client and group enqueue work; only then does tryRunInIntervals retain the next interval.',
+      'When producer failure occurs before an AppInbox entry exists, tryRunInIntervals owns retry and backoff; this path does not enter client candidate discovery.',
       'The registered CLIENT_EXPIRED_SESSIONS callback later invokes processExpiredSessionCommands once for the ResourceInbox attempt.',
-      'computeExpiredSessionMutations reads the canonical expiry candidates and runs command, fresh read, compute, and validate for each candidate in order.',
-      'An empty or all-no-write batch completes with an empty durable list; write outcomes continue together through one transaction.',
-      'AppInboxTransactionWriter commits the required writes and durable result atomically; only then are applied snapshots observed in order without another queue wake, and a waiting caller receives the durable list.',
-      'Retryable failures re-enter candidate discovery and every mutation phase; terminal failures finalize durably, transaction failures roll back, and ResourceInbox owns recovery cleanup.',
+      'computeExpiredSessionMutations reads candidates and runs every fresh mutation phase in order; an empty or all-no-write batch exits with an empty durable list.',
+      'AppInboxTransactionWriter commits writes and the durable result before ordered observation; a waiting caller receives the durable list, terminal failures finalize, and transaction failures roll back.',
+      'Later ResourceInbox retries re-enter candidate discovery and every mutation phase from fresh state; the initialization API exposes no cancellation or cleanup handle.',
     ]);
   });
 
@@ -344,6 +341,9 @@ describe('client-state navigation map integrity', () => {
     const plan = read(planPath);
     expect(plan).toContain('-> new ClientStateInboxHandler(...)');
     expect(plan).toContain('-> ClientStateInboxHandler.processCommand');
+    expect(plan).toContain(
+      '-> tryRunInIntervals immediately invokes enqueuePresenceExpiryReconciliation',
+    );
     expect(plan).not.toContain('createClientStateInboxHandler');
     expect(plan).not.toContain('ClientStateInboxHandler.processClientStateMutation');
   });

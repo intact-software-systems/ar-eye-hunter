@@ -181,22 +181,26 @@ result remains the AppInbox outcome.
 
 The shared timer and enqueue entry remain
 [`initPresenceExpiryReconciliation` and `enqueuePresenceExpiryReconciliation`](../group-state/presence/reconcile-expired-group-presence.ts).
+Immediate invocation, interval retention, and producer retry/backoff remain in
+[`tryRunInIntervals`](../../../shared/resilience/TryWith.ts).
 The client-specific registration and runtime decisions remain in
 [`AppClientInboxService`](./inbox/app-client-inbox-service.ts) and
 [`ClientStateInboxHandler`](./inbox/client-state-inbox-handler.ts).
 
 ```text
-1. initPresenceExpiryReconciliation schedules enqueuePresenceExpiryReconciliation, which enqueues client expiry and returns after enqueue rather than processing completion.
-2. The registered CLIENT_EXPIRED_SESSIONS callback later invokes processExpiredSessionCommands once for the ResourceInbox attempt.
-3. computeExpiredSessionMutations reads the canonical expiry candidates and runs command, fresh read, compute, and validate for each candidate in order.
-4. An empty or all-no-write batch completes with an empty durable list; write outcomes continue together through one transaction.
-5. AppInboxTransactionWriter commits the required writes and durable result atomically; only then are applied snapshots observed in order without another queue wake, and a waiting caller receives the durable list.
-6. Retryable failures re-enter candidate discovery and every mutation phase; terminal failures finalize durably, transaction failures roll back, and ResourceInbox owns recovery cleanup.
+1. initPresenceExpiryReconciliation delegates to tryRunInIntervals, which invokes enqueuePresenceExpiryReconciliation immediately.
+2. The initialization promise resolves after the first successful client and group enqueue work; only then does tryRunInIntervals retain the next interval.
+3. When producer failure occurs before an AppInbox entry exists, tryRunInIntervals owns retry and backoff; this path does not enter client candidate discovery.
+4. The registered CLIENT_EXPIRED_SESSIONS callback later invokes processExpiredSessionCommands once for the ResourceInbox attempt.
+5. computeExpiredSessionMutations reads candidates and runs every fresh mutation phase in order; an empty or all-no-write batch exits with an empty durable list.
+6. AppInboxTransactionWriter commits writes and the durable result before ordered observation; a waiting caller receives the durable list, terminal failures finalize, and transaction failures roll back.
+7. Later ResourceInbox retries re-enter candidate discovery and every mutation phase from fresh state; the initialization API exposes no cancellation or cleanup handle.
 ```
 
-The timer has no client-state cleanup callback: ResourceInbox retains retry and
-reservation recovery, while `AppInboxTransactionWriter` owns rollback and
-durable terminal finalization.
+The initialization promise is not a lifecycle handle: it exposes no stop,
+cancellation, or cleanup operation. The later AppInbox path remains separate;
+ResourceInbox owns its processing retry and reservation recovery, while
+`AppInboxTransactionWriter` owns rollback and durable terminal finalization.
 
 ## PR A command and validation timeline
 
