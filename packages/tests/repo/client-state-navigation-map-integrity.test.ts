@@ -172,6 +172,34 @@ describe('client-state navigation map integrity', () => {
     expect(readme).toContain('toClientMutationCommand');
   });
 
+  it('lists every retained compatibility path with its direct canonical owner', () => {
+    const readme = read(navigationPath);
+
+    for (const path of [
+      'client-presence-state.ts',
+      'client-state-storage-keys.ts',
+      'repositories/ClientStateRepository.ts',
+      'services/client-state-service.ts',
+      'services/AppClientInboxService.ts',
+      'services/client-state-mutations.ts',
+      'services/authorised-ws-client-app-inbox.ts',
+      'services/client-mutation-authority.ts',
+      'services/client-expired-state-authority.ts',
+      'services/client-state-semantic-equality.ts',
+      'services/cached-client-state-service.ts',
+      'services/client-state-snapshot-read-through-cache.ts',
+    ]) {
+      expect(readme).toContain(`\`${path}\``);
+    }
+    expect(readme).toContain('compatibility path is removed only by its listed condition.');
+  });
+
+  it('keeps source-derived traces separate from an unavailable navigation-time sample', () => {
+    expect(read(navigationPath)).toContain(
+      'No controlled human navigation-time sample is recorded in this map.',
+    );
+  });
+
   it('records the persistence stable-read ownership timeline', () => {
     const readme = read(navigationPath);
     expect(readTimeline(readme, 'PR B persistence and stable-read timeline')).toEqual([

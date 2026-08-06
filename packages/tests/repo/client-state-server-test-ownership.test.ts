@@ -150,9 +150,9 @@ describe('client-state server test ownership', () => {
     const ratchet = read('packages/tests/repo/client-state-server-source-ratchet.test.ts');
     expect(ratchet).toContain(
       [
-        'Owner: Task 4A persistence cohort; PR C must decide whether to remove, replace,',
-        '// or retain this supplementary ratchet after PR B publication evidence exists.',
-        '// The separate later ledger records that already-made PR C decision.',
+        'Temporary PR C source/style evidence. The client-state server child owns it',
+        '// until the separate later ledger removes it after PR C resulting-main workflow',
+        '// and the listed semantic ownership evidence are both published.',
       ].join('\n'),
     );
     expect(ratchet).not.toContain('PR C ledger');

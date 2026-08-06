@@ -17,6 +17,16 @@ interface CreateTimedClientStateServiceInput {
   readonly serviceId: string;
 }
 
+interface TimeClientMutationSyncInput<T> {
+  readonly input: CreateTimedClientStateServiceInput;
+  readonly operation: Extract<
+    ClientStateServiceOperation,
+    'mutation.compute' | 'mutation.validate'
+  >;
+  readonly command: ClientMutationCommand;
+  readonly action: () => T;
+}
+
 export function createTimedClientStateService(
   input: CreateTimedClientStateServiceInput,
 ): ClientStateService {
@@ -25,13 +35,19 @@ export function createTimedClientStateService(
     ...input.service,
     read: (command) => timeClientMutationRead(input, command, () => input.service.read(command)),
     compute: (command, read) =>
-      timeClientMutationSync(input, 'mutation.compute', command, () =>
-        input.service.compute(command, read),
-      ),
+      timeClientMutationSync({
+        input,
+        operation: 'mutation.compute',
+        command,
+        action: () => input.service.compute(command, read),
+      }),
     validate: (command, read, computed) =>
-      timeClientMutationSync(input, 'mutation.validate', command, () =>
-        input.service.validate(command, read, computed),
-      ),
+      timeClientMutationSync({
+        input,
+        operation: 'mutation.validate',
+        command,
+        action: () => input.service.validate(command, read, computed),
+      }),
     write: (transaction, computed) =>
       timeClientMutationWrite(input, computed, () => input.service.write(transaction, computed)),
   };
@@ -57,20 +73,20 @@ function timeClientMutationRead<T>(
   );
 }
 
-function timeClientMutationSync<T>(
-  input: CreateTimedClientStateServiceInput,
-  operation: Extract<ClientStateServiceOperation, 'mutation.compute' | 'mutation.validate'>,
-  command: ClientMutationCommand,
-  action: () => T,
-): T {
-  const startedAt = nowMs();
+function timeClientMutationSync<T>({
+  input,
+  operation,
+  command,
+  action,
+}: TimeClientMutationSyncInput<T>): T {
+  const startedAtEpochMs = nowMs();
   try {
     const result = action();
     recordRallarTiming(
       input.timing,
       toMutationTiming(operation, command, input.serviceId),
       'ok',
-      nowMs() - startedAt,
+      nowMs() - startedAtEpochMs,
     );
     return result;
   } catch (error) {
@@ -78,7 +94,7 @@ function timeClientMutationSync<T>(
       input.timing,
       toMutationTiming(operation, command, input.serviceId),
       'error',
-      nowMs() - startedAt,
+      nowMs() - startedAtEpochMs,
       error,
     );
     throw error;

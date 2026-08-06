@@ -2,12 +2,11 @@
 
 This directory is the canonical owner map for client-state server code. The
 map follows executable imports and declarations; it is navigation evidence,
-not a second runtime contract. PR A owns command construction, command and result
-validation, semantic equality, and pure compute families. The Task 4A PR B
-cohort owns persistence and stable reads. Task 4B owns service composition,
-timing, mutation reads/writes, and the AppInbox transaction shell. Authorized
-WebSocket, expiry, query, snapshot, event, and cache ownership now live in the
-same canonical feature tree without changing their behavior.
+not a second runtime contract. Command construction, validation, semantic
+equality, pure compute, persistence, stable reads, service composition, timing,
+AppInbox handling, authorized WebSocket, expiry, query, snapshot, event, and
+cache ownership live in this canonical feature tree without changing behavior.
+No controlled human navigation-time sample is recorded in this map.
 
 ## Command and validation owners
 
@@ -92,6 +91,34 @@ The legacy `services/cached-client-state-service.ts` and
 named compatibility exports for API-v1 and deep consumers. The package
 `mod.ts` exports both canonical snapshot owners directly. The cache remains a
 latest-value projection; durable client-state repositories remain authoritative.
+
+## Compatibility paths and removal conditions
+
+Each path below is a direct named one-hop export to its canonical owner. A
+compatibility path is removed only by its listed condition. Canonical
+client-state and shared-server implementation owners import canonical paths
+directly; API-v1 remains a compatibility consumer until its separately approved
+client-state route child changes it.
+
+| Compatibility path                                     | Canonical owner                                                      | Removal condition                                                                           |
+| ------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `client-presence-state.ts`                             | `client-state/client-presence-state.ts`                              | Internal direct-import proof plus no external/deep consumer, or a breaking release.         |
+| `client-state-storage-keys.ts`                         | `client-state/persistence/client-state-storage-keys.ts`              | Internal direct-import proof plus no external/deep consumer, or a breaking release.         |
+| `repositories/ClientStateRepository.ts`                | `client-state/persistence/client-state-repository.ts`                | A breaking release or separately approved public migration.                                 |
+| `services/client-state-service.ts`                     | `client-state/client-state-service.ts`                               | A breaking release or separately approved consumer migration proving no active import.      |
+| `services/AppClientInboxService.ts`                    | `client-state/inbox/app-client-inbox-service.ts`                     | A breaking release or separately approved consumer migration.                               |
+| `services/client-state-mutations.ts`                   | `client-state/mutation/*` and canonical validation owners            | All internal callers migrate and a separately approved API/public removal completes.        |
+| `services/authorised-ws-client-app-inbox.ts`           | `client-state/inbox/authorised-ws-client-app-inbox.ts`               | The future API-v1 client-state route child migrates its callers and proves no other import. |
+| `services/client-mutation-authority.ts`                | `client-state/mutation/client-mutation-authority.ts`                 | All internal callers migrate and an active-import scan proves no external consumer.         |
+| `services/client-expired-state-authority.ts`           | `client-state/mutation/validate-client-expired-session-authority.ts` | Canonical internal import proof and an active-import scan proving no external consumer.     |
+| `services/client-state-semantic-equality.ts`           | `client-state/client-state-semantic-equality.ts`                     | Canonical internal import proof and an active-import scan proving no external consumer.     |
+| `services/cached-client-state-service.ts`              | `client-state/snapshot/cached-client-state-service.ts`               | A breaking release or separately approved consumer migration.                               |
+| `services/client-state-snapshot-read-through-cache.ts` | `client-state/snapshot/client-state-snapshot-read-through-cache.ts`  | A breaking release or separately approved consumer migration.                               |
+
+`toClientStateSnapshotRepositoryKey` is re-exported directly from the shared
+snapshot repository contract by the package and legacy cache path. The
+client-state cache imports that owner directly; it does not retain a duplicate
+pass-through helper.
 
 ## Construction, registration, and enqueue timeline
 
@@ -184,10 +211,10 @@ AppInbox shells.
 6. The cache remains a latest-value view rather than mutation authority, and the unchanged snapshot, event, error, and caller result exits to the original consumer.
 ```
 
-## Cohort boundary and next owners
+## Ownership boundary
 
-- Task 4's persistence, ordinary transaction, authorized-WebSocket, expiry,
-  and query/cache owners are now in their canonical feature locations without
-  reinterpreting their behavior.
-- Compatibility-only source removal and mechanical warning alignment remain
-  for PR C.
+- The canonical feature owns client-state behavior and navigation, not shared
+  AppInbox transaction/retry ownership, WebSocket generation lifecycle, or
+  API-v1 route organization.
+- The maintained compatibility paths above remain public/deep-import evidence;
+  they are not the implementation map for canonical owners.
