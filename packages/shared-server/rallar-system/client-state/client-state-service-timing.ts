@@ -17,16 +17,6 @@ interface CreateTimedClientStateServiceInput {
   readonly serviceId: string;
 }
 
-interface TimeClientMutationSyncInput<T> {
-  readonly input: CreateTimedClientStateServiceInput;
-  readonly operation: Extract<
-    ClientStateServiceOperation,
-    'mutation.compute' | 'mutation.validate'
-  >;
-  readonly command: ClientMutationCommand;
-  readonly action: () => T;
-}
-
 export function createTimedClientStateService(
   input: CreateTimedClientStateServiceInput,
 ): ClientStateService {
@@ -35,19 +25,11 @@ export function createTimedClientStateService(
     ...input.service,
     read: (command) => timeClientMutationRead(input, command, () => input.service.read(command)),
     compute: (command, read) =>
-      timeClientMutationSync({
-        input,
-        operation: 'mutation.compute',
-        command,
-        action: () => input.service.compute(command, read),
-      }),
+      timeClientMutationCompute(input, command, () => input.service.compute(command, read)),
     validate: (command, read, computed) =>
-      timeClientMutationSync({
-        input,
-        operation: 'mutation.validate',
-        command,
-        action: () => input.service.validate(command, read, computed),
-      }),
+      timeClientMutationValidate(input, command, () =>
+        input.service.validate(command, read, computed),
+      ),
     write: (transaction, computed) =>
       timeClientMutationWrite(input, computed, () => input.service.write(transaction, computed)),
   };
@@ -73,18 +55,17 @@ function timeClientMutationRead<T>(
   );
 }
 
-function timeClientMutationSync<T>({
-  input,
-  operation,
-  command,
-  action,
-}: TimeClientMutationSyncInput<T>): T {
+function timeClientMutationCompute<T>(
+  input: CreateTimedClientStateServiceInput,
+  command: ClientMutationCommand,
+  action: () => T,
+): T {
   const startedAtEpochMs = nowMs();
   try {
     const result = action();
     recordRallarTiming(
       input.timing,
-      toMutationTiming(operation, command, input.serviceId),
+      toMutationTiming('mutation.compute', command, input.serviceId),
       'ok',
       nowMs() - startedAtEpochMs,
     );
@@ -92,7 +73,34 @@ function timeClientMutationSync<T>({
   } catch (error) {
     recordRallarTiming(
       input.timing,
-      toMutationTiming(operation, command, input.serviceId),
+      toMutationTiming('mutation.compute', command, input.serviceId),
+      'error',
+      nowMs() - startedAtEpochMs,
+      error,
+    );
+    throw error;
+  }
+}
+
+function timeClientMutationValidate<T>(
+  input: CreateTimedClientStateServiceInput,
+  command: ClientMutationCommand,
+  action: () => T,
+): T {
+  const startedAtEpochMs = nowMs();
+  try {
+    const result = action();
+    recordRallarTiming(
+      input.timing,
+      toMutationTiming('mutation.validate', command, input.serviceId),
+      'ok',
+      nowMs() - startedAtEpochMs,
+    );
+    return result;
+  } catch (error) {
+    recordRallarTiming(
+      input.timing,
+      toMutationTiming('mutation.validate', command, input.serviceId),
       'error',
       nowMs() - startedAtEpochMs,
       error,

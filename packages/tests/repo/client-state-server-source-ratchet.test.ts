@@ -10,6 +10,11 @@ const maximumModuleLines = 400;
 const maximumFunctionLines = 60;
 const canonicalProductionRoot = 'packages/shared-server/rallar-system/client-state';
 const canonicalTestRoot = 'packages/tests/shared-server/client-state';
+const directlyOwnedReviewEvidencePaths = [
+  'packages/tests/repo/client-state-navigation-map-integrity.test.ts',
+  'packages/tests/repo/client-state-navigation-trace-evidence.ts',
+  'packages/tests/repo/client-state-server-source-ratchet.test.ts',
+] as const;
 
 // Temporary PR C source/style evidence. The client-state server child owns it
 // until the separate later ledger removes it after PR C resulting-main workflow
@@ -24,9 +29,12 @@ const preservedPublicParameterCompatibility = new Set([
   'persistence/client-state-repository.ts:insertIdempotentClientStateWritten',
 ]);
 const approvedDirectImportLineWidths = new Set([
-  'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts:7:line-width',
-  'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts:8:line-width',
-  'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts:17:line-width',
+  'packages/shared-server/rallar-system/client-state/inbox/' +
+    'app-client-inbox-service.ts:7:line-width',
+  'packages/shared-server/rallar-system/client-state/inbox/' +
+    'app-client-inbox-service.ts:8:line-width',
+  'packages/shared-server/rallar-system/client-state/mutation/command-validation/' +
+    'validate-client-mutation-command.ts:17:line-width',
 ]);
 
 describe('client-state server source/style ratchet fixtures', () => {
@@ -141,7 +149,17 @@ describe('client-state server source/style ratchet', () => {
     ).toEqual([]);
   });
 
-  it('keeps canonical production functions concise with named inputs after three parameters', () => {
+  it('keeps directly owned PR C review evidence within 100 columns', () => {
+    expect(
+      directlyOwnedReviewEvidencePaths.flatMap((filePath) =>
+        readStyleViolations(filePath, read(filePath)).filter((violation) =>
+          violation.endsWith(':line-width'),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps canonical functions concise with named inputs after three parameters', () => {
     expect(
       readProductionSources().flatMap(({ filePath, source }) =>
         readStyleViolations(filePath, source).filter((violation) => {
@@ -156,7 +174,8 @@ describe('client-state server source/style ratchet', () => {
 
   it('keeps the public cache-key wrapper at the shared-server compatibility boundary', () => {
     const cache = read(
-      'packages/shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts',
+      'packages/shared-server/rallar-system/client-state/snapshot/' +
+        'client-state-snapshot-read-through-cache.ts',
     );
 
     expect(cache).toContain('export function toClientStateSnapshotRepositoryKey(');
@@ -175,6 +194,17 @@ describe('client-state server source/style ratchet', () => {
     expect(validationPrimitives).not.toContain('export interface RequireAllowedKeysInput {');
     expect(commandConstruction).toContain('type ClientExpiryCommandInput = Extract<');
     expect(commandConstruction).not.toContain('export type ClientExpiryCommandInput = Extract<');
+  });
+
+  it('keeps synchronous timing operations direct without a per-call options object', () => {
+    const timing = read(
+      'packages/shared-server/rallar-system/client-state/client-state-service-timing.ts',
+    );
+
+    expect(timing).not.toContain('interface TimeClientMutationSyncInput');
+    expect(timing).not.toContain('timeClientMutationSync({');
+    expect(timing).toContain('timeClientMutationCompute(input, command, () =>');
+    expect(timing).toContain('timeClientMutationValidate(input, command, () =>');
   });
 });
 
@@ -278,10 +308,12 @@ interface FunctionNode extends Record<string, unknown> {
 }
 
 function isFunctionNode(value: Record<string, unknown>): value is FunctionNode {
+  const functionNodePattern = new RegExp(
+    '(?:Function(?:Declaration|Expression)|ArrowFunctionExpression|' +
+      'ObjectMethod|Class(?:Method|PrivateMethod))$',
+  );
   return (
-    /(?:Function(?:Declaration|Expression)|ArrowFunctionExpression|ObjectMethod|Class(?:Method|PrivateMethod))$/.test(
-      String(value.type),
-    ) &&
+    functionNodePattern.test(String(value.type)) &&
     Array.isArray(value.params) &&
     isLocation(value.loc)
   );

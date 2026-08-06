@@ -6,10 +6,13 @@
 is complete and independently accepted at
 `31b4ad70140ba2802e2d5dd86b6260ea8d1e06de` / tree
 `4a8c4cc8133c55773d2821c6ff416e35cc48937d`; Task 7 final unchanged-tree
-gates, whole-child review, governed performance, publication, and Branch
-Release Gate remain pending. The later ledger has not begun, and this tree
-records no future PR C candidate, push, PR number, workflow, merge, or ledger
-evidence.
+gates and whole-child review passed at the first candidate, but its governed
+performance sequence failed and remains immutable evidence. The human
+authorized the evidence-led behavior-neutral remediation in Section 10.4;
+the corrected working tree passed independent review and every local gate.
+Candidate freeze, governed performance, publication, and Branch Release Gate
+remain pending. The later ledger has not begun, and this tree records no future
+corrected candidate, push, PR number, workflow, merge, or ledger evidence.
 
 **Program:**
 [Repository Human Traceability Refactoring Program](repo-human-traceability-refactoring-program-plan.md)
@@ -610,6 +613,7 @@ packages/tests/shared-server/client-state/
   postgres-client-mutation-test-driver.ts
 packages/tests/repo/
   client-state-navigation-map-integrity.test.ts
+  client-state-navigation-trace-evidence.ts
   client-state-server-export-surface-evidence.ts
   client-state-server-lineage-evidence.ts
   client-state-server-lineage-provenance.test.ts
@@ -1158,10 +1162,13 @@ and Important 0. These are local Task 6 and review-fix facts, not a future Task
 
 ### Task 7: Freeze, Review, And Publish PR C
 
-**Status:** candidate preparation, final gates, governed performance,
-whole-child review, publication, and Branch Release Gate pending. No future PR
-C commit, push, PR number, release run, merge, resulting-main workflow, or
-later-ledger fact is recorded here.
+**Status:** the first candidate passed final gates and whole-child review but
+failed its governed comparison. Section 10.4 records that immutable result and
+the separately authorized behavior-neutral correction. The corrected working
+tree passed independent review at Critical 0 / Important 0 and every invalidated
+local gate. Candidate freeze, governed performance, publication, and Branch
+Release Gate remain pending. No future corrected commit, push, PR number,
+release run, merge, resulting-main workflow, or later-ledger fact is recorded.
 
 - Run all Section 11 final gates on the unchanged tree.
 - Reconfirm that PR C is alignment-only and does not invalidate the PR B
@@ -1261,6 +1268,41 @@ This second sequence is pre-authorized here so alignment does not depend on a
 late performance decision. If PR C changes the mutation/concurrency
 classification, benchmark harness, environment, comparator, evaluator, or
 threshold rather than only behavior-neutral source, stop for human review.
+
+### 10.4 Human-authorized PR C performance remediation
+
+The first PR C candidate was exact commit
+`688227b834b0ecc1850ca00e375fd07fe446c273` / tree
+`5cbd4d518a6377cc323216b7faf7529764514050`. Its non-rerolled A-B-B-A sequence
+is retained as failed evidence. The pooled base, pooled candidate, and manifest
+SHA-256 values were respectively
+`9d89f65d9a7fac55dc0dc3f19b8046dd682fdfa195ecef44039f1b575434063a`,
+`dd23cc57da979f480dae309ef733847550dffa24907b01fca442f45fcbd01b1e`,
+and `74921da633a8517b22850976028612b87066024fb2fab11c0025664a566ec824`.
+The unchanged global comparator and child evaluator outputs remain at SHA-256
+`3c2e863cd0824b32fe67232fb1f86dfaf5ac2d8d69b024a43db82149a6fb3a9c`
+and `df1eda061e34472f99299a356ff762cb816780710d43747308997531ae7666cf`.
+The child evaluator rejected hot SQL statements at `+2.221031%` and hot
+transaction duration at `+1.647691%`; it accepted all covered findings and
+correctness invariants.
+
+The human then authorized one evidence-led diagnosis and behavior-neutral
+remediation pass without changing a contract, threshold, harness, comparator,
+or evaluator. Static tracing proved that PR C adds no SQL operation. Immutable
+artifact analysis showed candidate improvement for uncontended and shared
+workloads and only the hot workload regression. A non-governed tight profile
+isolated a `4.9-6.1%` cost in the newly introduced per-call named options object
+for synchronous compute/validate timing. The behavior-neutral correction gives
+compute and validate separate three-input timing operations; the same diagnostic
+then measured the corrected wrapper about `0.9-1.1%` faster than its paired
+approved-base runs. These diagnostic results identify the correction but are
+not governed acceptance evidence.
+
+After independent acceptance and all invalidated gates, freeze one new exact
+candidate and run exactly one new non-rerolled A-B-B-A sequence against
+`21a807c7d303adbf10e3289468323b1ea6b0b01f` under Sections 10.2-10.3. Preserve
+the first failed sequence. If the corrected comparison fails, stop without a
+rerun, optimization, or threshold change.
 
 ## 11. Validation Matrix
 
@@ -1440,15 +1482,15 @@ claimed for a changed runtime.
 
 ## 16. Progress Record
 
-| Milestone                  | State           | Evidence                                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pilot conclusions          | approved        | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                                                                                                                                                                                          |
-| Client-state child plan    | approved        | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                                                                                                                                                                                  |
-| PR A mutation core         | complete        | PR #72 feature `1e90c412855ea942a8b678aedde3b1c975efd5e8` / tree `e957db303770864fad04e6bb02b98cc03bcdc335`; Branch Release Gate `30997710887` attempt 1 success; resulting main `2fdba024bb347622727d337eb06fc13d2fe129fc` / same tree; Run Hetzner Supported Distributed Manifests `31008375282` attempt 1 success.                                                               |
-| PR B authoritative shell   | complete        | PR #73 feature `2dc7d8226e0b08026d992d72ee104bb9f638ed2a` / tree `3d5d4a90f66c290ed0c4c362fc6b200acc3788f3`; Branch Release Gate `31069282516` attempt 1 success; resulting main `21a807c7d303adbf10e3289468323b1ea6b0b01f`; Run Hetzner Supported Distributed Manifests `31072851821` attempt 1 success.                                                                           |
-| PR C alignment/final trace | Task 6 complete | Task 6 and its review fixes are accepted through `31b4ad70140ba2802e2d5dd86b6260ea8d1e06de` / tree `4a8c4cc8133c55773d2821c6ff416e35cc48937d`; 27 files / 155 focused tests and 263 governance tests passed; final scoped review reported Critical 0 / Important 0. Task 7 final gates, governed performance, whole-child review, publication, and remote workflows remain pending. |
-| Later evidence ledger      | not authorized  | Requires PR C merge and exact resulting-main workflow, then separate authorization. PR C makes each supplementary-ratchet decision; the later ledger records that prior decision.                                                                                                                                                                                                   |
-| Other Wave 2 domains       | blocked         | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                                                                                                                                                                                     |
+| Milestone                  | State                | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Pilot conclusions          | approved             | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Client-state child plan    | approved             | Human approval binds exact blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12`; planning PR #71 and its exact main workflow succeeded.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| PR A mutation core         | complete             | PR #72 feature `1e90c412855ea942a8b678aedde3b1c975efd5e8` / tree `e957db303770864fad04e6bb02b98cc03bcdc335`; Branch Release Gate `30997710887` attempt 1 success; resulting main `2fdba024bb347622727d337eb06fc13d2fe129fc` / same tree; Run Hetzner Supported Distributed Manifests `31008375282` attempt 1 success.                                                                                                                                                                                                                                                                                                                                                                                        |
+| PR B authoritative shell   | complete             | PR #73 feature `2dc7d8226e0b08026d992d72ee104bb9f638ed2a` / tree `3d5d4a90f66c290ed0c4c362fc6b200acc3788f3`; Branch Release Gate `31069282516` attempt 1 success; resulting main `21a807c7d303adbf10e3289468323b1ea6b0b01f`; Run Hetzner Supported Distributed Manifests `31072851821` attempt 1 success.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| PR C alignment/final trace | local gates complete | Task 6 and its review fixes are accepted through `31b4ad70140ba2802e2d5dd86b6260ea8d1e06de` / tree `4a8c4cc8133c55773d2821c6ff416e35cc48937d`. The first Task 7 candidate `688227b834b0ecc1850ca00e375fd07fe446c273` / tree `5cbd4d518a6377cc323216b7faf7529764514050` passed final gates and whole-child review but failed the immutable governed comparison on hot SQL statements and transaction duration. Section 10.4 records the separately authorized causal behavior-neutral correction. The corrected working tree passed independent review at Critical 0 / Important 0 and all invalidated local gates; candidate freeze, governed performance, publication, and remote workflows remain pending. |
+| Later evidence ledger      | not authorized       | Requires PR C merge and exact resulting-main workflow, then separate authorization. PR C makes each supplementary-ratchet decision; the later ledger records that prior decision.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Other Wave 2 domains       | blocked              | Auth, topology, RTC, CRDT, and admin remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## 17. Planning Self-Review Record
 
