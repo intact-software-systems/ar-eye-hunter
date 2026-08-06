@@ -21,3 +21,15 @@ export type {
 } from '../auth/mutation/auth-mutation-contracts.ts';
 export { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
 export { captureAuthMutationFacts } from '../auth/mutation/read/capture-auth-mutation-facts.ts';
+export { validateAuthMutation } from '../auth/mutation/validate/validate-auth-mutation.ts';
+export {
+    equalAuthJson,
+    requireAuthTicket,
+    requireMatchingAuthKind,
+    validateIssueSessionRead,
+    validateLiveSessionAuthority,
+} from '../auth/mutation/validate/auth-mutation-validation.ts';
+export {
+    validateAgentIssueRead,
+    validateConsumeAgentTicketRead,
+} from '../auth/mutation/validate/validate-auth-agent-ticket-mutation.ts';

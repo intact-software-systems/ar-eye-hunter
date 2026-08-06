@@ -1,5 +1,5 @@
 import type { AuthUser } from '../../../repositories/AuthUserRepository.ts';
-import { equalAuthJson } from '../../../services/auth-state-validation-shared.ts';
+import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 import type {
   AuthMutationComputed,
   AuthMutationRead,

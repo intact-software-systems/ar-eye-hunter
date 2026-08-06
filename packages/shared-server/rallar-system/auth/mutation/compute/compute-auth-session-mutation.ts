@@ -3,7 +3,7 @@ import {
   decodePersistedAuthSession,
   type PersistedAuthSession,
 } from '../../../repositories/auth-persistence-contracts.ts';
-import { equalAuthJson } from '../../../services/auth-state-validation-shared.ts';
+import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 import { requireIssueSessionLifecycle } from '../../sessions/require-auth-session-lifecycle.ts';
 import type {
   AuthMutationCommand,

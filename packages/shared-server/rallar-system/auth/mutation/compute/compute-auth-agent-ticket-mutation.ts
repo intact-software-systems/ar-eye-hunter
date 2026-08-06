@@ -5,7 +5,7 @@ import {
 import {
   equalAuthJson,
   requireAuthTicket,
-} from '../../../services/auth-state-validation-shared.ts';
+} from '../validate/auth-mutation-validation.ts';
 import type {
   AuthComputedSession,
   AuthMutationCommand,

@@ -1,4 +1,4 @@
-import { requireMatchingAuthKind } from '../../../services/auth-state-validation-shared.ts';
+import { requireMatchingAuthKind } from '../validate/auth-mutation-validation.ts';
 import type {
   AuthMutationCommand,
   AuthMutationComputed,

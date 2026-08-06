@@ -10,8 +10,8 @@ import type {
   AuthMutationResult,
 } from './mutation/auth-mutation-contracts.ts';
 import { computeAuthMutation } from './mutation/compute/compute-auth-mutation.ts';
+import { validateAuthMutation } from './mutation/validate/validate-auth-mutation.ts';
 import { readAuthMutation } from '../services/auth-state-read.ts';
-import { validateAuthMutation } from '../services/auth-state-validate.ts';
 import { writeAuthMutation } from '../services/auth-state-write.ts';
 
 export interface AuthMutationService {
