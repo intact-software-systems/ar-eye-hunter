@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { EntityStatus, type ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import {
+  EntityStatus,
+  NEVER_EXPIRE_TS,
+  type ResourceEntry,
+  toKeyAsString,
+} from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
@@ -135,7 +140,7 @@ function createReservedClientContext(): AppInboxMessageContext {
       date: Temporal.PlainTime.from('12:00:00'),
       createdBy: 'client-inbox-service',
       createdTs: Temporal.PlainDateTime.from('2026-08-05T12:00:00'),
-      expiryTs: Temporal.Instant.from('2026-08-06T00:00:00Z'),
+      expiryTs: NEVER_EXPIRE_TS,
     },
     status: EntityStatus.RESERVED,
     dequeueAudit: { attempts: 1 },

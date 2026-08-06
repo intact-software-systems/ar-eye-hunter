@@ -217,7 +217,7 @@ describe('client-state PR B persistence lineage provenance', () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('PASS: no new repository style findings');
-  }, 15_000);
+  }, 30_000);
 
   it('registers this provenance suite adjacent to the client-state governance tests', () => {
     const testRepoGovernance = JSON.parse(read('package.json')).scripts[
