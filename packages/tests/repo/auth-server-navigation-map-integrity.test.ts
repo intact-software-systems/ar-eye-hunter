@@ -8,21 +8,44 @@ const repoRoot = process.cwd();
 const navigationPath = 'packages/shared-server/rallar-system/auth/README.md';
 const expectedOwnerLinks = [
   ['./auth-mutation-service.ts', 'AuthMutationService'],
-  ['./inbox/app-auth-inbox-service.ts', 'AppAuthInboxService'],
-  ['./inbox/auth-inbox-handler.ts', 'AuthInboxHandler'],
-  ['./inbox/auth-app-inbox-routing.ts', 'toAuthAppInboxType'],
   ['./credentials/auth-credential-issuer.ts', 'createHmacAuthCredentialIssuer'],
   ['./credentials/hash-auth-secret.ts', 'hashAuthSecret'],
   ['./login/authenticate-auth-user.ts', 'authenticateAuthUser'],
   ['./login/prepare-auth-user-registration.ts', 'prepareAuthUserRegistration'],
+  ['./mutation/auth-mutation-contracts.ts', 'AuthMutationCommand'],
+  ['./mutation/auth-mutation-rejected-error.ts', 'AuthMutationRejectedError'],
   ['./mutation/decode-auth-mutation-command.ts', 'decodeAuthMutationCommand'],
   ['./mutation/decode-auth-mutation-result.ts', 'decodeAuthMutationResult'],
+  ['./mutation/to-auth-mutation-public-result.ts', 'toAuthMutationPublicResult'],
+  ['./mutation/read/capture-auth-mutation-facts.ts', 'captureAuthMutationFacts'],
+  ['./mutation/compute/auth-logout-outbox.ts', 'toAuthLogoutOutbox'],
+  ['./mutation/compute/compute-auth-agent-ticket-mutation.ts', 'computeAuthAgentTicketMutation'],
   ['./mutation/compute/compute-auth-mutation.ts', 'computeAuthMutation'],
+  ['./mutation/compute/compute-auth-session-mutation.ts', 'computeAuthSessionMutation'],
+  ['./mutation/compute/compute-auth-ticket-mutation.ts', 'computeAuthTicketMutation'],
+  ['./mutation/compute/compute-auth-user-registration.ts', 'computeAuthUserRegistration'],
+  ['./mutation/validate/auth-mutation-validation.ts', 'requireMatchingAuthKind'],
+  ['./mutation/validate/validate-auth-agent-ticket-mutation.ts', 'validateAuthAgentTicketMutation'],
   ['./mutation/validate/validate-auth-mutation.ts', 'validateAuthMutation'],
-  ['./mutation/write/write-auth-mutation.ts', 'writeAuthMutation'],
-  ['./persistence/auth-session-repository.ts', 'AuthSessionRepository'],
-  ['./persistence/auth-user-repository.ts', 'AuthUserRepository'],
+  ['./mutation/validate/validate-auth-session-mutation.ts', 'validateAuthSessionMutation'],
+  ['./mutation/validate/validate-auth-ticket-mutation.ts', 'validateAuthTicketMutation'],
+  ['./mutation/validate/validate-auth-user-mutation.ts', 'validateAuthUserMutation'],
   ['./sessions/auth-session-proof-secret.ts', 'authSessionProofSecret'],
+  ['./sessions/require-auth-session-lifecycle.ts', 'requireIssueSessionLifecycle'],
+  ['../services/AppAuthInboxService.ts', 'AppAuthInboxService'],
+  ['../services/auth-app-inbox-routing.ts', 'toAuthAppInboxType'],
+  ['../services/auth-state-read.ts', 'readAuthMutation'],
+  ['../services/auth-state-write.ts', 'writeAuthMutation'],
+  ['../repositories/AuthSessionRepository.ts', 'AuthSessionRepository'],
+  ['../repositories/AuthUserRepository.ts', 'AuthUserRepository'],
+  ['../repositories/auth-session-persistence.ts', 'AuthSessionPersistence'],
+  ['../repositories/auth-ticket-persistence.ts', 'AuthTicketPersistence'],
+  ['../repositories/auth-persistence-contracts.ts', 'PersistedAuthSession'],
+  ['../repositories/auth-session-types.ts', 'IssuedAuthSession'],
+  [
+    '../repositories/auth-legacy-compatibility.ts',
+    'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
+  ],
 ] as const;
 
 describe('auth server navigation map integrity', () => {
@@ -61,6 +84,15 @@ describe('auth server navigation map integrity', () => {
     ]) {
       expect(navigation).toContain(heading);
     }
+  });
+
+  it('distinguishes canonical PR A owners from still-current PR B predecessor owners', () => {
+    const navigation = readFileSync(absolute(navigationPath), 'utf8');
+
+    expect(navigation).toContain('Canonical PR A owners');
+    expect(navigation).toContain('Current predecessor owners reserved for PR B');
+    expect(navigation).not.toContain('./inbox/app-auth-inbox-service.ts');
+    expect(navigation).not.toContain('./persistence/auth-session-repository.ts');
   });
 });
 

@@ -5,7 +5,7 @@ import {
   toAuthAppInboxType,
   toAuthCommandContextId,
   toAuthCommandSenderId,
-} from '@shared-server/rallar-system/auth/inbox/auth-app-inbox-routing.ts';
+} from '@shared-server/rallar-system/services/auth-app-inbox-routing.ts';
 
 const user = {
   clientId: 'client-register',

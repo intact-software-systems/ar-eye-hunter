@@ -17,8 +17,9 @@ persistence, Web Crypto, Hono API-v1 consumers, and warning-only repository styl
 
 ## Global Constraints
 
-- This plan is drafted and unapproved. No auth production or test implementation begins until
-  a human explicitly approves this exact plan Git blob.
+- The human approved this plan at exact Git blob
+  `123990bceac9732660e1113101addd5b194d8347`. Execution remains limited to the three
+  sequential behavior-neutral implementation PRs and their explicit human merge gates.
 - Scope is authoritative shared-server auth ingress, mutation phases, login, credentials,
   sessions, persistence, codecs, validation, proofs, legacy compatibility, mirrored tests, and
   durable navigation. API-v1 and other domain consumers are characterized, not reorganized.
@@ -47,11 +48,14 @@ persistence, Web Crypto, Hono API-v1 consumers, and warning-only repository styl
 **Predecessor:**
 [Rallar Client-State Server Structure Plan](rallar-client-state-server-structure-plan.md)
 
-**Status:** Drafted and unapproved from exact base
-`6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, tree
-`104478f66bcabbbcf101ea97a80d2a2060cb10ec`. The client-state predecessor is
-`ledger-published` through PR #75 and the exact evidence in Section 1. No future auth tree,
-commit, PR, merge, workflow, or ledger fact is asserted here.
+**Status:** Approved at exact blob `123990bceac9732660e1113101addd5b194d8347`.
+Planning PR #76 published feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`,
+passed Branch Release Gate `31103489838` attempt 2, and merged as exact main
+`61e708708f94328f095f1f1fa5690747bb933476`, tree
+`32fad7c720dcc1eb462f6b486ff64db4f687f67e`. Run Hetzner Supported Distributed
+Manifests `31106485616` attempt 1 succeeded for that exact main SHA. PR A Tasks 1-2 are
+implemented locally with final review/publication Task 3 pending. No future PR A merge,
+resulting-main workflow, PR B, PR C, or ledger fact is asserted here.
 
 ## 1. Scope, Prerequisite, And Review-Size Decision
 
@@ -403,6 +407,52 @@ packages/shared-server/rallar-system/
 No nested barrel or second compatibility hop is added. Old private files not shown as
 compatibility owners are removed after active-import tests prove no repository consumer remains.
 
+#### Current PR A production tree
+
+PR A currently owns exactly this canonical subset:
+
+```text
+packages/shared-server/rallar-system/auth/
+  README.md
+  auth-mutation-service.ts
+  credentials/
+    auth-credential-issuer.ts
+    hash-auth-secret.ts
+  login/
+    authenticate-auth-user.ts
+    prepare-auth-user-registration.ts
+  mutation/
+    auth-mutation-contracts.ts
+    auth-mutation-rejected-error.ts
+    decode-auth-mutation-command.ts
+    decode-auth-mutation-result.ts
+    to-auth-mutation-public-result.ts
+    read/
+      capture-auth-mutation-facts.ts
+    compute/
+      auth-logout-outbox.ts
+      compute-auth-agent-ticket-mutation.ts
+      compute-auth-mutation.ts
+      compute-auth-session-mutation.ts
+      compute-auth-ticket-mutation.ts
+      compute-auth-user-registration.ts
+    validate/
+      auth-mutation-validation.ts
+      validate-auth-agent-ticket-mutation.ts
+      validate-auth-mutation.ts
+      validate-auth-session-mutation.ts
+      validate-auth-ticket-mutation.ts
+      validate-auth-user-mutation.ts
+  sessions/
+    auth-session-proof-secret.ts
+    require-auth-session-lifecycle.ts
+```
+
+The still-current AppInbox service/routing, stable read, transaction write, session/user
+repository, persistence, storage-key, legacy, and issued-session owners remain at their
+Section 3.1 predecessor paths. Their target-path and re-export-only assertions are deferred to
+PR B; PR A semantic tests continue to exercise those predecessor owners directly.
+
 ### 4.2 Primary symbol and responsibility contract
 
 | Target file                                                | Primary owner                                                                                                        |
@@ -535,6 +585,40 @@ packages/tests/repo/
 
 The API-v1 and black-box test paths in Section 3.3 remain in place. Historical test names are
 not preserved merely to describe the migration task.
+
+#### Current PR A test and evidence tree
+
+```text
+packages/tests/shared-server/auth/
+  auth-command-and-result-codec-regressions.test.ts
+  auth-command-and-result-codecs.test.ts
+  auth-credential-login.test.ts
+  auth-legacy-replay.test.ts
+  auth-logout-outbox.test.ts
+  auth-mutation-agent-compute-order.test.ts
+  auth-mutation-compute-evaluation-order.test.ts
+  auth-mutation-compute.test.ts
+  auth-mutation-facts.test.ts
+  auth-mutation-router-evaluation-order.test.ts
+  auth-mutation-service.test.ts
+  auth-mutation-validation-early-exit.test.ts
+  auth-mutation-validation.test.ts
+  auth-persistence-security.test.ts
+  auth-public-command-routing.test.ts
+  auth-public-result.test.ts
+  auth-request-proof.test.ts
+
+packages/tests/repo/
+  auth-server-lineage-provenance.test.ts
+  auth-server-navigation-map-integrity.test.ts
+  auth-server-ownership.test.ts
+  auth-server-pr-a-lineage-inventory.ts
+  auth-server-test-ownership.test.ts
+```
+
+These are PR A's stage-accurate owners. The final Section 5.1 consolidation remains reserved
+for PR B/PR C where the mixed predecessor AppInbox, persistence, conflict, legacy-cutoff, and
+transaction suites actually move. No PR A completion test requires a future path.
 
 ### 5.2 Complete mirrored-test move map
 
@@ -848,12 +932,12 @@ Any such need stops for separate explicit human approval.
 
 **Files:** the four planning files authorized by the planning request.
 
-- [ ] Format the four plans, run planning governance and repository completion gates, and
+- [x] Format the four plans, run planning governance and repository completion gates, and
       perform the Section 17 self-review.
-- [ ] Freeze the exact tree, commit on `codex/rallar-auth-server-structure-plan`, push
+- [x] Freeze the exact tree, commit on `codex/rallar-auth-server-structure-plan`, push
       non-forced, open one draft planning PR, and require Branch Release Gate for its exact head.
-- [ ] Stop for human review and explicit approval or revision of the exact auth plan Git blob.
-- [ ] After manual merge, require the exact resulting-main Run Hetzner Supported Distributed
+- [x] Stop for human review and explicit approval or revision of the exact auth plan Git blob.
+- [x] After manual merge, require the exact resulting-main Run Hetzner Supported Distributed
       Manifests workflow before creating the one child-specific goal or PR A branch.
 
 ### Task 1: Characterize Before Editing
@@ -876,9 +960,18 @@ assignment.
 - [x] Add RED semantic tests for seven command variants, credential secrecy, strict codecs,
       login, replay/no-op, security exits, operation ownership, compatibility, and navigation.
 - [x] Record the explicit human sample waiver and approval of all 49 warning dispositions.
-- [ ] Obtain an independent Task 1 review with Critical 0 and Important 0.
+- [x] Obtain an independent Task 1 review with Critical 0 and Important 0.
 
 ### Task 2: Implement PR A Mutation And Login Core Test-First
+
+**Status:** implemented locally. Task 2A protocol owners completed at
+`56af2b93609ee5c71d670f97447fdc878a7317fc`, Task 2B credential/login owners at
+`0acc1a28ec48913dd7b3db8e231f47adee05d4a6`, Task 2C facts/compute/service owners at
+`4a8e286da93ff8aac733f8e032feadd5cccd0533`, and Task 2D validation owners at
+`f321adeedd01fde22283087dea9e78669f6d9fdd`. Each cohort's final independent review
+reported Critical 0 and Important 0. This Task 2E tree adds the first durable map and
+stage-accurate supplementary evidence; its commit/tree remain in the external handoff until they
+exist.
 
 **Files:** target credential, login, mutation contract/codec/facts/compute/validate files;
 initial README; directly owned mirrored tests; six compatibility paths only as required.
@@ -887,17 +980,20 @@ initial README; directly owned mirrored tests; six compatibility paths only as r
 `AuthMutationComputed`, `AuthMutationResult`, `AuthMutationPublicResult`,
 `AuthMutationService`, `AuthCredentialIssuer`, `AuthUser`, and exact public exports.
 
-- [ ] Move contracts and strict command/result decoders with compile-time discriminant tests and
+- [x] Move contracts and strict command/result decoders with compile-time discriminant tests and
       runtime exact-field/property-order/error fixtures.
-- [ ] Move credential digest/issuer and login/registration decisions with exact algorithm,
+- [x] Move credential digest/issuer and login/registration decisions with exact algorithm,
       secrecy, static-client, invalid-credential, and public-surface tests.
-- [ ] Split facts, compute, and validation into real family owners; keep exhaustive routers under
+- [x] Split facts, compute, and validation into real family owners; keep exhaustive routers under
       60 lines and preserve result/outbox object order.
-- [ ] Move only PR A tests and fixtures, preserve every assertion site, add lineage evidence, and
+- [x] Move only PR A tests and fixtures, preserve every assertion site, add lineage evidence, and
       ensure canonical PR A code bypasses compatibility modules.
-- [ ] Update the README's code-derived current/target traces and run the exact PR A gates.
-- [ ] Use fresh implementer and independent review cycles per cohesive cohort; resolve ordinary
+- [x] Update the README's code-derived current/target traces and run the Task 2E focused gates.
+- [x] Use fresh implementer and independent review cycles per cohesive cohort; resolve ordinary
       behavior-neutral findings test-first until Critical 0 and Important 0.
+
+Section 11.2's complete unchanged-tree gate and whole-PR review remain Task 3 publication work.
+PR B persistence/read/write/inbox target-path and re-export-only assertions remain deferred.
 
 ### Task 3: Freeze, Review, And Publish PR A
 
@@ -1200,8 +1296,8 @@ changed tree.
 
 ## 14. Acceptance Checklist
 
-- [ ] Human approved this exact auth child plan Git blob.
-- [ ] Planning PR merged and its exact resulting-main workflow succeeded.
+- [x] Human approved this exact auth child plan Git blob.
+- [x] Planning PR merged and its exact resulting-main workflow succeeded.
 - [x] Controlled before/after human samples were honestly recorded or separately waived.
 - [x] Every focused warning row received explicit human owner/rationale disposition.
 - [ ] Three implementation PRs remained independently reviewable.
@@ -1237,15 +1333,15 @@ changed tree.
 
 ## 16. Progress Record
 
-| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                              |
-| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Client-state prerequisite  | ledger-published    | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success. |
-| Auth child plan            | drafted, unapproved | Planning-only branch from exact prerequisite main/tree; no implementation authority exists.                                                                                                                                                                           |
-| PR A mutation/login core   | blocked             | Waits for exact plan-blob approval and planning merge/default workflow.                                                                                                                                                                                               |
-| PR B authoritative shell   | blocked             | Waits for PR A exact merge/default workflow.                                                                                                                                                                                                                          |
-| PR C alignment/final trace | blocked             | Waits for PR B exact merge/default workflow.                                                                                                                                                                                                                          |
-| Later auth ledger          | blocked             | Requires completed PR C merge/default workflow and separate human authorization.                                                                                                                                                                                      |
-| Later Wave 2 domains       | blocked             | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                 |
+| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                            |
+| -------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client-state prerequisite  | ledger-published    | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.               |
+| Auth child plan            | approved            | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`; default workflow `31106485616` attempt 1 success. |
+| PR A mutation/login core   | implemented locally | Tasks 1-2 complete through the current stage-accurate navigation/lineage/test-ownership tree; Task 3 whole-PR review, completion gates, push, draft PR, Branch Release Gate, and human merge remain pending.                                                                        |
+| PR B authoritative shell   | blocked             | Waits for PR A exact merge/default workflow.                                                                                                                                                                                                                                        |
+| PR C alignment/final trace | blocked             | Waits for PR B exact merge/default workflow.                                                                                                                                                                                                                                        |
+| Later auth ledger          | blocked             | Requires completed PR C merge/default workflow and separate human authorization.                                                                                                                                                                                                    |
+| Later Wave 2 domains       | blocked             | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                               |
 
 ## 17. Planning Self-Review Record
 
