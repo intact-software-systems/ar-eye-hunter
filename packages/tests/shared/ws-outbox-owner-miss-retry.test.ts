@@ -178,7 +178,9 @@ describe('durable WS outbox owner misses', () => {
     ]));
   });
 
-  it('does not complete a published durable message with invalid targets', async () => {
+  it('keeps a published durable message with invalid targets retryable after one attempt', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000);
     const outbox = new InMemoryQueueBox();
     const invalid = { ...createUnicastMessage(), targets: undefined };
     await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(invalid, EnqueuedType.WS_OUTBOX));
@@ -193,7 +195,10 @@ describe('durable WS outbox owner misses', () => {
 
     await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-    expect(readEntry(outbox).status).toBe(EntityStatus.RETRY);
+    expect(readEntry(outbox)).toMatchObject({
+      status: EntityStatus.RETRY,
+      dequeueAudit: { attempts: 1 },
+    });
   });
 
   it('retries the durable row when cluster publication fails', async () => {

@@ -133,9 +133,11 @@ standard.
   - Any follow-up needed.
 - Keep the handoff structured, not just an action list. If tradeoffs were made,
   call them out explicitly.
-- Every final handoff ends with a collapsed `<details>` block using exactly
-  `<summary>Commands executed and what they taught us</summary>`. If no
-  commands or tool actions ran, say so inside the collapsed block.
+- Every final handoff ends with a Markdown `### Commands executed and what they
+  taught us` section. When commands or tool actions ran, include a concise
+  grouped bullet for each repeated or consequential action. If no commands or
+  tool actions ran, write `No commands or tool actions were run.` in that
+  section.
 - Group repeated or equivalent commands. For each command or consequential
   tool action, explain why the command or action was chosen, the important
   result or exit status, what its result means, and one useful lesson or

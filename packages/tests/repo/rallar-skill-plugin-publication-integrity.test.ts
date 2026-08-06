@@ -167,13 +167,13 @@ describe('Rallar skill plugin and publication integrity', () => {
     ]);
   });
 
-  it('requires a collapsed learning-oriented command summary in every final handoff', () => {
+  it('requires a Markdown learning-oriented command summary in every final handoff', () => {
     const agents = readRepo('AGENTS.md');
 
     expectAllNormalized(agents, [
-      'Every final handoff ends with a collapsed `<details>` block',
-      '<summary>Commands executed and what they taught us</summary>',
-      'If no commands or tool actions ran, say so inside the collapsed block',
+      'Every final handoff ends with a Markdown `### Commands executed and what they taught us` section',
+      'When commands or tool actions ran, include a concise grouped bullet for each repeated or consequential action',
+      'If no commands or tool actions ran, write `No commands or tool actions were run.` in that section',
       'Group repeated or equivalent commands',
       'why the command or action was chosen',
       'what its result means',
