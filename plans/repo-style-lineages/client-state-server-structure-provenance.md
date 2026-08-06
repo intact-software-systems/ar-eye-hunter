@@ -178,6 +178,12 @@ Target: `packages/shared-server/rallar-system/client-state/mutation/result-valid
 Stable read shape, snapshot, event, scope, and idempotency validation moved to
 the read-validation owner.
 
+Task 6 fix round 3 records the human-authorized, behavior-neutral multiline
+formatting of the direct `validateClientExpiredSessionAuthority` import as a
+resolved width warning, not retained debt. The binding and canonical module
+path are unchanged. The machine row remains the historical PR A
+resulting-main target and grants the later formatting no inherited capacity.
+
 ### validate-authority
 
 Target: `packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-authority-policy.ts`

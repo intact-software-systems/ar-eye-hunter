@@ -27,8 +27,6 @@ const approvedDirectImportLineWidths = new Set([
   'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts:7:line-width',
   'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts:8:line-width',
   'packages/shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts:17:line-width',
-  'packages/shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation-read.ts:21:line-width',
-  'packages/shared-server/rallar-system/client-state/persistence/assemble-client-state-snapshot.ts:16:line-width',
 ]);
 
 describe('client-state server source/style ratchet fixtures', () => {
