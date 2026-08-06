@@ -719,7 +719,7 @@ invocation occurs only when the queue reader dispatches a reserved entry.
 API-v1 middleware composition (organization unchanged)
   -> create runtime repository, event store, lifecycle, cache, and timing
   -> createClientStateService(named input)
-  -> createClientStateInboxHandler(named cohesive capabilities)
+  -> new ClientStateInboxHandler(...)
   -> new AppClientInboxService(existing public constructor preserved)
   -> register the same eight AppInbox types in predecessor order
   -> expose the same public service/enqueue/completion surface
@@ -763,7 +763,7 @@ Target:
 same HTTP caller and AppInbox public method
   -> authenticated-client-mutation-ingress.ts
   -> same AppInbox enqueue/wait and later queue invocation
-  -> ClientStateInboxHandler.processClientStateMutation
+  -> ClientStateInboxHandler.processCommand
   -> client-mutation-command.ts
   -> read-client-mutation.ts
   -> compute-client-mutation.ts -> one named operation-family compute owner

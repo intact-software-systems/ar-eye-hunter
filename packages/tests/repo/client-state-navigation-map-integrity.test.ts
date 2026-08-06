@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const navigationPath = 'packages/shared-server/rallar-system/client-state/README.md';
 const architecturePath = 'packages/shared-server/architecture.md';
+const planPath = 'plans/rallar-client-state-server-structure-plan.md';
 const prACohortLinks = [
   ['./client-state-contract-validation.ts', 'function validateClientPrincipal('],
   ['./client-mutation-receipt-validation.ts', 'function validateClientMutationReceipt('],
@@ -99,6 +100,23 @@ const prBOrdinaryTransactionCohortLinks = [
   ['./inbox/authorised-ws-client-app-inbox.ts', 'function toAuthorisedWsClientConnectEnqueue('],
   ['./inbox/client-state-inbox-handler.ts', 'class ClientStateInboxHandler'],
   ['./inbox/app-client-inbox-service.ts', 'class AppClientInboxService'],
+  ['./inbox/app-client-inbox-service.ts', 'public async processAuthorisedWsClientConnect('],
+  ['./inbox/app-client-inbox-service.ts', 'public async processAuthorisedWsClientDisconnect('],
+  ['./inbox/client-state-inbox-handler.ts', 'async processAuthorisedWsConnect('],
+  ['./inbox/client-state-inbox-handler.ts', 'private async writeInactiveGeneration('],
+  ['./inbox/client-state-inbox-handler.ts', 'async processAuthorisedWsDisconnect('],
+  ['./inbox/client-state-inbox-handler.ts', 'private async writeMissingSessionDisconnect('],
+  [
+    '../group-state/presence/reconcile-expired-group-presence.ts',
+    'export async function initPresenceExpiryReconciliation(',
+  ],
+  [
+    '../group-state/presence/reconcile-expired-group-presence.ts',
+    'export async function enqueuePresenceExpiryReconciliation(',
+  ],
+  ['./inbox/app-client-inbox-service.ts', 'private registerExpiredClientSessions(): void'],
+  ['./inbox/client-state-inbox-handler.ts', 'async processExpiredSessionCommands('],
+  ['./inbox/client-state-inbox-handler.ts', 'private async computeExpiredSessionMutations('],
 ] as const;
 
 const prBQueryCacheCohortLinks = [
@@ -298,6 +316,36 @@ describe('client-state navigation map integrity', () => {
       'The registered callback returns the confirmed result, and a waiting producer reads the same durable result for its caller-visible outcome.',
       'A retryable failure leaves the entry for ResourceInbox retry; the next claimed attempt re-enters identity validation and the complete command/read/compute/validate path without repeating the original enqueue wake.',
     ]);
+  });
+
+  it('records the authorized-WebSocket entry, decisions, and exits', () => {
+    expect(readTimeline(read(navigationPath), 'Authorized WebSocket family')).toEqual([
+      'Authorized WebSocket upgrade or close projects the connect or disconnect enqueue; AppInbox persists it and performs the only queue wake.',
+      'The registered callback later invokes processAuthorisedWsConnect or processAuthorisedWsDisconnect once for the ResourceInbox attempt.',
+      'Connect reads generation authority; a closed generation exits through writeInactiveGeneration, while an active generation computes and validates the client mutation and lifecycle guard.',
+      'Disconnect computes the closed lifecycle; a missing session exits through writeMissingSessionDisconnect, while an existing session computes and validates the client mutation.',
+      'commitComputed gives lifecycle and client writes to AppInboxTransactionWriter; after confirmed commit it observes the exact snapshot without another queue wake and returns the durable result.',
+      'Retryable failures re-enter the complete family path; terminal failures finalize durably, transaction failures roll back, and no family-local cleanup replaces ResourceInbox recovery.',
+    ]);
+  });
+
+  it('records the expiry-maintenance entry, decisions, and exits', () => {
+    expect(readTimeline(read(navigationPath), 'Expiry maintenance family')).toEqual([
+      'initPresenceExpiryReconciliation schedules enqueuePresenceExpiryReconciliation, which enqueues client expiry and returns after enqueue rather than processing completion.',
+      'The registered CLIENT_EXPIRED_SESSIONS callback later invokes processExpiredSessionCommands once for the ResourceInbox attempt.',
+      'computeExpiredSessionMutations reads the canonical expiry candidates and runs command, fresh read, compute, and validate for each candidate in order.',
+      'An empty or all-no-write batch completes with an empty durable list; write outcomes continue together through one transaction.',
+      'AppInboxTransactionWriter commits the required writes and durable result atomically; only then are applied snapshots observed in order without another queue wake, and a waiting caller receives the durable list.',
+      'Retryable failures re-enter candidate discovery and every mutation phase; terminal failures finalize durably, transaction failures roll back, and ResourceInbox owns recovery cleanup.',
+    ]);
+  });
+
+  it('names the implemented target handler construction and ordinary entry', () => {
+    const plan = read(planPath);
+    expect(plan).toContain('-> new ClientStateInboxHandler(...)');
+    expect(plan).toContain('-> ClientStateInboxHandler.processCommand');
+    expect(plan).not.toContain('createClientStateInboxHandler');
+    expect(plan).not.toContain('ClientStateInboxHandler.processClientStateMutation');
   });
 
   it('keeps the navigation owner reachable once from shared-server architecture', () => {

@@ -154,6 +154,50 @@ Retryable failures unwind to the ResourceInbox retry policy; they do not reuse a
 stale read or computed candidate. This cohort does not move or change the
 transaction, retry, result, observation, or enqueue-wake implementations.
 
+## Authorized WebSocket family
+
+The public enqueue owners and lifecycle translations remain in
+[`AppClientInboxService`](./inbox/app-client-inbox-service.ts) and
+[`authorised-ws-client-app-inbox.ts`](./inbox/authorised-ws-client-app-inbox.ts).
+The later runtime decisions remain visible in
+[`ClientStateInboxHandler`](./inbox/client-state-inbox-handler.ts).
+
+```text
+1. Authorized WebSocket upgrade or close projects the connect or disconnect enqueue; AppInbox persists it and performs the only queue wake.
+2. The registered callback later invokes processAuthorisedWsConnect or processAuthorisedWsDisconnect once for the ResourceInbox attempt.
+3. Connect reads generation authority; a closed generation exits through writeInactiveGeneration, while an active generation computes and validates the client mutation and lifecycle guard.
+4. Disconnect computes the closed lifecycle; a missing session exits through writeMissingSessionDisconnect, while an existing session computes and validates the client mutation.
+5. commitComputed gives lifecycle and client writes to AppInboxTransactionWriter; after confirmed commit it observes the exact snapshot without another queue wake and returns the durable result.
+6. Retryable failures re-enter the complete family path; terminal failures finalize durably, transaction failures roll back, and no family-local cleanup replaces ResourceInbox recovery.
+```
+
+The synchronous `processAuthorisedWsClientConnect` and
+`processAuthorisedWsClientDisconnect` methods return the durable result to the
+waiting caller. Enqueue-only WebSocket producers return after the durable entry
+is accepted. If observation throws after commit, the already-finalized durable
+result remains the AppInbox outcome.
+
+## Expiry maintenance family
+
+The shared timer and enqueue entry remain
+[`initPresenceExpiryReconciliation` and `enqueuePresenceExpiryReconciliation`](../group-state/presence/reconcile-expired-group-presence.ts).
+The client-specific registration and runtime decisions remain in
+[`AppClientInboxService`](./inbox/app-client-inbox-service.ts) and
+[`ClientStateInboxHandler`](./inbox/client-state-inbox-handler.ts).
+
+```text
+1. initPresenceExpiryReconciliation schedules enqueuePresenceExpiryReconciliation, which enqueues client expiry and returns after enqueue rather than processing completion.
+2. The registered CLIENT_EXPIRED_SESSIONS callback later invokes processExpiredSessionCommands once for the ResourceInbox attempt.
+3. computeExpiredSessionMutations reads the canonical expiry candidates and runs command, fresh read, compute, and validate for each candidate in order.
+4. An empty or all-no-write batch completes with an empty durable list; write outcomes continue together through one transaction.
+5. AppInboxTransactionWriter commits the required writes and durable result atomically; only then are applied snapshots observed in order without another queue wake, and a waiting caller receives the durable list.
+6. Retryable failures re-enter candidate discovery and every mutation phase; terminal failures finalize durably, transaction failures roll back, and ResourceInbox owns recovery cleanup.
+```
+
+The timer has no client-state cleanup callback: ResourceInbox retains retry and
+reservation recovery, while `AppInboxTransactionWriter` owns rollback and
+durable terminal finalization.
+
 ## PR A command and validation timeline
 
 ```text
