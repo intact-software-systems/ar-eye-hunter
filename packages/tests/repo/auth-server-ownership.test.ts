@@ -7,12 +7,103 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/auth';
 const compatibilityModules = [
-  ['services/AppAuthInboxService.ts', 'inbox/app-auth-inbox-service.ts'],
-  ['services/auth-state-mutations.ts', 'auth-mutation-service.ts'],
-  ['services/auth-login-service.ts', 'login/authenticate-auth-user.ts'],
-  ['services/auth-credential-issuer.ts', 'credentials/auth-credential-issuer.ts'],
-  ['repositories/AuthSessionRepository.ts', 'persistence/auth-session-repository.ts'],
-  ['repositories/AuthUserRepository.ts', 'persistence/auth-user-repository.ts'],
+  {
+    compatibilityPath: 'services/AppAuthInboxService.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'inbox/app-auth-inbox-service.ts',
+        names: ['AppAuthInboxService', 'AUTH_STATE_APP_INBOX_TOPIC'],
+      },
+      {
+        canonicalPath: 'inbox/auth-app-inbox-routing.ts',
+        names: ['toAuthAppInboxType'],
+      },
+    ],
+  },
+  {
+    compatibilityPath: 'services/auth-state-mutations.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'auth-mutation-service.ts',
+        names: ['createAuthMutationService'],
+      },
+      {
+        canonicalPath: 'mutation/decode-auth-mutation-command.ts',
+        names: ['decodeAuthMutationCommand'],
+      },
+      {
+        canonicalPath: 'mutation/decode-auth-mutation-result.ts',
+        names: ['decodeAuthMutationResult'],
+      },
+      {
+        canonicalPath: 'mutation/auth-mutation-rejected-error.ts',
+        names: ['AuthMutationRejectedError'],
+      },
+      {
+        canonicalPath: 'mutation/read/capture-auth-mutation-facts.ts',
+        names: ['captureAuthMutationFacts'],
+      },
+    ],
+  },
+  {
+    compatibilityPath: 'services/auth-login-service.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'login/authenticate-auth-user.ts',
+        names: ['authenticateAuthUser'],
+      },
+      {
+        canonicalPath: 'login/prepare-auth-user-registration.ts',
+        names: ['prepareAuthUserRegistration'],
+      },
+    ],
+  },
+  {
+    compatibilityPath: 'services/auth-credential-issuer.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'credentials/auth-credential-issuer.ts',
+        names: ['createHmacAuthCredentialIssuer', 'isValidAuthCredentialSecret'],
+      },
+    ],
+  },
+  {
+    compatibilityPath: 'repositories/AuthSessionRepository.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'persistence/auth-session-repository.ts',
+        names: ['AuthSessionRepository'],
+      },
+      {
+        canonicalPath: 'persistence/auth-persistence-contracts.ts',
+        names: [
+          'decodePersistedAgentSessionTicket',
+          'decodePersistedAuthSession',
+          'decodePersistedWebSocketTicket',
+        ],
+      },
+      {
+        canonicalPath: 'persistence/auth-legacy-compatibility.ts',
+        names: [
+          'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
+          'AUTH_LEGACY_PLAINTEXT_SCAN_LIMIT',
+        ],
+      },
+      {
+        canonicalPath: 'credentials/hash-auth-secret.ts',
+        names: ['hashAuthSecret'],
+      },
+    ],
+  },
+  {
+    compatibilityPath: 'repositories/AuthUserRepository.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'persistence/auth-user-repository.ts',
+        names: ['AuthUserRepository', 'normalizeUsername'],
+      },
+    ],
+  },
 ] as const;
 
 // Temporary structural supplement owned by the auth child. Remove it after PR C's
@@ -23,24 +114,35 @@ describe('auth server ownership', () => {
   });
 
   it('catches compatibility modules that do not resolve to canonical runtime identities', async () => {
-    for (const [compatibilityPath, canonicalPath] of compatibilityModules) {
-      const canonicalFilePath = absolute(`${canonicalRoot}/${canonicalPath}`);
-      if (!existsSync(canonicalFilePath)) {
-        expect(existsSync(canonicalFilePath), canonicalPath).toBe(true);
-        return;
+    for (const { compatibilityPath, canonicalExports } of compatibilityModules) {
+      for (const { canonicalPath } of canonicalExports) {
+        const canonicalFilePath = absolute(`${canonicalRoot}/${canonicalPath}`);
+        if (!existsSync(canonicalFilePath)) {
+          expect(existsSync(canonicalFilePath), canonicalPath).toBe(true);
+          return;
+        }
       }
       const compatibility = await import(
         absolute(`packages/shared-server/rallar-system/${compatibilityPath}`)
       );
-      const canonical = await import(canonicalFilePath);
-      for (const name of Object.keys(canonical)) {
-        expect(compatibility[name], `${compatibilityPath}:${name}`).toBe(canonical[name]);
+      const expectedRuntimeExports = canonicalExports.flatMap(({ names }) => names).toSorted();
+
+      expect(Object.keys(compatibility).toSorted(), compatibilityPath).toEqual(
+        expectedRuntimeExports,
+      );
+      for (const { canonicalPath, names } of canonicalExports) {
+        const canonical = await import(absolute(`${canonicalRoot}/${canonicalPath}`));
+        for (const name of names) {
+          expect(compatibility[name], `${compatibilityPath}:${name}`).toBe(canonical[name]);
+        }
       }
     }
   });
 
   it('catches canonical auth code importing a compatibility-only wrapper', () => {
-    const forbidden = new Set(compatibilityModules.map(([compatibilityPath]) => compatibilityPath));
+    const forbidden = new Set(
+      compatibilityModules.map(({ compatibilityPath }) => compatibilityPath),
+    );
     const findings = sourceFiles(absolute(canonicalRoot)).flatMap((filePath) => {
       const source = readFileSync(filePath, 'utf8');
       const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;

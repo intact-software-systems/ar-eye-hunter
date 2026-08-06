@@ -7,19 +7,32 @@ import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessio
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 describe('auth request proof', () => {
-  it('catches a proof owner that exposes plaintext instead of the session digest', async () => {
-    const persisted = {
+  it('returns the exact persisted digest proof without rehashing it', async () => {
+    await expect(
+      authSessionProofSecret({
+        clientId: 'client-1',
+        username: 'alice',
+        sessionId: 'session-1',
+        accessTokenDigest: 'persisted-digest-1',
+        issuedAtEpochMs: 1_000,
+        expiresAtEpochMs: 2_000,
+      }),
+    ).resolves.toBe('persisted-digest-1');
+  });
+
+  it('derives the issued-session proof from plaintext using the locked digest', async () => {
+    const issued = {
       clientId: 'client-1',
       username: 'alice',
       sessionId: 'session-1',
-      accessTokenDigest: 'digest-1',
+      accessToken: 'plaintext-access-token',
       issuedAtEpochMs: 1_000,
       expiresAtEpochMs: 2_000,
     } as const;
 
-    await expect(
-      authSessionProofSecret({ ...persisted, accessToken: 'plaintext-access-token' }, persisted),
-    ).resolves.toBe('digest-1');
+    await expect(authSessionProofSecret(issued)).resolves.toBe(
+      '6mat7CWylsZfTZEBdqwBFUtkiuFG8hifxLMOe_f8m10',
+    );
   });
 
   it('catches request authorization that skips bearer parsing or the client-id match', async () => {
