@@ -115,7 +115,12 @@ export function normalizePersistedClientPrincipal(
   expected: ClientPrincipalRef,
 ): ClientPrincipal {
   const legacy = requirePlainRecord(value, 'Stored client principal');
-  requireAllowedKeys(legacy, [], CLIENT_PRINCIPAL_PERSISTED_KEYS, 'Stored client principal');
+  requireAllowedKeys({
+    value: legacy,
+    required: [],
+    allowed: CLIENT_PRINCIPAL_PERSISTED_KEYS,
+    label: 'Stored client principal',
+  });
   const canonical = {
     applicationId: legacy.applicationId,
     workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
@@ -152,7 +157,12 @@ export function normalizePersistedClientInstance(
   expected: ClientInstanceRef,
 ): ClientInstance {
   const legacy = requirePlainRecord(value, 'Stored client instance');
-  requireAllowedKeys(legacy, [], CLIENT_INSTANCE_PERSISTED_KEYS, 'Stored client instance');
+  requireAllowedKeys({
+    value: legacy,
+    required: [],
+    allowed: CLIENT_INSTANCE_PERSISTED_KEYS,
+    label: 'Stored client instance',
+  });
   const canonical = {
     applicationId: legacy.applicationId,
     workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
@@ -183,7 +193,12 @@ export function normalizePersistedClientSession(
   expected: ClientSessionRef,
 ): ClientSession {
   const legacy = requirePlainRecord(value, 'Stored client session');
-  requireAllowedKeys(legacy, [], CLIENT_SESSION_PERSISTED_KEYS, 'Stored client session');
+  requireAllowedKeys({
+    value: legacy,
+    required: [],
+    allowed: CLIENT_SESSION_PERSISTED_KEYS,
+    label: 'Stored client session',
+  });
   const canonical = {
     applicationId: legacy.applicationId,
     workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
@@ -212,7 +227,12 @@ export function normalizePersistedClientEvent(
   expected: ClientPrincipalRef,
 ): ClientEvent {
   const legacy = requirePlainRecord(value, 'Stored client event');
-  requireAllowedKeys(legacy, [], CLIENT_EVENT_PERSISTED_KEYS, 'Stored client event');
+  requireAllowedKeys({
+    value: legacy,
+    required: [],
+    allowed: CLIENT_EVENT_PERSISTED_KEYS,
+    label: 'Stored client event',
+  });
   const canonical = {
     applicationId: legacy.applicationId,
     workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
@@ -238,7 +258,12 @@ function normalizePersistedClientAudit(
   label: string,
 ): AuditStamp {
   const audit = requirePlainRecord(value, label);
-  requireAllowedKeys(audit, [], CLIENT_AUDIT_PERSISTED_KEYS, label);
+  requireAllowedKeys({
+    value: audit,
+    required: [],
+    allowed: CLIENT_AUDIT_PERSISTED_KEYS,
+    label,
+  });
   const canonical = {
     atEpochMs: audit.atEpochMs,
     actor:
@@ -277,7 +302,12 @@ function normalizePersistedMutationActor(
     validateClientMutationActor(actor, label);
     return actor;
   }
-  requireAllowedKeys(actor, [], ['principalId', 'sessionId', 'serviceId'], label);
+  requireAllowedKeys({
+    value: actor,
+    required: [],
+    allowed: ['principalId', 'sessionId', 'serviceId'],
+    label,
+  });
   let canonical: MutationActor;
   if (actor.sessionId !== undefined) {
     requireNonEmptyString(actor.sessionId, `${label}.sessionId`);

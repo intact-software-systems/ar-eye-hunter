@@ -2,12 +2,11 @@
 
 This directory is the canonical owner map for client-state server code. The
 map follows executable imports and declarations; it is navigation evidence,
-not a second runtime contract. PR A owns command construction, command and result
-validation, semantic equality, and pure compute families. The Task 4A PR B
-cohort owns persistence and stable reads. Task 4B owns service composition,
-timing, mutation reads/writes, and the AppInbox transaction shell. Authorized
-WebSocket, expiry, query, snapshot, event, and cache ownership now live in the
-same canonical feature tree without changing their behavior.
+not a second runtime contract. Command construction, validation, semantic
+equality, pure compute, persistence, stable reads, service composition, timing,
+AppInbox handling, authorized WebSocket, expiry, query, snapshot, event, and
+cache ownership live in this canonical feature tree without changing behavior.
+No controlled human navigation-time sample is recorded in this map.
 
 ## Command and validation owners
 
@@ -93,6 +92,36 @@ named compatibility exports for API-v1 and deep consumers. The package
 `mod.ts` exports both canonical snapshot owners directly. The cache remains a
 latest-value projection; durable client-state repositories remain authoritative.
 
+## Compatibility paths and removal conditions
+
+Each path below is a direct named one-hop export to its canonical owner. A
+compatibility path is removed only by its listed condition. Canonical
+client-state and shared-server implementation owners import canonical paths
+directly; API-v1 remains a compatibility consumer until its separately approved
+client-state route child changes it.
+
+| Compatibility path                                     | Canonical owner                                                      | Removal condition                                                                           |
+| ------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `client-presence-state.ts`                             | `client-state/client-presence-state.ts`                              | Internal direct-import proof plus no external/deep consumer, or a breaking release.         |
+| `client-state-storage-keys.ts`                         | `client-state/persistence/client-state-storage-keys.ts`              | Internal direct-import proof plus no external/deep consumer, or a breaking release.         |
+| `repositories/ClientStateRepository.ts`                | `client-state/persistence/client-state-repository.ts`                | A breaking release or separately approved public migration.                                 |
+| `services/client-state-service.ts`                     | `client-state/client-state-service.ts`                               | A breaking release or separately approved consumer migration proving no active import.      |
+| `services/AppClientInboxService.ts`                    | `client-state/inbox/app-client-inbox-service.ts`                     | A breaking release or separately approved consumer migration.                               |
+| `services/client-state-mutations.ts`                   | `client-state/mutation/*` and canonical validation owners            | All internal callers migrate and a separately approved API/public removal completes.        |
+| `services/authorised-ws-client-app-inbox.ts`           | `client-state/inbox/authorised-ws-client-app-inbox.ts`               | The future API-v1 client-state route child migrates its callers and proves no other import. |
+| `services/client-mutation-authority.ts`                | `client-state/mutation/client-mutation-authority.ts`                 | All internal callers migrate and an active-import scan proves no external consumer.         |
+| `services/client-expired-state-authority.ts`           | `client-state/mutation/validate-client-expired-session-authority.ts` | Canonical internal import proof and an active-import scan proving no external consumer.     |
+| `services/client-state-semantic-equality.ts`           | `client-state/client-state-semantic-equality.ts`                     | Canonical internal import proof and an active-import scan proving no external consumer.     |
+| `services/cached-client-state-service.ts`              | `client-state/snapshot/cached-client-state-service.ts`               | A breaking release or separately approved consumer migration.                               |
+| `services/client-state-snapshot-read-through-cache.ts` | `client-state/snapshot/client-state-snapshot-read-through-cache.ts`  | A breaking release or separately approved consumer migration.                               |
+
+The canonical shared-server cache retains its predecessor public
+`toClientStateSnapshotRepositoryKey` wrapper around the shared repository key
+owner. The package and legacy cache paths expose that same shared-server
+wrapper, whose function identity remains distinct from the shared binding while
+producing the exact same key. Task 1 retained this one-call compatibility
+boundary until a separately approved public migration removes it.
+
 ## Construction, registration, and enqueue timeline
 
 ```text
@@ -126,6 +155,54 @@ Terminal failures are durably finalized by the AppInbox transaction owner.
 Retryable failures unwind to the ResourceInbox retry policy; they do not reuse a
 stale read or computed candidate. This cohort does not move or change the
 transaction, retry, result, observation, or enqueue-wake implementations.
+
+## Authorized WebSocket family
+
+The public enqueue owners and lifecycle translations remain in
+[`AppClientInboxService`](./inbox/app-client-inbox-service.ts) and
+[`authorised-ws-client-app-inbox.ts`](./inbox/authorised-ws-client-app-inbox.ts).
+The later runtime decisions remain visible in
+[`ClientStateInboxHandler`](./inbox/client-state-inbox-handler.ts).
+
+```text
+1. Authorized WebSocket upgrade or close projects the connect or disconnect enqueue; AppInbox persists it and performs the only queue wake.
+2. The registered callback later invokes processAuthorisedWsConnect or processAuthorisedWsDisconnect once for the ResourceInbox attempt.
+3. Connect reads generation authority; a closed generation exits through writeInactiveGeneration, while an active generation computes and validates the client mutation and lifecycle guard.
+4. Disconnect computes the closed lifecycle; a missing session exits through writeMissingSessionDisconnect, while an existing session computes and validates the client mutation.
+5. commitComputed gives lifecycle and client writes to AppInboxTransactionWriter; after confirmed commit it observes the exact snapshot without another queue wake and returns the durable result.
+6. Retryable failures re-enter the complete family path; terminal failures finalize durably, transaction failures roll back, and no family-local cleanup replaces ResourceInbox recovery.
+```
+
+The synchronous `processAuthorisedWsClientConnect` and
+`processAuthorisedWsClientDisconnect` methods return the durable result to the
+waiting caller. Enqueue-only WebSocket producers return after the durable entry
+is accepted. If observation throws after commit, the already-finalized durable
+result remains the AppInbox outcome.
+
+## Expiry maintenance family
+
+The shared timer and enqueue entry remain
+[`initPresenceExpiryReconciliation` and `enqueuePresenceExpiryReconciliation`](../group-state/presence/reconcile-expired-group-presence.ts).
+Immediate invocation, interval retention, and producer retry/backoff remain in
+[`tryRunInIntervals`](../../../shared/resilience/TryWith.ts).
+The client-specific registration and runtime decisions remain in
+[`AppClientInboxService`](./inbox/app-client-inbox-service.ts) and
+[`ClientStateInboxHandler`](./inbox/client-state-inbox-handler.ts).
+
+```text
+1. initPresenceExpiryReconciliation delegates to tryRunInIntervals, which invokes enqueuePresenceExpiryReconciliation immediately.
+2. The initialization promise resolves after the first successful client and group enqueue work; only then does tryRunInIntervals retain the next interval.
+3. When producer failure occurs before an AppInbox entry exists, tryRunInIntervals owns retry and backoff; this path does not enter client candidate discovery.
+4. The registered CLIENT_EXPIRED_SESSIONS callback later invokes processExpiredSessionCommands once for the ResourceInbox attempt.
+5. computeExpiredSessionMutations reads candidates and runs every fresh mutation phase in order; an empty or all-no-write batch exits with an empty durable list.
+6. AppInboxTransactionWriter commits writes and the durable result before ordered observation; a waiting caller receives the durable list, terminal failures finalize, and transaction failures roll back.
+7. Later ResourceInbox retries re-enter candidate discovery and every mutation phase from fresh state; the initialization API exposes no cancellation or cleanup handle.
+```
+
+The initialization promise is not a lifecycle handle: it exposes no stop,
+cancellation, or cleanup operation. The later AppInbox path remains separate;
+ResourceInbox owns its processing retry and reservation recovery, while
+`AppInboxTransactionWriter` owns rollback and durable terminal finalization.
 
 ## PR A command and validation timeline
 
@@ -184,10 +261,10 @@ AppInbox shells.
 6. The cache remains a latest-value view rather than mutation authority, and the unchanged snapshot, event, error, and caller result exits to the original consumer.
 ```
 
-## Cohort boundary and next owners
+## Ownership boundary
 
-- Task 4's persistence, ordinary transaction, authorized-WebSocket, expiry,
-  and query/cache owners are now in their canonical feature locations without
-  reinterpreting their behavior.
-- Compatibility-only source removal and mechanical warning alignment remain
-  for PR C.
+- The canonical feature owns client-state behavior and navigation, not shared
+  AppInbox transaction/retry ownership, WebSocket generation lifecycle, or
+  API-v1 route organization.
+- The maintained compatibility paths above remain public/deep-import evidence;
+  they are not the implementation map for canonical owners.

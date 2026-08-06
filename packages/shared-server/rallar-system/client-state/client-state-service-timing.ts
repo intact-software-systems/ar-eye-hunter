@@ -25,11 +25,9 @@ export function createTimedClientStateService(
     ...input.service,
     read: (command) => timeClientMutationRead(input, command, () => input.service.read(command)),
     compute: (command, read) =>
-      timeClientMutationSync(input, 'mutation.compute', command, () =>
-        input.service.compute(command, read),
-      ),
+      timeClientMutationCompute(input, command, () => input.service.compute(command, read)),
     validate: (command, read, computed) =>
-      timeClientMutationSync(input, 'mutation.validate', command, () =>
+      timeClientMutationValidate(input, command, () =>
         input.service.validate(command, read, computed),
       ),
     write: (transaction, computed) =>
@@ -57,28 +55,54 @@ function timeClientMutationRead<T>(
   );
 }
 
-function timeClientMutationSync<T>(
+function timeClientMutationCompute<T>(
   input: CreateTimedClientStateServiceInput,
-  operation: Extract<ClientStateServiceOperation, 'mutation.compute' | 'mutation.validate'>,
   command: ClientMutationCommand,
   action: () => T,
 ): T {
-  const startedAt = nowMs();
+  const startedAtEpochMs = nowMs();
   try {
     const result = action();
     recordRallarTiming(
       input.timing,
-      toMutationTiming(operation, command, input.serviceId),
+      toMutationTiming('mutation.compute', command, input.serviceId),
       'ok',
-      nowMs() - startedAt,
+      nowMs() - startedAtEpochMs,
     );
     return result;
   } catch (error) {
     recordRallarTiming(
       input.timing,
-      toMutationTiming(operation, command, input.serviceId),
+      toMutationTiming('mutation.compute', command, input.serviceId),
       'error',
-      nowMs() - startedAt,
+      nowMs() - startedAtEpochMs,
+      error,
+    );
+    throw error;
+  }
+}
+
+function timeClientMutationValidate<T>(
+  input: CreateTimedClientStateServiceInput,
+  command: ClientMutationCommand,
+  action: () => T,
+): T {
+  const startedAtEpochMs = nowMs();
+  try {
+    const result = action();
+    recordRallarTiming(
+      input.timing,
+      toMutationTiming('mutation.validate', command, input.serviceId),
+      'ok',
+      nowMs() - startedAtEpochMs,
+    );
+    return result;
+  } catch (error) {
+    recordRallarTiming(
+      input.timing,
+      toMutationTiming('mutation.validate', command, input.serviceId),
+      'error',
+      nowMs() - startedAtEpochMs,
       error,
     );
     throw error;

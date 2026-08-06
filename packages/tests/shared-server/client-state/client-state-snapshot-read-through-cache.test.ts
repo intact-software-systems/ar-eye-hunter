@@ -9,9 +9,25 @@ import type {
 import {
   findClientStateSnapshotByRef,
   findClientStateSnapshotByPrincipalId,
+  toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey,
 } from '@shared/repository/client-state-snapshots-repository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+// prettier-ignore
+import {
+  toClientStateSnapshotRepositoryKey as toPackageClientStateSnapshotRepositoryKey,
+} from '@shared-server/mod.ts';
+// prettier-ignore
+import { ClientStateRepository } from
+  '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+// prettier-ignore
+import {
+  createClientStateSnapshotReadThroughCache,
+  toClientStateSnapshotRepositoryKey,
+} from
+  '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+// prettier-ignore
+import {
+  toClientStateSnapshotRepositoryKey as toLegacyClientStateSnapshotRepositoryKey,
+} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import { configureTestCacheRepositories } from '../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
@@ -26,6 +42,20 @@ interface CreateClientSnapshotFixtureInput {
 describe('ClientStateSnapshotReadThroughCache', () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('keeps the public cache-key wrapper identity across compatibility paths', () => {
+    const ref = {
+      applicationId: 'app-1',
+      workspaceId: 'workspace-a',
+      principalId: 'alice',
+    };
+
+    expect(toPackageClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
+    expect(toLegacyClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
+    expect(toClientStateSnapshotRepositoryKey).not.toBe(toSharedClientStateSnapshotRepositoryKey);
+    expect(toClientStateSnapshotRepositoryKey(ref)).toBe('["app-1","workspace-a","alice"]');
+    expect(toSharedClientStateSnapshotRepositoryKey(ref)).toBe('["app-1","workspace-a","alice"]');
   });
 
   it('hydrates a cold client snapshot cache from durable state', async () => {

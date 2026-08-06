@@ -85,7 +85,12 @@ function validateRequestOperation(
 }
 
 function validatePrincipalRequest(value: ClientValidationRecord): void {
-  requireAllowedKeys(value, ['username'], principalRequestKeys, 'Client upsertPrincipal request');
+  requireAllowedKeys({
+    value,
+    required: ['username'],
+    allowed: principalRequestKeys,
+    label: 'Client upsertPrincipal request',
+  });
   requireNonEmptyString(value.username, 'Client principal username');
   requireOptionalString(value.displayName, 'Client principal displayName');
   requireOptionalString(value.avatarUrl, 'Client principal avatarUrl');
@@ -98,7 +103,12 @@ function validatePrincipalRequest(value: ClientValidationRecord): void {
 }
 
 function validateInstanceRequest(value: ClientValidationRecord): void {
-  requireAllowedKeys(value, [], instanceRequestKeys, 'Client upsertInstance request');
+  requireAllowedKeys({
+    value,
+    required: [],
+    allowed: instanceRequestKeys,
+    label: 'Client upsertInstance request',
+  });
   requireOptionalEnum(value.status, CLIENT_INSTANCE_STATUSES, 'Client instance status');
   requireOptionalEnum(value.platform, CLIENT_PLATFORMS, 'Client instance platform');
   for (const field of ['deviceLabel', 'appVersion', 'userAgent'] as const) {
@@ -110,7 +120,12 @@ function validateInstanceRequest(value: ClientValidationRecord): void {
 }
 
 function validateConnectRequest(value: ClientValidationRecord): void {
-  requireAllowedKeys(value, ['generationId'], connectRequestKeys, 'Client connectSession request');
+  requireAllowedKeys({
+    value,
+    required: ['generationId'],
+    allowed: connectRequestKeys,
+    label: 'Client connectSession request',
+  });
   validateGenerationId(value.generationId);
   requireOptionalEnum(value.presenceState, CLIENT_PRESENCE_STATES, 'Client connect presenceState');
   requireOptionalEnum(value.transport, CLIENT_TRANSPORTS, 'Client connect transport');
@@ -122,12 +137,12 @@ function validateConnectRequest(value: ClientValidationRecord): void {
 }
 
 function validateHeartbeatRequest(value: ClientValidationRecord): void {
-  requireAllowedKeys(
+  requireAllowedKeys({
     value,
-    ['generationId'],
-    heartbeatRequestKeys,
-    'Client heartbeatSession request',
-  );
+    required: ['generationId'],
+    allowed: heartbeatRequestKeys,
+    label: 'Client heartbeatSession request',
+  });
   validateGenerationId(value.generationId);
   requireOptionalEnum(
     value.presenceState,
@@ -140,12 +155,12 @@ function validateHeartbeatRequest(value: ClientValidationRecord): void {
 }
 
 function validateDisconnectRequest(value: ClientValidationRecord): void {
-  requireAllowedKeys(
+  requireAllowedKeys({
     value,
-    ['generationId'],
-    disconnectRequestKeys,
-    'Client disconnectSession request',
-  );
+    required: ['generationId'],
+    allowed: disconnectRequestKeys,
+    label: 'Client disconnectSession request',
+  });
   validateGenerationId(value.generationId);
   for (const field of disconnectTimestampFields) {
     requireOptionalTimestamp(value[field], `Client disconnect ${field}`);

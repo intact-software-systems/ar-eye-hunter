@@ -70,7 +70,7 @@ export function validateClientPrincipal(
     'deleted',
     'lastSeenAtEpochMs',
   ] as const;
-  requireAllowedKeys(principal, keys, keys, label);
+  requireAllowedKeys({ value: principal, required: keys, allowed: keys, label });
   validateClientPrincipalRef(principal, label, false);
   requireNonEmptyString(principal.username, `${label}.username`);
   for (const field of ['displayName', 'avatarUrl', 'authProvider', 'externalSubjectId'] as const) {
@@ -131,7 +131,7 @@ export function validateClientInstance(
     'updated',
     'revoked',
   ] as const;
-  requireAllowedKeys(instance, keys, keys, label);
+  requireAllowedKeys({ value: instance, required: keys, allowed: keys, label });
   validateClientPrincipalRef(instance, label, false);
   requireNonEmptyString(instance.clientInstanceId, `${label}.clientInstanceId`);
   requireEnum(instance.status, CLIENT_INSTANCE_STATUSES, `${label}.status`);
@@ -172,7 +172,7 @@ export function validateClientSession(
     'disconnectedAtEpochMs',
     'disconnectReason',
   ] as const;
-  requireAllowedKeys(session, keys, keys, label);
+  requireAllowedKeys({ value: session, required: keys, allowed: keys, label });
   validateClientPrincipalRef(session, label, false);
   requireNonEmptyString(session.clientInstanceId, `${label}.clientInstanceId`);
   requireNonEmptyString(session.sessionId, `${label}.sessionId`);

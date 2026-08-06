@@ -30,6 +30,13 @@ export function requirePlainRecord(
 
 export type ClientValidationRecord = ReturnType<typeof requirePlainRecord>;
 
+interface RequireAllowedKeysInput {
+  readonly value: ClientValidationRecord;
+  readonly required: readonly string[];
+  readonly allowed: readonly string[];
+  readonly label: string;
+}
+
 export function requireExactKeys(
   value: ClientValidationRecord,
   keys: readonly string[],
@@ -46,12 +53,12 @@ export function requireExactKeys(
   }
 }
 
-export function requireAllowedKeys(
-  value: ClientValidationRecord,
-  required: readonly string[],
-  allowed: readonly string[],
-  label: string,
-): void {
+export function requireAllowedKeys({
+  value,
+  required,
+  allowed,
+  label,
+}: RequireAllowedKeysInput): void {
   const expected = new Set(allowed);
   for (const key of required) {
     if (!Object.prototype.hasOwnProperty.call(value, key)) {

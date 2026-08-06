@@ -58,6 +58,14 @@ interface InactiveAuthorisedWsSession {
   readonly generationId: string;
 }
 
+interface WriteMissingSessionDisconnectInput {
+  readonly context: AppInboxMessageContext;
+  readonly disconnect: ClientAuthorisedWsSessionDisconnectAppInboxPayload;
+  readonly command: ClientMutationCommand;
+  readonly read: Awaited<ReturnType<ClientStateMutationService['read']>>;
+  readonly lifecycleComputed: WsSessionGenerationLifecycleComputed;
+}
+
 type AuthorisedWsClientMutationResult = ClientStateWritten | InactiveAuthorisedWsSession;
 
 export class ClientStateInboxHandler {
@@ -108,13 +116,13 @@ export class ClientStateInboxHandler {
     const command = await this.toAuthorisedWsDisconnectCommand(context, input);
     const read = await this.dependencies.mutationService.read(command);
     if (!read.session) {
-      return await this.writeMissingSessionDisconnect(
+      return await this.writeMissingSessionDisconnect({
         context,
-        input,
+        disconnect: input,
         command,
         read,
         lifecycleComputed,
-      );
+      });
     }
     const computed = this.dependencies.mutationService.compute(command, read);
     this.dependencies.mutationService.validate(command, read, computed);
@@ -240,20 +248,20 @@ export class ClientStateInboxHandler {
     );
   }
 
-  private async writeMissingSessionDisconnect(
-    context: AppInboxMessageContext,
-    input: ClientAuthorisedWsSessionDisconnectAppInboxPayload,
-    command: ClientMutationCommand,
-    read: Awaited<ReturnType<ClientStateMutationService['read']>>,
-    lifecycleComputed: WsSessionGenerationLifecycleComputed,
-  ): Promise<InactiveAuthorisedWsSession> {
+  private async writeMissingSessionDisconnect({
+    context,
+    disconnect,
+    command,
+    read,
+    lifecycleComputed,
+  }: WriteMissingSessionDisconnectInput): Promise<InactiveAuthorisedWsSession> {
     validateClientMutationAuthorityPolicy(command, read);
     return await this.dependencies.transactionWriter.writeMutation(context, async (transaction) => {
       await this.dependencies.sessionGenerationLifecycle.write(transaction, lifecycleComputed);
       return {
         status: 'inactive',
-        sessionId: input.connection.authSession.sessionId,
-        generationId: input.connection.generationId,
+        sessionId: disconnect.connection.authSession.sessionId,
+        generationId: disconnect.connection.generationId,
       };
     });
   }

@@ -27,6 +27,15 @@ import {
 
 export type ClientMutationPersistedFacts = Omit<ClientMutationFacts, 'commandHash'>;
 
+type ClientExpiryCommandInput = Extract<ClientMutationCommandInput, { operation: 'expireSession' }>;
+
+interface ClientMutationActorInput {
+  readonly actorPrincipalId: string | null;
+  readonly actorSessionId: string | null;
+  readonly reason: string | null;
+  readonly traceId: string | null;
+}
+
 export async function toClientMutationCommand(
   input: ClientMutationCommandInput,
   facts: ClientMutationPersistedFacts,
@@ -206,7 +215,7 @@ export function toDisconnectCommandInput(
 
 export function toExpiryCommandInput(
   session: ClientSessionExpiryCandidate,
-): Extract<ClientMutationCommandInput, { operation: 'expireSession' }> {
+): ClientExpiryCommandInput {
   const commandId = [
     'expire-client-session',
     session.sessionId,
@@ -245,7 +254,7 @@ function toActorInput(
     reason?: string;
     traceId?: string;
   }>,
-) {
+): ClientMutationActorInput {
   return {
     actorPrincipalId: request.actorPrincipalId ?? null,
     actorSessionId: request.actorSessionId ?? null,
