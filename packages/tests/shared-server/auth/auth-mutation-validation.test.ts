@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   AuthMutationCommand,
+  AuthMutationComputed,
   AuthMutationRead,
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
@@ -233,30 +234,30 @@ function registrationAndSessionRejectionCases(cases: readonly AuthMutationCase[]
   } as Extract<AuthMutationRead, { kind: 'issue-session' }>;
 
   return [
-    rejectionCase(
-      'registration username collision',
-      registration.command,
-      {
+    rejectionCase({
+      label: 'registration username collision',
+      command: registration.command,
+      read: {
         ...registration.read,
         byUsername: entry({ ...user, clientId: 'different-client' }, 'username=alice'),
-      },
-      'Auth username already exists',
-      409,
-    ),
-    rejectionCase(
-      'static session authority conflict',
-      issueSession.command,
-      staticUserRead,
-      'Static auth session authority conflicts with a registered user',
-      403,
-    ),
-    rejectionCase(
-      'logout index corruption',
-      logout.command,
-      { ...logout.read, bySession: entry(session, 'session=session-1') },
-      'Auth logout indexes are inconsistent',
-      500,
-    ),
+      } as AuthMutationRead,
+      message: 'Auth username already exists',
+      status: 409,
+    }),
+    rejectionCase({
+      label: 'static session authority conflict',
+      command: issueSession.command,
+      read: staticUserRead,
+      message: 'Static auth session authority conflicts with a registered user',
+      status: 403,
+    }),
+    rejectionCase({
+      label: 'logout index corruption',
+      command: logout.command,
+      read: { ...logout.read, bySession: entry(session, 'session=session-1') } as AuthMutationRead,
+      message: 'Auth logout indexes are inconsistent',
+      status: 500,
+    }),
   ];
 }
 
@@ -270,21 +271,21 @@ function webSocketTicketRejectionCases(cases: readonly AuthMutationCase[]) {
   const missingWebSocketTicketRead = { ...consumeWebSocket.read, ticket: null } as AuthMutationRead;
 
   return [
-    rejectionCase(
-      'websocket ticket expiry',
-      expiredWebSocketCommand,
-      issueWebSocket.read,
-      'Websocket ticket is expired',
-      410,
-    ),
-    rejectionCase(
-      'consumed websocket ticket absence',
-      consumeWebSocket.command,
-      missingWebSocketTicketRead,
-      'Auth ticket is invalid or consumed',
-      404,
-      computeAuth(consumeWebSocket.command, consumeWebSocket.read),
-    ),
+    rejectionCase({
+      label: 'websocket ticket expiry',
+      command: expiredWebSocketCommand,
+      read: issueWebSocket.read,
+      message: 'Websocket ticket is expired',
+      status: 410,
+    }),
+    rejectionCase({
+      label: 'consumed websocket ticket absence',
+      command: consumeWebSocket.command,
+      read: missingWebSocketTicketRead,
+      message: 'Auth ticket is invalid or consumed',
+      status: 404,
+      computed: computeAuth(consumeWebSocket.command, consumeWebSocket.read),
+    }),
   ];
 }
 
@@ -304,32 +305,41 @@ function agentTicketRejectionCases(cases: readonly AuthMutationCase[]) {
   const missingAgentTicketRead = { ...consumeAgent.read, ticket: null } as AuthMutationRead;
 
   return [
-    rejectionCase(
-      'agent ticket duplicate identity',
-      duplicateAgentCommand,
-      duplicateAgentRead,
-      'Agent ticket batch identity is duplicated',
-      409,
-    ),
-    rejectionCase(
-      'consumed agent ticket absence',
-      consumeAgent.command,
-      missingAgentTicketRead,
-      'Auth ticket is invalid or consumed',
-      404,
-      computeAuth(consumeAgent.command, consumeAgent.read),
-    ),
+    rejectionCase({
+      label: 'agent ticket duplicate identity',
+      command: duplicateAgentCommand,
+      read: duplicateAgentRead,
+      message: 'Agent ticket batch identity is duplicated',
+      status: 409,
+    }),
+    rejectionCase({
+      label: 'consumed agent ticket absence',
+      command: consumeAgent.command,
+      read: missingAgentTicketRead,
+      message: 'Auth ticket is invalid or consumed',
+      status: 404,
+      computed: computeAuth(consumeAgent.command, consumeAgent.read),
+    }),
   ];
 }
 
-function rejectionCase(
-  label: string,
-  command: AuthMutationCommand,
-  read: AuthMutationRead,
-  message: string,
-  status: number,
+interface RejectionCaseInput {
+  readonly label: string;
+  readonly command: AuthMutationCommand;
+  readonly read: AuthMutationRead;
+  readonly message: string;
+  readonly status: number;
+  readonly computed?: AuthMutationComputed;
+}
+
+function rejectionCase({
+  label,
+  command,
+  read,
+  message,
+  status,
   computed = computeAuth(command, read),
-) {
+}: RejectionCaseInput) {
   return {
     label,
     command,

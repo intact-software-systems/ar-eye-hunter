@@ -54,8 +54,9 @@ export const persistenceLineages = [
   ),
 ] as const;
 
-// Temporary structural supplement owned by the auth child. PR C removes it after
-// the PR B resulting-main workflow and later ledger preserve equivalent evidence.
+// Retain this PR B lineage evidence through PR C. The later ledger decides
+// removal only after PR C's resulting-main workflow publishes equivalent
+// semantic persistence evidence.
 export function validatePersistenceLineages(
   lineages: readonly PersistenceLineage[],
   targetOverrides = new Map<string, string>(),

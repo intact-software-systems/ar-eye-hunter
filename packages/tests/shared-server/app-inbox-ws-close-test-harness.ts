@@ -14,7 +14,7 @@ import {
   createGroupStateService,
   type GroupStateService,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { TestResourceInbox, TestResourceInboxResults } from './app-auth-inbox-test-harness.ts';
+import { TestResourceInbox, TestResourceInboxResults } from './auth/auth-app-inbox-test-runtime.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 

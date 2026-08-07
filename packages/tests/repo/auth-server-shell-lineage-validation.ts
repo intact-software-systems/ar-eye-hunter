@@ -105,8 +105,9 @@ export const authShellBoundaryEvidence: readonly AuthShellBoundaryEvidence[] = [
   },
 ];
 
-// Temporary structural supplement owned by the auth child. The later ledger removes it after
-// PR B's resulting-main workflow preserves equivalent semantic ownership evidence.
+// Retain this PR B lineage evidence through PR C. The later ledger decides
+// removal only after PR C's resulting-main workflow publishes equivalent
+// semantic shell ownership evidence.
 export function validateAuthShellLineage(input: ValidateAuthShellLineageInput = {}): void {
   const lineages = input.lineages ?? authShellLineages;
   const evidence = input.evidence ?? authShellBoundaryEvidence;

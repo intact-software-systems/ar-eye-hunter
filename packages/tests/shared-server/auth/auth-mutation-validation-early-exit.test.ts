@@ -84,12 +84,13 @@ function registerUserEarlyExit() {
     get byClientId() {
       throw new Error('Registration should stop before the client index');
     },
-  } as AuthMutationRead;
-  return rejectionCase(command, read, 'Auth username already exists', [
-    'kind',
-    'byUsername',
-    'byUsername',
-  ]);
+  } as unknown as AuthMutationRead;
+  return rejectionCase({
+    command,
+    read,
+    message: 'Auth username already exists',
+    readAccesses: ['kind', 'byUsername', 'byUsername'],
+  });
 }
 
 function issueSessionEarlyExit() {
@@ -109,8 +110,13 @@ function issueSessionEarlyExit() {
     get userByUsername() {
       throw new Error('Missing computed session must stop before user authority');
     },
-  } as AuthMutationRead;
-  return rejectionCase(command, read, 'Issued auth session is missing', ['kind']);
+  } as unknown as AuthMutationRead;
+  return rejectionCase({
+    command,
+    read,
+    message: 'Issued auth session is missing',
+    readAccesses: ['kind'],
+  });
 }
 
 function consumeWebSocketTicketEarlyExit() {
@@ -128,8 +134,13 @@ function consumeWebSocketTicketEarlyExit() {
     get session() {
       throw new Error('Missing ticket must stop before session authority');
     },
-  } as AuthMutationRead;
-  return rejectionCase(command, read, 'Auth ticket is invalid or consumed', ['kind', 'ticket']);
+  } as unknown as AuthMutationRead;
+  return rejectionCase({
+    command,
+    read,
+    message: 'Auth ticket is invalid or consumed',
+    readAccesses: ['kind', 'ticket'],
+  });
 }
 
 function issueAgentTicketEarlyExit() {
@@ -146,16 +157,23 @@ function issueAgentTicketEarlyExit() {
     get authority() {
       throw new Error('Invalid ticket batch must stop before authority');
     },
-  } as AuthMutationRead;
-  return rejectionCase(command, read, 'Agent ticket batch is invalid', ['kind']);
+  } as unknown as AuthMutationRead;
+  return rejectionCase({
+    command,
+    read,
+    message: 'Agent ticket batch is invalid',
+    readAccesses: ['kind'],
+  });
 }
 
-function rejectionCase(
-  command: AuthMutationCommand,
-  read: AuthMutationRead,
-  message: string,
-  readAccesses: readonly string[],
-) {
+interface RejectionCaseInput {
+  readonly command: AuthMutationCommand;
+  readonly read: AuthMutationRead;
+  readonly message: string;
+  readonly readAccesses: readonly string[];
+}
+
+function rejectionCase({ command, read, message, readAccesses }: RejectionCaseInput) {
   return { label: command.kind, command, read, message, readAccesses };
 }
 

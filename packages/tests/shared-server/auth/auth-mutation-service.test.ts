@@ -7,16 +7,11 @@ import {
   createAuthMutationService,
   type AuthMutationService,
 } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-import { createAuthMutationService as createCompatibilityAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createAuthMutationService as createPublicAuthMutationService } from '@shared-server/mod.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 describe('auth mutation service ownership', () => {
-  it('keeps the supported compatibility path on the canonical service owner', () => {
-    expect(createCompatibilityAuthMutationService).toBe(createAuthMutationService);
-  });
-
   it('keeps the package root on a direct canonical service export', () => {
     expect(createPublicAuthMutationService).toBe(createAuthMutationService);
     const program = parse(readFileSync('packages/shared-server/mod.ts', 'utf8'), {

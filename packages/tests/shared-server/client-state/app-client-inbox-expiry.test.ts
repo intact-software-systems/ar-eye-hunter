@@ -23,7 +23,7 @@ import {
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { createResilience } from '../app-auth-inbox-test-harness.ts';
+import { createResilience } from '../auth/auth-app-inbox-test-runtime.ts';
 import { createClientStatePhaseTestDriver } from './client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {

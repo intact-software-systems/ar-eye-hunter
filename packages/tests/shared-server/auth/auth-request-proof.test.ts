@@ -1,74 +1,181 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { requireApiAuthSession } from '@shared-server/http/request-auth-service.ts';
+import { Either } from '@shared/resilience/Either.ts';
+import {
+  requireApiAuthSession,
+  requireWsAuthSession,
+} from '@shared-server/http/request-auth-service.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
-describe('auth request proof', () => {
-  it('returns the exact persisted digest proof without rehashing it', async () => {
-    await expect(
-      authSessionProofSecret({
-        clientId: 'client-1',
-        username: 'alice',
-        sessionId: 'session-1',
-        accessTokenDigest: 'persisted-digest-1',
-        issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: 2_000,
-      }),
-    ).resolves.toBe('persisted-digest-1');
+it('validates bearer tokens against x-client-id', async () => {
+  const repository = new AuthSessionRepository(new FakeRuntimeStateRepository());
+  await repository.putSession({
+    clientId: 'client-1',
+    accessToken: 'token-1',
+    username: 'alice',
+    sessionId: 'session-1',
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs: Date.now() + 60_000,
   });
 
-  it('derives the issued-session proof from plaintext using the locked digest', async () => {
-    const issued = {
-      clientId: 'client-1',
-      username: 'alice',
-      sessionId: 'session-1',
-      accessToken: 'plaintext-access-token',
-      issuedAtEpochMs: 1_000,
-      expiresAtEpochMs: 2_000,
-    } as const;
+  const authorised = await requireApiAuthSession(
+    {
+      header(name) {
+        return name === 'authorization'
+          ? 'Bearer token-1'
+          : name === 'x-client-id'
+            ? 'client-1'
+            : undefined;
+      },
+    },
+    repository,
+  );
 
-    await expect(authSessionProofSecret(issued)).resolves.toBe(
-      '6mat7CWylsZfTZEBdqwBFUtkiuFG8hifxLMOe_f8m10',
-    );
+  expect(authorised.sessionId).toBe('session-1');
+  await expect(
+    requireApiAuthSession(
+      {
+        header(name) {
+          return name === 'authorization'
+            ? 'Bearer token-1'
+            : name === 'x-client-id'
+              ? 'client-2'
+              : undefined;
+        },
+      },
+      repository,
+    ),
+  ).rejects.toThrow('Unauthorized: Access token does not match x-client-id');
+});
+
+it('consumes websocket tickets once and rejects session mismatches', async () => {
+  const expiresAtEpochMs = Date.now() + 60_000;
+  const session = {
+    clientId: 'client-1',
+    accessToken: 'token-1',
+    username: 'alice',
+    sessionId: 'session-1',
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs,
+  };
+  const tickets = new Map([
+    ['ticket-1', session],
+    ['ticket-2', session],
+  ]);
+  const appAuthInbox = {
+    consumeWebSocketTicket: (input: { ticket: string; expectedSessionId: string }) => {
+      const current = tickets.get(input.ticket);
+      if (!current || current.sessionId !== input.expectedSessionId) {
+        return Promise.resolve(Either.ofLeft({ message: 'invalid' }));
+      }
+      tickets.delete(input.ticket);
+      return Promise.resolve(Either.ofRight(current));
+    },
+  } as never;
+
+  await expect(
+    requireWsAuthSession({ sessionId: 'session-1', ticket: 'ticket-1' }, appAuthInbox, {
+      requestId: 'consume-1',
+      capturedAtEpochMs: 1_000,
+    }),
+  ).resolves.toMatchObject({ clientId: 'client-1' });
+
+  await expect(
+    requireWsAuthSession({ sessionId: 'session-1', ticket: 'ticket-1' }, appAuthInbox, {
+      requestId: 'consume-2',
+      capturedAtEpochMs: 1_001,
+    }),
+  ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
+
+  await expect(
+    requireWsAuthSession({ sessionId: 'session-2', ticket: 'ticket-2' }, appAuthInbox, {
+      requestId: 'consume-3',
+      capturedAtEpochMs: 1_002,
+    }),
+  ).rejects.toThrow('Unauthorized: Invalid or expired websocket auth ticket');
+});
+
+it('keeps same-user sessions independent when one session logs out', async () => {
+  const repository = new AuthSessionRepository(new FakeRuntimeStateRepository());
+  const expiresAtEpochMs = Date.now() + 60_000;
+  const sessionA = {
+    clientId: 'client-1',
+    accessToken: 'token-a',
+    username: 'alice',
+    sessionId: 'session-a',
+    issuedAtEpochMs: 1_000,
+    expiresAtEpochMs,
+  };
+  const sessionB = {
+    clientId: 'client-1',
+    accessToken: 'token-b',
+    username: 'alice',
+    sessionId: 'session-b',
+    issuedAtEpochMs: 1_001,
+    expiresAtEpochMs,
+  };
+  await repository.putSession(sessionA);
+  await repository.putSession(sessionB);
+  await repository.putWebSocketTicket({
+    ticket: 'ticket-a-before-logout',
+    clientId: sessionA.clientId,
+    sessionId: sessionA.sessionId,
+    issuedAtEpochMs: 1_100,
+    expiresAtEpochMs,
+  });
+  await repository.putWebSocketTicket({
+    ticket: 'ticket-b-after-logout',
+    clientId: sessionB.clientId,
+    sessionId: sessionB.sessionId,
+    issuedAtEpochMs: 1_101,
+    expiresAtEpochMs,
   });
 
-  it('catches request authorization that skips bearer parsing or the client-id match', async () => {
-    const runtimeRepository = new FakeRuntimeStateRepository();
-    const repository = new AuthSessionRepository(runtimeRepository);
-    await repository.putSession({
-      clientId: 'client-1',
-      username: 'alice',
-      sessionId: 'session-1',
-      accessToken: 'token-1',
-      issuedAtEpochMs: 1_000,
-      expiresAtEpochMs: Date.now() + 60_000,
-    });
+  await repository.deleteSession(sessionA);
+
+  await expect(
+    requireApiAuthSession(authRequest(sessionA.accessToken, sessionA.clientId), repository),
+  ).rejects.toThrow('Unauthorized: Invalid or expired access token');
+  await expect(
+    requireApiAuthSession(authRequest(sessionB.accessToken, sessionB.clientId), repository),
+  ).resolves.toMatchObject({
+    clientId: 'client-1',
+    sessionId: 'session-b',
+  });
+});
+
+it('returns the normal invalid-bearer denial after the legacy cutoff', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+  try {
+    const runtime = new FakeRuntimeStateRepository();
+    const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
+    const repository = new AuthSessionRepository(runtime);
 
     await expect(
-      requireApiAuthSession(authRequest('token-1', 'client-1'), repository),
-    ).resolves.toMatchObject({ sessionId: 'session-1' });
-    await expect(
-      requireApiAuthSession(authRequest('token-1', 'client-2'), repository),
-    ).rejects.toThrow('Unauthorized: Access token does not match x-client-id');
-    await expect(requireApiAuthSession(authRequest('', 'client-1'), repository)).rejects.toThrow(
-      'Unauthorized: Missing bearer token',
-    );
-  });
+      requireApiAuthSession(authRequest('missing-token', 'client-1'), repository),
+    ).rejects.toThrow('Unauthorized: Invalid or expired access token');
+    expect(page).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 function authRequest(
   accessToken: string,
   clientId: string,
 ): {
-  readonly header: (name: string) => string | undefined;
+  header(name: string): string | undefined;
 } {
   return {
     header(name) {
-      if (name === 'authorization') return accessToken ? `Bearer ${accessToken}` : undefined;
-      return name === 'x-client-id' ? clientId : undefined;
+      return name === 'authorization'
+        ? `Bearer ${accessToken}`
+        : name === 'x-client-id'
+          ? clientId
+          : undefined;
     },
   };
 }

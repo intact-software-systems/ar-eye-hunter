@@ -4,6 +4,11 @@ import path from 'node:path';
 import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
+import {
+  authCompatibilityConsumerInventory,
+  readAuthCompatibilityConsumers,
+} from './auth-server-compatibility-consumer-inventory.ts';
+
 const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/auth';
 const compatibilityModules = [
@@ -137,6 +142,10 @@ const removedPrivatePredecessors = [
   'services/auth-state-read.ts',
   'services/auth-state-write.ts',
 ] as const;
+const compatibilityIdentityCase =
+  'catches compatibility modules that do not resolve to canonical runtime identities';
+const credentialCompatibilityCase =
+  'catches compatibility exports that no longer resolve to the canonical runtime owners';
 
 // Temporary structural supplement owned by the auth child. Remove it after PR C's
 // resulting-main workflow and the later ledger publish equivalent semantic import evidence.
@@ -145,7 +154,7 @@ describe('auth server ownership', () => {
     expect(existsSync(absolute(canonicalRoot))).toBe(true);
   });
 
-  it('catches compatibility modules that do not resolve to canonical runtime identities', async () => {
+  it(compatibilityIdentityCase, async () => {
     for (const { compatibilityPath, canonicalExports } of compatibilityModules) {
       for (const { canonicalPath } of canonicalExports) {
         const canonicalFilePath = absolute(`${canonicalRoot}/${canonicalPath}`);
@@ -168,6 +177,80 @@ describe('auth server ownership', () => {
           expect(compatibility[name], `${compatibilityPath}:${name}`).toBe(canonical[name]);
         }
       }
+    }
+  });
+
+  it('does not expose direct mutation or credential-minting compatibility APIs', async () => {
+    const [service, publicApi] = await Promise.all([
+      import(absolute('packages/shared-server/rallar-system/services/auth-login-service.ts')),
+      import(absolute('packages/shared-server/mod.ts')),
+    ]);
+
+    expect(service).not.toHaveProperty('registerAuthUser');
+    expect(service).not.toHaveProperty('loginAuthUser');
+    expect(publicApi).not.toHaveProperty('registerAuthUser');
+    expect(publicApi).not.toHaveProperty('loginAuthUser');
+    expect(publicApi).toHaveProperty('AppAuthInboxService');
+  });
+});
+
+it(credentialCompatibilityCase, async () => {
+  const [credentialCompatibility, loginCompatibility, sessionCompatibility] = await Promise.all([
+    import(absolute('packages/shared-server/rallar-system/services/auth-credential-issuer.ts')),
+    import(absolute('packages/shared-server/rallar-system/services/auth-login-service.ts')),
+    import(absolute('packages/shared-server/rallar-system/repositories/AuthSessionRepository.ts')),
+  ]);
+  const [credential, login, registration, secretHash] = await Promise.all([
+    import(absolute(`${canonicalRoot}/credentials/auth-credential-issuer.ts`)),
+    import(absolute(`${canonicalRoot}/login/authenticate-auth-user.ts`)),
+    import(absolute(`${canonicalRoot}/login/prepare-auth-user-registration.ts`)),
+    import(absolute(`${canonicalRoot}/credentials/hash-auth-secret.ts`)),
+  ]);
+
+  expect(credentialCompatibility.createHmacAuthCredentialIssuer).toBe(
+    credential.createHmacAuthCredentialIssuer,
+  );
+  expect(loginCompatibility.authenticateAuthUser).toBe(login.authenticateAuthUser);
+  expect(loginCompatibility.prepareAuthUserRegistration).toBe(
+    registration.prepareAuthUserRegistration,
+  );
+  expect(sessionCompatibility.hashAuthSecret).toBe(secretHash.hashAuthSecret);
+});
+
+it('keeps the supported compatibility path on the canonical facts owner', async () => {
+  const [compatibility, canonical] = await Promise.all([
+    import(absolute('packages/shared-server/rallar-system/services/auth-state-mutations.ts')),
+    import(absolute(`${canonicalRoot}/mutation/read/capture-auth-mutation-facts.ts`)),
+  ]);
+
+  expect(compatibility.captureAuthMutationFacts).toBe(canonical.captureAuthMutationFacts);
+});
+
+it('keeps the supported compatibility path on the canonical service owner', async () => {
+  const [compatibility, canonical] = await Promise.all([
+    import(absolute('packages/shared-server/rallar-system/services/auth-state-mutations.ts')),
+    import(absolute(`${canonicalRoot}/auth-mutation-service.ts`)),
+  ]);
+
+  expect(compatibility.createAuthMutationService).toBe(canonical.createAuthMutationService);
+});
+
+describe('auth compatibility ownership', () => {
+  it('keeps every wrapper direct named re-export-only', () => {
+    const invalid = authCompatibilityConsumerInventory
+      .map(({ compatibilityPath }) => compatibilityPath)
+      .filter((compatibilityPath) => !isDirectNamedReexportOnly(compatibilityPath));
+
+    expect(invalid).toEqual([]);
+  });
+
+  it('keeps the current consumer and removal-condition inventory exact', () => {
+    const actualConsumers = readAuthCompatibilityConsumers();
+    for (const inventory of authCompatibilityConsumerInventory) {
+      expect(actualConsumers.get(inventory.compatibilityPath), inventory.compatibilityPath).toEqual(
+        inventory.consumers,
+      );
+      expect(inventory.removalCondition, inventory.compatibilityPath).not.toBe('');
     }
   });
 });
@@ -266,6 +349,19 @@ function sourceFiles(directory: string): readonly string[] {
     if (entry.isDirectory()) return sourceFiles(entryPath);
     return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
   });
+}
+
+function isDirectNamedReexportOnly(filePath: string): boolean {
+  const program = parse(readFileSync(absolute(filePath), 'utf8'), {
+    sourceType: 'module',
+    plugins: ['typescript'],
+  }).program;
+  return program.body.every(
+    (statement) =>
+      statement.type === 'ExportNamedDeclaration' &&
+      statement.source !== null &&
+      statement.specifiers.every((specifier) => specifier.type !== 'ExportNamespaceSpecifier'),
+  );
 }
 
 function absolute(filePath: string): string {

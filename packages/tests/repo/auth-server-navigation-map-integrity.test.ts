@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { parse } from '@babel/parser';
-import { describe, expect, it } from 'vitest';
+import { expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const navigationPath = 'packages/shared-server/rallar-system/auth/README.md';
@@ -51,62 +51,143 @@ const expectedOwnerLinks = [
   ['./inbox/auth-app-inbox-routing.ts', 'toAuthAppInboxType'],
   ['./inbox/auth-inbox-handler.ts', 'AuthInboxHandler'],
 ] as const;
+const traceLabels = [
+  '### Construction and registration',
+  '**Registration owner/time:**',
+  '**Compatibility-only paths:**',
+  '### Later invocation trace',
+  '**Later invocation/retry:**',
+  '**First guard:**',
+  '**Transaction or query boundary:**',
+  '**Durable writes:**',
+  '**Commit/after-commit:**',
+  '**Normal result:**',
+  '**Early exits:**',
+  '**Terminal failure/cleanup:**',
+  '**Caller result:**',
+] as const;
+const familyTraceContracts = [
+  {
+    heading: 'Login and credential issuance',
+    markers: [
+      'config-route.init',
+      'login-repository.login',
+      'authenticateAuthUser',
+      'AppAuthInboxService.issueSession',
+      'hashAuthSecret',
+    ],
+  },
+  {
+    heading: 'Authenticated AppInbox mutation',
+    markers: [
+      'AppAuthInboxService` constructor',
+      'processAuthMutation',
+      'decodeAuthMutationCommand',
+      'transactionWriter.writeMutation',
+      'writeAuthMutation',
+    ],
+  },
+  {
+    heading: 'Session lifecycle, logout, expiry, and revocation',
+    markers: [
+      'requireIssueSessionLifecycle',
+      'computeAuthSessionMutation',
+      'validateAuthSessionMutation',
+      'writeAuthSession',
+      'toAuthLogoutOutbox',
+    ],
+  },
+  {
+    heading: 'Ticket issue and consume',
+    markers: [
+      'computeAuthTicketMutation',
+      'computeAuthAgentTicketMutation',
+      'validateAuthTicketMutation',
+      'writeAuthTicketMutation',
+      'AuthTicketPersistence',
+    ],
+  },
+  {
+    heading: 'Authentication and authorization proof/query',
+    markers: [
+      'requireApiAuthSession',
+      'requireWsAuthSession',
+      'findByAccessToken',
+      'authSessionProofSecret',
+      'request-auth-service.ts',
+    ],
+  },
+] as const;
 
-describe('auth server navigation map integrity', () => {
-  it('catches a missing durable navigation owner', () => {
-    expect(existsSync(absolute(navigationPath))).toBe(true);
-  });
-
-  it('catches an owner link that cannot navigate to its exported symbol', () => {
-    if (!existsSync(absolute(navigationPath))) {
-      expect(existsSync(absolute(navigationPath)), navigationPath).toBe(true);
-      return;
-    }
-    const navigation = readFileSync(absolute(navigationPath), 'utf8');
-    for (const [target, symbol] of expectedOwnerLinks) {
-      expect(navigation, target).toContain(`](${target})`);
-      const targetPath = path.resolve(path.dirname(absolute(navigationPath)), target);
-      expect(existsSync(targetPath), target).toBe(true);
-      expect(exportedNames(readFileSync(targetPath, 'utf8')), `${target}:${symbol}`).toContain(
-        symbol,
-      );
-    }
-  });
-
-  it('catches a navigation map that omits a materially different runtime family', () => {
-    if (!existsSync(absolute(navigationPath))) {
-      expect(existsSync(absolute(navigationPath)), navigationPath).toBe(true);
-      return;
-    }
-    const navigation = readFileSync(absolute(navigationPath), 'utf8');
-    for (const heading of [
-      'Login and credential issuance',
-      'Authenticated AppInbox mutation',
-      'Session lifecycle, logout, expiry, and revocation',
-      'Ticket issue and consume',
-      'Authentication and authorization proof/query',
-    ]) {
-      expect(navigation).toContain(heading);
-    }
-  });
-
-  it('distinguishes canonical shell owners from the supported compatibility entry', () => {
-    const navigation = readFileSync(absolute(navigationPath), 'utf8');
-
-    expect(navigation).toContain('Canonical auth owners');
-    expect(navigation).toContain('Supported compatibility entry');
-    expect(navigation).toContain('./inbox/app-auth-inbox-service.ts');
-    expect(navigation).toContain('./inbox/auth-inbox-handler.ts');
-    expect(navigation).not.toContain('../services/auth-state-read.ts');
-    expect(navigation).toContain('./persistence/auth-session-repository.ts');
-  });
+// Retain permanently: these checks are the durable semantic navigation evidence.
+it('catches a missing durable navigation owner', () => {
+  expect(existsSync(absolute(navigationPath))).toBe(true);
 });
+
+it('catches an owner link that cannot navigate to its exported symbol', () => {
+  if (!existsSync(absolute(navigationPath))) {
+    expect(existsSync(absolute(navigationPath)), navigationPath).toBe(true);
+    return;
+  }
+  const navigation = readFileSync(absolute(navigationPath), 'utf8');
+  for (const [target, symbol] of expectedOwnerLinks) {
+    expect(navigation, target).toContain(`](${target})`);
+    const targetPath = path.resolve(path.dirname(absolute(navigationPath)), target);
+    expect(existsSync(targetPath), target).toBe(true);
+    expect(exportedNames(readFileSync(targetPath, 'utf8')), `${target}:${symbol}`).toContain(
+      symbol,
+    );
+  }
+});
+
+it('keeps every runtime family as a separate ordered trace contract', () => {
+  const navigation = readFileSync(absolute(navigationPath), 'utf8');
+  for (const family of familyTraceContracts) {
+    const section = readSection(navigation, family.heading);
+    expectInOrder(section, traceLabels, family.heading);
+    for (const marker of family.markers) {
+      expect(section, `${family.heading}:${marker}`).toContain(marker);
+    }
+  }
+});
+
+it('distinguishes canonical shell owners from the supported compatibility entry', () => {
+  const navigation = readFileSync(absolute(navigationPath), 'utf8');
+
+  expect(navigation).toContain('Canonical auth owners');
+  expect(navigation).toContain('Supported compatibility entry');
+  expect(navigation).toContain('./inbox/app-auth-inbox-service.ts');
+  expect(navigation).toContain('./inbox/auth-inbox-handler.ts');
+  expect(navigation).not.toContain('../services/auth-state-read.ts');
+  expect(navigation).toContain('./persistence/auth-session-repository.ts');
+  expect(navigation).toContain('auth-server-compatibility-consumer-inventory.ts');
+});
+
+function readSection(navigation: string, heading: string): string {
+  const start = navigation.indexOf(`## ${heading}`);
+  expect(start, heading).toBeGreaterThanOrEqual(0);
+  const next = navigation.indexOf('\n## ', start + heading.length + 3);
+  return navigation.slice(start, next < 0 ? navigation.length : next);
+}
+
+function expectInOrder(source: string, markers: readonly string[], label: string): void {
+  let cursor = -1;
+  for (const marker of markers) {
+    const index = source.indexOf(marker, cursor + 1);
+    expect(index, `${label}:${marker}`).toBeGreaterThan(cursor);
+    cursor = index;
+  }
+}
 
 function exportedNames(source: string): readonly string[] {
   const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
   return program.body.flatMap((statement) => {
     if (statement.type !== 'ExportNamedDeclaration') return [];
-    if (statement.declaration && 'id' in statement.declaration && statement.declaration.id) {
+    if (
+      statement.declaration &&
+      'id' in statement.declaration &&
+      statement.declaration.id?.type === 'Identifier'
+    ) {
       return [statement.declaration.id.name];
     }
     if (statement.declaration?.type === 'VariableDeclaration') {

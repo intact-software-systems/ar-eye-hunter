@@ -27,7 +27,10 @@ import {
 } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
-import { TestResourceInbox, TestResourceInboxResults } from '../app-auth-inbox-test-harness.ts';
+import {
+  TestResourceInbox,
+  TestResourceInboxResults,
+} from '../auth/auth-app-inbox-test-runtime.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 const SERVICE_ID = 'server-12345678';

@@ -1,5 +1,9 @@
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
-import { persistAuthSession, type AuthSession, type StoredAuthSession } from '../auth-fixture.ts';
+import {
+  persistAuthSession,
+  type AuthSession,
+  type StoredAuthSession,
+} from '../auth/auth-test-fixtures.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
