@@ -5,7 +5,7 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
-import { authSessionProofSecret } from '../services/auth-session-proof-secret.ts';
+import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
 import {
   canonicalJson,
   constantTimeHexEqual,

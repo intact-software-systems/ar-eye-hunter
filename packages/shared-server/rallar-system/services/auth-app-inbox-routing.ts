@@ -1,5 +1,5 @@
+import type { AuthMutationCommand } from '../auth/mutation/auth-mutation-contracts.ts';
 import { AppInboxType } from './app-inbox-contracts.ts';
-import type { AuthMutationCommand } from './auth-state-contracts.ts';
 
 export function toAuthAppInboxType(command: AuthMutationCommand): AppInboxType {
     switch (command.kind) {

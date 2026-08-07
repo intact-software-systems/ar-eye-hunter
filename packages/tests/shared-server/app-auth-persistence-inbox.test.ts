@@ -346,7 +346,7 @@ describe('AppAuthInboxService architecture', () => {
 
     it('keeps auth compute deterministic and free of credential derivation', () => {
         const source = readFileSync(
-            'packages/shared-server/rallar-system/services/auth-state-compute.ts',
+            'packages/shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts',
             'utf8',
         );
         const compute = source.slice(

@@ -1,4 +1,4 @@
-import { hashAuthSecret } from '@shared-server/rallar-system/repositories/auth-secret-digest.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 
 export async function toExactPersistedEvidenceMatches(match: string): Promise<
   Readonly<{

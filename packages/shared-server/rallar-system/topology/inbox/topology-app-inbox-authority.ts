@@ -1,6 +1,6 @@
 import type { IssuedAuthSession } from '../../repositories/auth-session-types.ts';
 import type { PersistedAuthSession } from '../../repositories/auth-persistence-contracts.ts';
-import { authSessionProofSecret } from '../../services/auth-session-proof-secret.ts';
+import { authSessionProofSecret } from '../../auth/sessions/auth-session-proof-secret.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 import {
   createTopologyMutationAuthorityProof,

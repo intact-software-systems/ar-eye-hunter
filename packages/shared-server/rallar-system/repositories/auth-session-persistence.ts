@@ -16,7 +16,7 @@ import {
     isLegacyPlaintextCompatibilityActive,
     readBoundedLegacyAuthPage,
 } from './auth-legacy-compatibility.ts';
-import { hashAuthSecret } from './auth-secret-digest.ts';
+import { hashAuthSecret } from '../auth/credentials/hash-auth-secret.ts';
 import type { IssuedAuthSession } from './auth-session-types.ts';
 import {
     AUTH_SESSIONS_BY_SESSION_NAMESPACE,

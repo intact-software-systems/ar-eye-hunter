@@ -2,7 +2,7 @@ import {
     type PublicResultReceiptIdentity,
     publicResultIdentityMatches,
 } from './api-v1-state-write-group-causal-evidence.ts'
-import { decodeAuthMutationResult } from '@shared-server/rallar-system/services/auth-state-codecs.ts'
+import { decodeAuthMutationResult } from '@shared-server/mod.ts'
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/services/crdt-mutation-result-codec.ts'
 import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts'
 import { validateTopologyMutationResultPayload } from './validate-topology-mutation-result-payload.ts'

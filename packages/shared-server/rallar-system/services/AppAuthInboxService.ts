@@ -8,18 +8,21 @@ import { type AppInboxMessageContext, AppInboxType } from './app-inbox-contracts
 import { type AppInboxFailure, toTerminalAppInboxFailure } from './app-inbox-failure.ts';
 import { toAppInboxErrorCode } from './app-inbox-error-classification.ts';
 import { Either } from '@shared/resilience/Either.ts';
+import type { AuthMutationService } from '../auth/auth-mutation-service.ts';
+import type {
+    AuthMutationCommand,
+    AuthMutationPublicResult,
+    AuthMutationResult,
+    IssueAuthSessionCommand,
+} from '../auth/mutation/auth-mutation-contracts.ts';
+import { decodeAuthMutationCommand } from '../auth/mutation/decode-auth-mutation-command.ts';
+import { decodeAuthMutationResult } from '../auth/mutation/decode-auth-mutation-result.ts';
 import {
-    type AuthMutationCommand,
-    type AuthMutationPublicResult,
-    type AuthMutationResult,
-    type AuthMutationService,
     captureAuthMutationFacts,
-    decodeAuthMutationCommand,
-    decodeAuthMutationResult,
-    type IssueAuthSessionCommand,
-} from './auth-state-mutations.ts';
-import type { AuthCredentialIssuer } from './auth-credential-issuer.ts';
-import { hashAuthSecret, type IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
+} from '../auth/mutation/read/capture-auth-mutation-facts.ts';
+import type { AuthCredentialIssuer } from '../auth/credentials/auth-credential-issuer.ts';
+import { hashAuthSecret } from '../auth/credentials/hash-auth-secret.ts';
+import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
 import { toAppQueueKey } from './app-inbox-queue-key.ts';
 import type {
     AgentSessionTicketResponse,
@@ -35,7 +38,7 @@ import {
     toAuthCommandContextId,
     toAuthCommandSenderId,
 } from './auth-app-inbox-routing.ts';
-import { toAuthMutationPublicResult } from './auth-state-public-results.ts';
+import { toAuthMutationPublicResult } from '../auth/mutation/to-auth-mutation-public-result.ts';
 
 export { toAuthAppInboxType } from './auth-app-inbox-routing.ts';
 
