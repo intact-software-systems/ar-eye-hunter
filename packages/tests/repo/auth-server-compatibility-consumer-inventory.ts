@@ -1,11 +1,15 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
-import { parse } from '@babel/parser';
+import {
+  isSupportedSourcePath,
+  readModuleReferences,
+} from './auth-server-compatibility-governance-validation.ts';
 
 export interface AuthCompatibilityConsumerInventory {
   readonly compatibilityPath: string;
   readonly consumers: readonly string[];
+  readonly identityConsumers: readonly string[];
   readonly removalCondition: string;
 }
 
@@ -22,6 +26,12 @@ export const authCompatibilityConsumerInventory = [
       'packages/shared-server/rallar-system/middleware/rallar-middleware-options.ts',
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
     ],
+    identityConsumers: [
+      'apps/api-v1/src/middleware.ts',
+      'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
+      'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
+      'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
+    ],
     removalCondition:
       'Migrate every listed caller to canonical inbox owners, then retire this service path.',
   },
@@ -36,17 +46,40 @@ export const authCompatibilityConsumerInventory = [
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
       'packages/tests/shared/authoritative-state-contracts.test.ts',
     ],
+    identityConsumers: [
+      'apps/api-v1/src/middleware.ts',
+      'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
+      'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
+      'apps/api-v1/test/db/pglite-auth-transaction-rollback.test.ts',
+      'packages/shared-server/mod.ts',
+      'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
+    ],
     removalCondition:
       'Move the package export and every listed caller to canonical mutation owners first.',
   },
   {
     compatibilityPath: 'packages/shared-server/rallar-system/services/auth-login-service.ts',
-    consumers: ['apps/api-v1/src/repository/login-repository.ts'],
+    consumers: [
+      'apps/api-v1/src/repository/login-repository.ts',
+      'packages/tests/shared-server/auth/auth-credential-login.test.ts',
+    ],
+    identityConsumers: [
+      'apps/api-v1/src/repository/login-repository.ts',
+      'packages/tests/shared-server/auth/auth-credential-login.test.ts',
+    ],
     removalCondition: 'Move the API-v1 login repository to canonical login owners first.',
   },
   {
     compatibilityPath: 'packages/shared-server/rallar-system/services/auth-credential-issuer.ts',
     consumers: [
+      'apps/api-v1/src/middleware.ts',
+      'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
+      'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
+      'apps/api-v1/test/db/pglite-auth-transaction-rollback.test.ts',
+      'packages/shared-server/http/production-env-hardening.ts',
+      'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
+    ],
+    identityConsumers: [
       'apps/api-v1/src/middleware.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
@@ -110,6 +143,33 @@ export const authCompatibilityConsumerInventory = [
       'scripts/perf/api-v1-state-write-concurrency-bench.ts',
       'scripts/perf/group-list-fanout-bench.ts',
     ],
+    identityConsumers: [
+      'apps/api-v1/src/repository/createStateRepositories.ts',
+      'apps/api-v1/test/db/pglite-app-inbox-ws-close-test-harness.ts',
+      'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
+      'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
+      'apps/api-v1/test/db/pglite-auth-test-harness.ts',
+      'apps/api-v1/test/db/pglite-auth-transaction-rollback.test.ts',
+      'apps/api-v1/test/db/pglite-sql-adapter.test.ts',
+      'apps/api-v1/test/request-auth-service.test.ts',
+      'packages/shared-server/postgres/rallar-system/createStateRepositories.ts',
+      'packages/shared-server/rallar-system/client-state/client-state-service.ts',
+      'packages/shared-server/rallar-system/client-state/mutation/read/read-client-mutation.ts',
+      'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
+      'packages/tests/shared-server/app-inbox-ws-close-test-harness.ts',
+      'packages/tests/shared-server/client-state/app-client-inbox-authentication.test.ts',
+      'packages/tests/shared-server/client-state/app-client-inbox-authorised-ws.test.ts',
+      'packages/tests/shared-server/client-state/app-client-inbox-expiry-fixtures.ts',
+      'packages/tests/shared-server/client-state/app-client-inbox-mutation-test-harness.ts',
+      'packages/tests/shared-server/client-state/client-state-test-runtime.ts',
+      'packages/tests/shared-server/client-state/postgres-client-mutation-test-driver.ts',
+      'packages/tests/shared-server/fixtures/postgres-app-inbox-worker-services.ts',
+      'packages/tests/shared-server/group-state/inbox/group-state-inbox-authority.test.ts',
+      'packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts',
+      'packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts',
+      'scripts/perf/api-v1-state-write-concurrency-bench.ts',
+      'scripts/perf/group-list-fanout-bench.ts',
+    ],
     removalCondition:
       'Migrate every listed API, domain, fixture, and benchmark consumer to canonical persistence.',
   },
@@ -118,6 +178,12 @@ export const authCompatibilityConsumerInventory = [
     consumers: [
       'apps/api-v1/src/repository/createStateRepositories.ts',
       'apps/api-v1/src/repository/login-repository.ts',
+      'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
+      'apps/api-v1/test/login-repository.test.ts',
+      'packages/shared-server/postgres/rallar-system/createStateRepositories.ts',
+    ],
+    identityConsumers: [
+      'apps/api-v1/src/repository/createStateRepositories.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/login-repository.test.ts',
       'packages/shared-server/postgres/rallar-system/createStateRepositories.ts',
@@ -133,12 +199,22 @@ const compatibilityPaths: ReadonlySet<string> = new Set<string>(
 );
 
 export function readAuthCompatibilityConsumers(): ReadonlyMap<string, readonly string[]> {
+  return readConsumers(false);
+}
+
+export function readAuthCompatibilityIdentityConsumers(): ReadonlyMap<string, readonly string[]> {
+  return readConsumers(true);
+}
+
+function readConsumers(identityOnly: boolean): ReadonlyMap<string, readonly string[]> {
   const consumers = new Map<string, string[]>(
     [...compatibilityPaths].map((compatibilityPath) => [compatibilityPath, []]),
   );
   for (const filePath of readSourceFiles()) {
-    for (const specifier of readStaticModuleSpecifiers(filePath)) {
-      const resolved = resolveModuleSpecifier(filePath, specifier);
+    const source = readFileSync(path.join(repoRoot, filePath), 'utf8');
+    for (const reference of readModuleReferences(filePath, source)) {
+      if (identityOnly && !reference.requiresRuntimeIdentity) continue;
+      const resolved = resolveModuleSpecifier(filePath, reference.specifier);
       if (compatibilityPaths.has(resolved)) consumers.get(resolved)?.push(filePath);
     }
   }
@@ -155,28 +231,7 @@ function sourceFiles(directory: string): readonly string[] {
     if (entry.isDirectory() && ['node_modules', 'dist', 'coverage'].includes(entry.name)) return [];
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) return sourceFiles(entryPath);
-    return entry.isFile() && entry.name.endsWith('.ts') ? [relative(entryPath)] : [];
-  });
-}
-
-function readStaticModuleSpecifiers(filePath: string): readonly string[] {
-  const source = readFileSync(path.join(repoRoot, filePath), 'utf8');
-  let program;
-  try {
-    program = parse(source, {
-      sourceType: 'module',
-      plugins: ['typescript', 'decorators-legacy'],
-    }).program;
-  } catch (error) {
-    throw new SyntaxError(`${filePath}: ${String(error)}`);
-  }
-  return program.body.flatMap((statement) => {
-    if (statement.type === 'ImportDeclaration') return [statement.source.value];
-    if (statement.type === 'ExportAllDeclaration') return [statement.source.value];
-    if (statement.type === 'ExportNamedDeclaration' && statement.source) {
-      return [statement.source.value];
-    }
-    return [];
+    return entry.isFile() && isSupportedSourcePath(entryPath) ? [relative(entryPath)] : [];
   });
 }
 

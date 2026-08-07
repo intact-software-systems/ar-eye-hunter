@@ -129,3 +129,16 @@ it('rejects configured static usernames while preparing registration', async () 
     ),
   ).rejects.toThrow('Auth user already exists: admin');
 });
+
+it('does not expose direct mutation or credential-minting compatibility APIs', async () => {
+  const [service, publicApi] = await Promise.all([
+    import('@shared-server/rallar-system/services/auth-login-service.ts'),
+    import('@shared-server/mod.ts'),
+  ]);
+
+  expect(service).not.toHaveProperty('registerAuthUser');
+  expect(service).not.toHaveProperty('loginAuthUser');
+  expect(publicApi).not.toHaveProperty('registerAuthUser');
+  expect(publicApi).not.toHaveProperty('loginAuthUser');
+  expect(publicApi).toHaveProperty('AppAuthInboxService');
+});

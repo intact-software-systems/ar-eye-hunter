@@ -26,10 +26,11 @@ these canonical owners. Compatibility paths exist only for the listed callers.
    [`toAuthMutationPublicResult`](./mutation/to-auth-mutation-public-result.ts).
 
 The API-v1 composition root remains
-[`middleware.ts`](../../../../apps/api-v1/src/middleware.ts). The traces below
-are code-derived navigation evidence. The approved timing waiver remains in
-force: no human timing sample was repeated, and these traces make no
-productivity or statistical claim.
+[`middleware.ts`](../../../../apps/api-v1/src/middleware.ts). The prose traces
+below are supplementary navigation. Repository governance derives and checks
+an exact file, symbol, and direct import edge for every stage in all five
+families. The approved timing waiver remains in force: no human timing sample
+was repeated, and these traces make no productivity or statistical claim.
 
 ## Login and credential issuance
 

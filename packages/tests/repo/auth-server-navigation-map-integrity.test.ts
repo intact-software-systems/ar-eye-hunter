@@ -4,8 +4,14 @@ import path from 'node:path';
 import { parse } from '@babel/parser';
 import { expect, it } from 'vitest';
 
+import {
+  authNavigationFamilies,
+  readAuthNavigationViolations,
+} from './auth-server-navigation-validation.ts';
+
 const repoRoot = process.cwd();
 const navigationPath = 'packages/shared-server/rallar-system/auth/README.md';
+const navigationValidationPath = 'packages/tests/repo/auth-server-navigation-validation.ts';
 const expectedOwnerLinks = [
   ['./auth-mutation-service.ts', 'AuthMutationService'],
   ['./credentials/auth-credential-issuer.ts', 'createHmacAuthCredentialIssuer'],
@@ -124,6 +130,48 @@ it('catches a missing durable navigation owner', () => {
   expect(existsSync(absolute(navigationPath))).toBe(true);
 });
 
+it('requires code-derived edges behind every family trace', () => {
+  expect(existsSync(absolute(navigationValidationPath)), navigationValidationPath).toBe(true);
+});
+
+it('derives every trace stage from an exact file, symbol, and import edge', () => {
+  expect(readAuthNavigationViolations(read)).toEqual([]);
+  expect(authNavigationFamilies).toHaveLength(5);
+  for (const family of authNavigationFamilies) expect(Object.keys(family.stages)).toHaveLength(11);
+});
+
+it('rejects a missing source, symbol, or direct code edge', () => {
+  const edgeSource = 'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts';
+  const original = read(edgeSource);
+  const decodeImport =
+    "import { decodeAuthMutationCommand } from '" + "../mutation/decode-auth-mutation-command.ts';";
+  const mutations = [
+    new Map([
+      [edgeSource, original.replace('export class AuthInboxHandler', 'class RenamedInboxHandler')],
+    ]),
+    new Map([[edgeSource, original.replace(decodeImport, '')]]),
+    new Map([
+      [
+        edgeSource,
+        original.replace(
+          'const command = decodeAuthMutationCommand(commandCandidate);',
+          'const command = commandCandidate as AuthMutationCommand;',
+        ),
+      ],
+    ]),
+  ];
+
+  for (const overrides of mutations) {
+    expect(readAuthNavigationViolations(withOverrides(overrides))).not.toEqual([]);
+  }
+  expect(
+    readAuthNavigationViolations((filePath) => {
+      if (filePath === edgeSource) throw new Error('missing source');
+      return read(filePath);
+    }),
+  ).not.toEqual([]);
+});
+
 it('catches an owner link that cannot navigate to its exported symbol', () => {
   if (!existsSync(absolute(navigationPath))) {
     expect(existsSync(absolute(navigationPath)), navigationPath).toBe(true);
@@ -142,6 +190,7 @@ it('catches an owner link that cannot navigate to its exported symbol', () => {
 
 it('keeps every runtime family as a separate ordered trace contract', () => {
   const navigation = readFileSync(absolute(navigationPath), 'utf8');
+  expect(navigation).toContain('The prose traces\nbelow are supplementary navigation.');
   for (const family of familyTraceContracts) {
     const section = readSection(navigation, family.heading);
     expectInOrder(section, traceLabels, family.heading);
@@ -203,4 +252,12 @@ function exportedNames(source: string): readonly string[] {
 
 function absolute(filePath: string): string {
   return path.join(repoRoot, filePath);
+}
+
+function read(filePath: string): string {
+  return readFileSync(absolute(filePath), 'utf8');
+}
+
+function withOverrides(overrides: ReadonlyMap<string, string>): (filePath: string) => string {
+  return (filePath) => overrides.get(filePath) ?? read(filePath);
 }

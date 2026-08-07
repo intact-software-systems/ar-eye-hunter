@@ -4,12 +4,16 @@ import path from 'node:path';
 import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
+import { findLockedAppAuthInboxConstructor } from './auth-server-constructor-signature-validation.ts';
+import { authServerEvidencePaths } from './auth-server-evidence-paths.ts';
+
 const repoRoot = process.cwd();
 const maximumLineLength = 100;
 const maximumModuleLines = 400;
 const maximumFunctionLines = 60;
 const canonicalProductionRoot = 'packages/shared-server/rallar-system/auth';
 const canonicalTestRoot = 'packages/tests/shared-server/auth';
+const lockedConstructorOwner = `${canonicalProductionRoot}/inbox/app-auth-inbox-service.ts`;
 const requiredMovedOwners = [
   `${canonicalTestRoot}/auth-app-inbox-test-runtime.ts`,
   `${canonicalTestRoot}/auth-legacy-cutoff.test.ts`,
@@ -34,13 +38,6 @@ const crossDomainCallbackOwners = [
   'packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts',
   'packages/tests/shared-server/mutation-route-owner-provenance.test.ts',
 ] as const;
-const directlyOwnedEvidencePaths = [
-  'packages/tests/repo/auth-server-compatibility-consumer-inventory.ts',
-  'packages/tests/repo/auth-server-navigation-map-integrity.test.ts',
-  'packages/tests/repo/auth-server-ownership.test.ts',
-  'packages/tests/repo/auth-server-source-ratchet.test.ts',
-  'packages/tests/repo/auth-server-test-ownership.test.ts',
-] as const;
 const compatibilityPaths = [
   'packages/shared-server/rallar-system/repositories/AuthSessionRepository.ts',
   'packages/shared-server/rallar-system/repositories/AuthUserRepository.ts',
@@ -49,9 +46,18 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/auth-login-service.ts',
   'packages/shared-server/rallar-system/services/auth-state-mutations.ts',
 ] as const;
-const preservedPublicParameterCompatibility = new Set([
-  `${canonicalProductionRoot}/inbox/app-auth-inbox-service.ts:constructor`,
-]);
+const lockedConstructorParameters = [
+  'public override readonly inbox: InboxQueueReader',
+  'public override readonly resourceInbox: ResourceInboxRepository',
+  'public override readonly resourceInboxResults: ResourceInboxResultsRepository',
+  'database: PSqlSql',
+  'public readonly authMutationService: AuthMutationService',
+  'public readonly credentialIssuer: AuthCredentialIssuer',
+  'public override readonly serviceId: string',
+  'timing?: RallarTimingSink',
+  'options?: AppInboxServiceOptions',
+  'wakeQueue?: () => void',
+] as const;
 
 // Temporary PR C source/style evidence. The auth server child owns it through
 // PR C. The separate later ledger decides removal only after the PR C
@@ -82,6 +88,103 @@ describe('auth server source/style ratchet fixtures', () => {
   });
 });
 
+describe('AppAuthInboxService constructor signature fixtures', () => {
+  it('exempts only the exact locked constructor AST node', () => {
+    const filePath = lockedConstructorOwner;
+
+    expect(
+      readStyleViolations(filePath, toConstructorFixture(lockedConstructorParameters)),
+    ).toEqual([]);
+  });
+
+  it('rejects constructor drift instead of exempting every constructor-shaped violation', () => {
+    const constructorSource = toConstructorFixture([
+      ...lockedConstructorParameters,
+      'extra: string',
+    ]);
+    const filePath = lockedConstructorOwner;
+    const violations = readStyleViolations(filePath, constructorSource);
+
+    expect(violations).toContain(`${filePath}:2:constructor:parameters`);
+  });
+});
+
+describe('AppAuthInboxService constructor rejection fixtures', () => {
+  it.each([
+    {
+      label: 'renamed parameter',
+      parameters: replaceParameter(
+        lockedConstructorParameters,
+        0,
+        'public override readonly queue: InboxQueueReader',
+      ),
+    },
+    {
+      label: 'reordered parameters',
+      parameters: replaceParameter(
+        replaceParameter(lockedConstructorParameters, 0, lockedConstructorParameters[1]),
+        1,
+        lockedConstructorParameters[0],
+      ),
+    },
+    {
+      label: 'changed parameter type',
+      parameters: replaceParameter(lockedConstructorParameters, 3, 'database: unknown'),
+    },
+  ])('rejects a $label in the locked constructor', ({ parameters }) => {
+    const filePath = lockedConstructorOwner;
+    const violations = readStyleViolations(filePath, toConstructorFixture(parameters));
+
+    expect(violations).toContain(`${filePath}:2:constructor:parameters`);
+  });
+
+  it('rejects a second AppAuthInboxService constructor', () => {
+    const filePath = lockedConstructorOwner;
+    const source = toConstructorFixture(lockedConstructorParameters, true);
+    const violations = readStyleViolations(filePath, source);
+
+    expect(violations.some((violation) => violation.endsWith(':constructor:parameters'))).toBe(
+      true,
+    );
+  });
+
+  it('does not exempt the same signature outside the locked production owner', () => {
+    const filePath = `${canonicalProductionRoot}/inbox/not-app-auth-inbox-service.ts`;
+    const violations = readStyleViolations(
+      filePath,
+      toConstructorFixture(lockedConstructorParameters),
+    );
+
+    expect(violations).toContain(`${filePath}:2:constructor:parameters`);
+  });
+});
+
+function toConstructorFixture(parameters: readonly string[], includeOverload = false): string {
+  const overload = lockedConstructorParameters.map((parameter) =>
+    parameter.replace(/^(?:public )(?:override )?(?:readonly )?/, ''),
+  );
+  return [
+    'export class AppAuthInboxService {',
+    ...(includeOverload ? constructorLines(overload, ';') : []),
+    ...constructorLines(parameters, ' {}'),
+    '}',
+  ].join('\n');
+}
+
+function constructorLines(parameters: readonly string[], ending: string): readonly string[] {
+  return ['  constructor(', ...parameters.map((parameter) => `    ${parameter},`), `  )${ending}`];
+}
+
+function replaceParameter(
+  parameters: readonly string[],
+  index: number,
+  replacement: string,
+): readonly string[] {
+  return parameters.map((parameter, parameterIndex) =>
+    parameterIndex === index ? replacement : parameter,
+  );
+}
+
 describe('auth server source/style ratchet', () => {
   it('requires behavior-named owners and removes every stale predecessor path', () => {
     expect(requiredMovedOwners.filter((filePath) => !existsSync(absolute(filePath)))).toEqual([]);
@@ -93,9 +196,7 @@ describe('auth server source/style ratchet', () => {
       readStyleViolations(filePath, source),
     );
 
-    expect(
-      violations.filter((violation) => !isPreservedPublicParameterViolation(violation)),
-    ).toEqual([]);
+    expect(violations).toEqual([]);
   });
 
   it('keeps every compatibility owner direct named re-export-only', () => {
@@ -149,7 +250,7 @@ function readRatchetedSources(): readonly RatchetedSource[] {
     ...readTypeScriptPaths(canonicalProductionRoot),
     ...readTypeScriptPaths(canonicalTestRoot),
     ...crossDomainCallbackOwners,
-    ...directlyOwnedEvidencePaths,
+    ...authServerEvidencePaths,
   ];
   return [...new Set(filePaths)].sort().map((filePath) => ({
     filePath,
@@ -181,12 +282,16 @@ function readStyleViolations(
     }
   });
   const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
+  const lockedConstructor =
+    filePath === lockedConstructorOwner
+      ? findLockedAppAuthInboxConstructor(program as unknown as FunctionNode)
+      : undefined;
   visit(program, undefined, (node, parent) => {
     const name = functionNodeName(node, parent);
     if (node.loc.end.line - node.loc.start.line + 1 > maximumFunctionLines) {
       violations.push(`${filePath}:${node.loc.start.line}:${name}:function-length`);
     }
-    if (node.params.length > 3) {
+    if (node.params.length > 3 && node !== lockedConstructor) {
       violations.push(`${filePath}:${node.loc.start.line}:${name}:parameters`);
     }
   });
@@ -273,12 +378,6 @@ function resolveImportPath(filePath: string, specifier: string): string {
     return path.posix.normalize(path.posix.join(path.posix.dirname(filePath), specifier));
   }
   return specifier;
-}
-
-function isPreservedPublicParameterViolation(violation: string): boolean {
-  if (!violation.endsWith(':parameters')) return false;
-  const [filePath, , name] = violation.split(':');
-  return preservedPublicParameterCompatibility.has(`${filePath}:${name}`);
 }
 
 function physicalLineCount(source: string): number {

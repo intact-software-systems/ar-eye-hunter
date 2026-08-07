@@ -34,7 +34,6 @@ it(
 it(
   'rereads registered-user policy after a conflict is released for retry',
   rereadsUserPolicyAfterRetryConflict,
-  15_000,
 );
 
 async function commitsIssuedSessionAndResultAtomically(): Promise<void> {
@@ -170,7 +169,8 @@ async function rereadsUserPolicyAfterRetryConflict(): Promise<void> {
 
   const result = await pending;
   expect(result.left).toMatchObject({ status: 403 });
-  expect(fixture.conflict).toEqual({ injected: true, rollbackCount: 1 });
+  expect(fixture.conflict.injected).toBe(true);
+  expect(fixture.conflict.rollbackCount).toBe(1);
   expect(policyReadCalls(userRead.mock.calls)).toHaveLength(4);
   await expectFailedRetry(fixture);
 }

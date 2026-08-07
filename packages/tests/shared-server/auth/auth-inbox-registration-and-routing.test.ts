@@ -189,14 +189,17 @@ async function observeMalformedOutcome(
     ),
     waitForQueuedEntry(auth.queue).then(() => ({ kind: 'queued' as const })),
   ]);
-  if (firstOutcome.kind === 'rejected') return true;
-  if (firstOutcome.kind === 'settled') return firstOutcome.value.right === undefined;
-  await auth.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-  try {
-    return (await pending).right === undefined;
-  } catch {
-    return true;
+  let rejected = firstOutcome.kind === 'rejected';
+  if (firstOutcome.kind === 'queued') {
+    await auth.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    try {
+      const result = await pending;
+      rejected = result.right === undefined;
+    } catch {
+      rejected = true;
+    }
   }
+  return rejected;
 }
 
 function expectSessionStorageEmpty(runtimeRepository: FakeRuntimeStateRepository): void {

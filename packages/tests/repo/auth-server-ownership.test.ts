@@ -179,19 +179,6 @@ describe('auth server ownership', () => {
       }
     }
   });
-
-  it('does not expose direct mutation or credential-minting compatibility APIs', async () => {
-    const [service, publicApi] = await Promise.all([
-      import(absolute('packages/shared-server/rallar-system/services/auth-login-service.ts')),
-      import(absolute('packages/shared-server/mod.ts')),
-    ]);
-
-    expect(service).not.toHaveProperty('registerAuthUser');
-    expect(service).not.toHaveProperty('loginAuthUser');
-    expect(publicApi).not.toHaveProperty('registerAuthUser');
-    expect(publicApi).not.toHaveProperty('loginAuthUser');
-    expect(publicApi).toHaveProperty('AppAuthInboxService');
-  });
 });
 
 it(credentialCompatibilityCase, async () => {
