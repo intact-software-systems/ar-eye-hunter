@@ -27,6 +27,10 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
   previous membership.
 - `leaveCurrent` behavior is intentional when joining another room.
 - Multi-workspace code passes `roomRef` instead of only `roomId`.
+- `rooms.session(room).refresh()` is expected to make one exact group point
+  read; `rooms.refresh()` is the complete room/client collection refresh.
+- A room-session refresh `404` is rethrown after conditional local cleanup. A
+  newer snapshot racing that response is preserved.
 - `rooms.waitForPresence(...)` uses the right expectation for the flow:
   `{ min, max? }`, `{ exact }`, or `{ sessionIds, allowExtras? }`.
 - Room event subscriptions use the correct `scope`, `roomId`, `roomRef`, and `eventTypes`.
@@ -38,6 +42,25 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - Client events are not assumed to arrive while disconnected unless replay is used.
 - Server websocket lifecycle cleanup is installed.
 - Server presence expiry reconciliation is initialized.
+
+## REST Snapshot Reads
+
+- Client floors use one canonical `minStateRevision`; group floors provide
+  both `minGroupRevision` and `minPresenceRevision`.
+- `400` means the floor query is malformed. Authorized `409` with
+  `state-revision-floor-not-satisfied` means durable state has not reached or
+  does not dominate the requested floor. Treat `503` as infrastructure or
+  stable-snapshot-read failure instead.
+- Successful point responses include `Cache-Control: no-store`,
+  `rallar-state-source`, and revision headers that agree with the body.
+- Browser point readers validate authoritative body and response metadata. A
+  malformed success response is rejected and is not reconciled into caches.
+- Collection omission and heartbeat/point `404` cleanup is conditional on the
+  originally observed object identity. It is physical deletion, not a
+  tombstone; delayed stale publication can reinsert the snapshot.
+- Browser diagnostics use `setBrowserStateReadDiagnosticsSink(...)`. Keep
+  dimensions bounded and never add tenant, entity, session, or request IDs as
+  metric labels.
 
 ## WebSocket
 

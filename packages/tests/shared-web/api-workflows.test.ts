@@ -662,7 +662,7 @@ describe('state API workflows', () => {
         };
         stubFetch(({ url, method }) => {
             if (method === 'GET' && url.endsWith('/groups/group-1')) {
-                return jsonResponse(existing);
+                return groupPointResponse(existing);
             }
 
             if (method === 'PUT' && url.endsWith('/groups/group-1')) {
@@ -1778,6 +1778,19 @@ function jsonResponse(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' },
+    });
+}
+
+function groupPointResponse(body: GroupSnapshot): Response {
+    return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: {
+            'cache-control': 'no-store',
+            'content-type': 'application/json',
+            'rallar-state-source': 'durable',
+            'rallar-group-revision': String(body.causalRevision.groupRevision),
+            'rallar-presence-revision': String(body.causalRevision.presenceRevision),
+        },
     });
 }
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as legacyWorkflows from '@shared-web/browser/api-workflows.ts';
 import * as mutationWorkflows from '@shared-web/browser/rooms/room-group-state-mutation-workflows.ts';
+import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { createGroupSnapshotFixture } from '../authoritative-group-fixtures.ts';
@@ -46,13 +47,12 @@ describe.each(workflowPaths)(
         keep: true,
         rallarDirector: { old: true },
       });
-      stubFetch(fetchCalls, ({ method }) =>
-        jsonResponse(
-          method === 'GET'
-            ? current
-            : roomSnapshot('group-1', { keep: true, rallarDirector: { next: true } }),
-        ),
-      );
+      stubFetch(fetchCalls, ({ method }) => {
+        const body = method === 'GET'
+          ? current
+          : roomSnapshot('group-1', { keep: true, rallarDirector: { next: true } });
+        return method === 'GET' ? groupPointResponse(body) : jsonResponse(body);
+      });
 
       await workflows.updateStateGroupMetadata(
         'group-1',
@@ -271,5 +271,19 @@ function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'content-type': 'application/json' },
+  });
+}
+
+function groupPointResponse(body: GroupSnapshot): Response {
+  const revision = readGroupCausalRevision(body);
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+      'rallar-state-source': 'durable',
+      'rallar-group-revision': String(revision.groupRevision),
+      'rallar-presence-revision': String(revision.presenceRevision),
+    },
   });
 }

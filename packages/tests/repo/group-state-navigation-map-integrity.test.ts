@@ -208,6 +208,11 @@ const navigationSourceLinks = [
     declaration: 'export class GroupStateSnapshotReadThroughCache',
   },
   {
+    symbol: 'GroupRestSnapshotReadSelector',
+    sourcePath: './snapshot/group-rest-snapshot-read-selector.ts',
+    declaration: 'export interface GroupRestSnapshotReadSelector',
+  },
+  {
     symbol: 'canReadGroupSnapshot',
     sourcePath: '../group-policy.ts',
     declaration: 'export function canReadGroupSnapshot',

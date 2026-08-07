@@ -41,7 +41,8 @@ describe('rallar-black-box-headless bundle boundary', () => {
       );
     }
 
-    expect(result.brotliKiB).toBeLessThan(192);
+    // Validated snapshot point reads and race-fenced repair add a bounded browser cost.
+    expect(result.brotliKiB).toBeLessThan(194);
   });
 });
 

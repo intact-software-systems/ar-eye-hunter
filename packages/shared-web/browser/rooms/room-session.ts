@@ -26,7 +26,10 @@ export interface CreateRoomSessionInput {
   readonly leaveRoom: (
     input?: string | RallarLeaveRoomOptions,
   ) => Promise<GroupSnapshot | undefined>;
-  readonly refreshRooms: (input?: RallarRefreshOptions) => Promise<unknown>;
+  readonly refreshRoom: (
+    roomRef: GroupRef,
+    input?: RallarRefreshOptions,
+  ) => Promise<unknown>;
 }
 
 export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSession {
@@ -44,7 +47,10 @@ export function createRoomSession(input: CreateRoomSessionInput): RallarRoomSess
         scope: options.scope ?? toStateScope(input.roomRef),
       }),
     refresh: async (options = {}) => {
-      await input.refreshRooms({ ...options, scope: options.scope ?? toStateScope(input.roomRef) });
+      await input.refreshRoom(input.roomRef, {
+        ...options,
+        scope: options.scope ?? toStateScope(input.roomRef),
+      });
       return createRoomSession(input);
     },
     realtime: <T>(options?: RallarRoomSessionRealtimeInput) =>

@@ -106,6 +106,13 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
 - Browser RTC enables the initial connection-attempt budget by default. The
   shared service exposes `connect-exhausted`; browser facade waits report
   exhaustion as `failed` with reason `rtc-connect-attempt-budget-exhausted`.
+- Keep `rooms.refresh()` and people refresh on complete durable collections,
+  but use one exact group point read for a room session refresh. Capture the
+  current object identity before targeted, heartbeat, or collection repair and
+  remove only that unchanged observation after authoritative absence.
+- Conditional snapshot removal is a race fence, not a causal tombstone. Test
+  that a newer in-memory observation survives cleanup, and do not claim that
+  delayed stale publication cannot recreate a physically removed snapshot.
 - Game and motion traffic are reliability consumers of the realtime layer, not separate demos.
 
 ## Validation

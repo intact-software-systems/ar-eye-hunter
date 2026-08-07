@@ -279,6 +279,17 @@ re-thrown. The common mutation path observes only the committed snapshot after
 its AppInbox transaction returns, so cache observation never decides durable
 mutation success.
 
+[GroupRestSnapshotReadSelector](./snapshot/group-rest-snapshot-read-selector.ts)
+owns REST point-read policy for the complete group causal pair. Tokenless and
+strict reads load durable current state. A tokened non-strict read may use a
+presence-fresh cache entry only when its group and presence revisions equal or
+dominate the requested pair; domination and incomparability fall back to one
+durable-current read. Durable shortfall or incomparability returns the typed
+floor-conflict result. Strict route authorization reuses that same durable
+snapshot for policy, floor validation, and response construction. Durable
+absence conditionally removes only the unchanged cache identity; it is not a
+tombstone. Optional diagnostics keep only bounded dimensions.
+
 ## Family Inventory And Scope
 
 - Aggregate and membership operations share the authenticated AppInbox family.

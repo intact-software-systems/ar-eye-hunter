@@ -3,9 +3,7 @@ import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-t
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
 import {
   validateAuthoritativeClientSnapshot,
-  validateAuthoritativeClientSnapshotList,
   validateAuthoritativeGroupSnapshot,
-  validateAuthoritativeGroupSnapshotList,
 } from '@shared/api/authoritative-state-validation.ts';
 import type {
   RevokeGroupInviteRequest,
@@ -28,8 +26,6 @@ import {
   findStateGroup,
   heartbeatStateClientSession,
   heartbeatStateGroupPresenceSession,
-  listStateClients,
-  listStateGroups,
   revokeStateGroupInvite as revokeStateGroupInviteApi,
   rotateStateGroupJoinCode as rotateStateGroupJoinCodeApi,
   updateStateGroup,
@@ -41,6 +37,9 @@ import {
   toStateWorkflowRequestId,
 } from '@shared-web/browser/state-workflow-support.ts';
 import type { StateGroupWorkflowValue } from '@shared-web/browser/rooms/room-group-state-workflows.ts';
+import {
+  refreshCompleteStateSnapshotCollections,
+} from '@shared-web/browser/state-read/collection-refresh.ts';
 
 export {
   createAndJoinStateGroup,
@@ -96,30 +95,13 @@ export type RefreshStateHeartbeatResult = Readonly<{
   expiresAtEpochMs: number;
 }>;
 
-type StateSnapshotsKey = 'clients' | 'groups';
-
 type StateHeartbeatKey = 'client' | `group:${string}`;
 
 export async function refreshStateSnapshots(
   scope: StateScope = defaultStateScope(),
   policies: CommandsOrchestratorPolicies<StateSnapshotsWorkflowValue> = {},
 ): Promise<StateSnapshots> {
-  const flow = CommandsOrchestrator.withPolicies<StateSnapshotsKey, StateSnapshotsWorkflowValue>(
-    policies,
-  );
-
-  const results = await flow
-    .parallel(
-      flow.commandStep('clients', (signal) => listStateClients(scope, { signal })),
-      flow.commandStep('groups', (signal) => listStateGroups(scope, { signal })),
-    )
-    .run();
-
-  const clients: unknown = requireStateWorkflowResult(results, 'clients');
-  const groups: unknown = requireStateWorkflowResult(results, 'groups');
-  validateAuthoritativeClientSnapshotList(clients, scope);
-  validateAuthoritativeGroupSnapshotList(groups, scope);
-  return { clients, groups };
+  return await refreshCompleteStateSnapshotCollections(scope, policies);
 }
 
 export async function appointStateGroupDirector(

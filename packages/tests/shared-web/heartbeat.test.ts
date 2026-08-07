@@ -129,6 +129,49 @@ describe('browser heartbeat', () => {
         ).toBeUndefined();
     });
 
+    it('preserves a newer group publication that races an authoritative heartbeat 404', async () => {
+        const observed = groupSnapshot(
+            'stale-room',
+            'ar-eye-hunter',
+            'default',
+            authSession.clientId,
+            authSession.sessionId,
+        );
+        const newer = {
+            ...observed,
+            stateRevision: observed.stateRevision + 1,
+            causalRevision: {
+                groupRevision: observed.causalRevision.groupRevision + 1,
+                presenceRevision: observed.causalRevision.presenceRevision,
+            },
+        };
+        groupStateSnapshotsRepository.setGroupStateSnapshots([observed]);
+        stubFetch(({ url, method }) => {
+            if (method === 'POST' && url.includes('/clients/principal-1/')) {
+                return jsonResponse(clientSnapshot('principal-1'));
+            }
+            if (method === 'POST' && url.includes('/groups/stale-room/')) {
+                groupStateSnapshotsRepository.setGroupStateSnapshots([newer]);
+                return textResponse('Group presence session not found: session-1', 404);
+            }
+            return textResponse('unexpected', 500);
+        });
+
+        const handle = await initHeartbeat(clientData, {
+            authSession,
+            scope: { applicationId: 'ar-eye-hunter', workspaceId: 'default' },
+        });
+        await vi.waitFor(() => {
+            expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(2);
+        });
+        handle.stop();
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+
+        expect(groupStateSnapshotsRepository.findGroupStateSnapshotByRef(observed.group)).toBe(
+            newer,
+        );
+    });
+
     it('stops and reports auth invalidation after a single client heartbeat 401', async () => {
         const onAuthInvalid = vi.fn();
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

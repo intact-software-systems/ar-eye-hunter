@@ -1,8 +1,14 @@
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
+import {
+  ApiHttpError,
+  readStateGroupSnapshot,
+} from '@shared-web/browser/api-integration.ts';
+import type { StateGroupSnapshotRead } from '@shared-web/browser/api-integration.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarRefreshOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 import {
+  toRallarCommandOptions,
   toRallarWorkflowPolicies,
   type RallarOperationOptions,
 } from '@shared-web/browser/rallar-operation-options.ts';
@@ -14,8 +20,12 @@ import type {
   RallarUnsubscribe,
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { toGroupRefFromScope } from '@shared/api/api-type-utils.ts';
+import { toGroupRefFromScope, toStateScope } from '@shared/api/api-type-utils.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import { Command } from '@shared/cache/Command.ts';
+import * as groupStateSnapshotsRepository
+  from '@shared/repository/group-state-snapshots-repository.ts';
+import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 
 import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.ts';
 import { enterRoom, joinRoom } from './join-room.ts';
@@ -87,7 +97,7 @@ export function createBrowserRallarRooms(
       messages: input.messages,
       realtime: input.realtime,
       leaveRoom: async (leaveInput) => await leaveRoom({ ...input, input: leaveInput }),
-      refreshRooms: refresh,
+      refreshRoom: async (roomRef, options) => await refreshRoom(input, roomRef, options),
     });
 
   return {
@@ -219,6 +229,48 @@ async function refreshRooms(
     );
     await input.acceptSnapshots(context, clients, groups, scope);
     return input.stateStore.state();
+  });
+}
+
+async function refreshRoom(
+  input: CreateBrowserRallarRoomsInput,
+  roomRef: GroupRef,
+  refreshInput: RallarRefreshOptions = {},
+): Promise<void> {
+  await input.runAuthAwareOperation(async () => {
+    const scope = toStateScope(roomRef);
+    const operationOptions = input.resolveOperationOptions({
+      ...refreshInput,
+      scope,
+    });
+    const context = await input.connect(operationOptions);
+    const observed = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(roomRef);
+    try {
+      const response = await new Command<StateGroupSnapshotRead>(
+        (signal) => readStateGroupSnapshot(roomRef.groupId, scope, {
+          signal,
+          authSession: input.requireSession(),
+        }),
+        toRallarCommandOptions(operationOptions),
+      ).run();
+      await input.acceptSnapshots(context, [], [response.snapshot], scope);
+    } catch (error) {
+      if (error instanceof ApiHttpError && error.status === 404 && observed) {
+        const removed = groupStateSnapshotsRepository.removeGroupStateSnapshotIfUnchanged(
+          roomRef,
+          observed,
+        );
+        emitBrowserStateReadDiagnostic({
+          name: 'rallar.browser.state-read',
+          feature: 'group',
+          operation: 'point',
+          result: removed ? 'removed' : 'preserved',
+          durationMs: 0,
+        });
+        await groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle();
+      }
+      throw error;
+    }
   });
 }
 
