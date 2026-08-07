@@ -2,8 +2,8 @@ import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJso
 import {
     AuthSessionRepository,
     type PersistedAgentSessionTicket,
-} from '../repositories/AuthSessionRepository.ts';
-import { AuthUserRepository } from '../repositories/AuthUserRepository.ts';
+} from '../auth/persistence/auth-session-repository.ts';
+import { AuthUserRepository } from '../auth/persistence/auth-user-repository.ts';
 import * as authMutationFacts from '../auth/mutation/read/capture-auth-mutation-facts.ts';
 import type {
     AuthMutationCommand,

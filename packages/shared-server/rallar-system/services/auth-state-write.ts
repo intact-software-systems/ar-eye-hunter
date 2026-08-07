@@ -2,8 +2,8 @@ import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { requireConditionalWrite } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import { AuthUserRepository } from '../repositories/AuthUserRepository.ts';
+import { AuthSessionRepository } from '../auth/persistence/auth-session-repository.ts';
+import { AuthUserRepository } from '../auth/persistence/auth-user-repository.ts';
 import type {
     AuthComputedSession,
     AuthMutationComputed,

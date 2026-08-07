@@ -6,8 +6,8 @@ import type {
 import {
   validateRuntimeStateExpiredAuthority,
 } from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
-import type { PersistedAuthSession } from '../../../repositories/AuthSessionRepository.ts';
-import { authSessionKey, authTokenDigestKey } from '../../../repositories/auth-storage-keys.ts';
+import type { PersistedAuthSession } from '../../persistence/auth-persistence-contracts.ts';
+import { authSessionKey, authTokenDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type {
   AuthMutationCommand,
   AuthMutationRead,

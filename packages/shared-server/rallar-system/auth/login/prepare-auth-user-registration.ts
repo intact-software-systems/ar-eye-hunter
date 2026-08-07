@@ -1,6 +1,6 @@
 import type { RegisterRequest } from '@shared/api/api-config.ts';
 
-import { normalizeUsername, type AuthUser } from '../../repositories/AuthUserRepository.ts';
+import { normalizeUsername, type AuthUser } from '../persistence/auth-user-repository.ts';
 import type { LoginClientData } from './authenticate-auth-user.ts';
 
 const PASSWORD_ALGORITHM = 'pbkdf2-sha256' as const;

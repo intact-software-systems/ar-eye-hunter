@@ -14,10 +14,10 @@ import type {
   PersistedAgentSessionTicket,
   PersistedAuthSession,
   PersistedWebSocketTicket,
-} from '../../repositories/auth-persistence-contracts.ts';
-import type { IssuedAuthSession } from '../../repositories/auth-session-types.ts';
+} from '../persistence/auth-persistence-contracts.ts';
+import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
 
-type AuthUser = import('../../repositories/AuthUserRepository.ts').AuthUser;
+type AuthUser = import('../persistence/auth-user-repository.ts').AuthUser;
 
 type CommandBase = Readonly<{
   version: 1;

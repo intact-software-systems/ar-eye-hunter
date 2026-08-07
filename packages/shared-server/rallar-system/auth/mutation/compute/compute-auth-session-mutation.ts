@@ -2,7 +2,7 @@ import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeSt
 import {
   decodePersistedAuthSession,
   type PersistedAuthSession,
-} from '../../../repositories/auth-persistence-contracts.ts';
+} from '../../persistence/auth-persistence-contracts.ts';
 import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
 import type {

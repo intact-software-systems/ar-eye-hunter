@@ -2,7 +2,7 @@ import {
   decodePersistedAgentSessionTicket,
   decodePersistedAuthSession,
   decodePersistedWebSocketTicket,
-} from '../../repositories/auth-persistence-contracts.ts';
+} from '../persistence/auth-persistence-contracts.ts';
 import { requireIssueSessionLifecycle } from '../sessions/require-issue-session-lifecycle.ts';
 
 import type { AuthMutationCommand } from './auth-mutation-contracts.ts';

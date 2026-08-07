@@ -22,7 +22,7 @@ import {
 } from '../auth/mutation/read/capture-auth-mutation-facts.ts';
 import type { AuthCredentialIssuer } from '../auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '../auth/credentials/hash-auth-secret.ts';
-import type { IssuedAuthSession } from '../repositories/AuthSessionRepository.ts';
+import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import { toAppQueueKey } from './app-inbox-queue-key.ts';
 import type {
     AgentSessionTicketResponse,
@@ -32,7 +32,7 @@ import type {
     RegisterResponse,
     WebSocketTicketResponse,
 } from '@shared/api/api-config.ts';
-import type { AuthUser } from '../repositories/AuthUserRepository.ts';
+import type { AuthUser } from '../auth/persistence/auth-user-repository.ts';
 import {
     toAuthAppInboxType,
     toAuthCommandContextId,

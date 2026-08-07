@@ -32,20 +32,20 @@ const expectedOwnerLinks = [
   ['./mutation/validate/validate-auth-user-mutation.ts', 'validateAuthUserMutation'],
   ['./sessions/auth-session-proof-secret.ts', 'authSessionProofSecret'],
   ['./sessions/require-issue-session-lifecycle.ts', 'requireIssueSessionLifecycle'],
+  ['./persistence/auth-session-repository.ts', 'AuthSessionRepository'],
+  ['./persistence/auth-user-repository.ts', 'AuthUserRepository'],
+  ['./persistence/auth-session-persistence.ts', 'AuthSessionPersistence'],
+  ['./persistence/auth-ticket-persistence.ts', 'AuthTicketPersistence'],
+  ['./persistence/auth-persistence-contracts.ts', 'PersistedAuthSession'],
+  ['./persistence/auth-session-types.ts', 'IssuedAuthSession'],
+  [
+    './persistence/auth-legacy-compatibility.ts',
+    'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
+  ],
   ['../services/AppAuthInboxService.ts', 'AppAuthInboxService'],
   ['../services/auth-app-inbox-routing.ts', 'toAuthAppInboxType'],
   ['../services/auth-state-read.ts', 'readAuthMutation'],
   ['../services/auth-state-write.ts', 'writeAuthMutation'],
-  ['../repositories/AuthSessionRepository.ts', 'AuthSessionRepository'],
-  ['../repositories/AuthUserRepository.ts', 'AuthUserRepository'],
-  ['../repositories/auth-session-persistence.ts', 'AuthSessionPersistence'],
-  ['../repositories/auth-ticket-persistence.ts', 'AuthTicketPersistence'],
-  ['../repositories/auth-persistence-contracts.ts', 'PersistedAuthSession'],
-  ['../repositories/auth-session-types.ts', 'IssuedAuthSession'],
-  [
-    '../repositories/auth-legacy-compatibility.ts',
-    'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
-  ],
 ] as const;
 
 describe('auth server navigation map integrity', () => {
@@ -86,13 +86,13 @@ describe('auth server navigation map integrity', () => {
     }
   });
 
-  it('distinguishes canonical PR A owners from still-current PR B predecessor owners', () => {
+  it('distinguishes canonical persistence owners from the remaining shell predecessors', () => {
     const navigation = readFileSync(absolute(navigationPath), 'utf8');
 
-    expect(navigation).toContain('Canonical PR A owners');
+    expect(navigation).toContain('Canonical auth owners');
     expect(navigation).toContain('Current predecessor owners reserved for PR B');
     expect(navigation).not.toContain('./inbox/app-auth-inbox-service.ts');
-    expect(navigation).not.toContain('./persistence/auth-session-repository.ts');
+    expect(navigation).toContain('./persistence/auth-session-repository.ts');
   });
 });
 

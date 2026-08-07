@@ -8,19 +8,6 @@ const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/auth';
 const compatibilityModules = [
   {
-    compatibilityPath: 'services/auth-state-codecs.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'mutation/decode-auth-mutation-command.ts',
-        names: ['decodeAuthMutationCommand'],
-      },
-      {
-        canonicalPath: 'mutation/decode-auth-mutation-result.ts',
-        names: ['decodeAuthMutationResult'],
-      },
-    ],
-  },
-  {
     compatibilityPath: 'services/auth-state-mutations.ts',
     canonicalExports: [
       {
@@ -67,19 +54,68 @@ const compatibilityModules = [
       },
     ],
   },
+  {
+    compatibilityPath: 'repositories/AuthSessionRepository.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'persistence/auth-session-repository.ts',
+        names: ['AuthSessionRepository'],
+      },
+      {
+        canonicalPath: 'persistence/auth-persistence-contracts.ts',
+        names: [
+          'decodePersistedAgentSessionTicket',
+          'decodePersistedAuthSession',
+          'decodePersistedWebSocketTicket',
+        ],
+      },
+      {
+        canonicalPath: 'persistence/auth-legacy-compatibility.ts',
+        names: [
+          'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
+          'AUTH_LEGACY_PLAINTEXT_SCAN_LIMIT',
+        ],
+      },
+      {
+        canonicalPath: 'credentials/hash-auth-secret.ts',
+        names: ['hashAuthSecret'],
+      },
+    ],
+  },
+  {
+    compatibilityPath: 'repositories/AuthUserRepository.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'persistence/auth-user-repository.ts',
+        names: ['AuthUserRepository', 'normalizeUsername'],
+      },
+    ],
+  },
 ] as const;
 const prBPredecessorOwners = [
   'services/AppAuthInboxService.ts',
   'services/auth-app-inbox-routing.ts',
   'services/auth-state-read.ts',
   'services/auth-state-write.ts',
-  'repositories/AuthSessionRepository.ts',
-  'repositories/AuthUserRepository.ts',
-  'repositories/auth-session-persistence.ts',
-  'repositories/auth-ticket-persistence.ts',
-  'repositories/auth-persistence-contracts.ts',
-  'repositories/auth-session-types.ts',
+] as const;
+const canonicalPersistenceOwners = [
+  'auth-legacy-compatibility.ts',
+  'auth-persistence-contracts.ts',
+  'auth-session-persistence.ts',
+  'auth-session-repository.ts',
+  'auth-session-types.ts',
+  'auth-storage-keys.ts',
+  'auth-ticket-persistence.ts',
+  'auth-user-repository.ts',
+] as const;
+const removedPrivatePredecessors = [
   'repositories/auth-legacy-compatibility.ts',
+  'repositories/auth-persistence-contracts.ts',
+  'repositories/auth-session-persistence.ts',
+  'repositories/auth-session-types.ts',
+  'repositories/auth-storage-keys.ts',
+  'repositories/auth-ticket-persistence.ts',
+  'services/auth-state-codecs.ts',
 ] as const;
 
 // Temporary structural supplement owned by the auth child. Remove it after PR C's
@@ -122,6 +158,19 @@ describe('auth server ownership boundaries', () => {
       prBPredecessorOwners.filter(
         (predecessorPath) =>
           !existsSync(absolute(`packages/shared-server/rallar-system/${predecessorPath}`)),
+      ),
+    ).toEqual([]);
+  });
+
+  it('keeps persistence behavior at canonical auth owners only', () => {
+    expect(
+      canonicalPersistenceOwners.filter(
+        (owner) => !existsSync(absolute(`${canonicalRoot}/persistence/${owner}`)),
+      ),
+    ).toEqual([]);
+    expect(
+      removedPrivatePredecessors.filter((owner) =>
+        existsSync(absolute(`packages/shared-server/rallar-system/${owner}`)),
       ),
     ).toEqual([]);
   });

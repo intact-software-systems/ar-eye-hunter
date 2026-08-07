@@ -15,7 +15,49 @@ import {
 } from './auth-server-pr-a-lineage-inventory.ts';
 
 const repoRoot = process.cwd();
-const manifestPath = 'plans/repo-style-lineages/rallar-auth-server-pr-a.json';
+const retiredManifestPath = 'plans/repo-style-lineages/rallar-auth-server-pr-a.json';
+const persistenceBase = 'a90042398448776b0972aaaaa0f5cca762163fde';
+const persistenceManifestPath =
+  'plans/repo-style-lineages/rallar-auth-server-pr-b-persistence.json';
+const persistenceSourceRoot = 'packages/shared-server/rallar-system/repositories';
+const persistenceTargetRoot = 'packages/shared-server/rallar-system/auth/persistence';
+const persistenceLineages = [
+  persistenceLineage(
+    'AuthSessionRepository.ts',
+    '6721085e4a0ffac584da9e159f39ce3e70b80be4',
+    'auth-session-repository.ts',
+  ),
+  persistenceLineage(
+    'AuthUserRepository.ts',
+    '960ce5a419477719ca8532c63b64ba599a8ae582',
+    'auth-user-repository.ts',
+  ),
+  persistenceLineage(
+    'auth-legacy-compatibility.ts',
+    '7ef04186cdfeda6aec8c9420936db78428e6bfef',
+    'auth-legacy-compatibility.ts',
+  ),
+  persistenceLineage(
+    'auth-persistence-contracts.ts',
+    '26a16af1ee09a0f9d101aec6e0fac1b18cb3f3ab',
+    'auth-persistence-contracts.ts',
+  ),
+  persistenceLineage(
+    'auth-session-persistence.ts',
+    '12aa8dbbe55114411f9bf71512b17e177e2f3258',
+    'auth-session-persistence.ts',
+  ),
+  persistenceLineage(
+    'auth-session-types.ts',
+    'd484d00732deaa254abe350ba196ca84a13b1d8a',
+    'auth-session-types.ts',
+  ),
+  persistenceLineage(
+    'auth-ticket-persistence.ts',
+    '32db40789e181712b1665c84967ce3123b82219a',
+    'auth-ticket-persistence.ts',
+  ),
+] as const;
 const codecSource = 'packages/shared-server/rallar-system/services/auth-state-codecs.ts';
 const credentialSource = 'packages/shared-server/rallar-system/services/auth-credential-issuer.ts';
 const commandTarget =
@@ -24,18 +66,6 @@ const resultTarget =
   'packages/shared-server/rallar-system/auth/mutation/decode-auth-mutation-result.ts';
 const credentialTarget =
   'packages/shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-const expectedManifest = {
-  version: 1,
-  lineages: [
-    structuralLineage(codecSource, '1baa7032de313d639228de272aee6f5a0abf9d32', [
-      commandTarget,
-      resultTarget,
-    ]),
-    structuralLineage(credentialSource, '489233ca4fa42aaaa3cdf4109fe034281f9ee5d4', [
-      credentialTarget,
-    ]),
-  ],
-};
 const allowedDebtByTarget = new Map([
   [commandTarget, ['boundary.unknown']],
   [resultTarget, ['boundary.unknown']],
@@ -78,15 +108,38 @@ describe('auth server PR A lineage provenance', () => {
     validateLineages(authPrALineages);
   });
 
-  it('limits structural capacity to the exact reviewed boundary targets', () => {
-    const manifest = JSON.parse(read(manifestPath));
-
-    expect(manifest).toEqual(expectedManifest);
+  it('retires the temporary structural-capacity manifest after its consumers leave', () => {
+    expect(existsSync(absolute(retiredManifestPath))).toBe(false);
     expect(readCurrentStructuralLineages()).toEqual(
       new Map([
-        [commandTarget, codecSource],
-        [resultTarget, codecSource],
-        [credentialTarget, credentialSource],
+        [
+          `${persistenceTargetRoot}/auth-legacy-compatibility.ts`,
+          `${persistenceSourceRoot}/auth-legacy-compatibility.ts`,
+        ],
+        [
+          `${persistenceTargetRoot}/auth-persistence-contracts.ts`,
+          `${persistenceSourceRoot}/auth-persistence-contracts.ts`,
+        ],
+        [
+          `${persistenceTargetRoot}/auth-session-persistence.ts`,
+          `${persistenceSourceRoot}/auth-session-persistence.ts`,
+        ],
+        [
+          `${persistenceTargetRoot}/auth-session-repository.ts`,
+          `${persistenceSourceRoot}/AuthSessionRepository.ts`,
+        ],
+        [
+          `${persistenceTargetRoot}/auth-session-types.ts`,
+          `${persistenceSourceRoot}/auth-session-types.ts`,
+        ],
+        [
+          `${persistenceTargetRoot}/auth-ticket-persistence.ts`,
+          `${persistenceSourceRoot}/auth-ticket-persistence.ts`,
+        ],
+        [
+          `${persistenceTargetRoot}/auth-user-repository.ts`,
+          `${persistenceSourceRoot}/AuthUserRepository.ts`,
+        ],
       ]),
     );
     expect(
@@ -100,6 +153,33 @@ describe('auth server PR A lineage provenance', () => {
       [resultTarget, 'boundary.unknown'],
       [credentialTarget, 'boundary.unknown'],
     ]);
+  });
+
+  it('binds PR B persistence moves to exact source blobs without new boundary capacity', () => {
+    const manifest = JSON.parse(read(persistenceManifestPath));
+
+    expect(manifest).toEqual({ version: 1, lineages: persistenceLineages });
+    validatePersistenceLineages(persistenceLineages);
+    for (const lineage of persistenceLineages) {
+      const sourceMagnitude = findUnknownUsages(
+        readBaseAt(persistenceBase, lineage.source.path).split('\n'),
+      ).length;
+      const targetMagnitude = findUnknownUsages(read(lineage.targets[0]).split('\n')).length;
+      expect(targetMagnitude, lineage.targets[0]).toBeLessThanOrEqual(sourceMagnitude);
+    }
+  });
+
+  it('fails closed for PR B persistence base, blob, and target drift', () => {
+    const wrongBase = structuredClone(persistenceLineages);
+    wrongBase[0].mergeBase = '0'.repeat(40);
+    const wrongBlob = structuredClone(persistenceLineages);
+    wrongBlob[0].source.blob = '0'.repeat(40);
+    const missingTarget = structuredClone(persistenceLineages);
+    missingTarget[0].targets = [`${persistenceTargetRoot}/missing.ts`];
+
+    expect(() => validatePersistenceLineages(wrongBase)).toThrow('persistence base');
+    expect(() => validatePersistenceLineages(wrongBlob)).toThrow('persistence source blob');
+    expect(() => validatePersistenceLineages(missingTarget)).toThrow('persistence target');
   });
 
   it('keeps inherited magnitude source-derived and excludes new boundary owners', () => {
@@ -184,6 +264,26 @@ function validateLineages(lineages: readonly AuthPrALineage[]): void {
       if (target.inheritedStyleFindings.join() !== allowedDebt.join()) {
         throw new Error('historical style debt');
       }
+    }
+  }
+}
+
+interface PersistenceLineage {
+  mergeBase: string;
+  source: { path: string; blob: string };
+  targets: string[];
+}
+
+// Temporary structural supplement owned by the auth child. PR C removes it after
+// the PR B resulting-main workflow and later ledger preserve equivalent evidence.
+function validatePersistenceLineages(lineages: readonly PersistenceLineage[]): void {
+  for (const lineage of lineages) {
+    if (lineage.mergeBase !== persistenceBase) throw new Error('persistence base');
+    if (git(['rev-parse', `${persistenceBase}:${lineage.source.path}`]) !== lineage.source.blob) {
+      throw new Error('persistence source blob');
+    }
+    if (lineage.targets.length !== 1 || !existsSync(absolute(lineage.targets[0]))) {
+      throw new Error('persistence target');
     }
   }
 }
@@ -274,23 +374,19 @@ function declarationNames(declaration: { type: string; [key: string]: unknown })
 function readCurrentStructuralLineages(): ReadonlyMap<string, string> {
   return readStructuralLineageMap({
     repoRoot,
-    mergeBase: approvedBase,
+    mergeBase: persistenceBase,
     targetReference: 'WORKTREE',
     targetCommit: git(['rev-parse', 'HEAD']),
     renameByTargetPath: new Map(),
   });
 }
 
-function structuralLineage(sourcePath: string, blob: string, targets: readonly string[]) {
-  return {
-    mergeBase: approvedBase,
-    source: { path: sourcePath, blob },
-    targets,
-  };
+function readBase(filePath: string): string {
+  return readBaseAt(approvedBase, filePath);
 }
 
-function readBase(filePath: string): string {
-  return git(['show', `${approvedBase}:${filePath}`], false);
+function readBaseAt(base: string, filePath: string): string {
+  return git(['show', `${base}:${filePath}`], false);
 }
 
 function read(filePath: string): string {
@@ -304,4 +400,12 @@ function git(args: readonly string[], trim = true): string {
 
 function absolute(filePath: string): string {
   return path.join(repoRoot, filePath);
+}
+
+function persistenceLineage(sourceName: string, blob: string, targetName: string) {
+  return {
+    mergeBase: persistenceBase,
+    source: { path: `${persistenceSourceRoot}/${sourceName}`, blob },
+    targets: [`${persistenceTargetRoot}/${targetName}`],
+  };
 }

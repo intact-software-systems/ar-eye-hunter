@@ -1,12 +1,13 @@
 # Auth server navigation
 
-This directory is the canonical PR A owner for auth mutation contracts, codecs,
+This directory is the canonical owner for auth mutation contracts, codecs,
 credential derivation, login and registration decisions, mutation facts, pure
-compute, pure validation, public-result reconstruction, and session proof rules.
+compute, pure validation, public-result reconstruction, session proof rules,
+and persistence.
 
-PR A deliberately does **not** move the AppInbox shell, stable reads,
-transaction writes, or persistence. Those remain at the predecessor paths named
-below until PR B. This map describes the code that runs now; it does not present
+The first PR B cohort moves persistence only. The AppInbox shell, stable reads,
+and transaction writes remain at the predecessor paths named below until the
+next cohort. This map describes the code that runs now; it does not present
 future target paths as current owners.
 
 ## Read these files first
@@ -33,8 +34,8 @@ future target paths as current owners.
    issuer, queue repositories, and database before constructing the auth
    service.
 2. [`createAuthMutationService`](./auth-mutation-service.ts) constructs the
-   still-current [`AuthUserRepository`](../repositories/AuthUserRepository.ts)
-   and [`AuthSessionRepository`](../repositories/AuthSessionRepository.ts), then
+   canonical [`AuthUserRepository`](./persistence/auth-user-repository.ts)
+   and [`AuthSessionRepository`](./persistence/auth-session-repository.ts), then
    exposes direct read, compute, validate, and write operations.
 3. API-v1 constructs
    [`AppAuthInboxService`](../services/AppAuthInboxService.ts) with that complete
@@ -115,9 +116,9 @@ continues through the authenticated AppInbox mutation timeline above.
   and creates the exact final WS intent through
   [`toAuthLogoutOutbox`](./mutation/compute/to-auth-logout-outbox.ts).
 - Canonical and legacy session reads, observational expiry, conditional delete,
-  and public reconstruction remain in
-  [`AuthSessionRepository`](../repositories/AuthSessionRepository.ts) and its
-  current [`AuthSessionPersistence`](../repositories/auth-session-persistence.ts)
+  and public reconstruction are owned by
+  [`AuthSessionRepository`](./persistence/auth-session-repository.ts) and its
+  [`AuthSessionPersistence`](./persistence/auth-session-persistence.ts)
   owner.
 - Already-absent or superseded logout state retains the existing typed no-op;
   conditional-write conflict returns to the AppInbox retry owner. Failed
@@ -137,11 +138,11 @@ continues through the authenticated AppInbox mutation timeline above.
   [`computeAuthUserRegistration`](./mutation/compute/compute-auth-user-registration.ts),
   and session commands retain their own owner above.
 - One-use ticket reads, legacy cutoff and bounded scan, conditional insert or
-  consume, and session reconstruction remain in the current
-  [`AuthTicketPersistence`](../repositories/auth-ticket-persistence.ts),
-  [`auth-legacy-compatibility.ts`](../repositories/auth-legacy-compatibility.ts),
-  [`auth-persistence-contracts.ts`](../repositories/auth-persistence-contracts.ts),
-  and [`auth-session-types.ts`](../repositories/auth-session-types.ts) owners.
+  consume, and session reconstruction are owned by
+  [`AuthTicketPersistence`](./persistence/auth-ticket-persistence.ts),
+  [`auth-legacy-compatibility.ts`](./persistence/auth-legacy-compatibility.ts),
+  [`auth-persistence-contracts.ts`](./persistence/auth-persistence-contracts.ts),
+  and [`auth-session-types.ts`](./persistence/auth-session-types.ts).
 
 Missing, expired, already-consumed, digest-mismatched, or corrupt tickets retain
 their existing no-op or failure classification. Successful issue and consume
@@ -159,7 +160,7 @@ operations exit through the same AppInbox transaction and durable-result path.
   This feature does not absorb group, client-state, topology, CRDT, or admin
   authorization policy.
 
-## Canonical PR A owners
+## Canonical auth owners
 
 The remaining canonical owners, in addition to the files linked in the traces,
 are:
@@ -171,26 +172,19 @@ are:
 - shared exact-kind, ticket, and JSON rules in
   [`requireMatchingAuthKind`](./mutation/validate/auth-mutation-validation.ts)
 
-These are implementation owners. The supported old service paths are direct
-one-hop compatibility exports; canonical PR A code imports the files above.
+These are implementation owners. Supported old service and repository paths are
+direct one-hop compatibility exports; canonical auth code imports the files above.
 
 ## Current predecessor owners reserved for PR B
 
-The following files still own executable runtime or persistence behavior in PR
-A and must not be treated as compatibility-only yet:
+The following files still own executable shell, stable-read, or transaction-write
+behavior and must not be treated as compatibility-only yet:
 
 - [`AppAuthInboxService`](../services/AppAuthInboxService.ts)
 - [`toAuthAppInboxType`](../services/auth-app-inbox-routing.ts)
 - [`readAuthMutation`](../services/auth-state-read.ts)
 - [`writeAuthMutation`](../services/auth-state-write.ts)
-- [`AuthSessionRepository`](../repositories/AuthSessionRepository.ts)
-- [`AuthUserRepository`](../repositories/AuthUserRepository.ts)
-- [`AuthSessionPersistence`](../repositories/auth-session-persistence.ts)
-- [`AuthTicketPersistence`](../repositories/auth-ticket-persistence.ts)
-- [`PersistedAuthSession`](../repositories/auth-persistence-contracts.ts)
-- [`IssuedAuthSession`](../repositories/auth-session-types.ts)
-- [`AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS`](../repositories/auth-legacy-compatibility.ts)
 
-PR B may move these only under its separately reviewed authoritative-shell and
-persistence scope. Until then, tests and consumers must use these current owners
-rather than dead future paths.
+The old repository class paths remain supported direct one-hop compatibility
+exports. The remaining shell owners move only under their separately reviewed
+authoritative-shell cohort.

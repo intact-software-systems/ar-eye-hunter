@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "a90042398448776b0972aaaaa0f5cca762163fde",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/AuthSessionRepository.ts",
+        "blob": "6721085e4a0ffac584da9e159f39ce3e70b80be4"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/auth/persistence/auth-session-repository.ts"
+      ]
+    },
+    {
+      "mergeBase": "a90042398448776b0972aaaaa0f5cca762163fde",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/AuthUserRepository.ts",
+        "blob": "960ce5a419477719ca8532c63b64ba599a8ae582"
+      },
+      "targets": ["packages/shared-server/rallar-system/auth/persistence/auth-user-repository.ts"]
+    },
+    {
+      "mergeBase": "a90042398448776b0972aaaaa0f5cca762163fde",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/auth-legacy-compatibility.ts",
+        "blob": "7ef04186cdfeda6aec8c9420936db78428e6bfef"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/auth/persistence/auth-legacy-compatibility.ts"
+      ]
+    },
+    {
+      "mergeBase": "a90042398448776b0972aaaaa0f5cca762163fde",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/auth-persistence-contracts.ts",
+        "blob": "26a16af1ee09a0f9d101aec6e0fac1b18cb3f3ab"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts"
+      ]
+    },
+    {
+      "mergeBase": "a90042398448776b0972aaaaa0f5cca762163fde",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/auth-session-persistence.ts",
+        "blob": "12aa8dbbe55114411f9bf71512b17e177e2f3258"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/auth/persistence/auth-session-persistence.ts"
+      ]
+    },
+    {
+      "mergeBase": "a90042398448776b0972aaaaa0f5cca762163fde",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/auth-session-types.ts",
+        "blob": "d484d00732deaa254abe350ba196ca84a13b1d8a"
+      },
+      "targets": ["packages/shared-server/rallar-system/auth/persistence/auth-session-types.ts"]
+    },
+    {
+      "mergeBase": "a90042398448776b0972aaaaa0f5cca762163fde",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/auth-ticket-persistence.ts",
+        "blob": "32db40789e181712b1665c84967ce3123b82219a"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/auth/persistence/auth-ticket-persistence.ts"
+      ]
+    }
+  ]
+}

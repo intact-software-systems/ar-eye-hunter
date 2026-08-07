@@ -1,4 +1,4 @@
-import type { AuthUser } from '../../../repositories/AuthUserRepository.ts';
+import type { AuthUser } from '../../persistence/auth-user-repository.ts';
 import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
 import type {
   AuthMutationComputed,

@@ -4,7 +4,7 @@ import {
 } from '@shared/api/group-topology-config-canonical.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import type { IssuedAuthSession } from '../../repositories/auth-session-types.ts';
+import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import {
   GroupTopologyConfigIdempotencyConflictError,

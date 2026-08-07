@@ -1,7 +1,7 @@
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import type * as RuntimeState from '../../runtime-state/RuntimeStateRepository.ts';
-import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import { AuthUserRepository } from '../repositories/AuthUserRepository.ts';
+import { AuthSessionRepository } from './persistence/auth-session-repository.ts';
+import { AuthUserRepository } from './persistence/auth-user-repository.ts';
 import type {
   AuthMutationCommand,
   AuthMutationComputed,
