@@ -6,18 +6,20 @@
 
 **Started:** 2026-08-06
 
-**Status:** Phase 0 `verified`; Phase 1 `in-progress` for Ontology Task 1 and
-the non-conflicting RTC measurement reservation. Human auth PR A is externally
-active under its own owner. Phase 2 remains `not-started`.
+**Status:** Phase 0 `verified`; Phase 1 remains `in-progress`, with human auth
+PR A externally `verified` and the ontology/RTC tracks held at a structural
+plan-decision point after successful semantic prototypes. Phase 2 remains
+`not-started`.
 
 **Human owner:** Product/technical owner
 
 **Current roadmap coordinator:** The active primary agent for this roadmap task
 
 **Last reconciliation:** 2026-08-07 on
-`codex/phase-1-architecture-rtc-roadmap`, based on `origin/main`
-`d68d5112797b2cf8332dfe0243cebbe545da89c9` (tree
-`f966c1d8254cd1614e88db53c615c32bcd8eba84`).
+`codex/phase-1-architecture-rtc-roadmap`, after reconciling current
+`origin/main` `a90042398448776b0972aaaaa0f5cca762163fde` (tree
+`9a3084c2c78f90f004054924b99b97be67fe72bd`) while retaining Phase 0 closure
+anchor `d68d5112797b2cf8332dfe0243cebbe545da89c9` as historical evidence.
 
 **Stable design:**
 [Rallar architecture quality and RTC program design](../docs/superpowers/specs/2026-08-06-rallar-architecture-quality-and-rtc-program-design.md)
@@ -94,16 +96,17 @@ program's `ledger-published` state.
 
 ## 4. Reconciled Starting Point
 
-| Program                    | State                                                                | Current evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Next required action                                                                                                                                               |
-| -------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Human traceability         | client state `ledger-published`; auth PR A externally `in-progress`  | The exact auth-plan blob `123990bceac9732660e1113101addd5b194d8347` remains approved by [PR #76's closure record](https://github.com/intact-software-systems/ar-eye-hunter/pull/76#issuecomment-5205571315). The human-program owner opened draft [PR #78](https://github.com/intact-software-systems/ar-eye-hunter/pull/78) at `118a0773159e5970ef69c6e1792e46c1faf9a5f6` for Tasks 1-3 / PR A. Its [Branch Release Gate 31155900583](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31155900583) failed at `Check changed repository style`; later gate steps were skipped. The human master/execution/auth-plan status on `main` remains stale and is read-only to this coordinator. | Human-program owner reconciles its plans and fixes or reclassifies PR #78. PR B/C remain inactive. RTC-B06 stays serialized until the auth/service tree is stable. |
-| Ontology                   | plan `verified`; Task 1 `in-progress`                                | Exact plan blob `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37` is unchanged on current `main`. No open PR overlaps the six approved Task 1 paths.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `/root/ontology_task1_owner` executes only Task 1 on `codex/rallar-ontology-foundation`.                                                                           |
-| RTC performance            | plan accepted; instrumentation `in-progress`; baselines not captured | Exact plan blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d` is unchanged on current `main`. Draft [PR #40](https://github.com/intact-software-systems/ar-eye-hunter/pull/40) overlaps only `scripts/perf/README.md` within the initial reservation. RTC-B06 conflicts operationally with active auth PR #78.                                                                                                                                                                                                                                                                                                                                                                                                    | `/root/rtc_baseline_owner` may work only on non-conflicting reserved instrumentation. Hold `scripts/perf/README.md` and RTC-B06; keep RTC-B07 held.                |
-| Cross-program coordination | Phase 0 `verified`; Phase 1 `in-progress`                            | [PR #77](https://github.com/intact-software-systems/ar-eye-hunter/pull/77) merged as current `main` `d68d5112797b2cf8332dfe0243cebbe545da89c9`, tree `f966c1d8254cd1614e88db53c615c32bcd8eba84`. [Run 31122914721 attempt 4](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31122914721/attempts/4) succeeded; the [durable closure record](https://github.com/intact-software-systems/ar-eye-hunter/pull/77#issuecomment-5213602750) records exact jobs and artifacts.                                                                                                                                                                                                                 | Publish this coordinator-only activation record, then verify track handoffs without starting Phase 2.                                                              |
+| Program                    | State                                                                   | Current evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Next required action                                                                                                                                                           |
+| -------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Human traceability         | client state `ledger-published`; auth PR A externally `verified`        | Approved auth-plan anchor `123990bceac9732660e1113101addd5b194d8347` remains supported by [PR #76's closure record](https://github.com/intact-software-systems/ar-eye-hunter/pull/76#issuecomment-5205571315). [PR #78](https://github.com/intact-software-systems/ar-eye-hunter/pull/78) published feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; [Branch Release Gate 31159741601](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31159741601), attempt 1, job `92807133690`, succeeded. It merged as current `main` `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; [Run Hetzner Supported Distributed Manifests 31163606362](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31163606362), attempt 1, succeeded. The [read-only closure handoff](https://github.com/intact-software-systems/ar-eye-hunter/pull/78#issuecomment-5215094789) records all exact jobs. The merged auth-plan blob is now `42076f35734c8dade59947d3740c21a1e811c73b`, but its own Task 3/progress checkboxes still predict pending publication. | Human-program owner reconciles its authoritative plans with the verified PR A envelope. PR B/C remain inactive. The auth-tree prerequisite for later RTC-B06 is satisfied.     |
+| Ontology                   | plan `verified`; Task 1 semantic prototype approved; decision hold      | Exact approved plan blob `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37` remains unchanged on current `main`. The exact six-path prototype on base `d68d511...` passed 47/47 focused tests, shared type-check, formatting, and independent semantic review. It has no commit or PR. Publication is blocked by exact changed-style findings for a 954-line registry, an 842-line test, the unapproved narrow `mod.ts` boundary, and the domain-contract filename/export mismatch. Current-main drift also requires rebase and renewed evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Human approves or rejects the exact 17-path responsibility/checker-boundary plan amendment below. Only then may the track publish a new exact plan blob, rebase, and continue. |
+| RTC performance            | plan accepted; B01-B05 semantic prototype approved; decision hold       | Exact accepted plan blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d` remains unchanged on current `main`. The 21-path B01-B05 prototype on base `d68d511...` reached independent semantic approval, then passed its final 23/23 contract tests, exact 19-file Deno check, browser syntax, formatting, and diff check after the last local cleanup. An earlier 33-file/475-test correctness cohort passed but was invalidated as completion evidence by those later edits and current-main drift. No baseline was captured and no commit/PR exists. Publication remains blocked by the approved broad Deno glob's 16 errors in three unreserved historical probes, a 1,425-checker-line envelope, an 879-line contract test, a 440-checker-line diagnostics harness, and new root density/prefix findings. [PR #40](https://github.com/intact-software-systems/ar-eye-hunter/pull/40) still owns only `scripts/perf/README.md` within the initial reservation.                                                                                                                                                                                                                  | Human approves or rejects the exact RTC plan/reservation amendment below. Keep README, B06 implementation, RTC-B07, capture, production changes, and optimization held.        |
+| Cross-program coordination | Phase 0 `verified`; Phase 1 `in-progress` with two human decision holds | Phase 0 remains anchored by [PR #77](https://github.com/intact-software-systems/ar-eye-hunter/pull/77), `d68d511...`, and [run 31122914721 attempt 4](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31122914721/attempts/4). Draft [PR #79](https://github.com/intact-software-systems/ar-eye-hunter/pull/79) published the Phase 1 activation at `ce621a8128bfad5a8a4dbec5d895ab5bf87076f9`, tree `ec15fe11953aaf987c46b9ea5f9c6ecf7bfebb8d`; [Branch Release Gate 31158965238](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31158965238), job `92804701468`, succeeded, and the [activation record](https://github.com/intact-software-systems/ar-eye-hunter/pull/79#issuecomment-5214334597) is durable. Current `main` then advanced through verified auth PR A; the coordinator branch has reconciled that change without redefining the Phase 0 anchor.                                                                                                                                                                                                                                                                | Publish this verified blocker/decision reconciliation on PR #79, obtain the two exact plan-amendment decisions, and do not start Phase 2.                                      |
 
-The roadmap records the externally active auth work but does not edit or advance
-its plans. Ontology and RTC authority begins only with the named reservations
-below.
+The roadmap records externally verified auth publication but does not edit or
+advance its plans. Ontology and RTC authority remains limited to the named
+reservations below; proposed amended reservations are explicitly inactive until
+their new plan blobs are published and approved.
 
 ## 5. Work Routing And Reservations
 
@@ -130,15 +133,99 @@ One agent at a time owns:
 The coordinator records a temporary reservation here before parallel work
 starts:
 
-| Reservation            | Owner                                                                 | State                             | Release condition / hold                                                                                                                                                                                                                           |
-| ---------------------- | --------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Coordination documents | Roadmap coordinator on `codex/phase-1-architecture-rtc-roadmap`       | active                            | Release after the Phase 1 exit envelope and external evidence are recorded.                                                                                                                                                                        |
-| Ontology Task 1 paths  | `/root/ontology_task1_owner` on `codex/rallar-ontology-foundation`    | active                            | Only the six Task 1 paths against exact plan blob `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37`; release after exact branch/default publication evidence.                                                                                             |
-| RTC Phase 1 baseline   | `/root/rtc_baseline_owner` on `codex/rallar-rtc-performance-baseline` | active with holds                 | Only the Section 10 measurement reservation against exact plan blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d`. `scripts/perf/README.md` stays held for PR #40; RTC-B06 stays held while auth PR #78/service work is active; RTC-B07 remains held. |
-| Human auth PR A        | Human-program owner through PR #78                                    | externally active, read-only here | The owner must reconcile stale human-plan status and the failed exact-head style gate. PR B/C remain inactive.                                                                                                                                     |
+| Reservation            | Owner                                                                 | State                               | Release condition / hold                                                                                                                                                                                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coordination documents | Roadmap coordinator on `codex/phase-1-architecture-rtc-roadmap`       | active                              | Release after the Phase 1 exit envelope and external evidence are recorded.                                                                                                                                                                                                                             |
+| Ontology Task 1 paths  | `/root/ontology_task1_owner` on `codex/rallar-ontology-foundation`    | held at structural decision         | The old six-path reservation against blob `9267a16...` is not widened. After envelope approval, only the ontology plan may be edited/published to create a new exact blob; source implementation/publication remains held until that blob and the proposed reservation receive separate human approval. |
+| RTC Phase 1 baseline   | `/root/rtc_baseline_owner` on `codex/rallar-rtc-performance-baseline` | held at structural decision         | The old Section 10 reservation against blob `50614b2...` is not widened. After envelope approval, only the RTC plan may be edited/published to create a new exact blob; instrumentation/capture/publication remains held until exact-blob approval. README/PR #40, B06, B07, and production stay held.  |
+| Human auth PR A        | Human-program owner through PR #78                                    | externally verified, read-only here | PR A merged and its exact resulting-main workflow succeeded. The human-program owner must reconcile its stale Task 3/progress record. PR B/C remain inactive.                                                                                                                                           |
 
 No other path is active. A held path requires a later verified ownership or
 conflict update before its track agent may write or execute it.
+
+### Proposed Phase 1 structural decision envelope — inactive
+
+The two proposals below preserve the already reviewed ontology semantics and
+frozen RTC workloads. Listing them does not activate a path or amend a child
+plan. Each concern owner must first publish its own revised plan, record the new
+Git blob, and obtain human approval of that exact blob. Only the roadmap
+coordinator may then activate the corresponding cross-program reservation.
+
+#### Proposed Ontology Task 1 reservation
+
+- `packages/shared/ontology/rallar-ontology-contracts.ts`
+- `packages/shared/ontology/rallar-domain-ontology-term.ts`
+- `packages/shared/ontology/rallar-realtime-ontology-contracts.ts`
+- `packages/shared/ontology/rallar-ontology-registry-contracts.ts`
+- `packages/shared/ontology/rallar-ontology-identity-validation.ts`
+- `packages/shared/ontology/validate-rallar-ontology-vocabulary-module.ts`
+- `packages/shared/ontology/validate-rallar-ontology-binding-module.ts`
+- `packages/shared/ontology/validate-rallar-ontology-catalog.ts`
+- `packages/shared/ontology/rallar-ontology-registry.ts`
+- `packages/shared/ontology/mod.ts`
+- `packages/tests/shared/rallar-ontology-test-fixtures.ts`
+- `packages/tests/shared/rallar-ontology-registry.test.ts`
+- `packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts`
+- `packages/tests/shared/rallar-ontology-binding-validation.test.ts`
+- `packages/tests/shared/rallar-ontology-catalog-validation.test.ts`
+- `scripts/repo-style-check/layout-rules.mjs`
+- `packages/tests/repo/repo-style-layout-rules.test.ts`
+
+The amendment must keep the public Task 1 API/behavior unchanged, keep every
+new Task 1 source/test at or below 400 physical lines, and add only
+`packages/shared/ontology/mod.ts` to the existing exact compatibility-boundary
+allowlist with its semantic checker test. It may not change checker rule IDs,
+thresholds, suppressions, another compatibility boundary, package barrels,
+runtime imports, packets, payloads, authority, routing, validation, generated
+artifacts, or Tasks 2-11.
+
+#### Proposed RTC reservation and publication rule
+
+For B01-B05, retain the baseline plan, the existing 16 named TypeScript
+harnesses, `scripts/perf/rtc-data-channel-browser-soak.mjs`, and ignored
+`tmp/perf/rtc-baseline/**`, while replacing the three new root TypeScript files
+with:
+
+- `scripts/perf/rtc-baseline/rtc-baseline-contracts.ts`
+- `scripts/perf/rtc-baseline/rtc-baseline-validation.ts`
+- `scripts/perf/rtc-baseline/rtc-baseline-envelope.ts`
+- `scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts`
+- `scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts`
+- `scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts`
+- `packages/tests/repo/rtc-performance-baseline-contract.test.ts`
+- `packages/tests/repo/rtc-performance-baseline-harnesses.test.ts`
+
+The amended focused Deno gate must name those six feature-folder files and the
+16 accepted existing TypeScript harnesses exactly; it must not silently pull in
+or repair the three unreserved historical probes. Publish one RTC branch/draft
+PR as ordered foundation, B01, B02, B03, B04, and B05 commits. Its final
+unchanged, fully gated head is the B01-B05 measurement anchor.
+
+The revised plan must also retain the reviewed evidence contract: JSON-safe
+round trips; live clean-Git, source, configuration, and redacted-command
+reconciliation; baseline-ID path confinement and exclusive writes; retained
+failure artifacts followed by nonzero exit; exact workload inputs and complete
+sample-set accounting; and the reviewed B01-B04 correctness invariants.
+Existing README commands remain supported as confined, non-overwriting
+diagnostic runs that cannot emit accepted baseline evidence; accepted capture
+requires the complete environment/sample/output envelope.
+
+The later B06 reservation remains inactive and is limited to:
+
+- `tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts`
+- `packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts`
+- `tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts`
+- `packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts`
+- `docs/repo-code-style-exceptions.md`
+
+Its proposed exception is one exact `structured test scenario` entry for the
+existing matrix spec, owned by RTC baseline work and reviewed/removed before
+the spec's next material post-Phase-1 change. It is not a threshold or
+repository-wide waiver. B06 receives its own later clean measurement head and
+fresh gates. Before selecting a candidate using both heads, rerun the relevant
+B01-B05 workload on the B06 head. `scripts/perf/README.md` remains held for PR
+#40; the existing B06 coverage test remains untouched absent a separately
+approved coverage-semantic change.
 
 ## 6. Phase 0 — Establish Control And Measurement Design
 
@@ -402,19 +489,17 @@ coordinator, activates and updates that child.
 
 #### Human-program owner handoff (read only)
 
-The master human-refactoring plan's early status header still says client-state
-ledger publication is pending, while its later authoritative progress records
-correctly say `ledger-published`. Its auth records also remain
-drafted/unapproved despite PR #76's external approved-blob closure. The
-human-program owner must reconcile both internal contradictions and record the
-verified PR #76 planning envelope under its own non-circular protocol. The
-roadmap coordinator will not edit or advance either human master/execution plan
-or the auth child. The discrepancy and verified external evidence were delivered
-to that owner in the read-only
+The earlier planning/status contradictions and PR #76 evidence were delivered
+in the read-only
 [PR #76 handoff](https://github.com/intact-software-systems/ar-eye-hunter/pull/76#issuecomment-5206866857).
-Its statement that scheduling was held pending the Phase 1 decision is
-superseded by this approval; the required owner-side plan reconciliation remains
-outstanding, and no human-plan work is activated here.
+The human-program owner subsequently published PR A, but the auth child merged
+with Task 3 and its live progress table still predicting pending branch/default
+publication. The exact PR A feature, branch-gate, merge, resulting tree, and
+default-workflow evidence were therefore delivered in the later
+[PR #78 closure handoff](https://github.com/intact-software-systems/ar-eye-hunter/pull/78#issuecomment-5215094789).
+The owner must reconcile that authoritative progress under its own non-circular
+protocol. The roadmap coordinator did not edit or advance the human master,
+execution, or auth child plans; PR B/C remain inactive here.
 
 #### Recorded human decisions and remaining condition
 
@@ -424,8 +509,9 @@ outstanding, and no human-plan work is activated here.
    `9267a16a3fa3c547ba7db9ce4fd55f858f7d9e37`.
 3. `RTC-B01` through `RTC-B06` and their measurement-only reservation are
    accepted against exact blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d`.
-4. Auth blob `123990bceac9732660e1113101addd5b194d8347` is selected; Task 1 is
-   first, PR A remains gated, and PR B/C remain held.
+4. Auth blob `123990bceac9732660e1113101addd5b194d8347` is selected; at the
+   Phase 0 decision Task 1 was first and PR A/PR B/PR C were gated. Section 4
+   records PR A's later verified publication while PR B/C remain held.
 5. Conditional Postgres is permitted only under the measured-path rule above;
    remote `RTC-B07` remains held.
 6. A separate operations owner is required before affected release claims;
@@ -465,9 +551,12 @@ and an explicitly active reservation.
 **Exit:** Task 1 focused/full gates and exact branch/default publication evidence
 are verified.
 
-**Current state:** `in-progress`; `/root/ontology_task1_owner` owns the active
-six-path reservation on `codex/rallar-ontology-foundation`. No Tasks 2-11 work
-is authorized.
+**Current state:** `blocked` at a human structural decision. The six-path,
+`d68d511...`-based semantic prototype passed 47/47 focused tests and independent
+semantic review, but cannot satisfy the exact changed-style gate without the
+inactive 17-path amendment in Section 5. It is uncommitted and has no PR.
+Current `main` advanced afterward, so renewed work must also reconcile
+`a900423...` and rerun every invalidated gate. No Tasks 2-11 work is authorized.
 
 ### Track 1B: Human-traceability continuation
 
@@ -482,10 +571,13 @@ and an explicitly active reservation.
 **Exit:** the approved interval reaches the state required by its own child
 plan; the roadmap records only cross-program consequences.
 
-**Current state:** externally `in-progress` through PR #78 under the
-human-program owner. The exact-head Branch Release Gate is red at the changed
-repository style step. This coordinator keeps the human plans read-only; PR B/C
-remain inactive.
+**Current state:** PR A is externally `verified`: PR #78's final exact-head
+Branch Release Gate passed, it merged as `a900423...`, and resulting-main run
+31163606362 attempt 1 passed. The stable auth-tree prerequisite for later
+RTC-B06 is satisfied. The merged human child still predicts pending Task 3
+publication; its owner received the exact read-only closure handoff and must
+reconcile it. This coordinator keeps the human plans read-only; PR B/C remain
+inactive.
 
 ### Track 1C: RTC baseline execution
 
@@ -499,11 +591,16 @@ non-overlapping harness reservation.
 
 **Exit:** reproducible baseline and one human-accepted candidate vertical slice.
 
-**Current state:** `in-progress` for non-conflicting measurement
-instrumentation under `/root/rtc_baseline_owner` on
-`codex/rallar-rtc-performance-baseline`. `scripts/perf/README.md` and RTC-B06
-remain held; no baseline, remote RTC-B07 run, production change, or optimization
-has started.
+**Current state:** `blocked` at a human structural decision. The 21-path,
+`d68d511...`-based B01-B05 prototype reached independent semantic approval and
+then passed its final 23/23 contract tests plus exact reserved-file checks after
+the last local cleanup. Its earlier 33-file/475-test cohort is informative but
+not current completion evidence. It remains uncommitted and has no PR. The
+approved broad Deno gate and changed-style gate cannot pass honestly without
+the inactive amendment in Section 5, and current-main drift requires
+reconciliation and renewed evidence. The auth serialization prerequisite is
+now satisfied, but `scripts/perf/README.md`, B06 implementation/exception,
+RTC-B07, capture, production change, and optimization remain held.
 
 ### Phase 1 exit gate
 
@@ -563,25 +660,30 @@ cannot be reviewed independently.
 
 ## 10. Live Program Progress
 
-| Item                         | Owner                        | State                                 | Evidence/blocker                                                                                                                  | Next action                                                                                                                 |
-| ---------------------------- | ---------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Phase 0 publication          | Roadmap coordinator          | `verified`                            | PR #77 merged as `d68d511...`; resulting-main run 31122914721 attempt 4 succeeded.                                                | Preserve the external closure record.                                                                                       |
-| 1A Ontology Task 1           | `/root/ontology_task1_owner` | `in-progress`                         | Exact plan blob and conflict-free six-path reservation verified.                                                                  | Execute Task 1 test-first and publish its independent branch evidence.                                                      |
-| 1B Human auth PR A           | Human-program owner          | `in-progress`, blocked at branch gate | PR #78 head `118a077...`; Branch Release Gate 31155900583 failed at changed repository style. Human plans on `main` remain stale. | Owner reconciles authority/status and remediates or reclassifies the exact-head gate.                                       |
-| 1C RTC baseline              | `/root/rtc_baseline_owner`   | `in-progress` with holds              | Exact plan blob verified. PR #40 owns `scripts/perf/README.md`; active auth work holds RTC-B06.                                   | Implement only non-conflicting instrumentation; do not capture baselines until the exact instrumentation tree is published. |
-| Conditional operations owner | unassigned                   | not blocking unrelated tracks         | Existing Deploy Web + API and Deno Deploy failures remain recorded.                                                               | Assign before an affected release claim.                                                                                    |
+| Item                         | Owner                        | State                         | Evidence/blocker                                                                                                                                                                                                                                                                                        | Next action                                                                                                                                    |
+| ---------------------------- | ---------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 0 publication          | Roadmap coordinator          | `verified`                    | PR #77 merged as `d68d511...`; resulting-main run 31122914721 attempt 4 succeeded.                                                                                                                                                                                                                      | Preserve the historical closure record while reconciling later `main` commits separately.                                                      |
+| Phase 1 activation record    | Roadmap coordinator          | `published`, not merged       | Draft PR #79 head `ce621a8...`, tree `ec15fe1...`; Branch Release Gate 31158965238/job 92804701468 succeeded. The branch is now locally reconciled with auth-merged `main`; this blocker/decision update needs its own published exact-head evidence.                                                   | Publish the reconciled roadmap-only head and keep PR #79 draft.                                                                                |
+| 1A Ontology Task 1           | `/root/ontology_task1_owner` | `blocked` at human decision   | The old-base semantic prototype is independently approved; exact style/structure and current-base gates are not satisfiable under the six-path plan. No commit/PR exists.                                                                                                                               | Decide the exact 17-path amendment; if approved, publish/approve its new plan blob, rebase, split test-first, and rerun every gate.            |
+| 1B Human auth PR A           | Human-program owner          | externally `verified`         | PR #78 feature/tree and Branch Release Gate succeeded; merge `a900423...`, tree `9a3084c...`, resulting-main run 31163606362 attempt 1 succeeded. The merged auth progress record still predicts pending publication.                                                                                   | Human-program owner records exact closure. PR B/C remain inactive.                                                                             |
+| 1C RTC baseline              | `/root/rtc_baseline_owner`   | `blocked` at human decision   | The old-base B01-B05 semantic prototype is independently approved; exact broad Deno/style and current-base gates are not satisfiable under the initial plan. No capture, commit, or PR exists. PR #40 owns README. Auth no longer blocks later B06, but its structural exception decision remains open. | Decide the exact RTC amendment; if approved, publish/approve its new plan blob, rebase, split test-first, and rerun every gate before capture. |
+| Conditional operations owner | unassigned                   | not blocking unrelated tracks | Existing Deploy Web + API and Deno Deploy failures remain recorded.                                                                                                                                                                                                                                     | Assign before an affected release claim.                                                                                                       |
 
 ## 11. Immediate Next Actions
 
-1. Publish this coordinator-only Phase 1 activation record on its non-default
-   branch and keep its exact evidence current.
-2. Start Ontology Task 1 only after its isolated worktree confirms the exact
-   base and six-path reservation.
-3. Start only non-conflicting RTC instrumentation. Keep
-   `scripts/perf/README.md` held for PR #40 and RTC-B06 held for auth PR #78.
-4. Deliver the verified PR #78 approval/status/gate discrepancy to the
-   human-program owner without editing its plans.
-5. Require independent track reviews and exact local/branch publication
-   evidence before any baseline is measured or milestone is marked complete.
-6. Stop for human acceptance of the Phase 1 exit envelope before Phase 2 or any
-   production RTC optimization.
+1. Publish this coordinator-only blocker/decision reconciliation on draft PR
+   #79 and record its exact-head Branch Release Gate.
+2. Obtain the human decision on the exact Ontology Task 1 amendment in Section 5. If approved, the ontology owner revises only its plan first, publishes the
+   new blob, and obtains approval of that exact blob before source work resumes.
+3. Obtain the human decision on the exact RTC amendment, two-anchor/rerun rule,
+   diagnostic compatibility, and narrow B06 matrix exception in Section 5. If
+   approved, the RTC owner revises only its plan first, publishes the new blob,
+   and obtains approval of that exact blob before instrumentation resumes.
+4. Require both tracks to reconcile current `main` `a900423...`; old-base
+   prototype evidence is design/review input, not current publication evidence.
+5. Keep PR B/C, README/PR #40, B06 implementation, RTC-B07, capture, production
+   RTC changes, optimization, raw-artifact publication, and Phase 2 inactive
+   until their named later gates are satisfied.
+6. Require independent track reviews and exact local/branch/default evidence
+   before any baseline or milestone is marked complete, then stop for human
+   acceptance of the Phase 1 exit envelope before Phase 2.
