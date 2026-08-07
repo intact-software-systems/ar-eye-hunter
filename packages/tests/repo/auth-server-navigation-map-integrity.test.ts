@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -5,13 +6,17 @@ import { parse } from '@babel/parser';
 import { expect, it } from 'vitest';
 
 import {
-  authNavigationFamilies,
-  readAuthNavigationViolations,
-} from './auth-server-navigation-validation.ts';
+  type ReviewedSourceSnapshot,
+  authNavigationReadmeSnapshot,
+  authNavigationSourceSnapshot,
+  authNavigationStageLabels,
+  validateReviewedSourceSnapshot,
+} from './auth-server-reviewed-source-snapshot.ts';
 
 const repoRoot = process.cwd();
 const navigationPath = 'packages/shared-server/rallar-system/auth/README.md';
-const navigationValidationPath = 'packages/tests/repo/auth-server-navigation-validation.ts';
+const expectedRegionInventoryHash =
+  '060535b3e4f490e73c1d1986402aed51794524c96ca830e9699fddd2116374af';
 const expectedOwnerLinks = [
   ['./auth-mutation-service.ts', 'AuthMutationService'],
   ['./credentials/auth-credential-issuer.ts', 'createHmacAuthCredentialIssuer'],
@@ -57,20 +62,22 @@ const expectedOwnerLinks = [
   ['./inbox/auth-app-inbox-routing.ts', 'toAuthAppInboxType'],
   ['./inbox/auth-inbox-handler.ts', 'AuthInboxHandler'],
 ] as const;
-const traceLabels = [
-  '### Construction and registration',
-  '**Registration owner/time:**',
-  '**Compatibility-only paths:**',
-  '### Later invocation trace',
-  '**Later invocation/retry:**',
-  '**First guard:**',
-  '**Transaction or query boundary:**',
-  '**Durable writes:**',
+const expectedTraceLabels = [
+  '### Construction and callback registration',
+  '**Construction:**',
+  '**Callback registration:**',
+  '### Later handler invocation',
+  '**Later handler invocation:**',
+  '**First guard/validation:**',
+  '**Transaction/retry or query call:**',
+  '**Durable write or query-only N/A:**',
   '**Commit/after-commit:**',
-  '**Normal result:**',
-  '**Early exits:**',
-  '**Terminal failure/cleanup:**',
-  '**Caller result:**',
+  '**Normal return:**',
+  '**Early return/no-op:**',
+  '**Terminal throw/rejection:**',
+  '**Cleanup/finally/rollback:**',
+  '**Caller propagation:**',
+  '**Compatibility path:**',
 ] as const;
 const familyTraceContracts = [
   {
@@ -86,7 +93,7 @@ const familyTraceContracts = [
   {
     heading: 'Authenticated AppInbox mutation',
     markers: [
-      'AppAuthInboxService` constructor',
+      'AppAuthInboxService\` constructor',
       'processAuthMutation',
       'decodeAuthMutationCommand',
       'transactionWriter.writeMutation',
@@ -125,58 +132,60 @@ const familyTraceContracts = [
   },
 ] as const;
 
-// Retain permanently: these checks are the durable semantic navigation evidence.
-it('catches a missing durable navigation owner', () => {
+// The link and ordered-prose checks are durable. The exact source blobs are a
+// temporary auth-child supplement that the later ledger may remove only after
+// PR C's resulting-main workflow publishes equivalent semantic evidence.
+it('keeps the durable auth navigation owner present', () => {
   expect(existsSync(absolute(navigationPath))).toBe(true);
 });
 
-it('requires code-derived edges behind every family trace', () => {
-  expect(existsSync(absolute(navigationValidationPath)), navigationValidationPath).toBe(true);
-});
-
-it('derives every trace stage from an exact file, symbol, and import edge', () => {
-  expect(readAuthNavigationViolations(read)).toEqual([]);
-  expect(authNavigationFamilies).toHaveLength(5);
-  for (const family of authNavigationFamilies) expect(Object.keys(family.stages)).toHaveLength(11);
-});
-
-it('rejects a missing source, symbol, or direct code edge', () => {
-  const edgeSource = 'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts';
-  const original = read(edgeSource);
-  const decodeImport =
-    "import { decodeAuthMutationCommand } from '" + "../mutation/decode-auth-mutation-command.ts';";
-  const mutations = [
-    new Map([
-      [edgeSource, original.replace('export class AuthInboxHandler', 'class RenamedInboxHandler')],
-    ]),
-    new Map([[edgeSource, original.replace(decodeImport, '')]]),
-    new Map([
-      [
-        edgeSource,
-        original.replace(
-          'const command = decodeAuthMutationCommand(commandCandidate);',
-          'const command = commandCandidate as AuthMutationCommand;',
-        ),
-      ],
-    ]),
-  ];
-
-  for (const overrides of mutations) {
-    expect(readAuthNavigationViolations(withOverrides(overrides))).not.toEqual([]);
-  }
+it('binds the exact reviewed README, navigation sources, and named owner regions', () => {
+  const snapshots = [authNavigationReadmeSnapshot, ...authNavigationSourceSnapshot];
+  const regionInventory = authNavigationSourceSnapshot.map(({ path: sourcePath, regions }) => [
+    sourcePath,
+    regions,
+  ]);
   expect(
-    readAuthNavigationViolations((filePath) => {
-      if (filePath === edgeSource) throw new Error('missing source');
-      return read(filePath);
+    validateReviewedSourceSnapshot({
+      expectedSources: snapshots,
+      actualSources: readWorktreeSources(snapshots),
     }),
-  ).not.toEqual([]);
+  ).toEqual([]);
+  expect(authNavigationSourceSnapshot).toHaveLength(26);
+  expect(authNavigationSourceSnapshot.flatMap(({ regions }) => regions)).toHaveLength(32);
+  expect(authNavigationSourceSnapshot.every(({ regions }) => regions.length > 0)).toBe(true);
+  expect(authNavigationReadmeSnapshot.path).toBe(navigationPath);
+  expect(createHash('sha256').update(JSON.stringify(regionInventory)).digest('hex')).toBe(
+    expectedRegionInventoryHash,
+  );
+  expect(new Set(authNavigationSourceSnapshot.map(({ path: sourcePath }) => sourcePath)).size).toBe(
+    26,
+  );
+});
+
+it('rejects changed navigation bytes even when a fact appears in an uninvoked callback', () => {
+  const proofPath = 'packages/shared-server/http/request-auth-service.ts';
+  const actualSources = readWorktreeSources(authNavigationSourceSnapshot);
+  const changedSource = actualSources
+    .get(proofPath)!
+    .replace(
+      'const session = await repository.findByAccessToken(accessToken);',
+      [
+        'const session = undefined;',
+        'Promise.resolve(async () => await repository.findByAccessToken(accessToken));',
+      ].join('\n    '),
+    );
+  actualSources.set(proofPath, changedSource);
+
+  expect(
+    validateReviewedSourceSnapshot({
+      expectedSources: authNavigationSourceSnapshot,
+      actualSources,
+    }),
+  ).toContainEqual(expect.stringContaining(`source.changed:${proofPath}`));
 });
 
 it('catches an owner link that cannot navigate to its exported symbol', () => {
-  if (!existsSync(absolute(navigationPath))) {
-    expect(existsSync(absolute(navigationPath)), navigationPath).toBe(true);
-    return;
-  }
   const navigation = readFileSync(absolute(navigationPath), 'utf8');
   for (const [target, symbol] of expectedOwnerLinks) {
     expect(navigation, target).toContain(`](${target})`);
@@ -190,10 +199,11 @@ it('catches an owner link that cannot navigate to its exported symbol', () => {
 
 it('keeps every runtime family as a separate ordered trace contract', () => {
   const navigation = readFileSync(absolute(navigationPath), 'utf8');
-  expect(navigation).toContain('The prose traces\nbelow are supplementary navigation.');
+  expect(authNavigationStageLabels).toEqual(expectedTraceLabels);
+  expect(navigation).toContain('The prose traces\nbelow are supplementary navigation;');
   for (const family of familyTraceContracts) {
     const section = readSection(navigation, family.heading);
-    expectInOrder(section, traceLabels, family.heading);
+    expectInOrder(section, expectedTraceLabels, family.heading);
     for (const marker of family.markers) {
       expect(section, `${family.heading}:${marker}`).toContain(marker);
     }
@@ -250,14 +260,12 @@ function exportedNames(source: string): readonly string[] {
   });
 }
 
+function readWorktreeSources(snapshots: readonly ReviewedSourceSnapshot[]): Map<string, string> {
+  return new Map(
+    snapshots.map((snapshot) => [snapshot.path, readFileSync(absolute(snapshot.path), 'utf8')]),
+  );
+}
+
 function absolute(filePath: string): string {
   return path.join(repoRoot, filePath);
-}
-
-function read(filePath: string): string {
-  return readFileSync(absolute(filePath), 'utf8');
-}
-
-function withOverrides(overrides: ReadonlyMap<string, string>): (filePath: string) => string {
-  return (filePath) => overrides.get(filePath) ?? read(filePath);
 }

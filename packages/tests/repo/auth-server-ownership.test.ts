@@ -11,105 +11,6 @@ import {
 
 const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/auth';
-const compatibilityModules = [
-  {
-    compatibilityPath: 'services/AppAuthInboxService.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'inbox/app-auth-inbox-service.ts',
-        names: ['AUTH_STATE_APP_INBOX_TOPIC', 'AppAuthInboxService'],
-      },
-      {
-        canonicalPath: 'inbox/auth-app-inbox-routing.ts',
-        names: ['toAuthAppInboxType'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'services/auth-state-mutations.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'auth-mutation-service.ts',
-        names: ['createAuthMutationService'],
-      },
-      {
-        canonicalPath: 'mutation/decode-auth-mutation-command.ts',
-        names: ['decodeAuthMutationCommand'],
-      },
-      {
-        canonicalPath: 'mutation/decode-auth-mutation-result.ts',
-        names: ['decodeAuthMutationResult'],
-      },
-      {
-        canonicalPath: 'mutation/auth-mutation-rejected-error.ts',
-        names: ['AuthMutationRejectedError'],
-      },
-      {
-        canonicalPath: 'mutation/read/capture-auth-mutation-facts.ts',
-        names: ['captureAuthMutationFacts'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'services/auth-login-service.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'login/authenticate-auth-user.ts',
-        names: ['authenticateAuthUser'],
-      },
-      {
-        canonicalPath: 'login/prepare-auth-user-registration.ts',
-        names: ['prepareAuthUserRegistration'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'services/auth-credential-issuer.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'credentials/auth-credential-issuer.ts',
-        names: ['createHmacAuthCredentialIssuer', 'isValidAuthCredentialSecret'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'repositories/AuthSessionRepository.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'persistence/auth-session-repository.ts',
-        names: ['AuthSessionRepository'],
-      },
-      {
-        canonicalPath: 'persistence/auth-persistence-contracts.ts',
-        names: [
-          'decodePersistedAgentSessionTicket',
-          'decodePersistedAuthSession',
-          'decodePersistedWebSocketTicket',
-        ],
-      },
-      {
-        canonicalPath: 'persistence/auth-legacy-compatibility.ts',
-        names: [
-          'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
-          'AUTH_LEGACY_PLAINTEXT_SCAN_LIMIT',
-        ],
-      },
-      {
-        canonicalPath: 'credentials/hash-auth-secret.ts',
-        names: ['hashAuthSecret'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'repositories/AuthUserRepository.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'persistence/auth-user-repository.ts',
-        names: ['AuthUserRepository', 'normalizeUsername'],
-      },
-    ],
-  },
-] as const;
 const canonicalShellOwners = [
   'inbox/app-auth-inbox-service.ts',
   'inbox/auth-app-inbox-routing.ts',
@@ -142,10 +43,6 @@ const removedPrivatePredecessors = [
   'services/auth-state-read.ts',
   'services/auth-state-write.ts',
 ] as const;
-const compatibilityIdentityCase =
-  'catches compatibility modules that do not resolve to canonical runtime identities';
-const credentialCompatibilityCase =
-  'catches compatibility exports that no longer resolve to the canonical runtime owners';
 
 // Temporary structural supplement owned by the auth child. Remove it after PR C's
 // resulting-main workflow and the later ledger publish equivalent semantic import evidence.
@@ -153,73 +50,6 @@ describe('auth server ownership', () => {
   it('catches a missing canonical auth ownership root', () => {
     expect(existsSync(absolute(canonicalRoot))).toBe(true);
   });
-
-  it(compatibilityIdentityCase, async () => {
-    for (const { compatibilityPath, canonicalExports } of compatibilityModules) {
-      for (const { canonicalPath } of canonicalExports) {
-        const canonicalFilePath = absolute(`${canonicalRoot}/${canonicalPath}`);
-        if (!existsSync(canonicalFilePath)) {
-          expect(existsSync(canonicalFilePath), canonicalPath).toBe(true);
-          return;
-        }
-      }
-      const compatibility = await import(
-        absolute(`packages/shared-server/rallar-system/${compatibilityPath}`)
-      );
-      const expectedRuntimeExports = canonicalExports.flatMap(({ names }) => names).toSorted();
-
-      expect(Object.keys(compatibility).toSorted(), compatibilityPath).toEqual(
-        expectedRuntimeExports,
-      );
-      for (const { canonicalPath, names } of canonicalExports) {
-        const canonical = await import(absolute(`${canonicalRoot}/${canonicalPath}`));
-        for (const name of names) {
-          expect(compatibility[name], `${compatibilityPath}:${name}`).toBe(canonical[name]);
-        }
-      }
-    }
-  });
-});
-
-it(credentialCompatibilityCase, async () => {
-  const [credentialCompatibility, loginCompatibility, sessionCompatibility] = await Promise.all([
-    import(absolute('packages/shared-server/rallar-system/services/auth-credential-issuer.ts')),
-    import(absolute('packages/shared-server/rallar-system/services/auth-login-service.ts')),
-    import(absolute('packages/shared-server/rallar-system/repositories/AuthSessionRepository.ts')),
-  ]);
-  const [credential, login, registration, secretHash] = await Promise.all([
-    import(absolute(`${canonicalRoot}/credentials/auth-credential-issuer.ts`)),
-    import(absolute(`${canonicalRoot}/login/authenticate-auth-user.ts`)),
-    import(absolute(`${canonicalRoot}/login/prepare-auth-user-registration.ts`)),
-    import(absolute(`${canonicalRoot}/credentials/hash-auth-secret.ts`)),
-  ]);
-
-  expect(credentialCompatibility.createHmacAuthCredentialIssuer).toBe(
-    credential.createHmacAuthCredentialIssuer,
-  );
-  expect(loginCompatibility.authenticateAuthUser).toBe(login.authenticateAuthUser);
-  expect(loginCompatibility.prepareAuthUserRegistration).toBe(
-    registration.prepareAuthUserRegistration,
-  );
-  expect(sessionCompatibility.hashAuthSecret).toBe(secretHash.hashAuthSecret);
-});
-
-it('keeps the supported compatibility path on the canonical facts owner', async () => {
-  const [compatibility, canonical] = await Promise.all([
-    import(absolute('packages/shared-server/rallar-system/services/auth-state-mutations.ts')),
-    import(absolute(`${canonicalRoot}/mutation/read/capture-auth-mutation-facts.ts`)),
-  ]);
-
-  expect(compatibility.captureAuthMutationFacts).toBe(canonical.captureAuthMutationFacts);
-});
-
-it('keeps the supported compatibility path on the canonical service owner', async () => {
-  const [compatibility, canonical] = await Promise.all([
-    import(absolute('packages/shared-server/rallar-system/services/auth-state-mutations.ts')),
-    import(absolute(`${canonicalRoot}/auth-mutation-service.ts`)),
-  ]);
-
-  expect(compatibility.createAuthMutationService).toBe(canonical.createAuthMutationService);
 });
 
 describe('auth compatibility ownership', () => {
@@ -276,7 +106,9 @@ describe('auth server canonical owner presence', () => {
 describe('auth server canonical import and package boundaries', () => {
   it('catches canonical auth code importing a compatibility-only wrapper', () => {
     const forbidden = new Set([
-      ...compatibilityModules.map(({ compatibilityPath }) => compatibilityPath),
+      ...authCompatibilityConsumerInventory.map(({ compatibilityPath }) =>
+        compatibilityPath.replace('packages/shared-server/rallar-system/', ''),
+      ),
       'services/auth-app-inbox-routing.ts',
       'services/auth-state-read.ts',
       'services/auth-state-write.ts',
@@ -300,15 +132,8 @@ describe('auth server canonical import and package boundaries', () => {
     expect(findings).toEqual([]);
   });
 
-  it('keeps package auth inbox exports directly on their canonical owners', async () => {
+  it('keeps package auth inbox export declarations on their canonical owners', () => {
     const packagePath = absolute('packages/shared-server/mod.ts');
-    const packageRoot = await import(packagePath);
-    const canonicalService = await import(
-      absolute(`${canonicalRoot}/inbox/app-auth-inbox-service.ts`)
-    );
-    const canonicalRouting = await import(
-      absolute(`${canonicalRoot}/inbox/auth-app-inbox-routing.ts`)
-    );
     const exportSources = parse(readFileSync(packagePath, 'utf8'), {
       sourceType: 'module',
       plugins: ['typescript'],
@@ -317,12 +142,6 @@ describe('auth server canonical import and package boundaries', () => {
         ? [statement.source.value]
         : [],
     );
-
-    expect(packageRoot.AppAuthInboxService).toBe(canonicalService.AppAuthInboxService);
-    expect(packageRoot.AUTH_STATE_APP_INBOX_TOPIC).toBe(
-      canonicalRouting.AUTH_STATE_APP_INBOX_TOPIC,
-    );
-    expect(packageRoot.toAuthAppInboxType).toBe(canonicalRouting.toAuthAppInboxType);
     expect(exportSources).toContain('./rallar-system/auth/inbox/app-auth-inbox-service.ts');
     expect(exportSources).toContain('./rallar-system/auth/inbox/auth-app-inbox-routing.ts');
     expect(exportSources).not.toContain('./rallar-system/services/AppAuthInboxService.ts');

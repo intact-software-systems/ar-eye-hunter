@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -10,10 +10,14 @@ import {
 import {
   authCompatibilityConsumerInventory,
   readAuthCompatibilityConsumers,
+  readAuthCompatibilityGovernanceIdentityConsumers,
   readAuthCompatibilityIdentityConsumers,
 } from './auth-server-compatibility-consumer-inventory.ts';
 
 const validationPath = 'packages/tests/repo/auth-server-compatibility-governance-validation.ts';
+const canonicalAuthTestRoot = 'packages/tests/shared-server/auth';
+const runtimeIdentityGovernanceTest =
+  'packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts';
 
 it('requires fail-closed compatibility exports and consumer discovery', () => {
   expect(existsSync(path.join(process.cwd(), validationPath)), validationPath).toBe(true);
@@ -90,14 +94,90 @@ describe('compatibility consumer scanner fixtures', () => {
     expect(() => readModuleReferences('fixture.vue', 'const value = 1;')).toThrow(/unsupported/i);
   });
 
+  it.each([
+    "const target = './auth-login-service.ts'; import(target);",
+    "const target = './auth-login-service.ts'; require(target);",
+  ])('fails closed for a direct nonliteral module reference: %s', (source) => {
+    expect(() => readModuleReferences('reviewer-fixture.ts', source)).toThrow(/nonliteral/i);
+  });
+});
+
+it('fails closed when an allowlisted source is omitted from the scanned inventory', () => {
+  const missingPath = 'apps/api-v1/src/config-repo.ts';
+  const remainingAllowlistedPaths = [
+    'apps/api-v1/test/operations/rtc-persisted-state-migration.test.ts',
+    'apps/relic-hunter-server-v1/src/config-repo.ts',
+    'packages/shared-test/black-box-runner/rallar-browser-rtc-provider.ts',
+    'packages/shared-test/black-box-runner/utils.ts',
+    'packages/tests/hetzner/cloudflare-main-only-branch-controls.test.ts',
+    'packages/tests/repo/auth-mutation-validation-ownership.test.ts',
+    'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts',
+  ];
+
+  expect(() =>
+    readAuthCompatibilityConsumers({
+      readSource: readRepositorySource,
+      sourcePaths: remainingAllowlistedPaths,
+    }),
+  ).toThrow(`${missingPath}: missing allowlisted source path`);
+});
+
+describe('compatibility consumer ownership maps', () => {
+  it('fails closed when an allowlisted nonliteral reference is removed', () => {
+    const fixturePath = 'apps/api-v1/src/config-repo.ts';
+
+    expect(() =>
+      readAuthCompatibilityConsumers({
+        readSource: () => "export const fileName = './config.ts';",
+        sourcePaths: [fixturePath],
+      }),
+    ).toThrow(/missing allowlisted nonliteral module reference: dynamic:fileName/i);
+  });
+
+  it('fails closed when an end-to-end scan sees a fragmented nonliteral wrapper reference', () => {
+    const fixturePath = 'packages/tests/repo/fragmented-wrapper-reference.ts';
+    const source =
+      "require('../../shared-server/rallar-system/services/auth-login-' + 'service.ts');";
+
+    expect(() =>
+      readAuthCompatibilityConsumers({
+        readSource: () => source,
+        sourcePaths: [fixturePath],
+      }),
+    ).toThrow(/nonliteral/i);
+  });
+
+  it('keeps every canonical auth test free of compatibility wrappers', () => {
+    const compatibilitySpecifiers = new Set(
+      authCompatibilityConsumerInventory.map(({ compatibilityPath }) =>
+        compatibilityPath.replace('packages/shared-server/', '@shared-server/'),
+      ),
+    );
+    const compatibilityReferences = readdirSync(canonicalAuthTestRoot)
+      .filter((name) => name.endsWith('.test.ts'))
+      .flatMap((name) => {
+        const filePath = `${canonicalAuthTestRoot}/${name}`;
+        return readModuleReferences(filePath, readRepositorySource(filePath))
+          .filter(({ specifier }) => compatibilitySpecifiers.has(specifier))
+          .map(({ specifier }) => `${filePath}:${specifier}`);
+      });
+
+    expect(compatibilityReferences).toEqual([]);
+  });
+
   it('keeps all consumers and runtime-identity consumers explicit', () => {
     const consumers = readAuthCompatibilityConsumers();
     const identityConsumers = readAuthCompatibilityIdentityConsumers();
+    const governanceIdentityConsumers = readAuthCompatibilityGovernanceIdentityConsumers();
     for (const inventory of authCompatibilityConsumerInventory) {
       expect(consumers.get(inventory.compatibilityPath)).toEqual(inventory.consumers);
       expect(identityConsumers.get(inventory.compatibilityPath)).toEqual(
         inventory.identityConsumers,
       );
+      expect(governanceIdentityConsumers.get(inventory.compatibilityPath)).toEqual(
+        inventory.governanceIdentityConsumers,
+      );
+      expect(inventory.governanceIdentityConsumers).toEqual([runtimeIdentityGovernanceTest]);
     }
   });
 });

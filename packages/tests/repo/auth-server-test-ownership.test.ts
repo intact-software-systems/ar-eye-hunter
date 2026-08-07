@@ -56,6 +56,7 @@ const authRepositorySuites = [
   'packages/tests/repo/auth-server-lineage-provenance.test.ts',
   'packages/tests/repo/auth-server-shell-lineage-provenance.test.ts',
   'packages/tests/repo/auth-server-compatibility-governance.test.ts',
+  'packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts',
   'packages/tests/repo/auth-server-navigation-map-integrity.test.ts',
   'packages/tests/repo/auth-server-ownership.test.ts',
   'packages/tests/repo/auth-server-source-ratchet.test.ts',
@@ -86,7 +87,7 @@ it('keeps behavior-owned auth support files and rejects every predecessor path',
   expect(removedPredecessors.filter((filePath) => existsSync(absolute(filePath)))).toEqual([]);
 });
 
-it('keeps all nine auth evidence suites registered in repository governance', () => {
+it('keeps all ten auth evidence suites registered in repository governance', () => {
   const packageJson = JSON.parse(readFileSync(absolute('package.json'), 'utf8')) as {
     scripts: Record<string, string>;
   };

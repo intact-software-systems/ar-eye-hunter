@@ -5,355 +5,189 @@ import path from 'node:path';
 import { expect, it } from 'vitest';
 
 import {
-  createPassingProvenanceInput,
-  replaceFinalSource,
-  replacePredecessorSource,
-  toSingleCaseSource,
-} from './auth-server-test-provenance-fixtures.ts';
-import {
-  AUTH_TEST_PROVENANCE_MANIFEST,
-  type AuthTestProvenanceInput,
-  validateAuthTestProvenance,
-} from './auth-server-test-provenance-validation.ts';
-import {
-  identityMutationCases,
-  semanticMutationCases,
-  toMutableProvenanceInput,
-} from './auth-server-test-provenance-mutations.ts';
+  type ReviewedSourceSnapshot,
+  authTestFinalOwnerSnapshot,
+  authTestPredecessorSnapshot,
+  authTestProvenanceBaseCommit,
+  validateReviewedSourceSnapshot,
+} from './auth-server-reviewed-source-snapshot.ts';
 
-it('accepts formatting changes, static path relocation, and removed describe ownership', () => {
-  expect(validateAuthTestProvenance(createPassingProvenanceInput())).toEqual([]);
+const repoRoot = process.cwd();
+const expectedOwnerMappings = [
+  [
+    'packages/tests/shared-server/app-auth-conflict-inbox.test.ts',
+    ['packages/tests/shared-server/auth/auth-ticket-conflict.test.ts'],
+  ],
+  [
+    'packages/tests/shared-server/app-auth-inbox-service.test.ts',
+    [
+      'packages/tests/shared-server/auth/auth-command-and-result-codecs.test.ts',
+      'packages/tests/shared-server/auth/auth-inbox-registration-and-routing.test.ts',
+    ],
+  ],
+  [
+    'packages/tests/shared-server/app-auth-inbox-test-harness.ts',
+    ['packages/tests/shared-server/auth/auth-app-inbox-test-runtime.ts'],
+  ],
+  [
+    'packages/tests/shared-server/app-auth-legacy-cutoff.test.ts',
+    ['packages/tests/shared-server/auth/auth-legacy-cutoff.test.ts'],
+  ],
+  [
+    'packages/tests/shared-server/app-auth-legacy-replay-inbox.test.ts',
+    ['packages/tests/shared-server/auth/auth-legacy-replay.test.ts'],
+  ],
+  [
+    'packages/tests/shared-server/app-auth-persistence-inbox.test.ts',
+    ['packages/tests/shared-server/auth/auth-persistence-security.test.ts'],
+  ],
+  [
+    'packages/tests/shared-server/app-auth-public-routing-inbox.test.ts',
+    ['packages/tests/shared-server/auth/auth-public-command-routing.test.ts'],
+  ],
+  [
+    'packages/tests/shared-server/app-auth-transaction-inbox.test.ts',
+    ['packages/tests/shared-server/auth/auth-transaction-boundary.test.ts'],
+  ],
+  [
+    'packages/tests/shared-server/auth-fixture.ts',
+    ['packages/tests/shared-server/auth/auth-test-fixtures.ts'],
+  ],
+  [
+    'packages/tests/shared-server/auth-login-service.test.ts',
+    [
+      'packages/tests/shared-server/auth/auth-credential-login.test.ts',
+      'packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts',
+    ],
+  ],
+  [
+    'packages/tests/shared-server/request-auth-service.test.ts',
+    ['packages/tests/shared-server/auth/auth-request-proof.test.ts'],
+  ],
+] as const;
+const expectedFinalOwnerCases = [
+  ['packages/tests/shared-server/auth/auth-ticket-conflict.test.ts', 2],
+  ['packages/tests/shared-server/auth/auth-command-and-result-codecs.test.ts', 2],
+  ['packages/tests/shared-server/auth/auth-inbox-registration-and-routing.test.ts', 3],
+  ['packages/tests/shared-server/auth/auth-app-inbox-test-runtime.ts', 0],
+  ['packages/tests/shared-server/auth/auth-legacy-cutoff.test.ts', 3],
+  ['packages/tests/shared-server/auth/auth-legacy-replay.test.ts', 3],
+  ['packages/tests/shared-server/auth/auth-persistence-security.test.ts', 9],
+  ['packages/tests/shared-server/auth/auth-public-command-routing.test.ts', 3],
+  ['packages/tests/shared-server/auth/auth-transaction-boundary.test.ts', 3],
+  ['packages/tests/shared-server/auth/auth-test-fixtures.ts', 0],
+  ['packages/tests/shared-server/auth/auth-credential-login.test.ts', 5],
+  ['packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts', 6],
+  ['packages/tests/shared-server/auth/auth-request-proof.test.ts', 4],
+] as const;
+
+// Temporary PR C migration evidence owned by the auth child. Exact blobs are
+// supplementary to the semantic suites. The later ledger may remove this only
+// after PR C's resulting-main workflow publishes equivalent ownership evidence.
+it('binds the exact predecessor-to-final-owner and case-count inventory', () => {
+  expect(authTestProvenanceBaseCommit).toBe('8152de39faf2d630158143366596d61346e20457');
+  expect(
+    authTestPredecessorSnapshot.map(({ path: predecessorPath, finalOwners }) => [
+      predecessorPath,
+      finalOwners,
+    ]),
+  ).toEqual(expectedOwnerMappings);
+  expect(
+    authTestFinalOwnerSnapshot.map(({ path: ownerPath, caseCount }) => [ownerPath, caseCount]),
+  ).toEqual(expectedFinalOwnerCases);
+
+  const mappedOwners = new Set(
+    authTestPredecessorSnapshot.flatMap(({ finalOwners }) => finalOwners),
+  );
+  expect([...mappedOwners]).toEqual(authTestFinalOwnerSnapshot.map(({ path }) => path));
+  expect(authTestFinalOwnerSnapshot.reduce((total, owner) => total + owner.caseCount, 0)).toBe(43);
 });
 
-it('normalizes quotes, numeric separators, trailing commas, and redundant parentheses', () => {
-  const base = `
-    it("preserved context", () => {
-      prepare((1_000),);
-      expect((value)).toEqual({ answer: 1_000, });
-    },);
-  `;
-  const changed = `
-    it('preserved context', () => {
-      prepare(1000);
-      expect(value).toEqual({ answer: 1000 });
-    });
-  `;
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
+it('binds every predecessor to its exact base path, blob, and source bytes', () => {
+  expect(readGit(['rev-parse', `${authTestProvenanceBaseCommit}^{commit}`])).toBe(
+    authTestProvenanceBaseCommit,
   );
-  expect(validateAuthTestProvenance(input)).toEqual([]);
-});
-
-it('normalizes removed describe ownership when its title is a resolved constant', () => {
-  const base = `
-    const predecessorOwner = 'removed predecessor owner';
-    describe(predecessorOwner, () => {
-      it('preserved context', () => {
-        prepare();
-        expect(value).toBe(ready);
-      });
-    });
-  `;
-  const changed = `
-    it('preserved context', () => {
-      prepare();
-      expect(value).toBe(ready);
-    });
-  `;
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input)).toEqual([]);
-});
-
-it('normalizes extracted helper, binding, and fixture ownership refactors', () => {
-  const base = `
-    it('preserved context', () => {
-      verify(runtime, 'preserved');
-      verify(runtime, 'preserved');
-      expect(results.allEntries()).toEqual({ sessionId: session.sessionId });
-    });
-    function verify(actual, expected) {
-      waitForQueuedEntry(actual);
-      total += step + 2;
-      expect(actual).toEqual(
-        expect.objectContaining({ state: expected, codes: [7, /proof/gi] }),
-      );
-    }
-  `;
-  const changed = `
-    it('preserved context', () => {
-      check(fixture.runtime, 'preserved');
-      check(fixture.runtime, 'preserved');
-      expect(fixture.auth.results.allEntries()).toEqual({
-        sessionId: fixture.session.sessionId,
-      });
-    });
-    function check(subject, wanted) {
-      waitForAuthInboxEntry(subject);
-      count += amount + 2;
-      expect(subject).toEqual(
-        expect.objectContaining({ state: wanted, codes: [7, /proof/gi] }),
-      );
-    }
-  `;
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input)).toEqual([]);
-});
-
-it.each(identityMutationCases)('rejects %s in the exact provenance manifest', (_, code, mutate) => {
-  expect(validateAuthTestProvenance(mutate(createPassingProvenanceInput())).join('\n')).toContain(
-    code,
-  );
-});
-
-it('rejects a snapshot resolved from the wrong base commit', () => {
-  const input = toMutableProvenanceInput(createPassingProvenanceInput());
-  input.snapshot.baseCommit = '0000000000000000000000000000000000000000';
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('snapshot.base-commit');
-});
-
-it('rejects a predecessor whose observed blob differs from the locked blob', () => {
-  const input = toMutableProvenanceInput(createPassingProvenanceInput());
-  const predecessor = input.manifest.predecessors[0];
-  input.snapshot.predecessorBlobs[predecessor.path] = 'wrong-blob';
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('snapshot.predecessor-blob');
-});
-
-it('rejects extra or missing snapshot sources', () => {
-  const extra = toMutableProvenanceInput(createPassingProvenanceInput());
-  extra.snapshot.finalSources['packages/tests/shared-server/auth/unowned.test.ts'] = 'it.todo("x")';
-  expect(validateAuthTestProvenance(extra).join('\n')).toContain('snapshot.final-source-set');
-
-  const missing = toMutableProvenanceInput(createPassingProvenanceInput());
-  delete missing.snapshot.predecessorSources[missing.manifest.predecessors[0].path];
-  expect(validateAuthTestProvenance(missing).join('\n')).toContain(
-    'snapshot.predecessor-source-set',
-  );
-});
-
-it('rejects parse errors in predecessor and final owners', () => {
-  const predecessor = replacePredecessorSource(createPassingProvenanceInput(), 'it("broken"');
-  expect(validateAuthTestProvenance(predecessor).join('\n')).toContain('source.parse');
-
-  const final = replaceFinalSource(createPassingProvenanceInput(), 'it("broken"');
-  expect(validateAuthTestProvenance(final).join('\n')).toContain('source.parse');
-});
-
-it('rejects a syntactically valid final owner that contributes no predecessor facts', () => {
-  const input = replaceFinalSource(createPassingProvenanceInput(), "it.todo('unrelated case');");
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('owner.noncontributing');
-});
-
-it.each(semanticMutationCases)('rejects a changed %s occurrence', (_, finalSource, factKind) => {
-  const baseBody = [
-    'prepare();',
-    'prepare();',
-    'count += step;',
-    'expect(value).toBe(ready);',
-  ].join('\n');
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), finalSource),
-    toSingleCaseSource(baseBody),
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain(`semantic.missing:${factKind}`);
-});
-
-it('rejects a changed nested asymmetric matcher in the complete expectation', () => {
-  const base = toSingleCaseSource(
-    'expect(value).toEqual(expect.objectContaining({ nested: expect.arrayContaining([needle]) }));',
-  );
-  const changed = toSingleCaseSource(
-    'expect(value).toEqual(expect.objectContaining({ nested: expect.stringContaining(needle) }));',
-  );
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('semantic.missing:assertion');
-});
-
-it('rejects a changed expected literal passed through a helper parameter', () => {
-  const base = helperExpectationSource("verify(value, 'preserved');");
-  const changed = helperExpectationSource("verify(value, 'changed');");
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('semantic.missing:assertion');
-});
-
-it('rejects a changed literal inside the received call', () => {
-  const base = toSingleCaseSource("expect(repository.findBySessionId('session-1')).toBeDefined();");
-  const changed = toSingleCaseSource(
-    "expect(repository.findBySessionId('wrong-session')).toBeDefined();",
-  );
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('semantic.missing:assertion');
-});
-
-it('rejects a changed mutation RHS after local ownership is normalized', () => {
-  const base = toSingleCaseSource('count += step + 2; expect(value).toBe(ready);');
-  const changed = toSingleCaseSource('total += amount + 3; expect(value).toBe(ready);');
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain(
-    'semantic.missing:mutation-expression',
-  );
-});
-
-it('rejects a changed mutation inside an expression-bodied callback', () => {
-  const base = toSingleCaseSource(
-    'install(() => void (conflict.rollbackCount += 1)); expect(value).toBe(ready);',
-  );
-  const changed = toSingleCaseSource(
-    'install(() => void (conflict.rollbackCount += 2)); expect(value).toBe(ready);',
-  );
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain(
-    'semantic.missing:mutation-expression',
-  );
-});
-
-it('rejects changing a setup callee outside the approved helper aliases', () => {
-  const base = toSingleCaseSource('prepare(value); expect(value).toBe(ready);');
-  const changed = toSingleCaseSource('destroy(value); expect(value).toBe(ready);');
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain(
-    'semantic.missing:setup-expression',
-  );
-});
-
-it('rejects losing a duplicate helper invocation and its semantic occurrences', () => {
-  const base = helperExpectationSource('verify(value, 7); verify(value, 7);');
-  const changed = helperExpectationSource('verify(value, 7);');
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('semantic.missing:assertion');
-});
-
-it('rejects an otherwise complete expectation moved to another test context', () => {
-  const base = "it('first', () => { expect(value).toBe(ready); }); it('second', () => {});";
-  const changed = "it('first', () => {}); it('second', () => { expect(value).toBe(ready); });";
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('semantic.missing:assertion');
-});
-
-it.each([
-  ['string', "const first = 'same'; const second = 'same';", "const first = 'same';"],
-  ['numeric', 'const first = 7; const second = 7;', 'const first = 7;'],
-  ['regex', 'const first = /proof/gi; const second = /proof/gi;', 'const first = /proof/gi;'],
-] as const)('rejects loss of a duplicate %s literal', (kind, base, changed) => {
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain(
-    `semantic.missing:${kind}-literal`,
-  );
-});
-
-it.each([
-  ['pattern', 'const proof = /changed/gi;'],
-  ['flags', 'const proof = /proof/g;'],
-] as const)('rejects a changed regex %s', (_, changed) => {
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    'const proof = /proof/gi;',
-  );
-  expect(validateAuthTestProvenance(input).join('\n')).toContain('semantic.missing:regex-literal');
-});
-
-it('allows a static import path to change without treating it as a semantic fact', () => {
-  const base = "import { value } from './same.ts'; prepare();";
-  const changed = "import { value } from '../different.ts'; prepare();";
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input)).toEqual([]);
-});
-
-it('allows dynamic, require, and TypeScript import-equals paths to change', () => {
-  const base = `
-    const lazy = import('./before.ts');
-    const loaded = require('./before.cjs');
-    import Legacy = require('./before-legacy.ts');
-    prepare();
-  `;
-  const changed = `
-    const lazy = import('../after.ts');
-    const loaded = require('../after.cjs');
-    import Legacy = require('../after-legacy.ts');
-    prepare();
-  `;
-  const input = replacePredecessorSource(
-    replaceFinalSource(createPassingProvenanceInput(), changed),
-    base,
-  );
-  expect(validateAuthTestProvenance(input)).toEqual([]);
-});
-
-it('preserves every exact-base fact in the mapped real auth owners', () => {
-  const violations = validateAuthTestProvenance(readRealTreeInput());
-  expect(violations, violations.join('\n')).toEqual([]);
-});
-
-function readRealTreeInput(): AuthTestProvenanceInput {
-  const predecessorBlobs: Record<string, string> = {};
-  const predecessorSources: Record<string, string> = {};
-  const finalSources: Record<string, string> = {};
-  for (const entry of AUTH_TEST_PROVENANCE_MANIFEST.predecessors) {
-    predecessorBlobs[entry.path] = readGit([
-      'rev-parse',
-      `${AUTH_TEST_PROVENANCE_MANIFEST.baseCommit}:${entry.path}`,
-    ]);
-    predecessorSources[entry.path] = readGit(['show', entry.blob], false);
-    for (const owner of entry.finalOwners) {
-      finalSources[owner] = readFileSync(path.join(process.cwd(), owner), 'utf8');
-    }
+  for (const predecessor of authTestPredecessorSnapshot) {
+    expect(
+      readGit(['rev-parse', `${authTestProvenanceBaseCommit}:${predecessor.path}`]),
+      predecessor.path,
+    ).toBe(predecessor.blob);
   }
-  return {
-    manifest: AUTH_TEST_PROVENANCE_MANIFEST,
-    snapshot: {
-      baseCommit: readGit(['rev-parse', `${AUTH_TEST_PROVENANCE_MANIFEST.baseCommit}^{commit}`]),
-      predecessorBlobs,
-      predecessorSources,
-      finalSources,
-    },
-  };
+
+  expect(
+    validateReviewedSourceSnapshot({
+      expectedSources: authTestPredecessorSnapshot,
+      actualSources: readBaseSources(),
+    }),
+  ).toEqual([]);
+});
+
+it('binds every final owner and support file to its exact reviewed source bytes', () => {
+  expect(
+    validateReviewedSourceSnapshot({
+      expectedSources: authTestFinalOwnerSnapshot,
+      actualSources: readWorktreeSources(authTestFinalOwnerSnapshot),
+    }),
+  ).toEqual([]);
+});
+
+it('rejects changed source bytes even when the path inventory is unchanged', () => {
+  const actualSources = readWorktreeSources(authTestFinalOwnerSnapshot);
+  const changed = authTestFinalOwnerSnapshot[0];
+  actualSources.set(changed.path, `${actualSources.get(changed.path)}\n// changed`);
+
+  expect(
+    validateReviewedSourceSnapshot({
+      expectedSources: authTestFinalOwnerSnapshot,
+      actualSources,
+    }),
+  ).toContainEqual(expect.stringContaining(`source.changed:${changed.path}`));
+});
+
+it('rejects a missing reviewed source', () => {
+  const actualSources = readWorktreeSources(authTestFinalOwnerSnapshot);
+  const missing = authTestFinalOwnerSnapshot[0];
+  actualSources.delete(missing.path);
+
+  expect(
+    validateReviewedSourceSnapshot({
+      expectedSources: authTestFinalOwnerSnapshot,
+      actualSources,
+    }),
+  ).toContain(`source.missing:${missing.path}`);
+});
+
+it('rejects an extra unreviewed source', () => {
+  const actualSources = readWorktreeSources(authTestFinalOwnerSnapshot);
+  const extraPath = 'packages/tests/shared-server/auth/unreviewed.test.ts';
+  actualSources.set(extraPath, "it.todo('unreviewed');");
+
+  expect(
+    validateReviewedSourceSnapshot({
+      expectedSources: authTestFinalOwnerSnapshot,
+      actualSources,
+    }),
+  ).toContain(`source.extra:${extraPath}`);
+});
+
+function readBaseSources(): ReadonlyMap<string, string> {
+  const sources = new Map<string, string>();
+  for (const predecessor of authTestPredecessorSnapshot) {
+    sources.set(
+      predecessor.path,
+      readGit(['show', `${authTestProvenanceBaseCommit}:${predecessor.path}`], false),
+    );
+  }
+  return sources;
 }
 
-function helperExpectationSource(invocations: string): string {
-  return `
-    it('preserved context', () => { ${invocations} });
-    function verify(actual, expected) {
-      prepare(actual);
-      count += 1;
-      expect(actual).toEqual(expect.objectContaining({ expected }));
-    }
-  `;
+function readWorktreeSources(snapshots: readonly ReviewedSourceSnapshot[]): Map<string, string> {
+  return new Map(
+    snapshots.map((snapshot) => [
+      snapshot.path,
+      readFileSync(path.join(repoRoot, snapshot.path), 'utf8'),
+    ]),
+  );
 }
 
 function readGit(arguments_: readonly string[], trim = true): string {

@@ -1,17 +1,28 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
+import { isSupportedSourcePath } from './auth-server-compatibility-governance-validation.ts';
 import {
-  isSupportedSourcePath,
-  readModuleReferences,
-} from './auth-server-compatibility-governance-validation.ts';
+  readModuleReferenceEvidence,
+  type ModuleReference,
+  type NonliteralModuleReference,
+} from './auth-server-module-reference-validation.ts';
 
 export interface AuthCompatibilityConsumerInventory {
   readonly compatibilityPath: string;
   readonly consumers: readonly string[];
   readonly identityConsumers: readonly string[];
+  readonly governanceIdentityConsumers: readonly string[];
   readonly removalCondition: string;
 }
+
+export interface CompatibilityConsumerSourceInput {
+  readonly readSource: (filePath: string) => string;
+  readonly sourcePaths: readonly string[];
+}
+
+const runtimeIdentityGovernanceTest =
+  'packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts';
 
 export const authCompatibilityConsumerInventory = [
   {
@@ -32,6 +43,7 @@ export const authCompatibilityConsumerInventory = [
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
     ],
+    governanceIdentityConsumers: [runtimeIdentityGovernanceTest],
     removalCondition:
       'Migrate every listed caller to canonical inbox owners, then retire this service path.',
   },
@@ -54,19 +66,15 @@ export const authCompatibilityConsumerInventory = [
       'packages/shared-server/mod.ts',
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
     ],
+    governanceIdentityConsumers: [runtimeIdentityGovernanceTest],
     removalCondition:
       'Move the package export and every listed caller to canonical mutation owners first.',
   },
   {
     compatibilityPath: 'packages/shared-server/rallar-system/services/auth-login-service.ts',
-    consumers: [
-      'apps/api-v1/src/repository/login-repository.ts',
-      'packages/tests/shared-server/auth/auth-credential-login.test.ts',
-    ],
-    identityConsumers: [
-      'apps/api-v1/src/repository/login-repository.ts',
-      'packages/tests/shared-server/auth/auth-credential-login.test.ts',
-    ],
+    consumers: ['apps/api-v1/src/repository/login-repository.ts'],
+    identityConsumers: ['apps/api-v1/src/repository/login-repository.ts'],
+    governanceIdentityConsumers: [runtimeIdentityGovernanceTest],
     removalCondition: 'Move the API-v1 login repository to canonical login owners first.',
   },
   {
@@ -87,6 +95,7 @@ export const authCompatibilityConsumerInventory = [
       'packages/shared-server/http/production-env-hardening.ts',
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
     ],
+    governanceIdentityConsumers: [runtimeIdentityGovernanceTest],
     removalCondition:
       'Move every listed issuer or secret-validation caller to canonical credentials first.',
   },
@@ -170,6 +179,7 @@ export const authCompatibilityConsumerInventory = [
       'scripts/perf/api-v1-state-write-concurrency-bench.ts',
       'scripts/perf/group-list-fanout-bench.ts',
     ],
+    governanceIdentityConsumers: [runtimeIdentityGovernanceTest],
     removalCondition:
       'Migrate every listed API, domain, fixture, and benchmark consumer to canonical persistence.',
   },
@@ -188,6 +198,7 @@ export const authCompatibilityConsumerInventory = [
       'apps/api-v1/test/login-repository.test.ts',
       'packages/shared-server/postgres/rallar-system/createStateRepositories.ts',
     ],
+    governanceIdentityConsumers: [runtimeIdentityGovernanceTest],
     removalCondition:
       'Migrate every listed API and Postgres repository consumer to canonical persistence first.',
   },
@@ -197,28 +208,114 @@ const repoRoot = process.cwd();
 const compatibilityPaths: ReadonlySet<string> = new Set<string>(
   authCompatibilityConsumerInventory.map(({ compatibilityPath }) => compatibilityPath),
 );
+const governanceIdentityConsumerPaths: ReadonlySet<string> = new Set<string>(
+  authCompatibilityConsumerInventory.flatMap(
+    ({ governanceIdentityConsumers }) => governanceIdentityConsumers,
+  ),
+);
+const allowedNonliteralReferences: Readonly<Record<string, readonly string[]>> = {
+  'apps/api-v1/src/config-repo.ts': ['dynamic:fileName'],
+  'apps/api-v1/test/operations/rtc-persisted-state-migration.test.ts': ['dynamic:moduleUrl.href'],
+  'apps/relic-hunter-server-v1/src/config-repo.ts': ['dynamic:fileName'],
+  'packages/shared-test/black-box-runner/rallar-browser-rtc-provider.ts': ['dynamic:specifier'],
+  'packages/shared-test/black-box-runner/utils.ts': ['dynamic:fileName'],
+  'packages/tests/hetzner/cloudflare-main-only-branch-controls.test.ts': ['dynamic:scriptUrl'],
+  'packages/tests/repo/auth-mutation-validation-ownership.test.ts': [
+    "dynamic:absolute('packages/shared-server/mod.ts')",
+  ],
+  'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts': [
+    'dynamic:entrypoint.moduleId',
+  ],
+};
 
-export function readAuthCompatibilityConsumers(): ReadonlyMap<string, readonly string[]> {
-  return readConsumers(false);
+interface ConsumerSourceEvidence {
+  readonly filePath: string;
+  readonly references: readonly ModuleReference[];
 }
 
-export function readAuthCompatibilityIdentityConsumers(): ReadonlyMap<string, readonly string[]> {
-  return readConsumers(true);
+let cachedRepositoryEvidence: readonly ConsumerSourceEvidence[] | undefined;
+
+export function readAuthCompatibilityConsumers(
+  input?: CompatibilityConsumerSourceInput,
+): ReadonlyMap<string, readonly string[]> {
+  return readConsumers('all', input);
 }
 
-function readConsumers(identityOnly: boolean): ReadonlyMap<string, readonly string[]> {
+export function readAuthCompatibilityIdentityConsumers(
+  input?: CompatibilityConsumerSourceInput,
+): ReadonlyMap<string, readonly string[]> {
+  return readConsumers('identity', input);
+}
+
+export function readAuthCompatibilityGovernanceIdentityConsumers(
+  input?: CompatibilityConsumerSourceInput,
+): ReadonlyMap<string, readonly string[]> {
+  return readConsumers('governance-identity', input);
+}
+
+function readConsumers(
+  classification: 'all' | 'governance-identity' | 'identity',
+  input?: CompatibilityConsumerSourceInput,
+): ReadonlyMap<string, readonly string[]> {
   const consumers = new Map<string, string[]>(
     [...compatibilityPaths].map((compatibilityPath) => [compatibilityPath, []]),
   );
-  for (const filePath of readSourceFiles()) {
-    const source = readFileSync(path.join(repoRoot, filePath), 'utf8');
-    for (const reference of readModuleReferences(filePath, source)) {
-      if (identityOnly && !reference.requiresRuntimeIdentity) continue;
+  for (const { filePath, references } of readConsumerSourceEvidence(input)) {
+    const governanceIdentity = governanceIdentityConsumerPaths.has(filePath);
+    for (const reference of references) {
+      if (classification === 'governance-identity' && !governanceIdentity) continue;
+      if (classification !== 'governance-identity' && governanceIdentity) continue;
+      if (classification !== 'all' && !reference.requiresRuntimeIdentity) continue;
       const resolved = resolveModuleSpecifier(filePath, reference.specifier);
       if (compatibilityPaths.has(resolved)) consumers.get(resolved)?.push(filePath);
     }
   }
   return new Map([...consumers].map(([owner, paths]) => [owner, [...new Set(paths)].sort()]));
+}
+
+function readConsumerSourceEvidence(
+  input?: CompatibilityConsumerSourceInput,
+): readonly ConsumerSourceEvidence[] {
+  if (!input && cachedRepositoryEvidence) return cachedRepositoryEvidence;
+  const sources = input ?? {
+    sourcePaths: readSourceFiles(),
+    readSource: (filePath: string) => readFileSync(path.join(repoRoot, filePath), 'utf8'),
+  };
+  const evidence = sources.sourcePaths.map((filePath) => {
+    const parsed = readModuleReferenceEvidence(filePath, sources.readSource(filePath));
+    requireAllowedNonliteralReferences(filePath, parsed.nonliteral);
+    return { filePath, references: parsed.references };
+  });
+  requireAllAllowlistedSources(sources.sourcePaths);
+  if (!input) cachedRepositoryEvidence = evidence;
+  return evidence;
+}
+
+function requireAllAllowlistedSources(sourcePaths: readonly string[]): void {
+  const scannedPaths = new Set(sourcePaths);
+  const missingPath = Object.keys(allowedNonliteralReferences).find(
+    (allowedPath) => !scannedPaths.has(allowedPath),
+  );
+  if (missingPath) throw new SyntaxError(`${missingPath}: missing allowlisted source path`);
+}
+
+function requireAllowedNonliteralReferences(
+  filePath: string,
+  references: readonly NonliteralModuleReference[],
+): void {
+  const capacity = [...(allowedNonliteralReferences[filePath] ?? [])];
+  for (const reference of references) {
+    const key = `${reference.kind}:${reference.expression}`;
+    const index = capacity.indexOf(key);
+    if (index < 0) throw new SyntaxError(`${filePath}: nonliteral module reference: ${key}`);
+    capacity.splice(index, 1);
+  }
+  const missingReference = capacity[0];
+  if (missingReference) {
+    throw new SyntaxError(
+      `${filePath}: missing allowlisted nonliteral module reference: ${missingReference}`,
+    );
+  }
 }
 
 function readSourceFiles(): readonly string[] {

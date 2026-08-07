@@ -2,6 +2,14 @@ import path from 'node:path';
 
 import { parse } from '@babel/parser';
 
+import { isSupportedSourcePath } from './auth-server-module-reference-validation.ts';
+
+export {
+  readModuleReferences,
+  type ModuleReference,
+} from './auth-server-module-reference-validation.ts';
+export { isSupportedSourcePath } from './auth-server-module-reference-validation.ts';
+
 interface ExportGroup {
   readonly target: string;
   readonly runtime?: readonly string[];
@@ -11,12 +19,6 @@ interface ExportGroup {
 interface WrapperContract {
   readonly wrapper: string;
   readonly groups: readonly ExportGroup[];
-}
-
-export interface ModuleReference {
-  readonly kind: 'dynamic' | 'import-equals' | 'require' | 'static';
-  readonly requiresRuntimeIdentity: boolean;
-  readonly specifier: string;
 }
 
 interface AstNode extends Record<string, unknown> {
@@ -157,8 +159,6 @@ const contracts: readonly WrapperContract[] = [
   },
 ];
 
-const supportedExtensions = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'];
-
 export function readAuthCompatibilityExportViolations(
   readSource: (filePath: string) => string,
 ): readonly string[] {
@@ -177,20 +177,6 @@ export function readAuthCompatibilityExportViolations(
     }
     return violations;
   });
-}
-
-export function readModuleReferences(filePath: string, source: string): readonly ModuleReference[] {
-  const program = parseSource(filePath, source);
-  const references: ModuleReference[] = [];
-  visit(program, (node) => {
-    const reference = toModuleReference(node);
-    if (reference) references.push(reference);
-  });
-  return references;
-}
-
-export function isSupportedSourcePath(filePath: string): boolean {
-  return supportedExtensions.some((extension) => filePath.endsWith(extension));
 }
 
 function expectedExports(contract: WrapperContract): readonly string[] {
@@ -263,66 +249,6 @@ function declarationNames(node: AstNode | undefined): readonly [string, 'runtime
   return [[name, kind]];
 }
 
-function toModuleReference(node: AstNode): ModuleReference | undefined {
-  if (node.type === 'ImportDeclaration') return staticImportReference(node);
-  if (['ExportAllDeclaration', 'ExportNamedDeclaration'].includes(node.type) && node.source) {
-    return staticExportReference(node);
-  }
-  if (node.type === 'TSImportEqualsDeclaration') return importEqualsReference(node);
-  if (node.type === 'ImportExpression') {
-    return literalReference('dynamic', node.source);
-  }
-  if (node.type !== 'CallExpression') return undefined;
-  const callee = node.callee as AstNode;
-  if (callee?.type === 'Import') return literalReference('dynamic', firstArgument(node));
-  if (callee?.type === 'Identifier' && nameOf(callee) === 'require') {
-    return literalReference('require', firstArgument(node));
-  }
-  return undefined;
-}
-
-function staticImportReference(node: AstNode): ModuleReference {
-  const specifiers = (node.specifiers as readonly AstNode[]) ?? [];
-  const runtime =
-    node.importKind !== 'type' &&
-    (specifiers.length === 0 || specifiers.some((specifier) => specifier.importKind !== 'type'));
-  return reference('static', runtime, node.source);
-}
-
-function staticExportReference(node: AstNode): ModuleReference {
-  const specifiers = (node.specifiers as readonly AstNode[]) ?? [];
-  const runtime =
-    node.exportKind !== 'type' &&
-    (node.type === 'ExportAllDeclaration' ||
-      specifiers.some((specifier) => specifier.exportKind !== 'type'));
-  return reference('static', runtime, node.source);
-}
-
-function importEqualsReference(node: AstNode): ModuleReference | undefined {
-  const moduleReference = node.moduleReference as AstNode;
-  if (moduleReference?.type !== 'TSExternalModuleReference') return undefined;
-  return reference('import-equals', true, moduleReference.expression);
-}
-
-function literalReference(
-  kind: ModuleReference['kind'],
-  value: unknown,
-): ModuleReference | undefined {
-  const literal = value as { readonly type?: unknown; readonly value?: unknown } | undefined;
-  return literal?.type === 'StringLiteral'
-    ? { kind, requiresRuntimeIdentity: true, specifier: String(literal.value) }
-    : undefined;
-}
-
-function reference(
-  kind: ModuleReference['kind'],
-  requiresRuntimeIdentity: boolean,
-  value: unknown,
-): ModuleReference {
-  const literal = value as { readonly value?: unknown };
-  return { kind, requiresRuntimeIdentity, specifier: String(literal.value) };
-}
-
 function parseSource(filePath: string, source: string): AstNode {
   if (!isSupportedSourcePath(filePath))
     throw new Error(`${filePath}: unsupported source extension`);
@@ -336,23 +262,6 @@ function parseSource(filePath: string, source: string): AstNode {
   } catch (error) {
     throw new SyntaxError(`${filePath}: ${String(error)}`);
   }
-}
-
-function visit(value: unknown, action: (node: AstNode) => void): void {
-  if (!value || typeof value !== 'object') return;
-  if (Array.isArray(value)) {
-    for (const item of value) visit(item, action);
-    return;
-  }
-  const node = value as AstNode;
-  if (typeof node.type === 'string') action(node);
-  for (const [key, child] of Object.entries(node)) {
-    if (!['loc', 'start', 'end', 'extra'].includes(key)) visit(child, action);
-  }
-}
-
-function firstArgument(node: AstNode): unknown {
-  return ((node.arguments as readonly unknown[]) ?? [])[0];
 }
 
 function resolveModuleSpecifier(filePath: string, specifier: string): string {

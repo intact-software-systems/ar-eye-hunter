@@ -5,12 +5,13 @@ import path from 'node:path';
 
 import { parse } from '@babel/parser';
 
-export interface TypeScriptDiagnostic {
-  readonly code: number;
-  readonly message: string;
-  readonly owner: string;
-  readonly path: string;
-}
+import {
+  authServerInheritedDiagnosticLedger,
+  type InheritedDiagnosticDisposition,
+  type TypeScriptDiagnostic,
+} from './auth-server-inherited-diagnostic-ledger.ts';
+
+export type { TypeScriptDiagnostic } from './auth-server-inherited-diagnostic-ledger.ts';
 
 interface PathEvidence {
   readonly path: string;
@@ -28,11 +29,30 @@ interface DiagnosticEvidence {
   readonly pathEvidence: readonly PathEvidence[];
   readonly baseDiagnostics: readonly TypeScriptDiagnostic[];
   readonly headDiagnostics: readonly TypeScriptDiagnostic[];
+  readonly inheritedDiagnosticLedger: readonly InheritedDiagnosticDisposition[];
+  readonly diagnosticDispositionViolations: readonly string[];
 }
 
 interface CompilerResult {
   readonly status: number;
   readonly diagnostics: readonly TypeScriptDiagnostic[];
+}
+
+interface DiagnosticLocation {
+  readonly column: number;
+  readonly owner: string;
+  readonly ownerRelativeLine: number;
+}
+
+interface DiagnosticOwner {
+  readonly name: string;
+  readonly span: number;
+  readonly startLine: number;
+}
+
+interface DiagnosticPoint {
+  readonly column: number;
+  readonly line: number;
 }
 
 interface AstNode extends Record<string, unknown> {
@@ -54,6 +74,10 @@ export function readTouchedTypeScriptDiagnostics(): DiagnosticEvidence {
   try {
     const base = runCompiler(baseRoot, touchedPaths);
     const head = runCompiler(repoRoot, touchedPaths);
+    const diagnosticDispositionViolations = readDiagnosticDispositionViolations(
+      head.diagnostics,
+      authServerInheritedDiagnosticLedger,
+    );
     return {
       baseSha: exactBaseSha,
       baseStatus: base.status,
@@ -68,10 +92,27 @@ export function readTouchedTypeScriptDiagnostics(): DiagnosticEvidence {
       })),
       baseDiagnostics: base.diagnostics,
       headDiagnostics: head.diagnostics,
+      inheritedDiagnosticLedger: authServerInheritedDiagnosticLedger,
+      diagnosticDispositionViolations,
     };
   } finally {
     rmSync(baseRoot, { force: true, recursive: true });
   }
+}
+
+export function readDiagnosticDispositionViolations(
+  candidate: readonly TypeScriptDiagnostic[],
+  ledger: readonly Partial<InheritedDiagnosticDisposition>[],
+): readonly string[] {
+  const metadataViolations = ledger.flatMap(readDispositionMetadataViolations);
+  const expected = ledger.flatMap(toCompleteDiagnostic);
+  const missing = readDiagnosticRegressions(candidate, expected).map(
+    (diagnostic) => `missing diagnostic:${diagnosticKey(diagnostic)}`,
+  );
+  const unexpected = readDiagnosticRegressions(expected, candidate).map(
+    (diagnostic) => `unexpected diagnostic:${diagnosticKey(diagnostic)}`,
+  );
+  return [...metadataViolations, ...missing, ...unexpected];
 }
 
 export function readDiagnosticRegressions(
@@ -158,42 +199,112 @@ function parseDiagnostics(
     if (!match) continue;
     const filePath = relativeTo(root, match[1]);
     if (!touchedPaths.has(filePath)) continue;
+    const location = readDiagnosticLocation(root, filePath, {
+      column: Number(match[3]),
+      line: Number(match[2]),
+    });
     diagnostics.push({
+      ...location,
       code: Number(match[4]),
       message: normalizeMessage(match[5], root),
-      owner: readDiagnosticOwner(root, filePath, Number(match[2])),
       path: filePath,
     });
   }
   return diagnostics.sort((left, right) => diagnosticKey(left).localeCompare(diagnosticKey(right)));
 }
 
-function readDiagnosticOwner(root: string, filePath: string, line: number): string {
+function readDiagnosticLocation(
+  root: string,
+  filePath: string,
+  point: DiagnosticPoint,
+): DiagnosticLocation {
   const absolutePath = path.join(root, filePath);
-  if (!existsSync(absolutePath)) return '<missing>';
+  if (!existsSync(absolutePath)) return toDiagnosticLocation('<missing>', point, 1);
   try {
     const source = readFileSync(absolutePath, 'utf8');
     const program = parse(source, {
       sourceType: 'module',
       plugins: ['typescript', ...(filePath.endsWith('x') ? (['jsx'] as const) : [])],
     }).program;
-    return smallestOwner(program as unknown as AstNode, line)?.name ?? '<module>';
+    const owner = smallestOwner(program as unknown as AstNode, point.line);
+    return toDiagnosticLocation(owner?.name ?? '<module>', point, owner?.startLine ?? 1);
   } catch {
-    return '<unparsed>';
+    return toDiagnosticLocation('<unparsed>', point, 1);
   }
 }
 
-function smallestOwner(
-  root: AstNode,
-  line: number,
-): { readonly name: string; readonly span: number } | undefined {
-  let selected: { readonly name: string; readonly span: number } | undefined;
+function toDiagnosticLocation(
+  owner: string,
+  point: DiagnosticPoint,
+  ownerStartLine: number,
+): DiagnosticLocation {
+  return {
+    column: point.column,
+    owner,
+    ownerRelativeLine: point.line - ownerStartLine,
+  };
+}
+
+function readDispositionMetadataViolations(
+  entry: Partial<InheritedDiagnosticDisposition>,
+  index: number,
+): readonly string[] {
+  const violations: string[] = [];
+  if (typeof entry.column !== 'number' || !Number.isInteger(entry.column) || entry.column < 1) {
+    violations.push(`ledger[${index}]:column`);
+  }
+  if (!Number.isInteger(entry.code)) violations.push(`ledger[${index}]:code`);
+  if (
+    typeof entry.ownerRelativeLine !== 'number' ||
+    !Number.isInteger(entry.ownerRelativeLine) ||
+    entry.ownerRelativeLine < 0
+  ) {
+    violations.push(`ledger[${index}]:ownerRelativeLine`);
+  }
+  if (entry.disposition !== 'accepted inherited debt') {
+    violations.push(`ledger[${index}]:disposition`);
+  }
+  for (const field of [
+    'message',
+    'owner',
+    'path',
+    'responsibility',
+    'rationale',
+    'removalCondition',
+  ] as const) {
+    if (typeof entry[field] !== 'string' || entry[field].trim() === '') {
+      violations.push(`ledger[${index}]:${field}`);
+    }
+  }
+  return violations;
+}
+
+function toCompleteDiagnostic(
+  entry: Partial<InheritedDiagnosticDisposition>,
+): readonly TypeScriptDiagnostic[] {
+  if (
+    typeof entry.column !== 'number' ||
+    typeof entry.code !== 'number' ||
+    typeof entry.message !== 'string' ||
+    typeof entry.owner !== 'string' ||
+    typeof entry.ownerRelativeLine !== 'number' ||
+    typeof entry.path !== 'string'
+  ) {
+    return [];
+  }
+  return [entry as TypeScriptDiagnostic];
+}
+
+function smallestOwner(root: AstNode, line: number): DiagnosticOwner | undefined {
+  let selected: DiagnosticOwner | undefined;
   visit(root, undefined, (node, parent) => {
     if (!containsLine(node, line)) return;
     const name = ownerName(node, parent);
     if (!name) return;
     const span = node.loc!.end.line - node.loc!.start.line;
-    if (!selected || span < selected.span) selected = { name, span };
+    if (!selected || span < selected.span) {
+      selected = { name, span, startLine: node.loc!.start.line };
+    }
   });
   return selected;
 }
@@ -244,7 +355,14 @@ function containsLine(node: AstNode, line: number): boolean {
 }
 
 function diagnosticKey(diagnostic: TypeScriptDiagnostic): string {
-  return JSON.stringify([diagnostic.path, diagnostic.code, diagnostic.message, diagnostic.owner]);
+  return JSON.stringify([
+    diagnostic.path,
+    diagnostic.code,
+    diagnostic.message,
+    diagnostic.owner,
+    diagnostic.ownerRelativeLine,
+    diagnostic.column,
+  ]);
 }
 
 function normalizeMessage(message: string, root: string): string {
