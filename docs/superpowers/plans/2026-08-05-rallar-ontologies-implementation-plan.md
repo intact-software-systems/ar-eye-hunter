@@ -729,9 +729,14 @@ Its binding module uses:
 | File                                                                       | Responsibility                                                                                                         |
 | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `packages/shared/ontology/rallar-ontology-contracts.ts`                    | Generic vocabulary, IRI, relation, version, and binding contracts only. It has no code-standard-specific type.         |
-| `packages/shared/ontology/rallar-ontology-registry.ts`                     | Pure vocabulary/binding validation, deterministic catalog creation, lookup, and reference resolution.                  |
-| `packages/shared/ontology/rallar-domain-ontology-contracts.ts`             | Domain term profile.                                                                                                   |
+| `packages/shared/ontology/rallar-domain-ontology-term.ts`                  | Domain term profile only.                                                                                              |
 | `packages/shared/ontology/rallar-realtime-ontology-contracts.ts`           | Message, route, validation-classification, and RTC-lane profiles.                                                      |
+| `packages/shared/ontology/rallar-ontology-registry-contracts.ts`           | Catalog input, catalog result, and validation-issue contracts.                                                         |
+| `packages/shared/ontology/rallar-ontology-identity-validation.ts`          | Literal governed-IRI and exact semantic-version identity checks shared by the three validators.                        |
+| `packages/shared/ontology/validate-rallar-ontology-vocabulary-module.ts`   | Pure validation owned by one independently usable vocabulary module.                                                   |
+| `packages/shared/ontology/validate-rallar-ontology-binding-module.ts`      | Pure validation owned by one independently usable binding module.                                                      |
+| `packages/shared/ontology/validate-rallar-ontology-catalog.ts`             | Cross-module dependency, ownership, reference, and duplicate validation.                                               |
+| `packages/shared/ontology/rallar-ontology-registry.ts`                     | Pure deterministic catalog creation and lookup over already validated modules.                                         |
 | `packages/shared/ontology/rallar-domain-ontology.ts`                       | Experimental domain vocabulary root and pilot terms.                                                                   |
 | `packages/shared/ontology/rallar-domain-ontology-bindings.ts`              | Contractual/owner/informational bindings for pilot domain terms.                                                       |
 | `packages/shared/ontology/rallar-domain-state-ontology.ts`                 | Post-pilot membership, presence, snapshot, event, and topology terms.                                                  |
@@ -851,16 +856,47 @@ If criteria 1-7 fail, fix or roll back the owning slice; do not weaken the gate.
 
 **Purpose:** Establish a small semantic core whose meaning is independent of repository layout, plus a separate graded binding layer.
 
-**Prerequisites:** Start on `codex/rallar-ontology-foundation`; confirm the worktree does not contain overlapping user edits.
+**Prerequisites:** After this amended plan is published, its exact blob receives separate human approval, and the roadmap coordinator explicitly activates this exact 17-path cross-program reservation, start from a fresh, clean worktree on `codex/rallar-ontology-foundation` based on the then-current verified default branch. Record the approved plan blob, coordinator activation evidence, and full base SHA before writing tests. The earlier uncommitted six-path prototype based on `d68d5112797b2cf8332dfe0243cebbe545da89c9`, including its 47/47 focused result and semantic review, is design input only: do not reuse its worktree, claim its checks as current evidence, or transplant it as a completed implementation. Reimplement the behavior test-first, reconcile at least current `main` `a90042398448776b0972aaaaa0f5cca762163fde`, and rerun every gate on the new tree.
 
-**Files:**
+**Exact reservation:** Task 1 may create or modify only these 17 paths:
 
 - Create: `packages/shared/ontology/rallar-ontology-contracts.ts`
-- Create: `packages/shared/ontology/rallar-domain-ontology-contracts.ts`
+- Create: `packages/shared/ontology/rallar-domain-ontology-term.ts`
 - Create: `packages/shared/ontology/rallar-realtime-ontology-contracts.ts`
+- Create: `packages/shared/ontology/rallar-ontology-registry-contracts.ts`
+- Create: `packages/shared/ontology/rallar-ontology-identity-validation.ts`
+- Create: `packages/shared/ontology/validate-rallar-ontology-vocabulary-module.ts`
+- Create: `packages/shared/ontology/validate-rallar-ontology-binding-module.ts`
+- Create: `packages/shared/ontology/validate-rallar-ontology-catalog.ts`
 - Create: `packages/shared/ontology/rallar-ontology-registry.ts`
 - Create: `packages/shared/ontology/mod.ts`
+- Create: `packages/tests/shared/rallar-ontology-test-fixtures.ts`
 - Create: `packages/tests/shared/rallar-ontology-registry.test.ts`
+- Create: `packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts`
+- Create: `packages/tests/shared/rallar-ontology-binding-validation.test.ts`
+- Create: `packages/tests/shared/rallar-ontology-catalog-validation.test.ts`
+- Modify: `scripts/repo-style-check/layout-rules.mjs`
+- Modify: `packages/tests/repo/repo-style-layout-rules.test.ts`
+
+Every new Task 1 source and test file must contain at most 400 physical lines, including comments and blank lines. Keep both modified checker files at or below 400 lines as well; each is 399 lines at the approved base, so extend the existing allowlist declaration and existing semantic test without adding a new rule family or a large parallel fixture.
+
+**Responsibility split:**
+
+| File                                            | Exact Task 1 responsibility                                                                                                                                                                                                                                                |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rallar-ontology-contracts.ts`                  | Generic IRI, version, vocabulary, term, relation, binding, target, and binding-profile contracts plus `RALLAR_RELATION_IDS`; no domain/realtime behavior, registry behavior, repository I/O, or code-standard-specific type.                                               |
+| `rallar-domain-ontology-term.ts`                | `RallarDomainOntologyTerm` only.                                                                                                                                                                                                                                           |
+| `rallar-realtime-ontology-contracts.ts`         | The realtime term, route, validation-semantics, and binding-profile contracts from section 3.3 only.                                                                                                                                                                       |
+| `rallar-ontology-registry-contracts.ts`         | `RallarOntologyIssue`, `CreateRallarOntologyCatalogInput`, and `RallarOntologyCatalog` only.                                                                                                                                                                               |
+| `rallar-ontology-identity-validation.ts`        | Sibling-only pure helpers for literal governed-IRI validation, canonical numeric `major.minor.patch` parsing/comparison, version-series matching, repository-relative target syntax, and fully qualified issue construction. Do not re-export these helpers from `mod.ts`. |
+| `validate-rallar-ontology-vocabulary-module.ts` | Independent validation of one vocabulary's identity, version, compatibility metadata, terms, relations, and local deprecation invariants.                                                                                                                                  |
+| `validate-rallar-ontology-binding-module.ts`    | Independent validation of one binding module's identity, version, strengths, targets, binding/profile IDs, and local syntax.                                                                                                                                               |
+| `validate-rallar-ontology-catalog.ts`           | Cross-module duplicates, selected-version dependencies, cross-vocabulary references/supersession, exact binding-to-vocabulary pairing, and binding/profile term ownership.                                                                                                 |
+| `rallar-ontology-registry.ts`                   | Validate once, immutably copy and deterministically sort the catalog, throw the one programmer-boundary `TypeError`, and provide the three `getXxx` lookups.                                                                                                               |
+| `mod.ts`                                        | The intentional narrow compatibility surface containing exactly the already promised Task 1 public types, constants, validators, catalog creator, and lookups; no implementation-only identity helper export.                                                              |
+| `rallar-ontology-test-fixtures.ts`              | Reusable immutable `0.1.0` vocabulary/binding builders and canonical IDs used by the four focused ontology suites; no production behavior.                                                                                                                                 |
+| Four ontology test files                        | One responsibility each: vocabulary, binding, catalog, and deterministic registry/lookup behavior.                                                                                                                                                                         |
+| `layout-rules.mjs` and its existing test        | Add only the exact `packages/shared/ontology/mod.ts` compatibility-boundary exception and prove it through `scanRepositoryLayout`; no ontology import.                                                                                                                     |
 
 **Production symbols:**
 
@@ -915,6 +951,18 @@ export interface RallarOntologyCatalog {
   readonly bindingProfiles: readonly RallarOntologyBindingProfileBase[];
 }
 
+export function validateRallarOntologyVocabularyModule(
+  vocabulary: RallarOntologyVocabularyModule,
+): readonly RallarOntologyIssue[];
+
+export function validateRallarOntologyBindingModule(
+  bindingSet: RallarOntologyBindingModule,
+): readonly RallarOntologyIssue[];
+
+export function validateRallarOntologyCatalog(
+  input: CreateRallarOntologyCatalogInput,
+): readonly RallarOntologyIssue[];
+
 export function createRallarOntologyCatalog(
   input: CreateRallarOntologyCatalogInput,
 ): RallarOntologyCatalog;
@@ -935,47 +983,266 @@ export function getRallarOntologyBindingProfiles(
 ): readonly RallarOntologyBindingProfileBase[];
 ```
 
-`validate...` functions return all issues and never throw. `createRallarOntologyCatalog` sorts copied arrays and throws one `TypeError` containing all configuration issues only at this programmer boundary.
+`validate...` functions return all issues and never throw. Standalone issue paths are rooted at `vocabulary` or `bindingSet`, for example `vocabulary.terms[1].references[0].targetTermId` and `bindingSet.bindings[2].target.modulePath`. Catalog issue paths are rooted at `catalog` and retain the complete owning collection/index chain, for example `catalog.vocabularies[1].terms[0].supersededBy` and `catalog.bindingSets[0].bindings[3].termId`; a bare `termId`, `targetTermId`, or `modulePath` path is invalid. Sort returned issues by path, then code, then message using raw code-unit ordering so aggregation is locale-independent and deterministic.
+
+`createRallarOntologyCatalog` calls the three validators, throws one `TypeError` containing every sorted configuration issue only at this programmer boundary, and otherwise sorts by copying every order-insensitive array. Using the same raw code-unit comparator, nested copies sort vocabularies by ontology ID, vocabulary compatibility/dependency/question IDs, terms by term ID, term references by relation ID then target term ID, binding sets by binding-set ID, their compatibility IRIs and bindings by ID, and profiles by profile ID. Flattened `terms`, `bindings`, and `bindingProfiles` are independently sorted by their IDs. Preserve semantically ordered arrays such as `identityFields`, `propertyPath`, transports, target modes, and future profile-specific sequences. Never call a mutating sort on caller-owned input.
+
+**Semantic invariants locked for Task 1:**
+
+- Validate the governed base as the literal prefix `https://github.com/intact-software-systems/ar-eye-hunter/ontology/`; do not parse and normalize a URL before comparing it. Reject scheme/host/path lookalikes, user-info host tricks, empty or dot segments (`.` and `..`), query/fragment suffixes, percent-encoded alternatives, Unicode-confusable spellings, and bare `/extension` or `/extension/<owner>` ontology IDs without both owner and ontology-name segments.
+- Require every module's `version` to be canonical numeric `major.minor.patch`. A vocabulary's `versionIri` is the literal `<ontologyId>/version/<version>`; a binding module's `versionIri` is the literal `<bindingSetId>/version/<version>`. Each `compatibleWith` entry must be an exact, unique, strictly prior version IRI from that same owning series; reject self, future/equal, foreign-series, range, partial, prerelease, build, normalized, or inferred compatibility.
+- A selected vocabulary satisfies `requiredVocabularyVersionIris` only when its version IRI is the exact requirement or its own explicit `compatibleWith` contains that exact requirement. There is no SemVer-range inference.
+- A term reference or `supersededBy` may target another selected vocabulary only when the source vocabulary declares the target vocabulary's required version and that dependency is satisfied. Missing targets remain `missing-reference`; present cross-vocabulary targets without a satisfied declared dependency are `missing-vocabulary-import`.
+- A binding module must name the selected vocabulary's exact `ontologyId` and `vocabularyVersionIri`. Every binding and profile term must belong to that exact vocabulary version, not merely exist somewhere else in the selected catalog.
+- Preserve the deprecation rules already specified: a deprecated term requires `removalCondition`; optional `supersededBy` resolves, is not self, and follows the same cross-vocabulary dependency rule.
+- Keep Task 1 additive and operationally inert. Apart from the new narrow ontology `mod.ts`, do not change an existing package barrel (including `packages/shared/mod.ts`), runtime import, packet, payload, authority, routing, runtime validator, generated artifact, or Task 2-11 content.
 
 **Behavioral change:** Adds an opt-in metadata API only; no runtime or checker imports it.
 
-**Compatibility effect:** Additive narrow module; no change to `packages/shared/mod.ts` or existing imports.
+**Compatibility effect:** Additive narrow module; no change to `packages/shared/mod.ts` or existing imports. Add only `packages/shared/ontology/mod.ts` to the existing exact `approvedModCompatibilityBoundaries` allowlist. Do not change `layoutRuleIds`, any checker rule ID, threshold, severity, suppression, finding message, other compatibility boundary, or checker behavior outside that single exact-path result.
 
-- [ ] **Step 1: Write RED foundation tests**
-
-Test independent vocabulary/binding validation, deterministic ordering (including profiles), controlled relation IRIs, canonical repository-governed ontology/owner/term/version/profile IRIs (including rejection of query/fragment/percent-encoded/Unicode-confusable variants), duplicate IDs, exact declared vocabulary dependencies satisfied only by an exact or explicitly compatible selected version, exact binding-to-vocabulary version matching, matching series/version IRIs, missing term/profile references, invalid maturity/compatibility metadata, and deprecation rules (`removalCondition` required; optional `supersededBy` resolves and is not self). Also test strength/target compatibility, non-empty `propertyPath` segments that reject `__proto__`/`prototype`/`constructor`, and rejection of absolute/traversing repository paths.
-
-Use an experimental vocabulary fixture with version `0.1.0`, a matching version IRI, a controlled owner IRI, no required imports, one `draft` parent term, one child relation using `RALLAR_RELATION_IDS`, and a separate experimental `0.1.0` binding set with its own matching version IRI/owner IRI, the vocabulary's exact version IRI, one contractual TypeScript-export binding, and one generic profile. Also prove that the vocabulary remains valid when its binding set is omitted.
-
-- [ ] **Step 2: Run the focused test and verify RED**
+- [ ] **Step 1: Record the clean implementation base and exact reservation**
 
 ```bash
-npx vitest run packages/tests/shared/rallar-ontology-registry.test.ts
+git status --short --branch
+git rev-parse HEAD
+git rev-parse origin/main
+git merge-base --is-ancestor a90042398448776b0972aaaaa0f5cca762163fde HEAD
+git diff --name-only
 ```
 
-Expected: FAIL because `@shared/ontology/mod.ts` does not exist.
+Expected: the branch is `codex/rallar-ontology-foundation`, the worktree is clean, `HEAD` equals the then-current verified `origin/main`, and that base is at least `a90042398448776b0972aaaaa0f5cca762163fde`. Before any RED or source edit, verify and record both the human-approved exact plan blob and the roadmap coordinator's explicit activation evidence naming this exact 17-path reservation; neither substitutes for the other. Record the full base SHA in the draft PR before later publication. Stop if either authorization is absent or stale, the active reservation differs, or any path is already modified.
 
-- [ ] **Step 3: Implement the contracts and pure catalog**
+- [ ] **Step 2: Write the shared fixtures and RED vocabulary-validation suite**
 
-Keep repository I/O out of this task. Validate binding target syntax and strength compatibility only; structural export/schema/anchor resolution belongs to build-time governance. Sort without mutating callers. Do not add classes, mutable registration, clocks, environment access, or generic code-standard types.
+In `rallar-ontology-test-fixtures.ts`, define `createRallarOntologyVocabularyFixture` and `createRallarOntologyBindingModuleFixture` with immutable overrides. Their defaults are the independent experimental `0.1.0` vocabulary/binding pair already specified by this plan: exact series/version/owner IDs, one draft parent term, one draft child using `RALLAR_RELATION_IDS`, no dependencies, one contractual TypeScript-export binding, and one generic profile.
 
-- [ ] **Step 4: Run focused tests and shared type-check**
+In `rallar-ontology-vocabulary-validation.test.ts`, require these exact test groups:
+
+- the default fixture returns no issues without any binding module;
+- literal-base positives for the top-level domain/realtime/code-standards series and `/extension/acme/game`, plus canonical `/owner/acme`, `/term/acme.entity`, relation, and version IDs;
+- `invalid-ontology-iri`, `invalid-owner-iri`, and `invalid-term-iri` negatives that apply the relevant `http:`, uppercase/lookalike host, `github.com.evil`, `github.com@evil.example`, `/ontology.evil/`, `/./`, `/../`, empty-segment, query, fragment, percent-encoding, and Unicode-confusable variants; ontology-series cases also reject bare `/extension` and `/extension/acme`;
+- exact matching of `version` and `versionIri`, with canonical numeric triples only;
+- `compatibleWith` accepts distinct exact `0.1.0` and `0.2.0` entries for a `0.3.0` module from the same series, and rejects duplicates, self `0.3.0`, future `0.4.0`, another series, ranges, partials, prereleases, builds, and leading-zero forms with `invalid-compatible-version-iri`;
+- controlled relation IDs, unique term IDs, valid and invalid maturity cases, reference-record syntax, `supersededBy` non-self/removal-condition rules, and complete `vocabulary...` issue paths; target resolution remains catalog-owned.
+
+- [ ] **Step 3: Run the vocabulary suite and verify RED**
 
 ```bash
-npx vitest run packages/tests/shared/rallar-ontology-registry.test.ts
+npx vitest run packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts
+```
+
+Expected: FAIL because the Task 1 contract and vocabulary-validation modules do not exist.
+
+- [ ] **Step 4: Implement contracts, profile contracts, identity checks, and vocabulary validation**
+
+Create the first six reserved production files through `validate-rallar-ontology-vocabulary-module.ts` according to the responsibility table. Compare governed IRIs as literal ASCII strings, parse versions without URL or SemVer coercion, collect all issues, and keep repository I/O out. Do not add classes, global registration, clocks, environment access, code-standard-specific types, or exports beyond the frozen public surface.
+
+- [ ] **Step 5: Prove vocabulary validation GREEN and type-safe**
+
+```bash
+npx vitest run packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts
 npx tsc -p packages/shared/tsconfig.json --noEmit
 ```
 
-Expected: both exit 0.
+Expected: both commands exit 0.
 
-- [ ] **Step 5: Commit the isolated foundation on its own branch**
+- [ ] **Step 6: Write the RED binding-validation suite**
+
+In `rallar-ontology-binding-validation.test.ts`, prove the default fixture is independently valid and uses exact canonical IDs such as `/binding-set/acme.core`, `/binding/acme.core.export`, `/binding-profile/acme.core.profile`, `/owner/acme`, the selected vocabulary series, and their literal version IRIs. Require the binding-set version IRI to match its binding-set series/version and the vocabulary version IRI to belong to its declared ontology series. Reject malformed/lookalike/dot-segment/query/fragment/percent-encoded variants for each applicable identity. Reject an out-of-union maturity such as `preview` and cover the full binding-series `compatibleWith` matrix: exact unique prior same-series versions pass; duplicate, self, equal/future, foreign-series, range, partial, prerelease, build, and leading-zero versions fail with `invalid-compatible-version-iri`. Also cover unique binding/profile IDs, every strength/target pairing, repository-relative target paths, and non-empty `propertyPath` segments. Reject absolute paths, traversal, URLs/package specifiers, `__proto__`, `prototype`, and `constructor`. Require all issue paths to retain the complete `bindingSet.bindings[index].target...` or `bindingSet.profiles[index]...` chain. Leave actual export/schema/anchor resolution to Task 6.
+
+- [ ] **Step 7: Run the binding suite and verify RED**
 
 ```bash
-git add packages/shared/ontology packages/tests/shared/rallar-ontology-registry.test.ts
+npx vitest run packages/tests/shared/rallar-ontology-binding-validation.test.ts
+```
+
+Expected: FAIL because `validate-rallar-ontology-binding-module.ts` does not exist.
+
+- [ ] **Step 8: Implement independent binding-module validation**
+
+Implement only syntax, identity, version, compatibility, strength, target, and local duplicate validation in `validate-rallar-ontology-binding-module.ts`. Do not read the filesystem, import targets, resolve a vocabulary, or guess term ownership here.
+
+- [ ] **Step 9: Prove binding validation GREEN and type-safe**
+
+```bash
+npx vitest run packages/tests/shared/rallar-ontology-binding-validation.test.ts
+npx tsc -p packages/shared/tsconfig.json --noEmit
+```
+
+Expected: both commands exit 0.
+
+- [ ] **Step 10: Write the RED cross-catalog validation suite**
+
+In `rallar-ontology-catalog-validation.test.ts`, cover:
+
+- duplicate ontology/version/term/binding-set/binding/profile identities;
+- one exact selected dependency, one newer same-series selected vocabulary that explicitly lists the required prior IRI, and failures for omitted, incompatible, or merely SemVer-newer selections;
+- intra-vocabulary references without a dependency;
+- cross-vocabulary `references[].targetTermId` and `supersededBy` accepted only with a satisfied declared dependency;
+- `missing-reference` for an absent target and `missing-vocabulary-import` for a present foreign target lacking its dependency;
+- exact binding `ontologyId` plus `vocabularyVersionIri` pairing;
+- bindings and profiles accepted only when their `termId` belongs to that exact vocabulary, with a foreign selected term rejected as `missing-binding-term`;
+- complete `catalog.vocabularies[index]...` and `catalog.bindingSets[index]...` paths and deterministic path/code/message issue ordering.
+
+- [ ] **Step 11: Run the catalog suite and verify RED**
+
+```bash
+npx vitest run packages/tests/shared/rallar-ontology-catalog-validation.test.ts
+```
+
+Expected: FAIL because `validate-rallar-ontology-catalog.ts` does not exist.
+
+- [ ] **Step 12: Implement cross-module catalog validation**
+
+Build explicit maps from selected ontology ID/version IRI and term ID to their owning vocabulary. Reuse the two independent validators, prefix their standalone paths with the exact catalog collection/index, then validate duplicates, dependencies, references, supersession, binding pairing, and binding/profile term ownership. Collect every issue; do not mutate or construct the final catalog.
+
+- [ ] **Step 13: Prove catalog validation GREEN and type-safe**
+
+```bash
+npx vitest run packages/tests/shared/rallar-ontology-catalog-validation.test.ts
+npx tsc -p packages/shared/tsconfig.json --noEmit
+```
+
+Expected: both commands exit 0.
+
+- [ ] **Step 14: Write the RED deterministic-registry suite**
+
+In `rallar-ontology-registry.test.ts`, pass the same valid modules in forward and reverse order and require deeply equal catalog results. Assert the exact nested and flattened order described above, freeze every caller-owned input array before creation, compare the original graph after creation, and prove that order-sensitive arrays retain their authored order. Cover all three lookups, missing lookups returning `undefined` or `[]` as already promised, independent vocabulary creation without bindings, and one invalid aggregate producing one `TypeError` that contains every sorted code/path/message.
+
+- [ ] **Step 15: Run the registry suite and verify RED**
+
+```bash
+npx vitest run packages/tests/shared/rallar-ontology-registry.test.ts
+```
+
+Expected: FAIL because `rallar-ontology-registry.ts` and `mod.ts` do not exist.
+
+- [ ] **Step 16: Implement deterministic creation, lookups, and the frozen public surface**
+
+Create sorted copies in `rallar-ontology-registry.ts`, implement the three direct `getXxx` operations, and make `mod.ts` re-export exactly the Task 1 public contracts/functions listed above. Internal source imports name their owning files directly; do not route internal calls back through `mod.ts`.
+
+- [ ] **Step 17: Prove registry behavior GREEN and run the complete ontology cohort**
+
+```bash
+npx vitest run \
+  packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts \
+  packages/tests/shared/rallar-ontology-binding-validation.test.ts \
+  packages/tests/shared/rallar-ontology-catalog-validation.test.ts \
+  packages/tests/shared/rallar-ontology-registry.test.ts
+npx tsc -p packages/shared/tsconfig.json --noEmit
+```
+
+Expected: both commands exit 0.
+
+- [ ] **Step 18: Extend the existing layout-rule test and verify RED**
+
+Modify the existing semantic `scanRepositoryLayout` mod-boundary case in `repo-style-layout-rules.test.ts`. Include `packages/shared/ontology/mod.ts` as accepted and `packages/shared/ontology/nested/mod.ts` as rejected alongside the already accepted/rejected fixtures. Assert findings through `layoutRuleIds.unapprovedMod`; do not inspect the allowlist's source text and do not add a new checker rule.
+
+```bash
+npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts
+```
+
+Expected: FAIL because the exact ontology boundary is not yet approved.
+
+- [ ] **Step 19: Add the one exact compatibility boundary and prove GREEN**
+
+Add only `packages/shared/ontology/mod.ts` to `approvedModCompatibilityBoundaries` in `layout-rules.mjs`. Do not change any other allowlist member or any checker rule ID, threshold, severity, suppression, finding text, scan scope, or exported symbol.
+
+```bash
+npx vitest run packages/tests/repo/repo-style-layout-rules.test.ts
+npm run test:repo-governance
+```
+
+Expected: both commands exit 0; the exact ontology boundary is accepted and its nested lookalike still reports `layout.unapproved-mod`.
+
+- [ ] **Step 20: Enforce the physical-line and exact-reservation gates**
+
+```bash
+for file in \
+  packages/shared/ontology/rallar-ontology-contracts.ts \
+  packages/shared/ontology/rallar-domain-ontology-term.ts \
+  packages/shared/ontology/rallar-realtime-ontology-contracts.ts \
+  packages/shared/ontology/rallar-ontology-registry-contracts.ts \
+  packages/shared/ontology/rallar-ontology-identity-validation.ts \
+  packages/shared/ontology/validate-rallar-ontology-vocabulary-module.ts \
+  packages/shared/ontology/validate-rallar-ontology-binding-module.ts \
+  packages/shared/ontology/validate-rallar-ontology-catalog.ts \
+  packages/shared/ontology/rallar-ontology-registry.ts \
+  packages/shared/ontology/mod.ts \
+  packages/tests/shared/rallar-ontology-test-fixtures.ts \
+  packages/tests/shared/rallar-ontology-registry.test.ts \
+  packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts \
+  packages/tests/shared/rallar-ontology-binding-validation.test.ts \
+  packages/tests/shared/rallar-ontology-catalog-validation.test.ts \
+  scripts/repo-style-check/layout-rules.mjs \
+  packages/tests/repo/repo-style-layout-rules.test.ts
+do
+  line_count="$(wc -l < "$file")"
+  if [ "$line_count" -gt 400 ]; then
+    echo "$file has $line_count physical lines; maximum is 400"
+    exit 1
+  fi
+done
+git add \
+  packages/shared/ontology/rallar-ontology-contracts.ts \
+  packages/shared/ontology/rallar-domain-ontology-term.ts \
+  packages/shared/ontology/rallar-realtime-ontology-contracts.ts \
+  packages/shared/ontology/rallar-ontology-registry-contracts.ts \
+  packages/shared/ontology/rallar-ontology-identity-validation.ts \
+  packages/shared/ontology/validate-rallar-ontology-vocabulary-module.ts \
+  packages/shared/ontology/validate-rallar-ontology-binding-module.ts \
+  packages/shared/ontology/validate-rallar-ontology-catalog.ts \
+  packages/shared/ontology/rallar-ontology-registry.ts \
+  packages/shared/ontology/mod.ts \
+  packages/tests/shared/rallar-ontology-test-fixtures.ts \
+  packages/tests/shared/rallar-ontology-registry.test.ts \
+  packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts \
+  packages/tests/shared/rallar-ontology-binding-validation.test.ts \
+  packages/tests/shared/rallar-ontology-catalog-validation.test.ts \
+  scripts/repo-style-check/layout-rules.mjs \
+  packages/tests/repo/repo-style-layout-rules.test.ts
+git diff --cached --name-only "$(git merge-base origin/main HEAD)"
+git diff --name-only
+```
+
+Expected: the loop exits 0, the staged diff lists exactly the 17 reserved paths, and the unstaged diff is empty, with no existing package barrel, runtime, packet, payload, authority, routing, runtime-validation, generated-artifact, or Task 2-11 file.
+
+- [ ] **Step 21: Run focused formatting, style, and final unchanged-tree gates**
+
+```bash
+npx prettier --check \
+  packages/shared/ontology \
+  packages/tests/shared/rallar-ontology-test-fixtures.ts \
+  packages/tests/shared/rallar-ontology-registry.test.ts \
+  packages/tests/shared/rallar-ontology-vocabulary-validation.test.ts \
+  packages/tests/shared/rallar-ontology-binding-validation.test.ts \
+  packages/tests/shared/rallar-ontology-catalog-validation.test.ts \
+  scripts/repo-style-check/layout-rules.mjs \
+  packages/tests/repo/repo-style-layout-rules.test.ts
+git diff --check
+git diff --cached --check
+npm run check:repo-style:changed -- "$(git merge-base origin/main HEAD)"
+npm run test:repo-governance
+npm run test:unit
+npm run test:ci
+npm run build
+```
+
+Expected: every command exits 0. Run the commands on the final unchanged tree; any later edit invalidates all results and requires the whole step again. No checker warning is acceptable as implicit success: record any changed-production finding by path, rule, symbol, and disposition.
+
+- [ ] **Step 22: Commit only the isolated foundation**
+
+```bash
+git diff --cached --name-only
+git diff --name-only
+git write-tree
 git commit -m "feat: add Rallar ontology vocabulary and binding contracts"
 ```
 
-**Acceptance criteria:** Semantic terms contain no code paths; binding strength is explicit; in-memory lookup uses `getXxx`; each module validates without unrelated ontology modules; no runtime/checker entry point changes.
+Expected: the staged inventory is still exactly the 17-path reservation, the unstaged diff is empty, and the recorded tree contains only the fully gated content.
+
+**Acceptance criteria:** The public Task 1 API and behavior remain the API and behavior already approved in this plan; only its internal responsibilities and tests are split. Semantic terms contain no code paths; binding strength is explicit; literal identities, version compatibility, declared dependencies, cross-vocabulary ownership, deterministic immutable sorting, and fully qualified issues satisfy the locked invariants; in-memory lookup uses `getXxx`; each module validates without unrelated ontology modules; only the exact ontology `mod.ts` compatibility boundary is added; no runtime or existing checker entry point imports ontology code.
 
 **Rollback point:** Revert `feat: add Rallar ontology vocabulary and binding contracts`; no existing consumer can be affected.
 
