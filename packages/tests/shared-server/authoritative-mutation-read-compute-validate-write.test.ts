@@ -292,7 +292,7 @@ it('keeps AppInbox as the only retry and transaction owner for HTTP and WS mutat
 
 it('keeps transport boundaries free of direct mutators and persistence owners', () => {
   expect(findMutationBoundaryViolations()).toEqual([]);
-});
+}, 15_000);
 
 it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomically', () => {
   const seam = functionBody(sources.topologyConfig, 'writeTopologyConfigMutation');

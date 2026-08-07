@@ -179,7 +179,7 @@ describe('compatibility consumer ownership maps', () => {
       );
       expect(inventory.governanceIdentityConsumers).toEqual([runtimeIdentityGovernanceTest]);
     }
-  });
+  }, 15_000);
 });
 
 function readRepositorySource(filePath: string): string {

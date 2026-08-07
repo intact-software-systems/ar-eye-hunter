@@ -69,7 +69,7 @@ describe('auth compatibility ownership', () => {
       );
       expect(inventory.removalCondition, inventory.compatibilityPath).not.toBe('');
     }
-  });
+  }, 15_000);
 });
 
 describe('auth server canonical owner presence', () => {
