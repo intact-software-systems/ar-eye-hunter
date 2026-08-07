@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -203,21 +203,6 @@ describe('client-state PR B persistence lineage provenance', () => {
       expect(structuralLineageByTargetPath.has(target), target).toBe(false);
     }
   });
-
-  it('passes the active changed-style gate without capacity for mixed-source targets', () => {
-    const result = spawnSync(
-      process.execPath,
-      ['scripts/check-changed-repo-style.mjs', prAResultingMain],
-      {
-        cwd: repoRoot,
-        encoding: 'utf8',
-      },
-    );
-
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(result.stdout).toContain('PASS: no new repository style findings');
-  }, 30_000);
 
   it('registers this provenance suite adjacent to the client-state governance tests', () => {
     const testRepoGovernance = JSON.parse(read('package.json')).scripts[

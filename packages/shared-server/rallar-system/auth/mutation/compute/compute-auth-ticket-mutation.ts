@@ -4,10 +4,7 @@ import type {
   AuthMutationRead,
   IssueAuthWsTicketCommand,
 } from '../auth-mutation-contracts.ts';
-import {
-  equalAuthJson,
-  requireAuthTicket,
-} from '../validate/auth-mutation-validation.ts';
+import { equalAuthJson, requireAuthTicket } from '../validate/auth-mutation-validation.ts';
 import {
   requireConsumedAuthSession,
   toConsumedAuthSessionResult,

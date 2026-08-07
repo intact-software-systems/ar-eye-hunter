@@ -970,8 +970,10 @@ assignment.
 `4a8e286da93ff8aac733f8e032feadd5cccd0533`, and Task 2D validation owners at
 `f321adeedd01fde22283087dea9e78669f6d9fdd`. Each cohort's final independent review
 reported Critical 0 and Important 0. This Task 2E tree adds the first durable map and
-stage-accurate supplementary evidence; its commit/tree remain in the external handoff until they
-exist.
+stage-accurate supplementary evidence at exact commit
+`b36f565c4cc7560eb0900a001c77f1000112077e`, tree
+`3c9836a475b713c28668a11914475951aa6b0d40`; its independent review reported
+Critical 0, Important 0, and Minor 0.
 
 **Files:** target credential, login, mutation contract/codec/facts/compute/validate files;
 initial README; directly owned mirrored tests; six compatibility paths only as required.
@@ -997,12 +999,28 @@ PR B persistence/read/write/inbox target-path and re-export-only assertions rema
 
 ### Task 3: Freeze, Review, And Publish PR A
 
-- [ ] Reconcile all 49 dispositions for PR A rows, focused checker output, compatibility imports,
+- [x] Reconcile all 49 dispositions for PR A rows, focused checker output, compatibility imports,
       primary symbols, module/function limits, cycles, lost assertions, and security behavior.
 - [ ] Run Section 11.2 and repository completion gates on the final unchanged tree.
 - [ ] Freeze exact commit/tree, push non-forced, update one draft PR A, require Branch Release
       Gate, mark ready, and stop for human merge.
 - [ ] After merge, require exact resulting-main/default-workflow success before PR B.
+
+The whole-PR review reported Critical 0, Important 1, and Minor 0. The sole Important finding was
+an unmapped 116-column canonical decoder import in a shared-test consumer. Exact commit
+`7ba002c222fc6c02e3d5bcfa9971b4ae3f778c49`, tree
+`9a50b99d937437a3cbcc2d3f2b34154be78cf3f2`, routes that public consumer through the intentional
+shared-server package entry; its scoped re-review reported Critical 0, Important 0, and Minor 0.
+The exact-base warning-only comparison now contains only 16 reconciled findings: thirteen approved
+untrusted/nested decode-boundary findings, the two approved target filename heuristics, and the
+transitional `auth-state-read.ts` filename finding owned by PR B.
+
+Repository governance also exposed a completed client-state exact-base assertion whose recorded
+removal condition was satisfied by ledger PR #75. A separate human authorization allowed removal
+of only that obsolete subprocess assertion and its `spawnSync` import. Independent review reported
+Critical 0, Important 0, and Minor 0; the retained client-state provenance suite passes 4 tests and
+the complete repository-governance suite passes 278 tests. The final commit/tree, completion gates,
+push, PR, and Branch Release Gate remain in the external publication envelope until they exist.
 
 ### Task 4: Implement PR B Authoritative Shell And Persistence Test-First
 
@@ -1337,7 +1355,7 @@ changed tree.
 | -------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Client-state prerequisite  | ledger-published    | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.               |
 | Auth child plan            | approved            | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`; default workflow `31106485616` attempt 1 success. |
-| PR A mutation/login core   | implemented locally | Tasks 1-2 complete through the current stage-accurate navigation/lineage/test-ownership tree; Task 3 whole-PR review, completion gates, push, draft PR, Branch Release Gate, and human merge remain pending.                                                                        |
+| PR A mutation/login core   | final gates pending | Tasks 1-2 and the Task 3 whole-PR/review-fix cycle are independently accepted at Critical 0 / Important 0; exact final-tree completion gates, push, draft PR, Branch Release Gate, and human merge remain pending.                                                                  |
 | PR B authoritative shell   | blocked             | Waits for PR A exact merge/default workflow.                                                                                                                                                                                                                                        |
 | PR C alignment/final trace | blocked             | Waits for PR B exact merge/default workflow.                                                                                                                                                                                                                                        |
 | Later auth ledger          | blocked             | Requires completed PR C merge/default workflow and separate human authorization.                                                                                                                                                                                                    |
