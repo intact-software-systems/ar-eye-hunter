@@ -8,6 +8,7 @@ import {
 } from './authoritative-mutation-source-analysis.ts';
 
 const serviceRoot = 'packages/shared-server/rallar-system/services';
+const authRoot = 'packages/shared-server/rallar-system/auth';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
 const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
 const topologyInboxRoot = 'packages/shared-server/rallar-system/topology/inbox';
@@ -30,7 +31,7 @@ const sharedValidationPrimitiveNames = [
 
 const sources = {
   appAdmin: read(`${serviceRoot}/AppAdminInboxService.ts`),
-  appAuth: read(`${serviceRoot}/AppAuthInboxService.ts`),
+  authHandler: read(`${authRoot}/inbox/auth-inbox-handler.ts`),
   appClient: read(
     'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
   ),
@@ -160,13 +161,15 @@ describe('authoritative mutation read/compute/validate/write contract', { timeou
   it.each([
     {
       name: 'auth AppInbox',
-      source: sources.appAuth,
-      owner: 'processCommand',
+      source: sources.authHandler,
+      owner: 'processAuthMutation',
       calls: [
-        'this.authMutationService.read(command)',
-        'this.authMutationService.compute(command, read, facts)',
-        'this.authMutationService.validate(command, read, computed)',
-        'this.authMutationService.write(transaction, computed)',
+        'this.dependencies.mutationService.read(command)',
+        'captureAuthMutationFacts(command, this.dependencies.credentialIssuer)',
+        'this.dependencies.mutationService.compute(command, read, facts)',
+        'this.dependencies.mutationService.validate(command, read, computed)',
+        'this.dependencies.transactionWriter.writeMutation(',
+        'this.dependencies.mutationService.write(transaction, computed)',
       ],
     },
     {

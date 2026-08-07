@@ -18,6 +18,8 @@ const expectedOwnerLinks = [
   ['./mutation/decode-auth-mutation-result.ts', 'decodeAuthMutationResult'],
   ['./mutation/to-auth-mutation-public-result.ts', 'toAuthMutationPublicResult'],
   ['./mutation/read/capture-auth-mutation-facts.ts', 'captureAuthMutationFacts'],
+  ['./mutation/read/read-auth-mutation.ts', 'readAuthMutation'],
+  ['./mutation/read/read-auth-session-entries.ts', 'readAuthSessionEntries'],
   ['./mutation/compute/to-auth-logout-outbox.ts', 'toAuthLogoutOutbox'],
   ['./mutation/compute/compute-auth-agent-ticket-mutation.ts', 'computeAuthAgentTicketMutation'],
   ['./mutation/compute/compute-auth-mutation.ts', 'computeAuthMutation'],
@@ -30,6 +32,9 @@ const expectedOwnerLinks = [
   ['./mutation/validate/validate-auth-session-mutation.ts', 'validateAuthSessionMutation'],
   ['./mutation/validate/validate-auth-ticket-mutation.ts', 'validateAuthTicketMutation'],
   ['./mutation/validate/validate-auth-user-mutation.ts', 'validateAuthUserMutation'],
+  ['./mutation/write/write-auth-mutation.ts', 'writeAuthMutation'],
+  ['./mutation/write/write-auth-session.ts', 'writeAuthSession'],
+  ['./mutation/write/write-auth-ticket-mutation.ts', 'writeAuthTicketMutation'],
   ['./sessions/auth-session-proof-secret.ts', 'authSessionProofSecret'],
   ['./sessions/require-issue-session-lifecycle.ts', 'requireIssueSessionLifecycle'],
   ['./persistence/auth-session-repository.ts', 'AuthSessionRepository'],
@@ -42,10 +47,9 @@ const expectedOwnerLinks = [
     './persistence/auth-legacy-compatibility.ts',
     'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
   ],
-  ['../services/AppAuthInboxService.ts', 'AppAuthInboxService'],
-  ['../services/auth-app-inbox-routing.ts', 'toAuthAppInboxType'],
-  ['../services/auth-state-read.ts', 'readAuthMutation'],
-  ['../services/auth-state-write.ts', 'writeAuthMutation'],
+  ['./inbox/app-auth-inbox-service.ts', 'AppAuthInboxService'],
+  ['./inbox/auth-app-inbox-routing.ts', 'toAuthAppInboxType'],
+  ['./inbox/auth-inbox-handler.ts', 'AuthInboxHandler'],
 ] as const;
 
 describe('auth server navigation map integrity', () => {
@@ -86,12 +90,14 @@ describe('auth server navigation map integrity', () => {
     }
   });
 
-  it('distinguishes canonical persistence owners from the remaining shell predecessors', () => {
+  it('distinguishes canonical shell owners from the supported compatibility entry', () => {
     const navigation = readFileSync(absolute(navigationPath), 'utf8');
 
     expect(navigation).toContain('Canonical auth owners');
-    expect(navigation).toContain('Current predecessor owners reserved for PR B');
-    expect(navigation).not.toContain('./inbox/app-auth-inbox-service.ts');
+    expect(navigation).toContain('Supported compatibility entry');
+    expect(navigation).toContain('./inbox/app-auth-inbox-service.ts');
+    expect(navigation).toContain('./inbox/auth-inbox-handler.ts');
+    expect(navigation).not.toContain('../services/auth-state-read.ts');
     expect(navigation).toContain('./persistence/auth-session-repository.ts');
   });
 });

@@ -240,14 +240,16 @@ function checkRegisteredHandlerCallChain(
   const source = sources.readProgram(issues, item.sourcePath, 'call chain', item);
   const enqueue = sources.readProgram(issues, item.enqueueSourcePath, 'call chain', item);
   const owner = sources.readProgram(issues, item.ownerSourcePath, 'owner', item);
+  const typeOwner = sources.readProgram(issues, item.typeOwnerSourcePath, 'type owner', item);
   const dispatch = sources.readProgram(issues, item.dispatchSourcePath, 'owner dispatch', item);
-  if (!source || !enqueue || !owner || !dispatch) return;
+  if (!source || !enqueue || !owner || !typeOwner || !dispatch) return;
   issues.push(
     ...findMutationRouteReachabilityIssues({
       item,
       source,
       enqueueSource: enqueue,
       ownerSource: owner,
+      typeOwnerSource: typeOwner,
       dispatchSource: dispatch,
       containsMarker: hasExactMarker,
       matchesMarker: hasDirectExactMarker,

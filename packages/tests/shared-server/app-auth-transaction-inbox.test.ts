@@ -3,7 +3,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { createAuthMutationService, type IssueAuthSessionCommand } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
@@ -64,6 +64,11 @@ describe('AppAuthInboxService architecture', () => {
         });
         expect(await new AuthSessionRepository(runtime).findByAccessToken(accessToken))
             .toMatchObject({ sessionId: 'session-1' });
+        expect(await new AuthSessionRepository(runtime).findBySessionId('session-1'))
+            .toMatchObject({
+                sessionId: 'session-1',
+                accessTokenDigest: command.session.accessTokenDigest,
+            });
         const entries = await readEntries(queue);
         expect(entries).toHaveLength(1);
         expect(entries[0].status).toBe(EntityStatus.COMPLETED);

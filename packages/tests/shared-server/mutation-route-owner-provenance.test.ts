@@ -111,21 +111,26 @@ class DeadLifecycleOwner {
 
   it('rejects a cross-file auth handoff discriminator and owner reroute', () => {
     const item = requireEntry(AppInboxType.AUTH_USER_REGISTER, 'HTTP');
-    const source = readFileSync(item.ownerSourcePath, 'utf8');
+    const typeOwnerSource = readFileSync(item.typeOwnerSourcePath, 'utf8');
+    const dispatchSource = readFileSync(item.dispatchSourcePath, 'utf8');
     const wrongType =
-      source.replace("kind: 'register-user',", "kind: 'issue-session',") +
+      typeOwnerSource.replace("kind: 'register-user',", "kind: 'issue-session',") +
       "\nfunction deadAuthType(): void { void 'register-user'; }\n";
     const wrongOwner =
-      source.replace(
-        'async (data, context) => await this.processCommand(data, context)',
-        'async (data, context) => await this.processAuthCommandUntilCompletion(data)',
+      dispatchSource.replace(
+        'await this.authInboxHandler.processAuthMutation(command, context)',
+        'await Promise.resolve(command)',
       ) +
-      '\nclass DeadAuthOwner { process(): void { void this.processCommand; } private processCommand(): void {} }\n';
+      '\nclass DeadAuthOwner { process(): void { void this.authInboxHandler.processAuthMutation; } private readonly authInboxHandler = { processAuthMutation(): void {} }; }\n';
+    expect(typeOwnerSource).toContain("kind: 'register-user',");
+    expect(dispatchSource).toContain(
+      'await this.authInboxHandler.processAuthMutation(command, context)',
+    );
 
-    expect(validateWithOverride(item.ownerSourcePath, wrongType)).toEqual(
+    expect(validateWithOverride(item.typeOwnerSourcePath, wrongType)).toEqual(
       expect.arrayContaining([expect.stringContaining('registered handler is not connected')]),
     );
-    expect(validateWithOverride(item.ownerSourcePath, wrongOwner)).toEqual(
+    expect(validateWithOverride(item.dispatchSourcePath, wrongOwner)).toEqual(
       expect.arrayContaining([expect.stringContaining('owner dispatch is not connected')]),
     );
   });

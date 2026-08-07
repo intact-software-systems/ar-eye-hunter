@@ -20,6 +20,8 @@ const EXACT_RESOLVED_HANDOFFS = new Set([
   'packages/shared-server/http/request-auth-service.ts',
   'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
   'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
+  'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts',
+  'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts',
   'packages/shared-server/rallar-system/services/AppClientInboxService.ts',
   'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts',
   'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',

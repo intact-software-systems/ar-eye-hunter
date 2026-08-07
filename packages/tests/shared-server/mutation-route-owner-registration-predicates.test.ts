@@ -9,7 +9,7 @@ import {
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
 const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
-const AUTH_OWNER = 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts';
+const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
 
 describe('Mutation route owner registration predicates contracts', () => {

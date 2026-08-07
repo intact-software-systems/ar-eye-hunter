@@ -11,7 +11,7 @@ const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capabi
 const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
 const GROUP_TYPES =
   'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-const AUTH_OWNER = 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts';
+const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/services/AppCrdtInboxService.ts';
 const CRDT_TYPES = 'packages/shared-server/rallar-system/services/crdt-mutation-contracts.ts';
 const CLIENT_OWNER =

@@ -79,6 +79,14 @@ describe('auth server PR A lineage provenance', () => {
     expect(readCurrentStructuralLineages()).toEqual(
       new Map([
         [
+          'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts',
+          'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
+        ],
+        [
+          'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts',
+          'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
+        ],
+        [
           `${persistenceTargetRoot}/auth-legacy-compatibility.ts`,
           `${persistenceSourceRoot}/auth-legacy-compatibility.ts`,
         ],

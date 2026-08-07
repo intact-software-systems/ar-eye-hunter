@@ -8,6 +8,19 @@ const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/auth';
 const compatibilityModules = [
   {
+    compatibilityPath: 'services/AppAuthInboxService.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'inbox/app-auth-inbox-service.ts',
+        names: ['AUTH_STATE_APP_INBOX_TOPIC', 'AppAuthInboxService'],
+      },
+      {
+        canonicalPath: 'inbox/auth-app-inbox-routing.ts',
+        names: ['toAuthAppInboxType'],
+      },
+    ],
+  },
+  {
     compatibilityPath: 'services/auth-state-mutations.ts',
     canonicalExports: [
       {
@@ -92,11 +105,15 @@ const compatibilityModules = [
     ],
   },
 ] as const;
-const prBPredecessorOwners = [
-  'services/AppAuthInboxService.ts',
-  'services/auth-app-inbox-routing.ts',
-  'services/auth-state-read.ts',
-  'services/auth-state-write.ts',
+const canonicalShellOwners = [
+  'inbox/app-auth-inbox-service.ts',
+  'inbox/auth-app-inbox-routing.ts',
+  'inbox/auth-inbox-handler.ts',
+  'mutation/read/read-auth-mutation.ts',
+  'mutation/read/read-auth-session-entries.ts',
+  'mutation/write/write-auth-mutation.ts',
+  'mutation/write/write-auth-session.ts',
+  'mutation/write/write-auth-ticket-mutation.ts',
 ] as const;
 const canonicalPersistenceOwners = [
   'auth-legacy-compatibility.ts',
@@ -115,7 +132,10 @@ const removedPrivatePredecessors = [
   'repositories/auth-session-types.ts',
   'repositories/auth-storage-keys.ts',
   'repositories/auth-ticket-persistence.ts',
+  'services/auth-app-inbox-routing.ts',
   'services/auth-state-codecs.ts',
+  'services/auth-state-read.ts',
+  'services/auth-state-write.ts',
 ] as const;
 
 // Temporary structural supplement owned by the auth child. Remove it after PR C's
@@ -153,13 +173,20 @@ describe('auth server ownership', () => {
 });
 
 describe('auth server ownership boundaries', () => {
-  it('keeps PR B owners executable at their predecessor paths during PR A', () => {
+  it('keeps shell behavior at canonical auth owners and removes private predecessors', () => {
     expect(
-      prBPredecessorOwners.filter(
-        (predecessorPath) =>
-          !existsSync(absolute(`packages/shared-server/rallar-system/${predecessorPath}`)),
+      canonicalShellOwners.filter(
+        (ownerPath) => !existsSync(absolute(`${canonicalRoot}/${ownerPath}`)),
       ),
     ).toEqual([]);
+    expect(
+      removedPrivatePredecessors.filter((owner) =>
+        existsSync(absolute(`packages/shared-server/rallar-system/${owner}`)),
+      ),
+    ).toEqual([]);
+    expect(
+      existsSync(absolute('packages/shared-server/rallar-system/services/AppAuthInboxService.ts')),
+    ).toBe(true);
   });
 
   it('keeps persistence behavior at canonical auth owners only', () => {
@@ -176,9 +203,12 @@ describe('auth server ownership boundaries', () => {
   });
 
   it('catches canonical auth code importing a compatibility-only wrapper', () => {
-    const forbidden = new Set(
-      compatibilityModules.map(({ compatibilityPath }) => compatibilityPath),
-    );
+    const forbidden = new Set([
+      ...compatibilityModules.map(({ compatibilityPath }) => compatibilityPath),
+      'services/auth-app-inbox-routing.ts',
+      'services/auth-state-read.ts',
+      'services/auth-state-write.ts',
+    ]);
     const findings = sourceFiles(absolute(canonicalRoot)).flatMap((filePath) => {
       const source = readFileSync(filePath, 'utf8');
       const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
@@ -198,15 +228,32 @@ describe('auth server ownership boundaries', () => {
     expect(findings).toEqual([]);
   });
 
-  it('keeps captureAuthMutationFacts as the predecessor read-owner runtime identity', async () => {
-    const predecessor = await import(
-      absolute('packages/shared-server/rallar-system/services/auth-state-read.ts')
+  it('keeps package auth inbox exports directly on their canonical owners', async () => {
+    const packagePath = absolute('packages/shared-server/mod.ts');
+    const packageRoot = await import(packagePath);
+    const canonicalService = await import(
+      absolute(`${canonicalRoot}/inbox/app-auth-inbox-service.ts`)
     );
-    const canonical = await import(
-      absolute(`${canonicalRoot}/mutation/read/capture-auth-mutation-facts.ts`)
+    const canonicalRouting = await import(
+      absolute(`${canonicalRoot}/inbox/auth-app-inbox-routing.ts`)
+    );
+    const exportSources = parse(readFileSync(packagePath, 'utf8'), {
+      sourceType: 'module',
+      plugins: ['typescript'],
+    }).program.body.flatMap((statement) =>
+      statement.type === 'ExportNamedDeclaration' && statement.source
+        ? [statement.source.value]
+        : [],
     );
 
-    expect(predecessor.captureAuthMutationFacts).toBe(canonical.captureAuthMutationFacts);
+    expect(packageRoot.AppAuthInboxService).toBe(canonicalService.AppAuthInboxService);
+    expect(packageRoot.AUTH_STATE_APP_INBOX_TOPIC).toBe(
+      canonicalRouting.AUTH_STATE_APP_INBOX_TOPIC,
+    );
+    expect(packageRoot.toAuthAppInboxType).toBe(canonicalRouting.toAuthAppInboxType);
+    expect(exportSources).toContain('./rallar-system/auth/inbox/app-auth-inbox-service.ts');
+    expect(exportSources).toContain('./rallar-system/auth/inbox/auth-app-inbox-routing.ts');
+    expect(exportSources).not.toContain('./rallar-system/services/AppAuthInboxService.ts');
   });
 });
 

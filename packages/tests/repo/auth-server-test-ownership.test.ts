@@ -5,10 +5,11 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const authTestRoot = 'packages/tests/shared-server/auth';
-const activePrATestOwners = [
+const activeAuthTestOwners = [
   'auth-command-and-result-codec-regressions.test.ts',
   'auth-command-and-result-codecs.test.ts',
   'auth-credential-login.test.ts',
+  'auth-inbox-registration-and-routing.test.ts',
   'auth-legacy-replay.test.ts',
   'auth-logout-outbox.test.ts',
   'auth-mutation-agent-compute-order.test.ts',
@@ -31,15 +32,15 @@ const authRepositorySuites = [
   'packages/tests/repo/auth-server-test-ownership.test.ts',
 ] as const;
 
-describe('auth server PR A test ownership', () => {
-  it('keeps the complete active PR A semantic test inventory present', () => {
+describe('auth server test ownership', () => {
+  it('keeps the complete active semantic test inventory present', () => {
     const actualOwners = readdirSync(absolute(authTestRoot))
       .filter((name) => name.endsWith('.test.ts'))
       .toSorted();
 
-    expect(actualOwners).toEqual([...activePrATestOwners].toSorted());
+    expect(actualOwners).toEqual([...activeAuthTestOwners].toSorted());
     expect(
-      activePrATestOwners.every((owner) => existsSync(absolute(`${authTestRoot}/${owner}`))),
+      activeAuthTestOwners.every((owner) => existsSync(absolute(`${authTestRoot}/${owner}`))),
     ).toBe(true);
   });
 
