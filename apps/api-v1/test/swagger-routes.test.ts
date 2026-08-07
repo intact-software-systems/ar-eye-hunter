@@ -149,6 +149,56 @@ Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async 
   }
 });
 
+Deno.test('OpenAPI JSON exposes point-read floors, headers, and status boundaries', async () => {
+  const response = await init(new Hono()).request('/api/openapi.json');
+  const json = await response.json() as {
+    paths: Record<
+      string,
+      { get?: { parameters?: Array<{ $ref?: string }>; responses?: Record<string, unknown> } }
+    >;
+  };
+  const clientPath =
+    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}';
+  const groupPath = '/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}';
+  const client = json.paths[clientPath]?.get;
+  const group = json.paths[groupPath]?.get;
+
+  assert.ok(
+    client?.parameters?.some((parameter) =>
+      parameter.$ref === '#/components/parameters/MinStateRevision'
+    ),
+  );
+  assert.ok(
+    group?.parameters?.some((parameter) =>
+      parameter.$ref === '#/components/parameters/MinGroupRevision'
+    ),
+  );
+  assert.ok(
+    group?.parameters?.some((parameter) =>
+      parameter.$ref === '#/components/parameters/MinPresenceRevision'
+    ),
+  );
+  for (const operation of [client, group]) {
+    assert.deepEqual(Object.keys(operation?.responses ?? {}), [
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
+      '409',
+      '429',
+      '503',
+    ]);
+  }
+
+  const clientCollection = json.paths[
+    '/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients'
+  ]?.get;
+  assert.ok(
+    !clientCollection?.parameters?.some((parameter) => parameter.$ref?.includes('Revision')),
+  );
+});
+
 Deno.test('OpenAPI JSON includes scoped graph and topology management contracts', async () => {
   const app = init(new Hono());
   const response = await app.request('/api/openapi.json');

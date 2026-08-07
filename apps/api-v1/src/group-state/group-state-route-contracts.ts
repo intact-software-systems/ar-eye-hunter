@@ -31,6 +31,11 @@ import type {
 import type {
   IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type {
+  GroupStateSnapshotReadOptions,
+  StateSnapshotReadResult,
+} from '@shared/api/state-snapshot-read.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { GroupStateService } from '../services/group-state-service.ts';
 
@@ -234,6 +239,10 @@ export interface GroupStateRouteDependencies {
   readonly hydrateStateSyncSnapshotCaches?: (
     input: StateSyncCacheHydrationInput,
   ) => Promise<StateSyncCacheHydrationResult>;
+  readonly readGroupSnapshot?: (
+    ref: GroupRef,
+    options: GroupStateSnapshotReadOptions & Readonly<{ strictMode?: boolean }>,
+  ) => Promise<StateSnapshotReadResult<GroupSnapshot>>;
 }
 
 export type ResolvedGroupStateRouteDependencies = Required<

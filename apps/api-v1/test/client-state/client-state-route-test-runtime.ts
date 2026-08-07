@@ -46,6 +46,9 @@ export function createClientRouteDeps(
     processClientAppInbox?: clientStateRoutes.ClientStateRouteDependencies[
       'processClientAppInbox'
     ];
+    readClientSnapshot?: clientStateRoutes.ClientStateRouteDependencies[
+      'readClientSnapshot'
+    ];
   }>,
 ):
   & Required<clientStateRoutes.ClientStateRouteDependencies>
@@ -70,6 +73,12 @@ export function createClientRouteDeps(
       (() => Promise.reject(new Error('Unexpected client mutation route call'))),
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
       (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
+    readClientSnapshot: input.readClientSnapshot ?? (async (ref) => {
+      const snapshot = await input.clientService.readSnapshot?.(ref);
+      return snapshot
+        ? { status: 'found', source: 'durable', snapshot }
+        : { status: 'not-found', source: 'durable' };
+    }),
     authCallCount: () => authCalls,
   };
 }

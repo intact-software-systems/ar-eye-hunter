@@ -22,6 +22,27 @@ import {
     selectRallarBlackBoxMessages,
 } from '../../shared-test/rallar-bb-test/mod.ts';
 import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
+import {
+    normalizeBlackBoxResponseHeaders,
+} from '../../shared-test/black-box-runner/http/normalize-black-box-response-headers.ts';
+
+describe('black-box HTTP response evidence', () => {
+    it('retains only allow-listed response headers with lowercase names', () => {
+        const headers = new Headers({
+            'Cache-Control': 'no-store',
+            'Rallar-State-Source': 'durable',
+            'Rallar-State-Revision': '8',
+            Authorization: 'Bearer secret',
+            'Set-Cookie': 'session=secret',
+        });
+
+        expect(normalizeBlackBoxResponseHeaders(headers)).toEqual({
+            'cache-control': 'no-store',
+            'rallar-state-revision': '8',
+            'rallar-state-source': 'durable',
+        });
+    });
+});
 
 function createDeterministicRuntime() {
     let now = 1_000;

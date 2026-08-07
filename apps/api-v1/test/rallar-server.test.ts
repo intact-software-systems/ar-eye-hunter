@@ -15,7 +15,7 @@ import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerS
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
 import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
 
-import type { Middleware } from '../src/middleware.ts';
+import type { Middleware } from '../src/middleware-contract.ts';
 import { createRallarServer } from '../src/create-rallar-server.ts';
 import { init as initCrdtAdminRoutes } from '../src/routes/crdt-admin-routes.ts';
 

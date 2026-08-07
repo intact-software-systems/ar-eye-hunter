@@ -23,12 +23,10 @@ import {
     type RallarRemoteBrowserControlResultEnvelope,
 } from './rallar-remote-browser-provider.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
-
+import { normalizeBlackBoxResponseHeaders } from './http/normalize-black-box-response-headers.ts';
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
-
 declare const process: { env: Record<string, string | undefined> } | undefined;
-
 type Redaction = {
     name: string
     value: string
@@ -1119,6 +1117,7 @@ function toStatus(
         expected: interaction.response,
         actual: {
             body: actualJson,
+            headers: normalizeBlackBoxResponseHeaders(res.headers),
             statusCode: res.status,
             statusText: res.statusText,
         },
@@ -1155,6 +1154,7 @@ function toSuccessStatus(config: any, actualJson: any, response: any, interactio
         expected: interaction.response,
         actual: {
             body: actualJson,
+            headers: normalizeBlackBoxResponseHeaders(response.headers),
             statusCode: response.status,
             statusText: response.statusText,
         },

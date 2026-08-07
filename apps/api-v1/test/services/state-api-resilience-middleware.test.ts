@@ -99,7 +99,7 @@ Deno.test('state API circuit breaker opens after repeated server failures', asyn
   });
 });
 
-Deno.test('state API circuit breaker ignores client errors', async () => {
+Deno.test('state API circuit breaker ignores repeated revision-floor conflicts', async () => {
   const app = new Hono();
   const duration = Temporal.Duration.from({ seconds: 60 });
   app.use(
@@ -112,7 +112,10 @@ Deno.test('state API circuit breaker ignores client errors', async () => {
       ),
     }),
   );
-  app.get('/api/state/client-error', (c) => c.json({ error: 'bad' }, 400));
+  app.get(
+    '/api/state/client-error',
+    (c) => c.json({ code: 'state-revision-floor-not-satisfied' }, 409),
+  );
 
   const first = await app.request('/api/state/client-error', {
     headers: { 'x-client-id': 'alice' },
@@ -121,6 +124,6 @@ Deno.test('state API circuit breaker ignores client errors', async () => {
     headers: { 'x-client-id': 'alice' },
   });
 
-  assert.equal(first.status, 400);
-  assert.equal(second.status, 400);
+  assert.equal(first.status, 409);
+  assert.equal(second.status, 409);
 });

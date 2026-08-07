@@ -58,7 +58,7 @@ export type GraphTopologyAppInboxService = Readonly<{
 }>;
 
 export type GraphTopologyGroupStateService = Readonly<{
-  readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
+  readCurrentSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
 }>;
 
 export type GraphTopologyRouteGraphDiagnostics = Readonly<{
@@ -120,8 +120,8 @@ export function init(
     async (c) => {
       try {
         const groupRef = toGroupRef(c);
-        await assertGroupExists(groupRef, deps);
-        await assertCanReadGroupRef(c.req, deps, groupRef);
+        const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
+        await assertCanReadGroupSnapshot(c.req, deps, snapshot);
         return toGraphDiagnosticResponse(
           c,
           deps.graphDiagnostics.readGroupGraphDiagnostic(groupRef, readGraphOptions(c)),
@@ -137,8 +137,8 @@ export function init(
     async (c) => {
       try {
         const groupRef = toGroupRef(c);
-        await assertGroupExists(groupRef, deps);
-        await assertCanReadGroupRef(c.req, deps, groupRef);
+        const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
+        await assertCanReadGroupSnapshot(c.req, deps, snapshot);
         return c.json(await deps.topologyManagement.readTopologyView(groupRef));
       } catch (error) {
         return toErrorResponse(c, error);
@@ -151,8 +151,8 @@ export function init(
     async (c) => {
       try {
         const groupRef = toGroupRef(c);
-        await assertGroupExists(groupRef, deps);
-        await assertCanReadGroupRef(c.req, deps, groupRef);
+        const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
+        await assertCanReadGroupSnapshot(c.req, deps, snapshot);
         return c.json(await deps.topologyManagement.readConfig(groupRef));
       } catch (error) {
         return toErrorResponse(c, error);
@@ -211,8 +211,8 @@ export function init(
     async (c) => {
       try {
         const groupRef = toGroupRef(c);
-        await assertGroupExists(groupRef, deps);
-        await assertCanReadGroupRef(c.req, deps, groupRef);
+        const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
+        await assertCanReadGroupSnapshot(c.req, deps, snapshot);
         return c.json(await deps.topologyManagement.readOverride(groupRef) ?? {});
       } catch (error) {
         return toErrorResponse(c, error);
@@ -309,7 +309,9 @@ function toDependencies(
 ): GraphTopologyRouteDependencies {
   return {
     getGroupStateService: dependencies.getGroupStateService ??
-      (() => getGroupStateService()),
+      (() => ({
+        readCurrentSnapshot: (ref) => getGroupStateService().readSnapshot(ref),
+      })),
     graphDiagnostics: dependencies.graphDiagnostics ?? {
       readScopedGlobalGraphDiagnostic,
       readGroupGraphDiagnostic,
@@ -347,27 +349,25 @@ function notConfiguredTopologyManagement(): GraphTopologyRouteTopologyManagement
   };
 }
 
-async function assertGroupExists(
+async function readCurrentGroupSnapshot(
   groupRef: GroupRef,
   deps: GraphTopologyRouteDependencies,
 ): Promise<GroupSnapshot> {
-  const snapshot = await deps.getGroupStateService().readSnapshot(groupRef);
+  const snapshot = await deps.getGroupStateService().readCurrentSnapshot(groupRef);
   if (!snapshot) {
     throw new Error(`Group not found: ${groupRef.groupId}`);
   }
   return snapshot;
 }
-
-async function assertCanReadGroupRef(
+async function assertCanReadGroupSnapshot(
   req: { header(name: string): string | undefined },
   deps: GraphTopologyRouteDependencies,
-  groupRef: GroupRef,
+  snapshot: GroupSnapshot,
 ): Promise<void> {
   if (!isStrictReadAuthEnabled()) {
     return;
   }
   const authSession = await deps.requireApiAuthSession(req);
-  const snapshot = await assertGroupExists(groupRef, deps);
   const result = canReadGroupSnapshot({
     snapshot,
     actor: { principalId: authSession.clientId },
@@ -399,7 +399,7 @@ async function assertCanManageGroupRef(
   }>
 > {
   const authSession = await deps.requireApiAuthSession(req);
-  const snapshot = await assertGroupExists(groupRef, deps);
+  const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
   if (deps.adminClientIds.includes(authSession.clientId)) {
     return { authSession, groupRef, snapshot };
   }

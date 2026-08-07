@@ -94,6 +94,25 @@ Deno.test('strict read auth allows active members and rejects non-members', asyn
   });
 });
 
+Deno.test('strict graph and topology policy uses one durable current snapshot', async () => {
+  await withStrictReadAuth(true, async () => {
+    let durableReads = 0;
+    const app = createRouteApp({
+      group: createGroupSnapshot('room-1', ['owner']),
+      session: createIssuedSession('owner', 'owner-session'),
+      onCurrentGroupRead: () => durableReads += 1,
+    });
+
+    const response = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/graphs/latest',
+      { headers: { authorization: 'Bearer token' } },
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(durableReads, 1);
+  });
+});
+
 Deno.test('strict read auth rejects unauthenticated scoped global graph diagnostics', async () => {
   await withStrictReadAuth(true, async () => {
     let authCalls = 0;
@@ -612,19 +631,22 @@ function createRouteApp(options: {
       data: unknown;
     },
   ) => Promise<unknown>;
+  readonly onCurrentGroupRead?: () => void;
 }): Hono {
   const app = new Hono();
   graphTopologyRoutes.init(app, {
     getGroupStateService: () => ({
-      readSnapshot: (ref: GroupRef) =>
-        Promise.resolve(
+      readCurrentSnapshot: (ref: GroupRef) => {
+        options.onCurrentGroupRead?.();
+        return Promise.resolve(
           options.group &&
             options.group.group.applicationId === ref.applicationId &&
             options.group.group.workspaceId === ref.workspaceId &&
             options.group.group.groupId === ref.groupId
             ? options.group
             : undefined,
-        ),
+        );
+      },
     }),
     requireApiAuthSession: options.requireApiAuthSession ??
       (() => Promise.resolve(options.session ?? createIssuedSession('owner', 'owner-session'))),

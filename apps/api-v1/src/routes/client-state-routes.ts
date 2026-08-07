@@ -32,16 +32,26 @@ import {
   ClientMutationRejectedError,
   validateClientMutationRequest,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import {
+  type ClientStatePointRead,
+  createDurableClientStatePointRead,
+  readCurrentClientSnapshot,
+  registerClientStatePointReadRoute,
+} from './client-state-point-read-route.ts';
 
-export type ClientStateRouteService = Pick<
-  ClientStateService,
-  | 'listSnapshots'
-  | 'readSnapshot'
-  | 'readPresenceSnapshot'
-  | 'listEvents'
-  | 'listRecentEvents'
-  | 'listEventPage'
->;
+export type ClientStateRouteService =
+  & Pick<
+    ClientStateService,
+    | 'listSnapshots'
+    | 'readSnapshot'
+    | 'readPresenceSnapshot'
+    | 'listEvents'
+    | 'listRecentEvents'
+    | 'listEventPage'
+  >
+  & Readonly<{
+    readCurrentSnapshot?(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
+  }>;
 
 export type ClientStateRouteAuthSession = IssuedAuthSession;
 
@@ -61,6 +71,7 @@ export type ClientStateRouteDependencies = Readonly<{
     input: StateSyncCacheHydrationInput,
   ) => Promise<StateSyncCacheHydrationResult>;
   processClientAppInbox?: ProcessClientAppInbox;
+  readClientSnapshot?: ClientStatePointRead;
 }>;
 
 export function init(
@@ -77,7 +88,7 @@ export function init(
         const authSession = await readStrictReadAuthSession(c.req, deps);
         const snapshots = authSession
           ? [
-            await deps.getClientStateService().readSnapshot({
+            await readCurrentClientSnapshot(deps.getClientStateService(), {
               ...scope,
               principalId: authSession.clientId,
             }),
@@ -91,28 +102,12 @@ export function init(
     },
   );
 
-  app.get(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId',
-    async (c) => {
-      try {
-        const principalId = c.req.param('principalId');
-        await assertCanReadClientState(c.req, deps, principalId);
-        const snapshot = await deps.getClientStateService().readSnapshot({
-          ...toScope(c),
-          principalId,
-        });
-
-        if (!snapshot) {
-          return c.json({ error: `Client not found: ${principalId}` }, 404);
-        }
-
-        hydrateClientSnapshots(deps, [snapshot]);
-        return c.json(snapshot);
-      } catch (error) {
-        return toErrorResponse(c, error);
-      }
-    },
-  );
+  registerClientStatePointReadRoute(app, {
+    read: deps.readClientSnapshot,
+    requireAuthSession: deps.requireApiAuthSession,
+    hydrate: (snapshots) => hydrateClientSnapshots(deps, snapshots),
+    toErrorResponse,
+  });
 
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/presence',
@@ -392,6 +387,10 @@ function toClientStateRouteDependencies(
       defaultHydrateStateSyncSnapshotCaches,
     processClientAppInbox: dependencies.processClientAppInbox ??
       defaultProcessClientAppInbox,
+    readClientSnapshot: dependencies.readClientSnapshot ??
+      createDurableClientStatePointRead(
+        dependencies.getClientStateService ?? getClientStateService,
+      ),
   };
 }
 
