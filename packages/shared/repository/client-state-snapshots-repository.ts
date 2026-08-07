@@ -24,6 +24,13 @@ import {
     type StateSnapshotRevisionDecision,
     toStateSnapshotObservation,
 } from './state-snapshot-revision.ts';
+import { toClientStateSnapshotRepositoryKey } from './client-state-snapshot-repository-key.ts';
+
+export {
+    fromClientStateSnapshotRepositoryKey,
+    toClientStateSnapshotRepositoryKey,
+    type ClientStateSnapshotRepositoryRef,
+} from './client-state-snapshot-repository-key.ts';
 
 export type ClientStateSnapshotRepositoryOptions =
     & Omit<
@@ -153,6 +160,17 @@ export function setClientStateSnapshotByPrincipalId(
     return decision === 'inserted' || decision === 'advanced';
 }
 
+export function removeClientStateSnapshotIfUnchanged(
+    ref: ClientPrincipalRef,
+    expected: ClientSnapshot,
+    manager?: RepositoryManager,
+): boolean {
+    return requireClientStateSnapshotRepository(manager).compareAndDelete(
+        toClientStateSnapshotRepositoryKey(ref),
+        expected,
+    );
+}
+
 export function observeClientStateSnapshot(
     snapshot: ClientSnapshot,
     manager?: RepositoryManager,
@@ -198,16 +216,6 @@ export function getAllClientStateSnapshots(
 
 function toClientSnapshotVersion(snapshot: ClientSnapshot): number {
     return readClientVersion(snapshot);
-}
-
-export function toClientStateSnapshotRepositoryKey(
-    ref: ClientPrincipalRef,
-): string {
-    return JSON.stringify([
-        ref.applicationId,
-        ref.workspaceId ?? '',
-        ref.principalId,
-    ]);
 }
 
 function toClientStateSnapshotChange(

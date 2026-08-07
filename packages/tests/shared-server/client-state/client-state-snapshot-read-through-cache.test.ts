@@ -54,8 +54,10 @@ describe('ClientStateSnapshotReadThroughCache', () => {
     expect(toPackageClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
     expect(toLegacyClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
     expect(toClientStateSnapshotRepositoryKey).not.toBe(toSharedClientStateSnapshotRepositoryKey);
-    expect(toClientStateSnapshotRepositoryKey(ref)).toBe('["app-1","workspace-a","alice"]');
-    expect(toSharedClientStateSnapshotRepositoryKey(ref)).toBe('["app-1","workspace-a","alice"]');
+    const expectedKey =
+      '["client-state-snapshot","app-1",["present","workspace-a"],"alice"]';
+    expect(toClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
+    expect(toSharedClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
   });
 
   it('hydrates a cold client snapshot cache from durable state', async () => {
@@ -243,6 +245,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
     ).toThrow('Client snapshot revision conflict');
     expect(readThroughCache.peek(base.principal)).toEqual(revisionTwo);
   });
+
 });
 
 async function putClientSnapshot(

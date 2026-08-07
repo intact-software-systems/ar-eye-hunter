@@ -10,6 +10,7 @@ export type CachedClientStateServiceCache = Readonly<{
 export type CachedClientStateService = ClientStateService &
   Readonly<{
     observeSnapshot(snapshot: ClientSnapshot): Promise<ClientSnapshot>;
+    readCurrentSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
   }>;
 
 export function createCachedClientStateService(
@@ -25,6 +26,7 @@ export function createCachedClientStateService(
   const service: CachedClientStateService = {
     ...options.durable,
     observeSnapshot,
+    readCurrentSnapshot: async (ref) => await options.durable.readSnapshot(ref),
     listSnapshots: async (scope) => {
       const snapshots = await options.durable.listSnapshots(scope);
       return await Promise.all(snapshots.map(observeSnapshot));

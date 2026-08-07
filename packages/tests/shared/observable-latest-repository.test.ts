@@ -243,4 +243,45 @@ describe('ObservableLatestRepository', () => {
         ]);
         expect(repository.read('b')).toBe(2);
     });
+
+    it('deletes only the exact observed value', async () => {
+        type Snapshot = Readonly<{ revision: number }>;
+        type ConditionallyDeletable = Readonly<{
+            compareAndDelete?: (key: string, expected: Snapshot) => boolean;
+        }>;
+        const repository = new ObservableLatestRepository<string, Snapshot>();
+        const deleted = vi.fn();
+        const first = { revision: 1 };
+        const equalButDifferent = { revision: 1 };
+        const newer = { revision: 2 };
+        const conditionallyDeletable = repository as ConditionallyDeletable;
+
+        repository.onDeletedDo(deleted);
+        repository.set('room', first);
+
+        expect(
+            conditionallyDeletable.compareAndDelete?.('room', equalButDifferent)
+                ?? false,
+        ).toBe(false);
+        expect(repository.peek('room')).toBe(first);
+
+        repository.set('room', newer);
+        await repository.whenIdle();
+        expect(
+            conditionallyDeletable.compareAndDelete?.('room', first) ?? false,
+        ).toBe(false);
+        expect(repository.peek('room')).toBe(newer);
+
+        expect(
+            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false,
+        ).toBe(true);
+        await repository.whenIdle();
+
+        expect(repository.peek('room')).toBeUndefined();
+        expect(deleted).toHaveBeenCalledTimes(1);
+        expect(deleted.mock.calls[0]?.[0]).toMatchObject({
+            key: 'room',
+            previous: newer,
+        });
+    });
 });

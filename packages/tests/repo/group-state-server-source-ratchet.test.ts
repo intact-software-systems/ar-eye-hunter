@@ -94,6 +94,7 @@ const expectedGroupStateProductionTree = [
   'presence/reconcile-expired-group-presence.ts',
   'presence/validate-group-presence-summary-read-collections.ts',
   'snapshot/cached-group-state-service.ts',
+  'snapshot/group-rest-snapshot-read-selector.ts',
   'snapshot/group-state-snapshot-read-through-cache.ts',
   'snapshot/validate-persisted-group-snapshot.ts',
 ] as const;

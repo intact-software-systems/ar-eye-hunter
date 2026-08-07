@@ -129,6 +129,30 @@ describe('cached state services', () => {
         expect(findOrLoadByRef).toHaveBeenCalledWith(snapshot.principal);
         expect(observe).toHaveBeenCalledWith(snapshot);
     });
+
+    it('reads current client authority durably without touching the cache', async () => {
+        type DurableCurrentClientReader = Readonly<{
+            readCurrentSnapshot?: ClientStateService['readSnapshot'];
+        }>;
+        const snapshot = createClientSnapshot(3);
+        const findOrLoadByRef = vi.fn();
+        const observe = vi.fn();
+        const durable = {
+            readSnapshot: vi.fn().mockResolvedValue(snapshot),
+        } as unknown as ClientStateService;
+        const service = createCachedClientStateService({
+            durable,
+            cache: { findOrLoadByRef, observe },
+        }) as DurableCurrentClientReader;
+
+        await expect(
+            service.readCurrentSnapshot?.(snapshot.principal),
+        ).resolves.toBe(snapshot);
+        expect(durable.readSnapshot).toHaveBeenCalledOnce();
+        expect(durable.readSnapshot).toHaveBeenCalledWith(snapshot.principal);
+        expect(findOrLoadByRef).not.toHaveBeenCalled();
+        expect(observe).not.toHaveBeenCalled();
+    });
 });
 
 function createGroupPhaseService(): GroupStateService {

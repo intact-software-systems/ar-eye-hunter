@@ -17,6 +17,7 @@ export * from './api/group-policy-types.ts';
 export * from './api/overlay-topology.ts';
 export * from './api/rallar-validation.ts';
 export * from './api/spa-statistics-types.ts';
+export * from './api/state-snapshot-read.ts';
 
 export * from './crdt/mod.ts';
 

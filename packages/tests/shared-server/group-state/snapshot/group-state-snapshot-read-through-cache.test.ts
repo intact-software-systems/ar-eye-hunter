@@ -172,6 +172,38 @@ describe('GroupStateSnapshotReadThroughCache', () => {
     );
     expect(cache.peek(ref)).toEqual(converged);
   });
+
+  it('evicts only identities that have not advanced in either cache layer', async () => {
+    type ConditionallyEvictable = Readonly<{
+      evictIfUnchanged?: (
+        ref: GroupRef,
+        expected: GroupSnapshot,
+      ) => boolean;
+    }>;
+    configureTestCacheRepositories();
+    const repository = new GroupStateRepository(new FakeRuntimeStateRepository());
+    const cache = createGroupStateSnapshotReadThroughCache({
+      groupsRepository: repository,
+    });
+    const first = createGroupSnapshot(1, ['session-a']);
+    const newer = createGroupSnapshot(2, ['session-a', 'session-b']);
+    await putGroupSnapshot(repository, first);
+    const loaded = await cache.findOrLoadByRef(first.group);
+    if (!loaded) throw new Error('Expected loaded group snapshot');
+
+    expect(cache.observe(newer)).toBe('advanced');
+    const conditionallyEvictable = cache as ConditionallyEvictable;
+
+    expect(
+      conditionallyEvictable.evictIfUnchanged?.(loaded.group, loaded) ?? false,
+    ).toBe(true);
+    expect(cache.peek(newer.group)).toBe(newer);
+
+    expect(
+      conditionallyEvictable.evictIfUnchanged?.(newer.group, newer) ?? false,
+    ).toBe(true);
+    expect(cache.peek(newer.group)).toBeUndefined();
+  });
 });
 
 async function convergePresenceSummaryForCacheTest(

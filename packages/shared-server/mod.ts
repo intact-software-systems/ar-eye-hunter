@@ -66,6 +66,8 @@ export type {
 } from './rallar-system/client-state/client-state-service-contracts.ts';
 export * from './rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 export * from './rallar-system/client-state/snapshot/cached-client-state-service.ts';
+export * from './rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
+export * from './rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 export * from './rallar-system/services/cached-group-state-service.ts';
 export {
   createAuthMutationService,

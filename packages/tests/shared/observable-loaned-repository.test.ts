@@ -256,6 +256,48 @@ describe('ObservableLoanedRepository', () => {
             value: 2,
         });
     });
+
+    it('deletes only the exact observed loaned value', async () => {
+        type Snapshot = Readonly<{ revision: number }>;
+        type ConditionallyDeletable = Readonly<{
+            compareAndDelete?: (key: string, expected: Snapshot) => boolean;
+        }>;
+        let current: Snapshot = { revision: 1 };
+        const repository = new ObservableLoanedRepository<string, Snapshot>(
+            async () => current,
+        );
+        const deleted = vi.fn();
+        const conditionallyDeletable = repository as ConditionallyDeletable;
+        const first = await repository.get('room');
+
+        repository.onDeletedDo(deleted);
+        expect(
+            conditionallyDeletable.compareAndDelete?.(
+                'room',
+                { revision: first.revision },
+            ) ?? false,
+        ).toBe(false);
+        expect(repository.peek('room')).toBe(first);
+
+        current = { revision: 2 };
+        const newer = await repository.refresh('room');
+        expect(
+            conditionallyDeletable.compareAndDelete?.('room', first) ?? false,
+        ).toBe(false);
+        expect(repository.peek('room')).toBe(newer);
+
+        expect(
+            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false,
+        ).toBe(true);
+        await repository.whenIdle();
+
+        expect(repository.peek('room')).toBeUndefined();
+        expect(deleted).toHaveBeenCalledTimes(1);
+        expect(deleted.mock.calls[0]?.[0]).toMatchObject({
+            key: 'room',
+            previous: newer,
+        });
+    });
 });
 
 function createDeferred<T>() {
