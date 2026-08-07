@@ -13,51 +13,17 @@ import {
   authPrAProductionTargets,
   type AuthPrALineage,
 } from './auth-server-pr-a-lineage-inventory.ts';
+import {
+  persistenceBase,
+  persistenceLineages,
+  persistenceManifestPath,
+  persistenceSourceRoot,
+  persistenceTargetRoot,
+  validatePersistenceLineages,
+} from './auth-server-persistence-lineage-validation.ts';
 
 const repoRoot = process.cwd();
 const retiredManifestPath = 'plans/repo-style-lineages/rallar-auth-server-pr-a.json';
-const persistenceBase = 'a90042398448776b0972aaaaa0f5cca762163fde';
-const persistenceManifestPath =
-  'plans/repo-style-lineages/rallar-auth-server-pr-b-persistence.json';
-const persistenceSourceRoot = 'packages/shared-server/rallar-system/repositories';
-const persistenceTargetRoot = 'packages/shared-server/rallar-system/auth/persistence';
-const persistenceLineages = [
-  persistenceLineage(
-    'AuthSessionRepository.ts',
-    '6721085e4a0ffac584da9e159f39ce3e70b80be4',
-    'auth-session-repository.ts',
-  ),
-  persistenceLineage(
-    'AuthUserRepository.ts',
-    '960ce5a419477719ca8532c63b64ba599a8ae582',
-    'auth-user-repository.ts',
-  ),
-  persistenceLineage(
-    'auth-legacy-compatibility.ts',
-    '7ef04186cdfeda6aec8c9420936db78428e6bfef',
-    'auth-legacy-compatibility.ts',
-  ),
-  persistenceLineage(
-    'auth-persistence-contracts.ts',
-    '26a16af1ee09a0f9d101aec6e0fac1b18cb3f3ab',
-    'auth-persistence-contracts.ts',
-  ),
-  persistenceLineage(
-    'auth-session-persistence.ts',
-    '12aa8dbbe55114411f9bf71512b17e177e2f3258',
-    'auth-session-persistence.ts',
-  ),
-  persistenceLineage(
-    'auth-session-types.ts',
-    'd484d00732deaa254abe350ba196ca84a13b1d8a',
-    'auth-session-types.ts',
-  ),
-  persistenceLineage(
-    'auth-ticket-persistence.ts',
-    '32db40789e181712b1665c84967ce3123b82219a',
-    'auth-ticket-persistence.ts',
-  ),
-] as const;
 const codecSource = 'packages/shared-server/rallar-system/services/auth-state-codecs.ts';
 const credentialSource = 'packages/shared-server/rallar-system/services/auth-credential-issuer.ts';
 const commandTarget =
@@ -182,6 +148,40 @@ describe('auth server PR A lineage provenance', () => {
     expect(() => validatePersistenceLineages(missingTarget)).toThrow('persistence target');
   });
 
+  it('fails closed when equal boundary magnitude moves to a new semantic owner', () => {
+    const targetPath = `${persistenceTargetRoot}/auth-persistence-contracts.ts`;
+    const target = read(targetPath);
+    const semanticDrift = target
+      .replace(
+        'export function decodePersistedAuthSession(input: unknown)',
+        'export function decodePersistedAuthSession(input: object)',
+      )
+      .concat(
+        '\nfunction unrelatedPersistenceBoundary(value: unknown): object {\n',
+        '  return value as object;\n',
+        '}\n',
+      );
+
+    expect(findUnknownUsages(semanticDrift.split('\n'))).toHaveLength(
+      findUnknownUsages(target.split('\n')).length,
+    );
+    expect(() =>
+      validatePersistenceLineages(persistenceLineages, new Map([[targetPath, semanticDrift]])),
+    ).toThrow('persistence target derivation');
+  });
+
+  it('fails closed when an inherited boundary owner changes content', () => {
+    const targetPath = `${persistenceTargetRoot}/auth-persistence-contracts.ts`;
+    const changedContent = read(targetPath).replace(
+      "const value = requirePlainRecord(input, 'Persisted auth session');",
+      "const value = requirePlainRecord(input, 'Changed persisted auth session');",
+    );
+
+    expect(() =>
+      validatePersistenceLineages(persistenceLineages, new Map([[targetPath, changedContent]])),
+    ).toThrow('persistence target derivation');
+  });
+
   it('keeps inherited magnitude source-derived and excludes new boundary owners', () => {
     validateBoundaryCapacity();
   });
@@ -264,26 +264,6 @@ function validateLineages(lineages: readonly AuthPrALineage[]): void {
       if (target.inheritedStyleFindings.join() !== allowedDebt.join()) {
         throw new Error('historical style debt');
       }
-    }
-  }
-}
-
-interface PersistenceLineage {
-  mergeBase: string;
-  source: { path: string; blob: string };
-  targets: string[];
-}
-
-// Temporary structural supplement owned by the auth child. PR C removes it after
-// the PR B resulting-main workflow and later ledger preserve equivalent evidence.
-function validatePersistenceLineages(lineages: readonly PersistenceLineage[]): void {
-  for (const lineage of lineages) {
-    if (lineage.mergeBase !== persistenceBase) throw new Error('persistence base');
-    if (git(['rev-parse', `${persistenceBase}:${lineage.source.path}`]) !== lineage.source.blob) {
-      throw new Error('persistence source blob');
-    }
-    if (lineage.targets.length !== 1 || !existsSync(absolute(lineage.targets[0]))) {
-      throw new Error('persistence target');
     }
   }
 }
@@ -400,12 +380,4 @@ function git(args: readonly string[], trim = true): string {
 
 function absolute(filePath: string): string {
   return path.join(repoRoot, filePath);
-}
-
-function persistenceLineage(sourceName: string, blob: string, targetName: string) {
-  return {
-    mergeBase: persistenceBase,
-    source: { path: `${persistenceSourceRoot}/${sourceName}`, blob },
-    targets: [`${persistenceTargetRoot}/${targetName}`],
-  };
 }
