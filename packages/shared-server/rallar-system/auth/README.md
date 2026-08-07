@@ -107,13 +107,13 @@ continues through the authenticated AppInbox mutation timeline above.
 
 ## Session lifecycle, logout, expiry, and revocation
 
-- [`requireIssueSessionLifecycle`](./sessions/require-auth-session-lifecycle.ts)
+- [`requireIssueSessionLifecycle`](./sessions/require-issue-session-lifecycle.ts)
   preserves the issue-time and expiry invariant used by decode, compute,
   validate, and write.
 - Logout computation uses
   [`computeAuthSessionMutation`](./mutation/compute/compute-auth-session-mutation.ts)
   and creates the exact final WS intent through
-  [`toAuthLogoutOutbox`](./mutation/compute/auth-logout-outbox.ts).
+  [`toAuthLogoutOutbox`](./mutation/compute/to-auth-logout-outbox.ts).
 - Canonical and legacy session reads, observational expiry, conditional delete,
   and public reconstruction remain in
   [`AuthSessionRepository`](../repositories/AuthSessionRepository.ts) and its

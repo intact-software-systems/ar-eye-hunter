@@ -1,4 +1,4 @@
-import { requireIssueSessionLifecycle } from '../../sessions/require-auth-session-lifecycle.ts';
+import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
 import type {
   AuthMutationCommand,
   AuthMutationComputed,

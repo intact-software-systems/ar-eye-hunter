@@ -1,5 +1,7 @@
 import type { AuthMutationResult } from './auth-mutation-contracts.ts';
 
+type AuthMutationRecord = ReturnType<typeof requireRecord>;
+
 export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
   const result = requireRecord(input, 'Auth mutation result');
   requireString(result.requestId, 'Auth mutation result requestId');
@@ -14,7 +16,7 @@ export function decodeAuthMutationResult(input: unknown): AuthMutationResult {
   return structuredClone(result) as AuthMutationResult;
 }
 
-function validateAuthRegistrationResult(result: Readonly<Record<string, unknown>>): void {
+function validateAuthRegistrationResult(result: AuthMutationRecord): void {
   requireExactKeys(result, [
     'requestId',
     'clientId',
@@ -30,12 +32,12 @@ function validateAuthRegistrationResult(result: Readonly<Record<string, unknown>
   requireTimestamp(result.registeredAtEpochMs, 'Auth result registeredAtEpochMs');
 }
 
-function validateAuthLogoutResult(result: Readonly<Record<string, unknown>>): void {
+function validateAuthLogoutResult(result: AuthMutationRecord): void {
   requireExactKeys(result, ['requestId', 'loggedOut']);
   if (result.loggedOut !== true) throw new TypeError('Auth logout result is invalid');
 }
 
-function validateDiscriminatedResult(result: Readonly<Record<string, unknown>>): void {
+function validateDiscriminatedResult(result: AuthMutationRecord): void {
   switch (result.kind) {
     case 'session-issued':
     case 'ws-ticket-consumed':
@@ -53,7 +55,7 @@ function validateDiscriminatedResult(result: Readonly<Record<string, unknown>>):
   }
 }
 
-function validateWebSocketTicketIssuedResult(result: Readonly<Record<string, unknown>>): void {
+function validateWebSocketTicketIssuedResult(result: AuthMutationRecord): void {
   requireExactKeys(result, [
     'requestId',
     'kind',
@@ -67,16 +69,17 @@ function validateWebSocketTicketIssuedResult(result: Readonly<Record<string, unk
   validateResultLifecycle(result);
 }
 
-function validateAgentTicketsIssuedResult(result: Readonly<Record<string, unknown>>): void {
+function validateAgentTicketsIssuedResult(result: AuthMutationRecord): void {
   requireExactKeys(result, ['requestId', 'kind', 'tickets']);
   if (!Array.isArray(result.tickets) || result.tickets.length === 0) {
     throw new TypeError('Auth result tickets must be a non-empty array');
   }
-  for (const inputTicket of result.tickets) validateAgentTicketResult(inputTicket);
+  for (const inputTicket of result.tickets) {
+    validateAgentTicketResult(requireRecord(inputTicket, 'Auth result agent ticket'));
+  }
 }
 
-function validateAgentTicketResult(input: unknown): void {
-  const ticket = requireRecord(input, 'Auth result agent ticket');
+function validateAgentTicketResult(ticket: AuthMutationRecord): void {
   requireExactKeys(ticket, [
     'agentId',
     'ticketDigest',
@@ -90,7 +93,7 @@ function validateAgentTicketResult(input: unknown): void {
   validateResultLifecycle(ticket);
 }
 
-function validateSessionResult(result: Readonly<Record<string, unknown>>): void {
+function validateSessionResult(result: AuthMutationRecord): void {
   requireExactKeys(result, [
     'requestId',
     'kind',
@@ -107,7 +110,7 @@ function validateSessionResult(result: Readonly<Record<string, unknown>>): void 
   validateResultLifecycle(result);
 }
 
-function validateResultLifecycle(result: Readonly<Record<string, unknown>>): void {
+function validateResultLifecycle(result: AuthMutationRecord): void {
   requireTimestamp(result.issuedAtEpochMs, 'Auth result issuedAtEpochMs');
   requireTimestamp(result.expiresAtEpochMs, 'Auth result expiresAtEpochMs');
   if (result.issuedAtEpochMs >= result.expiresAtEpochMs) {
@@ -141,7 +144,7 @@ function requireRecord(value: unknown, label: string): Readonly<Record<string, u
   return value as Readonly<Record<string, unknown>>;
 }
 
-function requireExactKeys(value: Readonly<Record<string, unknown>>, keys: readonly string[]): void {
+function requireExactKeys(value: AuthMutationRecord, keys: readonly string[]): void {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

@@ -4,11 +4,14 @@ import {
     type PersistedAgentSessionTicket,
 } from '../repositories/AuthSessionRepository.ts';
 import { AuthUserRepository } from '../repositories/AuthUserRepository.ts';
+import * as authMutationFacts from '../auth/mutation/read/capture-auth-mutation-facts.ts';
 import type {
     AuthMutationCommand,
     AuthMutationRead,
     AuthSessionEntries,
 } from '../auth/mutation/auth-mutation-contracts.ts';
+
+export const captureAuthMutationFacts = authMutationFacts.captureAuthMutationFacts;
 
 export async function readAuthMutation(
     users: AuthUserRepository,

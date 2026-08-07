@@ -31,8 +31,16 @@ export const authPrALineages: AuthPrALineage[] = [
     '1baa7032de313d639228de272aee6f5a0abf9d32',
     ['decodeAuthMutationCommand', 'decodeAuthMutationResult'],
     [
-      target('mutation/decode-auth-mutation-command.ts', ['decodeAuthMutationCommand']),
-      target('mutation/decode-auth-mutation-result.ts', ['decodeAuthMutationResult']),
+      target(
+        'mutation/decode-auth-mutation-command.ts',
+        ['decodeAuthMutationCommand'],
+        ['boundary.unknown'],
+      ),
+      target(
+        'mutation/decode-auth-mutation-result.ts',
+        ['decodeAuthMutationResult'],
+        ['boundary.unknown'],
+      ),
     ],
   ),
   lineage(
@@ -54,7 +62,7 @@ export const authPrALineages: AuthPrALineage[] = [
     'packages/shared-server/rallar-system/services/auth-session-lifecycle.ts',
     '372782728974a39f34f1d372fb4a6fe8915ccced',
     ['requireIssueSessionLifecycle'],
-    [target('sessions/require-auth-session-lifecycle.ts', ['requireIssueSessionLifecycle'])],
+    [target('sessions/require-issue-session-lifecycle.ts', ['requireIssueSessionLifecycle'])],
   ),
   lineage(
     'packages/shared-server/rallar-system/services/auth-session-proof-secret.ts',
@@ -73,10 +81,11 @@ export const authPrALineages: AuthPrALineage[] = [
     '489233ca4fa42aaaa3cdf4109fe034281f9ee5d4',
     ['AuthCredentialIssuer', 'createHmacAuthCredentialIssuer'],
     [
-      target('credentials/auth-credential-issuer.ts', [
-        'AuthCredentialIssuer',
-        'createHmacAuthCredentialIssuer',
-      ]),
+      target(
+        'credentials/auth-credential-issuer.ts',
+        ['AuthCredentialIssuer', 'createHmacAuthCredentialIssuer'],
+        ['boundary.unknown'],
+      ),
     ],
   ),
   lineage(
@@ -99,7 +108,7 @@ export const authPrALineages: AuthPrALineage[] = [
     'b48f229659ee90e85c3aeba041959e62bb0c7139',
     ['computeAuthMutation', 'toLogoutWsOutbox'],
     [
-      target('mutation/compute/auth-logout-outbox.ts', ['toAuthLogoutOutbox']),
+      target('mutation/compute/to-auth-logout-outbox.ts', ['toAuthLogoutOutbox']),
       target('mutation/compute/compute-auth-agent-ticket-mutation.ts', [
         'computeAuthAgentTicketMutation',
       ]),
@@ -162,7 +171,7 @@ export const authPrAProductionTargets = [
   'packages/shared-server/rallar-system/auth/login/prepare-auth-user-registration.ts',
   'packages/shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts',
   'packages/shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts',
-  'packages/shared-server/rallar-system/auth/mutation/compute/auth-logout-outbox.ts',
+  'packages/shared-server/rallar-system/auth/mutation/compute/to-auth-logout-outbox.ts',
   'packages/shared-server/rallar-system/auth/mutation/compute/compute-auth-agent-ticket-mutation.ts',
   'packages/shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts',
   'packages/shared-server/rallar-system/auth/mutation/compute/compute-auth-session-mutation.ts',
@@ -179,7 +188,7 @@ export const authPrAProductionTargets = [
   'packages/shared-server/rallar-system/auth/mutation/validate/validate-auth-ticket-mutation.ts',
   'packages/shared-server/rallar-system/auth/mutation/validate/validate-auth-user-mutation.ts',
   'packages/shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts',
-  'packages/shared-server/rallar-system/auth/sessions/require-auth-session-lifecycle.ts',
+  'packages/shared-server/rallar-system/auth/sessions/require-issue-session-lifecycle.ts',
 ] as const;
 
 function lineage(
@@ -191,10 +200,14 @@ function lineage(
   return { base: approvedBase, source: { path, blob, symbols }, targets };
 }
 
-function target(relativePath: string, symbols: string[]): AuthPrATargetLineage {
+function target(
+  relativePath: string,
+  symbols: string[],
+  inheritedStyleFindings: string[] = [],
+): AuthPrATargetLineage {
   return {
     path: `packages/shared-server/rallar-system/auth/${relativePath}`,
     symbols,
-    inheritedStyleFindings: [],
+    inheritedStyleFindings,
   };
 }

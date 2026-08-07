@@ -10,7 +10,7 @@ import type {
     AuthMutationRead,
     AuthMutationResult,
 } from '../auth/mutation/auth-mutation-contracts.ts';
-import { requireIssueSessionLifecycle } from '../auth/sessions/require-auth-session-lifecycle.ts';
+import { requireIssueSessionLifecycle } from '../auth/sessions/require-issue-session-lifecycle.ts';
 import { requireAuthTicket } from '../auth/mutation/validate/auth-mutation-validation.ts';
 
 export async function writeAuthMutation(

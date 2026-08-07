@@ -8,6 +8,19 @@ const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/auth';
 const compatibilityModules = [
   {
+    compatibilityPath: 'services/auth-state-codecs.ts',
+    canonicalExports: [
+      {
+        canonicalPath: 'mutation/decode-auth-mutation-command.ts',
+        names: ['decodeAuthMutationCommand'],
+      },
+      {
+        canonicalPath: 'mutation/decode-auth-mutation-result.ts',
+        names: ['decodeAuthMutationResult'],
+      },
+    ],
+  },
+  {
     compatibilityPath: 'services/auth-state-mutations.ts',
     canonicalExports: [
       {
@@ -134,6 +147,17 @@ describe('auth server ownership boundaries', () => {
     });
 
     expect(findings).toEqual([]);
+  });
+
+  it('keeps captureAuthMutationFacts as the predecessor read-owner runtime identity', async () => {
+    const predecessor = await import(
+      absolute('packages/shared-server/rallar-system/services/auth-state-read.ts')
+    );
+    const canonical = await import(
+      absolute(`${canonicalRoot}/mutation/read/capture-auth-mutation-facts.ts`)
+    );
+
+    expect(predecessor.captureAuthMutationFacts).toBe(canonical.captureAuthMutationFacts);
   });
 });
 

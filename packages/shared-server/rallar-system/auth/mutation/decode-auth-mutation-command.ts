@@ -3,9 +3,11 @@ import {
   decodePersistedAuthSession,
   decodePersistedWebSocketTicket,
 } from '../../repositories/auth-persistence-contracts.ts';
-import { requireIssueSessionLifecycle } from '../sessions/require-auth-session-lifecycle.ts';
+import { requireIssueSessionLifecycle } from '../sessions/require-issue-session-lifecycle.ts';
 
 import type { AuthMutationCommand } from './auth-mutation-contracts.ts';
+
+type AuthMutationRecord = ReturnType<typeof requireRecord>;
 
 export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
   const command = requireRecord(input, 'Auth mutation command');
@@ -17,7 +19,7 @@ export function decodeAuthMutationCommand(input: unknown): AuthMutationCommand {
   return structuredClone(command) as AuthMutationCommand;
 }
 
-function validateAuthMutationCommand(command: Readonly<Record<string, unknown>>): void {
+function validateAuthMutationCommand(command: AuthMutationRecord): void {
   switch (command.kind) {
     case 'register-user':
       validateRegisterAuthUserCommand(command);
@@ -45,12 +47,12 @@ function validateAuthMutationCommand(command: Readonly<Record<string, unknown>>)
   }
 }
 
-function validateRegisterAuthUserCommand(command: Readonly<Record<string, unknown>>): void {
+function validateRegisterAuthUserCommand(command: AuthMutationRecord): void {
   requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'user']);
   validateAuthUserContract(command.user);
 }
 
-function validateIssueAuthSessionCommand(command: Readonly<Record<string, unknown>>): void {
+function validateIssueAuthSessionCommand(command: AuthMutationRecord): void {
   requireExactKeys(command, [
     'version',
     'kind',
@@ -66,19 +68,17 @@ function validateIssueAuthSessionCommand(command: Readonly<Record<string, unknow
   );
 }
 
-function validateLogoutAuthSessionCommand(command: Readonly<Record<string, unknown>>): void {
+function validateLogoutAuthSessionCommand(command: AuthMutationRecord): void {
   requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'expected']);
   decodePersistedAuthSession(command.expected);
 }
 
-function validateIssueAuthWebSocketTicketCommand(command: Readonly<Record<string, unknown>>): void {
+function validateIssueAuthWebSocketTicketCommand(command: AuthMutationRecord): void {
   requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'ticketRecord']);
   decodePersistedWebSocketTicket(command.ticketRecord);
 }
 
-function validateConsumeAuthWebSocketTicketCommand(
-  command: Readonly<Record<string, unknown>>,
-): void {
+function validateConsumeAuthWebSocketTicketCommand(command: AuthMutationRecord): void {
   requireExactKeys(command, [
     'version',
     'kind',
@@ -91,7 +91,7 @@ function validateConsumeAuthWebSocketTicketCommand(
   requireString(command.expectedSessionId, 'Auth websocket expected sessionId');
 }
 
-function validateIssueAuthAgentTicketsCommand(command: Readonly<Record<string, unknown>>): void {
+function validateIssueAuthAgentTicketsCommand(command: AuthMutationRecord): void {
   requireExactKeys(command, [
     'version',
     'kind',
@@ -104,7 +104,7 @@ function validateIssueAuthAgentTicketsCommand(command: Readonly<Record<string, u
   validateAgentTicketCommands(command.tickets);
 }
 
-function validateConsumeAuthAgentTicketCommand(command: Readonly<Record<string, unknown>>): void {
+function validateConsumeAuthAgentTicketCommand(command: AuthMutationRecord): void {
   requireExactKeys(command, ['version', 'kind', 'requestId', 'capturedAtEpochMs', 'ticketDigest']);
   requireString(command.ticketDigest, 'Auth agent ticket digest');
 }
@@ -127,11 +127,12 @@ function validateAgentTicketCommands(input: unknown): void {
   if (!Array.isArray(input) || input.length === 0) {
     throw new TypeError('Auth agent tickets must be a non-empty array');
   }
-  for (const inputTicket of input) validateAgentTicketCommand(inputTicket);
+  for (const inputTicket of input) {
+    validateAgentTicketCommand(requireRecord(inputTicket, 'Auth agent ticket command'));
+  }
 }
 
-function validateAgentTicketCommand(input: unknown): void {
-  const ticket = requireRecord(input, 'Auth agent ticket command');
+function validateAgentTicketCommand(ticket: AuthMutationRecord): void {
   requireExactKeys(ticket, [
     'agentId',
     'sessionId',
@@ -146,7 +147,7 @@ function validateAgentTicketCommand(input: unknown): void {
   validateAgentTicketCommandFields(ticket);
 }
 
-function validateAgentTicketCommandFields(ticket: Readonly<Record<string, unknown>>): void {
+function validateAgentTicketCommandFields(ticket: AuthMutationRecord): void {
   for (const field of [
     'agentId',
     'sessionId',
@@ -167,7 +168,7 @@ function validateAgentTicketCommandFields(ticket: Readonly<Record<string, unknow
   validateAgentTicketCommandLifecycle(ticket);
 }
 
-function validateAgentTicketCommandLifecycle(ticket: Readonly<Record<string, unknown>>): void {
+function validateAgentTicketCommandLifecycle(ticket: AuthMutationRecord): void {
   const issuedAtEpochMs = ticket.issuedAtEpochMs as number;
   const sessionExpiresAtEpochMs = ticket.sessionExpiresAtEpochMs as number;
   decodePersistedAgentSessionTicket({
@@ -203,7 +204,7 @@ function validateAuthUserContract(input: unknown): void {
   validateAuthUserFields(user);
 }
 
-function validateAuthUserFields(user: Readonly<Record<string, unknown>>): void {
+function validateAuthUserFields(user: AuthMutationRecord): void {
   for (const field of [
     'clientId',
     'username',
@@ -220,7 +221,7 @@ function validateAuthUserFields(user: Readonly<Record<string, unknown>>): void {
   validateAuthUserMetadata(user);
 }
 
-function validateAuthUserMetadata(user: Readonly<Record<string, unknown>>): void {
+function validateAuthUserMetadata(user: AuthMutationRecord): void {
   requireTimestamp(user.passwordIterations, 'Auth user passwordIterations');
   requireTimestamp(user.createdAtEpochMs, 'Auth user createdAtEpochMs');
   requireTimestamp(user.updatedAtEpochMs, 'Auth user updatedAtEpochMs');
@@ -260,7 +261,7 @@ function requireRecord(value: unknown, label: string): Readonly<Record<string, u
   return value as Readonly<Record<string, unknown>>;
 }
 
-function requireExactKeys(value: Readonly<Record<string, unknown>>, keys: readonly string[]): void {
+function requireExactKeys(value: AuthMutationRecord, keys: readonly string[]): void {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

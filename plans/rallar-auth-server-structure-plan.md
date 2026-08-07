@@ -363,7 +363,7 @@ packages/shared-server/rallar-system/auth/
       read-auth-mutation.ts
       read-auth-session-entries.ts
     compute/
-      auth-logout-outbox.ts
+      to-auth-logout-outbox.ts
       compute-auth-mutation.ts
       compute-auth-user-registration.ts
       compute-auth-session-mutation.ts
@@ -391,7 +391,7 @@ packages/shared-server/rallar-system/auth/
     auth-user-repository.ts
   sessions/
     auth-session-proof-secret.ts
-    require-auth-session-lifecycle.ts
+    require-issue-session-lifecycle.ts
 
 packages/shared-server/rallar-system/
   services/
@@ -430,7 +430,7 @@ packages/shared-server/rallar-system/auth/
     read/
       capture-auth-mutation-facts.ts
     compute/
-      auth-logout-outbox.ts
+      to-auth-logout-outbox.ts
       compute-auth-agent-ticket-mutation.ts
       compute-auth-mutation.ts
       compute-auth-session-mutation.ts
@@ -445,13 +445,20 @@ packages/shared-server/rallar-system/auth/
       validate-auth-user-mutation.ts
   sessions/
     auth-session-proof-secret.ts
-    require-auth-session-lifecycle.ts
+    require-issue-session-lifecycle.ts
 ```
 
 The still-current AppInbox service/routing, stable read, transaction write, session/user
 repository, persistence, storage-key, legacy, and issued-session owners remain at their
 Section 3.1 predecessor paths. Their target-path and re-export-only assertions are deferred to
 PR B; PR A semantic tests continue to exercise those predecessor owners directly.
+
+PR A also temporarily restores `services/auth-state-codecs.ts` as a direct named re-export of
+the two canonical decoders. It exists only because the approved one-to-many structural-lineage
+validator requires the exact predecessor path in the target tree. Canonical auth code does not
+import it. `services/auth-state-read.ts` remains PR B's executable read owner while directly
+exporting the predecessor `captureAuthMutationFacts` binding as the exact canonical runtime
+identity.
 
 ### 4.2 Primary symbol and responsibility contract
 
@@ -478,7 +485,7 @@ PR B; PR A semantic tests continue to exercise those predecessor owners directly
 | `mutation/compute/compute-auth-session-mutation.ts`        | `computeAuthSessionMutation`                                                                                         |
 | `mutation/compute/compute-auth-ticket-mutation.ts`         | `computeAuthTicketMutation`                                                                                          |
 | `mutation/compute/compute-auth-agent-ticket-mutation.ts`   | `computeAuthAgentTicketMutation`                                                                                     |
-| `mutation/compute/auth-logout-outbox.ts`                   | `toAuthLogoutOutbox` exact `WS_OUTBOX` intent                                                                        |
+| `mutation/compute/to-auth-logout-outbox.ts`                | `toAuthLogoutOutbox` exact `WS_OUTBOX` intent                                                                        |
 | `mutation/validate/validate-auth-mutation.ts`              | exhaustive validation-family router                                                                                  |
 | `mutation/validate/auth-mutation-validation.ts`            | shared exact-kind/session/ticket/JSON validation                                                                     |
 | `mutation/validate/validate-auth-user-mutation.ts`         | `validateAuthUserMutation`                                                                                           |
@@ -496,7 +503,7 @@ PR B; PR A semantic tests continue to exercise those predecessor owners directly
 | `persistence/auth-session-types.ts`                        | `IssuedAuthSession`, `IssuedWebSocketTicket`, and `IssuedAgentSessionTicket`                                         |
 | `persistence/auth-storage-keys.ts`                         | exact namespace constants and `auth*Key` functions                                                                   |
 | `persistence/auth-legacy-compatibility.ts`                 | deadline/limit constants, `isLegacyPlaintextCompatibilityActive`, and `readBoundedLegacyAuthPage`                    |
-| `sessions/require-auth-session-lifecycle.ts`               | `requireIssueSessionLifecycle`                                                                                       |
+| `sessions/require-issue-session-lifecycle.ts`              | `requireIssueSessionLifecycle`                                                                                       |
 | `sessions/auth-session-proof-secret.ts`                    | `authSessionProofSecret`                                                                                             |
 
 Every general function or callback remains at most 60 physical lines and every module at most 400. A split must own a decision, lifecycle, persistence operation, or protocol translation; a
@@ -504,35 +511,35 @@ line-limit-only forwarding helper is rejected.
 
 ### 4.3 Complete current-to-target production map
 
-| Current file                                 | Exact target owner(s)                                                                                                |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `services/AppAuthInboxService.ts`            | `inbox/app-auth-inbox-service.ts`; `inbox/auth-inbox-handler.ts`; old path becomes one-hop compatibility             |
-| `services/auth-app-inbox-routing.ts`         | `inbox/auth-app-inbox-routing.ts`                                                                                    |
-| `services/auth-credential-issuer.ts`         | `credentials/auth-credential-issuer.ts`; old path becomes one-hop compatibility                                      |
-| `services/auth-login-service.ts`             | `login/authenticate-auth-user.ts`; `login/prepare-auth-user-registration.ts`; old path becomes one-hop compatibility |
-| `services/auth-session-lifecycle.ts`         | `sessions/require-auth-session-lifecycle.ts`                                                                         |
-| `services/auth-session-proof-secret.ts`      | `sessions/auth-session-proof-secret.ts`                                                                              |
-| `services/auth-state-agent-validation.ts`    | `mutation/validate/validate-auth-agent-ticket-mutation.ts`                                                           |
-| `services/auth-state-codecs.ts`              | `mutation/decode-auth-mutation-command.ts`; `mutation/decode-auth-mutation-result.ts`                                |
-| `services/auth-state-compute.ts`             | compute router; four compute family owners; `auth-logout-outbox.ts`                                                  |
-| `services/auth-state-contracts.ts`           | `mutation/auth-mutation-contracts.ts`                                                                                |
-| `services/auth-state-errors.ts`              | `mutation/auth-mutation-rejected-error.ts`; digest check moves beside captured facts/public projection               |
-| `services/auth-state-mutations.ts`           | old path remains direct named compatibility exports to canonical mutation/service owners                             |
-| `services/auth-state-public-results.ts`      | `mutation/to-auth-mutation-public-result.ts`                                                                         |
-| `services/auth-state-read.ts`                | read router; `capture-auth-mutation-facts.ts`; `read-auth-session-entries.ts`                                        |
-| `services/auth-state-service.ts`             | `auth/auth-mutation-service.ts`                                                                                      |
-| `services/auth-state-validate.ts`            | validation router and user/session/ticket family owners                                                              |
-| `services/auth-state-validation-shared.ts`   | `mutation/validate/auth-mutation-validation.ts`                                                                      |
-| `services/auth-state-write.ts`               | write router; `write-auth-session.ts`; `write-auth-ticket-mutation.ts`                                               |
-| `repositories/AuthSessionRepository.ts`      | `persistence/auth-session-repository.ts`; old path becomes one-hop compatibility                                     |
-| `repositories/AuthUserRepository.ts`         | `persistence/auth-user-repository.ts`; old path becomes one-hop compatibility                                        |
-| `repositories/auth-legacy-compatibility.ts`  | `persistence/auth-legacy-compatibility.ts`                                                                           |
-| `repositories/auth-persistence-contracts.ts` | `persistence/auth-persistence-contracts.ts`                                                                          |
-| `repositories/auth-secret-digest.ts`         | `credentials/hash-auth-secret.ts`                                                                                    |
-| `repositories/auth-session-persistence.ts`   | `persistence/auth-session-persistence.ts`                                                                            |
-| `repositories/auth-session-types.ts`         | `persistence/auth-session-types.ts`                                                                                  |
-| `repositories/auth-storage-keys.ts`          | `persistence/auth-storage-keys.ts`                                                                                   |
-| `repositories/auth-ticket-persistence.ts`    | `persistence/auth-ticket-persistence.ts`                                                                             |
+| Current file                                 | Exact target owner(s)                                                                                                                                                                          |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/AppAuthInboxService.ts`            | `inbox/app-auth-inbox-service.ts`; `inbox/auth-inbox-handler.ts`; old path becomes one-hop compatibility                                                                                       |
+| `services/auth-app-inbox-routing.ts`         | `inbox/auth-app-inbox-routing.ts`                                                                                                                                                              |
+| `services/auth-credential-issuer.ts`         | `credentials/auth-credential-issuer.ts`; old path becomes one-hop compatibility                                                                                                                |
+| `services/auth-login-service.ts`             | `login/authenticate-auth-user.ts`; `login/prepare-auth-user-registration.ts`; old path becomes one-hop compatibility                                                                           |
+| `services/auth-session-lifecycle.ts`         | `sessions/require-issue-session-lifecycle.ts`                                                                                                                                                  |
+| `services/auth-session-proof-secret.ts`      | `sessions/auth-session-proof-secret.ts`                                                                                                                                                        |
+| `services/auth-state-agent-validation.ts`    | `mutation/validate/validate-auth-agent-ticket-mutation.ts`                                                                                                                                     |
+| `services/auth-state-codecs.ts`              | `mutation/decode-auth-mutation-command.ts`; `mutation/decode-auth-mutation-result.ts`; PR A old path temporarily re-exports both canonical identities for exact one-to-many lineage validation |
+| `services/auth-state-compute.ts`             | compute router; four compute family owners; `to-auth-logout-outbox.ts`                                                                                                                         |
+| `services/auth-state-contracts.ts`           | `mutation/auth-mutation-contracts.ts`                                                                                                                                                          |
+| `services/auth-state-errors.ts`              | `mutation/auth-mutation-rejected-error.ts`; digest check moves beside captured facts/public projection                                                                                         |
+| `services/auth-state-mutations.ts`           | old path remains direct named compatibility exports to canonical mutation/service owners                                                                                                       |
+| `services/auth-state-public-results.ts`      | `mutation/to-auth-mutation-public-result.ts`                                                                                                                                                   |
+| `services/auth-state-read.ts`                | read router; `capture-auth-mutation-facts.ts`; `read-auth-session-entries.ts`                                                                                                                  |
+| `services/auth-state-service.ts`             | `auth/auth-mutation-service.ts`                                                                                                                                                                |
+| `services/auth-state-validate.ts`            | validation router and user/session/ticket family owners                                                                                                                                        |
+| `services/auth-state-validation-shared.ts`   | `mutation/validate/auth-mutation-validation.ts`                                                                                                                                                |
+| `services/auth-state-write.ts`               | write router; `write-auth-session.ts`; `write-auth-ticket-mutation.ts`                                                                                                                         |
+| `repositories/AuthSessionRepository.ts`      | `persistence/auth-session-repository.ts`; old path becomes one-hop compatibility                                                                                                               |
+| `repositories/AuthUserRepository.ts`         | `persistence/auth-user-repository.ts`; old path becomes one-hop compatibility                                                                                                                  |
+| `repositories/auth-legacy-compatibility.ts`  | `persistence/auth-legacy-compatibility.ts`                                                                                                                                                     |
+| `repositories/auth-persistence-contracts.ts` | `persistence/auth-persistence-contracts.ts`                                                                                                                                                    |
+| `repositories/auth-secret-digest.ts`         | `credentials/hash-auth-secret.ts`                                                                                                                                                              |
+| `repositories/auth-session-persistence.ts`   | `persistence/auth-session-persistence.ts`                                                                                                                                                      |
+| `repositories/auth-session-types.ts`         | `persistence/auth-session-types.ts`                                                                                                                                                            |
+| `repositories/auth-storage-keys.ts`          | `persistence/auth-storage-keys.ts`                                                                                                                                                             |
+| `repositories/auth-ticket-persistence.ts`    | `persistence/auth-ticket-persistence.ts`                                                                                                                                                       |
 
 ### 4.4 Acyclic dependency direction
 
@@ -843,21 +850,27 @@ Only logout creates a final auth-owned `WS_OUTBOX` intent. The plan preserves th
 
 ### 7.2 Direct one-hop compatibility inventory
 
-| Old path                                | Known production consumers retained initially                                                                                      | Owner and removal condition                                                                                       |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `services/AppAuthInboxService.ts`       | package `mod.ts`, API middleware/contracts/config route, shared middleware options, shared HTTP WS auth                            | auth child; remove only after package/API/shared consumers adopt a separately approved path or a breaking release |
-| `services/auth-state-mutations.ts`      | package `mod.ts`, API middleware, shared public-contract tests                                                                     | auth child; direct named re-export remains until supported public/deep imports are separately migrated            |
-| `services/auth-login-service.ts`        | package `mod.ts`, API login repository                                                                                             | auth child; remove in a future API-v1 auth child plus public compatibility decision                               |
-| `services/auth-credential-issuer.ts`    | package `mod.ts`, API middleware, production-env hardening                                                                         | auth child; remove only after package/API consumers migrate with explicit compatibility approval                  |
-| `repositories/AuthSessionRepository.ts` | package `mod.ts`, API repository/routes/auth, shared HTTP, client/group/topology owners, PostgreSQL factories, performance harness | auth child; preserve until all cross-domain and public consumers receive separate approved migration              |
-| `repositories/AuthUserRepository.ts`    | package `mod.ts`, API repositories, PostgreSQL factory                                                                             | auth child; preserve until public/API consumers receive separate approved migration                               |
+| Old path                                | Known production consumers retained initially                                                                                      | Owner and removal condition                                                                                                                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/AppAuthInboxService.ts`       | package `mod.ts`, API middleware/contracts/config route, shared middleware options, shared HTTP WS auth                            | auth child; remove only after package/API/shared consumers adopt a separately approved path or a breaking release                                                            |
+| `services/auth-state-mutations.ts`      | package `mod.ts`, API middleware, shared public-contract tests                                                                     | auth child; direct named re-export remains until supported public/deep imports are separately migrated                                                                       |
+| `services/auth-login-service.ts`        | package `mod.ts`, API login repository                                                                                             | auth child; remove in a future API-v1 auth child plus public compatibility decision                                                                                          |
+| `services/auth-credential-issuer.ts`    | package `mod.ts`, API middleware, production-env hardening                                                                         | auth child; remove only after package/API consumers migrate with explicit compatibility approval                                                                             |
+| `services/auth-state-codecs.ts`         | no canonical or supported production consumer; required only by PR A's exact one-to-many lineage validator                         | auth child; remove with the PR A manifest in the first later auth PR whose merge base no longer needs it, after an active-consumer scan proves no supported consumer remains |
+| `repositories/AuthSessionRepository.ts` | package `mod.ts`, API repository/routes/auth, shared HTTP, client/group/topology owners, PostgreSQL factories, performance harness | auth child; preserve until all cross-domain and public consumers receive separate approved migration                                                                         |
+| `repositories/AuthUserRepository.ts`    | package `mod.ts`, API repositories, PostgreSQL factory                                                                             | auth child; preserve until public/API consumers receive separate approved migration                                                                                          |
 
 `packages/shared-server/mod.ts` must export canonical symbols directly after the move while each
 old supported path remains one direct re-export hop. Canonical auth code and moved auth tests may
-not import the six old paths.
+not import the supported old paths or the temporary codec wrapper.
 
-The following non-public old files receive no compatibility wrapper after their exact active
-consumers move: `auth-app-inbox-routing`, session lifecycle/proof, validation, codecs, read,
+During PR A, `services/auth-state-read.ts` remains the executable predecessor read owner and also
+exports the canonical `captureAuthMutationFacts` function as a direct identity binding. It is not a
+compatibility-only module until PR B moves `readAuthMutation`; canonical PR A facts code still
+imports its canonical owner directly.
+
+The following non-public old files receive no lasting compatibility wrapper after their exact
+active consumers move: `auth-app-inbox-routing`, session lifecycle/proof, validation, codecs, read,
 compute, validate, write, persistence contracts/types/keys, secret digest, session persistence,
 ticket persistence, and legacy compatibility. Cross-domain imports of proof, persisted session
 contracts, and session types may receive import-path-only updates; if an active consumer cannot
@@ -976,7 +989,8 @@ stage-accurate supplementary evidence at exact commit
 Critical 0, Important 0, and Minor 0.
 
 **Files:** target credential, login, mutation contract/codec/facts/compute/validate files;
-initial README; directly owned mirrored tests; six compatibility paths only as required.
+initial README; directly owned mirrored tests; supported direct compatibility paths plus the
+temporary PR A codec wrapper only as required.
 
 **Interfaces:** preserve the seven `AuthMutationCommand` variants, `AuthMutationRead`,
 `AuthMutationComputed`, `AuthMutationResult`, `AuthMutationPublicResult`,
@@ -1011,9 +1025,21 @@ an unmapped 116-column canonical decoder import in a shared-test consumer. Exact
 `7ba002c222fc6c02e3d5bcfa9971b4ae3f778c49`, tree
 `9a50b99d937437a3cbcc2d3f2b34154be78cf3f2`, routes that public consumer through the intentional
 shared-server package entry; its scoped re-review reported Critical 0, Important 0, and Minor 0.
-The exact-base warning-only comparison now contains only 16 reconciled findings: thirteen approved
-untrusted/nested decode-boundary findings, the two approved target filename heuristics, and the
-transitional `auth-state-read.ts` filename finding owned by PR B.
+Branch Release Gate run `31155900583` attempt 1 failed only at changed repository style with 16
+rows: thirteen untrusted/nested decode-boundary rows, two target filename mismatches, and the
+transitional `auth-state-read.ts` filename mismatch. A separately authorized reconciliation uses
+one exact-base structural-lineage manifest only for source-derived `boundary.unknown` capacity:
+15 occurrences from base `services/auth-state-codecs.ts` map to nine command-decoder and six
+result-decoder occurrences, while the credential issuer maps one base occurrence to one target
+occurrence. New post-narrowing helpers use the named `AuthMutationRecord` return contract and
+receive no additional capacity; every other rule retains zero inherited capacity.
+
+The same correction renames the two private owners to `to-auth-logout-outbox.ts` and
+`require-issue-session-lifecycle.ts`, restores the predecessor `captureAuthMutationFacts` runtime
+identity binding from the still-executable `services/auth-state-read.ts`, and keeps
+`services/auth-state-codecs.ts` as a direct re-export only. The temporary codec wrapper and PR A
+manifest are owned by this child and are removed in the first later auth PR whose merge base no
+longer needs the lineage, after an active-consumer scan proves no supported consumer remains.
 
 Repository governance also exposed a completed client-state exact-base assertion whose recorded
 removal condition was satisfied by ledger PR #75. A separate human authorization allowed removal

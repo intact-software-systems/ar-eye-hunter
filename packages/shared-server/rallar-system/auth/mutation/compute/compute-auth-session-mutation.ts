@@ -4,7 +4,7 @@ import {
   type PersistedAuthSession,
 } from '../../../repositories/auth-persistence-contracts.ts';
 import { equalAuthJson } from '../validate/auth-mutation-validation.ts';
-import { requireIssueSessionLifecycle } from '../../sessions/require-auth-session-lifecycle.ts';
+import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
 import type {
   AuthMutationCommand,
   AuthMutationComputed,
@@ -14,7 +14,7 @@ import type {
   LogoutAuthSessionCommand,
 } from '../auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '../auth-mutation-rejected-error.ts';
-import { toAuthLogoutOutbox } from './auth-logout-outbox.ts';
+import { toAuthLogoutOutbox } from './to-auth-logout-outbox.ts';
 
 type AuthSessionMutationCommand = Extract<
   AuthMutationCommand,

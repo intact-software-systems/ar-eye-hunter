@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "61e708708f94328f095f1f1fa5690747bb933476",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/auth-state-codecs.ts",
+        "blob": "1baa7032de313d639228de272aee6f5a0abf9d32"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/auth/mutation/decode-auth-mutation-command.ts",
+        "packages/shared-server/rallar-system/auth/mutation/decode-auth-mutation-result.ts"
+      ]
+    },
+    {
+      "mergeBase": "61e708708f94328f095f1f1fa5690747bb933476",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/auth-credential-issuer.ts",
+        "blob": "489233ca4fa42aaaa3cdf4109fe034281f9ee5d4"
+      },
+      "targets": ["packages/shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts"]
+    }
+  ]
+}
