@@ -24,6 +24,10 @@ export interface GroupStateRouteAuthorization {
     request: GroupStateRouteRequest,
     snapshot: GroupSnapshot,
   ): Promise<void>;
+  assertAuthenticatedCanReadGroupState(
+    session: GroupStateRouteAuthSession | undefined,
+    snapshot: GroupSnapshot,
+  ): void;
   assertCanUpdateGroup(principalId: string, ref: GroupRef): Promise<void>;
   assertSelfPrincipal(clientId: string, principalId: string): void;
   assertSelfSession(
@@ -53,6 +57,9 @@ export function createGroupStateRouteAuthorization(
     assertCanReadGroupRef: (request, ref) => assertCanReadGroupRef(request, ref, dependencies),
     assertCanReadGroupState: (request, snapshot) =>
       assertCanReadGroupState(request, snapshot, dependencies),
+    assertAuthenticatedCanReadGroupState: (session, snapshot) => {
+      if (session) assertCanReadGroupSnapshot(session.clientId, snapshot);
+    },
     assertCanUpdateGroup: (principalId, ref) =>
       assertCanUpdateGroup(principalId, ref, dependencies),
     assertSelfPrincipal,

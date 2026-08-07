@@ -5,6 +5,12 @@ import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middl
 import type { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import type { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyPublicationFanout } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
+import type {
+  ClientRestSnapshotReadSelector,
+} from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
+import type {
+  GroupRestSnapshotReadSelector,
+} from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 
 export type Middleware =
   & Omit<
@@ -23,9 +29,17 @@ export type Middleware =
     rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
     rtcTopologyPublicationFanout: RtcTopologyPublicationFanout;
     appAuthInboxService: AppAuthInboxService;
+    clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
+    groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
   }>;
 
-export function requireApiMiddleware(runtime: RallarMiddlewareRuntime): Middleware {
+export function requireApiMiddleware(
+  runtime: RallarMiddlewareRuntime,
+  selectors: Readonly<{
+    clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
+    groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
+  }>,
+): Middleware {
   if (!isCachedClientStateService(runtime.clientStateService)) {
     throw new Error('API middleware requires the cached client state service');
   }
@@ -52,6 +66,7 @@ export function requireApiMiddleware(runtime: RallarMiddlewareRuntime): Middlewa
     rtcTopologyExecutionRepository: runtime.rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout: runtime.rtcTopologyPublicationFanout,
     appAuthInboxService: runtime.appAuthInboxService,
+    ...selectors,
   };
 }
 

@@ -44,9 +44,8 @@ import {
   backfillAllGroupTopologyConfigGenerations,
 } from '@shared-server/rallar-system/services/group-topology-config-generation-backfill.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import {
-  createGroupStateService,
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createGroupStateService }
+  from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   createCachedClientStateService,
 } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
@@ -73,7 +72,8 @@ import {
 import {
   initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
-import { getApiAppInboxServiceOptions, getApiTimingSink } from './services/timing-service.ts';
+import { createApiStateSnapshotReadSelectors, getApiAppInboxServiceOptions,
+  getApiTimingSink } from './services/timing-service.ts';
 import {
   createRuntimeStateExpiryLifecycle,
   runRuntimeStateExpiryStartupBarrier,
@@ -106,14 +106,12 @@ import {
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
 import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
 import { type Middleware, requireApiMiddleware } from './middleware-contract.ts';
-export type { Middleware } from './middleware-contract.ts';
+export type { Middleware };
 let middleware: Middleware | undefined = undefined;
 const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
 const middlewareBackgroundTaskStops = new Set<() => void>();
 export function getMiddleware(): Middleware {
-  if (middleware === undefined) {
-    throw new Error('Middleware not initialised');
-  }
+  if (middleware === undefined) throw new Error('Middleware not initialised');
   return middleware;
 }
 export function initialiseMiddleware() {
@@ -416,12 +414,14 @@ function initialise(
     appGroupInboxService: runtime.appGroupInboxService,
   })
     .catch((e) => console.error('Failed to initialise presence expiry reconciliation:', e));
-  return requireApiMiddleware(runtime);
+  const selectors = createApiStateSnapshotReadSelectors({
+    clientDurable: clientsRepository, clientCache: clientSnapshotReadThroughCache,
+    groupDurable: groupsRepository, groupCache: groupSnapshotReadThroughCache,
+  }, timing);
+  return requireApiMiddleware(runtime, selectors);
 }
 function readRequiredAuthCredentialSecret(): string {
   const secret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();
-  if (!secret) {
-    throw new Error('RALLAR_AUTH_CREDENTIAL_SECRET is required');
-  }
+  if (!secret) throw new Error('RALLAR_AUTH_CREDENTIAL_SECRET is required');
   return secret;
 }

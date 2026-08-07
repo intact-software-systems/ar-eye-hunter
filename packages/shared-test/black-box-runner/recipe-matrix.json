@@ -907,6 +907,23 @@
       "description": "No-browser API-v1 authenticated raw WebSocket routing recipe."
     },
     {
+      "id": "api-v1-state-read-convergence",
+      "recipe": "tests/api-v1/api-v1-state-read-convergence.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box-cluster"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-state-read-convergence",
+      "requires": {
+        "livePreflight": { "timeoutMs": 10000 },
+        "httpServices": [
+          { "name": "Rallar API primary", "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
+          { "name": "Rallar API secondary", "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" }
+        ]
+      },
+      "description": "Two-server REST point-read convergence with scalar and causal floor/header evidence."
+    },
+    {
       "id": "api-v1-rtc-topology-convergence",
       "recipe": "tests/api-v1/api-v1-rtc-topology-convergence.json",
       "category": "api-v1-black-box",

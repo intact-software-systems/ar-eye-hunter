@@ -62,3 +62,84 @@ Deno.test('strict state read routes reject non-self client snapshot and event re
     });
   });
 });
+
+Deno.test('client point reads expose authoritative metadata and forward scalar floors', async () => {
+  await withStrictReadAuth(false, async () => {
+    const snapshot = { ...createClientSnapshot('alice'), stateRevision: 7 };
+    const calls: unknown[] = [];
+    const deps = createClientRouteDeps({
+      session: createAuthSession('alice'),
+      clientService: {},
+      readClientSnapshot: (ref, options) => {
+        calls.push({ ref, options });
+        return Promise.resolve({ status: 'found', source: 'cache', snapshot });
+      },
+    });
+    const response = await createClientRouteApp(deps).request(
+      '/api/state/apps/app-1/workspaces/workspace-1/clients/alice?minStateRevision=6',
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('rallar-state-source'), 'cache');
+    assert.equal(response.headers.get('rallar-state-revision'), '7');
+    assert.deepEqual(calls, [{
+      ref: { applicationId: 'app-1', workspaceId: 'workspace-1', principalId: 'alice' },
+      options: { minStateRevision: 6, strictMode: false },
+    }]);
+  });
+});
+
+Deno.test('client point reads return typed 400 and 409 responses', async () => {
+  await withStrictReadAuth(false, async () => {
+    const snapshot = createClientSnapshot('alice');
+    const deps = createClientRouteDeps({
+      session: createAuthSession('alice'),
+      clientService: {},
+      readClientSnapshot: () =>
+        Promise.resolve({ status: 'floor-not-satisfied', source: 'durable', snapshot }),
+    });
+    const app = createClientRouteApp(deps);
+
+    const malformed = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/clients/alice?minStateRevision=01',
+    );
+    const shortfall = await app.request(
+      '/api/state/apps/app-1/workspaces/workspace-1/clients/alice?minStateRevision=2',
+    );
+
+    assert.equal(malformed.status, 400);
+    assert.equal((await malformed.json()).code, 'invalid-state-revision');
+    assert.equal(shortfall.status, 409);
+    assert.deepEqual(await shortfall.json(), {
+      error: 'Client state revision floor was not satisfied',
+      code: 'state-revision-floor-not-satisfied',
+    });
+    assert.equal(shortfall.headers.get('retry-after'), null);
+  });
+});
+
+Deno.test('strict client collection reads the authenticated self from durable current state', async () => {
+  await withStrictReadAuth(true, async () => {
+    const snapshot = createClientSnapshot('alice');
+    let currentReads = 0;
+    const deps = createClientRouteDeps({
+      session: createAuthSession('alice'),
+      clientService: {
+        readSnapshot: () => Promise.reject(new Error('cache-permitting read leaked')),
+        readCurrentSnapshot: () => {
+          currentReads += 1;
+          return Promise.resolve(snapshot);
+        },
+      },
+    });
+
+    const response = await createClientRouteApp(deps).request(
+      '/api/state/apps/app-1/workspaces/workspace-1/clients',
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), [snapshot]);
+    assert.equal(currentReads, 1);
+  });
+});

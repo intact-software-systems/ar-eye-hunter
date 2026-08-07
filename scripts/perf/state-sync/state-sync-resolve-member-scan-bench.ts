@@ -9,7 +9,8 @@ const CLIENTS = Number(
         '10000',
 );
 const SESSIONS_PER_CLIENT = Number(
-    Deno.args.find((arg) => arg.startsWith('--sessions-per-client='))?.slice('--sessions-per-client='.length) ??
+    Deno.args.find((arg) => arg.startsWith('--sessions-per-client='))
+        ?.slice('--sessions-per-client='.length) ??
         '5',
 );
 const MEMBERS = Number(

@@ -35,7 +35,7 @@ import {
   readScopedGlobalGraphDiagnostic,
 } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import type { Middleware } from './middleware.ts';
+import type { Middleware } from './middleware-contract.ts';
 import { initialiseMiddleware, registerMiddlewareBackgroundTask } from './middleware.ts';
 import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
@@ -46,10 +46,11 @@ import { readConfiguredCrdtPolicies } from './services/create-api-mutation-inbox
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
-import * as clientStateRoutes from './routes/client-state-routes.ts';
-import * as groupStateRoutes from './group-state/register-group-state-routes.ts';
 import * as spaStatisticsRoutes from './routes/spa-statistics-routes.ts';
 import * as graphTopologyRoutes from './routes/graph-topology-routes.ts';
+import {
+  createStateSnapshotReadRouteRegistrars,
+} from './routes/create-state-snapshot-read-route-registrars.ts';
 import * as crdtAdminRoutes from './routes/crdt-admin-routes.ts';
 import * as adminOperationsRoutes from './routes/admin-operations-routes.ts';
 import * as adminSupportRoutes from './routes/admin-support-routes.ts';
@@ -243,6 +244,7 @@ export function createRallarServer(
   });
   let stopSystemTopics: (() => void) | undefined;
 
+  const snapshotReadRoutes = createStateSnapshotReadRouteRegistrars(middleware);
   const rallarApplication = createRallarServerApplication({
     runtime: middleware,
     repositories: options.repositories ?? defaultRepositoryManager,
@@ -339,21 +341,15 @@ export function createRallarServer(
       rest: [
         configRoutes.init,
         iceRoutes.init,
-        (app) =>
-          clientStateRoutes.init(app, {
-            getClientStateService: () => middleware.clientStateService,
-          }),
-        (app) =>
-          groupStateRoutes.registerGroupStateRoutes(app, {
-            getGroupStateService: () => middleware.groupStateService,
-          }),
+        snapshotReadRoutes.client,
+        snapshotReadRoutes.group,
         (app) =>
           spaStatisticsRoutes.init(app, {
             statistics: spaStatistics,
           }),
         (app) =>
           graphTopologyRoutes.init(app, {
-            getGroupStateService: () => middleware.groupStateService,
+            getGroupStateService: () => snapshotReadRoutes.graphGroupStateService,
             graphDiagnostics: {
               readScopedGlobalGraphDiagnostic,
               readGroupGraphDiagnostic,

@@ -41,6 +41,7 @@ export interface GroupStateRouteTestRuntimeInput {
   readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteDependencies[
     'hydrateStateSyncSnapshotCaches'
   ];
+  readonly readGroupSnapshot?: GroupStateRouteDependencies['readGroupSnapshot'];
   readonly installStateAuthentication?: boolean;
 }
 
@@ -91,6 +92,14 @@ export function createGroupStateRouteTestDependencies(
     processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
       (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
+    readGroupSnapshot: input.readGroupSnapshot ?? (async (ref) => {
+      const readSnapshot = input.groupService?.readCurrentSnapshot ??
+        input.groupService?.readSnapshot;
+      const snapshot = await readSnapshot?.(ref);
+      return snapshot
+        ? { status: 'found', source: 'durable', snapshot }
+        : { status: 'not-found', source: 'durable' };
+    }),
   };
 }
 

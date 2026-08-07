@@ -1,0 +1,220 @@
+{
+  "variables": {
+    "apiPrimary": { "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
+    "apiSecondary": { "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
+    "applicationId": { "default": "state-read-{runId}" },
+    "workspaceId": { "default": "default-{runId}" },
+    "groupId": { "default": "snapshot-room-{runId}" },
+    "aliceUsername": { "env": "RALLAR_ALICE_USERNAME", "default": "alice" },
+    "alicePassword": { "env": "RALLAR_ALICE_PASSWORD", "default": "secret", "secret": true },
+    "runId": { "env": "RALLAR_BB_RUN_ID", "default": "local" }
+  },
+  "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
+  "connections": {
+    "primary": { "type": "http", "baseUrl": "{apiPrimary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 },
+    "secondary": { "type": "http", "baseUrl": "{apiSecondary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": { "username": "{aliceUsername}", "password": "{alicePassword}" },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceSessionId": "body.sessionId",
+          "aliceAccessToken": { "path": "body.accessToken", "secret": true }
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": { "concat": ["Bearer ", { "path": "outputs.aliceAccessToken" }] }
+    },
+    {
+      "name": "createClientState",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {
+          "requestId": "client-create-{runId}",
+          "username": "{aliceUsername}",
+          "displayName": "Snapshot reader initial {runId}",
+          "status": "active",
+          "roles": []
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "warmPrimaryClient",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "outputs": { "warmClientSource": "headers.rallar-state-source" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "mutateClientOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}/principal",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {
+          "requestId": "client-update-{runId}",
+          "username": "{aliceUsername}",
+          "displayName": "Snapshot reader updated {runId}",
+          "status": "active",
+          "roles": []
+        },
+        "outputs": {
+          "clientFloor": "body.stateRevision",
+          "clientFloorString": { "transform": { "string": { "path": "body.stateRevision" } } }
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "readClientFloorOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}?minStateRevision={clientFloor}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "rejectUnsatisfiedClientFloor",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}?minStateRevision=9007199254740991",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" }
+      },
+      "expect": { "status": 409, "body": { "code": "state-revision-floor-not-satisfied" } }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {
+          "requestId": "group-create-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "Snapshot group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": { "status": 201 }
+    },
+    {
+      "name": "warmPrimaryGroup",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "outputs": { "warmGroupSource": "headers.rallar-state-source" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "mutatePresenceOnSecondary",
+      "type": "http",
+      "connection": "secondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" },
+        "body": {
+          "requestId": "presence-connect-{runId}",
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        },
+        "outputs": {
+          "groupFloor": "body.causalRevision.groupRevision",
+          "groupFloorString": { "transform": { "string": { "path": "body.causalRevision.groupRevision" } } },
+          "presenceFloor": "body.causalRevision.presenceRevision",
+          "presenceFloorString": { "transform": { "string": { "path": "body.causalRevision.presenceRevision" } } }
+        }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "readGroupFloorOnPrimary",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}?minGroupRevision={groupFloor}&minPresenceRevision={presenceFloor}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" }
+      },
+      "expect": { "status": 200 }
+    },
+    {
+      "name": "rejectPartialGroupFloor",
+      "type": "http",
+      "connection": "primary",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}?minGroupRevision={groupFloor}",
+        "headers": { "Authorization": "{aliceAuthHeader}", "x-client-id": "{aliceClientId}" }
+      },
+      "expect": { "status": 400, "body": { "code": "invalid-group-causal-revision" } }
+    },
+    {
+      "name": "assertReadConvergenceEvidence",
+      "type": "assert",
+      "actual": {
+        "warmClientSource": "{warmClientSource}",
+        "warmGroupSource": "{warmGroupSource}",
+        "clientRevisionBody": "{resultsByName.readClientFloorOnPrimary.0.actual.body.stateRevision}",
+        "clientRevisionHeader": "{resultsByName.readClientFloorOnPrimary.0.actual.headers.rallar-state-revision}",
+        "clientSource": "{resultsByName.readClientFloorOnPrimary.0.actual.headers.rallar-state-source}",
+        "groupRevisionBody": "{resultsByName.readGroupFloorOnPrimary.0.actual.body.causalRevision.groupRevision}",
+        "groupRevisionHeader": "{resultsByName.readGroupFloorOnPrimary.0.actual.headers.rallar-group-revision}",
+        "presenceRevisionBody": "{resultsByName.readGroupFloorOnPrimary.0.actual.body.causalRevision.presenceRevision}",
+        "presenceRevisionHeader": "{resultsByName.readGroupFloorOnPrimary.0.actual.headers.rallar-presence-revision}",
+        "groupSource": "{resultsByName.readGroupFloorOnPrimary.0.actual.headers.rallar-state-source}"
+      },
+      "expect": { "body": {
+        "warmClientSource": "durable",
+        "warmGroupSource": "durable",
+        "clientRevisionBody": "{clientFloor}",
+        "clientRevisionHeader": "{clientFloorString}",
+        "clientSource": "string",
+        "groupRevisionBody": "{groupFloor}",
+        "groupRevisionHeader": "{groupFloorString}",
+        "presenceRevisionBody": "{presenceFloor}",
+        "presenceRevisionHeader": "{presenceFloorString}",
+        "groupSource": "string"
+      } }
+    }
+  ]
+}

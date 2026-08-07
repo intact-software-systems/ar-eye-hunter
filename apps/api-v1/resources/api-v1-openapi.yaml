@@ -338,17 +338,35 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/PrincipalId'
+        - $ref: '#/components/parameters/MinStateRevision'
       responses:
         '200':
           description: Client snapshot.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Rallar-State-Source:
+              $ref: '#/components/headers/StateSource'
+            Rallar-State-Revision:
+              $ref: '#/components/headers/StateRevision'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClientSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateRevisionFloorNotSatisfied'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{principalId}/presence:
     get:
@@ -644,17 +662,38 @@ paths:
         - $ref: '#/components/parameters/ApplicationId'
         - $ref: '#/components/parameters/WorkspaceId'
         - $ref: '#/components/parameters/GroupId'
+        - $ref: '#/components/parameters/MinGroupRevision'
+        - $ref: '#/components/parameters/MinPresenceRevision'
       responses:
         '200':
           description: Group snapshot.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+            Rallar-State-Source:
+              $ref: '#/components/headers/StateSource'
+            Rallar-Group-Revision:
+              $ref: '#/components/headers/GroupRevision'
+            Rallar-Presence-Revision:
+              $ref: '#/components/headers/PresenceRevision'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/GroupSnapshot'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/StateRevisionFloorNotSatisfied'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     put:
       tags: [Group State]
       summary: Update a group
@@ -2517,6 +2556,33 @@ components:
       required: true
       schema:
         type: string
+    MinStateRevision:
+      name: minStateRevision
+      in: query
+      required: false
+      description: Minimum scalar revision accepted for this client point read.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 9007199254740991
+    MinGroupRevision:
+      name: minGroupRevision
+      in: query
+      required: false
+      description: Group component of the causal floor; supply with minPresenceRevision.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 9007199254740991
+    MinPresenceRevision:
+      name: minPresenceRevision
+      in: query
+      required: false
+      description: Presence component of the causal floor; supply with minGroupRevision.
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 9007199254740991
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2587,6 +2653,33 @@ components:
       schema:
         type: string
 
+  headers:
+    NoStore:
+      description: Prevents intermediary or browser HTTP response caching.
+      schema:
+        type: string
+        enum: [no-store]
+    StateSource:
+      description: Snapshot source selected for this response.
+      schema:
+        type: string
+        enum: [cache, durable]
+    StateRevision:
+      description: Authoritative client scalar revision.
+      schema:
+        type: integer
+        minimum: 0
+    GroupRevision:
+      description: Authoritative group causal revision component.
+      schema:
+        type: integer
+        minimum: 0
+    PresenceRevision:
+      description: Authoritative presence causal revision component.
+      schema:
+        type: integer
+        minimum: 0
+
   responses:
     BadRequest:
       description: Request is invalid.
@@ -2614,6 +2707,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     Conflict:
       description: Request conflicts with existing state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    StateRevisionFloorNotSatisfied:
+      description: Durable state does not satisfy the requested revision floor.
       content:
         application/json:
           schema:
@@ -3909,6 +4008,7 @@ components:
         stateRevision:
           type: integer
           format: int64
+          minimum: 0
         principal:
           $ref: '#/components/schemas/ClientPrincipal'
         instances:

@@ -30,6 +30,14 @@ export function createGroupStateRouteDependencies(
     processGroupAppInbox: dependencies.processGroupAppInbox ?? defaultProcessGroupAppInbox,
     hydrateStateSyncSnapshotCaches: dependencies.hydrateStateSyncSnapshotCaches ??
       defaultHydrateStateSyncSnapshotCaches,
+    readGroupSnapshot: dependencies.readGroupSnapshot ??
+      (async (ref) => {
+        const snapshot = await (dependencies.getGroupStateService ?? getGroupStateService)()
+          .readCurrentSnapshot(ref);
+        return snapshot
+          ? { status: 'found' as const, source: 'durable' as const, snapshot }
+          : { status: 'not-found' as const, source: 'durable' as const };
+      }),
   };
 }
 

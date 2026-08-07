@@ -17,6 +17,8 @@ import {
   isGroupStateRouteSnapshotReadable,
 } from './group-state-route-authorization.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
+import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read-query.ts';
+import { writeGroupSnapshotHeaders } from '../routes/state-snapshot-read-response.ts';
 
 const GROUPS_PATH = '/api/state/apps/:applicationId/workspaces/:workspaceId/groups';
 const GROUP_PATH = `${GROUPS_PATH}/:groupId`;
@@ -66,17 +68,28 @@ async function readGroupSnapshot(
 ): Promise<Response> {
   try {
     const groupId = context.req.param('groupId');
-    const snapshot = await dependencies.getGroupStateService().readCurrentSnapshot({
+    const authSession = await authorization.readStrictAuthSession(context.req);
+    const result = await dependencies.readGroupSnapshot({
       ...toGroupStateRouteScope(context),
       groupId,
+    }, {
+      ...readGroupSnapshotPointQuery(new URL(context.req.raw.url).searchParams),
+      strictMode: authSession !== undefined,
     });
-    if (!snapshot) {
+    if (result.status === 'not-found') {
       return context.json({ error: `Group not found: ${groupId}` }, 404);
     }
-    await authorization.assertCanReadGroupState(context.req, snapshot);
-    hydrateGroupSnapshots(dependencies, [snapshot]);
+    authorization.assertAuthenticatedCanReadGroupState(authSession, result.snapshot);
+    if (result.status === 'floor-not-satisfied') {
+      return context.json({
+        error: 'Group state revision floor was not satisfied',
+        code: 'state-revision-floor-not-satisfied',
+      }, 409);
+    }
+    hydrateGroupSnapshots(dependencies, [result.snapshot]);
+    writeGroupSnapshotHeaders(context, result.source, result.snapshot);
 
-    return context.json(snapshot);
+    return context.json(result.snapshot);
   } catch (error) {
     return toGroupStateErrorResponse(context, error);
   }

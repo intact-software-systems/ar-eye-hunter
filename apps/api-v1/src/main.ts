@@ -10,6 +10,9 @@ import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/databa
 import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { assertApiV1ProductionEnv } from '@shared-server/http/production-env-hardening.ts';
 import { shutdownMiddlewareBackgroundTasks } from './middleware.ts';
+import {
+  STATE_SNAPSHOT_READ_EXPOSED_HEADERS,
+} from './routes/state-snapshot-read-exposed-headers.ts';
 
 const app: Hono = new Hono();
 addEventListener('unload', () => {
@@ -31,7 +34,12 @@ const apiCors = cors(
     origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
-    exposeHeaders: ['Content-Length', 'Server-Timing', 'x-request-id'],
+    exposeHeaders: [
+      'Content-Length',
+      'Server-Timing',
+      'x-request-id',
+      ...STATE_SNAPSHOT_READ_EXPOSED_HEADERS,
+    ],
     maxAge: 600, // Cache the preflight for 10 minutes
     credentials: true,
   },

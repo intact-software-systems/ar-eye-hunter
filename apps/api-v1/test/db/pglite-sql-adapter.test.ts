@@ -2262,7 +2262,7 @@ Deno.test('PGlite topology route preserves structured AppInbox terminal and unav
       const app = new Hono();
       graphTopologyRoutes.init(app, {
         getGroupStateService: () => ({
-          readSnapshot: (ref) => groupRepository.readSnapshot(ref),
+          readCurrentSnapshot: (ref) => groupRepository.readSnapshot(ref),
         }),
         requireApiAuthSession: () => Promise.resolve(authority),
         readAppGroupInboxService: () => service,
