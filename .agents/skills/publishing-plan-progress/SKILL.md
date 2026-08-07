@@ -117,8 +117,15 @@ removal condition.
 
 ## Plan Completion Gate
 
-Do not approve, report, or mark a written implementation plan complete until
-the final uncommitted working tree passes all three commands:
+Plan-only branches do not wait for local or Branch Release Gate builds. This
+exception applies only when every changed path is an implementation-plan or
+agent-guidance path excluded by `.github/workflows/branch-release-gate.yml`.
+Branch Release Gate remains required for branches that change code, workflows,
+scripts, tests, or plugin metadata.
+
+For build-affecting written implementation plans, do not approve, report, or
+mark the plan complete until the final uncommitted working tree passes all three
+commands:
 
 ```bash
 npm run test:unit
@@ -129,17 +136,18 @@ npm run build
 Focused checks are earlier feedback and never replace these final commands. Any
 change after a successful gate invalidates that gate and requires a fresh run.
 
-Completion also requires a current draft pull request and successful published
-gates. **Branch Release Gate** must be green for the final feature-branch
-commit. **Run Hetzner Supported Distributed Manifests** must be green for the
-resulting default-branch commit. Record the exact commit SHA for each workflow;
-do not infer success from a run on different code. Do not approve completion:
-the plan is not complete while any required command or workflow is pending,
-skipped, failed, or attached to an older commit.
+For build-affecting implementation plans, completion also requires a current
+draft pull request and successful published gates. **Branch Release Gate** must
+be green for the final feature-branch commit. **Run Hetzner Supported Distributed
+Manifests** must be green for the resulting default-branch commit. Record the
+exact commit SHA for each workflow; do not infer success from a run on different
+code. Do not approve completion: the plan is not complete while any required
+command or workflow is pending, skipped, failed, or attached to an older commit.
 
-An instruction not to commit or push postpones publication; it does not waive
-any completion gate. Continue safe uncommitted work and report the plan as
-incomplete until the publication and remote gates are permitted and successful.
+For build-affecting implementation plans, an instruction not to commit or push
+postpones publication; it does not waive any completion gate. Continue safe
+uncommitted work and report the plan as incomplete until the publication and
+remote gates are permitted and successful.
 
 ## Feature-Branch Check Scope
 

@@ -106,22 +106,28 @@ standard.
   bundle-boundary checks when exports or entry points change.
 - For game/realtime changes, include the relevant app tests/builds and shared
   package tests.
-- A written implementation plan may be approved or marked complete only after
-  the final uncommitted working tree passes `npm run test:unit`,
+- For build-affecting written implementation plans, the plan may be approved or
+  marked complete only after the final uncommitted working tree passes
+  `npm run test:unit`,
   `npm run test:ci`, and `npm run build`. Focused tests are feedback, not a
   substitute for these completion gates. Any change after a successful gate
   invalidates that gate and requires it to run again.
-- Publication is also part of completion: keep the draft pull request current,
-  require **Branch Release Gate** to pass for the final feature-branch commit,
-  and require **Run Hetzner Supported Distributed Manifests** to pass for the
-  resulting default-branch commit. Record the exact commit SHA validated by
-  each workflow. Do not approve completion: the plan is not complete while any
-  required command or workflow is pending, skipped, failed, or attached to an
-  older commit.
-- An explicit instruction not to commit or push postpones publication; it does
-  not waive any completion gate. Continue safe uncommitted work and report the
-  plan as incomplete until publication and remote gates are permitted and
-  successful.
+- Plan-only branches do not wait for local or Branch Release Gate builds. This
+  exception applies only when every changed path is an implementation-plan or
+  agent-guidance path excluded by `.github/workflows/branch-release-gate.yml`.
+  Branch Release Gate remains required for branches that change code, workflows,
+  scripts, tests, or plugin metadata.
+- For build-affecting implementation plans, publication is also part of
+  completion: keep the draft pull request current, require **Branch Release
+  Gate** to pass for the final feature-branch commit, and require **Run Hetzner
+  Supported Distributed Manifests** to pass for the resulting default-branch
+  commit. Record the exact commit SHA validated by each workflow. Do not
+  approve completion: the plan is not complete while any required command or
+  workflow is pending, skipped, failed, or attached to an older commit.
+- For build-affecting implementation plans, an explicit instruction not to
+  commit or push postpones publication; it does not waive any completion gate.
+  Continue safe uncommitted work and report the plan as incomplete until
+  publication and remote gates are permitted and successful.
 - Report commands that passed, failed, or were skipped.
 
 ## AI Handoff Contract (applies to all agents)
