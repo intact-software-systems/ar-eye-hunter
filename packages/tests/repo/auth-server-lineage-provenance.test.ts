@@ -69,7 +69,7 @@ const expectedBoundaryMagnitudeByTarget = new Map([
   [credentialTarget, 1],
 ]);
 
-describe('auth server PR A lineage provenance', () => {
+describe('auth server PR A lineage identity', () => {
   it('binds every source owner to the exact approved base blob and declared symbols', () => {
     validateLineages(authPrALineages);
   });
@@ -128,7 +128,9 @@ describe('auth server PR A lineage provenance', () => {
       [credentialTarget, 'boundary.unknown'],
     ]);
   });
+});
 
+describe('auth server PR B persistence lineage identity', () => {
   it('binds PR B persistence moves to exact source blobs without new boundary capacity', () => {
     const manifest = JSON.parse(read(persistenceManifestPath));
 
@@ -155,7 +157,9 @@ describe('auth server PR A lineage provenance', () => {
     expect(() => validatePersistenceLineages(wrongBlob)).toThrow('persistence source blob');
     expect(() => validatePersistenceLineages(missingTarget)).toThrow('persistence target');
   });
+});
 
+describe('auth server PR B persistence lineage derivation', () => {
   it('fails closed when equal boundary magnitude moves to a new semantic owner', () => {
     const targetPath = `${persistenceTargetRoot}/auth-persistence-contracts.ts`;
     const target = read(targetPath);
@@ -189,7 +193,9 @@ describe('auth server PR A lineage provenance', () => {
       validatePersistenceLineages(persistenceLineages, new Map([[targetPath, changedContent]])),
     ).toThrow('persistence target derivation');
   });
+});
 
+describe('auth server PR A lineage capacity', () => {
   it('keeps inherited magnitude source-derived and excludes new boundary owners', () => {
     validateBoundaryCapacity();
   });
@@ -206,7 +212,9 @@ describe('auth server PR A lineage provenance', () => {
       }
     }
   });
+});
 
+describe('auth server PR A lineage fail-closed behavior', () => {
   it('fails closed for base, blob, target, symbol, rule, magnitude, and derivation drift', () => {
     const wrongBase = structuredClone(authPrALineages);
     wrongBase[0].base = '0'.repeat(40);

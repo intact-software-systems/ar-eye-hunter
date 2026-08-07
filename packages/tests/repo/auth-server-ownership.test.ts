@@ -172,7 +172,7 @@ describe('auth server ownership', () => {
   });
 });
 
-describe('auth server ownership boundaries', () => {
+describe('auth server canonical owner presence', () => {
   it('keeps shell behavior at canonical auth owners and removes private predecessors', () => {
     expect(
       canonicalShellOwners.filter(
@@ -201,7 +201,9 @@ describe('auth server ownership boundaries', () => {
       ),
     ).toEqual([]);
   });
+});
 
+describe('auth server canonical import and package boundaries', () => {
   it('catches canonical auth code importing a compatibility-only wrapper', () => {
     const forbidden = new Set([
       ...compatibilityModules.map(({ compatibilityPath }) => compatibilityPath),

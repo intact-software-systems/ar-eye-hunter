@@ -22,7 +22,7 @@ const user = {
   updatedAtEpochMs: 1_000,
 } as const;
 
-describe('auth replay and no-op decisions', () => {
+describe('auth session canonical and legacy read order', () => {
   it('reads canonical session indexes in order without widening to legacy', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const sessions = new AuthSessionRepository(runtimeRepository);
@@ -70,7 +70,9 @@ describe('auth replay and no-op decisions', () => {
     expect(bySession.mock.invocationCallOrder[0]).toBeLessThan(byToken.mock.invocationCallOrder[0]);
     expect(byToken.mock.invocationCallOrder[0]).toBeLessThan(legacy.mock.invocationCallOrder[0]);
   });
+});
 
+describe('auth replay and no-op decisions', () => {
   it('catches registration replay that is rewritten instead of returned as replay', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     await runtimeRepository.upsert(

@@ -21,7 +21,7 @@ const AUTH_INBOX_TYPES = [
     'AUTH_AGENT_SESSION_TICKET_CONSUME',
 ] as const;
 
-describe('AppAuthInboxService architecture', () => {
+describe('AppAuthInboxService registration', () => {
     it('registers all seven callbacks in order before any later queue invocation', async () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
@@ -70,7 +70,9 @@ describe('AppAuthInboxService architecture', () => {
         await expect(pending).resolves.toMatchObject({ right: { loggedOut: true } });
         expect(read).toHaveBeenCalledOnce();
     });
+});
 
+describe('AppAuthInboxService architecture', () => {
     it('defines every mandatory auth mutation command at the AppInbox boundary', () => {
         expect(AUTH_INBOX_TYPES.map((type) => AppInboxType[type])).toEqual(
             AUTH_INBOX_TYPES,
