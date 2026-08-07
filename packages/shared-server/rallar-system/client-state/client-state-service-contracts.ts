@@ -16,7 +16,7 @@ import type {
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import type { ClientSessionExpiryCandidate } from '../repositories/session-expiry.ts';
 import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
-import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
+import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 // prettier-ignore
 import {

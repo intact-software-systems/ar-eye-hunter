@@ -9,9 +9,9 @@ export * from './app-data/AppDataRepository.ts';
 export * from './app-data/RallarServerAppData.ts';
 export * from './rallar-system/middleware/RallarMiddleware.ts';
 export * from './rallar-system/cache-repositories.ts';
-export * from './rallar-system/repositories/AuthSessionRepository.ts';
+export * from './rallar-system/auth/persistence/auth-session-repository.ts';
 export { hashAuthSecret } from './rallar-system/auth/credentials/hash-auth-secret.ts';
-export * from './rallar-system/repositories/AuthUserRepository.ts';
+export * from './rallar-system/auth/persistence/auth-user-repository.ts';
 export * from './rallar-system/client-state/persistence/client-state-repository.ts';
 export * from './rallar-system/repositories/GroupStateRepository.ts';
 export * from './rallar-system/repositories/GroupTopologyConfigRepository.ts';
@@ -75,7 +75,11 @@ export * from './rallar-system/auth/login/authenticate-auth-user.ts';
 export * from './rallar-system/auth/login/prepare-auth-user-registration.ts';
 export * from './rallar-system/services/auth-state-mutations.ts';
 export * from './rallar-system/auth/credentials/auth-credential-issuer.ts';
-export * from './rallar-system/services/AppAuthInboxService.ts';
+export { AppAuthInboxService } from './rallar-system/auth/inbox/app-auth-inbox-service.ts';
+export {
+  AUTH_STATE_APP_INBOX_TOPIC,
+  toAuthAppInboxType,
+} from './rallar-system/auth/inbox/auth-app-inbox-routing.ts';
 // prettier-ignore
 export {
   AppClientInboxService,

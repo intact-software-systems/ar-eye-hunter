@@ -35,8 +35,8 @@ import type {
   RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
-import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
+import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
+import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import type {

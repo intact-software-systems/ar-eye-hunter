@@ -1,196 +1,149 @@
 # Auth server navigation
 
-This directory is the canonical PR A owner for auth mutation contracts, codecs,
-credential derivation, login and registration decisions, mutation facts, pure
-compute, pure validation, public-result reconstruction, and session proof rules.
-
-PR A deliberately does **not** move the AppInbox shell, stable reads,
-transaction writes, or persistence. Those remain at the predecessor paths named
-below until PR B. This map describes the code that runs now; it does not present
-future target paths as current owners.
+This directory owns authenticated server commands from queue routing through
+stable reads, pure decisions, validation, transactional writes, and public
+result reconstruction. Package consumers may keep using the supported service
+entry described below; new auth implementation code imports canonical owners.
 
 ## Read these files first
 
-1. Start at the current runtime entry,
-   [`AppAuthInboxService`](../services/AppAuthInboxService.ts), to see public
-   enqueue methods, callback registration, queue identity, and the transaction
-   boundary.
-2. Follow the phase composition through
-   [`AuthMutationService`](./auth-mutation-service.ts).
-3. Read [`AuthMutationCommand`](./mutation/auth-mutation-contracts.ts) for the
-   seven command variants and stage contracts.
-4. Follow [`captureAuthMutationFacts`](./mutation/read/capture-auth-mutation-facts.ts),
+1. Start at the canonical
+   [`AppAuthInboxService`](./inbox/app-auth-inbox-service.ts) for public enqueue
+   methods and construction-time registration.
+2. Follow a later dequeue into
+   [`AuthInboxHandler`](./inbox/auth-inbox-handler.ts), which makes the mutation
+   phases and transaction boundary visible in one method.
+3. Read [`AuthMutationCommand`](./mutation/auth-mutation-contracts.ts), then
+   [`AuthMutationService`](./auth-mutation-service.ts) for the seven command
+   variants and phase interface.
+4. Follow [`readAuthMutation`](./mutation/read/read-auth-mutation.ts),
+   [`captureAuthMutationFacts`](./mutation/read/capture-auth-mutation-facts.ts),
    [`computeAuthMutation`](./mutation/compute/compute-auth-mutation.ts), and
    [`validateAuthMutation`](./mutation/validate/validate-auth-mutation.ts).
-5. Finish at the current transaction owner,
-   [`writeAuthMutation`](../services/auth-state-write.ts), then return through
+5. Finish at [`writeAuthMutation`](./mutation/write/write-auth-mutation.ts),
+   then return through
    [`decodeAuthMutationResult`](./mutation/decode-auth-mutation-result.ts) and
    [`toAuthMutationPublicResult`](./mutation/to-auth-mutation-public-result.ts).
 
 ## Construction and registration timeline
 
-1. API-v1 composition creates the runtime-state repositories, credential
-   issuer, queue repositories, and database before constructing the auth
-   service.
-2. [`createAuthMutationService`](./auth-mutation-service.ts) constructs the
-   still-current [`AuthUserRepository`](../repositories/AuthUserRepository.ts)
-   and [`AuthSessionRepository`](../repositories/AuthSessionRepository.ts), then
-   exposes direct read, compute, validate, and write operations.
-3. API-v1 constructs
-   [`AppAuthInboxService`](../services/AppAuthInboxService.ts) with that complete
-   service and credential issuer.
-4. The constructor registers one `onStateMessage` callback for each of the seven
-   auth AppInbox types. Registration performs no mutation. The callback can run
-   only after the queue reader delivers an accepted entry.
+1. API-v1 constructs the repositories, credential issuer, complete
+   `AuthMutationService`, and queue dependencies.
+2. The `AppAuthInboxService` constructor creates one complete
+   `AuthInboxHandler`, including its transaction-writer port.
+3. The service registers the seven auth message types in their fixed order.
+   Registration only stores callbacks; it performs no reads or mutations.
+4. A callback invokes the already-constructed handler only after the queue
+   reader later delivers an accepted entry.
 
-The API-v1 composition root is
-[`middleware.ts`](../../../../apps/api-v1/src/middleware.ts). The temporary
-API-v1 import of `services/auth-state-mutations.ts` is a supported direct
-one-hop compatibility path; the canonical service implementation is here.
+The API-v1 composition root remains
+[`middleware.ts`](../../../../apps/api-v1/src/middleware.ts).
 
 ## Authenticated AppInbox mutation
 
 ### Request and enqueue
 
-1. An API route calls a public method on
-   [`AppAuthInboxService`](../services/AppAuthInboxService.ts).
-2. [`decodeAuthMutationCommand`](./mutation/decode-auth-mutation-command.ts)
-   applies the existing exact-field, lifecycle, and discriminant checks.
-3. The current
-   [`auth-app-inbox-routing.ts`](../services/auth-app-inbox-routing.ts) owner
-   selects queue type, context, and sender identity.
-4. `processEntryUntilCompletionResult` enqueues the durable command and waits
-   for the queue-owned result. A terminal queue failure returns the existing
-   typed `AppInboxFailure`.
+1. A public service method decodes a command with
+   [`decodeAuthMutationCommand`](./mutation/decode-auth-mutation-command.ts).
+2. [`toAuthAppInboxType`](./inbox/auth-app-inbox-routing.ts) and its sibling
+   routing functions derive type, context, and sender identity.
+3. The base AppInbox service durably enqueues the command and waits for the
+   queue-owned result. Terminal queue failures retain their typed
+   `AppInboxFailure` result.
 
 ### Later queue invocation and transaction exit
 
-1. Queue delivery invokes the callback registered during construction exactly
-   as governed by the base `AppInboxService` retry contract.
-2. `processCommand` decodes again, verifies queue identity, and calls the
-   current [`readAuthMutation`](../services/auth-state-read.ts) owner.
-3. [`captureAuthMutationFacts`](./mutation/read/capture-auth-mutation-facts.ts)
-   verifies deterministic credential facts before pure computation.
-4. [`computeAuthMutation`](./mutation/compute/compute-auth-mutation.ts) selects
-   one operation-family owner; [`validateAuthMutation`](./mutation/validate/validate-auth-mutation.ts)
-   independently validates the complete read and computed result.
-5. `AppInboxService.writeMutation` owns the transaction and retry boundary. Its
-   callback invokes the current
-   [`writeAuthMutation`](../services/auth-state-write.ts), whose first
-   operation-specific conditional write guards the mutation.
-6. The transaction writes authoritative rows, durable result, receipt, and any
-   final outbox intent atomically. A conflict re-enters a complete queue attempt;
-   a failure produces no successful durable completion.
-7. After commit, the waiting caller decodes the durable result and
-   [`toAuthMutationPublicResult`](./mutation/to-auth-mutation-public-result.ts)
-   reconstructs only the existing caller-visible plaintext result.
+1. Queue delivery invokes `AuthInboxHandler.processAuthMutation`.
+2. The handler decodes again and verifies type, resource, and context identity
+   before any state read. Sender is intentionally not part of this established
+   auth-specific rejection check.
+3. [`readAuthMutation`](./mutation/read/read-auth-mutation.ts) performs stable
+   command-family reads. Session commands share the explicit canonical-then-
+   legacy order in
+   [`readAuthSessionEntries`](./mutation/read/read-auth-session-entries.ts).
+4. Facts, compute, and validation run before opening the write transaction.
+5. The base AppInbox transaction writer invokes
+   [`writeAuthMutation`](./mutation/write/write-auth-mutation.ts). Conditional
+   conflicts escape to the existing whole-attempt retry owner.
+6. One transaction writes authoritative state, durable result, receipt, and any
+   final outbox intent. A failed transaction commits none of them; a terminal
+   retry failure produces no successful completion.
+7. After commit, the waiting caller decodes the durable result and reconstructs
+   only the established public plaintext response.
 
 ## Login and credential issuance
 
-- API-v1 registration uses
-  [`prepareAuthUserRegistration`](./login/prepare-auth-user-registration.ts) to
-  validate username, password, display name, and static-client collision before
-  the register-user AppInbox flow.
-- Login uses [`authenticateAuthUser`](./login/authenticate-auth-user.ts) for the
-  registered-user lookup, disabled-user exit, PBKDF2 verification, constant-time
-  comparison, and static-client fallback.
+- [`prepareAuthUserRegistration`](./login/prepare-auth-user-registration.ts)
+  owns registration input preparation.
+- [`authenticateAuthUser`](./login/authenticate-auth-user.ts) owns registered
+  and static-client login decisions.
 - [`createHmacAuthCredentialIssuer`](./credentials/auth-credential-issuer.ts)
-  deterministically issues access tokens and tickets. Plaintext credentials
-  cross only the established caller boundary.
-- [`hashAuthSecret`](./credentials/hash-auth-secret.ts) owns the persisted digest
-  representation. Digest mismatch exits through the existing error timing and
-  messages.
+  deterministically issues credentials, while
+  [`hashAuthSecret`](./credentials/hash-auth-secret.ts) owns persisted digests.
 
-Normal login exits with the existing authenticated identity; invalid or
-disabled credentials return the existing unsuccessful result. Registration
-continues through the authenticated AppInbox mutation timeline above.
+Plaintext credentials cross only the existing caller boundary. Persisted
+commands and results retain digest-only representations.
 
 ## Session lifecycle, logout, expiry, and revocation
 
 - [`requireIssueSessionLifecycle`](./sessions/require-issue-session-lifecycle.ts)
-  preserves the issue-time and expiry invariant used by decode, compute,
-  validate, and write.
-- Logout computation uses
-  [`computeAuthSessionMutation`](./mutation/compute/compute-auth-session-mutation.ts)
-  and creates the exact final WS intent through
-  [`toAuthLogoutOutbox`](./mutation/compute/to-auth-logout-outbox.ts).
-- Canonical and legacy session reads, observational expiry, conditional delete,
-  and public reconstruction remain in
-  [`AuthSessionRepository`](../repositories/AuthSessionRepository.ts) and its
-  current [`AuthSessionPersistence`](../repositories/auth-session-persistence.ts)
-  owner.
-- Already-absent or superseded logout state retains the existing typed no-op;
-  conditional-write conflict returns to the AppInbox retry owner. Failed
-  transactions produce neither a durable success nor logout outbox completion.
+  preserves issue/expiry invariants.
+- [`computeAuthSessionMutation`](./mutation/compute/compute-auth-session-mutation.ts)
+  owns session decisions, and
+  [`toAuthLogoutOutbox`](./mutation/compute/to-auth-logout-outbox.ts) builds the
+  exact final logout intent.
+- [`writeAuthSession`](./mutation/write/write-auth-session.ts) writes the token
+  index before the session index and owns guarded logout ordering.
+- [`AuthSessionRepository`](./persistence/auth-session-repository.ts) composes
+  [`AuthSessionPersistence`](./persistence/auth-session-persistence.ts) with
+  ticket persistence.
+
+Already-absent or superseded logout state remains an established no-op. Expired
+and legacy observations remain separate from authoritative write decisions.
 
 ## Ticket issue and consume
 
-- WebSocket ticket operations compute through
-  [`computeAuthTicketMutation`](./mutation/compute/compute-auth-ticket-mutation.ts)
-  and validate through
-  [`validateAuthTicketMutation`](./mutation/validate/validate-auth-ticket-mutation.ts).
-- Agent-ticket operations compute through
-  [`computeAuthAgentTicketMutation`](./mutation/compute/compute-auth-agent-ticket-mutation.ts)
-  and validate through
-  [`validateAuthAgentTicketMutation`](./mutation/validate/validate-auth-agent-ticket-mutation.ts).
-- User registration has its own pure owner,
-  [`computeAuthUserRegistration`](./mutation/compute/compute-auth-user-registration.ts),
-  and session commands retain their own owner above.
-- One-use ticket reads, legacy cutoff and bounded scan, conditional insert or
-  consume, and session reconstruction remain in the current
-  [`AuthTicketPersistence`](../repositories/auth-ticket-persistence.ts),
-  [`auth-legacy-compatibility.ts`](../repositories/auth-legacy-compatibility.ts),
-  [`auth-persistence-contracts.ts`](../repositories/auth-persistence-contracts.ts),
-  and [`auth-session-types.ts`](../repositories/auth-session-types.ts) owners.
+- [`computeAuthTicketMutation`](./mutation/compute/compute-auth-ticket-mutation.ts)
+  and [`validateAuthTicketMutation`](./mutation/validate/validate-auth-ticket-mutation.ts)
+  own WebSocket ticket decisions.
+- [`computeAuthAgentTicketMutation`](./mutation/compute/compute-auth-agent-ticket-mutation.ts)
+  and [`validateAuthAgentTicketMutation`](./mutation/validate/validate-auth-agent-ticket-mutation.ts)
+  own agent-ticket decisions.
+- [`writeAuthTicketMutation`](./mutation/write/write-auth-ticket-mutation.ts)
+  makes each ticket-family write order visible.
+- [`AuthTicketPersistence`](./persistence/auth-ticket-persistence.ts),
+  [`auth-legacy-compatibility.ts`](./persistence/auth-legacy-compatibility.ts),
+  [`auth-persistence-contracts.ts`](./persistence/auth-persistence-contracts.ts),
+  and [`auth-session-types.ts`](./persistence/auth-session-types.ts) own storage,
+  bounded legacy reads, persisted shapes, and issued shapes.
 
-Missing, expired, already-consumed, digest-mismatched, or corrupt tickets retain
-their existing no-op or failure classification. Successful issue and consume
-operations exit through the same AppInbox transaction and durable-result path.
+One-use consumes remain conditional writes inside the same AppInbox transaction.
 
 ## Authentication and authorization proof/query
 
-- HTTP bearer authentication reads the current session repository through
-  `packages/shared-server/http/request-auth-service.ts`; it does not enter a
-  mutation transaction.
-- [`authSessionProofSecret`](./sessions/auth-session-proof-secret.ts) returns the
-  existing digest proof used by canonical group and topology authority owners.
-- Queries and authorization checks remain read-only. Missing, expired, corrupt,
-  or mismatched authority fails through the existing consumer-specific result.
-  This feature does not absorb group, client-state, topology, CRDT, or admin
-  authorization policy.
+HTTP bearer authentication remains a read-only repository query.
+[`authSessionProofSecret`](./sessions/auth-session-proof-secret.ts) returns the
+existing digest proof used by authority consumers. This auth boundary does not
+absorb group, client-state, topology, CRDT, or admin policy.
 
-## Canonical PR A owners
+## Canonical auth owners
 
-The remaining canonical owners, in addition to the files linked in the traces,
-are:
+The owners linked above are supplemented by:
 
 - [`AuthMutationRejectedError`](./mutation/auth-mutation-rejected-error.ts)
+- [`AuthUserRepository`](./persistence/auth-user-repository.ts)
 - [`computeAuthUserRegistration`](./mutation/compute/compute-auth-user-registration.ts)
 - [`validateAuthUserMutation`](./mutation/validate/validate-auth-user-mutation.ts)
 - [`validateAuthSessionMutation`](./mutation/validate/validate-auth-session-mutation.ts)
-- shared exact-kind, ticket, and JSON rules in
+- shared exact-kind and JSON rules in
   [`requireMatchingAuthKind`](./mutation/validate/auth-mutation-validation.ts)
 
-These are implementation owners. The supported old service paths are direct
-one-hop compatibility exports; canonical PR A code imports the files above.
+## Supported compatibility entry
 
-## Current predecessor owners reserved for PR B
+[`services/AppAuthInboxService.ts`](../services/AppAuthInboxService.ts) is the
+supported one-hop entry for existing service imports. It directly re-exports
+the canonical class, topic constant, and type router. The package root also
+exports those identities directly from canonical inbox modules.
 
-The following files still own executable runtime or persistence behavior in PR
-A and must not be treated as compatibility-only yet:
-
-- [`AppAuthInboxService`](../services/AppAuthInboxService.ts)
-- [`toAuthAppInboxType`](../services/auth-app-inbox-routing.ts)
-- [`readAuthMutation`](../services/auth-state-read.ts)
-- [`writeAuthMutation`](../services/auth-state-write.ts)
-- [`AuthSessionRepository`](../repositories/AuthSessionRepository.ts)
-- [`AuthUserRepository`](../repositories/AuthUserRepository.ts)
-- [`AuthSessionPersistence`](../repositories/auth-session-persistence.ts)
-- [`AuthTicketPersistence`](../repositories/auth-ticket-persistence.ts)
-- [`PersistedAuthSession`](../repositories/auth-persistence-contracts.ts)
-- [`IssuedAuthSession`](../repositories/auth-session-types.ts)
-- [`AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS`](../repositories/auth-legacy-compatibility.ts)
-
-PR B may move these only under its separately reviewed authoritative-shell and
-persistence scope. Until then, tests and consumers must use these current owners
-rather than dead future paths.
+The former private routing, read, and write service files have no compatibility
+wrapper. Canonical auth code and moved tests must not import them.

@@ -19,6 +19,7 @@ interface MutationRouteReachabilityInput {
   readonly source: AstNode;
   readonly enqueueSource: AstNode;
   readonly ownerSource: AstNode;
+  readonly typeOwnerSource: AstNode;
   readonly dispatchSource: AstNode;
   readonly containsMarker: (node: AstNode, marker: string) => boolean;
   readonly matchesMarker: (node: AstNode, marker: string) => boolean;
@@ -30,6 +31,7 @@ export function findMutationRouteReachabilityIssues({
   source,
   enqueueSource,
   ownerSource,
+  typeOwnerSource,
   dispatchSource,
   containsMarker,
   matchesMarker,
@@ -58,7 +60,7 @@ export function findMutationRouteReachabilityIssues({
   if (operation && operationHandlers.length !== 1) {
     issues.push(`${routeKey} operation is not connected to ${item.enqueueMarker}`);
   }
-  if (!routeConnected || !hasOwnerCommandDiscriminator(ownerSource, item, containsMarker)) {
+  if (!routeConnected || !hasAuthCommandDiscriminator(typeOwnerSource, item, containsMarker)) {
     issues.push(
       `${routeKey} registered handler is not connected to ` +
         `${item.enqueueMarker} with AppInboxType.${item.type}`,
@@ -88,14 +90,14 @@ const AUTH_COMMAND_KIND_BY_TYPE: Readonly<Partial<Record<AppInboxType, string>>>
   [AppInboxType.AUTH_AGENT_SESSION_TICKET_CONSUME]: 'consume-agent-ticket',
 };
 
-function hasOwnerCommandDiscriminator(
-  ownerSource: AstNode,
+function hasAuthCommandDiscriminator(
+  typeOwnerSource: AstNode,
   item: MutationRouteInventoryEntry,
   hasMarker: (node: AstNode, marker: string) => boolean,
 ): boolean {
   const expected = AUTH_COMMAND_KIND_BY_TYPE[item.type];
   if (!expected) return true;
-  const publicHandoffs = findFunctionLikes(ownerSource, item.enqueueMarker);
+  const publicHandoffs = findFunctionLikes(typeOwnerSource, item.enqueueMarker);
   return (
     publicHandoffs.length === 0 ||
     publicHandoffs.some((method) => hasMarker(method, `'${expected}'`))
@@ -361,9 +363,7 @@ function readMemberPath(node: AstNode | undefined): string {
   return property ? (prefix ? `${prefix}.${property}` : property) : '';
 }
 
-function readCallName(node: AstNode | undefined): string {
-  return readName(node) || readMemberName(node);
-}
+const readCallName = (node: AstNode | undefined): string => readName(node) || readMemberName(node);
 
 function readMemberName(node: AstNode | undefined): string {
   return node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression'

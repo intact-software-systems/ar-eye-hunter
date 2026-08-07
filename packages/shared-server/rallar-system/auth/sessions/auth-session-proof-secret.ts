@@ -1,8 +1,6 @@
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
-import type {
-  IssuedAuthSession,
-  PersistedAuthSession,
-} from '../../repositories/AuthSessionRepository.ts';
+import type { PersistedAuthSession } from '../persistence/auth-persistence-contracts.ts';
+import type { IssuedAuthSession } from '../persistence/auth-session-types.ts';
 
 export async function authSessionProofSecret(
   session: IssuedAuthSession | PersistedAuthSession,

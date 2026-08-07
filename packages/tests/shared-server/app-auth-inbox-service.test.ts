@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { AuthSessionRepository, decodePersistedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { createAuthMutationService, type IssueAuthSessionCommand } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
@@ -20,6 +20,57 @@ const AUTH_INBOX_TYPES = [
     'AUTH_AGENT_SESSION_TICKETS_ISSUE',
     'AUTH_AGENT_SESSION_TICKET_CONSUME',
 ] as const;
+
+describe('AppAuthInboxService registration', () => {
+    it('registers all seven callbacks in order before any later queue invocation', async () => {
+        const queue = new TestResourceInbox();
+        const results = new TestResourceInboxResults();
+        const reader = new InboxQueueReader(queue);
+        const registrations = vi.spyOn(reader, 'onInboxMessageDo');
+        const runtime = new FakeRuntimeStateRepository();
+        const mutationService = createAuthMutationService({
+            runtimeRepository: runtime,
+            serviceId: 'auth-registration-service',
+        });
+        const read = vi.spyOn(mutationService, 'read');
+        const service = new AppAuthInboxService(
+            reader,
+            queue as never,
+            results as never,
+            createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
+            mutationService,
+            createHmacAuthCredentialIssuer('auth-registration-secret-0123456789abcdef'),
+            'auth-registration-service',
+        );
+
+        expect(registrations.mock.calls.map(([type]) => type)).toEqual(
+            AUTH_INBOX_TYPES.map((type) => AppInboxType[type]),
+        );
+        expect(read).not.toHaveBeenCalled();
+
+        const pending = service.logoutSession({
+            requestId: 'registration-later-invocation',
+            capturedAtEpochMs: 1_000,
+            session: {
+                clientId: 'client-1',
+                username: 'alice',
+                sessionId: 'session-1',
+                accessToken: 'absent-access-token',
+                issuedAtEpochMs: 500,
+                expiresAtEpochMs: 2_000,
+            },
+        });
+        await waitForQueuedEntry(queue);
+        expect(read).not.toHaveBeenCalled();
+
+        await reader.dequeueInbox(
+            InboxQueueReader.INBOX_DEQUEUE_TYPES,
+            createResilience(),
+        );
+        await expect(pending).resolves.toMatchObject({ right: { loggedOut: true } });
+        expect(read).toHaveBeenCalledOnce();
+    });
+});
 
 describe('AppAuthInboxService architecture', () => {
     it('defines every mandatory auth mutation command at the AppInbox boundary', () => {

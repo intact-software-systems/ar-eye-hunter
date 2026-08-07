@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 

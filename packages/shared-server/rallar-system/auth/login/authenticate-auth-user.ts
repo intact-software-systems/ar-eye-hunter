@@ -4,7 +4,7 @@ import {
   AuthUserRepository,
   normalizeUsername,
   type AuthUser,
-} from '../../repositories/AuthUserRepository.ts';
+} from '../persistence/auth-user-repository.ts';
 import type { IssueAuthSessionCommand } from '../mutation/auth-mutation-contracts.ts';
 
 export type AuthenticatedUserIdentity = Readonly<{

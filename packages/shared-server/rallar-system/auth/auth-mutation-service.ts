@@ -1,7 +1,7 @@
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import type * as RuntimeState from '../../runtime-state/RuntimeStateRepository.ts';
-import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import { AuthUserRepository } from '../repositories/AuthUserRepository.ts';
+import { AuthSessionRepository } from './persistence/auth-session-repository.ts';
+import { AuthUserRepository } from './persistence/auth-user-repository.ts';
 import type {
   AuthMutationCommand,
   AuthMutationComputed,
@@ -10,9 +10,9 @@ import type {
   AuthMutationResult,
 } from './mutation/auth-mutation-contracts.ts';
 import { computeAuthMutation } from './mutation/compute/compute-auth-mutation.ts';
+import { readAuthMutation } from './mutation/read/read-auth-mutation.ts';
 import { validateAuthMutation } from './mutation/validate/validate-auth-mutation.ts';
-import { readAuthMutation } from '../services/auth-state-read.ts';
-import { writeAuthMutation } from '../services/auth-state-write.ts';
+import { writeAuthMutation } from './mutation/write/write-auth-mutation.ts';
 
 export interface AuthMutationService {
   readonly read: (command: AuthMutationCommand) => Promise<AuthMutationRead>;

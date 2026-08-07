@@ -54,8 +54,18 @@ passed Branch Release Gate `31103489838` attempt 2, and merged as exact main
 `61e708708f94328f095f1f1fa5690747bb933476`, tree
 `32fad7c720dcc1eb462f6b486ff64db4f687f67e`. Run Hetzner Supported Distributed
 Manifests `31106485616` attempt 1 succeeded for that exact main SHA. PR A Tasks 1-2 are
-implemented locally with final review/publication Task 3 pending. No future PR A merge,
-resulting-main workflow, PR B, PR C, or ledger fact is asserted here.
+published and merged through PR #78: final feature
+`5118891effa1b9c856154ecab051c2df1b094145`, tree
+`0082575cf0697a170c2125cf856ae07fedfe37e2`, Branch Release Gate `31159741601`
+attempt 1 success, resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree
+`9a3084c2c78f90f004054924b99b97be67fe72bd`, and Run Hetzner Supported Distributed
+Manifests `31163606362` attempt 1 success for that exact main SHA. Deploy Web + API run
+`31163606018` separately failed its Cloudflare main-only branch-control job on that main SHA;
+it is not relabeled as the named predecessor gate. PR B draft PR #81 currently publishes its
+independently accepted Task 4 persistence and read/write/inbox cohorts through
+`4beac90478690c0e383cb343d65325afd44eb93a`, tree
+`065651a46a679ae9d69e06449c14f30ddb4c78ce`. No future PR B candidate, performance, merge,
+resulting-main workflow, PR C, or ledger fact is asserted here.
 
 ## 1. Scope, Prerequisite, And Review-Size Decision
 
@@ -850,24 +860,24 @@ Only logout creates a final auth-owned `WS_OUTBOX` intent. The plan preserves th
 
 ### 7.2 Direct one-hop compatibility inventory
 
-| Old path                                | Known production consumers retained initially                                                                                      | Owner and removal condition                                                                                                                                                  |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `services/AppAuthInboxService.ts`       | package `mod.ts`, API middleware/contracts/config route, shared middleware options, shared HTTP WS auth                            | auth child; remove only after package/API/shared consumers adopt a separately approved path or a breaking release                                                            |
-| `services/auth-state-mutations.ts`      | package `mod.ts`, API middleware, shared public-contract tests                                                                     | auth child; direct named re-export remains until supported public/deep imports are separately migrated                                                                       |
-| `services/auth-login-service.ts`        | package `mod.ts`, API login repository                                                                                             | auth child; remove in a future API-v1 auth child plus public compatibility decision                                                                                          |
-| `services/auth-credential-issuer.ts`    | package `mod.ts`, API middleware, production-env hardening                                                                         | auth child; remove only after package/API consumers migrate with explicit compatibility approval                                                                             |
-| `services/auth-state-codecs.ts`         | no canonical or supported production consumer; required only by PR A's exact one-to-many lineage validator                         | auth child; remove with the PR A manifest in the first later auth PR whose merge base no longer needs it, after an active-consumer scan proves no supported consumer remains |
-| `repositories/AuthSessionRepository.ts` | package `mod.ts`, API repository/routes/auth, shared HTTP, client/group/topology owners, PostgreSQL factories, performance harness | auth child; preserve until all cross-domain and public consumers receive separate approved migration                                                                         |
-| `repositories/AuthUserRepository.ts`    | package `mod.ts`, API repositories, PostgreSQL factory                                                                             | auth child; preserve until public/API consumers receive separate approved migration                                                                                          |
+| Old path                                | Known production consumers retained initially                                                                                      | Owner and removal condition                                                                               |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `services/AppAuthInboxService.ts`       | API middleware/contracts/config route, shared middleware options, shared HTTP WS auth                                              | auth child; remove only after API/shared consumers adopt a separately approved path or a breaking release |
+| `services/auth-state-mutations.ts`      | package `mod.ts`, API middleware, shared public-contract tests                                                                     | auth child; direct named re-export remains until supported public/deep imports are separately migrated    |
+| `services/auth-login-service.ts`        | package `mod.ts`, API login repository                                                                                             | auth child; remove in a future API-v1 auth child plus public compatibility decision                       |
+| `services/auth-credential-issuer.ts`    | package `mod.ts`, API middleware, production-env hardening                                                                         | auth child; remove only after package/API consumers migrate with explicit compatibility approval          |
+| `repositories/AuthSessionRepository.ts` | package `mod.ts`, API repository/routes/auth, shared HTTP, client/group/topology owners, PostgreSQL factories, performance harness | auth child; preserve until all cross-domain and public consumers receive separate approved migration      |
+| `repositories/AuthUserRepository.ts`    | package `mod.ts`, API repositories, PostgreSQL factory                                                                             | auth child; preserve until public/API consumers receive separate approved migration                       |
 
-`packages/shared-server/mod.ts` must export canonical symbols directly after the move while each
-old supported path remains one direct re-export hop. Canonical auth code and moved auth tests may
-not import the supported old paths or the temporary codec wrapper.
+`packages/shared-server/mod.ts` exports canonical AppAuth symbols directly while each retained
+old supported path remains one direct re-export hop. Canonical auth code and moved auth tests do
+not import supported old paths. The temporary codec wrapper has been removed after its active-
+consumer scan found no supported consumer.
 
-During PR A, `services/auth-state-read.ts` remains the executable predecessor read owner and also
-exports the canonical `captureAuthMutationFacts` function as a direct identity binding. It is not a
-compatibility-only module until PR B moves `readAuthMutation`; canonical PR A facts code still
-imports its canonical owner directly.
+PR B moves `readAuthMutation` and `writeAuthMutation` to canonical phase owners.
+`services/auth-state-mutations.ts` keeps the supported direct identity binding for
+`captureAuthMutationFacts`; the private predecessor read, write, and routing files are removed
+without wrappers after their active consumers move.
 
 The following non-public old files receive no lasting compatibility wrapper after their exact
 active consumers move: `auth-app-inbox-routing`, session lifecycle/proof, validation, codecs, read,
@@ -977,7 +987,7 @@ assignment.
 
 ### Task 2: Implement PR A Mutation And Login Core Test-First
 
-**Status:** implemented locally. Task 2A protocol owners completed at
+**Status:** implemented, published, and merged through PR A. Task 2A protocol owners completed at
 `56af2b93609ee5c71d670f97447fdc878a7317fc`, Task 2B credential/login owners at
 `0acc1a28ec48913dd7b3db8e231f47adee05d4a6`, Task 2C facts/compute/service owners at
 `4a8e286da93ff8aac733f8e032feadd5cccd0533`, and Task 2D validation owners at
@@ -1008,17 +1018,17 @@ temporary PR A codec wrapper only as required.
 - [x] Use fresh implementer and independent review cycles per cohesive cohort; resolve ordinary
       behavior-neutral findings test-first until Critical 0 and Important 0.
 
-Section 11.2's complete unchanged-tree gate and whole-PR review remain Task 3 publication work.
-PR B persistence/read/write/inbox target-path and re-export-only assertions remain deferred.
+Section 11.2's complete unchanged-tree gate and whole-PR review were completed in Task 3.
+PR B now owns the persistence/read/write/inbox target-path and re-export-only assertions.
 
 ### Task 3: Freeze, Review, And Publish PR A
 
 - [x] Reconcile all 49 dispositions for PR A rows, focused checker output, compatibility imports,
       primary symbols, module/function limits, cycles, lost assertions, and security behavior.
-- [ ] Run Section 11.2 and repository completion gates on the final unchanged tree.
-- [ ] Freeze exact commit/tree, push non-forced, update one draft PR A, require Branch Release
+- [x] Run Section 11.2 and repository completion gates on the final unchanged tree.
+- [x] Freeze exact commit/tree, push non-forced, update one draft PR A, require Branch Release
       Gate, mark ready, and stop for human merge.
-- [ ] After merge, require exact resulting-main/default-workflow success before PR B.
+- [x] After merge, require exact resulting-main/default-workflow success before PR B.
 
 The whole-PR review reported Critical 0, Important 1, and Minor 0. The sole Important finding was
 an unmapped 116-column canonical decoder import in a shared-test consumer. Exact commit
@@ -1045,32 +1055,87 @@ Repository governance also exposed a completed client-state exact-base assertion
 removal condition was satisfied by ledger PR #75. A separate human authorization allowed removal
 of only that obsolete subprocess assertion and its `spawnSync` import. Independent review reported
 Critical 0, Important 0, and Minor 0; the retained client-state provenance suite passes 4 tests and
-the complete repository-governance suite passes 278 tests. The final commit/tree, completion gates,
-push, PR, and Branch Release Gate remain in the external publication envelope until they exist.
+the complete repository-governance suite passes 278 tests.
+
+PR A froze at feature `5118891effa1b9c856154ecab051c2df1b094145`, tree
+`0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601`
+attempt 1 succeeded. PR #78 merged at `2026-08-07T08:53:42Z` as resulting main
+`a90042398448776b0972aaaaa0f5cca762163fde`, tree
+`9a3084c2c78f90f004054924b99b97be67fe72bd`, and Run Hetzner Supported Distributed
+Manifests `31163606362` attempt 1 succeeded for that exact main SHA. Deploy Web + API run
+`31163606018` separately failed its Cloudflare main-only branch-control job; this record does
+not convert that failure into predecessor-gate success.
 
 ### Task 4: Implement PR B Authoritative Shell And Persistence Test-First
 
-**Branch:** `codex/rallar-auth-server-authoritative-shell` from PR A's exact verified main.
+**Branch:** `codex/rallar-auth-server-authoritative-shell` from PR A's exact verified main
+`a90042398448776b0972aaaaa0f5cca762163fde`.
+
+**Status:** complete and independently accepted. The persistence cohort consists of
+implementation `9008e55a32b8b8ecbe7c57a9a8dbf3506a4f72e3`, tree
+`7492e0e91d23fe16bafb024521533afb4317cc88`, and fail-closed lineage review fix
+`f163c697e7ffb1a35f6db11d802b4a866b02c3e1`, tree
+`7ddee320f526e72a4b2cc3eca34d1b73ca355e32`. The read/write/inbox cohort consists of
+implementation `da4e01b433c2221c1bef3e5af60c829880d68c8f`, tree
+`06ac4e3cdba3a6b6fadc6de108bffd0a93f52aca`, and fail-closed lineage, module/function-limit,
+and import-group review fix `4beac90478690c0e383cb343d65325afd44eb93a`, tree
+`065651a46a679ae9d69e06449c14f30ddb4c78ce`. Each cohort's final scoped independent review
+reported Critical 0, Important 0, and Minor 0.
+
+The cohort uses the Section 1.4 private refinement authority to keep the auth topic constant
+with the pure routing owner, avoiding a service/handler import cycle; to name the shared
+canonical/legacy session-read order in `read-auth-session-entries.ts`; and to split transaction
+writes into the visible mutation, session/logout, and ticket-family owners already listed in the
+target tree. One combined registration-and-routing semantic suite keeps construction silence,
+later callback invocation, queue identity, and the full handler phase order together. The exact-
+base shell lineage manifest maps the old AppAuth owner only to its new service and handler so the
+two retained untrusted-boundary warnings inherit exactly the old two-occurrence capacity.
 
 **Files:** target persistence/read/write/public-result/service/inbox files; package export and
 exact import-only consumers; directly owned security, concurrency, PostgreSQL, and compatibility
 tests.
 
-- [ ] Move strict persisted contracts, namespaces/keys, session/user/ticket repositories, expiry
+- [x] Move strict persisted contracts, namespaces/keys, session/user/ticket repositories, expiry
       behavior, and bounded legacy readers behind canonical owners.
-- [ ] Move read and write families; prove canonical-before-legacy order, exact corruption exits,
+- [x] Move read and write families; prove canonical-before-legacy order, exact corruption exits,
       compare-and-set revisions, two-index session atomicity, single-use ticket consume, and
       logout outbox behavior.
-- [ ] Extract `AuthInboxHandler` and keep `AppAuthInboxService` as visible public registration and
+- [x] Extract `AuthInboxHandler` and keep `AppAuthInboxService` as visible public registration and
       enqueue/completion owner with its existing constructor/method signatures.
-- [ ] Pass named complete dependencies at construction; preserve callback registration and later
+- [x] Pass named complete dependencies at construction; preserve callback registration and later
       invocation, transaction/retry, durable result, terminal failure, and public reconstruction.
-- [ ] Update canonical package exports and only the import paths explicitly allowed by Section 7;
+- [x] Update canonical package exports and only the import paths explicitly allowed by Section 7;
       leave out-of-scope policies and organization unchanged.
-- [ ] Run independent scoped reviews after persistence and inbox cohorts; resolve in-scope
+- [x] Run independent scoped reviews after persistence and inbox cohorts; resolve in-scope
       behavior-neutral findings test-first.
 
 ### Task 5: Freeze, Measure, Review, And Publish PR B
+
+Draft PR #81 is open at the reviewed Task 4 head
+`4beac90478690c0e383cb343d65325afd44eb93a`, tree
+`065651a46a679ae9d69e06449c14f30ddb4c78ce`. Interim Branch Release Gate `31171930744`
+attempt 1 succeeded for the earlier persistence-only head
+`f163c697e7ffb1a35f6db11d802b4a866b02c3e1`. That run is retained as milestone evidence but
+is not Task 5's final immutable-candidate gate.
+
+The pre-freeze focused auth scan reports 33 warning rows, all `boundary.unknown`: 13 are the
+already human-dispositioned PR A credential/decoder boundaries, 18 are mechanically inherited
+persistence boundaries bound by the exact PR B persistence lineage and source-owner checks, and
+two are mechanically inherited AppInbox/handler boundaries bound by the exact PR B shell lineage
+and source-owner checks. Construction details add no row. Layout and detailed layout report zero
+findings; output-contract and object-interface modes repeat the same 33 boundary rows; exact-base
+changed-style reports zero new or worsened finding. This inventory applies the existing human
+dispositions and exact lineage ownership; it does not create a new human approval.
+
+The diff-aware callback audit resolves the materially changed lineage, ownership, registration,
+and canonical-before-legacy test grouping within PR B while preserving every case and assertion.
+Five over-limit callbacks across four test files remain explicit PR C alignment debt: the
+persistence inbox test changes only an import and source-inventory paths; the transaction inbox
+test retains two predecessor over-limit callbacks while adding one exact two-index persistence
+assertion; the authoritative phase test changes only auth owner/path/call markers; and the
+mutation-route provenance test changes only the supplementary auth owner/path ratchet. Broadly
+restructuring those inherited tests here would enlarge the behavior-neutral shell review without
+improving Task 4 ownership.
 
 - [ ] Run all PR B focused security, transaction, concurrency, API, black-box, type, style,
       compatibility, and completion gates before candidate freeze.
@@ -1352,7 +1417,7 @@ changed tree.
 - [ ] AppInbox, transaction, retry, durable result, receipt, logout outbox, and completion are
       exact.
 - [ ] Semantic security/ownership/exit tests remain primary and all ratchets have decisions.
-- [ ] PR A review/gates and exact resulting-main workflow succeeded.
+- [x] PR A review/gates and exact resulting-main workflow succeeded.
 - [ ] PR B review/gates, governed performance, and exact resulting-main workflow succeeded.
 - [ ] PR C review/gates and exact resulting-main workflow succeeded.
 - [ ] The separate evidence ledger independently reached `ledger-published`.
@@ -1377,15 +1442,15 @@ changed tree.
 
 ## 16. Progress Record
 
-| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                            |
-| -------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Client-state prerequisite  | ledger-published    | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.               |
-| Auth child plan            | approved            | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`; default workflow `31106485616` attempt 1 success. |
-| PR A mutation/login core   | final gates pending | Tasks 1-2 and the Task 3 whole-PR/review-fix cycle are independently accepted at Critical 0 / Important 0; exact final-tree completion gates, push, draft PR, Branch Release Gate, and human merge remain pending.                                                                  |
-| PR B authoritative shell   | blocked             | Waits for PR A exact merge/default workflow.                                                                                                                                                                                                                                        |
-| PR C alignment/final trace | blocked             | Waits for PR B exact merge/default workflow.                                                                                                                                                                                                                                        |
-| Later auth ledger          | blocked             | Requires completed PR C merge/default workflow and separate human authorization.                                                                                                                                                                                                    |
-| Later Wave 2 domains       | blocked             | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                               |
+| Milestone                  | State            | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Client-state prerequisite  | ledger-published | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.                                                                                                                                                                            |
+| Auth child plan            | approved         | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`; default workflow `31106485616` attempt 1 success.                                                                                                                                                              |
+| PR A mutation/login core   | merged           | PR #78 feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601` attempt 1 success; resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; Hetzner workflow `31163606362` attempt 1 success.                                                                                                                   |
+| PR B authoritative shell   | in progress      | Draft PR #81 publishes independently accepted Task 4 through `4beac90478690c0e383cb343d65325afd44eb93a`, tree `065651a46a679ae9d69e06449c14f30ddb4c78ce`; both scoped reviews report Critical 0, Important 0, Minor 0. Interim persistence-only Branch Release Gate `31171930744` attempt 1 succeeded but is not final candidate evidence. Task 5 whole-PR review, completion gates, governed performance, and final publication remain pending. |
+| PR C alignment/final trace | blocked          | Waits for PR B exact merge/default workflow.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Later auth ledger          | blocked          | Requires completed PR C merge/default workflow and separate human authorization.                                                                                                                                                                                                                                                                                                                                                                 |
+| Later Wave 2 domains       | blocked          | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## 17. Planning Self-Review Record
 

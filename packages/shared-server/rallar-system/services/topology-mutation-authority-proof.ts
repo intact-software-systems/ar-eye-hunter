@@ -1,5 +1,5 @@
-import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
-import type { PersistedAuthSession } from '../repositories/auth-persistence-contracts.ts';
+import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
+import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
 
 export type TopologyMutationAuthorityProof = Readonly<{

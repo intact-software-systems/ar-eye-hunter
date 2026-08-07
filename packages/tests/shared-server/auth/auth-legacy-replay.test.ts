@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
+import { readAuthSessionEntries } from '@shared-server/rallar-system/auth/mutation/read/read-auth-session-entries.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
@@ -18,6 +21,56 @@ const user = {
   createdAtEpochMs: 1_000,
   updatedAtEpochMs: 1_000,
 } as const;
+
+describe('auth session canonical and legacy read order', () => {
+  it('reads canonical session indexes in order without widening to legacy', async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const sessions = new AuthSessionRepository(runtimeRepository);
+    const accessToken = 'canonical-access-token';
+    await sessions.putSession({
+      clientId: 'client-1',
+      username: 'alice',
+      sessionId: 'session-1',
+      accessToken,
+      issuedAtEpochMs: 1_000,
+      expiresAtEpochMs: Date.now() + 60_000,
+    });
+    const bySession = vi.spyOn(sessions, 'readSessionBySessionIdEntry');
+    const byToken = vi.spyOn(sessions, 'readSessionByAccessTokenDigestEntry');
+    const legacy = vi.spyOn(sessions, 'findLegacySessionByAccessTokenDigestEntry');
+
+    const read = await readAuthSessionEntries(sessions, {
+      sessionId: 'session-1',
+      accessTokenDigest: await hashAuthSecret(accessToken),
+    });
+
+    expect(read.bySession?.value.sessionId).toBe('session-1');
+    expect(read.byToken?.value.sessionId).toBe('session-1');
+    expect(bySession.mock.invocationCallOrder[0]).toBeLessThan(byToken.mock.invocationCallOrder[0]);
+    expect(legacy).not.toHaveBeenCalled();
+  });
+
+  it('tries bounded legacy only after both canonical token outcomes are absent', async () => {
+    const sessions = new AuthSessionRepository(new FakeRuntimeStateRepository());
+    const bySession = vi.spyOn(sessions, 'readSessionBySessionIdEntry');
+    const byToken = vi.spyOn(sessions, 'readSessionByAccessTokenDigestEntry');
+    const legacy = vi.spyOn(sessions, 'findLegacySessionByAccessTokenDigestEntry');
+
+    await expect(
+      readAuthSessionEntries(sessions, {
+        sessionId: 'missing-session',
+        accessTokenDigest: 'missing-digest',
+      }),
+    ).resolves.toEqual({
+      byToken: null,
+      bySession: null,
+      expiredByTokenEntry: null,
+      expiredBySessionEntry: null,
+    });
+    expect(bySession.mock.invocationCallOrder[0]).toBeLessThan(byToken.mock.invocationCallOrder[0]);
+    expect(byToken.mock.invocationCallOrder[0]).toBeLessThan(legacy.mock.invocationCallOrder[0]);
+  });
+});
 
 describe('auth replay and no-op decisions', () => {
   it('catches registration replay that is rewritten instead of returned as replay', async () => {

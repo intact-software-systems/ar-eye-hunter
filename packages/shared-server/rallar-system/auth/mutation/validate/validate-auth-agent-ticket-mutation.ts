@@ -2,7 +2,7 @@
 import {
   validateRuntimeStateExpiredAuthority,
 } from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
-import { authTicketDigestKey } from '../../../repositories/auth-storage-keys.ts';
+import { authTicketDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type {
   AuthMutationCommand,
   AuthMutationComputed,

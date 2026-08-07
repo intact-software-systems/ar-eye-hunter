@@ -28,7 +28,7 @@ import {
   toExpiredPresenceEnqueue,
   toGroupSessionCleanupEnqueue,
 } from '../group-state/presence/group-presence-service.ts';
-import type { IssuedAuthSession } from '../repositories/auth-session-types.ts';
+import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 // prettier-ignore
 import type {
   RtcRttAppInboxDependencies,

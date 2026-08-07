@@ -5,7 +5,7 @@ import {
 } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 
-import type { IssuedAuthSession } from '../../repositories/auth-session-types.ts';
+import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 // prettier-ignore

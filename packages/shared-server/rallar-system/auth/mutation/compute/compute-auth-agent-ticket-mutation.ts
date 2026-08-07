@@ -1,7 +1,7 @@
 import {
   decodePersistedAuthSession,
   type PersistedAgentSessionTicket,
-} from '../../../repositories/auth-persistence-contracts.ts';
+} from '../../persistence/auth-persistence-contracts.ts';
 import { equalAuthJson, requireAuthTicket } from '../validate/auth-mutation-validation.ts';
 import type {
   AuthComputedSession,
