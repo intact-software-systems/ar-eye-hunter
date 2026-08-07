@@ -7,6 +7,7 @@ import {
   readMethodBody as methodBody,
 } from './authoritative-mutation-source-analysis.ts';
 
+const read = (file: string): string => readFileSync(file, 'utf8');
 const serviceRoot = 'packages/shared-server/rallar-system/services';
 const authRoot = 'packages/shared-server/rallar-system/auth';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
@@ -388,9 +389,6 @@ describe('authoritative mutation read/compute/validate/write contract', { timeou
   });
 });
 
-function read(file: string): string {
-  return readFileSync(file, 'utf8');
-}
 function expectInOrder(source: string, expected: readonly string[]): void {
   let cursor = -1;
   for (const marker of expected) {

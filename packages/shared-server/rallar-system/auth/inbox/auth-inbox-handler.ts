@@ -1,3 +1,8 @@
+// prettier-ignore
+import type {
+  AppInboxMutationTransactionWriter,
+} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
+
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';
@@ -5,10 +10,6 @@ import { decodeAuthMutationCommand } from '../mutation/decode-auth-mutation-comm
 import { captureAuthMutationFacts } from '../mutation/read/capture-auth-mutation-facts.ts';
 import type { AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
 import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
-// prettier-ignore
-import type {
-  AppInboxMutationTransactionWriter,
-} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
 import {
   AUTH_STATE_APP_INBOX_TOPIC,
   toAuthAppInboxType,

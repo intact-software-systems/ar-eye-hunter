@@ -363,9 +363,7 @@ function readMemberPath(node: AstNode | undefined): string {
   return property ? (prefix ? `${prefix}.${property}` : property) : '';
 }
 
-function readCallName(node: AstNode | undefined): string {
-  return readName(node) || readMemberName(node);
-}
+const readCallName = (node: AstNode | undefined): string => readName(node) || readMemberName(node);
 
 function readMemberName(node: AstNode | undefined): string {
   return node?.type === 'MemberExpression' || node?.type === 'OptionalMemberExpression'

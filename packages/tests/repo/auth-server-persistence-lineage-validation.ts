@@ -2,9 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { parse } from '@babel/parser';
-
-import { findUnknownUsages } from '../../../scripts/repo-style-check/contract-rules.mjs';
+import { readBoundaryOwnerContentByName } from './auth-server-lineage-boundary-analysis.ts';
 
 export const persistenceBase = 'a90042398448776b0972aaaaa0f5cca762163fde';
 export const persistenceManifestPath =
@@ -16,18 +14,6 @@ export interface PersistenceLineage {
   mergeBase: string;
   source: { path: string; blob: string };
   targets: string[];
-}
-
-interface BoundaryOwner {
-  name: string;
-  startLine: number;
-  endLine: number;
-  node: ParsedNode;
-}
-
-interface ParsedNode {
-  type: string;
-  [key: string]: unknown;
 }
 
 export const persistenceLineages = [
@@ -89,114 +75,15 @@ export function validatePersistenceLineages(
 }
 
 function validatePersistenceTargetDerivation(source: string, target: string): void {
-  const sourceOwners = boundaryOwnersByName(source);
-  const targetOwners = boundaryOwnersByName(target);
+  const errorPrefix = 'persistence target derivation';
+  const sourceOwners = readBoundaryOwnerContentByName(source, errorPrefix);
+  const targetOwners = readBoundaryOwnerContentByName(target, errorPrefix);
 
-  for (const [name, targetOwner] of targetOwners) {
-    const sourceOwner = sourceOwners.get(name);
-    if (
-      sourceOwner === undefined ||
-      canonicalOwnerContent(sourceOwner.node) !== canonicalOwnerContent(targetOwner.node)
-    ) {
+  for (const [name, targetOwnerContent] of targetOwners) {
+    if (sourceOwners.get(name) !== targetOwnerContent) {
       throw new Error(`persistence target derivation: ${name}`);
     }
   }
-}
-
-function boundaryOwnersByName(source: string): ReadonlyMap<string, BoundaryOwner> {
-  const owners = readFunctionOwners(source);
-  const boundaryOwners = new Map<string, BoundaryOwner>();
-
-  for (const usage of findUnknownUsages(source.split('\n'))) {
-    const owner = owners
-      .filter(({ startLine, endLine }) => usage.line >= startLine && usage.line <= endLine)
-      .toSorted((left, right) => ownerLength(left) - ownerLength(right))[0];
-    if (owner === undefined) throw new Error('persistence target derivation: unowned boundary');
-    const existing = boundaryOwners.get(owner.name);
-    if (existing !== undefined && existing.node !== owner.node) {
-      throw new Error(`persistence target derivation: duplicate owner ${owner.name}`);
-    }
-    boundaryOwners.set(owner.name, owner);
-  }
-
-  return boundaryOwners;
-}
-
-function readFunctionOwners(source: string): readonly BoundaryOwner[] {
-  const owners: BoundaryOwner[] = [];
-  const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
-  collectFunctionOwners(program as ParsedNode, undefined, owners);
-  return owners;
-}
-
-function collectFunctionOwners(
-  node: ParsedNode,
-  className: string | undefined,
-  owners: BoundaryOwner[],
-): void {
-  const nextClassName = classDeclarationName(node) ?? className;
-  const owner = toBoundaryOwner(node, nextClassName);
-  if (owner !== undefined) owners.push(owner);
-
-  for (const [key, value] of Object.entries(node)) {
-    if (ignoredAstKeys.has(key)) continue;
-    if (Array.isArray(value)) {
-      for (const child of value)
-        if (isParsedNode(child)) collectFunctionOwners(child, nextClassName, owners);
-    } else if (isParsedNode(value)) {
-      collectFunctionOwners(value, nextClassName, owners);
-    }
-  }
-}
-
-function toBoundaryOwner(
-  node: ParsedNode,
-  className: string | undefined,
-): BoundaryOwner | undefined {
-  if (node.type === 'FunctionDeclaration') {
-    return boundaryOwner(identifierName(node.id), node);
-  }
-  if (node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') {
-    const methodName = identifierName(node.key);
-    return boundaryOwner(className === undefined ? methodName : `${className}.${methodName}`, node);
-  }
-  return undefined;
-}
-
-function boundaryOwner(name: string | undefined, node: ParsedNode): BoundaryOwner | undefined {
-  const loc = node.loc as { start?: { line?: number }; end?: { line?: number } } | undefined;
-  const startLine = loc?.start?.line;
-  const endLine = loc?.end?.line;
-  return name === undefined || startLine === undefined || endLine === undefined
-    ? undefined
-    : { name, startLine, endLine, node };
-}
-
-function canonicalOwnerContent(node: ParsedNode): string {
-  return JSON.stringify(node, (key, value) => (ignoredAstKeys.has(key) ? undefined : value));
-}
-
-function classDeclarationName(node: ParsedNode): string | undefined {
-  return node.type === 'ClassDeclaration' ? identifierName(node.id) : undefined;
-}
-
-function identifierName(value: unknown): string | undefined {
-  if (!isParsedNode(value)) return undefined;
-  if (value.type === 'Identifier' || value.type === 'PrivateName') {
-    const name = value.name ?? (isParsedNode(value.id) ? value.id.name : undefined);
-    return typeof name === 'string' ? name : undefined;
-  }
-  return typeof value.value === 'string' ? value.value : undefined;
-}
-
-function isParsedNode(value: unknown): value is ParsedNode {
-  return (
-    typeof value === 'object' && value !== null && typeof (value as ParsedNode).type === 'string'
-  );
-}
-
-function ownerLength(owner: BoundaryOwner): number {
-  return owner.endLine - owner.startLine;
 }
 
 function readBase(filePath: string): string {
@@ -228,13 +115,3 @@ function persistenceLineage(sourceName: string, blob: string, targetName: string
     targets: [`${persistenceTargetRoot}/${targetName}`],
   };
 }
-
-const ignoredAstKeys = new Set([
-  'end',
-  'extra',
-  'innerComments',
-  'leadingComments',
-  'loc',
-  'start',
-  'trailingComments',
-]);

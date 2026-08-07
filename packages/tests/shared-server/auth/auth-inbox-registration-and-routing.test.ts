@@ -25,7 +25,7 @@ import type {
   AppInboxMutationTransactionWriter,
 } from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
 
-describe('auth inbox registration and routing handler', () => {
+describe('auth inbox routing phase order', () => {
   it('runs decode, read, facts, compute, validate, and transaction write in order', async () => {
     const actions: string[] = [];
     const transaction = {} as PSqlTransactionSql;
@@ -66,7 +66,9 @@ describe('auth inbox registration and routing handler', () => {
     expect(actions).toEqual(['read', 'facts', 'compute', 'validate', 'transaction', 'write']);
     expect(written).toEqual([[transaction, computed]]);
   });
+});
 
+describe('auth inbox routing rejection', () => {
   it('decodes before queue identity validation and exits before mutation phases on mismatch', async () => {
     const actions: string[] = [];
     const transaction = {} as PSqlTransactionSql;

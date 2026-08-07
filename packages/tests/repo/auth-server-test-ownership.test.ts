@@ -27,6 +27,7 @@ const activeAuthTestOwners = [
 ] as const;
 const authRepositorySuites = [
   'packages/tests/repo/auth-server-lineage-provenance.test.ts',
+  'packages/tests/repo/auth-server-shell-lineage-provenance.test.ts',
   'packages/tests/repo/auth-server-navigation-map-integrity.test.ts',
   'packages/tests/repo/auth-server-ownership.test.ts',
   'packages/tests/repo/auth-server-test-ownership.test.ts',
@@ -44,7 +45,7 @@ describe('auth server test ownership', () => {
     ).toBe(true);
   });
 
-  it('keeps all four auth evidence suites registered in repository governance', () => {
+  it('keeps all five auth evidence suites registered in repository governance', () => {
     const packageJson = JSON.parse(readFileSync(absolute('package.json'), 'utf8')) as {
       scripts: Record<string, string>;
     };
