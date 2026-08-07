@@ -40,6 +40,13 @@ rg --files packages/shared packages/shared-web packages/shared-server packages/s
 - Prefer adding narrow helpers beside the domain they belong to, then export through the local package barrel.
 - Treat broad `mod.ts` barrels as compatibility surfaces; avoid moving symbols in ways that break imports.
 - When editing shared contracts, inspect both browser and server consumers before changing a type.
+- REST snapshot point readers keep transport metadata in additive result
+  envelopes. Preserve body-only compatibility wrappers such as
+  `findStateGroup(...)`, and require browser success paths to validate the
+  authoritative body plus source/revision header agreement before returning.
+- Keep state-read diagnostic dimensions bounded. Application, workspace,
+  principal, group, session, and request identifiers are values for logs or
+  traces under an approved policy, not metric labels.
 
 ## Contract Shape And Compatibility
 

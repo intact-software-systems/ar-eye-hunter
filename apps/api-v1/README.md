@@ -53,6 +53,29 @@ brokered.
 See [Production Env Hardening Checklist](../../docs/production-env-hardening-checklist.md) and
 [Environment Variables](../../docs/environment-variables.md).
 
+## REST snapshot point reads
+
+Client point reads accept one optional canonical non-negative safe-integer
+`minStateRevision`. Group point reads accept `minGroupRevision` and
+`minPresenceRevision` only as a complete pair. Malformed floors return typed
+`400` responses; authorized durable shortfall or causal incomparability returns
+typed `409 state-revision-floor-not-satisfied`. Repeated floor conflicts do not
+trip the infrastructure circuit breaker.
+
+Tokenless point reads observe durable current state. Eligible tokened reads may
+use a presence-fresh cache entry that satisfies the requested floor, while
+strict authorization always uses durable state. Group policy, floor validation,
+and the successful response reuse one durable snapshot. Graph and topology
+authority reads also use one durable current snapshot per request; mutation
+prechecks remain advisory because AppInbox revalidates before commit.
+
+Successful point responses use `Cache-Control: no-store` and authoritative
+source and revision headers. CORS exposes those Rallar headers. Client response
+metadata carries one scalar revision; group metadata carries the group and
+presence revisions, while the compatibility scalar revision remains body-only.
+See [the API reference](../../docs/rallar-api-reference.md) for exact paths,
+headers, status codes, and OpenAPI shapes.
+
 ## RTC persisted-state cutover
 
 The RTC persisted-state migration is an offline cutover. It intentionally has no legacy dual-read

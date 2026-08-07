@@ -600,6 +600,29 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         },
     },
     {
+        filePath: 'packages/shared-web/browser/state-read/point-read.ts',
+        expected: {
+            values: ['readStateClientSnapshot', 'readStateGroupSnapshot'],
+            types: [
+                'ReadStateClientSnapshotOptions',
+                'ReadStateGroupSnapshotOptions',
+                'StateClientSnapshotRead',
+                'StateGroupSnapshotRead',
+            ],
+            starExports: [],
+            namespaceExports: [],
+        },
+    },
+    {
+        filePath: 'packages/shared-web/browser/state-read/diagnostics.ts',
+        expected: {
+            values: ['emitBrowserStateReadDiagnostic', 'setBrowserStateReadDiagnosticsSink'],
+            types: ['BrowserStateReadDiagnosticEvent', 'BrowserStateReadDiagnosticsSink'],
+            starExports: [],
+            namespaceExports: [],
+        },
+    },
+    {
         filePath: 'packages/shared-web/mod.ts',
         expected: {
             values: [
@@ -644,6 +667,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './browser/resilience-config.ts',
                 './browser/rtc-engine.ts',
                 './browser/rtc-message-router.ts',
+                './browser/state-read/diagnostics.ts',
                 './browser/ws-message-router.ts',
                 './game/mod.ts',
             ],

@@ -206,10 +206,14 @@ application inbox service publishes WS or topology work. Every snapshot and
 idempotent result must carry `stateRevision`; revisionless compatibility is not
 supported.
 
-Reads use asynchronous read-through caching. Authorization, REST, admin,
-statistics, and topology paths use these shared services. Synchronous `peek`
-is restricted to best-effort local routing where a cache miss can safely
-produce no local recipients.
+General reads use asynchronous read-through caching. Point-read convergence has
+a narrower rule: reads without a revision floor use the durable current
+snapshot, while an eligible floor-bearing read may return a causally sufficient
+cache entry. Strict authorization and graph/topology authority reads use the
+same durable current snapshot used for the request decision; stale cached state
+is never authorization authority. Synchronous `peek` is restricted to
+best-effort local routing where a cache miss can safely produce no local
+recipients.
 
 Client cache keys contain the complete principal identity:
 
@@ -424,6 +428,21 @@ only the revision probe.
 
 ## Browser Convergence
 
+Browser point readers expose the response source and authoritative revision
+metadata. They reject malformed authoritative bodies, missing or invalid
+metadata headers, and header/body revision disagreement. A room session refresh
+uses one exact group point read without a floor; top-level room and people
+refreshes continue to use complete durable collections.
+
+Before targeted, heartbeat, or complete collection reads, browser repair
+captures the observed snapshot identity. An authoritative `404`, heartbeat
+absence, or successful complete collection omission removes that value only if
+the repository still contains the identical observation. Failed, aborted,
+malformed, or partial collection reads do not reconcile absence. This is a
+race fence for physical cleanup, not a deletion tombstone: a delayed stale
+publication can reinsert a removed client or group snapshot until causal
+tombstones exist.
+
 `RallarOverlayTopologySnapshot` and `OverlayInfo` require
 `sourceGroupStateRevision` and `state`. Browser overlay repositories use the
 same revision ordering rule as server state caches:
@@ -459,8 +478,9 @@ that is safe because the publication and browser observation are idempotent.
 The architecture guarantees that a returned durable group/client snapshot is
 revision-consistent, process caches do not regress, outbox-accepted topology
 output is atomic with its publication index, a work retry reuses the same
-publication, and room authorization observes durable revision movement on the
-next message.
+publication, strict read authorization does not trust cached snapshots, and an
+eligible floor-bearing point read never returns below its requested scalar or
+causal floor.
 
 It does not yet guarantee lossless cluster publication replay. PostgreSQL
 notifications are ephemeral, so a server disconnected after publication commit
@@ -468,6 +488,13 @@ can miss the wake-up. The durable record remains correct, but no ordered cursor
 drain currently discovers it. The follow-up architecture should maintain a
 durable ordered publication log with per-process replay cursors and treat
 notifications only as wake-ups.
+
+Browser client/group absence repair also does not guarantee resurrection
+safety. Conditional physical deletion protects a newer observation already in
+the repository, but it cannot prevent a delayed stale publication from
+recreating an absent entry. Causal tombstones remain separate work. The overlay
+tombstones described above are a different feature and do not provide state
+snapshot deletion authority.
 
 ## Performance Bounds
 
@@ -477,6 +504,9 @@ notifications only as wake-ups.
   and one exact-key aggregate validation batch.
 - Warm room authorization performs one durable aggregate revision probe; the
   stable snapshot reader runs only after revision movement.
+- An eligible point-read cache hit performs zero durable snapshot reads.
+  Tokenless reads, misses, floor fallback, and strict group point reads perform
+  one full durable snapshot read for the selected feature.
 - Topology planning is outside the transaction. Current execution performs a
   fresh read and one conditional write transaction per accepted attempt;
   conflicts re-enter the complete read/compute/validate path.
@@ -515,10 +545,12 @@ The cluster-notification cutover requires a coordinated deployment of API
 nodes. Older nodes do not subscribe to topology publication notifications and
 cannot fan out publications to their locally connected sessions.
 
-REST route and request shapes, database schema, generated manifests, and
-browser runtime import paths are unchanged. The required response fields and
-the two-work-type topology queue contract are intentional breaking contract
-changes and require a coordinated deployment.
+Existing REST paths, database schema, generated manifests, and browser runtime
+import paths remain compatible. Point-read floor queries, authoritative
+response headers, and metadata-bearing browser readers are additive;
+`findStateGroup(...)` preserves its body-only return shape. The required
+response fields and the two-work-type topology queue contract remain the
+intentional coordinated-deployment boundary described by this architecture.
 
 ## Source Map
 

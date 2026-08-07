@@ -11,6 +11,7 @@ import {
     refreshStateHeartbeat,
     type StateHeartbeatWorkflowValue,
 } from '@shared-web/browser/api-workflows.ts';
+import { emitBrowserStateReadDiagnostic } from '@shared-web/browser/state-read/diagnostics.ts';
 
 const intervalMsecs = 20000;
 const retryIntervalMsecs = 5000;
@@ -123,7 +124,17 @@ async function refreshHeartbeat(
 
     groupStateSnapshotsRepository.setGroupStateSnapshots(refreshed.groups);
     for (const missingGroup of refreshed.missingGroups) {
-        groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(missingGroup.group);
+        const removed = groupStateSnapshotsRepository.removeGroupStateSnapshotIfUnchanged(
+            missingGroup.group,
+            missingGroup,
+        );
+        emitBrowserStateReadDiagnostic({
+            name: 'rallar.browser.state-read',
+            feature: 'group',
+            operation: 'heartbeat',
+            result: removed ? 'removed' : 'preserved',
+            durationMs: 0,
+        });
     }
 
     await Promise.all([

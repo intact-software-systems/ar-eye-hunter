@@ -85,12 +85,22 @@ AppInbox owners directly.
 
 - [`createCachedClientStateService` and explicit committed-snapshot observation](./snapshot/cached-client-state-service.ts)
 - [`ClientStateSnapshotReadThroughCache` and durable read-through refresh](./snapshot/client-state-snapshot-read-through-cache.ts)
+- [`ClientRestSnapshotReadSelector` and REST scalar-floor selection](./snapshot/client-rest-snapshot-read-selector.ts)
 
 The legacy `services/cached-client-state-service.ts` and
 `services/client-state-snapshot-read-through-cache.ts` paths remain direct
 named compatibility exports for API-v1 and deep consumers. The package
 `mod.ts` exports both canonical snapshot owners directly. The cache remains a
 latest-value projection; durable client-state repositories remain authoritative.
+
+`ClientRestSnapshotReadSelector` keeps REST policy separate from the general
+cache API. Tokenless and strict reads load durable current state. A tokened
+non-strict read may return a presence-fresh cache entry only when its scalar
+revision satisfies `minStateRevision`; otherwise it performs exactly one
+durable-current read. Durable shortfall returns the typed floor-conflict result.
+Durable absence conditionally removes only the unchanged cached observation,
+which is a race fence rather than a tombstone. Its optional diagnostics report
+only bounded source, result, floor, cleanup, strict-mode, and duration fields.
 
 ## Compatibility paths and removal conditions
 

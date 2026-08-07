@@ -1,5 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { readApiBaseUrl } from './api-client-config.ts';
+import { ApiHttpError, type ApiHttpMethod } from './api/http-error.ts';
+import { readStateGroupSnapshot } from './state-read/point-read.ts';
 import { readSession } from '@shared/api/auth.ts';
 import {
     validateAuthoritativeClientEventList,
@@ -69,7 +71,6 @@ import {
     type RotateGroupJoinCodeRequest,
     type SetGroupMemberRoleRequest,
     type StateScope,
-    type StateErrorResponse,
     type TransferGroupOwnershipRequest,
     type UnbanGroupMemberRequest,
     type UpdateGroupRequest,
@@ -95,7 +96,18 @@ export type ApiRequestOptions = Readonly<{
     authSession?: AuthSession | null;
 }>;
 
-export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+export { ApiHttpError, readApiPolicyError } from './api/http-error.ts';
+export type { ApiHttpMethod } from './api/http-error.ts';
+export {
+    readStateClientSnapshot,
+    readStateGroupSnapshot,
+} from './state-read/point-read.ts';
+export type {
+    ReadStateClientSnapshotOptions,
+    ReadStateGroupSnapshotOptions,
+    StateClientSnapshotRead,
+    StateGroupSnapshotRead,
+} from './state-read/point-read.ts';
 
 export type StateEventListRequestOptions<TEventType extends string> =
     & ApiRequestOptions
@@ -133,32 +145,6 @@ export type GroupStateEventListRequestOptions =
 
 export type ClientStateEventListRequestOptions =
     StateEventListRequestOptions<ClientEventType>;
-
-export class ApiHttpError extends Error {
-    public readonly policyError?: StateErrorResponse & Readonly<{ code: string }>;
-
-    public constructor(
-        public readonly method: ApiHttpMethod,
-        public readonly path: string,
-        public readonly status: number,
-        public readonly bodyText: string,
-        public readonly headers?: Headers,
-    ) {
-        super(`API ${method} ${path} failed: ${status} ${bodyText}`);
-        this.name = 'ApiHttpError';
-        this.policyError = parseApiPolicyError(bodyText);
-    }
-}
-
-export function readApiPolicyError(
-    error: unknown,
-): (StateErrorResponse & Readonly<{ code: string }>) | undefined {
-    if (error instanceof ApiHttpError) {
-        return error.policyError;
-    }
-
-    return undefined;
-}
 
 export type WebSocketTicketBackoffState = Readonly<
     | {
@@ -421,44 +407,6 @@ async function createWebSocketTicketThroughCircuitBreaker(
     );
 }
 
-async function readTextOrElse(
-    res: Response,
-    orElse: () => string,
-): Promise<string> {
-    try {
-        return await res.text();
-    } catch {
-        return orElse();
-    }
-}
-
-function parseApiPolicyError(
-    bodyText: string,
-): (StateErrorResponse & Readonly<{ code: string }>) | undefined {
-    try {
-        const value = JSON.parse(bodyText);
-        if (!isRecord(value)) {
-            return undefined;
-        }
-        if (typeof value.error !== 'string' || typeof value.code !== 'string') {
-            return undefined;
-        }
-
-        return {
-            error: value.error,
-            code: value.code,
-            message: typeof value.message === 'string' ? value.message : undefined,
-            details: isRecord(value.details) ? value.details : undefined,
-        };
-    } catch {
-        return undefined;
-    }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
-}
-
 async function executeHttpRequest<TReq, TRes>(
     baseUrl: string,
     path: string,
@@ -467,25 +415,20 @@ async function executeHttpRequest<TReq, TRes>(
     options: ApiRequestOptions = {},
     requestHeaders: Readonly<Record<string, string>> = {},
 ): Promise<TRes> {
-    const url = `${baseUrl}${path}`;
-
     const init: RequestInit = {
         method,
         headers: { 'content-type': 'application/json', ...requestHeaders },
         signal: options.signal,
     };
-
     const session = options.authSession === undefined
         ? readSession()
         : options.authSession;
-
     if (session) {
         const headers = new Headers(init.headers);
         headers.set('authorization', `Bearer ${session.accessToken}`);
         headers.set('x-client-id', session.clientId);
         init.headers = headers;
     }
-
     if (method === 'POST' || method === 'PUT') {
         if (body === undefined) {
             throw new Error(`${method} ${path} requires a body`);
@@ -494,16 +437,25 @@ async function executeHttpRequest<TReq, TRes>(
     } else if (method === 'DELETE' && body !== undefined) {
         init.body = JSON.stringify(body);
     }
-
-    const res = await fetch(url, init);
-
-    if (!res.ok) {
-        const txt = await readTextOrElse(res, () => '');
-
-        throw new ApiHttpError(method, path, res.status, txt, res.headers);
+    const response = await fetch(`${baseUrl}${path}`, init);
+    if (!response.ok) {
+        throw new ApiHttpError(
+            method,
+            path,
+            response.status,
+            await readErrorBody(response),
+            response.headers,
+        );
     }
+    return (await response.json()) as TRes;
+}
 
-    return (await res.json()) as TRes;
+async function readErrorBody(response: Response): Promise<string> {
+    try {
+        return await response.text();
+    } catch {
+        return '';
+    }
 }
 
 export async function readApiConfig(
@@ -734,13 +686,7 @@ export async function findStateGroup(
     scope: StateScope = defaultStateScope(),
     options?: ApiRequestOptions,
 ): Promise<GroupStateSnapshot> {
-    return await executeHttpRequest<void, GroupStateSnapshot>(
-        readApiBaseUrl(),
-        `${toStateScopePath(scope)}/groups/${encodeURIComponent(groupId)}`,
-        'GET',
-        undefined,
-        options,
-    );
+    return (await readStateGroupSnapshot(groupId, scope, options)).snapshot;
 }
 
 export async function listStateGroupEvents(

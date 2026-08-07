@@ -179,7 +179,10 @@ await rallar.auth.registerAndLogin({
 
 `rooms.list()` returns room summaries.
 
-`rooms.refresh(input?)` fetches current room and client snapshots from the API and updates local caches.
+`rooms.refresh(input?)` fetches complete current room and client snapshot
+collections from the API and updates local caches. A room session's
+`refresh()` performs one group point read for that exact `roomRef`, without a
+revision-floor query, and updates only that room.
 
 `rooms.create(input)` creates a group/room, joins it, and makes it current.
 `input` can be a display name string or an object. It does not leave the
@@ -292,6 +295,35 @@ REST errors keep the existing `{ error }` shape and may also include `code`,
 `message`, and `details`. Browser workflows preserve the parsed response on
 `ApiHttpError`, so apps can branch on stable policy reason codes without string
 matching `error`.
+
+Client and group point reads support optional convergence floors:
+
+- `readStateClientSnapshot(principalId, scope, { minStateRevision? })` returns
+  `{ snapshot, source, stateRevision }`.
+- `readStateGroupSnapshot(groupId, scope, { minCausalRevision? })` returns
+  `{ snapshot, source, groupRevision, presenceRevision }`.
+- `findStateGroup(...)` remains the body-only compatibility wrapper and returns
+  `Promise<GroupSnapshot>`.
+
+Floors are non-negative safe integers. Group callers provide both components
+through `minCausalRevision`; the REST query sends both `minGroupRevision` and
+`minPresenceRevision`. Malformed or partial floors return `400`. An authorized
+durable snapshot that does not satisfy the requested floor returns `409` with
+code `state-revision-floor-not-satisfied`; this is distinct from an
+infrastructure `503`.
+
+A point read without a floor observes durable state. An eligible floor-bearing
+read may be served from a process cache. Successful responses include
+`Cache-Control: no-store`, `rallar-state-source`, and the applicable
+`rallar-state-revision` or `rallar-group-revision` plus
+`rallar-presence-revision` headers. The browser readers validate the
+authoritative body, requested identity, required headers, and header/body
+revision agreement before returning.
+
+`setBrowserStateReadDiagnosticsSink(...)` installs an optional browser sink for
+bounded point, heartbeat, and collection outcomes. Events expose only feature,
+operation, result, source when known, and duration. Do not add application,
+workspace, principal, group, session, or request identifiers as metric labels.
 
 The group state routes for the policy workflows are:
 

@@ -1,5 +1,6 @@
 export * from './browser/api-client-config.ts';
 export * from './browser/api-integration.ts';
+export * from './browser/state-read/diagnostics.ts';
 export {
     appointStateGroupDirector as appointStateGroupDirectorWorkflow,
     archiveStateGroup,

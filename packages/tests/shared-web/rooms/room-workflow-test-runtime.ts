@@ -200,6 +200,15 @@ vi.mock('@shared/repository/group-state-snapshots-repository.ts', () => ({
     roomWorkflowMocks.groupSnapshots.find((snapshot) => isSameRoomRef(snapshot.group, roomRef)),
   ),
   getAllGroupStateSnapshots: vi.fn(() => [...roomWorkflowMocks.groupSnapshots]),
+  removeGroupStateSnapshotIfUnchanged: vi.fn((roomRef: GroupRef, expected: GroupSnapshot) => {
+    const index = roomWorkflowMocks.groupSnapshots.findIndex((snapshot) =>
+      snapshot === expected && isSameRoomRef(snapshot.group, roomRef)
+    );
+    if (index < 0) return false;
+    roomWorkflowMocks.groupSnapshots.splice(index, 1);
+    return true;
+  }),
+  waitForGroupStateSnapshotChangesIdle: vi.fn(async () => undefined),
 }));
 
 export function readRoomWorkflowMocks(): typeof roomWorkflowMocks {
