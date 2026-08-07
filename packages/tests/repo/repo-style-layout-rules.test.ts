@@ -11,11 +11,9 @@ import {
 const repoRoot = path.resolve('/repo');
 describe('repository layout rules', () => {
   it('uses the exact TypeScript projection and defensively ignores JavaScript', () => {
-    expect(isLayoutTypeScriptFile('/repo/feature/value.ts')).toBe(true);
-    expect(isLayoutTypeScriptFile('/repo/feature/value.tsx')).toBe(true);
-    expect(isLayoutTypeScriptFile('/repo/feature/value.mts')).toBe(true);
-    expect(isLayoutTypeScriptFile('/repo/feature/value.cts')).toBe(true);
-    expect(isLayoutTypeScriptFile('/repo/feature/value.d.ts')).toBe(true);
+    for (const suffix of ['ts', 'tsx', 'mts', 'cts', 'd.ts']) {
+      expect(isLayoutTypeScriptFile(`/repo/feature/value.${suffix}`)).toBe(true);
+    }
     expect(isLayoutTypeScriptFile('/repo/feature/value.mjs')).toBe(false);
     const result = scanFiles({ 'feature/value.mjs': 'export const value = 1;' });
     expect(result.findings).toEqual([]);
@@ -70,16 +68,18 @@ describe('repository layout rules', () => {
   it('groups exact filename, generic-name, tool-name, and mod-boundary cases', () => {
     const result = scan(
       sourceList(
-        'feature/ThingService.ts feature/thingService.ts feature/thing-service.ts ' +
-          'feature/vite.config.ts feature/types.ts feature/group-state-types.ts ' +
-          'feature/helpers.ts feature/group-state-helpers.ts packages/shared/mod.ts ' +
-          'packages/shared/feature/mod.ts',
+        'feature/ThingService.ts feature/thingService.ts packages/shared/mod.ts ' +
+          'feature/thing-service.ts feature/vite.config.ts packages/shared/feature/mod.ts ' +
+          'feature/types.ts feature/group-state-types.ts packages/shared/ontology/nested/mod.ts ' +
+          'feature/helpers.ts feature/group-state-helpers.ts packages/shared/ontology/mod.ts',
       ),
     );
     expect(result.counts[rules.filenameStyle]).toBe(2);
     expect(findingsFor(result, rules.filenameStyle)).toHaveLength(1);
     expect(result.counts[rules.genericFilename]).toBe(2);
-    expect(result.counts[rules.unapprovedMod]).toBe(1);
+    const unapprovedModCount = (file: string) => scan(sourceList(file)).counts[rules.unapprovedMod];
+    expect(unapprovedModCount('packages/shared/ontology/mod.ts')).toBe(0);
+    expect(unapprovedModCount('packages/shared/ontology/nested/mod.ts')).toBe(1);
   });
   it('parses exported route registration functions instead of matching text', () => {
     const result = scanFiles(
