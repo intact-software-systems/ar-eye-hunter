@@ -74,10 +74,16 @@ When UI behavior changes, acceptance requires a Playwright test that operates vi
 
 ## Plan Completion Gate
 
+Plan-only branches do not wait for local or Branch Release Gate builds. This
+exception applies only when every changed path is an implementation-plan or
+agent-guidance path excluded by `.github/workflows/branch-release-gate.yml`.
+Branch Release Gate remains required for branches that change code, workflows,
+scripts, tests, or plugin metadata.
+
 Focused tests are feedback, not a substitute for completion gates. Before a
-written implementation plan can be approved or marked complete, apply this
-rule: Run the commands from the final uncommitted working tree before
-publication:
+build-affecting written implementation plan can be approved or marked
+complete, apply this rule: Run the commands from the final uncommitted working
+tree before publication:
 
 ```bash
 npm run test:unit
@@ -85,14 +91,15 @@ npm run test:ci
 npm run build
 ```
 
-Any change after a successful gate invalidates that gate. Keep the draft pull
-request current, then require **Branch Release Gate** to pass for the final
-feature-branch commit and **Run Hetzner Supported Distributed Manifests** to
-pass for the resulting default-branch commit. Record the exact commit SHA for
-each result. Do not approve completion: the plan is not complete while any
-required command or workflow is pending, skipped, failed, or attached to an
-older commit. An instruction not to commit or push postpones publication but
-does not waive these completion gates.
+Any change after a successful gate invalidates that gate. For build-affecting
+implementation plans, keep the draft pull request current, then require
+**Branch Release Gate** to pass for the final feature-branch commit and **Run
+Hetzner Supported Distributed Manifests** to pass for the resulting
+default-branch commit. Record the exact commit SHA for each result. Do not
+approve completion: the plan is not complete while any required command or
+workflow is pending, skipped, failed, or attached to an older commit. An
+instruction not to commit or push postpones publication but does not waive
+these completion gates.
 
 ## Reporting
 

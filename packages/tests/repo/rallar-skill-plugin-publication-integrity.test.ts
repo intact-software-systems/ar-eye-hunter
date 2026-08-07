@@ -151,7 +151,7 @@ describe('Rallar skill plugin and publication integrity', () => {
     }
 
     expectAllNormalized(progressSkill, [
-      'An instruction not to commit or push postpones publication',
+      'For build-affecting implementation plans, an instruction not to commit or push postpones publication',
       'does not waive any completion gate',
       'Any change after a successful gate invalidates that gate',
     ]);
@@ -165,6 +165,35 @@ describe('Rallar skill plugin and publication integrity', () => {
       'plan-completion gate',
       'Focused checks never substitute for that final gate',
     ]);
+  });
+
+  it('limits feature-branch release gates to changes that can affect builds', () => {
+    const branchWorkflow = readRepo('.github/workflows/branch-release-gate.yml');
+    const reusableWorkflow = readRepo('.github/workflows/release-gate.yml');
+    const agents = readRepo('AGENTS.md');
+    const progressSkill = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
+    const testingSkill = readRepo('.agents/skills/rallar-testing/SKILL.md');
+    const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
+
+    expectAllNormalized(branchWorkflow, [
+      'branches-ignore:',
+      '- main',
+      'paths-ignore:',
+      "- 'docs/superpowers/plans/**'",
+      "- 'plans/**'",
+      "- '.agents/**'",
+      "- 'AGENTS.md'",
+    ]);
+    expect(branchWorkflow).not.toContain('docs/superpowers/specs/**');
+    expect(branchWorkflow).not.toContain('.codex-plugin/**');
+    expect(reusableWorkflow).not.toContain('paths-ignore:');
+
+    for (const source of [agents, progressSkill, testingSkill, testCommands]) {
+      expectAllNormalized(source, [
+        'Plan-only branches do not wait for local or Branch Release Gate builds',
+        'Branch Release Gate remains required for branches that change code, workflows, scripts, tests, or plugin metadata',
+      ]);
+    }
   });
 
   it('requires a Markdown learning-oriented command summary in every final handoff', () => {
