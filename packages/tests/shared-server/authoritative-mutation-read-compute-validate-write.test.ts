@@ -18,7 +18,6 @@ const rtcInboxRoot = 'packages/shared-server/rallar-system/rtc-topology/inbox';
 const persistenceRoot = `${groupStateRoot}/persistence`;
 const validationPrimitivesPath = `${groupStateRoot}/group-state-validation-primitives.ts`;
 const oldValidationPath = `${groupStateRoot}/mutation/group-state-validation-primitives.ts`;
-
 const sharedValidationPrimitiveNames = [
   'assertExactKeys',
   'assertRequiredKeys',
