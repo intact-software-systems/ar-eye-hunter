@@ -1,9 +1,5 @@
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    compareGroupCausalRevision,
-    readGroupCausalRevision,
-    readGroupVersion,
-} from '@shared/api/group-client-views.ts';
+import { readGroupVersion } from '@shared/api/group-client-views.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
@@ -25,9 +21,20 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 import {
     type StateSnapshotObservation,
     type StateSnapshotRevisionDecision,
-    StateSnapshotRevisionConflictError,
     toStateSnapshotObservation,
 } from './state-snapshot-revision.ts';
+import { toGroupStateSnapshotRepositoryKey } from './group-state-snapshot-repository-key.ts';
+import {
+    decideGroupSnapshotCausalRevision,
+    GroupStateSnapshotIncomparableError,
+} from './group-state-snapshot-revision.ts';
+
+export {
+    fromGroupStateSnapshotRepositoryKey,
+    toGroupStateSnapshotRepositoryKey,
+    type GroupStateSnapshotRepositoryRef,
+} from './group-state-snapshot-repository-key.ts';
+export { GroupStateSnapshotIncomparableError } from './group-state-snapshot-revision.ts';
 
 export type GroupStateSnapshotRepositoryOptions =
     & Omit<
@@ -51,13 +58,6 @@ export type GroupStateSnapshotChange = Readonly<{
 export type GroupStateSnapshotChangeListener = (
     change: GroupStateSnapshotChange,
 ) => void | Promise<void>;
-
-export class GroupStateSnapshotIncomparableError extends Error {
-    constructor(readonly groupRef: GroupRef) {
-        super('Group snapshot causal tuple is incomparable');
-        this.name = 'GroupStateSnapshotIncomparableError';
-    }
-}
 
 export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryToken<
     string,
@@ -248,27 +248,6 @@ function writeGroupStateSnapshot(
     return decision;
 }
 
-function decideGroupSnapshotCausalRevision(
-    current: GroupSnapshot | undefined,
-    incoming: GroupSnapshot,
-): StateSnapshotRevisionDecision {
-    if (!current) return 'inserted';
-
-    const order = compareGroupCausalRevision(
-        readGroupCausalRevision(incoming),
-        readGroupCausalRevision(current),
-    );
-    if (order === 'dominates') return 'advanced';
-    if (order === 'dominated') return 'stale';
-    if (order === 'incomparable') return 'incomparable';
-    if (jsonEquals(current, incoming)) return 'duplicate';
-
-    throw new StateSnapshotRevisionConflictError(
-        'Group',
-        incoming.stateRevision,
-    );
-}
-
 export function removeGroupStateSnapshotByRef(
     ref: GroupRef,
     manager?: RepositoryManager,
@@ -282,6 +261,24 @@ export function removeGroupStateSnapshotByRef(
             groupSessionIndexForRepository(repository),
             repositoryKey,
             previous,
+        );
+    }
+    return removed;
+}
+
+export function removeGroupStateSnapshotIfUnchanged(
+    ref: GroupRef,
+    expected: GroupSnapshot,
+    manager?: RepositoryManager,
+): boolean {
+    const repository = requireGroupStateSnapshotRepository(manager);
+    const repositoryKey = toGroupStateSnapshotRepositoryKey(ref);
+    const removed = repository.compareAndDelete(repositoryKey, expected);
+    if (removed) {
+        removeGroupSnapshotFromSessionIndex(
+            groupSessionIndexForRepository(repository),
+            repositoryKey,
+            expected,
         );
     }
     return removed;
@@ -397,14 +394,6 @@ function groupSnapshotHasSessionIds(
         snapshot.activeSessions.map((session) => session.sessionId),
     );
     return sessionIds.every((sessionId) => activeSessionIds.has(sessionId));
-}
-
-export function toGroupStateSnapshotRepositoryKey(ref: GroupRef): string {
-    return JSON.stringify([
-        ref.applicationId,
-        ref.workspaceId ?? '',
-        ref.groupId,
-    ]);
 }
 
 function toGroupStateSnapshotChange(

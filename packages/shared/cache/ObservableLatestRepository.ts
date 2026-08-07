@@ -238,6 +238,11 @@ export class ObservableLatestRepository<K, V>
         return true;
     }
 
+    public compareAndDelete(key: K, expected: V): boolean {
+        const entry = this.entries.get(key);
+        return entry !== undefined && entry.peek() === expected && this.delete(key);
+    }
+
     public clear(key: K): void {
         const entry = this.entries.get(key);
         if (!entry) {
@@ -440,14 +445,9 @@ export class ObservableLatestRepository<K, V>
 
 function toUnsubscribe(unsubscribe: () => void): Unsubscribe {
     let active = true;
-    return {
-        unsubscribe: () => {
-            if (!active) {
-                return;
-            }
-
-            active = false;
-            unsubscribe();
-        },
-    };
+    return { unsubscribe: () => {
+        if (!active) return;
+        active = false;
+        unsubscribe();
+    } };
 }

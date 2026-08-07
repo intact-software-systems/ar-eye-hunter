@@ -8,7 +8,9 @@ import {
 } from '@shared/api/group-client-views.ts';
 import {
   findGroupStateSnapshotByRef,
+  fromGroupStateSnapshotRepositoryKey,
   observeGroupStateSnapshot,
+  removeGroupStateSnapshotIfUnchanged,
   toGroupStateSnapshotRepositoryKey,
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
@@ -51,7 +53,7 @@ export class GroupStateSnapshotReadThroughCache {
   constructor(private readonly options: GroupStateSnapshotReadThroughCacheOptions) {
     this.snapshots = new ObservableLoanedRepository<string, GroupSnapshot>(
       async (key) => {
-        const ref = fromGroupStateSnapshotRepositoryKey(key);
+        const ref = toGroupRef(key);
         const snapshot = await options.groupsRepository.readSnapshot(ref);
         if (!snapshot) {
           throw new GroupStateSnapshotNotFoundError(ref);
@@ -114,6 +116,22 @@ export class GroupStateSnapshotReadThroughCache {
     await this.snapshots.whenIdle();
   }
 
+  public evictIfUnchanged(
+    ref: GroupRef,
+    expected: GroupSnapshot,
+  ): boolean {
+    const latestRemoved = removeGroupStateSnapshotIfUnchanged(
+      ref,
+      expected,
+      this.options.manager,
+    );
+    const loanedRemoved = this.snapshots.compareAndDelete(
+      toGroupStateSnapshotRepositoryKey(ref),
+      expected,
+    );
+    return latestRemoved || loanedRemoved;
+  }
+
   public observe(snapshot: GroupSnapshot): StateSnapshotObservation {
     return observeGroupStateSnapshot(snapshot, this.options.manager);
   }
@@ -168,12 +186,13 @@ export function createGroupStateSnapshotReadThroughCache(
   return new GroupStateSnapshotReadThroughCache(options);
 }
 
-function fromGroupStateSnapshotRepositoryKey(key: string): GroupRef {
-  const [applicationId, workspaceId, groupId] = JSON.parse(key) as [string, string, string];
+function toGroupRef(key: string): GroupRef {
+  const { applicationId, workspaceId, groupId } =
+    fromGroupStateSnapshotRepositoryKey(key);
 
   return {
     applicationId,
-    workspaceId: workspaceId === '' ? DEFAULT_STATE_WORKSPACE_ID : workspaceId,
+    workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
     groupId,
   };
 }

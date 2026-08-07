@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { OverlayInfo, RttMeasurementInfo, } from '@shared/api/api-config.ts';
-import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    ClientPrincipalRef,
+    ClientSession,
+    ClientSnapshot,
+} from '@shared/api/client-types.ts';
 import { readClientVersion, readGroupVersion } from '@shared/api/group-client-views.ts';
 import type {
     AuditStamp,
@@ -18,8 +22,10 @@ import {
     onClientStateSnapshotChange,
     readableClientStateSnapshotCache,
     setClientStateSnapshotByPrincipalId,
+    toClientStateSnapshotRepositoryKey,
     waitForClientStateSnapshotChangesIdle,
 } from '@shared/repository/client-state-snapshots-repository.ts';
+import * as clientSnapshotRepositoryModule from '@shared/repository/client-state-snapshots-repository.ts';
 import {
     findFirstGroupStateSnapshotRefSessionIdIsIn,
     findGroupStateSnapshotsBySessionIds,
@@ -29,8 +35,10 @@ import {
     removeGroupStateSnapshotByRef,
     setGroupStateSnapshot,
     setGroupStateSnapshots,
+    toGroupStateSnapshotRepositoryKey,
     waitForGroupStateSnapshotChangesIdle,
 } from '@shared/repository/group-state-snapshots-repository.ts';
+import * as groupSnapshotRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
 import {
     createAndSetStarOverlays,
     findOverlayById,
@@ -84,6 +92,59 @@ describe('repository modules', () => {
         expect(findClientStateSnapshotByRef(workspaceA.principal)).toEqual(workspaceA);
         expect(findClientStateSnapshotByRef(workspaceB.principal)).toEqual(workspaceB);
         expect(getAllClientStateSnapshots()).toHaveLength(2);
+    });
+
+    it('keeps absent and explicitly empty client workspace keys distinct', () => {
+        const absentWorkspace = {
+            applicationId: 'app-1',
+            principalId: 'client-1',
+        } as ClientPrincipalRef;
+        const emptyWorkspace = {
+            ...absentWorkspace,
+            workspaceId: '',
+        };
+
+        expect(toClientStateSnapshotRepositoryKey(absentWorkspace)).not.toBe(
+            toClientStateSnapshotRepositoryKey(emptyWorkspace),
+        );
+    });
+
+    it('round-trips client snapshot keys with tagged workspace values', () => {
+        type SnapshotKeyCodec = Readonly<{
+            fromClientStateSnapshotRepositoryKey?: (
+                key: string,
+            ) => Partial<ClientPrincipalRef>;
+        }>;
+        const codec = clientSnapshotRepositoryModule as SnapshotKeyCodec;
+        const refs = [
+            {
+                applicationId: 'app|with:delimiters',
+                principalId: 'principal%2Fname',
+            } as ClientPrincipalRef,
+            {
+                applicationId: 'app|with:delimiters',
+                workspaceId: '',
+                principalId: 'principal%2Fname',
+            },
+            {
+                applicationId: 'app|with:delimiters',
+                workspaceId: '_',
+                principalId: 'principal%2Fname',
+            },
+            {
+                applicationId: 'app|with:delimiters',
+                workspaceId: 'workspace:%25',
+                principalId: 'principal%2Fname',
+            },
+        ] satisfies readonly ClientPrincipalRef[];
+
+        const keys = refs.map(toClientStateSnapshotRepositoryKey);
+        expect(new Set(keys).size).toBe(refs.length);
+        expect(
+            keys.map((key) =>
+                codec.fromClientStateSnapshotRepositoryKey?.(key) ?? null
+            ),
+        ).toEqual(refs);
     });
 
     it('emits client snapshot changes only for accepted writes', async () => {
@@ -174,6 +235,38 @@ describe('repository modules', () => {
         expect(findClientStateSnapshotByPrincipalId('client-1')).toEqual(accepted);
         expect(() => setClientStateSnapshotByPrincipalId('client-1', conflict))
             .toThrow('Client snapshot revision conflict');
+    });
+
+    it('conditionally removes only the unchanged client snapshot identity', () => {
+        type ConditionalClientRemoval = Readonly<{
+            removeClientStateSnapshotIfUnchanged?: (
+                ref: ClientPrincipalRef,
+                expected: ClientSnapshot,
+            ) => boolean;
+        }>;
+        const conditionalRemoval =
+            clientSnapshotRepositoryModule as ConditionalClientRemoval;
+        const first = createClientSnapshot('client-1', 'session-old', 1);
+        const newer = createClientSnapshot('client-1', 'session-new', 2);
+
+        expect(setClientStateSnapshotByPrincipalId('client-1', first)).toBe(true);
+        expect(setClientStateSnapshotByPrincipalId('client-1', newer)).toBe(true);
+
+        expect(
+            conditionalRemoval.removeClientStateSnapshotIfUnchanged?.(
+                first.principal,
+                first,
+            ) ?? false,
+        ).toBe(false);
+        expect(findClientStateSnapshotByRef(first.principal)).toBe(newer);
+
+        expect(
+            conditionalRemoval.removeClientStateSnapshotIfUnchanged?.(
+                newer.principal,
+                newer,
+            ) ?? false,
+        ).toBe(true);
+        expect(findClientStateSnapshotByRef(newer.principal)).toBeUndefined();
     });
 
     it('stores group snapshots by scoped ref, keeps newer versions, and finds memberships', () => {
@@ -280,6 +373,59 @@ describe('repository modules', () => {
         );
     });
 
+    it('keeps absent and explicitly empty group workspace keys distinct', () => {
+        const absentWorkspace = {
+            applicationId: 'app-1',
+            groupId: 'group-1',
+        } as GroupSnapshot['group'];
+        const emptyWorkspace = {
+            ...absentWorkspace,
+            workspaceId: '',
+        };
+
+        expect(toGroupStateSnapshotRepositoryKey(absentWorkspace)).not.toBe(
+            toGroupStateSnapshotRepositoryKey(emptyWorkspace),
+        );
+    });
+
+    it('round-trips group snapshot keys with tagged workspace values', () => {
+        type SnapshotKeyCodec = Readonly<{
+            fromGroupStateSnapshotRepositoryKey?: (
+                key: string,
+            ) => Partial<GroupSnapshot['group']>;
+        }>;
+        const codec = groupSnapshotRepositoryModule as SnapshotKeyCodec;
+        const refs = [
+            {
+                applicationId: 'app|with:delimiters',
+                groupId: 'group%2Fname',
+            } as GroupSnapshot['group'],
+            {
+                applicationId: 'app|with:delimiters',
+                workspaceId: '',
+                groupId: 'group%2Fname',
+            },
+            {
+                applicationId: 'app|with:delimiters',
+                workspaceId: '_',
+                groupId: 'group%2Fname',
+            },
+            {
+                applicationId: 'app|with:delimiters',
+                workspaceId: 'workspace:%25',
+                groupId: 'group%2Fname',
+            },
+        ] satisfies readonly GroupSnapshot['group'][];
+
+        const keys = refs.map(toGroupStateSnapshotRepositoryKey);
+        expect(new Set(keys).size).toBe(refs.length);
+        expect(
+            keys.map((key) =>
+                codec.fromGroupStateSnapshotRepositoryKey?.(key) ?? null
+            ),
+        ).toEqual(refs);
+    });
+
     it('uses the full group causal tuple for cache ordering', () => {
         const first = {
             ...createGroupSnapshot('group-1', 'Alpha', 1, ['self']),
@@ -333,6 +479,48 @@ describe('repository modules', () => {
         expect(findGroupStateSnapshotByRef(accepted.group)).toEqual(accepted);
         expect(() => setGroupStateSnapshot(conflict))
             .toThrow('Group snapshot revision conflict');
+    });
+
+    it('conditionally removes only the unchanged group and session-index identity', () => {
+        type ConditionalGroupRemoval = Readonly<{
+            removeGroupStateSnapshotIfUnchanged?: (
+                ref: GroupSnapshot['group'],
+                expected: GroupSnapshot,
+            ) => boolean;
+        }>;
+        const conditionalRemoval =
+            groupSnapshotRepositoryModule as ConditionalGroupRemoval;
+        const first = createGroupSnapshot('group-1', 'Alpha', 1, [
+            'self',
+            'session-old',
+        ]);
+        const newer = createGroupSnapshot('group-1', 'Alpha', 2, [
+            'self',
+            'session-new',
+        ]);
+
+        expect(setGroupStateSnapshot(first)).toBe(true);
+        expect(setGroupStateSnapshot(newer)).toBe(true);
+
+        expect(
+            conditionalRemoval.removeGroupStateSnapshotIfUnchanged?.(
+                first.group,
+                first,
+            ) ?? false,
+        ).toBe(false);
+        expect(findGroupStateSnapshotByRef(first.group)).toBe(newer);
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'session-new']))
+            .toEqual([newer]);
+
+        expect(
+            conditionalRemoval.removeGroupStateSnapshotIfUnchanged?.(
+                newer.group,
+                newer,
+            ) ?? false,
+        ).toBe(true);
+        expect(findGroupStateSnapshotByRef(newer.group)).toBeUndefined();
+        expect(findGroupStateSnapshotsBySessionIds(['self', 'session-new']))
+            .toEqual([]);
     });
 
     it('emits group snapshot changes only for accepted writes', async () => {

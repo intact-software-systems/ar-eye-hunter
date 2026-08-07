@@ -3,7 +3,9 @@ import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { readClientStateRevision, readClientVersion } from '@shared/api/group-client-views.ts';
 import {
   findClientStateSnapshotByRef,
+  fromClientStateSnapshotRepositoryKey,
   observeClientStateSnapshot,
+  removeClientStateSnapshotIfUnchanged,
   toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey,
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
@@ -43,7 +45,7 @@ export class ClientStateSnapshotReadThroughCache {
   constructor(private readonly options: ClientStateSnapshotReadThroughCacheOptions) {
     this.snapshots = new ObservableLoanedRepository<string, ClientSnapshot>(
       async (key) => {
-        const ref = fromClientStateSnapshotRepositoryKey(key);
+        const ref = toClientPrincipalRef(key);
         const snapshot = await options.clientsRepository.readSnapshot(ref);
         if (!snapshot) {
           throw new ClientStateSnapshotNotFoundError(ref);
@@ -110,6 +112,22 @@ export class ClientStateSnapshotReadThroughCache {
     await this.snapshots.whenIdle();
   }
 
+  public evictIfUnchanged(
+    ref: ClientPrincipalRef,
+    expected: ClientSnapshot,
+  ): boolean {
+    const latestRemoved = removeClientStateSnapshotIfUnchanged(
+      ref,
+      expected,
+      this.options.manager,
+    );
+    const loanedRemoved = this.snapshots.compareAndDelete(
+      toClientStateSnapshotRepositoryKey(ref),
+      expected,
+    );
+    return latestRemoved || loanedRemoved;
+  }
+
   public observe(snapshot: ClientSnapshot): StateSnapshotObservation {
     return observeClientStateSnapshot(snapshot, this.options.manager);
   }
@@ -167,12 +185,13 @@ export function toClientStateSnapshotRepositoryKey(ref: ClientPrincipalRef): str
   return toSharedClientStateSnapshotRepositoryKey(ref);
 }
 
-function fromClientStateSnapshotRepositoryKey(key: string): ClientPrincipalRef {
-  const [applicationId, workspaceId, principalId] = JSON.parse(key) as [string, string, string];
+function toClientPrincipalRef(key: string): ClientPrincipalRef {
+  const { applicationId, workspaceId, principalId } =
+    fromClientStateSnapshotRepositoryKey(key);
 
   return {
     applicationId,
-    workspaceId: workspaceId === '' ? DEFAULT_STATE_WORKSPACE_ID : workspaceId,
+    workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
     principalId,
   };
 }
