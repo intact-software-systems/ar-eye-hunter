@@ -4,7 +4,6 @@ import {
   type AppInboxTestDatabase,
   createAppInboxTestDatabase,
 } from '../../app-inbox-test-database.ts';
-import type { AppInboxTestDatabaseOptions } from '../../app-inbox-test-database-contracts.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -226,13 +225,7 @@ export async function runOperationMatrix(
 
 export async function createAuthorityHarness(
   principalIds: readonly string[],
-  options: Readonly<{
-    wakeQueue?: () => void;
-    databaseOptions?: Pick<
-      AppInboxTestDatabaseOptions,
-      'onTransactionRollback' | 'shouldFailOutboxWrite'
-    >;
-  }> = {},
+  options: Readonly<{ wakeQueue?: () => void }> = {},
 ): Promise<AuthorityHarness> {
   const nowEpochMs = Date.now();
   const runtimeRepository = new FakeRuntimeStateRepository();
@@ -254,10 +247,7 @@ export async function createAuthorityHarness(
   const queue = new TestResourceInbox();
   const reader = new InboxQueueReader(queue);
   const results = new TestResourceInboxResults();
-  const database = createAppInboxTestDatabase(queue, results, {
-    runtimeRepository,
-    ...options.databaseOptions,
-  });
+  const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
   const groupStateService = createGroupStateService({
     runtimeRepository,
     createGroupStateEventStore: () => database.groupEventStore,

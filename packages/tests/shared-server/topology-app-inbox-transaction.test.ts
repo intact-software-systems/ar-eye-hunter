@@ -2,15 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { computeRtcTopologyEntry } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 import {
   type AppInboxMessageContext,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import {
+  toTopologyAppInboxCommand,
+  toTopologyConfigMutationCommand,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import { TopologyAppInboxHandler } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import {
   authenticatedProcessor,
@@ -75,23 +80,36 @@ describe('topology AppInbox transaction and idempotency', () => {
   });
 
   it('rolls back topology state when the RTC APP_OUTBOX write collides', async () => {
-    let failOutboxWrite = false;
-    const onTransactionRollback = vi.fn();
     const wakeQueue = vi.fn();
-    const harness = await createAuthorityHarness(['owner'], {
-      wakeQueue,
-      databaseOptions: {
-        shouldFailOutboxWrite: () => failOutboxWrite,
-        onTransactionRollback,
-      },
-    });
+    const harness = await createAuthorityHarness(['owner'], { wakeQueue });
     await createRoom(harness, GROUP_REF.groupId, 'Topology room');
     const repository = new GroupTopologyConfigRepository(harness.runtimeRepository);
     const management = topologyManagement(harness, repository);
     wakeQueue.mockClear();
-    onTransactionRollback.mockClear();
     const initialOutboxCount = harness.database.outboxEntries.size;
     const command = await topologyCommand('collision-request', 5);
+    const mutationCommand = toTopologyConfigMutationCommand(command);
+    const preparation = await management.prepareTopologyConfigMutation({
+      command: mutationCommand,
+      commandHash: command.commandHash,
+      capturedAtEpochMs: command.capturedAtEpochMs,
+    });
+    const read = await management.readTopologyConfigMutation(mutationCommand);
+    const computed = management.computeTopologyConfigMutation(preparation, read, 1);
+    management.validateTopologyConfigMutation(preparation, read, 1, computed);
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') throw new Error('Expected a topology config write');
+    const expectedEntry = computeRtcTopologyEntry(computed.outbox);
+    const collisionEntry = computeRtcTopologyEntry({
+      ...computed.outbox,
+      publish: !computed.outbox.publish,
+    });
+    expect(collisionEntry.key).toEqual(expectedEntry.key);
+    expect(collisionEntry.resource).not.toBe(expectedEntry.resource);
+    await harness.database.begin(async (transaction) => {
+      await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(collisionEntry);
+    });
+    expect(harness.database.outboxEntries.size).toBe(initialOutboxCount + 1);
     const enqueue = await createAuthenticatedTopologyEnqueue({
       enqueue: topologyEnqueue(command),
       claimedAuthority: harness.sessions.owner,
@@ -104,7 +122,6 @@ describe('topology AppInbox transaction and idempotency', () => {
       wakeQueue,
       writeMutation: async (_context, write) => await harness.database.begin(write),
     });
-    failOutboxWrite = true;
 
     await expect(
       handler.processMutation(
@@ -117,8 +134,12 @@ describe('topology AppInbox transaction and idempotency', () => {
     ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
     expect(await repository.findConfig(GROUP_REF)).toBeUndefined();
     expect(await repository.findMutationRecord(GROUP_REF, command.requestId)).toBeUndefined();
-    expect(harness.database.outboxEntries.size).toBe(initialOutboxCount);
-    expect(onTransactionRollback).toHaveBeenCalledOnce();
+    expect(harness.database.outboxEntries.size).toBe(initialOutboxCount + 1);
+    expect(
+      [...harness.database.outboxEntries.values()].find(
+        (entry) => entry.key.resourceId === collisionEntry.key.resourceId,
+      ),
+    ).toMatchObject({ key: collisionEntry.key, resource: collisionEntry.resource });
     expect(wakeQueue).not.toHaveBeenCalled();
   });
 });
