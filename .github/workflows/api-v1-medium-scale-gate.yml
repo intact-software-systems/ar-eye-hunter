@@ -64,6 +64,7 @@ jobs:
           backend: postgres
           api-port: '18080'
           secondary-api-port: '18081'
+          tertiary-api-port: '18082'
           artifact-dir: .artifacts/api-v1-black-box/medium-scale
           profile: api-v1-black-box-medium-scale
           run-id: '${{ github.run_id }}-${{ github.run_attempt }}-medium-scale'
@@ -72,5 +73,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: api-v1-medium-scale-${{ github.sha }}
-          path: .artifacts/api-v1-black-box/medium-scale
+          path: |
+            .artifacts/api-v1-black-box/medium-scale
+            .artifacts/api-v1-black-box/medium-scale/api-v1-server.log
+            .artifacts/api-v1-black-box/medium-scale/api-v1-server-secondary.log
+            .artifacts/api-v1-black-box/medium-scale/api-v1-server-tertiary.log
           if-no-files-found: error
