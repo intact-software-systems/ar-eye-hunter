@@ -9,25 +9,33 @@ import {
   sameTopologyGroupRef,
   validateAcceptedTopologyConfig,
   validateTopologyConfigExactKeys,
+  validateTopologyCausalRevision,
   validateTopologyGroupRef,
   validateTopologyPositiveInteger,
   validateTopologyStorageRevision,
-} from './topology-config-mutation-validation-primitives.ts';
+} from './topology-config-mutation-boundary.ts';
+import type { TopologyConfigRecord } from './topology-config-mutation-boundary.ts';
+
+type TopologyConfigReceiptRecord = Readonly<{
+  [Field in keyof GroupTopologyConfigMutationReceipt]: TopologyConfigRecord[string];
+}>;
 
 export function validateTopologyConfigReceipt(
-  value: unknown,
+  candidate: TopologyConfigRecord | GroupTopologyConfigMutationReceipt,
   expectedRef: GroupRef,
-): asserts value is GroupTopologyConfigMutationReceipt {
-  if (!isTopologyConfigRecord(value)) throw new TypeError('Topology config receipt is invalid');
-  validateTopologyConfigReceiptIdentity(value, expectedRef);
-  validateTopologyConfigReceiptAcceptedState(value);
-  validateTopologyConfigReceiptEffect(value);
-  validateTopologyConfigReceiptCausalRevision(value);
-  validateTopologyConfigReceiptTimestamps(value);
+): GroupTopologyConfigMutationReceipt {
+  const value = candidate as TopologyConfigRecord;
+  const receipt = value as TopologyConfigReceiptRecord;
+  validateTopologyConfigReceiptIdentity(receipt, expectedRef);
+  validateTopologyConfigReceiptAcceptedState(receipt);
+  validateTopologyConfigReceiptEffect(receipt);
+  validateTopologyConfigReceiptCausalRevision(receipt);
+  validateTopologyConfigReceiptTimestamps(receipt);
+  return value as TopologyConfigRecord & GroupTopologyConfigMutationReceipt;
 }
 
 function validateTopologyConfigReceiptIdentity(
-  receipt: Readonly<Record<string, unknown>>,
+  receipt: TopologyConfigReceiptRecord,
   expectedRef: GroupRef,
 ): void {
   validateTopologyConfigExactKeys(receipt, topologyConfigReceiptKeys, 'Topology config receipt');
@@ -54,9 +62,7 @@ function validateTopologyConfigReceiptIdentity(
   }
 }
 
-function validateTopologyConfigReceiptAcceptedState(
-  receipt: Readonly<Record<string, unknown>>,
-): void {
+function validateTopologyConfigReceiptAcceptedState(receipt: TopologyConfigReceiptRecord): void {
   const expectsConfig = receipt.operation === 'putConfig' || receipt.operation === 'deleteConfig';
   if ((expectsConfig ? 'config' : 'override') !== receipt.target) {
     throw new TypeError('Topology config receipt operation target is invalid');
@@ -73,7 +79,9 @@ function validateTopologyConfigReceiptAcceptedState(
     );
   }
   for (const [field, label] of acceptedReceiptTimeFields) {
-    if (receipt[field] !== null) validateTopologyStorageRevision(receipt[field], label);
+    if (receipt[field] !== null) {
+      validateTopologyStorageRevision(receipt[field], label);
+    }
   }
   if (receipt.acceptedConfig !== null) {
     validateAcceptedTopologyConfig(
@@ -86,11 +94,13 @@ function validateTopologyConfigReceiptAcceptedState(
   }
 }
 
-function validateTopologyConfigReceiptEffect(receipt: Readonly<Record<string, unknown>>): void {
+function validateTopologyConfigReceiptEffect(receipt: TopologyConfigReceiptRecord): void {
   if (receipt.outboxId !== null) {
     requireTopologyString(receipt.outboxId, 'Topology config outboxId');
   }
-  if (receipt.eventId !== null) throw new TypeError('Topology config receipt eventId must be null');
+  if (receipt.eventId !== null) {
+    throw new TypeError('Topology config receipt eventId must be null');
+  }
   if (
     !Array.isArray(receipt.outboxIds) ||
     receipt.outboxIds.some((outboxId) => typeof outboxId !== 'string') ||
@@ -116,10 +126,10 @@ function validateTopologyConfigReceiptEffect(receipt: Readonly<Record<string, un
   }
 }
 
-function validateTopologyConfigReceiptCausalRevision(
-  receipt: Readonly<Record<string, unknown>>,
-): void {
-  if (receipt.acceptedCausalRevision === null) return;
+function validateTopologyConfigReceiptCausalRevision(receipt: TopologyConfigReceiptRecord): void {
+  if (receipt.acceptedCausalRevision === null) {
+    return;
+  }
   if (!isTopologyConfigRecord(receipt.acceptedCausalRevision)) {
     throw new TypeError('Topology config accepted causal revision is invalid');
   }
@@ -151,7 +161,7 @@ function validateTopologyConfigReceiptCausalRevision(
   }
 }
 
-function validateTopologyConfigReceiptTimestamps(receipt: Readonly<Record<string, unknown>>): void {
+function validateTopologyConfigReceiptTimestamps(receipt: TopologyConfigReceiptRecord): void {
   const isPut = receipt.operation === 'putConfig' || receipt.operation === 'putOverride';
   if (
     receipt.outcome === 'no-op' &&
@@ -181,16 +191,6 @@ function validateTopologyConfigReceiptTimestamps(receipt: Readonly<Record<string
   ) {
     throw new TypeError('Topology config receipt expiry does not follow update');
   }
-}
-
-function validateTopologyCausalRevision(
-  value: unknown,
-  label: string,
-): asserts value is GroupStateCausalRevision {
-  if (!isTopologyConfigRecord(value)) throw new TypeError(`${label} is invalid`);
-  validateTopologyConfigExactKeys(value, ['groupRevision', 'presenceRevision'], label);
-  validateTopologyStorageRevision(value.groupRevision, `${label} groupRevision`);
-  validateTopologyStorageRevision(value.presenceRevision, `${label} presenceRevision`);
 }
 
 const topologyConfigOperations = ['putConfig', 'deleteConfig', 'putOverride', 'deleteOverride'];

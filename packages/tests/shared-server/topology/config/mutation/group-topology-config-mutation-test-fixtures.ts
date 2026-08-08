@@ -8,6 +8,7 @@ import type {
 
 export interface CreateTopologyConfigMutationTestInput {
   readonly operation?: 'putConfig' | 'putOverride';
+  readonly commandId?: string | null;
   readonly config?: GroupTopologyConfigPatch;
   readonly durableDegreeLimit?: number;
   readonly overrideDegreeLimit?: number | null;
@@ -20,6 +21,8 @@ export function createTopologyConfigMutationTestInput(
   const operation = settings.operation ?? 'putConfig';
   const groupRef = createTopologyTestGroupRef();
   const requestId = settings.requestId === undefined ? `request-${operation}` : settings.requestId;
+  const commandId =
+    settings.commandId === undefined ? (requestId ?? `command-${operation}`) : settings.commandId;
   const read = createTopologyConfigMutationRead({
     durableDegreeLimit: settings.durableDegreeLimit,
     overrideDegreeLimit: settings.overrideDegreeLimit,
@@ -27,7 +30,7 @@ export function createTopologyConfigMutationTestInput(
   const command: GroupTopologyConfigMutationCommand = {
     operation,
     aggregateRef: groupRef,
-    commandId: requestId ?? `command-${operation}`,
+    commandId: commandId ?? `command-${operation}`,
     requestId,
     input: {
       config: settings.config ?? { topologyKind: 'tree' },

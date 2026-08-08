@@ -250,7 +250,9 @@ function createTopologyConfigReceipt(
 function resultFromTopologyConfigGuard(
   guard: TopologyConfigWriteGuard,
 ): GroupTopologyConfigMutationAcceptedResult {
-  if (guard.operation === 'delete') return { kind: 'delete', deleted: true };
+  if (guard.operation === 'delete') {
+    return { kind: 'delete', deleted: true };
+  }
   return guard.target === 'config'
     ? { kind: 'config', config: guard.value }
     : { kind: 'override', override: guard.value };

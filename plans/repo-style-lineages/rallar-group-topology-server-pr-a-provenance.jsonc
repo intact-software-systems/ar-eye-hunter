@@ -1,0 +1,882 @@
+{
+  "version": 1,
+  "rows": [
+    {
+      "id": "mutation-module-extraction",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "$moduleDeclarations",
+            "startLine": 35,
+            "endLine": 1379,
+            "sha256": "91459c880163bd6940c6db697a88ac04a6591658c8ba58abd8360175c85bc817",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts",
+          "blob": "d3cbb4af10dbf3d337a3ec86b5a6b3b6df32bb50",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 21,
+              "endLine": 165,
+              "sha256": "4d07d20f956d6a24cfb14ec6d1104ca2df7f58118838ef6621bc6266b12b0b78",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-idempotency.ts",
+          "blob": "f02e9fd59996ea047e98d6a121f05163fe740c8c",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 16,
+              "endLine": 80,
+              "sha256": "45fa5d240579c9f09126945afc28cc656894b969610a9c959c1240c651871762",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts",
+          "blob": "57045f4c50a17c7688e490be3abe2aa67a0525bb",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 30,
+              "endLine": 282,
+              "sha256": "4d73a223ee44d556ab125bb27d9cd3b21a5796e87443d0934a3c07abf5d2a959",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-input.ts",
+          "blob": "7e4656475bc52a659ab50ad2533a06bdd65cad73",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 33,
+              "endLine": 215,
+              "sha256": "bd51417501b065428bff4e82ad6673cd0afd1ea1730e29b7f901451c0c4c42a3",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 5,
+              "endLine": 147,
+              "sha256": "2cb8d4d17feded07cba3563315f4bbd674636c57088a94978e5a798361f753f2",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
+          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 26,
+              "endLine": 167,
+              "sha256": "ce34acb140e7ec41bfebe51495906a1821cc7fada149ec615db66ecc62c370cc",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-receipt.ts",
+          "blob": "82395e7bc7b1de4309e76a4f1c5ac111fd48043e",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 19,
+              "endLine": 236,
+              "sha256": "efd82025e131bd8f5dcc37f2fabecad9a95322b8c54bd4d73cda9385b2eb96ce",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts",
+          "blob": "5f93c52b75d1a336a08cafe2ae90e7f8fcd23e3b",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 13,
+              "endLine": 54,
+              "sha256": "65ab53be80bb7a9a5e5dd791a2267504cd99e0b94085bf770fc3ba2263e30960",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-receipt.ts",
+          "blob": "3a52754a36d0ac3f827b94f0a034bf7dc8d4ef22",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 24,
+              "endLine": 283,
+              "sha256": "1e5808a6362ff1ea088582d1ce89b8ae0db7f7b5ef9f251d50cfb03a4f394358",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "sourceDeclarations": 53,
+        "targetDeclarations": 91,
+        "sourceUnknownBoundaryLines": 14,
+        "targetUnknownBoundaryLines": 14,
+      },
+      "derivation": {
+        "capacityEligible": false,
+        "kind": "split-inventory",
+        "sourceDerivation": "Exact source declaration inventory to all contracts, idempotency, compute, input, boundary, record, receipt, validation, and result owners; warning capacity is governed only by the boundary rows.",
+      },
+    },
+    {
+      "id": "config-resolution-relocation",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-service.ts",
+        "blob": "a78dc11667c80be903b486049ce58a4734334017",
+        "regions": [
+          {
+            "symbol": "resolveGroupTopologyConfig",
+            "startLine": 136,
+            "endLine": 165,
+            "sha256": "d99ef915b105da501b60fa3c3c6712fed0c29abc05ffea7d060f6020c9cb1c11",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/group-topology-config.ts",
+          "blob": "45509981e74365c6b011932b067c2bb44abf177f",
+          "regions": [
+            {
+              "symbol": "resolveGroupTopologyConfig",
+              "startLine": 127,
+              "endLine": 156,
+              "sha256": "175fc6377b57b60ed76d03a59007ba3a096485e209a0a04dd4b9fde46b95b103",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "sourceUnknownBoundaryLines": 0,
+        "targetUnknownBoundaryLines": 0,
+      },
+      "derivation": {
+        "capacityEligible": false,
+        "kind": "mechanical-relocation",
+        "sourceDerivation": "Path and relative-import relocation with formatter-only layout; precedence, property order, validation, and clone points are unchanged.",
+      },
+    },
+    {
+      "id": "authority-proof-relocation",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/topology-mutation-authority-proof.ts",
+        "blob": "2be25a4d4b071c85fd6867842590adf38738e5e6",
+        "regions": [
+          {
+            "symbol": "createTopologyMutationAuthorityProof",
+            "startLine": 15,
+            "endLine": 48,
+            "sha256": "482134cd92ec6a65be87b09c7594881564027b3a6ee981e35368739ca27fd08a",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/inbox/topology-mutation-authority-proof.ts",
+          "blob": "8f95077ffe5abbbbc02a09216f49736a9f175f89",
+          "regions": [
+            {
+              "symbol": "createTopologyMutationAuthorityProof",
+              "startLine": 15,
+              "endLine": 50,
+              "sha256": "fe69273ed1c0789ca568ef6a7d0ed980bd3d162d6544ffa9de0b07e6307d7e23",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "sourceUnknownBoundaryLines": 0,
+        "targetUnknownBoundaryLines": 0,
+      },
+      "derivation": {
+        "capacityEligible": false,
+        "kind": "mechanical-relocation",
+        "sourceDerivation": "Path and relative-import relocation; proof property order, HMAC purpose, key algorithm, encoding, and hexadecimal projection are unchanged.",
+      },
+    },
+    {
+      "id": "generation-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateGroupTopologyConfigGeneration",
+            "startLine": 847,
+            "endLine": 868,
+            "sha256": "4662168c2449158bc2d7decac01fa20f6b30a89def52bd85d1723e84ae17ba92",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "readTopologyConfigGenerationBoundary",
+              "startLine": 5,
+              "endLine": 10,
+              "sha256": "bea2f6f3d61f6eb69ba13be585f1db8573be8e9fa797c3fbf044bdbb448d910d",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
+          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "regions": [
+            {
+              "symbol": "validateGroupTopologyConfigGeneration",
+              "startLine": 26,
+              "endLine": 46,
+              "sha256": "cfd08382387a2708b084b52cedc78302f23f8525372a89e0c30f335251d76c16",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "boundary-extraction-with-typed-continuation",
+        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+      },
+    },
+    {
+      "id": "invariant-generation-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateGroupTopologyConfigInvariantGeneration",
+            "startLine": 870,
+            "endLine": 895,
+            "sha256": "930691be42cc61983c66cc4b75173a81ad8c4ecb5bfc5a8545ce4ca29f873dcb",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "readTopologyConfigInvariantGenerationBoundary",
+              "startLine": 12,
+              "endLine": 17,
+              "sha256": "1d214777409ced794c07d5bed75cbcfebff129e70c86da99a637dc376360548c",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
+          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "regions": [
+            {
+              "symbol": "validateGroupTopologyConfigInvariantGeneration",
+              "startLine": 48,
+              "endLine": 64,
+              "sha256": "abebf5fdc0256ad979de32e7f78a140b071e223b21fb8a4ce83eaced5f267533",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "boundary-extraction-with-typed-continuation",
+        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+      },
+    },
+    {
+      "id": "stored-config-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateStoredGroupTopologyConfig",
+            "startLine": 921,
+            "endLine": 950,
+            "sha256": "aee432d2d574f63b84baecbd5c005ae024b6797b955934436d662b47af44b4e0",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "readStoredTopologyConfigBoundary",
+              "startLine": 19,
+              "endLine": 24,
+              "sha256": "3c282d504d9d77114e68a149a7f0a159be044758b9c7bc04c75386386251c62f",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
+          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "regions": [
+            {
+              "symbol": "validateStoredGroupTopologyConfig",
+              "startLine": 66,
+              "endLine": 88,
+              "sha256": "0af51796894531fa291e412f734936e9a46fff105983f56e431ae7526d13b319",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "boundary-extraction-with-typed-continuation",
+        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+      },
+    },
+    {
+      "id": "stored-override-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateStoredGroupTopologyOverride",
+            "startLine": 952,
+            "endLine": 977,
+            "sha256": "9ebd46aa085216541c89ea3946b558abcb3c1a891f0df093310d08be448e2f6b",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "readStoredTopologyOverrideBoundary",
+              "startLine": 26,
+              "endLine": 31,
+              "sha256": "405a76464c33324f76e1b87574f969444a17ede6b33b8d8f70c11dac03b8384f",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
+          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "regions": [
+            {
+              "symbol": "validateStoredGroupTopologyOverride",
+              "startLine": 90,
+              "endLine": 108,
+              "sha256": "5157e291865e68ebef4d49e5f04508eee3fca2a1637eb2373bb5d6c6080ea60e",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "boundary-extraction-with-typed-continuation",
+        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+      },
+    },
+    {
+      "id": "mutation-record-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateGroupTopologyConfigMutationRecord",
+            "startLine": 979,
+            "endLine": 1023,
+            "sha256": "7f9a08c10e98f1c561231dc3909869cc5564c5a5eff85f8034162d5600277bbc",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "readTopologyConfigMutationRecordBoundary",
+              "startLine": 33,
+              "endLine": 38,
+              "sha256": "9ff85375df5f16a094a4ba1236162303ba1d6db69c9018b33de7f578c8b1acf7",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
+          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "regions": [
+            {
+              "symbol": "validateGroupTopologyConfigMutationRecord",
+              "startLine": 110,
+              "endLine": 145,
+              "sha256": "9ad9aec5b73ddc8fbb8215edb84998dfee7a6847e6941938f38ed388ff26c96d",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "boundary-extraction-with-typed-continuation",
+        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+      },
+    },
+    {
+      "id": "receipt-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateTopologyConfigReceipt",
+            "startLine": 1025,
+            "endLine": 1209,
+            "sha256": "bd14758af93f9e4f5d50ba3466838fefbf22b650fb036a2722fb414bfb6922f4",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "readTopologyConfigReceiptBoundary",
+              "startLine": 40,
+              "endLine": 45,
+              "sha256": "6a32856cfd631914e4ecbef3ce2a8ab649f9cdaa5051c73f6ebc8cfd542039d3",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-receipt.ts",
+          "blob": "82395e7bc7b1de4309e76a4f1c5ac111fd48043e",
+          "regions": [
+            {
+              "symbol": "validateTopologyConfigReceipt",
+              "startLine": 23,
+              "endLine": 35,
+              "sha256": "0f951a892a659f3e67fde11a1b0e805b9529774d4d7780cf2b7aebbd92d64526",
+            },
+            {
+              "symbol": "validateTopologyConfigReceiptIdentity",
+              "startLine": 37,
+              "endLine": 63,
+              "sha256": "b2bbfd6f99a36de5f589114cb6220f71182d32331299b51f0d1680519b0a937b",
+            },
+            {
+              "symbol": "validateTopologyConfigReceiptAcceptedState",
+              "startLine": 65,
+              "endLine": 95,
+              "sha256": "1a38d0b84ed52bf4f49e13fccb4deba77c8eddc75211a0f9c6fc656cf252e366",
+            },
+            {
+              "symbol": "validateTopologyConfigReceiptEffect",
+              "startLine": 97,
+              "endLine": 127,
+              "sha256": "12c1e47f8aa94e3e1244dcea14fee5e570d1adae72db3578c06317bed5873c09",
+            },
+            {
+              "symbol": "validateTopologyConfigReceiptCausalRevision",
+              "startLine": 129,
+              "endLine": 162,
+              "sha256": "2f6d15043a5ef599e3f75d04e324edc3972ff4042e98cba97e5c6ace90ca3848",
+            },
+            {
+              "symbol": "validateTopologyConfigReceiptTimestamps",
+              "startLine": 164,
+              "endLine": 194,
+              "sha256": "884901f59e09b9dc58dcbe09bdafcf09bd5fd42b5c4d5cc20632f090f8c5df46",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "boundary-extraction-with-typed-continuation",
+        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+      },
+    },
+    {
+      "id": "accepted-config-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateAcceptedTopologyConfig",
+            "startLine": 1270,
+            "endLine": 1304,
+            "sha256": "ede70933e575a442890673a3f5ef3c1e250aa10af5dca14822e348c6f07180e7",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "validateAcceptedTopologyConfig",
+              "startLine": 101,
+              "endLine": 133,
+              "sha256": "9b6c3ee20a5e1b11e449110e1ff9bed9fd9044385301e59e72b40b1c03e9b5b6",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+    {
+      "id": "group-ref-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateGroupRef",
+            "startLine": 1314,
+            "endLine": 1321,
+            "sha256": "a5c3a9402c32b2d8b0b4e9df470ca442bda0c4cd8a9ab64eff115b7ceda1c2fb",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "validateTopologyGroupRef",
+              "startLine": 62,
+              "endLine": 71,
+              "sha256": "c7cc48597ba1cd4c5f633e3306f8283e31c578db1365d4677fa5fc7c4cb13cfb",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+    {
+      "id": "causal-revision-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateCausalRevision",
+            "startLine": 1323,
+            "endLine": 1336,
+            "sha256": "d2faeb179c97438a6f5c84cb33258ca48ea0857757190b7cef93e2702773d7ba",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "validateTopologyCausalRevision",
+              "startLine": 135,
+              "endLine": 145,
+              "sha256": "ce1b2c0a0c024151de3d915d74a9ed698b27257f4713c1a3ec7c8a89d388b123",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+    {
+      "id": "exact-keys-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateExactKeys",
+            "startLine": 1344,
+            "endLine": 1354,
+            "sha256": "3ba2978427fee8714ab0f73bde74b5d02c227d8162afd386b26d29dd8f6bd365",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "validateTopologyConfigExactKeys",
+              "startLine": 91,
+              "endLine": 99,
+              "sha256": "4ebe7bf6305bf6d7115eccb8cc939f12b74a57af840a74122508c40405129f53",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+    {
+      "id": "positive-integer-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validatePositiveInteger",
+            "startLine": 1356,
+            "endLine": 1363,
+            "sha256": "3cd3bfcf575036417438113e786c7215054a9d5ca47deaf373e2c640fed84879",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "validateTopologyPositiveInteger",
+              "startLine": 53,
+              "endLine": 60,
+              "sha256": "247837555a076f4585cd0451b8044036d2583c2a3e8320dd5de83bc200e19a77",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+    {
+      "id": "storage-revision-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "validateStorageRevision",
+            "startLine": 1365,
+            "endLine": 1369,
+            "sha256": "b3a4e3b3af30558a03b51a1b490993330c14e0a6408d880147b140e31f484f5a",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "validateTopologyStorageRevision",
+              "startLine": 47,
+              "endLine": 51,
+              "sha256": "3207224eb4a73b9d82c77c149c97d0e57aad6e059b5b107e626f35488cd22be9",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+    {
+      "id": "required-string-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "requireString",
+            "startLine": 1371,
+            "endLine": 1375,
+            "sha256": "ed1fbdb90ffa3f10c43062c90dcfc4ab24ab1bdae54e680e6f02a09284599f0c",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "requireTopologyString",
+              "startLine": 81,
+              "endLine": 85,
+              "sha256": "e5605fe7ac3d353c61cb9dbb9f1aa7f78a024ed7acd3e6a8e901412644ca6c6e",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+    {
+      "id": "record-boundary",
+      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
+        "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda",
+        "regions": [
+          {
+            "symbol": "isRecord",
+            "startLine": 1377,
+            "endLine": 1379,
+            "sha256": "2090863550a1ac436a4569302035032d87d08ec4de0ba1e6569f6b070cb48329",
+          },
+        ],
+      },
+      "targets": [
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
+          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "regions": [
+            {
+              "symbol": "isTopologyConfigRecord",
+              "startLine": 87,
+              "endLine": 89,
+              "sha256": "a5432458684d9b3e0259e2706158d8e2775bc35af6e26962ec72ccbe7ec9f176",
+            },
+          ],
+        },
+      ],
+      "magnitude": {
+        "rule": "boundary.unknown",
+        "sourceUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 1,
+      },
+      "derivation": {
+        "capacityEligible": true,
+        "kind": "mechanical-helper-relocation",
+        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+      },
+    },
+  ],
+}

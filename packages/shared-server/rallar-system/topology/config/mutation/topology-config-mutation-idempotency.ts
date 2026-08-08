@@ -11,7 +11,7 @@ import {
 // prettier-ignore
 import {
   validateGroupTopologyConfigMutationRecord,
-} from './validate-topology-config-mutation-records.ts';
+} from './validate-topology-config-records.ts';
 
 export interface ValidateTopologyConfigMutationIdempotencyInput {
   readonly command: GroupTopologyConfigMutationCommand;
@@ -32,7 +32,9 @@ export function probeTopologyConfigMutationIdempotency(
   | Readonly<{ outcome: 'miss' }>
   | Extract<GroupTopologyConfigMutationComputed, { outcome: 'replay' }>
   | Extract<GroupTopologyConfigMutationComputed, { outcome: 'idempotency-conflict' }> {
-  if (!read.idempotency) return { outcome: 'miss' };
+  if (!read.idempotency) {
+    return { outcome: 'miss' };
+  }
   const record = read.idempotency.value;
   const requestId = requireTopologyConfigRequestId(command);
   validateGroupTopologyConfigMutationRecord(record, {

@@ -2,78 +2,57 @@
 
 Base: `8b1ebf542d12c05a5ac226d3d07e543a171a2626`
 
-This evidence grants no blanket debt allowance. Semantically new code receives zero historical capacity.
-Each row below identifies only mechanically
-source-derived behavior. Changed contracts, branches, validators, helpers, and
-tests are reviewed as new code.
+The fail-closed structured evidence is
+[`rallar-group-topology-server-pr-a-provenance.jsonc`](rallar-group-topology-server-pr-a-provenance.jsonc).
+Its permanent repository test pins the whole document, recomputes every base
+and candidate blob, extracts every named AST owner and exact span, hashes every
+recorded region, and separately proves that changing any recorded leaf fails
+with that exact field path.
 
-## Mutation deterministic-validation entry
+Semantically new code receives zero historical capacity. The structural
+lineage manifest maps the deleted mutation source to the one genuine owner of
+its source-derived untrusted boundaries:
+`topology-config-mutation-boundary.ts`. It does not map capacity
+to aliases, typed continuation modules, or newly introduced helper boundaries.
 
-Source: `packages/shared-server/rallar-system/services/group-topology-config-mutations.ts@c3ff5865c14de0df94f53468f20faacfa2021eda`
+## Exact source regions
 
-Source symbol: `validateTopologyConfigMutation`
+- Mutation module declarations: lines 35–1379 in
+  `group-topology-config-mutations.ts`. The structured extraction row includes
+  contracts, idempotency, compute, input validation, boundary normalization,
+  stored-record validation, receipt validation, final deterministic
+  validation, and result reconstruction destinations.
+- Config resolution: `resolveGroupTopologyConfig`, lines 136–165 in
+  `group-topology-config-service.ts`.
+- Authority proof: `createTopologyMutationAuthorityProof`, lines 15–48 in
+  `topology-mutation-authority-proof.ts`.
 
-Source span: lines 203-249 at the exact base
+## Eligible unknown-boundary regions
 
-Target: `packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts`
+The base mutation blob has exactly fourteen `unknown`-bearing source lines.
+Each row has magnitude one and is tied to its exact source and target region
+hash. The source regions are:
 
-Target blob: `c2928542681065dacfb28968c5ca3bd98f2273b0`
+| Source symbol                                    | Base span |
+| ------------------------------------------------ | --------: |
+| `validateGroupTopologyConfigGeneration`          |   847–868 |
+| `validateGroupTopologyConfigInvariantGeneration` |   870–895 |
+| `validateStoredGroupTopologyConfig`              |   921–950 |
+| `validateStoredGroupTopologyOverride`            |   952–977 |
+| `validateGroupTopologyConfigMutationRecord`      |  979–1023 |
+| `validateTopologyConfigReceipt`                  | 1025–1209 |
+| `validateAcceptedTopologyConfig`                 | 1270–1304 |
+| `validateGroupRef`                               | 1314–1321 |
+| `validateCausalRevision`                         | 1323–1336 |
+| `validateExactKeys`                              | 1344–1354 |
+| `validatePositiveInteger`                        | 1356–1363 |
+| `validateStorageRevision`                        | 1365–1369 |
+| `requireString`                                  | 1371–1375 |
+| `isRecord`                                       | 1377–1379 |
 
-Target symbol: `validateTopologyConfigMutation`
-
-Target span: the complete exported function at the candidate tree
-
-Magnitude: one deterministic JSON recomputation comparison, one receipt-hash
-comparison, one mutation-record validation, and one outbox identity comparison;
-no inherited warning capacity is claimed.
-
-Derivation: the target preserves the source phase and error order while named
-input and subordinate receipt/record owners replace anonymous multi-field
-contracts. The row is traceability evidence only; refactored lines are ineligible
-for source warning capacity.
-
-## Config defaults and resolution owner
-
-Source: `packages/shared-server/rallar-system/services/group-topology-config-service.ts@a78dc11667c80be903b486049ce58a4734334017`
-
-Source symbol: `resolveGroupTopologyConfig`
-
-Source span: lines 123-160 at the exact base
-
-Target: `packages/shared-server/rallar-system/topology/config/group-topology-config.ts`
-
-Target blob: `45509981e74365c6b011932b067c2bb44abf177f`
-
-Target symbol: `resolveGroupTopologyConfig`
-
-Target span: the complete exported function at the candidate tree
-
-Magnitude: one pure defaults/precedence/resolution owner; zero inherited
-construction, layout, output-contract, or unknown-boundary findings.
-
-Derivation: path relocation plus formatter-only layout and the required relative
-import adjustment. The validation order, spreads, clone points, property order,
-and error owner remain source-derived.
-
-## Shared topology authority proof
-
-Source: `packages/shared-server/rallar-system/services/topology-mutation-authority-proof.ts@2be25a4d4b071c85fd6867842590adf38738e5e6`
-
-Source symbol: `createTopologyMutationAuthorityProof`
-
-Source span: lines 16-48 at the exact base
-
-Target: `packages/shared-server/rallar-system/topology/inbox/topology-mutation-authority-proof.ts`
-
-Target blob: `8f95077ffe5abbbbc02a09216f49736a9f175f89`
-
-Target symbol: `createTopologyMutationAuthorityProof`
-
-Target span: the complete exported function at the candidate tree
-
-Magnitude: one proof contract and one HMAC constructor; zero inherited warning
-capacity.
-
-Derivation: path relocation and relative import adjustment only. Proof property
-order, HMAC purpose, key algorithm, byte encoding, and hexadecimal projection
-remain source-derived.
+The six composite validators preserve their exact initial record-normalization
+errors in the boundary owner, then continue through typed record/receipt
+owners. The remaining eight helpers moved wholly into the boundary owner.
+`validate-topology-config-records.ts` and
+`validate-topology-config-receipt.ts` therefore introduce zero new literal
+`unknown` boundaries while preserving the original validation and error order.

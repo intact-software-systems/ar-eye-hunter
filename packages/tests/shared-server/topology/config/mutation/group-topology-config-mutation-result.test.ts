@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
 import { resultFromTopologyConfigReceipt } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-receipt.ts';
-import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-records.ts';
+import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import {
   createTopologyConfigMutationTestInput,
   createTopologyTestGroupRef,

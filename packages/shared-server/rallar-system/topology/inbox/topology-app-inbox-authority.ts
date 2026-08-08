@@ -53,7 +53,9 @@ export async function createAuthenticatedTopologyEnqueue<V>(
 
 export function readTopologyAppInboxAuthority(value: unknown): TopologyAppInboxAuthority {
   try {
-    if (!isTopologyRecord(value)) throw new TypeError('authority is not a record');
+    if (!isTopologyRecord(value)) {
+      throw new TypeError('authority is not a record');
+    }
     requireExactTopologyKeys(value, ['kind', 'proof', 'command']);
     if (value.kind !== 'topology-config' && value.kind !== 'topology-reconfigure') {
       throw new TypeError('authority kind is invalid');
@@ -101,7 +103,9 @@ export async function verifyTopologyAppInboxAuthority(
 }
 
 export function readTopologyMutationAuthorityProof(value: unknown): void {
-  if (!isTopologyRecord(value)) throw new TypeError('authority proof is invalid');
+  if (!isTopologyRecord(value)) {
+    throw new TypeError('authority proof is invalid');
+  }
   requireExactTopologyKeys(value, [
     'version',
     'principalId',

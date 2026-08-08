@@ -36,7 +36,9 @@ export function computeTopologyConfigMutation(
     topologyMutation.read,
     topologyMutation.facts.commandHash,
   );
-  if (idempotency.outcome !== 'miss') return idempotency;
+  if (idempotency.outcome !== 'miss') {
+    return idempotency;
+  }
 
   switch (topologyMutation.command.operation) {
     case 'putConfig':
@@ -155,7 +157,9 @@ function computeDelete(
     target === 'config'
       ? topologyMutation.read.configGeneration
       : topologyMutation.read.overrideGeneration;
-  if (!current) return computeAbsentDelete(topologyMutation, target, generation);
+  if (!current) {
+    return computeAbsentDelete(topologyMutation, target, generation);
+  }
 
   resolveGroupTopologyConfig({
     serverOptions: topologyMutation.serverDefaults,
@@ -260,8 +264,12 @@ function applyGroupTopologyConfigPatch(input: {
 }
 
 function applyTopologyConfigField<T>(patch: T | null | undefined, current: T, fallback: T): T {
-  if (patch === undefined) return current;
-  if (patch === null) return fallback;
+  if (patch === undefined) {
+    return current;
+  }
+  if (patch === null) {
+    return fallback;
+  }
   return patch;
 }
 

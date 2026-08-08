@@ -93,9 +93,12 @@ type TopologyAppInboxCommandFor<Operation extends TopologyAppInboxCommandOperati
   payload: TopologyAppInboxPayload<Operation>;
 }>;
 
-export type TopologyAppInboxCommand = {
+type TopologyAppInboxCommandByOperation = Readonly<{
   [Operation in TopologyAppInboxCommandOperation]: TopologyAppInboxCommandFor<Operation>;
-}[TopologyAppInboxCommandOperation];
+}>;
+
+export type TopologyAppInboxCommand =
+  TopologyAppInboxCommandByOperation[TopologyAppInboxCommandOperation];
 
 type CreateTopologyAppInboxCommandInputFor<Operation extends TopologyAppInboxCommandOperation> =
   Readonly<{

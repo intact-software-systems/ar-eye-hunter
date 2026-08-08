@@ -24,11 +24,11 @@ const currentOwners = [
     'validateTopologyConfigMutationInput',
   ],
   [
-    'config/mutation/topology-config-mutation-validation-primitives.ts',
-    'validateAcceptedTopologyConfig',
+    'config/mutation/topology-config-mutation-boundary.ts',
+    'readTopologyConfigMutationRecordBoundary',
   ],
   [
-    'config/mutation/validate-topology-config-mutation-records.ts',
+    'config/mutation/validate-topology-config-records.ts',
     'validateGroupTopologyConfigMutationRecord',
   ],
   ['config/mutation/validate-topology-config-receipt.ts', 'validateTopologyConfigReceipt'],
@@ -76,7 +76,9 @@ function exportedNames(source: string): readonly string[] {
   const program = parse(source, { sourceType: 'module', plugins: ['typescript'] }).program;
   const names: string[] = [];
   for (const statement of program.body) {
-    if (statement.type !== 'ExportNamedDeclaration') continue;
+    if (statement.type !== 'ExportNamedDeclaration') {
+      continue;
+    }
     if (statement.declaration && 'id' in statement.declaration && statement.declaration.id) {
       names.push(statement.declaration.id.name);
     }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { computeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts';
-import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-records.ts';
+import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import { validateTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts';
 import {
   createTopologyConfigMutationTestInput,
@@ -13,40 +13,7 @@ import {
 
 describe('group topology config mutation compute', () => {
   it('computes and validates the same immutable config mutation twice', () => {
-    const input = deepFreezeTopologyTestValue({
-      command: {
-        operation: 'putConfig' as const,
-        aggregateRef: createTopologyTestGroupRef(),
-        commandId: 'config-command-1',
-        requestId: 'config-command-1',
-        input: {
-          config: { topologyKind: 'tree' as const, degreeLimit: 4 },
-          updatedByPrincipalId: 'owner',
-          ttlMs: null,
-          expiresAtEpochMs: null,
-        },
-      },
-      read: {
-        config: null,
-        override: null,
-        configGeneration: null,
-        overrideGeneration: null,
-        invariantGeneration: null,
-        idempotency: null,
-        groupSnapshot: createTopologyTestGroupSnapshot(),
-        groupAuthorityGuard: createTopologyTestAuthorityGuard(40),
-      },
-      facts: {
-        requestedAtEpochMs: 1_000,
-        policyNowEpochMs: 1_000,
-        commandHash: `sha256:${'a'.repeat(64)}`,
-        attemptCount: 1,
-        isPlatformAdmin: false,
-        resolvedOverrideExpiresAtEpochMs: null,
-        deleteTarget: null,
-      },
-      serverDefaults: {},
-    });
+    const input = deterministicMutationInput();
     const before = structuredClone(input);
 
     const first = computeTopologyConfigMutation(input);
@@ -73,52 +40,19 @@ describe('group topology config mutation compute', () => {
       throw new Error('Expected an applied topology config mutation');
     }
     expect(() =>
-      validateGroupTopologyConfigMutationRecord(
-        {
-          groupRef: input.command.aggregateRef,
-          requestId: input.command.requestId,
-          commandHash: input.facts.commandHash,
-          receipt: {
-            ...first.receipt,
-            outboxId: 'state-mutation-attacker-selected',
-          },
-        },
-        {
-          groupRef: input.command.aggregateRef,
-          requestId: input.command.requestId,
-        },
-      ),
+      validateMutationRecord(input, {
+        ...first.receipt,
+        outboxId: 'state-mutation-attacker-selected',
+      }),
     ).toThrow('Topology config receipt outboxIds are invalid');
+    expect(() => validateMutationRecord(input, { ...first.receipt, acceptedConfig: null })).toThrow(
+      'accepted config does not match operation',
+    );
     expect(() =>
-      validateGroupTopologyConfigMutationRecord(
-        {
-          groupRef: input.command.aggregateRef,
-          requestId: input.command.requestId,
-          commandHash: input.facts.commandHash,
-          receipt: { ...first.receipt, acceptedConfig: null },
-        },
-        {
-          groupRef: input.command.aggregateRef,
-          requestId: input.command.requestId,
-        },
-      ),
-    ).toThrow('accepted config does not match operation');
-    expect(() =>
-      validateGroupTopologyConfigMutationRecord(
-        {
-          groupRef: input.command.aggregateRef,
-          requestId: input.command.requestId,
-          commandHash: input.facts.commandHash,
-          receipt: {
-            ...first.receipt,
-            acceptedConfig: { topologyKind: 'tree' },
-          },
-        },
-        {
-          groupRef: input.command.aggregateRef,
-          requestId: input.command.requestId,
-        },
-      ),
+      validateMutationRecord(input, {
+        ...first.receipt,
+        acceptedConfig: { topologyKind: 'tree' } as WriteReceipt['acceptedConfig'],
+      }),
     ).toThrow('accepted config fields are invalid');
   });
 
@@ -149,12 +83,8 @@ describe('group topology config mutation compute', () => {
   });
 
   it('keeps pure topology config phases ambient-free and orchestration visible', () => {
-    const mutationSource = readFileSync(
-      new URL(
-        '../../../../../shared-server/rallar-system/topology/config/mutation/compute-topology-config-mutation.ts',
-        import.meta.url,
-      ),
-      'utf8',
+    const mutationSource = readProductionSource(
+      'topology/config/mutation/compute-topology-config-mutation.ts',
     );
     for (const forbidden of [
       'Date.now',
@@ -169,20 +99,8 @@ describe('group topology config mutation compute', () => {
       expect(mutationSource, forbidden).not.toContain(forbidden);
     }
 
-    const managementSource = readFileSync(
-      new URL(
-        '../../../../../shared-server/rallar-system/services/group-topology-management-service.ts',
-        import.meta.url,
-      ),
-      'utf8',
-    );
-    const appInboxSource = readFileSync(
-      new URL(
-        '../../../../../shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts',
-        import.meta.url,
-      ),
-      'utf8',
-    );
+    const managementSource = readProductionSource('services/group-topology-management-service.ts');
+    const appInboxSource = readProductionSource('topology/inbox/topology-app-inbox-handler.ts');
     const read = appInboxSource.indexOf(
       'const read = await topologyManagementService.readTopologyConfigMutation',
     );
@@ -217,3 +135,69 @@ describe('group topology config mutation compute', () => {
     expect(appInboxSource.slice(read, write)).not.toContain('.begin(');
   });
 });
+
+type DeterministicMutationInput = ReturnType<typeof deterministicMutationInput>;
+type WriteMutation = Extract<
+  ReturnType<typeof computeTopologyConfigMutation>,
+  Readonly<{ outcome: 'write' }>
+>;
+type WriteReceipt = WriteMutation['receipt'];
+
+function deterministicMutationInput() {
+  return deepFreezeTopologyTestValue({
+    command: {
+      operation: 'putConfig' as const,
+      aggregateRef: createTopologyTestGroupRef(),
+      commandId: 'config-command-1',
+      requestId: 'config-command-1',
+      input: {
+        config: { topologyKind: 'tree' as const, degreeLimit: 4 },
+        updatedByPrincipalId: 'owner',
+        ttlMs: null,
+        expiresAtEpochMs: null,
+      },
+    },
+    read: {
+      config: null,
+      override: null,
+      configGeneration: null,
+      overrideGeneration: null,
+      invariantGeneration: null,
+      idempotency: null,
+      groupSnapshot: createTopologyTestGroupSnapshot(),
+      groupAuthorityGuard: createTopologyTestAuthorityGuard(40),
+    },
+    facts: {
+      requestedAtEpochMs: 1_000,
+      policyNowEpochMs: 1_000,
+      commandHash: `sha256:${'a'.repeat(64)}`,
+      attemptCount: 1,
+      isPlatformAdmin: false,
+      resolvedOverrideExpiresAtEpochMs: null,
+      deleteTarget: null,
+    },
+    serverDefaults: {},
+  });
+}
+
+function validateMutationRecord(input: DeterministicMutationInput, receipt: WriteReceipt) {
+  return validateGroupTopologyConfigMutationRecord(
+    {
+      groupRef: input.command.aggregateRef,
+      requestId: input.command.requestId,
+      commandHash: input.facts.commandHash,
+      receipt,
+    },
+    {
+      groupRef: input.command.aggregateRef,
+      requestId: input.command.requestId,
+    },
+  );
+}
+
+function readProductionSource(relativePath: string): string {
+  return readFileSync(
+    new URL(`../../../../../shared-server/rallar-system/${relativePath}`, import.meta.url),
+    'utf8',
+  );
+}

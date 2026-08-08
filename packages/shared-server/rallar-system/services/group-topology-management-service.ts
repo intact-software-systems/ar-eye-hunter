@@ -45,22 +45,13 @@ import {
     resolveGroupTopologyConfig,
     resolveOverrideExpiresAtEpochMs,
 } from '../topology/config/group-topology-config.ts';
-import {
-    type GroupTopologyConfigMutationCommand,
-    type GroupTopologyConfigMutationComputed,
-    type GroupTopologyConfigMutationReceipt,
-    type GroupTopologyConfigMutationStableFacts,
-} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
-import {
-    computeTopologyConfigMutation,
-} from '../topology/config/mutation/compute-topology-config-mutation.ts';
-import {
-    probeTopologyConfigMutationIdempotency,
-    validateTopologyConfigMutationIdempotency,
-} from '../topology/config/mutation/topology-config-mutation-idempotency.ts';
-import {
-    validateTopologyConfigMutation,
-} from '../topology/config/mutation/validate-topology-config-mutation.ts';
+import type * as mutationContracts from
+    '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import * as mutationCompute from '../topology/config/mutation/compute-topology-config-mutation.ts';
+import * as mutationIdempotency from
+    '../topology/config/mutation/topology-config-mutation-idempotency.ts';
+import * as mutationValidation from
+    '../topology/config/mutation/validate-topology-config-mutation.ts';
 import { readTopologyConfigMutation } from './group-topology-config-mutation-read.ts';
 import { backfillGroupTopologyConfigGenerationsForRef } from './group-topology-config-generation-backfill.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
@@ -182,17 +173,17 @@ export type PutGroupTopologyOverrideInput = PutGroupTopologyConfigInput &
 
 export type PutGroupTopologyConfigResult = Readonly<{
     config: StoredGroupTopologyConfig;
-    receipt: GroupTopologyConfigMutationReceipt;
+    receipt: mutationContracts.GroupTopologyConfigMutationReceipt;
 }>;
 
 export type PutGroupTopologyOverrideResult = Readonly<{
     override: StoredGroupTopologyOverride;
-    receipt: GroupTopologyConfigMutationReceipt;
+    receipt: mutationContracts.GroupTopologyConfigMutationReceipt;
 }>;
 
 export type DeleteGroupTopologyConfigResult = Readonly<{
     deleted: boolean;
-    receipt: GroupTopologyConfigMutationReceipt;
+    receipt: mutationContracts.GroupTopologyConfigMutationReceipt;
 }>;
 
 export type ReconcileGroupTopologyResult = Readonly<{
@@ -202,14 +193,14 @@ export type ReconcileGroupTopologyResult = Readonly<{
 }>;
 
 export type GroupTopologyConfigMutationExecution = Readonly<{
-    receipt: GroupTopologyConfigMutationReceipt;
+    receipt: mutationContracts.GroupTopologyConfigMutationReceipt;
     config?: StoredGroupTopologyConfig;
     override?: StoredGroupTopologyOverride;
 }>;
 
 export type GroupTopologyConfigMutationPreparation = Readonly<{
-    command: GroupTopologyConfigMutationCommand;
-    stableFacts: GroupTopologyConfigMutationStableFacts;
+    command: mutationContracts.GroupTopologyConfigMutationCommand;
+    stableFacts: mutationContracts.GroupTopologyConfigMutationStableFacts;
 }>;
 
 export type GroupTopologyConfigMutationAttemptRead = Readonly<{
@@ -326,7 +317,7 @@ export class GroupTopologyManagementService {
 
     async prepareTopologyConfigMutation(
         input: Readonly<{
-            command: GroupTopologyConfigMutationCommand;
+            command: mutationContracts.GroupTopologyConfigMutationCommand;
             commandHash: string;
             capturedAtEpochMs: number;
         }>,
@@ -351,7 +342,7 @@ export class GroupTopologyManagementService {
     }
 
     async readTopologyConfigMutation(
-        command: GroupTopologyConfigMutationCommand,
+        command: mutationContracts.GroupTopologyConfigMutationCommand,
     ): Promise<GroupTopologyConfigMutationAttemptRead> {
         await this.ensureTopologyConfigGenerationReady(command.aggregateRef);
         return {
@@ -368,14 +359,14 @@ export class GroupTopologyManagementService {
         preparation: GroupTopologyConfigMutationPreparation,
         read: GroupTopologyConfigMutationAttemptRead,
         attemptCount: number,
-    ): GroupTopologyConfigMutationComputed {
-        const idempotency = probeTopologyConfigMutationIdempotency(
+    ): mutationContracts.GroupTopologyConfigMutationComputed {
+        const idempotency = mutationIdempotency.probeTopologyConfigMutationIdempotency(
             preparation.command,
             read.state,
             preparation.stableFacts.commandHash,
         );
         if (idempotency.outcome !== 'miss') return idempotency;
-        return computeTopologyConfigMutation({
+        return mutationCompute.computeTopologyConfigMutation({
             command: preparation.command,
             read: read.state,
             facts: {
@@ -394,13 +385,13 @@ export class GroupTopologyManagementService {
         preparation: GroupTopologyConfigMutationPreparation,
         read: GroupTopologyConfigMutationAttemptRead,
         attemptCount: number,
-        computed: GroupTopologyConfigMutationComputed,
+        computed: mutationContracts.GroupTopologyConfigMutationComputed,
     ): void {
         if (
             computed.outcome === 'replay' ||
             computed.outcome === 'idempotency-conflict'
         ) {
-            validateTopologyConfigMutationIdempotency({
+            mutationIdempotency.validateTopologyConfigMutationIdempotency({
                 command: preparation.command,
                 read: read.state,
                 commandHash: preparation.stableFacts.commandHash,
@@ -413,7 +404,7 @@ export class GroupTopologyManagementService {
             });
             return;
         }
-        validateTopologyConfigMutation({
+        mutationValidation.validateTopologyConfigMutation({
             command: preparation.command,
             read: read.state,
             facts: {
@@ -432,18 +423,18 @@ export class GroupTopologyManagementService {
     async writeTopologyConfigMutation(
         transaction: PSqlTransactionSql,
         computed: Extract<
-            GroupTopologyConfigMutationComputed,
+            mutationContracts.GroupTopologyConfigMutationComputed,
             {
                 outcome: 'write' | 'claim';
             }
         >,
-    ): Promise<GroupTopologyConfigMutationReceipt> {
+    ): Promise<mutationContracts.GroupTopologyConfigMutationReceipt> {
         return await writeTopologyConfigMutation(transaction, computed);
     }
 
     toTopologyConfigMutationResult(
         computed: Exclude<
-            GroupTopologyConfigMutationComputed,
+            mutationContracts.GroupTopologyConfigMutationComputed,
             {
                 outcome: 'idempotency-conflict';
             }
@@ -1044,10 +1035,10 @@ async function readConsistentTopologyConfigPair(
 export async function writeTopologyConfigMutation(
     transaction: PSqlTransactionSql,
     computed: Extract<
-        GroupTopologyConfigMutationComputed,
+        mutationContracts.GroupTopologyConfigMutationComputed,
         { outcome: 'write' | 'claim' }
     >,
-): Promise<GroupTopologyConfigMutationReceipt> {
+): Promise<mutationContracts.GroupTopologyConfigMutationReceipt> {
     const runtime = new PSqlRuntimeStateRepository(transaction);
     const repository = new GroupTopologyConfigRepository(runtime);
     const authorityFence = await new GroupStateRepository(
@@ -1116,13 +1107,13 @@ function requireAcceptedTopologyConfigWrite(
 }
 
 function topologyConfigExecution(
-    receipt: GroupTopologyConfigMutationReceipt,
+    receipt: mutationContracts.GroupTopologyConfigMutationReceipt,
     computed: Extract<
-        GroupTopologyConfigMutationComputed,
+        mutationContracts.GroupTopologyConfigMutationComputed,
         { outcome: 'write' | 'claim' | 'replay' | 'no-op' }
     >,
 ): Readonly<{
-    receipt: GroupTopologyConfigMutationReceipt;
+    receipt: mutationContracts.GroupTopologyConfigMutationReceipt;
     config?: StoredGroupTopologyConfig;
     override?: StoredGroupTopologyOverride;
 }> {

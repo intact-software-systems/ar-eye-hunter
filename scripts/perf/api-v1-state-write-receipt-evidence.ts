@@ -1,6 +1,5 @@
-import type {
-  GroupTopologyConfigMutationRecord,
-} from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import type { validateGroupTopologyConfigMutationRecord } from
+  '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import type {
   ClientMutationIdempotencyRecord,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
@@ -121,7 +120,7 @@ export function projectGroupReceiptEvidence(
 
 export function projectTopologyReceiptEvidence(
   commandId: string,
-  record: GroupTopologyConfigMutationRecord,
+  record: ReturnType<typeof validateGroupTopologyConfigMutationRecord>,
 ): ProductionReceiptEvidence {
   const receipt = record.receipt;
   return {

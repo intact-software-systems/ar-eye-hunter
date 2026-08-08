@@ -104,7 +104,9 @@ export async function readAuthenticatedTopologyCommand<V>(
 }
 
 export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppInboxCommand {
-  if (!isRecord(value)) throw new TypeError('topology command is invalid');
+  if (!isRecord(value)) {
+    throw new TypeError('topology command is invalid');
+  }
   requireExactKeys(value, [
     'actor',
     'groupRef',
@@ -119,7 +121,9 @@ export function readDurableTopologyAppInboxCommand(value: unknown): TopologyAppI
   }
   const actor = isRecord(value.actor) ? value.actor : null;
   const groupRef = isRecord(value.groupRef) ? value.groupRef : null;
-  if (!actor || !groupRef) throw new TypeError('topology identity is invalid');
+  if (!actor || !groupRef) {
+    throw new TypeError('topology identity is invalid');
+  }
   requireExactKeys(actor, ['principalId', 'sessionId']);
   requireExactKeys(groupRef, ['applicationId', 'workspaceId', 'groupId']);
   if (!hasValidTopologyCommandIdentity(value, actor, groupRef)) {
@@ -177,7 +181,9 @@ export function isTopologyRecord(value: unknown): value is TopologyRecord {
 }
 
 function isTopologyAppInboxRequestPayload(value: unknown): value is TopologyAppInboxRequestPayload {
-  if (!isRecord(value) || typeof value.operation !== 'string') return false;
+  if (!isRecord(value) || typeof value.operation !== 'string') {
+    return false;
+  }
   try {
     switch (value.operation) {
       case 'putConfig':
@@ -207,9 +213,13 @@ function isTopologyAppInboxRequestPayload(value: unknown): value is TopologyAppI
 }
 
 function isTopologyAppInboxPayload(value: unknown): value is TopologyAppInboxPayload {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value)) {
+    return false;
+  }
   const record = value;
-  if (typeof record.operation !== 'string') return false;
+  if (typeof record.operation !== 'string') {
+    return false;
+  }
   try {
     switch (record.operation) {
       case 'putConfig':

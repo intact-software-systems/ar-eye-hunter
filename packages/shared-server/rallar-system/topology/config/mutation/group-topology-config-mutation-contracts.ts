@@ -18,18 +18,18 @@ export type {
   GroupTopologyConfigMutationReceipt,
 } from '@shared/api/graph-topology-management-types.ts';
 
-export interface GroupTopologyConfigMutationCommand {
-  readonly operation: GroupTopologyConfigMutationOperation;
-  readonly aggregateRef: GroupRef;
-  readonly commandId: string;
-  readonly requestId: string | null;
-  readonly input: Readonly<{
+export type GroupTopologyConfigMutationCommand = Readonly<{
+  operation: GroupTopologyConfigMutationOperation;
+  aggregateRef: GroupRef;
+  commandId: string;
+  requestId: string | null;
+  input: Readonly<{
     config: GroupTopologyConfigPatch | null;
     updatedByPrincipalId: string;
     ttlMs: number | null;
     expiresAtEpochMs: number | null;
   }>;
-}
+}>;
 
 export interface GroupTopologyConfigMutationRecord {
   readonly groupRef: GroupRef;

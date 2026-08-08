@@ -11,6 +11,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
@@ -29,8 +30,10 @@ import {
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { type ClientMutationIdempotencyRecord, validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { type GroupMutationIdempotencyRecord, validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import type { GroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
-import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-records.ts';
+import { readTopologyConfigMutationRecordBoundary } from
+  '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
+import { validateGroupTopologyConfigMutationRecord } from
+  '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
@@ -1384,9 +1387,7 @@ export function isValidProductionReceipt(
 }
 
 function isValidatedReceiptIdentity(
-  value: unknown,
-  ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>,
-  requestId: string,
+  value: unknown, ref: GroupRef, requestId: string,
 ): value is GroupMutationIdempotencyRecord {
   try {
     validateGroupMutationIdempotencyRecord(value, ref);
@@ -1395,18 +1396,16 @@ function isValidatedReceiptIdentity(
   }
   return value.requestId === requestId && value.receipt.commandId === requestId;
 }
-
 function isValidatedTopologyReceipt(
-  value: unknown,
-  groupRef: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>,
-  requestId: string,
-): value is GroupTopologyConfigMutationRecord {
+  value: unknown, groupRef: GroupRef, requestId: string,
+): value is ReturnType<typeof validateGroupTopologyConfigMutationRecord> {
   try {
-    validateGroupTopologyConfigMutationRecord(value, { groupRef, requestId });
+    const stored = readTopologyConfigMutationRecordBoundary(value);
+    const record = validateGroupTopologyConfigMutationRecord(stored, { groupRef, requestId });
+    return record.requestId === requestId && record.receipt.commandId === requestId;
   } catch {
     return false;
   }
-  return value.requestId === requestId && value.receipt.commandId === requestId;
 }
 
 function deriveCorrectness(

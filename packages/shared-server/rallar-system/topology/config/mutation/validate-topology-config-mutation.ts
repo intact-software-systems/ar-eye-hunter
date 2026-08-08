@@ -8,7 +8,7 @@ import { requireTopologyConfigRequestId } from './validate-topology-config-mutat
 // prettier-ignore
 import {
   validateGroupTopologyConfigMutationRecord,
-} from './validate-topology-config-mutation-records.ts';
+} from './validate-topology-config-records.ts';
 
 export interface ValidateTopologyConfigMutationInput extends TopologyConfigMutationInput {
   readonly computed: GroupTopologyConfigMutationComputed;

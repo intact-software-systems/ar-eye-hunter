@@ -87,7 +87,11 @@ describe('topology config mutation validation', () => {
   });
 
   it('rejects an elapsed stable override expiry from pure facts', () => {
-    const mutation = createTopologyConfigMutationTestInput({ operation: 'putOverride' });
+    const mutation = createTopologyConfigMutationTestInput({
+      operation: 'putOverride',
+      commandId: 'elapsed-stable-expiry',
+      requestId: 'elapsed-stable-expiry',
+    });
     expect(() =>
       computeTopologyConfigMutation({
         ...mutation,

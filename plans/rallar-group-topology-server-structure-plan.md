@@ -604,8 +604,8 @@ packages/shared-server/rallar-system/topology/
       compute-topology-config-mutation.ts
       validate-topology-config-mutation.ts
       validate-topology-config-mutation-input.ts
-      topology-config-mutation-validation-primitives.ts
-      validate-topology-config-mutation-records.ts
+      topology-config-mutation-boundary.ts
+      validate-topology-config-records.ts
       validate-topology-config-receipt.ts
       topology-config-mutation-receipt.ts
       to-topology-config-mutation-result.ts
@@ -646,10 +646,12 @@ second hop, nested barrel, executable shim, hidden default, or new public export
 is permitted.
 
 Task 2 applied the Section 1.5 private target-tree refinement shown above. The
-four validation owners keep input/attempt validation, shared exact record
-shapes, stored mutation records, and receipt validation cohesive and directed;
-they avoid the runtime cycle and over-400-line validator that a single file
-would create. They add no public compatibility surface.
+canonical mutation-boundary owner contains the fourteen mechanically
+source-derived untrusted boundary regions. The input, stored-record, and
+receipt owners continue only after those boundaries have normalized a named
+record shape; their semantically new helper signatures add zero `unknown`
+capacity. This direction avoids a runtime cycle and the over-400-line validator
+that a single file would create. It adds no public compatibility surface.
 
 ## 6. Exact Target Mirrored-Test Tree
 
@@ -700,12 +702,38 @@ packages/tests/shared-server/topology/
       postgres-topology-app-inbox-worker.ts
 
 packages/tests/repo/
+  group-topology-server-lineage-boundary-bijection.ts
+  group-topology-server-pr-a-test-ownership.ts
+  group-topology-server-lineage-provenance-fixtures.ts
   group-topology-server-lineage-provenance.test.ts
   group-topology-server-navigation-map-integrity.test.ts
   group-topology-server-ownership.test.ts
   group-topology-server-source-ratchet.test.ts
+  group-topology-server-test-ast.ts
+  group-topology-server-test-atom-inventory.ts
+  group-topology-server-test-atom-ownership-contracts.ts
+  group-topology-server-test-atom-ownership-validation.ts
+  group-topology-server-test-atom-ownership.test.ts
+  group-topology-server-test-atom-ownership.ts
+  group-topology-server-test-atom-translations.ts
   group-topology-server-test-ownership.test.ts
+  group-topology-server-test-semantic-atoms.ts
 ```
+
+PR A lineage evidence stays in one namespace under
+`plans/repo-style-lineages/`: the checker-owned
+`rallar-group-topology-server-pr-a.json`, the human summary
+`rallar-group-topology-server-pr-a-provenance.md`, and the test-pinned exact
+blob/symbol/span/region evidence
+`rallar-group-topology-server-pr-a-provenance.jsonc`. The `.jsonc` suffix keeps
+the richer evidence outside the checker manifest schema while its permanent
+test parses and verifies it directly. The descriptive
+`group-topology-server-lineage-provenance-fixtures.ts` owner holds that frozen
+inventory and its fail-closed blob/span/hash/magnitude/derivation verification;
+`group-topology-server-lineage-boundary-bijection.ts` independently proves the
+fourteen source/target boundary-region bijection; the behavior-named test owns
+the positive and per-field/row negative cases. All three owners remain below
+the hard 400-line limit.
 
 Retained downstream RTC consumer evidence stays at:
 
@@ -718,9 +746,19 @@ packages/tests/shared-server/
   ws-system-topics-rtc-topology.test.ts
 ```
 
-Every current case, fixture, raw literal, barrier, assertion, and assertion site
-maps to one behavior owner before its old file is removed. No count-based
-ratchet may replace semantic coverage.
+Every frozen source case, fixture, runtime raw literal, barrier, assertion,
+expanded variant, and eligible top-level support declaration maps through a
+pinned source/target atom endpoint before its old file is removed. The endpoint
+evidence records both AST IDs/fingerprints, validates the exact 710-source-atom
+and 89-atom additive target partitions, excludes TypeScript-only annotation
+literals, and restricts each of the 23 predecessor support declarations to its
+exact allowed target-symbol set. Reused support atoms must select the strongest
+available field-slot match; endpoint deletion, replacement, duplicate claims,
+unclassified cases/support, weaker generic matching, and undeclared
+translations all fail closed. The cohesive AST, inventory, contracts,
+assignment, translation, and validation owners listed above keep this
+permanent ratchet human-navigable and below 400 lines. Aggregate counts remain
+supplementary diagnostics only.
 
 Task 2 also added
 `packages/tests/shared-server/authoritative-mutation-runtime-source-inventory.ts`
@@ -728,51 +766,57 @@ as the descriptive inventory owner used by the retained cross-domain source
 boundary test. This keeps that materially changed test below 400 lines without
 moving or weakening any assertion.
 
+The shared-test authoritative receipt harness keeps its exact property-order
+projection in
+`packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-projection.ts`;
+the retained receipt-evidence owner performs repository I/O and calls that pure
+projection directly. Both paths are included in the performance blob manifest.
+
 ## 7. Complete Current-To-Target Move And Symbol Map
 
 ### 7.1 Production owners
 
-| Current owner                                                                                                           | Target owner and primary symbols                                                                                                                                                                             | PR                |
-| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- |
-| `services/group-topology-config-service.ts`                                                                             | `topology/config/group-topology-config.ts`: existing default, validation, expiry, and resolution functions                                                                                                   | A                 |
-| `topology/inbox/topology-app-inbox-contracts.ts`                                                                        | Same path: `TopologyAppInboxOperation`, payload and handler contracts                                                                                                                                        | A                 |
-| `topology/inbox/topology-app-inbox-command.ts`                                                                          | Same path: authenticated/durable command translators and hashes                                                                                                                                              | A                 |
-| `topology/inbox/topology-app-inbox-authority.ts`                                                                        | Same path: authenticated enqueue, read/verify authority                                                                                                                                                      | A                 |
-| `services/topology-mutation-authority-proof.ts`                                                                         | `topology/inbox/topology-mutation-authority-proof.ts`: proof creation/read/equality                                                                                                                          | A                 |
-| `services/group-topology-config-mutations.ts` types                                                                     | `config/mutation/group-topology-config-mutation-contracts.ts`                                                                                                                                                | A                 |
-| same, idempotency functions                                                                                             | `config/mutation/topology-config-mutation-idempotency.ts`: probe/validate idempotency                                                                                                                        | A                 |
-| same, put/delete/patch decisions                                                                                        | `config/mutation/compute-topology-config-mutation.ts`: `computeTopologyConfigMutation`                                                                                                                       | A                 |
-| same, exact recomputation                                                                                               | `config/mutation/validate-topology-config-mutation.ts`: `validateTopologyConfigMutation`                                                                                                                     | A                 |
-| same, input/attempt, shared-shape, stored-record, and receipt validation                                                | `config/mutation/validate-topology-config-mutation-input.ts`, `topology-config-mutation-validation-primitives.ts`, `validate-topology-config-mutation-records.ts`, and `validate-topology-config-receipt.ts` | A                 |
-| same, receipt creation and `resultFromTopologyConfigReceipt`                                                            | `config/mutation/topology-config-mutation-receipt.ts`: receipt/result reconstruction                                                                                                                         | A                 |
-| `repositories/GroupTopologyConfigRepository.ts` public types                                                            | `config/persistence/group-topology-config-repository-contracts.ts`                                                                                                                                           | B                 |
-| same, namespaces                                                                                                        | `config/persistence/group-topology-config-runtime-namespaces.ts`                                                                                                                                             | B                 |
-| same, key builders/decoders                                                                                             | `config/persistence/group-topology-config-storage-keys.ts`                                                                                                                                                   | B                 |
-| same, stored value/entry decoding and corruption errors                                                                 | `config/persistence/group-topology-config-persistence-codec.ts`                                                                                                                                              | B                 |
-| same, repository CRUD/CAS/page operations                                                                               | `config/persistence/group-topology-config-repository.ts`                                                                                                                                                     | B                 |
-| `repositories/group-topology-mutation-exact-read.ts`                                                                    | `config/persistence/read-exact-group-topology-config-mutation.ts`                                                                                                                                            | B                 |
-| `repositories/group-topology-stored-source-values.ts`                                                                   | `config/persistence/decode-stored-group-topology-config.ts`                                                                                                                                                  | B                 |
-| `services/group-topology-config-generation-backfill.ts` canonical backfill                                              | `config/maintenance/backfill-group-topology-config-generations.ts`                                                                                                                                           | B                 |
-| same, legacy key migration                                                                                              | `config/maintenance/migrate-legacy-group-topology-config-keys.ts`                                                                                                                                            | B                 |
-| `services/group-topology-config-mutation-read.ts`                                                                       | `config/mutation/read-topology-config-mutation.ts`: `readTopologyConfigMutation`                                                                                                                             | B                 |
-| config query/readiness methods in management service                                                                    | `config/group-topology-config-query-service.ts`                                                                                                                                                              | C                 |
-| the single management-service readiness map and `ensureTopologyConfigGenerationReady`                                   | `config/maintenance/group-topology-config-generation-readiness.ts`: `GroupTopologyConfigGenerationReadiness` shared by query and mutation                                                                    | C                 |
-| config mutation phase methods in management service                                                                     | `config/group-topology-config-mutation-service.ts`                                                                                                                                                           | C                 |
-| standalone `writeTopologyConfigMutation` in management service                                                          | `config/mutation/write-topology-config-mutation.ts`: same primary symbol                                                                                                                                     | C                 |
-| method `toTopologyConfigMutationResult` and helper `topologyConfigExecution`                                            | `config/mutation/to-topology-config-mutation-result.ts`: `toTopologyConfigMutationResult`                                                                                                                    | C                 |
-| explicit reconfigure types                                                                                              | `reconfigure/group-topology-reconfigure-contracts.ts`                                                                                                                                                        | C                 |
-| explicit reconfigure read/compute/validate/write                                                                        | `reconfigure/group-topology-reconfigure-mutation.ts`                                                                                                                                                         | C                 |
-| planning authority, topology computation, observation, local compatibility planning                                     | `planning/group-topology-planning-contracts.ts` and `planning/group-topology-planning-service.ts`                                                                                                            | C                 |
-| broadcast fact type plus `createRtcOverlayTopologyBroadcastMessage` and `materializeRtcOverlayTopologyBroadcastMessage` | `planning/materialize-rtc-overlay-topology-broadcast-message.ts`                                                                                                                                             | C                 |
-| `GroupTopologyValidationError`, `GroupTopologyCommitConflictError`, `GroupTopologyConfigIdempotencyConflictError`       | `group-topology-errors.ts`: same three public classes                                                                                                                                                        | C                 |
-| `topology/inbox/topology-app-inbox-handler.ts`                                                                          | Same path: thin operation dispatch to config and reconfigure owners                                                                                                                                          | C                 |
-| public management contracts                                                                                             | `group-topology-management-contracts.ts`                                                                                                                                                                     | C                 |
-| `services/group-topology-management-service.ts` public class                                                            | `topology/group-topology-management-service.ts`: existing public compatibility facade                                                                                                                        | C                 |
-| `packages/shared-server/mod.ts` export sources                                                                          | retained in place; point directly to canonical owners while preserving public names/identity                                                                                                                 | matching owner PR |
-| import-only API, RTC, shared-test, and performance consumers in Section 3.4                                             | retained in place; canonical import redirects only                                                                                                                                                           | matching owner PR |
-| old private service/repository paths                                                                                    | removed only after the exact per-path active-consumer decision in Section 8                                                                                                                                  | A-C               |
-| current flat tests                                                                                                      | behavior-named modules in Section 6, preserving every case/assertion                                                                                                                                         | matching owner PR |
-| navigation and supplementary ratchets                                                                                   | the five exact `packages/tests/repo/group-topology-server-*` owners in Section 6                                                                                                                             | A-D               |
+| Current owner                                                                                                           | Target owner and primary symbols                                                                                                                                                       | PR                |
+| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `services/group-topology-config-service.ts`                                                                             | `topology/config/group-topology-config.ts`: existing default, validation, expiry, and resolution functions                                                                             | A                 |
+| `topology/inbox/topology-app-inbox-contracts.ts`                                                                        | Same path: `TopologyAppInboxOperation`, payload and handler contracts                                                                                                                  | A                 |
+| `topology/inbox/topology-app-inbox-command.ts`                                                                          | Same path: authenticated/durable command translators and hashes                                                                                                                        | A                 |
+| `topology/inbox/topology-app-inbox-authority.ts`                                                                        | Same path: authenticated enqueue, read/verify authority                                                                                                                                | A                 |
+| `services/topology-mutation-authority-proof.ts`                                                                         | `topology/inbox/topology-mutation-authority-proof.ts`: proof creation/read/equality                                                                                                    | A                 |
+| `services/group-topology-config-mutations.ts` types                                                                     | `config/mutation/group-topology-config-mutation-contracts.ts`                                                                                                                          | A                 |
+| same, idempotency functions                                                                                             | `config/mutation/topology-config-mutation-idempotency.ts`: probe/validate idempotency                                                                                                  | A                 |
+| same, put/delete/patch decisions                                                                                        | `config/mutation/compute-topology-config-mutation.ts`: `computeTopologyConfigMutation`                                                                                                 | A                 |
+| same, exact recomputation                                                                                               | `config/mutation/validate-topology-config-mutation.ts`: `validateTopologyConfigMutation`                                                                                               | A                 |
+| same, input/attempt, shared-shape, stored-record, and receipt validation                                                | `config/mutation/validate-topology-config-mutation-input.ts`, `topology-config-mutation-boundary.ts`, `validate-topology-config-records.ts`, and `validate-topology-config-receipt.ts` | A                 |
+| same, receipt creation and `resultFromTopologyConfigReceipt`                                                            | `config/mutation/topology-config-mutation-receipt.ts`: receipt/result reconstruction                                                                                                   | A                 |
+| `repositories/GroupTopologyConfigRepository.ts` public types                                                            | `config/persistence/group-topology-config-repository-contracts.ts`                                                                                                                     | B                 |
+| same, namespaces                                                                                                        | `config/persistence/group-topology-config-runtime-namespaces.ts`                                                                                                                       | B                 |
+| same, key builders/decoders                                                                                             | `config/persistence/group-topology-config-storage-keys.ts`                                                                                                                             | B                 |
+| same, stored value/entry decoding and corruption errors                                                                 | `config/persistence/group-topology-config-persistence-codec.ts`                                                                                                                        | B                 |
+| same, repository CRUD/CAS/page operations                                                                               | `config/persistence/group-topology-config-repository.ts`                                                                                                                               | B                 |
+| `repositories/group-topology-mutation-exact-read.ts`                                                                    | `config/persistence/read-exact-group-topology-config-mutation.ts`                                                                                                                      | B                 |
+| `repositories/group-topology-stored-source-values.ts`                                                                   | `config/persistence/decode-stored-group-topology-config.ts`                                                                                                                            | B                 |
+| `services/group-topology-config-generation-backfill.ts` canonical backfill                                              | `config/maintenance/backfill-group-topology-config-generations.ts`                                                                                                                     | B                 |
+| same, legacy key migration                                                                                              | `config/maintenance/migrate-legacy-group-topology-config-keys.ts`                                                                                                                      | B                 |
+| `services/group-topology-config-mutation-read.ts`                                                                       | `config/mutation/read-topology-config-mutation.ts`: `readTopologyConfigMutation`                                                                                                       | B                 |
+| config query/readiness methods in management service                                                                    | `config/group-topology-config-query-service.ts`                                                                                                                                        | C                 |
+| the single management-service readiness map and `ensureTopologyConfigGenerationReady`                                   | `config/maintenance/group-topology-config-generation-readiness.ts`: `GroupTopologyConfigGenerationReadiness` shared by query and mutation                                              | C                 |
+| config mutation phase methods in management service                                                                     | `config/group-topology-config-mutation-service.ts`                                                                                                                                     | C                 |
+| standalone `writeTopologyConfigMutation` in management service                                                          | `config/mutation/write-topology-config-mutation.ts`: same primary symbol                                                                                                               | C                 |
+| method `toTopologyConfigMutationResult` and helper `topologyConfigExecution`                                            | `config/mutation/to-topology-config-mutation-result.ts`: `toTopologyConfigMutationResult`                                                                                              | C                 |
+| explicit reconfigure types                                                                                              | `reconfigure/group-topology-reconfigure-contracts.ts`                                                                                                                                  | C                 |
+| explicit reconfigure read/compute/validate/write                                                                        | `reconfigure/group-topology-reconfigure-mutation.ts`                                                                                                                                   | C                 |
+| planning authority, topology computation, observation, local compatibility planning                                     | `planning/group-topology-planning-contracts.ts` and `planning/group-topology-planning-service.ts`                                                                                      | C                 |
+| broadcast fact type plus `createRtcOverlayTopologyBroadcastMessage` and `materializeRtcOverlayTopologyBroadcastMessage` | `planning/materialize-rtc-overlay-topology-broadcast-message.ts`                                                                                                                       | C                 |
+| `GroupTopologyValidationError`, `GroupTopologyCommitConflictError`, `GroupTopologyConfigIdempotencyConflictError`       | `group-topology-errors.ts`: same three public classes                                                                                                                                  | C                 |
+| `topology/inbox/topology-app-inbox-handler.ts`                                                                          | Same path: thin operation dispatch to config and reconfigure owners                                                                                                                    | C                 |
+| public management contracts                                                                                             | `group-topology-management-contracts.ts`                                                                                                                                               | C                 |
+| `services/group-topology-management-service.ts` public class                                                            | `topology/group-topology-management-service.ts`: existing public compatibility facade                                                                                                  | C                 |
+| `packages/shared-server/mod.ts` export sources                                                                          | retained in place; point directly to canonical owners while preserving public names/identity                                                                                           | matching owner PR |
+| import-only API, RTC, shared-test, and performance consumers in Section 3.4                                             | retained in place; canonical import redirects only                                                                                                                                     | matching owner PR |
+| old private service/repository paths                                                                                    | removed only after the exact per-path active-consumer decision in Section 8                                                                                                            | A-C               |
+| current flat tests                                                                                                      | behavior-named modules in Section 6, preserving every case/assertion                                                                                                                   | matching owner PR |
+| navigation and supplementary ratchets                                                                                   | the seven exact `packages/tests/repo/group-topology-server-*` owners in Section 6                                                                                                      | A-D               |
 
 The exact management-service partition must not copy mutable state into multiple
 owners. `GroupTopologyConfigGenerationReadiness` is the sole owner of the
@@ -1109,10 +1153,12 @@ harness blob is byte-identical to its exact base. Otherwise it uses the fixed
 protocol in Section 13.
 
 Task 2 candidate `3529959d841e95b375965692a86a77a4fb170058`, tree
-`6606d55f2ac9e00a99a5b599c6fe03ad949bf7cf`, is not exempt: the fail-closed
-16-path comparison found nine byte-identical paths and seven required import
-redirect changes. The Section 13 governed comparison and publication gates
-remain pending and the final Task 2 checkbox therefore remains open.
+`6606d55f2ac9e00a99a5b599c6fe03ad949bf7cf`, is not exempt. Review-fix round 1
+expands the fail-closed scope to 24 paths, including the extracted shared-test
+receipt projection: eight are byte-identical and sixteen have required import,
+boundary, projection, or brace changes. The Section 13 governed comparison and
+publication gates remain pending and the final Task 2 checkbox therefore
+remains open.
 
 ### Task 3: PR B — persistence, exact reads, generations, and migration
 
@@ -1368,10 +1414,17 @@ npx vitest run \
   packages/tests/repo/group-topology-server-lineage-provenance.test.ts \
   packages/tests/repo/group-topology-server-navigation-map-integrity.test.ts \
   packages/tests/repo/group-topology-server-ownership.test.ts \
+  packages/tests/repo/group-topology-server-test-atom-ownership.test.ts \
   packages/tests/repo/group-topology-server-test-ownership.test.ts \
   packages/tests/shared/authoritative-state-contracts.test.ts
+npx vitest run \
+  packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 (cd apps/api-v1 && deno task check)
+deno check --config apps/api-v1/deno.json \
+  scripts/perf/api-v1-state-write-concurrency-bench.ts \
+  scripts/perf/api-v1-state-write-receipt-evidence.ts \
+  packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts
 ```
 
 ### 14.3 PR B persistence and concurrency gates
@@ -1634,16 +1687,16 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 19. Progress Record
 
-| Milestone                  | State            | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| -------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth prerequisite          | ledger-published | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                  |
-| Group-topology child plan  | approved         | Planning PR #95, exact approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, resulting main `3fa0c94b748281dc326b814e700c06f6c4dd9d07`.                                                                                                                                                                                                                                                                                                                                                                                                    |
-| PR A protocol/core         | in progress      | Draft PR #103. Task 1 accepted at head `7c03c1c7b96d6203742e68426a52298d1b05d2d2`, tree `66d48b5def11b813d3889e0ff7a515cc9b817c00`; Branch Release Gate `31264619538`, attempt 1, succeeded. Task 2 local implementation is `3529959d841e95b375965692a86a77a4fb170058`, tree `6606d55f2ac9e00a99a5b599c6fe03ad949bf7cf`; its 16-path blob comparison is non-exempt (9 identical, 7 changed), so the governed performance comparison, scoped review, publication, Branch Release Gate, human merge, and resulting-main workflow remain pending. |
-| PR B persistence           | blocked          | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| PR C authoritative shell   | blocked          | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| PR D alignment/final trace | blocked          | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Later topology ledger      | blocked          | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| RTC/RTT and later domains  | blocked          | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Milestone                  | State            | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth prerequisite          | ledger-published | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                               |
+| Group-topology child plan  | approved         | Planning PR #95, exact approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, resulting main `3fa0c94b748281dc326b814e700c06f6c4dd9d07`.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| PR A protocol/core         | in progress      | Draft PR #103. Task 1 accepted at head `7c03c1c7b96d6203742e68426a52298d1b05d2d2`, tree `66d48b5def11b813d3889e0ff7a515cc9b817c00`; Branch Release Gate `31264619538`, attempt 1, succeeded. Task 2 local implementation is `3529959d841e95b375965692a86a77a4fb170058`, tree `6606d55f2ac9e00a99a5b599c6fe03ad949bf7cf`; review-fix round 1 is uncommitted. Its expanded 24-path blob comparison is non-exempt (8 identical, 16 changed), so the governed performance comparison, scoped review, publication, Branch Release Gate, human merge, and resulting-main workflow remain pending. |
+| PR B persistence           | blocked          | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| PR C authoritative shell   | blocked          | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| PR D alignment/final trace | blocked          | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Later topology ledger      | blocked          | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| RTC/RTT and later domains  | blocked          | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ## 20. Self-Review Checklist
 

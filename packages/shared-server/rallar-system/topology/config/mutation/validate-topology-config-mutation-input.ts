@@ -21,14 +21,14 @@ import {
   validateTopologyGroupRef,
   validateTopologyPositiveInteger,
   validateTopologyStorageRevision,
-} from './topology-config-mutation-validation-primitives.ts';
+} from './topology-config-mutation-boundary.ts';
 import {
   validateGroupTopologyConfigGeneration,
   validateGroupTopologyConfigInvariantGeneration,
   validateGroupTopologyConfigMutationRecord,
   validateStoredGroupTopologyConfig,
   validateStoredGroupTopologyOverride,
-} from './validate-topology-config-mutation-records.ts';
+} from './validate-topology-config-records.ts';
 
 export function validateTopologyConfigMutationInput(
   topologyMutation: TopologyConfigMutationInput,
@@ -88,7 +88,9 @@ function validateTopologyConfigCommand(command: GroupTopologyConfigMutationComma
   }
   requireTopologyString(command.input.updatedByPrincipalId, 'Topology config updated principal');
   const isPut = command.operation === 'putConfig' || command.operation === 'putOverride';
-  if (isPut) validateGroupTopologyConfigPatch(requireTopologyConfigPatch(command));
+  if (isPut) {
+    validateGroupTopologyConfigPatch(requireTopologyConfigPatch(command));
+  }
   if (isPut !== (command.input.config !== null)) {
     throw new TypeError('Topology config command patch does not match operation');
   }
@@ -196,12 +198,18 @@ function validateTopologyConfigAuthority(
     group: snapshot.group,
     nowEpochMs: facts.policyNowEpochMs,
   });
-  if (!lifecyclePolicy.allowed) throw new GroupPolicyDeniedError(lifecyclePolicy);
-  if (facts.isPlatformAdmin) return;
+  if (!lifecyclePolicy.allowed) {
+    throw new GroupPolicyDeniedError(lifecyclePolicy);
+  }
+  if (facts.isPlatformAdmin) {
+    return;
+  }
   const policy = canUpdateGroupSnapshot({
     snapshot,
     actor: { principalId: command.input.updatedByPrincipalId },
     nowEpochMs: facts.policyNowEpochMs,
   });
-  if (!policy.allowed) throw new GroupPolicyDeniedError(policy);
+  if (!policy.allowed) {
+    throw new GroupPolicyDeniedError(policy);
+  }
 }

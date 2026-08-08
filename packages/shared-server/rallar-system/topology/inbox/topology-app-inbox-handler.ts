@@ -153,6 +153,8 @@ export class TopologyAppInboxHandler {
 export function requireTopologyManagementService(
   service: GroupTopologyManagementService | undefined,
 ): GroupTopologyManagementService {
-  if (!service) throw new TypeError('Topology management service is not configured');
+  if (!service) {
+    throw new TypeError('Topology management service is not configured');
+  }
   return service;
 }
