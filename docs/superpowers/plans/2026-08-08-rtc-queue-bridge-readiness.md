@@ -84,14 +84,14 @@ GitHub Actions, Hetzner distributed manifests.
 - Produces: `installQueueBoxPubSubBridge(options): Promise<void>`.
 - Produces: bounded `listener-subscribe` and `cluster-receive` timing events.
 
-- [ ] **Step 1: Write the failing readiness test**
+- [x] **Step 1: Write the failing readiness test**
 
 Add a delayed fake transport. Assert that installation returns a `Promise`,
 that it remains pending until `subscribe` has completed, and that successful
 completion records one `listener-subscribe` event with `status: 'ok'` and only
 bounded channel details.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -102,14 +102,14 @@ npx vitest run packages/tests/shared-server/queuebox-pubsub-bridge.test.ts
 Expected: FAIL because `installQueueBoxPubSubBridge` currently returns
 `undefined` and detaches the subscription.
 
-- [ ] **Step 3: Write the failing failure-path and receive-diagnostic tests**
+- [x] **Step 3: Write the failing failure-path and receive-diagnostic tests**
 
 Assert that a rejected transport subscription rejects the returned readiness
 promise and records `listener-subscribe` with `status: 'error'`. Deliver a
 remote key message and assert one `cluster-receive` event whose details contain
 only bounded channel, delivery, and entry-kind values.
 
-- [ ] **Step 4: Implement the minimal bridge behavior**
+- [x] **Step 4: Implement the minimal bridge behavior**
 
 Change the return type to `Promise<void>`. Register existing queue callbacks,
 start the transport subscription through `timeRallarAsync`, attach the existing
@@ -117,11 +117,11 @@ console failure report without swallowing the returned rejection, and return
 the same promise. Record `cluster-receive` only after self-publication filtering
 and before durable key loading.
 
-- [ ] **Step 5: Run the focused test and verify GREEN**
+- [x] **Step 5: Run the focused test and verify GREEN**
 
 Run the Task 1 command again. Expected: PASS with no unhandled rejection.
 
-- [ ] **Step 6: Commit the bridge slice**
+- [x] **Step 6: Commit the bridge slice**
 
 Commit only the Task 1 production and test files with:
 
@@ -141,14 +141,14 @@ fix(shared-server): expose queue bridge readiness
 - Produces: optional `queuePubSubBridge` construction input without the already-owned `wsQBoxServerService`.
 - Produces: one `runtime.readiness` that resolves only after existing readiness and queue subscription readiness both resolve.
 
-- [ ] **Step 1: Write the failing middleware readiness test**
+- [x] **Step 1: Write the failing middleware readiness test**
 
 Construct real shared middleware with two independently controlled promises:
 the existing readiness input and a fake external pub/sub subscription. Assert
 that resolving either one alone does not resolve `runtime.readiness`, resolving
 both does, and bridge subscription rejection rejects `runtime.readiness`.
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -159,7 +159,7 @@ npx vitest run packages/tests/shared-server/rallar-middleware.test.ts
 Expected: FAIL because shared middleware does not accept or compose queue
 pub/sub installation today.
 
-- [ ] **Step 3: Implement middleware-owned construction**
+- [x] **Step 3: Implement middleware-owned construction**
 
 Add a narrow optional installation input derived from
 `InstallQueueBoxPubSubBridgeOptions` without `wsQBoxServerService`. Immediately
@@ -167,7 +167,7 @@ after constructing `WsQueueBoxServerService`, install the bridge when supplied.
 Return `Promise.all([existingReadiness, queueBridgeReadiness]).then(() =>
 undefined)` as the runtime readiness value.
 
-- [ ] **Step 4: Move API bridge installation into middleware input**
+- [x] **Step 4: Move API bridge installation into middleware input**
 
 In `apps/api-v1/src/middleware.ts`, construct the complete bridge input from
 the current pub/sub config and pass it to `createRallarMiddleware`. Remove the
@@ -175,7 +175,7 @@ later detached installation block. Preserve disabled/local/Postgres decisions,
 delivery format, publisher identity, timing sink, and the independent RTC
 fanout readiness.
 
-- [ ] **Step 5: Run focused tests and Deno check**
+- [x] **Step 5: Run focused tests and Deno check**
 
 Run:
 
@@ -188,7 +188,7 @@ npx vitest run \
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the composition slice**
+- [x] **Step 6: Commit the composition slice**
 
 Commit Task 2 files with:
 
@@ -205,7 +205,7 @@ fix(api-v1): await distributed queue listener startup
 - Consumes: returned queue bridge readiness promises.
 - Proves: after both process listeners are ready, the first claimant publication reaches the remote socket owner.
 
-- [ ] **Step 1: Write the semantic regression test**
+- [x] **Step 1: Write the semantic regression test**
 
 Use two real `WsQueueBoxServerService` instances over one durable in-memory
 outbox and a test bridge whose second subscription completes only when released.
@@ -213,13 +213,13 @@ Await both returned installation promises before the claimant dequeues the
 first WS-outbox row. Assert the remote owner sends exactly once and the durable
 row completes.
 
-- [ ] **Step 2: Mutation-check the test**
+- [x] **Step 2: Mutation-check the test**
 
 Temporarily make the test publish before awaiting the remote readiness and
 verify it fails because the remote owner misses the first publication. Restore
 the correct test before continuing.
 
-- [ ] **Step 3: Run the semantic suite**
+- [x] **Step 3: Run the semantic suite**
 
 Run:
 
@@ -229,7 +229,7 @@ npx vitest run packages/tests/shared/ws-outbox-owner-miss-retry.test.ts
 
 Expected: PASS with unchanged retry/failure-path assertions.
 
-- [ ] **Step 4: Commit the semantic proof**
+- [x] **Step 4: Commit the semantic proof**
 
 Commit the Task 3 test with:
 
@@ -247,12 +247,12 @@ test(shared): prove first distributed outbox delivery after readiness
 - Documents: PostgreSQL notification is a wake/delivery signal, durable WS outbox is the source record, and startup readiness includes the actual listener.
 - Preserves: no claim of durable per-process replay after a post-start notification loss.
 
-- [ ] **Step 1: Update active guidance**
+- [x] **Step 1: Update active guidance**
 
 Document the readiness boundary, current post-start loss limitation, bounded
 diagnostics, and unchanged durable replay deferral. Do not edit historical plans.
 
-- [ ] **Step 2: Run documentation governance**
+- [x] **Step 2: Run documentation governance**
 
 Run:
 
@@ -262,7 +262,7 @@ npm run test:repo-governance
 
 Expected: PASS.
 
-- [ ] **Step 3: Commit documentation**
+- [x] **Step 3: Commit documentation**
 
 Commit Task 4 files with:
 
