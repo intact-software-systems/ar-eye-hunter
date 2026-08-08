@@ -2,9 +2,10 @@
   "variables": {
     "apiPrimary": { "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
     "apiSecondary": { "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
-    "applicationId": { "default": "state-read-{runId}" },
-    "workspaceId": { "default": "default-{runId}" },
-    "groupId": { "default": "snapshot-room-{runId}" },
+    "apiTertiary": { "env": "RALLAR_API_BASE_URL_TERTIARY", "default": "http://127.0.0.1:18082" },
+    "applicationId": "state-read-{runId}",
+    "workspaceId": "default-{runId}",
+    "groupId": "snapshot-room-{runId}",
     "aliceUsername": { "env": "RALLAR_ALICE_USERNAME", "default": "alice" },
     "alicePassword": { "env": "RALLAR_ALICE_PASSWORD", "default": "secret", "secret": true },
     "runId": { "env": "RALLAR_BB_RUN_ID", "default": "local" }
@@ -12,7 +13,8 @@
   "execution": { "correlation": { "injectHeaders": true, "injectPayloads": false } },
   "connections": {
     "primary": { "type": "http", "baseUrl": "{apiPrimary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 },
-    "secondary": { "type": "http", "baseUrl": "{apiSecondary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 }
+    "secondary": { "type": "http", "baseUrl": "{apiSecondary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 },
+    "tertiary": { "type": "http", "baseUrl": "{apiTertiary}", "headers": { "Content-Type": "application/json" }, "timeoutMs": 10000 }
   },
   "steps": [
     {
@@ -92,9 +94,9 @@
       "expect": { "status": 200 }
     },
     {
-      "name": "readClientFloorOnPrimary",
+      "name": "readClientFloorOnTertiary",
       "type": "http",
-      "connection": "primary",
+      "connection": "tertiary",
       "request": {
         "method": "GET",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/clients/{aliceClientId}?minStateRevision={clientFloor}",
@@ -167,9 +169,9 @@
       "expect": { "status": 200 }
     },
     {
-      "name": "readGroupFloorOnPrimary",
+      "name": "readGroupFloorOnTertiary",
       "type": "http",
-      "connection": "primary",
+      "connection": "tertiary",
       "request": {
         "method": "GET",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}?minGroupRevision={groupFloor}&minPresenceRevision={presenceFloor}",
@@ -194,14 +196,14 @@
       "actual": {
         "warmClientSource": "{warmClientSource}",
         "warmGroupSource": "{warmGroupSource}",
-        "clientRevisionBody": "{resultsByName.readClientFloorOnPrimary.0.actual.body.stateRevision}",
-        "clientRevisionHeader": "{resultsByName.readClientFloorOnPrimary.0.actual.headers.rallar-state-revision}",
-        "clientSource": "{resultsByName.readClientFloorOnPrimary.0.actual.headers.rallar-state-source}",
-        "groupRevisionBody": "{resultsByName.readGroupFloorOnPrimary.0.actual.body.causalRevision.groupRevision}",
-        "groupRevisionHeader": "{resultsByName.readGroupFloorOnPrimary.0.actual.headers.rallar-group-revision}",
-        "presenceRevisionBody": "{resultsByName.readGroupFloorOnPrimary.0.actual.body.causalRevision.presenceRevision}",
-        "presenceRevisionHeader": "{resultsByName.readGroupFloorOnPrimary.0.actual.headers.rallar-presence-revision}",
-        "groupSource": "{resultsByName.readGroupFloorOnPrimary.0.actual.headers.rallar-state-source}"
+        "clientRevisionBody": "{resultsByName.readClientFloorOnTertiary.0.actual.body.stateRevision}",
+        "clientRevisionHeader": "{resultsByName.readClientFloorOnTertiary.0.actual.headers.rallar-state-revision}",
+        "clientSource": "{resultsByName.readClientFloorOnTertiary.0.actual.headers.rallar-state-source}",
+        "groupRevisionBody": "{resultsByName.readGroupFloorOnTertiary.0.actual.body.causalRevision.groupRevision}",
+        "groupRevisionHeader": "{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-group-revision}",
+        "presenceRevisionBody": "{resultsByName.readGroupFloorOnTertiary.0.actual.body.causalRevision.presenceRevision}",
+        "presenceRevisionHeader": "{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-presence-revision}",
+        "groupSource": "{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-state-source}"
       },
       "expect": { "body": {
         "warmClientSource": "durable",

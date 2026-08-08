@@ -13,3 +13,20 @@ published API/WS URLs and demo credentials.
 
 Keep API-v1 recipes to HTTP, raw WS, SET, and ASSERT steps. They should not
 require Playwright, browser providers, or RTC connections.
+
+## API-v1 Managed Topology
+
+Memory mode manages one API process. Built-in Postgres cluster profiles manage
+three Postgres-backed API processes: three Deno API processes sharing one
+Postgres database on ports 18080, 18081, and 18082, with isolated `api-v1-server.log`,
+`api-v1-server-secondary.log`, and `api-v1-server-tertiary.log` artifacts.
+Recipes-only mode is externally managed and starts no API process.
+
+Keep node C meaningful in standard/default, CRDT, and medium-scale cluster
+recipes. The medium-scale fixture remains exactly 100 independently
+authenticated clients, five groups, 10 client lanes, and five control lanes.
+The runner automatically clears prior `fairness-proof.json` before every
+managed run; failure triage uses only the current invocation's isolated logs
+and fairness proof. This is a test-topology change: run correctness and load
+gates, but do not add a new production benchmark or numeric latency SLO unless
+production behavior changes.

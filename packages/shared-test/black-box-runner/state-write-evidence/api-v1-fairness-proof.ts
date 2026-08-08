@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const FAIRNESS_OVERDUE_THRESHOLD_MS = 30_000;
@@ -57,6 +57,10 @@ interface ToProofInput {
   readonly fixture: Fixture;
   readonly timing: Timing;
   readonly artifactDir: string;
+}
+
+export async function removeApiV1FairnessProofArtifact(artifactDir: string): Promise<void> {
+  await rm(path.join(artifactDir, 'fairness-proof.json'), { force: true });
 }
 
 export async function verifyApiV1FairnessProof(

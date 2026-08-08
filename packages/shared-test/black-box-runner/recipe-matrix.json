@@ -918,10 +918,11 @@
         "livePreflight": { "timeoutMs": 10000 },
         "httpServices": [
           { "name": "Rallar API primary", "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
-          { "name": "Rallar API secondary", "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" }
+          { "name": "Rallar API secondary", "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
+          { "name": "Rallar API tertiary", "env": "RALLAR_API_BASE_URL_TERTIARY", "default": "http://127.0.0.1:18082" }
         ]
       },
-      "description": "Two-server REST point-read convergence with scalar and causal floor/header evidence."
+      "description": "Three-server REST point-read convergence with scalar and causal floor/header evidence."
     },
     {
       "id": "api-v1-rtc-topology-convergence",
@@ -945,10 +946,15 @@
             "name": "Rallar API secondary",
             "env": "RALLAR_API_BASE_URL_SECONDARY",
             "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
           }
         ]
       },
-      "description": "No-browser two-server convergence test for immutable RTC topology revisions and PostgreSQL-backed WebSocket fanout."
+      "description": "No-browser three-server convergence test for immutable RTC topology revisions and PostgreSQL-backed WebSocket fanout."
     },
     {
       "id": "api-v1-state-topology-churn",
@@ -972,10 +978,15 @@
             "name": "Rallar API secondary",
             "env": "RALLAR_API_BASE_URL_SECONDARY",
             "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
           }
         ]
       },
-      "description": "Bounded two-server load recipe with 12 clients contending across two groups and disconnect/reconnect presence churn."
+      "description": "Bounded three-server load recipe with 12 clients contending across two groups and disconnect/reconnect presence churn."
     },
     {
       "id": "api-v1-state-write-convergence",
@@ -999,10 +1010,15 @@
             "name": "Rallar API secondary",
             "env": "RALLAR_API_BASE_URL_SECONDARY",
             "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
           }
         ]
       },
-      "description": "Two-server state-write convergence gate for bounded membership, reused-session fencing, topology config receipts, and causal history."
+      "description": "Three-server state-write convergence gate for bounded membership, reused-session fencing, topology config receipts, and causal history."
     },
     {
       "id": "api-v1-crdt-app-inbox",
@@ -1026,10 +1042,15 @@
             "name": "Rallar API secondary",
             "env": "RALLAR_API_BASE_URL_SECONDARY",
             "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
           }
         ]
       },
-      "description": "Two-server CRDT AppInbox gate for authenticated append, committed reply, durable fanout, and catch-up."
+      "description": "Three-server CRDT AppInbox gate for authenticated append, committed reply, durable fanout, and catch-up."
     },
     {
       "id": "api-v1-state-medium-scale-churn",
@@ -1050,10 +1071,15 @@
             "name": "Rallar API secondary",
             "env": "RALLAR_API_BASE_URL_SECONDARY",
             "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
           }
         ]
       },
-      "description": "Opt-in two-server PostgreSQL gate with 100 independently authenticated clients across five contended groups."
+      "description": "Opt-in three-server PostgreSQL gate with 100 independently authenticated clients across five contended groups."
     },
     {
       "id": "api-v1-scope-isolation",

@@ -1,10 +1,11 @@
 /// <reference lib="deno.ns" />
-import { readApiV1BlackBoxArgValues } from './read-api-v1-black-box-arg-values.mts';
-import { verifyApiV1FairnessProof } from './state-write-evidence/api-v1-fairness-proof.ts';
+import {
+  removeApiV1FairnessProofArtifact,
+  verifyApiV1FairnessProof,
+} from './state-write-evidence/api-v1-fairness-proof.ts';
 import {
   startManagedApiServer,
   stopManagedApiServer,
-  type ManagedApiServer,
   type ManagedPGliteRunStorage,
   withManagedPGliteRunStorage,
 } from './managed-api/api-v1-managed-process-lifecycle.mts';
@@ -16,6 +17,14 @@ import {
   requiresManagedPostgresRunDatabase,
   withManagedPostgresRunDatabase,
 } from './managed-api/api-v1-managed-postgres-run-database.mts';
+import {
+  type ApiV1BlackBoxOptions,
+  parseApiV1BlackBoxArgs,
+} from './parse-api-v1-black-box-options.mts';
+import {
+  type ManagedApiServerPlan,
+  withManagedApiServerPlans,
+} from './managed-api/with-managed-api-server-plans.mts';
 
 export {
   managedApiDiagnosticSecrets,
@@ -25,96 +34,25 @@ export {
   type ReadBoundedLogTailOptions,
   type WaitForManagedApiReadyInput,
 } from './managed-api/api-v1-managed-api-readiness.mts';
-export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory';
-export type ApiV1BlackBoxOptions = Readonly<{
-  backend: ApiV1BlackBoxBackend;
-  port: number;
-  secondaryPort?: number;
-  profile: string;
-  clusterProfile: string;
-  clusterOnly: boolean;
-  artifactDir: string;
-  runId: string;
-  requireGates: boolean;
-  runMigrations: boolean;
-  recipesOnly: boolean;
-}>;
-
-export type ManagedApiServerPlan = Readonly<{
-  port: number;
-  baseUrl: string;
-  logPath: string;
-  env: Record<string, string>;
-}>;
+export {
+  type ApiV1BlackBoxBackend,
+  type ApiV1BlackBoxOptions,
+  parseApiV1BlackBoxArgs,
+} from './parse-api-v1-black-box-options.mts';
+export {
+  type ManagedApiServerPlan,
+  withManagedApiServerPlans,
+} from './managed-api/with-managed-api-server-plans.mts';
 
 const SCRIPT_DIR = new URL('.', import.meta.url);
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR);
 const API_CONFIG_PATH = 'apps/api-v1/deno.json';
 const API_ENTRYPOINT = 'apps/api-v1/src/main.ts';
-const API_V1_CLUSTER_MATRIX_PROFILE = 'api-v1-black-box-cluster';
 export const API_V1_STATE_WRITE_EVIDENCE_OUTPUT = 'stateWriteEvidence';
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 
-export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
-  const values = readApiV1BlackBoxArgValues(args);
-
-  const backend = String(values.get('--backend') ?? 'postgres') as ApiV1BlackBoxBackend;
-  if (backend !== 'postgres' && backend !== 'pglite-memory') {
-    throw new Error('--backend must be postgres or pglite-memory.');
-  }
-
-  const port = Number(values.get('--port') ?? '18080');
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('--port must be an integer from 1 to 65535.');
-  }
-
-  const secondaryPortValue = values.get('--secondary-port');
-  const secondaryPort = secondaryPortValue === undefined ? undefined : Number(secondaryPortValue);
-  if (secondaryPort !== undefined) {
-    if (!Number.isInteger(secondaryPort) || secondaryPort < 1 || secondaryPort > 65535) {
-      throw new Error('--secondary-port must be an integer from 1 to 65535.');
-    }
-    if (secondaryPort === port) {
-      throw new Error('--secondary-port must differ from --port.');
-    }
-    if (backend !== 'postgres') {
-      throw new Error('--secondary-port requires --backend=postgres.');
-    }
-  }
-
-  const runId = String(values.get('--run-id') ?? defaultRunId());
-  const artifactDir = String(
-    values.get('--artifact-dir') ?? `.artifacts/api-v1-black-box/${backend}`,
-  );
-  const recipesOnly = values.get('--recipes-only') === true;
-  if (recipesOnly && secondaryPort !== undefined) {
-    throw new Error('--secondary-port is not available with --recipes-only.');
-  }
-  const clusterOnly = values.get('--cluster-only') === true;
-  const clusterProfile = String(values.get('--cluster-profile') ?? API_V1_CLUSTER_MATRIX_PROFILE);
-  if ((clusterOnly || values.has('--cluster-profile')) && secondaryPort === undefined) {
-    throw new Error('--cluster-only and --cluster-profile require --secondary-port.');
-  }
-
-  return {
-    backend,
-    port,
-    ...(secondaryPort === undefined ? {} : { secondaryPort }),
-    profile: String(
-      values.get('--profile') ?? (recipesOnly ? 'api-v1-black-box-recipes' : 'api-v1-black-box'),
-    ),
-    clusterProfile,
-    clusterOnly,
-    artifactDir,
-    runId,
-    requireGates: values.get('--no-require-gates') !== true,
-    runMigrations: backend === 'postgres' && !recipesOnly && values.get('--no-migrate') !== true,
-    recipesOnly,
-  };
-}
-
-function defaultRunId(): string {
-  return `local-${Date.now()}`;
+export function createApiV1BlackBoxExecutionToken(): string {
+  return crypto.randomUUID().replaceAll('-', '').slice(0, 24).toLowerCase();
 }
 
 export function toApiV1BlackBoxEnvironment(
@@ -139,7 +77,12 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_API_BASE_URL_SECONDARY = `http://127.0.0.1:${options.secondaryPort}`;
     env.RALLAR_WS_BASE_URL_SECONDARY = `ws://127.0.0.1:${options.secondaryPort}`;
   }
+  if (options.tertiaryPort !== undefined) {
+    env.RALLAR_API_BASE_URL_TERTIARY = `http://127.0.0.1:${options.tertiaryPort}`;
+    env.RALLAR_WS_BASE_URL_TERTIARY = `ws://127.0.0.1:${options.tertiaryPort}`;
+  }
   env.RALLAR_BB_RUN_ID = options.runId;
+  env.RALLAR_BB_EXECUTION_TOKEN = createApiV1BlackBoxExecutionToken();
   env.RALLAR_STATE_WRITE_EVIDENCE_OUTPUT = API_V1_STATE_WRITE_EVIDENCE_OUTPUT;
   env.RALLAR_ICE_MODE = env.RALLAR_ICE_MODE ?? 'local';
   env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET =
@@ -191,6 +134,16 @@ export function toManagedApiServerPlans(
             baseUrl: `http://127.0.0.1:${options.secondaryPort}`,
             logPath: `${root}/api-v1-server-secondary.log`,
             env: toManagedApiServerEnvironment(env, options.secondaryPort),
+          },
+        ]),
+    ...(options.tertiaryPort === undefined
+      ? []
+      : [
+          {
+            port: options.tertiaryPort,
+            baseUrl: `http://127.0.0.1:${options.tertiaryPort}`,
+            logPath: `${root}/api-v1-server-tertiary.log`,
+            env: toManagedApiServerEnvironment(env, options.tertiaryPort),
           },
         ]),
   ];
@@ -258,7 +211,7 @@ export function toRecipeMatrixCommands(
 ): readonly (readonly string[])[] {
   return [
     ...(options.clusterOnly ? [] : [toRecipeMatrixCommand(options, artifactDir)]),
-    ...(options.secondaryPort === undefined
+    ...(options.tertiaryPort === undefined
       ? []
       : [toClusterRecipeMatrixCommand(options, artifactDir)]),
   ];
@@ -314,13 +267,8 @@ async function main(): Promise<void> {
   const options = parseApiV1BlackBoxArgs(Deno.args);
   const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
   const artifactDir = resolveArtifactDir(options.artifactDir);
-  const servers: Array<
-    Readonly<{
-      plan: ManagedApiServerPlan;
-      server: ManagedApiServer;
-    }>
-  > = [];
   await Deno.mkdir(artifactDir, { recursive: true });
+  await removeApiV1FairnessProofArtifact(artifactDir);
   const runWithStorage = async (
     pgliteStorage: ManagedPGliteRunStorage | undefined,
   ): Promise<void> => {
@@ -332,39 +280,22 @@ async function main(): Promise<void> {
     if (options.runMigrations) {
       await runCommand(['npm', 'run', 'db:migrate'], env);
     }
-    try {
-      if (!options.recipesOnly) {
-        for (const plan of serverPlans) {
-          await Deno.writeTextFile(plan.logPath, '');
-          servers.push({
-            plan,
-            server: startManagedApiServer(toApiV1ServerCommand(options), plan, repoRootPath()),
-          });
-        }
-        await Promise.all(
-          servers.map(({ plan, server }) =>
-            waitForManagedApiReady({
-              baseUrl: plan.baseUrl,
-              logPath: plan.logPath,
-              childStatus: server.child.status,
-              startup: server.startup,
-              streamsDrained: server.streamsDrained,
-              diagnosticSecrets: managedApiDiagnosticSecrets(plan.env),
-            }),
-          ),
-        );
-      }
-
-      await runRecipeMatrix(options, env, artifactDir);
-      await verifyApiV1FairnessProof(
-        artifactDir,
-        servers.map(({ plan }) => plan.logPath),
-      );
-    } finally {
-      await Promise.allSettled(
-        [...servers].reverse().map(({ server }) => stopManagedApiServer(server.child)),
-      );
-    }
+    await withManagedApiServerPlans({
+      plans: options.recipesOnly ? [] : serverPlans,
+      serverCommand: toApiV1ServerCommand(options),
+      repoRootPath: repoRootPath(),
+      artifactDir,
+    }, {
+      writeEmptyLogFile: async (path) => await Deno.writeTextFile(path, ''),
+      startServer: startManagedApiServer,
+      waitForReady: waitForManagedApiReady,
+      toDiagnosticSecrets: managedApiDiagnosticSecrets,
+      runRecipes: async () => await runRecipeMatrix(options, env, artifactDir),
+      verifyFairness: async (fairnessArtifactDir, serverLogPaths) => {
+        await verifyApiV1FairnessProof(fairnessArtifactDir, serverLogPaths);
+      },
+      stopServer: stopManagedApiServer,
+    });
   };
   await runManagedBlackBoxBackend(options, env, runWithStorage);
 }

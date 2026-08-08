@@ -13,6 +13,10 @@ inputs:
     description: Optional second local API port for Postgres cluster recipes.
     required: false
     default: ""
+  tertiary-api-port:
+    description: Optional third local API port for Postgres cluster recipes.
+    required: false
+    default: ""
   artifact-dir:
     description: Directory for runner artifacts and API logs.
     required: false
@@ -53,6 +57,10 @@ runs:
 
         if [ -n "${{ inputs.secondary-api-port }}" ]; then
           args+=("--secondary-port=${{ inputs.secondary-api-port }}")
+        fi
+
+        if [ -n "${{ inputs.tertiary-api-port }}" ]; then
+          args+=("--tertiary-port=${{ inputs.tertiary-api-port }}")
         fi
 
         deno run -A packages/shared-test/black-box-runner/api-v1-black-box-run.mts "${args[@]}"

@@ -110,7 +110,7 @@ export const taskSevenRepairProductionOwners = [
   'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-source.ts',
   'packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-sql.ts',
   'packages/shared-test/black-box-runner/api-v1-state-write-evidence.ts',
-  'packages/shared-test/black-box-runner/read-api-v1-black-box-arg-values.mts',
+  'packages/shared-test/black-box-runner/parse-api-v1-black-box-options.mts',
 ] as const;
 
 export const taskNineLayoutProductionOwners = [

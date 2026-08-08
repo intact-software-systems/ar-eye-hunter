@@ -103,6 +103,26 @@ npm run test:api-v1:black-box:recipes
 Use `memory` for fast local feedback, `postgres` when Postgres is available,
 and `recipes` when validating against an already-running API.
 
+### API-v1 Black-Box Topology And Artifacts
+
+`memory` manages one API process. Built-in Postgres cluster profiles manage
+three Deno API processes sharing one Postgres database on ports 18080, 18081,
+and 18082. Their logs stay isolated as `api-v1-server.log`,
+`api-v1-server-secondary.log`, and `api-v1-server-tertiary.log` under the
+API-v1 artifact directory.
+
+Recipes-only mode is externally managed: it neither starts nor stops API
+processes. Standard/default, CRDT, and medium-scale Postgres recipes must make
+node C meaningful; inspect all three logs and the current-run fairness proof
+when a managed cluster run fails. The runner automatically clears prior
+`fairness-proof.json` at the start of each invocation, so a failed run cannot
+inherit stale proof as current evidence.
+
+The three-server runner is a test-topology change. Run the applicable focused
+correctness and load gates, but do not add a new production performance
+benchmark or numeric SLO unless the change also alters a production mutation
+path or concurrency domain.
+
 ## Convergent State-Write Gates
 
 For any api-v1 client, group, topology, runtime-state, mutation-path, or
@@ -113,7 +133,7 @@ npm run test:api-v1:black-box:postgres:medium-scale
 ```
 
 This command is one fixed gate: 100 independently authenticated clients, five
-groups, two Postgres-backed API processes, 10 client lanes plus 5 control
+groups, three Postgres-backed API processes, 10 client lanes plus 5 control
 lanes. Never reduce these constants, the operation matrix, or the assertions to
 make a change pass.
 

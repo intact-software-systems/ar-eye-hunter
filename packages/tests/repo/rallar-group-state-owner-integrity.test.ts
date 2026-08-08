@@ -7,8 +7,17 @@ const mediumScaleRequirements = [
   'npm run test:api-v1:black-box:postgres:medium-scale',
   '100 independently authenticated clients',
   'five groups',
-  'two Postgres-backed API processes',
+  'three Postgres-backed API processes',
   '10 client lanes plus 5 control lanes',
+] as const;
+const apiV1BlackBoxTopologyRequirements = [
+  'Memory mode manages one API process',
+  'three Postgres-backed API processes',
+  '18080, 18081, and 18082',
+  'api-v1-server.log',
+  'api-v1-server-secondary.log',
+  'api-v1-server-tertiary.log',
+  'Recipes-only mode is externally managed',
 ] as const;
 const performanceGateRequirements = [
   'npm run perf:api-v1:state-write',
@@ -194,6 +203,13 @@ describe('group-state owner integrity', () => {
       'removed-medium-scale-command',
     );
     expect(() => expectAllNormalized(testing, mediumScaleRequirements)).toThrow();
+  });
+
+  it.each([
+    'packages/shared-test/black-box-runner/docs/black-box-runner-recipe-matrix.md',
+    'packages/shared-test/black-box-runner/tests/README.md',
+  ])('%s documents the managed API-v1 topology modes and isolated logs', (filePath) => {
+    expectAllNormalized(readRepo(filePath), apiV1BlackBoxTopologyRequirements);
   });
 });
 

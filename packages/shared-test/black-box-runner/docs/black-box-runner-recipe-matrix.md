@@ -109,6 +109,31 @@ These commands write artifacts under `.artifacts/api-v1-black-box/*` instead of
 the generic `.artifacts/shared-test/recipe-matrix/*` path because the helper
 also captures `apps/api-v1` server logs.
 
+## API-v1 Managed Topologies
+
+Memory mode manages one API process. Built-in Postgres cluster profiles manage
+three Postgres-backed API processes: three Deno API processes sharing one
+Postgres database on ports 18080, 18081, and 18082. They write isolated logs named `api-v1-server.log`,
+`api-v1-server-secondary.log`, and `api-v1-server-tertiary.log`.
+
+Recipes-only mode is externally managed: it consumes published API and WS URLs
+and does not start or stop any server. The standard/default, CRDT, and
+medium-scale Postgres recipes each make node C meaningful: the standard recipe
+warms A, mutates B, and verifies floors through C; the CRDT recipe observes
+durable fanout and catch-up through C; and medium-scale shards its existing
+lanes across all three nodes before cross-node verification.
+
+The medium-scale workload remains fixed at exactly 100 independently
+authenticated clients, five groups, 10 client lanes, and five control lanes.
+Do not weaken it to accommodate topology work. This runner topology change
+requires correctness and load gates, but introduces no new production benchmark
+or numeric latency SLO.
+
+The runner automatically clears any prior `fairness-proof.json` before startup.
+A failure therefore leaves only current-run evidence: inspect all isolated
+server logs and the current fairness proof where it exists, never a proof from
+an earlier failed run.
+
 ## Artifacts
 
 Matrix commands write artifacts under `.artifacts/shared-test/recipe-matrix/*`.

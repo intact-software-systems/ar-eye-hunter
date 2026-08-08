@@ -55,6 +55,7 @@ jobs:
           backend: postgres
           api-port: "18080"
           secondary-api-port: "18081"
+          tertiary-api-port: "18082"
           artifact-dir: .artifacts/api-v1-black-box/postgres
           run-id: "${{ github.run_id }}-${{ github.run_attempt }}-postgres"
       - name: Upload artifacts
