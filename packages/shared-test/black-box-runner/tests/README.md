@@ -25,7 +25,8 @@ Recipes-only mode is externally managed and starts no API process.
 Keep node C meaningful in standard/default, CRDT, and medium-scale cluster
 recipes. The medium-scale fixture remains exactly 100 independently
 authenticated clients, five groups, 10 client lanes, and five control lanes.
-Clear a previous fairness proof before every managed run; failure triage uses
-only the current invocation's isolated logs and fairness proof. This is a
-test-topology change: run correctness and load gates, but do not add a new
-production benchmark or numeric latency SLO unless production behavior changes.
+The runner automatically clears prior `fairness-proof.json` before every
+managed run; failure triage uses only the current invocation's isolated logs
+and fairness proof. This is a test-topology change: run correctness and load
+gates, but do not add a new production benchmark or numeric latency SLO unless
+production behavior changes.

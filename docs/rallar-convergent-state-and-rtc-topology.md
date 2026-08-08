@@ -174,13 +174,13 @@ tuple rather than forcing both domains through one scalar write guard.
 
 Group and client caches use the following policy:
 
-| Current cache | Incoming snapshot                   | Result              |
-| ------------- | ----------------------------------- | ------------------- |
-| Missing       | Any                                 | Insert              |
-| Revision N    | Revision greater than N             | Advance             |
-| Revision N    | Revision less than N                | Ignore as stale     |
-| Revision N    | Same revision and same content      | Duplicate/no-op     |
-| Revision N    | Same revision and different content | Invariant violation |
+| Current cache              | Incoming snapshot                   | Result                                  |
+| -------------------------- | ----------------------------------- | --------------------------------------- |
+| Missing    | Any                                 | Insert              |
+| Revision N | Revision greater than N             | Advance             |
+| Revision N | Revision less than N                | Ignore as stale     |
+| Revision N | Same revision and same content      | Duplicate/no-op     |
+| Revision N | Same revision and different content | Invariant violation |
 
 An equal causal revision with different content throws
 `StateSnapshotRevisionConflictError`. Silently choosing one would make a data
@@ -266,7 +266,7 @@ RTT refresh is a latest-value workload and may coalesce while pending:
 
 ```ts
 type RtcTopologyRttRefreshWork = {
-  kind: 'rtt-refresh';
+  kind: "rtt-refresh";
   groupSnapshot: GroupSnapshot;
   requestedGroupStateRevision: number;
   requestedRttVersion: number;
@@ -532,8 +532,9 @@ Postgres database on ports 18080, 18081, and 18082. Inspect the isolated
 `api-v1-server.log`, `api-v1-server-secondary.log`, and
 `api-v1-server-tertiary.log` artifacts together; recipes-only mode is
 externally managed. Standard/default, CRDT, and medium-scale cluster recipes
-all give node C meaningful work. The runner clears an old fairness proof before
-each invocation, so a failed run cannot leave stale proof presented as current.
+all give node C meaningful work. The runner automatically clears prior
+`fairness-proof.json` before each invocation, so a failed run cannot leave
+stale proof presented as current.
 This topology-only test change requires correctness and load gates, not a new
 production benchmark or numeric latency SLO.
 

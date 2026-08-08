@@ -53,8 +53,9 @@ The first local Postgres attempt failed before recipe proof because stale
 persisted legacy auth rows exceeded the bounded 128-row compatibility scan and
 a stale group lacked its required `slug`; it was not a three-process startup or
 readiness failure. After explicit authorization to reset local test data, all
-four checkpoint commands passed. The runner now clears a stale fairness-proof
-artifact before every invocation, and regression coverage proves that lifecycle.
+four checkpoint commands passed. The runner automatically clears prior
+`fairness-proof.json` before every invocation, and regression coverage proves
+that lifecycle.
 
 ## Public Contracts
 
@@ -157,21 +158,21 @@ Base `codex/rallar-rest-snapshot-browser` on PR 2.
 
 ## Verification and Traceability
 
-| Guarantee                                                | Implementation owner                 | Required proof                                                                                                              |
-| -------------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| Tokenless client reads are durable                       | PR1 selector; PR2 route              | Selector durable-call count, client route test, three-process recipe                                                        |
-| Tokened client reads never return below the scalar floor | PR1 client selector                  | Eligible hit, below-floor fallback, durable shortfall `409`, three-cache test                                               |
-| Group reads use the complete causal pair                 | PR1 group selector; PR2 parser       | Equality/dominance success; domination/incomparability fallback or `409`; partial pair `400`                                |
-| Strict authorization never trusts cache                  | PR2 client/group/graph routes        | Strict self, member, banned/nonmember, graph/manage tests; one durable read assertion                                       |
-| Authoritative absence cannot delete a newer observation  | PR1 conditional deletion; PR3 repair | Latest/loaned CAS-delete races, session-index tests, targeted/heartbeat/collection races                                    |
-| Physical deletion is not a tombstone                     | PR3 documentation/tests              | Delayed stale publication may reinsert; no resurrection-safety assertion                                                    |
-| Snapshot cache keys are injective in scope               | PR1 snapshot repositories            | Presence/value/delimiter/percent/round-trip/scope-isolation tests                                                           |
-| REST contract is compatible and visible to browsers      | PR2 routes/OpenAPI/CORS              | Parser matrix, statuses, no-store, CORS, authoritative headers, Swagger tests                                               |
-| Browser API is additive                                  | PR3 transport/public exports         | Existing `findStateGroup` shape, new envelopes, malformed body/header rejection, API snapshots                              |
-| Multi-process contract holds                             | PR2 runner/recipe                    | Warm A, mutate B, verify client/group floors through C; cache source and header/body revisions agree; no result below floor |
-| Diagnostics are usable and safe                          | PR1/PR3 sinks                        | Exact event names and bounded dimensions; no tenant/entity labels                                                           |
-| Added durable I/O is bounded                             | PR1 selectors; PR2 benchmark         | Cache hit = 0 durable reads; tokenless/miss/strict group = one full durable read                                            |
-| Publication evidence matches code                        | All PRs                              | Exact SHA/tree, focused tests, completion gates, medium-scale artifact, Branch Release Gate                                 |
+| Guarantee | Implementation owner | Required proof |
+|---|---|---|
+| Tokenless client reads are durable | PR1 selector; PR2 route | Selector durable-call count, client route test, three-process recipe |
+| Tokened client reads never return below the scalar floor | PR1 client selector | Eligible hit, below-floor fallback, durable shortfall `409`, three-cache test |
+| Group reads use the complete causal pair | PR1 group selector; PR2 parser | Equality/dominance success; domination/incomparability fallback or `409`; partial pair `400` |
+| Strict authorization never trusts cache | PR2 client/group/graph routes | Strict self, member, banned/nonmember, graph/manage tests; one durable read assertion |
+| Authoritative absence cannot delete a newer observation | PR1 conditional deletion; PR3 repair | Latest/loaned CAS-delete races, session-index tests, targeted/heartbeat/collection races |
+| Physical deletion is not a tombstone | PR3 documentation/tests | Delayed stale publication may reinsert; no resurrection-safety assertion |
+| Snapshot cache keys are injective in scope | PR1 snapshot repositories | Presence/value/delimiter/percent/round-trip/scope-isolation tests |
+| REST contract is compatible and visible to browsers | PR2 routes/OpenAPI/CORS | Parser matrix, statuses, no-store, CORS, authoritative headers, Swagger tests |
+| Browser API is additive | PR3 transport/public exports | Existing `findStateGroup` shape, new envelopes, malformed body/header rejection, API snapshots |
+| Multi-process contract holds | PR2 runner/recipe | Warm A, mutate B, verify client/group floors through C; cache source and header/body revisions agree; no result below floor |
+| Diagnostics are usable and safe | PR1/PR3 sinks | Exact event names and bounded dimensions; no tenant/entity labels |
+| Added durable I/O is bounded | PR1 selectors; PR2 benchmark | Cache hit = 0 durable reads; tokenless/miss/strict group = one full durable read |
+| Publication evidence matches code | All PRs | Exact SHA/tree, focused tests, completion gates, medium-scale artifact, Branch Release Gate |
 
 Focused verification must use current paths, including:
 

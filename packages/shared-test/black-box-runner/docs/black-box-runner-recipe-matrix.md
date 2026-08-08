@@ -26,26 +26,26 @@ packages/shared-test/black-box-runner/recipe-matrix.mts
 
 ## Profiles
 
-| Profile                    | Purpose                                                                                                                                                   |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `quick`                    | Fast local confidence. Runs deterministic memory delivery plus selected dry-run browser recipes.                                                          |
-| `dry`                      | Dry-run recipe expansion for browser/remote/signaling recipes that should not touch real services.                                                        |
-| `deterministic`            | Deterministic local recipes, including intentional diagnostic failures with expected exit codes.                                                          |
-| `soak`                     | Deterministic same-connection soak recipes that keep one connection set open across repeated loop traffic.                                                |
-| `traffic`                  | Deterministic seeded traffic-plan recipes with replayable expanded plans.                                                                                 |
-| `parallel`                 | Deterministic bounded parallel group recipes for concurrent actor behavior.                                                                               |
-| `failure-diagnostics`      | Recipes that are expected to fail and produce useful failure artifacts.                                                                                   |
-| `live-soak`                | Gated live browser and remote-browser same-connection soak recipes.                                                                                       |
-| `live-traffic`             | Gated live browser and remote-browser seeded traffic recipes.                                                                                             |
-| `live-parallel`            | Gated live browser and remote-browser bounded parallel recipes.                                                                                           |
-| `live-crdt`                | Gated CRDT live validation for WS convergence, RTC fallback, durable catch-up, local persistence, and admin integrity.                                    |
-| `rallar-server-live`       | Live Rallar Server REST/WS recipes. Skips when the configured API is unavailable.                                                                         |
-| `api-v1-black-box`         | Full no-browser `apps/api-v1` REST/WS black-box test recipes. Managed helper runs start the API with deterministic local ICE and operator-token settings. |
+| Profile | Purpose |
+| --- | --- |
+| `quick` | Fast local confidence. Runs deterministic memory delivery plus selected dry-run browser recipes. |
+| `dry` | Dry-run recipe expansion for browser/remote/signaling recipes that should not touch real services. |
+| `deterministic` | Deterministic local recipes, including intentional diagnostic failures with expected exit codes. |
+| `soak` | Deterministic same-connection soak recipes that keep one connection set open across repeated loop traffic. |
+| `traffic` | Deterministic seeded traffic-plan recipes with replayable expanded plans. |
+| `parallel` | Deterministic bounded parallel group recipes for concurrent actor behavior. |
+| `failure-diagnostics` | Recipes that are expected to fail and produce useful failure artifacts. |
+| `live-soak` | Gated live browser and remote-browser same-connection soak recipes. |
+| `live-traffic` | Gated live browser and remote-browser seeded traffic recipes. |
+| `live-parallel` | Gated live browser and remote-browser bounded parallel recipes. |
+| `live-crdt` | Gated CRDT live validation for WS convergence, RTC fallback, durable catch-up, local persistence, and admin integrity. |
+| `rallar-server-live` | Live Rallar Server REST/WS recipes. Skips when the configured API is unavailable. |
+| `api-v1-black-box` | Full no-browser `apps/api-v1` REST/WS black-box test recipes. Managed helper runs start the API with deterministic local ICE and operator-token settings. |
 | `api-v1-black-box-recipes` | Portable recipes-only subset for an already-running `apps/api-v1`. Excludes scenarios that require server startup env the helper cannot apply externally. |
-| `browser-live`             | Live browser-backed Rallar recipes. Requires credentials, Rallar API, and Playwright.                                                                     |
-| `remote-live`              | Live control-server-backed browser provider recipes. Requires Rallar API, control server, and an agent.                                                   |
-| `signaling-live`           | Live signaling-only provider recipes. Requires `RALLAR_SIGNALING_URL`.                                                                                    |
-| `live`                     | All live profiles together. Skips unavailable gates unless strict mode is used.                                                                           |
+| `browser-live` | Live browser-backed Rallar recipes. Requires credentials, Rallar API, and Playwright. |
+| `remote-live` | Live control-server-backed browser provider recipes. Requires Rallar API, control server, and an agent. |
+| `signaling-live` | Live signaling-only provider recipes. Requires `RALLAR_SIGNALING_URL`. |
+| `live` | All live profiles together. Skips unavailable gates unless strict mode is used. |
 
 ## Commands
 
@@ -129,8 +129,8 @@ Do not weaken it to accommodate topology work. This runner topology change
 requires correctness and load gates, but introduces no new production benchmark
 or numeric latency SLO.
 
-For every managed invocation, remove any old `fairness-proof.json` before
-startup. A failure must leave only current-run evidence: inspect all isolated
+The runner automatically clears any prior `fairness-proof.json` before startup.
+A failure therefore leaves only current-run evidence: inspect all isolated
 server logs and the current fairness proof where it exists, never a proof from
 an earlier failed run.
 

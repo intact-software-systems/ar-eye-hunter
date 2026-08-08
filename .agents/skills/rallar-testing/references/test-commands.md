@@ -114,9 +114,9 @@ API-v1 artifact directory.
 Recipes-only mode is externally managed: it neither starts nor stops API
 processes. Standard/default, CRDT, and medium-scale Postgres recipes must make
 node C meaningful; inspect all three logs and the current-run fairness proof
-when a managed cluster run fails. The runner clears any prior fairness proof at
-the start of each invocation, so a failed run cannot inherit stale proof as
-current evidence.
+when a managed cluster run fails. The runner automatically clears prior
+`fairness-proof.json` at the start of each invocation, so a failed run cannot
+inherit stale proof as current evidence.
 
 The three-server runner is a test-topology change. Run the applicable focused
 correctness and load gates, but do not add a new production performance
