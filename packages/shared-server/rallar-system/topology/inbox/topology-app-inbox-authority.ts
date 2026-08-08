@@ -5,7 +5,7 @@ import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 import {
   createTopologyMutationAuthorityProof,
   type TopologyMutationAuthorityProof,
-} from '../../services/topology-mutation-authority-proof.ts';
+} from './topology-mutation-authority-proof.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';

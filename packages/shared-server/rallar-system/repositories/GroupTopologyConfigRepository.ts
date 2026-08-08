@@ -22,14 +22,14 @@ import type {
     GroupTopologyConfigGenerationTarget,
     GroupTopologyConfigInvariantGeneration,
     GroupTopologyConfigMutationRecord,
-} from '../services/group-topology-config-mutations.ts';
+} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import {
     validateGroupTopologyConfigGeneration,
     validateGroupTopologyConfigInvariantGeneration,
     validateGroupTopologyConfigMutationRecord,
     validateStoredGroupTopologyConfig,
     validateStoredGroupTopologyOverride,
-} from '../services/group-topology-config-mutations.ts';
+} from '../topology/config/mutation/validate-topology-config-mutation-records.ts';
 import {
     createGroupTopologyMutationExactReadDecoders,
     createGroupTopologyMutationExactReadLocations,

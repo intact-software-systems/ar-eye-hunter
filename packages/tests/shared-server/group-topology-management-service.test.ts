@@ -6,7 +6,7 @@ import {
 } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import type {
     GroupTopologyConfigMutationCommand,
-} from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+} from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 
 const GROUP_REF = {

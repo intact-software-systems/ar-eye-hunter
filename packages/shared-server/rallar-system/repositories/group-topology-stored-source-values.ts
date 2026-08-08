@@ -7,7 +7,7 @@ import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
   validateStoredGroupTopologyConfig,
   validateStoredGroupTopologyOverride,
-} from '../services/group-topology-config-mutations.ts';
+} from '../topology/config/mutation/validate-topology-config-mutation-records.ts';
 
 const LEGACY_CONFIG_KEYS = [
   'groupRef',

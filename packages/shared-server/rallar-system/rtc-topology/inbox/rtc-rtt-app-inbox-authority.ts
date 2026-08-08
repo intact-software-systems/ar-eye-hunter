@@ -6,7 +6,7 @@ import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 // prettier-ignore
 import {
   createTopologyMutationAuthorityProof,
-} from '../../services/topology-mutation-authority-proof.ts';
+} from '../../topology/inbox/topology-mutation-authority-proof.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import {

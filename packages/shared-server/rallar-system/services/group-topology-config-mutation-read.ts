@@ -6,7 +6,7 @@ import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-r
 import type {
   GroupTopologyConfigMutationCommand,
   GroupTopologyConfigMutationRead,
-} from './group-topology-config-mutations.ts';
+} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
 
 export async function readTopologyConfigMutation(
   repository: GroupTopologyConfigRepository,

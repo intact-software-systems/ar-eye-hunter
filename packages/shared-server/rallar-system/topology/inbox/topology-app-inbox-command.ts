@@ -11,7 +11,7 @@ import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 // prettier-ignore
 import type {
   GroupTopologyConfigMutationCommand,
-} from '../../services/group-topology-config-mutations.ts';
+} from '../config/mutation/group-topology-config-mutation-contracts.ts';
 import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
 import { AppInboxType } from '../../services/AppInboxService.ts';
 import type {
@@ -62,7 +62,7 @@ export async function toTopologyAppInboxCommand(
     ...stableCommand,
     capturedAtEpochMs: input.capturedAtEpochMs,
     commandHash: await hashCanonicalCommand(stableCommand),
-  };
+  } as TopologyAppInboxCommand;
 }
 
 export async function readAuthenticatedTopologyCommand<V>(

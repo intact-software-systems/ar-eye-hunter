@@ -22,7 +22,7 @@ import type {
   GroupTopologyConfigGenerationTarget,
   GroupTopologyConfigInvariantGeneration,
   GroupTopologyConfigMutationRecord,
-} from '../services/group-topology-config-mutations.ts';
+} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
 
 type ExactReadLocation = Readonly<{
   namespace: string;

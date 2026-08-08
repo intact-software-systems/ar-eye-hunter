@@ -1,6 +1,6 @@
 import type {
   GroupTopologyConfigMutationRecord,
-} from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+} from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import type {
   ClientMutationIdempotencyRecord,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';

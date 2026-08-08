@@ -6,7 +6,7 @@ import type { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
 // prettier-ignore
 import type {
   TopologyMutationAuthorityProof,
-} from '../../services/topology-mutation-authority-proof.ts';
+} from '../../topology/inbox/topology-mutation-authority-proof.ts';
 
 export type RtcRttAppInboxCommand = Readonly<{
   actor: Readonly<{ principalId: string; sessionId: string }>;

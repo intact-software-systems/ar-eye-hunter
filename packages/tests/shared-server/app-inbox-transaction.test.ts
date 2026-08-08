@@ -30,7 +30,7 @@ import {
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/services/group-topology-config-service.ts';
+import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 

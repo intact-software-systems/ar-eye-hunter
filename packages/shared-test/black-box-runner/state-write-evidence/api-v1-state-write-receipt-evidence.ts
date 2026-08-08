@@ -12,7 +12,7 @@ import { validateClientMutationIdempotencyRecord } from
 import { validateGroupMutationCommand } from
     '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { validateGroupTopologyConfigMutationRecord } from
-    '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+    '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-records.ts';
 import { validatePersistedAppInboxCommandIdentity } from
     '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
 import { AppInboxType } from

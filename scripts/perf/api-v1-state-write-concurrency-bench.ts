@@ -29,7 +29,8 @@ import {
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { type ClientMutationIdempotencyRecord, validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { type GroupMutationIdempotencyRecord, validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { type GroupTopologyConfigMutationRecord, validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+import type { GroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import { validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-records.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';

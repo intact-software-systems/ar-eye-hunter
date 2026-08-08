@@ -6,6 +6,7 @@ import {
   readFunctionBody as functionBody,
   readMethodBody as methodBody,
 } from './authoritative-mutation-source-analysis.ts';
+import { authoritativeMutationRuntimeSourcePaths } from './authoritative-mutation-runtime-source-inventory.ts';
 
 // Retain permanently as cross-domain semantic phase-order evidence.
 const read = (file: string): string => readFileSync(file, 'utf8');
@@ -52,37 +53,7 @@ const sources = {
   rtt: read(`${serviceRoot}/rtc-rtt-mutation-service.ts`),
 };
 
-const trackedRuntimeSource = [
-  `${serviceRoot}/AppInboxService.ts`,
-  'packages/shared-server/rallar-system/client-state/client-state-service.ts',
-  'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
-  'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
-  `${serviceRoot}/group-state-service.ts`,
-  `${groupStateRoot}/group-mutation-authority.ts`,
-  `${groupStateRoot}/group-mutation-command.ts`,
-  `${groupStateRoot}/group-presence-mutation-command.ts`,
-  `${groupStateRoot}/group-state-service-contracts.ts`,
-  `${groupStateRoot}/group-state-service.ts`,
-  `${groupStateRoot}/inbox/group-state-inbox-contracts.ts`,
-  `${groupStateRoot}/inbox/group-state-inbox-handler.ts`,
-  `${groupStateRoot}/inbox/to-group-mutation-descriptor.ts`,
-  `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
-  `${topologyInboxRoot}/topology-app-inbox-handler.ts`,
-  `${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`,
-  `${serviceRoot}/group-state-mutations.ts`,
-  `${serviceRoot}/group-topology-config-mutations.ts`,
-  `${serviceRoot}/group-topology-management-service.ts`,
-  `${groupStateRoot}/presence/group-presence-summary-work.ts`,
-  `${serviceRoot}/rtc-rtt-mutation-service.ts`,
-  `${serviceRoot}/canonical-command-hash.ts`,
-  `${repositoryRoot}/RtcTopologyPublicationRepository.ts`,
-  `${repositoryRoot}/RtcTopologyScalarAuthorityMigration.ts`,
-  'packages/shared-server/rallar-system/middleware/RallarMiddleware.ts',
-  'packages/shared-server/mod.ts',
-  'apps/api-v1/src/middleware.ts',
-]
-  .map(read)
-  .join('\n');
+const trackedRuntimeSource = authoritativeMutationRuntimeSourcePaths.map(read).join('\n');
 
 const removedIntermediateOutboxSymbols = [
   'state-mutation:' + 'outbox',

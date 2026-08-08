@@ -44,17 +44,23 @@ import {
     GroupTopologyServerOptions,
     resolveGroupTopologyConfig,
     resolveOverrideExpiresAtEpochMs,
-} from './group-topology-config-service.ts';
+} from '../topology/config/group-topology-config.ts';
 import {
-    computeTopologyConfigMutation,
     type GroupTopologyConfigMutationCommand,
     type GroupTopologyConfigMutationComputed,
     type GroupTopologyConfigMutationReceipt,
     type GroupTopologyConfigMutationStableFacts,
+} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import {
+    computeTopologyConfigMutation,
+} from '../topology/config/mutation/compute-topology-config-mutation.ts';
+import {
     probeTopologyConfigMutationIdempotency,
-    validateTopologyConfigMutation,
     validateTopologyConfigMutationIdempotency,
-} from './group-topology-config-mutations.ts';
+} from '../topology/config/mutation/topology-config-mutation-idempotency.ts';
+import {
+    validateTopologyConfigMutation,
+} from '../topology/config/mutation/validate-topology-config-mutation.ts';
 import { readTopologyConfigMutation } from './group-topology-config-mutation-read.ts';
 import { backfillGroupTopologyConfigGenerationsForRef } from './group-topology-config-generation-backfill.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
@@ -394,17 +400,17 @@ export class GroupTopologyManagementService {
             computed.outcome === 'replay' ||
             computed.outcome === 'idempotency-conflict'
         ) {
-            validateTopologyConfigMutationIdempotency(
-                preparation.command,
-                read.state,
-                preparation.stableFacts.commandHash,
-                {
+            validateTopologyConfigMutationIdempotency({
+                command: preparation.command,
+                read: read.state,
+                commandHash: preparation.stableFacts.commandHash,
+                authorityFacts: {
                     isPlatformAdmin: this.isPlatformAdmin(
                         preparation.command.input.updatedByPrincipalId,
                     ),
                 },
                 computed,
-            );
+            });
             return;
         }
         validateTopologyConfigMutation({

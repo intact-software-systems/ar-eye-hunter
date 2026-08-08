@@ -8,7 +8,7 @@ import {
 } from '../repositories/GroupTopologyConfigRepository.ts';
 import type {
     GroupTopologyConfigGenerationTarget,
-} from './group-topology-config-mutations.ts';
+} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import {
     DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS,
     RuntimeStateRetryExhaustedError,

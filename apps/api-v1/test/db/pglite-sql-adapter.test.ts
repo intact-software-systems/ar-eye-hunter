@@ -58,7 +58,7 @@ import {
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import {
   hashMutationCommand,
   type JsonWireValue,
