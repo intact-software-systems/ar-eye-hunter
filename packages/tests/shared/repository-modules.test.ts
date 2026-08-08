@@ -44,7 +44,9 @@ import {
     findOverlayById,
     getAllOverlays,
     onOverlayChange,
+    OverlayRevisionConflictError,
     removeOverlayById,
+    setOverlayAdoptionDiagnosticsSink,
     setOverlayById,
     updateNextHopSessionIds,
     waitForOverlayChangesIdle,
@@ -663,6 +665,83 @@ describe('repository modules', () => {
             expect(findOverlayById('group-1')).toBeUndefined();
         } finally {
             unsubscribe();
+        }
+    });
+
+    it('reports every overlay adoption outcome through the diagnostics sink', () => {
+        const outcomes: string[] = [];
+        setOverlayAdoptionDiagnosticsSink((event) => {
+            outcomes.push(event.outcome);
+        });
+
+        try {
+            const overlayId = 'group-adoption';
+            const first = {
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 1,
+                    presenceRevision: 1,
+                },
+                state: 'active',
+                overlayId,
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: overlayId,
+                },
+                topology: 'star',
+                name: 'Alpha',
+                createdByClientId: 'owner',
+                createdAtEpochMs: 1,
+                nextHopSessionIds: ['self'],
+                degreeLimit: 1,
+                overlayVersion: 1,
+                updatedAtEpochMs: 1,
+            } satisfies OverlayInfo;
+            const stale = { ...first, overlayVersion: 0 } satisfies OverlayInfo;
+            const newer = { ...first, overlayVersion: 2 } satisfies OverlayInfo;
+            const conflicting = {
+                ...newer,
+                nextHopSessionIds: ['peer-x'],
+            } satisfies OverlayInfo;
+            const incomparable = {
+                ...first,
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 2,
+                    presenceRevision: 0,
+                },
+            } satisfies OverlayInfo;
+
+            setOverlayById(overlayId, first);
+            setOverlayById(overlayId, first);
+            setOverlayById(overlayId, stale);
+            setOverlayById(overlayId, newer);
+            expect(() => setOverlayById(overlayId, conflicting)).toThrow(
+                OverlayRevisionConflictError,
+            );
+            expect(() => setOverlayById(overlayId, incomparable)).toThrow(
+                OverlayRevisionConflictError,
+            );
+
+            expect(outcomes).toEqual([
+                'initial-set',
+                'equal',
+                'dominated-dropped',
+                'adopted',
+                'incomparable-conflict',
+                'incomparable-conflict',
+            ]);
+
+            setOverlayAdoptionDiagnosticsSink(() => {
+                throw new Error('diagnostics sink failure');
+            });
+            const adoptedDespiteSinkFailure = {
+                ...newer,
+                overlayVersion: 3,
+            } satisfies OverlayInfo;
+            setOverlayById(overlayId, adoptedDespiteSinkFailure);
+            expect(findOverlayById(overlayId)?.overlayVersion).toBe(3);
+        } finally {
+            setOverlayAdoptionDiagnosticsSink(undefined);
         }
     });
 

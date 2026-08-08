@@ -61,6 +61,39 @@ export class OverlayRevisionConflictError extends Error {
     }
 }
 
+export type OverlayAdoptionOutcome =
+    | 'initial-set'
+    | 'adopted'
+    | 'equal'
+    | 'dominated-dropped'
+    | 'incomparable-conflict';
+
+export type OverlayAdoptionDiagnosticsEvent = Readonly<{
+    overlayId: string;
+    outcome: OverlayAdoptionOutcome;
+}>;
+
+export type OverlayAdoptionDiagnosticsSink = (
+    event: OverlayAdoptionDiagnosticsEvent,
+) => void;
+
+// One process-wide sink keeps the adoption surface additive and opt-in.
+let adoptionDiagnosticsSink: OverlayAdoptionDiagnosticsSink | undefined;
+
+export function setOverlayAdoptionDiagnosticsSink(
+    sink: OverlayAdoptionDiagnosticsSink | undefined,
+): void {
+    adoptionDiagnosticsSink = sink;
+}
+
+function emitOverlayAdoption(overlayId: string, outcome: OverlayAdoptionOutcome): void {
+    try {
+        adoptionDiagnosticsSink?.({ overlayId, outcome });
+    } catch {
+        // Recording must never affect overlay adoption behavior.
+    }
+}
+
 export const overlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
     'shared.repository.overlays',
     'Overlay repository is not configured',
@@ -208,12 +241,14 @@ export function setOverlayById(
     const repository = requireOverlayRepository(manager);
     const current = repository.read(id);
     if (!current) {
+        emitOverlayAdoption(id, 'initial-set');
         repository.set(id, overlay);
         return;
     }
 
     const comparison = compareOverlayInfoTuple(overlay, current);
     if (comparison === 'dominates') {
+        emitOverlayAdoption(id, 'adopted');
         console.log(`Received updated overlay details: ${JSON.stringify(overlay)}`);
         repository.set(id, overlay);
         return;
@@ -221,15 +256,19 @@ export function setOverlayById(
 
     if (comparison === 'equal') {
         if (JSON.stringify(overlay) === JSON.stringify(current)) {
+            emitOverlayAdoption(id, 'equal');
             return;
         }
+        emitOverlayAdoption(id, 'incomparable-conflict');
         throw new OverlayRevisionConflictError(id);
     }
 
     if (comparison === 'incomparable') {
+        emitOverlayAdoption(id, 'incomparable-conflict');
         throw new OverlayRevisionConflictError(id);
     }
 
+    emitOverlayAdoption(id, 'dominated-dropped');
     console.log(
         'Received stale overlay data: ' +
         JSON.stringify(overlay) +

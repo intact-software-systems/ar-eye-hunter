@@ -1,5 +1,8 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
+import {
+    readOverlayAdoptionDiagnostics,
+} from '@shared-web/browser/rtc-overlay-adoption-diagnostics.ts';
 import type {
     CreateRallarRtcFacadeOptions,
     RallarRoomTransportState,
@@ -346,6 +349,8 @@ class BrowserRallarRtcController implements RallarRtcController {
             ).length,
             relayPeerCount: peers.filter((peer) => peer.usesRelay).length,
             peers,
+            groupManager: ctx.middleware.webRtcGroupManager.readDiagnostics(),
+            overlayAdoption: readOverlayAdoptionDiagnostics(),
         };
     }
 

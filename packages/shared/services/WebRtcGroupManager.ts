@@ -44,6 +44,30 @@ export type WebRtcRttReportingPeerOptions = Readonly<{
     degreeLimit?: number;
 }>;
 
+export type WebRtcGroupManagerDiagnostics = Readonly<{
+    reconcileRunCount: number;
+    reconcileAwaitedInFlightCount: number;
+    lastDesiredPeerCount: number;
+    connectAttemptCount: number;
+    connectFailureCount: number;
+    disconnectCount: number;
+    retainedEvictionCount: number;
+}>;
+
+type MutableWebRtcGroupManagerDiagnostics = {
+    -readonly [K in keyof WebRtcGroupManagerDiagnostics]: number;
+};
+
+const emptyGroupManagerDiagnostics = (): MutableWebRtcGroupManagerDiagnostics => ({
+    reconcileRunCount: 0,
+    reconcileAwaitedInFlightCount: 0,
+    lastDesiredPeerCount: 0,
+    connectAttemptCount: 0,
+    connectFailureCount: 0,
+    disconnectCount: 0,
+    retainedEvictionCount: 0,
+});
+
 type RetainedPeerConnection = Readonly<{
     peerId: PeerId;
     groupKey: string;
@@ -57,6 +81,7 @@ export class WebRtcGroupManager {
     private peerOwnersCache: ReadonlyMap<PeerId, readonly GroupId[]> | undefined;
     private reconcileInFlight: Promise<void> | undefined;
     private retainedOrder = 0;
+    private readonly diagnostics = emptyGroupManagerDiagnostics();
 
     constructor(
         public readonly rtcQBox: WebRtcConnectionService,
@@ -65,6 +90,14 @@ export class WebRtcGroupManager {
         public readonly overlayCache?: ReadableKeyedValues<string, OverlayInfo>,
         public readonly options: WebRtcGroupManagerOptions = {},
     ) {
+    }
+
+    readDiagnostics(): WebRtcGroupManagerDiagnostics {
+        return { ...this.diagnostics };
+    }
+
+    resetDiagnostics(): void {
+        Object.assign(this.diagnostics, emptyGroupManagerDiagnostics());
     }
 
     getOrCreate(group: GroupRef): WebRtcGroupService {
@@ -252,11 +285,13 @@ export class WebRtcGroupManager {
 
     private async reconcileAllGroups(): Promise<void> {
         if (this.reconcileInFlight) {
+            this.diagnostics.reconcileAwaitedInFlightCount += 1;
             await this.reconcileInFlight;
             return;
         }
 
         const run = (async () => {
+            this.diagnostics.reconcileRunCount += 1;
             const peerOwners = this.peerOwners();
             const desiredPeerIds = new Set(peerOwners.keys());
             const onlinePeerIds = this.onlinePeerIds();
@@ -265,6 +300,7 @@ export class WebRtcGroupManager {
             );
             let knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
             this.removeRetainedDesiredPeers(desiredPeerIds);
+            this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
             const connectablePeerIds = Array.from(desiredPeerIds).filter(
                 (peerId) => onlinePeerIds.has(peerId),
@@ -275,8 +311,10 @@ export class WebRtcGroupManager {
             );
 
             for (const peerId of peersToConnect) {
+                this.diagnostics.connectAttemptCount += 1;
                 const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
                 if (connected.left) {
+                    this.diagnostics.connectFailureCount += 1;
                     const error = connected.left.kind === 'self'
                         ? undefined
                         : connected.left.error;
@@ -300,6 +338,7 @@ export class WebRtcGroupManager {
                 try {
                     this.rtcQBox.disconnectPeer(peerId);
                     this.retainedPeerConnections.delete(peerId);
+                    this.diagnostics.disconnectCount += 1;
                 } catch (error) {
                     console.error(`Failed to disconnect peer ${peerId}`, error);
                 }
@@ -309,6 +348,7 @@ export class WebRtcGroupManager {
                 try {
                     this.rtcQBox.disconnectPeer(peerId);
                     this.retainedPeerConnections.delete(peerId);
+                    this.diagnostics.retainedEvictionCount += 1;
                 } catch (error) {
                     console.error(`Failed to disconnect retained peer ${peerId}`, error);
                 }

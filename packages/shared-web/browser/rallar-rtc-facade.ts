@@ -4,7 +4,11 @@ import type {
     RallarUnsubscribe,
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { RallarReadinessExpectation } from '@shared-web/browser/readiness.ts';
+import type {
+    RallarOverlayAdoptionDiagnostics,
+} from '@shared-web/browser/rtc-overlay-adoption-diagnostics.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { WebRtcGroupManagerDiagnostics } from '@shared/services/WebRtcGroupManager.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 import type { QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConnection.ts';
 
@@ -221,6 +225,8 @@ export type RallarRtcDiagnostics = Readonly<{
     connectedPeerCount: number;
     relayPeerCount: number;
     peers: readonly RallarRtcPeerDiagnostics[];
+    groupManager?: WebRtcGroupManagerDiagnostics;
+    overlayAdoption?: RallarOverlayAdoptionDiagnostics;
 }>;
 
 export type RallarRtcRecoveryStatus =
