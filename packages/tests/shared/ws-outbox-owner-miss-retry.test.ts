@@ -178,6 +178,60 @@ describe('durable WS outbox owner misses', () => {
     ]));
   });
 
+  it('gates the first remote publication on the actual listener readiness', async () => {
+    const outbox = new InMemoryQueueBox();
+    const bus = createDelayedSecondSubscriberBridgeBus();
+    const claimant = createService(outbox, createSocket(), 'claimant', () => []);
+    const remoteSocket = createSocket();
+    const remote = createService(outbox, remoteSocket, 'remote', () => [
+      { peerId: 'writer-session', connectionId: 'writer-session' },
+    ]);
+    const claimantReadiness = installQueueBoxPubSubBridge({
+      wsQBoxServerService: claimant,
+      bridge: bus,
+      channel: 'ws',
+      publisherId: 'claimant',
+      delivery: 'key',
+    });
+    await claimantReadiness;
+    const remoteReadiness = installQueueBoxPubSubBridge({
+      wsQBoxServerService: remote,
+      bridge: bus,
+      channel: 'ws',
+      publisherId: 'remote',
+      delivery: 'key',
+    });
+    await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
+      createUnicastMessage('published-before-readiness', 'reply-before-readiness'),
+      EnqueuedType.WS_OUTBOX,
+    ));
+
+    await claimant.dequeueOutbox(
+      WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
+      createResilience(),
+    );
+
+    expect(remoteSocket.sendEncoded).not.toHaveBeenCalled();
+
+    bus.releaseSecondSubscription();
+    await remoteReadiness;
+    await outbox.enqueue(QueueBoxUtilities.toResourceEntryFromMsg(
+      createUnicastMessage('published-after-readiness', 'reply-after-readiness'),
+      EnqueuedType.WS_OUTBOX,
+    ));
+
+    await claimant.dequeueOutbox(
+      WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
+      createResilience(),
+    );
+
+    expect(remoteSocket.sendEncoded).toHaveBeenCalledOnce();
+    expect(remoteSocket.sendEncoded).toHaveBeenCalledWith(
+      'writer-session',
+      expect.stringContaining('published-after-readiness'),
+    );
+  });
+
   it('keeps a published durable message with invalid targets retryable after one attempt', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(1_000);
@@ -286,10 +340,13 @@ describe('durable WS outbox owner misses', () => {
   );
 });
 
-function createUnicastMessage(): ALMessage {
+function createUnicastMessage(
+  msgId = 'durable-reply-1',
+  resourceId = 'reply-1',
+): ALMessage {
   return {
-    id: { v: 2, msgId: 'durable-reply-1', ts: Date.now(), senderId: 'server-worker' },
-    route: { topicId: 'app.crdt', resourceId: 'reply-1', contextId: 'rallar-server' },
+    id: { v: 2, msgId, ts: Date.now(), senderId: 'server-worker' },
+    route: { topicId: 'app.crdt', resourceId, contextId: 'rallar-server' },
     targets: { mode: 'unicast', toPeerId: 'writer-session' },
     constraints: { expiresAtMs: Date.now() + 60_000 },
     payload: { typeId: 'rallar.crdt.append-response.v1', contentType: 'application/json', resource: '{}' },
@@ -349,6 +406,33 @@ function createFireAndForgetBridgeBus(): QueueBoxPubSubBridge & { drain(): Promi
         subscribers.map(async (subscriber) => await subscriber(message))
       ));
     },
+  };
+}
+
+function createDelayedSecondSubscriberBridgeBus(): QueueBoxPubSubBridge & Readonly<{
+  releaseSecondSubscription(): void;
+}> {
+  const subscribers: ((message: QueueBoxPubSubMessage) => Promise<void> | void)[] = [];
+  let subscriptionCount = 0;
+  let releaseSecondSubscription: () => void = () => undefined;
+  const secondSubscription = new Promise<void>((resolve) => {
+    releaseSecondSubscription = resolve;
+  });
+
+  return {
+    subscribe: async (_channel, subscriber) => {
+      subscriptionCount += 1;
+      if (subscriptionCount === 2) {
+        await secondSubscription;
+      }
+      subscribers.push(subscriber);
+    },
+    publish: async (_channel, message) => {
+      await Promise.all(
+        subscribers.map(async (subscriber) => await subscriber(message)),
+      );
+    },
+    releaseSecondSubscription,
   };
 }
 
