@@ -32,14 +32,44 @@ readiness timeout while its other jobs succeeded. Neither outcome is called
 transient, and this follow-up cannot retroactively make PR #87, PR #88, or
 those historical gates green.
 
-The current follow-up changes only black-box topology, governance evidence,
-and active guidance; it does not change the production REST contract. It
-repairs the auth-governance evidence, adds three-process proof, and can supply
-fresh final-tree evidence only after its own exact feature SHA passes Branch
-Release Gate and API v1 Medium-Scale Gate. Its feature PR, exact feature SHA,
-workflow runs, merge SHA, resulting-main Release Gate, resulting-main Hetzner
-run, and later plan-only closure record are all pending. Local checkpoint
-results are evidence, not remote publication completion.
+The follow-up changed only black-box topology, governance evidence, and active
+guidance; it did not change the production REST contract. PR #94 published
+feature SHA `ed3c75c1b948ff6f4c827d6adddc11d81277a452`, passed Branch Release
+Gate `31257450232` and API v1 Medium-Scale Gate `31257452581`, and merged as
+exact main `20020977507c3104949da07d27b95e89d3b91c96`. On that resulting main,
+the required Release Gate job `93111803475` in Deploy Web + API run
+`31258963298` attempt 2 passed and Run Hetzner Supported Distributed Manifests
+`31258963308` passed. The parent Deploy Web + API workflow remained red only
+because the separately owned Cloudflare branch-control job failed; issue #98
+owns that provider account/API configuration work.
+
+The local checkpoint also exposed a pre-existing PostgreSQL admin-prune defect:
+postgres.js encoded the row-ID array as a JSON scalar, so deleting two expired
+inbox results failed with PostgreSQL `22023`. PR #97 corrected all four
+admin-prune page-deletion paths without changing the REST convergence contract.
+It published feature SHA `a7219a7b0592f7c9796d72f5b190c10e18ef1387`,
+passed Branch Release Gate `31262942800` and API v1 Medium-Scale Gate
+`31262944466`, and merged as exact main
+`1ec386f12735203daf928ca56e6b21d3b089c196`.
+
+On that exact resulting main, required Release Gate job `93124715021` in Deploy
+Web + API run `31266237752` passed root CI, deployable builds, Deno checks,
+migrations, the three-server API v1 black-box recipes, artifact upload, and
+Postgres full-stack smoke tests. The parent workflow conclusion is still red
+only because Cloudflare branch-control job `93124714925` failed at its provider
+API/configuration step; the application web build jobs passed and deployment
+jobs were skipped. Run Hetzner Supported Distributed Manifests `31266237746`
+passed all five supported manifests on the same exact SHA, including provider
+parity without changing its readiness timeout or minimum-ready-peer
+requirement.
+
+This exact-main evidence closes the REST convergence implementation and the
+three-server follow-up. It does not retroactively turn the historical PR #87,
+PR #88, or `a66b0b02e162b1027478a397fb1ebfe74e7a0a30` gates green. This
+plan-only record is the closure publication; its own future merge SHA and
+resulting-main external evidence cannot be recorded before those events occur
+and remain the publication envelope rather than a production implementation
+blocker.
 
 The completed local checkpoint recorded:
 
@@ -56,6 +86,34 @@ readiness failure. After explicit authorization to reset local test data, all
 four checkpoint commands passed. The runner automatically clears prior
 `fairness-proof.json` before every invocation, and regression coverage proves
 that lifecycle.
+
+The exact-main Hetzner artifacts for `31266237746` provide a current operational
+baseline rather than a numeric SLO. Health and composite-evidence completed with
+100% pass rates and command maxima of 363 ms and 603 ms. RTC smoke and provider
+parity completed with 100% pass rates and command maxima of 7,293 ms and 7,838
+ms. The five-second RTC stability run completed all 50 attempted stream
+operations with zero failed, dropped, in-flight, or backpressure operations;
+its maximum command duration was 12,531 ms and maximum stream drift was 5 ms.
+Every manifest reported zero reconnects and no failed, missing, stale, or flaky
+agents. Raw analyzer inventories retained 6 RTC-smoke, 11 provider-parity, and
+7 stability diagnostic events, but the correlated SPA runtime reports had no
+diagnostics or warning signals and no recipe failed. Those nonzero raw
+inventories remain visible baseline evidence rather than being silently
+discarded.
+
+Residual work has explicit ownership:
+
+- Issue #98 owns the external Cloudflare/Deno branch-deployment account and API
+  configuration. No provider configuration is changed by this plan.
+- Issue #99 preserves the historical provider-parity peer-discovery timeout for
+  root-cause classification. Two later exact-main successes are clean current
+  evidence, not proof that the historical failure was transient.
+- Issue #100 tracks the deliberately deferred REST convergence hardening listed
+  below.
+- Issue #102 tracks repeatable isolation for the reused-database Postgres
+  presence-expiry suite; it is separate from the fixed admin-prune defect.
+- Issue #104 tracks migration away from deprecated Node.js 20 GitHub Action
+  runtimes observed in the successful exact-main workflows.
 
 ## Public Contracts
 
