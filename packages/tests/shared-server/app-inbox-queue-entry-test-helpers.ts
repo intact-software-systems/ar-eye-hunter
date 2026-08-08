@@ -7,7 +7,7 @@ import {
   createResilience,
   readEntries,
   type TestResourceInbox,
-} from './app-auth-inbox-test-harness.ts';
+} from './auth/auth-app-inbox-test-runtime.ts';
 
 const DELAYED_UNTIL_EPOCH_MS = 1_800_001_000_000;
 

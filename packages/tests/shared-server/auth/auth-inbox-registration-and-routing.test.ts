@@ -1,108 +1,165 @@
-import { Temporal } from '@js-temporal/polyfill';
-import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-import { AuthInboxHandler } from '@shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts';
-import {
-  AUTH_STATE_APP_INBOX_TOPIC,
-  toAuthAppInboxType,
-  toAuthCommandContextId,
-} from '@shared-server/rallar-system/auth/inbox/auth-app-inbox-routing.ts';
-import type { AuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-import type {
-  AuthMutationCommand,
-  AuthMutationComputed,
-  AuthMutationRead,
-  AuthMutationResult,
-} from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import type {
-  AppInboxMutationTransactionResult,
-  AppInboxMutationTransactionWriter,
-} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+import type { IssueAuthSessionCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 
-describe('auth inbox routing phase order', () => {
-  it('runs decode, read, facts, compute, validate, and transaction write in order', async () => {
-    const actions: string[] = [];
-    const transaction = {} as PSqlTransactionSql;
-    const command = await createIssueSessionCommand();
-    const read: AuthMutationRead = {
-      kind: 'issue-session',
-      userByUsername: null,
-      userByClientId: null,
-      byToken: null,
-      bySession: null,
-      expiredByTokenEntry: null,
-      expiredBySessionEntry: null,
-    };
-    const result: AuthMutationResult = {
-      requestId: command.requestId,
-      kind: 'session-issued',
-      ...command.session,
-    };
-    const computed: AuthMutationComputed = {
-      command,
-      read,
-      result,
-      sessions: [{ session: command.session }],
-      agentTickets: [],
-      logoutOutbox: null,
-      outcome: 'write',
-    };
-    const written: Array<readonly [PSqlTransactionSql, AuthMutationComputed]> = [];
-    const handler = new AuthInboxHandler({
-      mutationService: createMutationService({ actions, read, computed, result, written }),
-      credentialIssuer: createCredentialIssuer(actions),
-      transactionWriter: new RecordingTransactionWriter(actions, transaction),
+import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
+import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
+import {
+  type AuthInboxTestRuntime,
+  createResilience,
+  createAuthInboxTestRuntime,
+  TestResourceInbox,
+  TestResourceInboxResults,
+  waitForQueuedEntry,
+} from './auth-app-inbox-test-runtime.ts';
+const AUTH_INBOX_TYPES = [
+  'AUTH_USER_REGISTER',
+  'AUTH_SESSION_ISSUE',
+  'AUTH_SESSION_LOGOUT',
+  'AUTH_WS_TICKET_ISSUE',
+  'AUTH_WS_TICKET_CONSUME',
+  'AUTH_AGENT_SESSION_TICKETS_ISSUE',
+  'AUTH_AGENT_SESSION_TICKET_CONSUME',
+] as const;
+
+describe('AppAuthInboxService registration', () => {
+  it('registers all seven callbacks in order before any later queue invocation', async () => {
+    const queue = new TestResourceInbox();
+    const results = new TestResourceInboxResults();
+    const reader = new InboxQueueReader(queue);
+    const registrations = vi.spyOn(reader, 'onInboxMessageDo');
+    const runtime = new FakeRuntimeStateRepository();
+    const mutationService = createAuthMutationService({
+      runtimeRepository: runtime,
+      serviceId: 'auth-registration-service',
     });
-
-    await expect(handler.processAuthMutation(command, createContext(command))).resolves.toBe(
-      result,
+    const read = vi.spyOn(mutationService, 'read');
+    const service = new AppAuthInboxService(
+      reader,
+      queue as never,
+      results as never,
+      createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
+      mutationService,
+      createHmacAuthCredentialIssuer('auth-registration-secret-0123456789abcdef'),
+      'auth-registration-service',
     );
-    expect(actions).toEqual(['read', 'facts', 'compute', 'validate', 'transaction', 'write']);
-    expect(written).toEqual([[transaction, computed]]);
+
+    expect(registrations.mock.calls.map(([type]) => type)).toEqual(
+      AUTH_INBOX_TYPES.map((type) => AppInboxType[type]),
+    );
+    expect(read).not.toHaveBeenCalled();
+
+    const pending = service.logoutSession({
+      requestId: 'registration-later-invocation',
+      capturedAtEpochMs: 1_000,
+      session: {
+        clientId: 'client-1',
+        username: 'alice',
+        sessionId: 'session-1',
+        accessToken: 'absent-access-token',
+        issuedAtEpochMs: 500,
+        expiresAtEpochMs: 2_000,
+      },
+    });
+    await waitForQueuedEntry(queue);
+    expect(read).not.toHaveBeenCalled();
+
+    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await expect(pending).resolves.toMatchObject({ right: { loggedOut: true } });
+    expect(read).toHaveBeenCalledOnce();
   });
 });
 
-describe('auth inbox routing rejection', () => {
-  it('decodes before queue identity validation and exits before mutation phases on mismatch', async () => {
-    const actions: string[] = [];
-    const transaction = {} as PSqlTransactionSql;
-    const command = await createIssueSessionCommand();
-    const context = createContext(command, 'wrong-context');
-    const handler = new AuthInboxHandler({
-      mutationService: createUnreachableMutationService(actions),
-      credentialIssuer: createCredentialIssuer(actions),
-      transactionWriter: new RecordingTransactionWriter(actions, transaction),
-    });
-
-    await expect(handler.processAuthMutation({}, context)).rejects.toThrow(
-      'Auth mutation command version is invalid',
-    );
-    await expect(handler.processAuthMutation(command, context)).rejects.toThrow(
-      'Auth AppInbox command identity differs from queue key',
-    );
-    expect(actions).toEqual([]);
-  });
+it('defines every mandatory auth mutation command at the AppInbox boundary', () => {
+  expect(AUTH_INBOX_TYPES.map((type) => AppInboxType[type])).toEqual(AUTH_INBOX_TYPES);
 });
 
-async function createIssueSessionCommand(): Promise<
-  Extract<
-    AuthMutationCommand,
+it(
+  'does not persist session or success results for malformed lifecycle commands',
+  rejectsMalformedSessionLifecycles,
+);
+
+async function rejectsMalformedSessionLifecycles(): Promise<void> {
+  const capturedAtEpochMs = Date.now() + 60_000;
+  const invalidLifecycles = [
     {
-      kind: 'issue-session';
-    }
-  >
-> {
+      label: 'backdated',
+      issuedAtEpochMs: capturedAtEpochMs - 1,
+      expiresAtEpochMs: capturedAtEpochMs + 60_000,
+    },
+    {
+      label: 'future-issued',
+      issuedAtEpochMs: capturedAtEpochMs + 1,
+      expiresAtEpochMs: capturedAtEpochMs + 60_000,
+    },
+    {
+      label: 'equal-expiry',
+      issuedAtEpochMs: capturedAtEpochMs,
+      expiresAtEpochMs: capturedAtEpochMs,
+    },
+    {
+      label: 'reversed-expiry',
+      issuedAtEpochMs: capturedAtEpochMs,
+      expiresAtEpochMs: capturedAtEpochMs - 1,
+    },
+  ] as const;
+  for (const lifecycle of invalidLifecycles) {
+    await expectMalformedLifecycle({ capturedAtEpochMs, lifecycle });
+  }
+}
+
+interface MalformedLifecycleInput {
+  readonly capturedAtEpochMs: number;
+  readonly lifecycle: Readonly<{
+    label: string;
+    issuedAtEpochMs: number;
+    expiresAtEpochMs: number;
+  }>;
+}
+
+async function expectMalformedLifecycle({
+  capturedAtEpochMs,
+  lifecycle,
+}: MalformedLifecycleInput): Promise<void> {
+  const runtimeRepository = new FakeRuntimeStateRepository();
+  const auth = createAuthInboxTestRuntime({
+    runtimeRepository,
+    serviceId: 'auth-test-service',
+    credentialSecret: 'invalid-lifecycle-secret-0123456789abcdef',
+  });
+  const command = await createMalformedCommand(auth, capturedAtEpochMs, lifecycle);
+  const pending = auth.service.processAuthCommandUntilCompletion(command);
+  const rejected = await observeMalformedOutcome(auth, pending);
+
+  expect(rejected).toBe(true);
+  expectSessionStorageEmpty(runtimeRepository);
+  expect(
+    auth.results
+      .allEntries()
+      .some(
+        (entry) =>
+          entry.status === EntityStatus.COMPLETED || entry.resource.includes('session-issued'),
+      ),
+  ).toBe(false);
+}
+
+async function createMalformedCommand(
+  auth: AuthInboxTestRuntime,
+  capturedAtEpochMs: number,
+  lifecycle: MalformedLifecycleInput['lifecycle'],
+): Promise<IssueAuthSessionCommand> {
   return {
     version: 1,
     kind: 'issue-session',
-    requestId: 'handler-session-request',
-    capturedAtEpochMs: 1_000,
+    requestId: `invalid-lifecycle-${lifecycle.label}`,
+    capturedAtEpochMs,
     authority: {
       kind: 'static-client',
       clientId: 'client-1',
@@ -111,122 +168,45 @@ async function createIssueSessionCommand(): Promise<
     session: {
       clientId: 'client-1',
       username: 'alice',
-      sessionId: 'session-1',
-      accessTokenDigest: await hashAuthSecret('handler-access-token'),
-      issuedAtEpochMs: 1_000,
-      expiresAtEpochMs: 2_000,
+      sessionId: `invalid-session-${lifecycle.label}`,
+      accessTokenDigest: await hashAuthSecret(
+        await auth.credentialIssuer.issueAccessToken(`invalid-session-${lifecycle.label}`),
+      ),
+      issuedAtEpochMs: lifecycle.issuedAtEpochMs,
+      expiresAtEpochMs: lifecycle.expiresAtEpochMs,
     },
   };
 }
 
-interface MutationServiceRecording {
-  readonly actions: string[];
-  readonly read: AuthMutationRead;
-  readonly computed: AuthMutationComputed;
-  readonly result: AuthMutationResult;
-  readonly written: Array<readonly [PSqlTransactionSql, AuthMutationComputed]>;
-}
-
-function createMutationService(input: MutationServiceRecording): AuthMutationService {
-  return {
-    read: async () => {
-      input.actions.push('read');
-      return input.read;
-    },
-    compute: () => {
-      input.actions.push('compute');
-      return input.computed;
-    },
-    validate: () => {
-      input.actions.push('validate');
-    },
-    write: async (transaction, candidate) => {
-      input.actions.push('write');
-      input.written.push([transaction, candidate]);
-      return input.result;
-    },
-  };
-}
-
-function createUnreachableMutationService(actions: string[]): AuthMutationService {
-  const unreachable = (): never => {
-    actions.push('unexpected-mutation-phase');
-    throw new Error('Mutation phase must not run');
-  };
-  return {
-    read: async () => unreachable(),
-    compute: unreachable,
-    validate: unreachable,
-    write: async () => unreachable(),
-  };
-}
-
-function createCredentialIssuer(actions: string[]): AuthCredentialIssuer {
-  return {
-    issueAccessToken: async () => {
-      actions.push('facts');
-      return 'handler-access-token';
-    },
-    issueWebSocketTicket: async () => {
-      throw new Error('WebSocket ticket issuance must not run');
-    },
-    issueAgentTicket: async () => {
-      throw new Error('Agent ticket issuance must not run');
-    },
-  };
-}
-
-class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
-  constructor(
-    private readonly actions: string[],
-    private readonly transaction: PSqlTransactionSql,
-  ) {}
-
-  async writeMutation<Result>(
-    _context: AppInboxMessageContext,
-    write: (transaction: PSqlTransactionSql) => Promise<Result>,
-  ): Promise<Result> {
-    this.actions.push('transaction');
-    return await write(this.transaction);
+async function observeMalformedOutcome(
+  auth: AuthInboxTestRuntime,
+  pending: ReturnType<AuthInboxTestRuntime['service']['processAuthCommandUntilCompletion']>,
+): Promise<boolean> {
+  const firstOutcome = await Promise.race([
+    pending.then(
+      (value) => ({ kind: 'settled' as const, value }),
+      (error: unknown) => ({ kind: 'rejected' as const, error }),
+    ),
+    waitForQueuedEntry(auth.queue).then(() => ({ kind: 'queued' as const })),
+  ]);
+  let rejected = firstOutcome.kind === 'rejected';
+  if (firstOutcome.kind === 'queued') {
+    await auth.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    try {
+      const result = await pending;
+      rejected = result.right === undefined;
+    } catch {
+      rejected = true;
+    }
   }
-
-  async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-    _context: AppInboxMessageContext,
-    _write: (
-      transaction: PSqlTransactionSql,
-    ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>,
-  ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
-    throw new Error('After-commit transaction must not run');
-  }
+  return rejected;
 }
 
-function createContext(
-  command: AuthMutationCommand,
-  contextId: string = toAuthCommandContextId(command),
-): AppInboxMessageContext {
-  const enqueue = {
-    type: toAuthAppInboxType(command),
-    topicId: AUTH_STATE_APP_INBOX_TOPIC,
-    resourceId: command.requestId,
-    contextId,
-    data: command,
-  };
-  const entry: ResourceEntry = {
-    key: {
-      topicId: enqueue.topicId,
-      resourceId: enqueue.resourceId,
-      contextId: enqueue.contextId,
-    },
-    resource: JSON.stringify(enqueue),
-    typeId: EnqueuedType.APP_INBOX,
-    audit: {
-      date: Temporal.PlainTime.from('12:00:00'),
-      createdBy: 'auth-test-service',
-      createdTs: Temporal.PlainDateTime.from('2026-08-07T12:00:00'),
-      expiryTs: Temporal.Instant.from('2026-08-07T13:00:00Z'),
-    },
-    status: EntityStatus.RESERVED,
-    dequeueAudit: { attempts: 1 },
-  };
-  return { enqueue, message: { id: { ts: 1_000 } } as never, entry };
+function expectSessionStorageEmpty(runtimeRepository: FakeRuntimeStateRepository): void {
+  expect(
+    [...runtimeRepository.data.keys()].filter(
+      (key) =>
+        key.startsWith('auth-sessions:by-token::') || key.startsWith('auth-sessions:by-session::'),
+    ),
+  ).toEqual([]);
 }

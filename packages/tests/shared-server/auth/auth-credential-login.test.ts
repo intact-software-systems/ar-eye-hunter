@@ -1,165 +1,131 @@
 import { describe, expect, it } from 'vitest';
 
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-import {
-  authenticateAuthUser,
-  type LoginAuthUserOptions,
-} from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
+import { authenticateAuthUser } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import { prepareAuthUserRegistration } from '@shared-server/rallar-system/auth/login/prepare-auth-user-registration.ts';
-import { createHmacAuthCredentialIssuer as createCompatibilityCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
-import {
-  authenticateAuthUser as authenticateCompatibilityAuthUser,
-  prepareAuthUserRegistration as prepareCompatibilityAuthUserRegistration,
-} from '@shared-server/rallar-system/services/auth-login-service.ts';
-import {
-  authenticateAuthUser as authenticatePublicAuthUser,
-  createHmacAuthCredentialIssuer as createPublicCredentialIssuer,
-  hashAuthSecret as hashPublicAuthSecret,
-  prepareAuthUserRegistration as preparePublicAuthUserRegistration,
-} from '@shared-server/mod.ts';
-import { hashAuthSecret as hashRepositoryAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 
-const credentialSecret = 'auth-task-one-secret-0123456789abcdef';
+import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
-describe('auth credential compatibility', () => {
-  it('catches compatibility exports that no longer resolve to the canonical runtime owners', () => {
-    expect(createCompatibilityCredentialIssuer).toBe(createHmacAuthCredentialIssuer);
-    expect(authenticateCompatibilityAuthUser).toBe(authenticateAuthUser);
-    expect(prepareCompatibilityAuthUserRegistration).toBe(prepareAuthUserRegistration);
-    expect(createPublicCredentialIssuer).toBe(createHmacAuthCredentialIssuer);
-    expect(authenticatePublicAuthUser).toBe(authenticateAuthUser);
-    expect(preparePublicAuthUserRegistration).toBe(prepareAuthUserRegistration);
-    expect(hashRepositoryAuthSecret).toBe(hashAuthSecret);
-    expect(hashPublicAuthSecret).toBe(hashAuthSecret);
-  });
-});
-
-describe('auth credential issuer', () => {
-  it('catches a credential issuer that changes the locked HMAC domain, purpose, or identity', async () => {
-    const issuer = createHmacAuthCredentialIssuer(credentialSecret);
-
-    await expect(issuer.issueAccessToken('session-1')).resolves.toBe(
-      'd7o5FFiHIJx_t-Q5D8bifed9yKjbZ0iIlahYJHof--g',
-    );
-    await expect(issuer.issueWebSocketTicket('request-1', 'session-1')).resolves.toBe(
-      'qhOBnvdnS9XjjUffy--_rQ2DJKSZY8qbXUCz5J6lGVE',
-    );
-    await expect(issuer.issueAgentTicket('request-1', 'agent-1', 'session-1')).resolves.toBe(
-      '3m0dlqbcWOvUtYop1Ca97r2Ts4LiYiMuxgV9cskZByM',
-    );
-  });
-});
-
-describe('auth registration', () => {
-  it('catches registration that changes password metadata or emits an incomplete user', async () => {
-    const registered = await prepareAuthUserRegistration(
-      { username: '  Alice  ', password: 'secret', displayName: ' Alice Example ' },
-      { clientId: 'client-1', capturedAtEpochMs: 1_000 },
-    );
-
-    expect(registered).toMatchObject({
+it('prepares a complete persisted user without writing it', async () => {
+  const runtimeRepository = new FakeRuntimeStateRepository();
+  const user = await prepareAuthUserRegistration(
+    {
+      username: '  new-user  ',
+      password: 'secret',
+    },
+    {
       clientId: 'client-1',
-      username: 'Alice',
-      normalizedUsername: 'alice',
-      displayName: 'Alice Example',
-      passwordAlgorithm: 'pbkdf2-sha256',
-      passwordIterations: 120_000,
-      roles: ['member'],
-      status: 'active',
-      createdAtEpochMs: 1_000,
-      updatedAtEpochMs: 1_000,
-    });
-    expect(registered.passwordHash).not.toContain('secret');
-    expect(registered.passwordSalt).not.toBe('');
+      capturedAtEpochMs: 1_234,
+    },
+  );
+
+  expect(user).toEqual({
+    clientId: 'client-1',
+    username: 'new-user',
+    normalizedUsername: 'new-user',
+    displayName: null,
+    passwordHash: expect.any(String),
+    passwordSalt: expect.any(String),
+    passwordAlgorithm: 'pbkdf2-sha256',
+    passwordIterations: 120_000,
+    roles: ['member'],
+    status: 'active',
+    createdAtEpochMs: 1_234,
+    updatedAtEpochMs: 1_234,
   });
+  expect(runtimeRepository.data.size).toBe(0);
 });
 
-describe('auth registered login', () => {
-  it('catches login that bypasses registered password proof or exposes credentials', async () => {
-    const registered = await prepareAuthUserRegistration(
-      { username: 'Alice', password: 'secret' },
-      { clientId: 'client-1', capturedAtEpochMs: 1_000 },
-    );
-    const userRepository = {
-      findByNormalizedUsernameEntry: async () => ({
-        entry: { revision: 7 },
-        value: registered,
-      }),
-    } as LoginAuthUserOptions['userRepository'];
+it('authenticates a prepared runtime user without minting credentials', async () => {
+  const runtimeRepository = new FakeRuntimeStateRepository();
+  const userRepository = new AuthUserRepository(runtimeRepository);
+  const user = await prepareAuthUserRegistration(
+    { username: 'runtime-user', password: 'secret', displayName: 'Runtime User' },
+    { clientId: 'client-1', capturedAtEpochMs: 1_234 },
+  );
+  await userRepository.putUser(user);
 
-    await expect(
-      authenticateAuthUser({ username: 'ALICE', password: 'secret' }, { userRepository }),
-    ).resolves.toEqual({
+  const first = await authenticateAuthUser(
+    { username: 'runtime-user', password: 'secret' },
+    { userRepository },
+  );
+  const second = await authenticateAuthUser(
+    { username: 'RUNTIME-USER', password: 'secret' },
+    { userRepository },
+  );
+
+  expect(first).toEqual({
+    clientId: 'client-1',
+    username: 'runtime-user',
+    authority: {
+      kind: 'registered-user',
       clientId: 'client-1',
-      username: 'Alice',
-      authority: {
-        kind: 'registered-user',
-        clientId: 'client-1',
-        normalizedUsername: 'alice',
-        userRevision: 7,
+      normalizedUsername: 'runtime-user',
+      userRevision: 0,
+    },
+  });
+  expect(second).toEqual(first);
+  expect(first).not.toHaveProperty('sessionId');
+  expect(first).not.toHaveProperty('accessToken');
+  await expect(
+    authenticateAuthUser({ username: 'runtime-user', password: 'wrong' }, { userRepository }),
+  ).resolves.toBeUndefined();
+});
+
+it('does not authenticate disabled runtime users', async () => {
+  const runtimeRepository = new FakeRuntimeStateRepository();
+  const userRepository = new AuthUserRepository(runtimeRepository);
+  const user = await prepareAuthUserRegistration(
+    { username: 'disabled-user', password: 'secret' },
+    { clientId: 'client-1', capturedAtEpochMs: 1_234 },
+  );
+  await userRepository.putUser({ ...user, status: 'disabled' });
+
+  await expect(
+    authenticateAuthUser({ username: 'disabled-user', password: 'secret' }, { userRepository }),
+  ).resolves.toBeUndefined();
+});
+
+it('authenticates configured static clients without minting credentials', async () => {
+  const userRepository = new AuthUserRepository(new FakeRuntimeStateRepository());
+
+  await expect(
+    authenticateAuthUser(
+      { username: 'admin', password: 'secret' },
+      {
+        userRepository,
+        staticClients: [
+          {
+            clientId: 'static-admin',
+            username: 'Admin',
+            password: 'secret',
+          },
+        ],
       },
-    });
-    await expect(
-      authenticateAuthUser({ username: 'alice', password: 'wrong' }, { userRepository }),
-    ).resolves.toBeUndefined();
+    ),
+  ).resolves.toEqual({
+    clientId: 'static-admin',
+    username: 'Admin',
+    authority: {
+      kind: 'static-client',
+      clientId: 'static-admin',
+      normalizedUsername: 'admin',
+    },
   });
 });
 
-describe('auth login accessor evaluation order', () => {
-  it('catches wrong-password login that reads revision before predecessor password rejection', async () => {
-    const registered = await prepareAuthUserRegistration(
-      { username: 'active-user', password: 'secret' },
-      { clientId: 'client-1', capturedAtEpochMs: 1_000 },
-    );
-    const reads: string[] = [];
-    const userRepository = {
-      findByNormalizedUsernameEntry: async () => ({
-        get value() {
-          reads.push('value');
-          return registered;
+it('rejects configured static usernames while preparing registration', async () => {
+  await expect(
+    prepareAuthUserRegistration(
+      { username: 'admin', password: 'secret' },
+      { clientId: 'client-1', capturedAtEpochMs: 1_234 },
+      [
+        {
+          clientId: 'static-admin',
+          username: 'Admin',
+          password: 'secret',
         },
-        get entry() {
-          reads.push('revision');
-          throw new Error('Wrong-password authentication must not read revision');
-        },
-      }),
-    } as unknown as LoginAuthUserOptions['userRepository'];
-
-    await expect(
-      authenticateAuthUser({ username: 'active-user', password: 'wrong' }, { userRepository }),
-    ).resolves.toBeUndefined();
-    expect(reads).toEqual(['value', 'value']);
-  });
-
-  it('catches disabled login that reads password or revision before predecessor status evaluation', async () => {
-    const reads: string[] = [];
-    const userRepository = {
-      findByNormalizedUsernameEntry: async () => ({
-        get value() {
-          reads.push('value');
-          return {
-            get status() {
-              reads.push('status');
-              return 'disabled';
-            },
-          };
-        },
-        get entry() {
-          reads.push('revision');
-          return { revision: 7 };
-        },
-      }),
-    } as unknown as LoginAuthUserOptions['userRepository'];
-    const loginRequest = {
-      username: 'disabled-user',
-      get password() {
-        reads.push('password');
-        return 'secret';
-      },
-    };
-
-    await expect(authenticateAuthUser(loginRequest, { userRepository })).resolves.toBeUndefined();
-    expect(reads).toEqual(['value', 'status']);
-  });
+      ],
+    ),
+  ).rejects.toThrow('Auth user already exists: admin');
 });

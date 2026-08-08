@@ -1,0 +1,18 @@
+export const authServerEvidencePaths = [
+  'packages/tests/repo/auth-server-compatibility-consumer-inventory.ts',
+  'packages/tests/repo/auth-server-compatibility-governance-validation.ts',
+  'packages/tests/repo/auth-server-compatibility-governance.test.ts',
+  'packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts',
+  'packages/tests/repo/auth-server-constructor-signature-validation.ts',
+  'packages/tests/repo/auth-server-evidence-paths.ts',
+  'packages/tests/repo/auth-server-inherited-diagnostic-ledger.ts',
+  'packages/tests/repo/auth-server-module-reference-validation.ts',
+  'packages/tests/repo/auth-server-navigation-map-integrity.test.ts',
+  'packages/tests/repo/auth-server-ownership.test.ts',
+  'packages/tests/repo/auth-server-reviewed-source-snapshot.ts',
+  'packages/tests/repo/auth-server-source-ratchet.test.ts',
+  'packages/tests/repo/auth-server-test-provenance.test.ts',
+  'packages/tests/repo/auth-server-test-ownership.test.ts',
+  'packages/tests/repo/auth-server-touched-typescript-diagnostics-validation.ts',
+  'packages/tests/repo/auth-server-touched-typescript-diagnostics.test.ts',
+] as const;

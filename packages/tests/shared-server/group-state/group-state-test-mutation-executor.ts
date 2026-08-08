@@ -31,7 +31,7 @@ import type {
   GroupMutationFacts,
   GroupMutationReceipt,
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import type { AuthSession } from '../auth-fixture.ts';
+import type { AuthSession } from '../auth/auth-test-fixtures.ts';
 
 type GroupStateTestMutationExecutorDependencies = Readonly<{
   durableService: GroupStateService;

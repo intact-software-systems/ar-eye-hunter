@@ -5,7 +5,6 @@ import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/ha
 import type { AuthMutationCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { AuthMutationRejectedError } from '@shared-server/rallar-system/auth/mutation/auth-mutation-rejected-error.ts';
 import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
-import { captureAuthMutationFacts as captureCompatibilityAuthMutationFacts } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 
 interface AuthFactsDigests {
   readonly accessToken: string;
@@ -47,10 +46,6 @@ const authUser = {
 } as const;
 
 describe('auth mutation facts', () => {
-  it('keeps the supported compatibility path on the canonical facts owner', () => {
-    expect(captureCompatibilityAuthMutationFacts).toBe(captureAuthMutationFacts);
-  });
-
   it('captures all seven command kinds and preserves credential derivation order', async () => {
     const calls: string[] = [];
     const credentialIssuer = recordingCredentialIssuer(calls);

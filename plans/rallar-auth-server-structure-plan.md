@@ -61,11 +61,12 @@ attempt 1 success, resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tr
 `9a3084c2c78f90f004054924b99b97be67fe72bd`, and Run Hetzner Supported Distributed
 Manifests `31163606362` attempt 1 success for that exact main SHA. Deploy Web + API run
 `31163606018` separately failed its Cloudflare main-only branch-control job on that main SHA;
-it is not relabeled as the named predecessor gate. PR B draft PR #81 currently publishes its
-independently accepted Task 4 persistence and read/write/inbox cohorts through
-`4beac90478690c0e383cb343d65325afd44eb93a`, tree
-`065651a46a679ae9d69e06449c14f30ddb4c78ce`. No future PR B candidate, performance, merge,
-resulting-main workflow, PR C, or ledger fact is asserted here.
+it is not relabeled as the named predecessor gate. PR B #81 published final feature
+`1f7d7b0682c93c7c831fc2a31c0f635829d50734`, passed Branch Release Gate `31185044360`, and
+merged as exact main `8152de39faf2d630158143366596d61346e20457`, tree
+`2a5d756b83f44b6b8bbae166e8571f761371af29`. Run Hetzner Supported Distributed Manifests
+`31187663870` attempt 1 succeeded for that exact main SHA. PR C starts from that exact base. No
+future PR C candidate, merge, resulting-main workflow, or ledger fact is asserted here.
 
 ## 1. Scope, Prerequisite, And Review-Size Decision
 
@@ -1111,12 +1112,23 @@ tests.
 
 ### Task 5: Freeze, Measure, Review, And Publish PR B
 
-Draft PR #81 is open at the reviewed Task 4 head
-`4beac90478690c0e383cb343d65325afd44eb93a`, tree
-`065651a46a679ae9d69e06449c14f30ddb4c78ce`. Interim Branch Release Gate `31171930744`
-attempt 1 succeeded for the earlier persistence-only head
-`f163c697e7ffb1a35f6db11d802b4a866b02c3e1`. That run is retained as milestone evidence but
-is not Task 5's final immutable-candidate gate.
+PR B #81 completed at immutable feature
+`1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree
+`2a5d756b83f44b6b8bbae166e8571f761371af29`. Branch Release Gate `31185044360` succeeded,
+the PR merged as exact main `8152de39faf2d630158143366596d61346e20457` with the same tree,
+and Run Hetzner Supported Distributed Manifests `31187663870` attempt 1 succeeded for that SHA.
+
+The fixed A-B-B-A records are A1 `ede88c02bfa57b02aa4f5c5ffe45c78f75e39be5d8378a8a55da2ccdd1e3ae14`,
+B1 `d252ac681262924f21ce32b9e8e19e23712ec1f92cf9b4c21b234e1993c6f339`, B2
+`ec2e63eda73d18f726ed13aabcf243027ac68e9ea05a17c681db3eb9541e75c6`, and A2
+`afb66ff1ac9f3df9554c992450f4008426f9e1f5d0c14f51f67400055ce91404`. The pooled base is
+`631f5d4a0208a537efd36cce5b520371d870d842512643888bbaf4c318ea0ed8`, pooled candidate is
+`7bbae106a02f2b2ee89137530c525ce0019cf3098441705f2cbfaf6e2116c8de`, and manifest is
+`f8a031cedf7dd2bbbd3997f5695a5f5f6ac92da7a5772e7a848488d3dbda7430`. Comparator log
+`9dba8bda5e968ef87cd6f578989faa3c0dcdc1f1b8b24f4fcc11eda3ba55407b` retained exit 1 for
+four recognized within-policy movements; child evaluator
+`9b1681f20f2ca4e8ae23faa507cba020d1456d9763db484ee5499756c6ba1c80` passed. No
+conflict-depth exception was used.
 
 The pre-freeze focused auth scan reports 33 warning rows, all `boundary.unknown`: 13 are the
 already human-dispositioned PR A credential/decoder boundaries, 18 are mechanically inherited
@@ -1137,32 +1149,44 @@ mutation-route provenance test changes only the supplementary auth owner/path ra
 restructuring those inherited tests here would enlarge the behavior-neutral shell review without
 improving Task 4 ownership.
 
-- [ ] Run all PR B focused security, transaction, concurrency, API, black-box, type, style,
+- [x] Run all PR B focused security, transaction, concurrency, API, black-box, type, style,
       compatibility, and completion gates before candidate freeze.
-- [ ] Obtain whole-PR Critical 0 and Important 0 review and human dispositions for every final
+- [x] Obtain whole-PR Critical 0 and Important 0 review and human dispositions for every final
       focused warning.
-- [ ] Create one immutable candidate and run exactly the Section 10 A-B-B-A protocol with no
+- [x] Create one immutable candidate and run exactly the Section 10 A-B-B-A protocol with no
       rerolls or content changes.
-- [ ] If accepted, push the measured candidate, update the draft PR with immutable artifacts,
+- [x] If accepted, push the measured candidate, update the draft PR with immutable artifacts,
       require Branch Release Gate, mark ready, and stop for human merge.
-- [ ] After merge, require exact resulting-main/default-workflow success before PR C.
+- [x] After merge, require exact resulting-main/default-workflow success before PR C.
 
 ### Task 6: Implement PR C Alignment And Final Traceability Test-First
 
 **Branch:** `codex/rallar-auth-server-alignment` from PR B's exact verified main.
 
-- [ ] Add the temporary auth source/style ratchet first, owned by this child with its later ledger
+- [x] Add the temporary auth source/style ratchet first, owned by this child with its later ledger
       as the removal/replacement decision point.
-- [ ] Align only new/materially rewritten auth implementation, mirrored tests, navigation,
+- [x] Align only new/materially rewritten auth implementation, mirrored tests, navigation,
       evidence, ratchets, and compatibility files.
-- [ ] Finish behavior-named test moves, imports/file ordering, named inputs/interfaces,
+- [x] Finish behavior-named test moves, imports/file ordering, named inputs/interfaces,
       100-column guidance, 60-line functions, 400-line modules, and primary-symbol matching.
-- [ ] Prove each compatibility file is direct re-export-only, canonical auth callers bypass it,
+- [x] Prove each compatibility file is direct re-export-only, canonical auth callers bypass it,
       and every retained consumer/removal condition remains exact.
-- [ ] Finalize all five family traces and repeat the controlled human sample without claiming
-      statistical significance.
-- [ ] Decide every supplementary ratchet as remove, semantic replacement, or retained with an
+- [x] Finalize all five code-derived family traces while preserving the Section 2.3 timing
+      waiver. Do not repeat or fabricate a human sample or make a human-productivity claim.
+- [x] Decide every supplementary ratchet as remove, semantic replacement, or retained with an
       owner/reason and ledger-time decision.
+
+Task 6's final local refinement replaced the interim provenance and navigation interpreters with
+three review-sized frozen-snapshot owners. Exact Git blobs now bind the 11 PR B predecessor
+sources, 13 final test/support owners and 43 cases, the auth README, 26 navigation sources, 32
+named regions, and all 15 ordered trace labels. Existing auth behavior, security, transaction,
+ownership, and routing suites remain the primary semantic evidence; the snapshot evidence is
+fail-closed and temporary until the already-stated resulting-main-plus-ledger condition is met.
+The refinement removed 29 interpreter/helper files from the working design and retained the
+400-line and 60-line source ratchets. Independent review found one omitted-allowlist fail-close
+gap in compatibility consumer discovery; a RED regression and post-traversal reconciliation
+closed it. The final re-review reported Critical 0 and Important 0. Task 7 validation and
+publication evidence remains external and pending in this tree under the non-circular contract.
 
 ### Task 7: Freeze, Review, And Publish PR C
 
@@ -1351,7 +1375,7 @@ npm run check:repo-style:layout
 npm run check:repo-style:layout-details
 npm run check:repo-style:output-contracts
 npm run check:repo-style:object-interfaces
-node scripts/check-changed-repo-style.mjs --base <exact-predecessor-resulting-main>
+node scripts/check-changed-repo-style.mjs 8152de39faf2d630158143366596d61346e20457
 npx prettier --check packages/shared-server/rallar-system/auth \
   packages/tests/shared-server/auth packages/tests/repo/auth-server-* \
   plans/rallar-auth-server-structure-plan.md
@@ -1418,7 +1442,7 @@ changed tree.
       exact.
 - [ ] Semantic security/ownership/exit tests remain primary and all ratchets have decisions.
 - [x] PR A review/gates and exact resulting-main workflow succeeded.
-- [ ] PR B review/gates, governed performance, and exact resulting-main workflow succeeded.
+- [x] PR B review/gates, governed performance, and exact resulting-main workflow succeeded.
 - [ ] PR C review/gates and exact resulting-main workflow succeeded.
 - [ ] The separate evidence ledger independently reached `ledger-published`.
 - [ ] API-v1 organization and all later Wave 2 domains remained unstarted.
@@ -1442,15 +1466,15 @@ changed tree.
 
 ## 16. Progress Record
 
-| Milestone                  | State            | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Client-state prerequisite  | ledger-published | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.                                                                                                                                                                            |
-| Auth child plan            | approved         | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`; default workflow `31106485616` attempt 1 success.                                                                                                                                                              |
-| PR A mutation/login core   | merged           | PR #78 feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601` attempt 1 success; resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; Hetzner workflow `31163606362` attempt 1 success.                                                                                                                   |
-| PR B authoritative shell   | in progress      | Draft PR #81 publishes independently accepted Task 4 through `4beac90478690c0e383cb343d65325afd44eb93a`, tree `065651a46a679ae9d69e06449c14f30ddb4c78ce`; both scoped reviews report Critical 0, Important 0, Minor 0. Interim persistence-only Branch Release Gate `31171930744` attempt 1 succeeded but is not final candidate evidence. Task 5 whole-PR review, completion gates, governed performance, and final publication remain pending. |
-| PR C alignment/final trace | blocked          | Waits for PR B exact merge/default workflow.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Later auth ledger          | blocked          | Requires completed PR C merge/default workflow and separate human authorization.                                                                                                                                                                                                                                                                                                                                                                 |
-| Later Wave 2 domains       | blocked          | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                                                                                                                                                                                            |
+| Milestone                  | State                                         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client-state prerequisite  | ledger-published                              | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.                                                                                                                                                                                           |
+| Auth child plan            | approved                                      | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`; default workflow `31106485616` attempt 1 success.                                                                                                                                                                             |
+| PR A mutation/login core   | merged                                        | PR #78 feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601` attempt 1 success; resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; Hetzner workflow `31163606362` attempt 1 success.                                                                                                                                  |
+| PR B authoritative shell   | merged                                        | PR #81 feature `1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree `2a5d756b83f44b6b8bbae166e8571f761371af29`; Branch Release Gate `31185044360` succeeded; resulting main `8152de39faf2d630158143366596d61346e20457` has the same tree; Hetzner workflow `31187663870` attempt 1 succeeded.                                                                                                                                                                       |
+| PR C alignment/final trace | implementation accepted; publication external | Task 6 starts from exact PR B main `8152de39faf2d630158143366596d61346e20457`. Its final simplification uses three review-sized frozen-snapshot owners, preserves primary semantic suites, and passed independent review at Critical 0 / Important 0 after closing one compatibility allowlist omission. Task 7 validation and publication facts remain external; no future PR C push, merge, resulting-main, workflow, or ledger fact is claimed in this tree. |
+| Later auth ledger          | blocked                                       | Requires completed PR C merge/default workflow and separate human authorization.                                                                                                                                                                                                                                                                                                                                                                                |
+| Later Wave 2 domains       | blocked                                       | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 ## 17. Planning Self-Review Record
 

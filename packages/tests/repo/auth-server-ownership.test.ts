@@ -4,107 +4,13 @@ import path from 'node:path';
 import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
+import {
+  authCompatibilityConsumerInventory,
+  readAuthCompatibilityConsumers,
+} from './auth-server-compatibility-consumer-inventory.ts';
+
 const repoRoot = process.cwd();
 const canonicalRoot = 'packages/shared-server/rallar-system/auth';
-const compatibilityModules = [
-  {
-    compatibilityPath: 'services/AppAuthInboxService.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'inbox/app-auth-inbox-service.ts',
-        names: ['AUTH_STATE_APP_INBOX_TOPIC', 'AppAuthInboxService'],
-      },
-      {
-        canonicalPath: 'inbox/auth-app-inbox-routing.ts',
-        names: ['toAuthAppInboxType'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'services/auth-state-mutations.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'auth-mutation-service.ts',
-        names: ['createAuthMutationService'],
-      },
-      {
-        canonicalPath: 'mutation/decode-auth-mutation-command.ts',
-        names: ['decodeAuthMutationCommand'],
-      },
-      {
-        canonicalPath: 'mutation/decode-auth-mutation-result.ts',
-        names: ['decodeAuthMutationResult'],
-      },
-      {
-        canonicalPath: 'mutation/auth-mutation-rejected-error.ts',
-        names: ['AuthMutationRejectedError'],
-      },
-      {
-        canonicalPath: 'mutation/read/capture-auth-mutation-facts.ts',
-        names: ['captureAuthMutationFacts'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'services/auth-login-service.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'login/authenticate-auth-user.ts',
-        names: ['authenticateAuthUser'],
-      },
-      {
-        canonicalPath: 'login/prepare-auth-user-registration.ts',
-        names: ['prepareAuthUserRegistration'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'services/auth-credential-issuer.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'credentials/auth-credential-issuer.ts',
-        names: ['createHmacAuthCredentialIssuer', 'isValidAuthCredentialSecret'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'repositories/AuthSessionRepository.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'persistence/auth-session-repository.ts',
-        names: ['AuthSessionRepository'],
-      },
-      {
-        canonicalPath: 'persistence/auth-persistence-contracts.ts',
-        names: [
-          'decodePersistedAgentSessionTicket',
-          'decodePersistedAuthSession',
-          'decodePersistedWebSocketTicket',
-        ],
-      },
-      {
-        canonicalPath: 'persistence/auth-legacy-compatibility.ts',
-        names: [
-          'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
-          'AUTH_LEGACY_PLAINTEXT_SCAN_LIMIT',
-        ],
-      },
-      {
-        canonicalPath: 'credentials/hash-auth-secret.ts',
-        names: ['hashAuthSecret'],
-      },
-    ],
-  },
-  {
-    compatibilityPath: 'repositories/AuthUserRepository.ts',
-    canonicalExports: [
-      {
-        canonicalPath: 'persistence/auth-user-repository.ts',
-        names: ['AuthUserRepository', 'normalizeUsername'],
-      },
-    ],
-  },
-] as const;
 const canonicalShellOwners = [
   'inbox/app-auth-inbox-service.ts',
   'inbox/auth-app-inbox-routing.ts',
@@ -144,32 +50,26 @@ describe('auth server ownership', () => {
   it('catches a missing canonical auth ownership root', () => {
     expect(existsSync(absolute(canonicalRoot))).toBe(true);
   });
+});
 
-  it('catches compatibility modules that do not resolve to canonical runtime identities', async () => {
-    for (const { compatibilityPath, canonicalExports } of compatibilityModules) {
-      for (const { canonicalPath } of canonicalExports) {
-        const canonicalFilePath = absolute(`${canonicalRoot}/${canonicalPath}`);
-        if (!existsSync(canonicalFilePath)) {
-          expect(existsSync(canonicalFilePath), canonicalPath).toBe(true);
-          return;
-        }
-      }
-      const compatibility = await import(
-        absolute(`packages/shared-server/rallar-system/${compatibilityPath}`)
-      );
-      const expectedRuntimeExports = canonicalExports.flatMap(({ names }) => names).toSorted();
+describe('auth compatibility ownership', () => {
+  it('keeps every wrapper direct named re-export-only', () => {
+    const invalid = authCompatibilityConsumerInventory
+      .map(({ compatibilityPath }) => compatibilityPath)
+      .filter((compatibilityPath) => !isDirectNamedReexportOnly(compatibilityPath));
 
-      expect(Object.keys(compatibility).toSorted(), compatibilityPath).toEqual(
-        expectedRuntimeExports,
-      );
-      for (const { canonicalPath, names } of canonicalExports) {
-        const canonical = await import(absolute(`${canonicalRoot}/${canonicalPath}`));
-        for (const name of names) {
-          expect(compatibility[name], `${compatibilityPath}:${name}`).toBe(canonical[name]);
-        }
-      }
-    }
+    expect(invalid).toEqual([]);
   });
+
+  it('keeps the current consumer and removal-condition inventory exact', () => {
+    const actualConsumers = readAuthCompatibilityConsumers();
+    for (const inventory of authCompatibilityConsumerInventory) {
+      expect(actualConsumers.get(inventory.compatibilityPath), inventory.compatibilityPath).toEqual(
+        inventory.consumers,
+      );
+      expect(inventory.removalCondition, inventory.compatibilityPath).not.toBe('');
+    }
+  }, 15_000);
 });
 
 describe('auth server canonical owner presence', () => {
@@ -206,7 +106,9 @@ describe('auth server canonical owner presence', () => {
 describe('auth server canonical import and package boundaries', () => {
   it('catches canonical auth code importing a compatibility-only wrapper', () => {
     const forbidden = new Set([
-      ...compatibilityModules.map(({ compatibilityPath }) => compatibilityPath),
+      ...authCompatibilityConsumerInventory.map(({ compatibilityPath }) =>
+        compatibilityPath.replace('packages/shared-server/rallar-system/', ''),
+      ),
       'services/auth-app-inbox-routing.ts',
       'services/auth-state-read.ts',
       'services/auth-state-write.ts',
@@ -230,15 +132,8 @@ describe('auth server canonical import and package boundaries', () => {
     expect(findings).toEqual([]);
   });
 
-  it('keeps package auth inbox exports directly on their canonical owners', async () => {
+  it('keeps package auth inbox export declarations on their canonical owners', () => {
     const packagePath = absolute('packages/shared-server/mod.ts');
-    const packageRoot = await import(packagePath);
-    const canonicalService = await import(
-      absolute(`${canonicalRoot}/inbox/app-auth-inbox-service.ts`)
-    );
-    const canonicalRouting = await import(
-      absolute(`${canonicalRoot}/inbox/auth-app-inbox-routing.ts`)
-    );
     const exportSources = parse(readFileSync(packagePath, 'utf8'), {
       sourceType: 'module',
       plugins: ['typescript'],
@@ -247,12 +142,6 @@ describe('auth server canonical import and package boundaries', () => {
         ? [statement.source.value]
         : [],
     );
-
-    expect(packageRoot.AppAuthInboxService).toBe(canonicalService.AppAuthInboxService);
-    expect(packageRoot.AUTH_STATE_APP_INBOX_TOPIC).toBe(
-      canonicalRouting.AUTH_STATE_APP_INBOX_TOPIC,
-    );
-    expect(packageRoot.toAuthAppInboxType).toBe(canonicalRouting.toAuthAppInboxType);
     expect(exportSources).toContain('./rallar-system/auth/inbox/app-auth-inbox-service.ts');
     expect(exportSources).toContain('./rallar-system/auth/inbox/auth-app-inbox-routing.ts');
     expect(exportSources).not.toContain('./rallar-system/services/AppAuthInboxService.ts');
@@ -266,6 +155,19 @@ function sourceFiles(directory: string): readonly string[] {
     if (entry.isDirectory()) return sourceFiles(entryPath);
     return entry.isFile() && entry.name.endsWith('.ts') ? [entryPath] : [];
   });
+}
+
+function isDirectNamedReexportOnly(filePath: string): boolean {
+  const program = parse(readFileSync(absolute(filePath), 'utf8'), {
+    sourceType: 'module',
+    plugins: ['typescript'],
+  }).program;
+  return program.body.every(
+    (statement) =>
+      statement.type === 'ExportNamedDeclaration' &&
+      statement.source !== null &&
+      statement.specifiers.every((specifier) => specifier.type !== 'ExportNamespaceSpecifier'),
+  );
 }
 
 function absolute(filePath: string): string {

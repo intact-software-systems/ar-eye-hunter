@@ -21,7 +21,7 @@ import {
     TestResourceInbox,
     TestResourceInboxResults,
     waitForQueuedEntry,
-} from './app-auth-inbox-test-harness.ts';
+} from './auth/auth-app-inbox-test-runtime.ts';
 import {
     createClientStatePhaseTestDriver,
     failNextClientStateTestOutboxWrite,
