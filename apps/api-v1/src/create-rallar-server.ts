@@ -140,6 +140,7 @@ export function createRallarServer(
   );
   middleware.appGroupInboxService.setRtcRttAppInboxDependencies({
     repository: rttRepository,
+    formationMetrics: middleware.groupFormationMetrics.rttMutation,
     readPolicyInputs: async (command) => {
       const sessionsByGroupKey = new Map<string, {
         ref: GroupRef;
@@ -216,6 +217,8 @@ export function createRallarServer(
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
     readRtcTopologyMetrics: () => rtcTopologyService.readMetrics(),
     resetRtcTopologyMetrics: () => rtcTopologyService.resetMetrics(),
+    readGroupFormationMetrics: () => middleware.groupFormationMetrics.readMetrics(),
+    resetGroupFormationMetrics: () => middleware.groupFormationMetrics.resetMetrics(),
     crdtAdminRepository: crdtLogRepository,
     mutationGateway: createApiAdminMutationGateway({
       appAdmin: middleware.appAdminInboxService,

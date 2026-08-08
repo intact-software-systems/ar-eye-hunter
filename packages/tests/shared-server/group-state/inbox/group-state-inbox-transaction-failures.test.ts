@@ -36,6 +36,7 @@ describe('group-state AppInbox transaction failure boundaries', () => {
       expect(harness.transactionWriter.read(harness.context)).toEqual({ state: 'pending' });
       expect(harness.observedSnapshots).toEqual([]);
       expect(harness.readWakeCount()).toBe(0);
+      expect(harness.formationMutationEvents).toEqual([]);
     },
   );
 });

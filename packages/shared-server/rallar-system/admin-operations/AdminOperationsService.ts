@@ -66,6 +66,8 @@ export type AdminOperationsServiceOptions = Readonly<{
   wsStatus?: () => AdminRealtimeWsStatus;
   readRtcTopologyMetrics?: () => unknown;
   resetRtcTopologyMetrics?: () => void;
+  readGroupFormationMetrics?: () => unknown;
+  resetGroupFormationMetrics?: () => void;
   crdtAdminRepository?: Partial<RallarCrdtAdminLogRepository>;
   timing?: RallarTimingSink;
   mutationGateway: AdminOperationsMutationGateway;
@@ -122,6 +124,7 @@ export class AdminOperationsService {
       },
       realtime: {
         topologyMetrics: realtime.rtcTopology.metrics,
+        groupFormationMetrics: realtime.groupFormation.metrics,
       },
       state: {
         activeSessions: state.clients.activeSessions,
@@ -169,6 +172,10 @@ export class AdminOperationsService {
         metrics: this.options.readRtcTopologyMetrics?.(),
         processLocal: true,
       },
+      groupFormation: {
+        metrics: this.options.readGroupFormationMetrics?.(),
+        processLocal: true,
+      },
     });
   }
 
@@ -195,13 +202,18 @@ export class AdminOperationsService {
       let changed = false;
 
       for (const category of categories) {
-        if (category !== 'rtc-topology') {
-          continue;
+        if (category === 'rtc-topology') {
+          before.rtcTopology = this.options.readRtcTopologyMetrics?.();
+          this.options.resetRtcTopologyMetrics?.();
+          after.rtcTopology = this.options.readRtcTopologyMetrics?.();
+          changed = true;
         }
-        before.rtcTopology = this.options.readRtcTopologyMetrics?.();
-        this.options.resetRtcTopologyMetrics?.();
-        after.rtcTopology = this.options.readRtcTopologyMetrics?.();
-        changed = true;
+        if (category === 'group-formation') {
+          before.groupFormation = this.options.readGroupFormationMetrics?.();
+          this.options.resetGroupFormationMetrics?.();
+          after.groupFormation = this.options.readGroupFormationMetrics?.();
+          changed = true;
+        }
       }
 
       return Promise.resolve({

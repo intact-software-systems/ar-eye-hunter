@@ -5,6 +5,10 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
 // prettier-ignore
 import type {
+  GroupFormationRttMutationSink,
+} from '../../formation-metrics/formation-metrics.ts';
+// prettier-ignore
+import type {
   TopologyMutationAuthorityProof,
 } from '../../services/topology-mutation-authority-proof.ts';
 
@@ -33,6 +37,7 @@ export type RtcRttAppInboxDependencies = Readonly<{
     }>
   >;
   observeCommitted?(rtt: RttMeasurementInfo): void;
+  formationMetrics?: GroupFormationRttMutationSink;
 }>;
 
 export interface CreateRtcRttAppInboxEnqueueInput {

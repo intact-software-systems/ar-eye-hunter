@@ -92,7 +92,26 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
     outboundStores?: ALOutboundRuntimeStores;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
+    deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
 }>;
+
+export type WsDeliveryDiagnosticsEvent =
+    | Readonly<{
+        kind: 'live-send';
+        topicId: string;
+        recipientCount: number;
+        sentCount: number;
+    }>
+    | Readonly<{
+        kind: 'outbox-send';
+        topicId: string;
+    }>
+    | Readonly<{
+        kind: 'no-local-recipient';
+        topicId: string;
+    }>;
+
+export type WsDeliveryDiagnosticsSink = (event: WsDeliveryDiagnosticsEvent) => void;
 
 export type WsOutboxDeliveryOutcome =
     | Readonly<{
@@ -144,6 +163,7 @@ export class WsQueueBoxServerService {
     private readonly qosProvider?: ALQosInputProvider;
     private readonly targetResolver: WsServerTargetResolver;
     private readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
+    private readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
     constructor(
         public readonly inbox: QueueBoxResourceEntryRepository,
         public readonly outbox: QueueBoxResourceEntryRepository,
@@ -154,6 +174,7 @@ export class WsQueueBoxServerService {
         this.qosProvider = options.qosProvider;
         this.targetResolver = options.targetResolver ?? {};
         this.outboundDeliveryOutcome = options.outboundDeliveryOutcome;
+        this.deliveryDiagnostics = options.deliveryDiagnostics;
 
         this.outboundRuntime = new ALOutboundMessageRuntime<
             WsServerPreparedMessage
@@ -448,6 +469,10 @@ export class WsQueueBoxServerService {
     sendToTargetsWithResult(message: ALMessage): WsServerLiveSendResult {
         const recipients = this.resolveRecipients(message);
         if (recipients.length === 0) {
+            this.recordDeliveryDiagnostics({
+                kind: 'no-local-recipient',
+                topicId: message.route.topicId,
+            });
             return {
                 status: 'no-recipients',
                 message,
@@ -501,6 +526,12 @@ export class WsQueueBoxServerService {
             }
         }
 
+        this.recordDeliveryDiagnostics({
+            kind: 'live-send',
+            topicId: message.route.topicId,
+            recipientCount: recipients.length,
+            sentCount: sent,
+        });
         return {
             status: toWsServerLiveSendStatus(
                 recipients.length,
@@ -578,6 +609,10 @@ export class WsQueueBoxServerService {
                 this.recordOutboundDeliveryOutcome({
                     status: 'no-current-recipient',
                     messageId: message.id.msgId,
+                });
+                this.recordDeliveryDiagnostics({
+                    kind: 'no-local-recipient',
+                    topicId: message.route.topicId,
                 });
             }
             return Either.ofLeft(
@@ -680,6 +715,10 @@ export class WsQueueBoxServerService {
                 status: 'sent',
                 messageId: prepared.message.id.msgId,
             });
+            this.recordDeliveryDiagnostics({
+                kind: 'outbox-send',
+                topicId: prepared.message.route.topicId,
+            });
             return { status: 'sent' };
         } catch (error) {
             this.recordOutboundDeliveryOutcome({
@@ -698,6 +737,14 @@ export class WsQueueBoxServerService {
             this.outboundDeliveryOutcome?.(outcome);
         } catch (error) {
             console.error('WS outbox delivery outcome sink failed', error);
+        }
+    }
+
+    private recordDeliveryDiagnostics(event: WsDeliveryDiagnosticsEvent): void {
+        try {
+            this.deliveryDiagnostics?.(event);
+        } catch {
+            // Delivery diagnostics must never affect WS send behavior.
         }
     }
 

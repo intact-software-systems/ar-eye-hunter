@@ -98,8 +98,12 @@ import {
 } from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';
 import {
   deriveRtcTopologyEntryResourceId,
+  setRtcTopologyOutboxWriteSink,
   writeRtcTopologyOutbox,
 } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import {
+  createGroupFormationMetricsRecorder,
+} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
 import {
   createRtcTopologyPublicationFanout,
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
@@ -148,6 +152,8 @@ function initialise(
   const timing = getApiTimingSink();
   const now = () => Date.now();
   const appInboxOptions = getApiAppInboxServiceOptions();
+  const groupFormationMetrics = createGroupFormationMetricsRecorder();
+  setRtcTopologyOutboxWriteSink(groupFormationMetrics.topologyOutboxWritten);
   const pubSubConfig = readApiV1DatabasePubSubConfig();
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
@@ -264,6 +270,7 @@ function initialise(
     findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(clientSnapshotReadThroughCache, ref),
     inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
+    wsDeliveryDiagnostics: groupFormationMetrics.wsDelivery,
     createAppGroupInboxService: ({
       inboxQueueReader,
       outboxQueueReader,
@@ -287,6 +294,7 @@ function initialise(
         wakeQueue: wakeQueueEngine,
         now,
         timing,
+        formationMetrics: groupFormationMetrics.presenceSummary,
       });
       outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.GROUP_PRESENCE_SUMMARY,
@@ -305,6 +313,7 @@ function initialise(
         timing,
         appInboxOptions,
         wakeQueueEngine,
+        groupFormationMetrics.groupMutation,
       );
     },
     createAppClientInboxService: ({ inboxQueueReader, wakeQueueEngine }) => {
@@ -416,7 +425,7 @@ function initialise(
     clientDurable: clientsRepository, clientCache: clientSnapshotReadThroughCache,
     groupDurable: groupsRepository, groupCache: groupSnapshotReadThroughCache,
   }, timing);
-  return requireApiMiddleware(runtime, selectors);
+  return requireApiMiddleware(runtime, selectors, groupFormationMetrics);
 }
 function readRequiredAuthCredentialSecret(): string {
   const secret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();

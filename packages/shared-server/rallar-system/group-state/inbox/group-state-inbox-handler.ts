@@ -23,6 +23,11 @@ import type {
   GroupStateMutationService,
   GroupStateService,
 } from '../group-state-service-contracts.ts';
+// prettier-ignore
+import type {
+  GroupFormationGroupMutationSink,
+  GroupFormationMutationOutcome,
+} from '../../formation-metrics/formation-metrics.ts';
 import {
   readGroupStateInboxResult,
   type GroupStateInboxDurableResult,
@@ -34,6 +39,7 @@ export interface GroupStateInboxHandlerDependencies {
   readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
   readonly transactionWriter: AppInboxMutationTransactionWriter;
   readonly wakeQueue?: () => void;
+  readonly formationMetrics?: GroupFormationGroupMutationSink;
 }
 
 interface CommitGroupStateMutationInput {
@@ -66,9 +72,12 @@ export class GroupStateInboxHandler {
         sessionGenerationLifecycle: this.dependencies.sessionGenerationLifecycle,
       });
       if (outcome.status === 'inactive') {
-        return await this.dependencies.transactionWriter.writeMutation(context, () =>
-          Promise.resolve(outcome),
+        const durableResult = await this.dependencies.transactionWriter.writeMutation(
+          context,
+          () => Promise.resolve(outcome),
         );
+        this.recordGroupMutation(command, 'rejected');
+        return durableResult;
       }
       return await this.commitMutation({
         context,
@@ -118,7 +127,29 @@ export class GroupStateInboxHandler {
       await this.dependencies.snapshotObserver.observeSnapshot(committedSnapshot);
     }
     this.dependencies.wakeQueue?.();
+    this.recordGroupMutation(
+      input.command,
+      input.computed.outcome === 'write'
+        ? 'write'
+        : input.computed.outcome === 'rejected'
+          ? 'rejected'
+          : 'noOp',
+    );
     return durableResult;
+  }
+
+  private recordGroupMutation(
+    command: GroupStateMutationCommand,
+    outcome: GroupFormationMutationOutcome,
+  ): void {
+    try {
+      this.dependencies.formationMetrics?.({
+        operation: command.command.operation,
+        outcome,
+      });
+    } catch {
+      // Recording must never affect group mutation behavior.
+    }
   }
 }
 

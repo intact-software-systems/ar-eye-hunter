@@ -64,6 +64,58 @@ describe('AdminOperationsService', () => {
     });
   });
 
+  it('exposes group-formation metrics beside rtc-topology in realtime and overview', async () => {
+    const service = createService({
+      readGroupFormationMetrics: () => ({ presenceSummaryExpansionCount: 4 }),
+    });
+
+    const realtime = await service.readRealtime({ adminSession: createAdminSession() });
+    expect(realtime.rtcTopology).toEqual({
+      metrics: { recomputeCount: 0 },
+      processLocal: true,
+    });
+    expect(realtime.groupFormation).toEqual({
+      metrics: { presenceSummaryExpansionCount: 4 },
+      processLocal: true,
+    });
+
+    const overview = await service.readOverview({ adminSession: createAdminSession() });
+    expect(overview.realtime).toEqual({
+      topologyMetrics: { recomputeCount: 0 },
+      groupFormationMetrics: { presenceSummaryExpansionCount: 4 },
+    });
+  });
+
+  it('resets group-formation metrics without touching rtc-topology metrics', async () => {
+    const calls: string[] = [];
+    let formationMetrics = { presenceSummaryExpansionCount: 4 };
+    const service = createService({
+      readRtcTopologyMetrics: () => ({ recomputeCount: 2 }),
+      resetRtcTopologyMetrics: () => {
+        calls.push('reset-rtc-topology');
+      },
+      readGroupFormationMetrics: () => formationMetrics,
+      resetGroupFormationMetrics: () => {
+        calls.push('reset-group-formation');
+        formationMetrics = { presenceSummaryExpansionCount: 0 };
+      },
+    });
+
+    const result = await service.resetMetrics({
+      adminSession: createAdminSession(),
+      request: { categories: ['group-formation'], reason: 'operator-test' },
+    });
+
+    expect(calls).toEqual(['reset-group-formation']);
+    expect(result).toMatchObject({
+      operation: 'metrics.reset',
+      status: 'completed',
+      changed: true,
+      before: { groupFormation: { presenceSummaryExpansionCount: 4 } },
+      after: { groupFormation: { presenceSummaryExpansionCount: 0 } },
+    });
+  });
+
   it('records bounded timing metadata for process-local metric writes', async () => {
     const events: RallarTimingEvent[] = [];
     const service = createService({ timing: (event) => events.push(event) });
