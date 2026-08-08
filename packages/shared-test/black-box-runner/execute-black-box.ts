@@ -496,6 +496,10 @@ function directTransformSpec(spec: Record<string, unknown>): unknown {
         'template',
         'concat',
         'coalesce',
+        'add',
+        'max',
+        'equals',
+        'if',
         'jsonStringify',
         'jsonParse',
         'urlEncode',
@@ -519,6 +523,10 @@ function isTransformOnlySpec(spec: Record<string, unknown>): boolean {
         'template',
         'concat',
         'coalesce',
+        'add',
+        'max',
+        'equals',
+        'if',
         'jsonStringify',
         'jsonParse',
         'urlEncode',
@@ -533,6 +541,9 @@ function isTransformOnlySpec(spec: Record<string, unknown>): boolean {
         'value',
         'input',
         'values',
+        'condition',
+        'then',
+        'else',
         'format',
         'secret',
         'redact',
@@ -665,6 +676,28 @@ function toTransformBoolean(value: unknown, details: any): boolean {
     });
 }
 
+function numericTransformValues(
+    spec: Record<string, unknown>,
+    operator: 'add' | 'max',
+    input: TransformEvaluationInput,
+    details: any,
+): number[] {
+    const values = Array.isArray(spec[operator])
+        ? spec[operator]
+        : Array.isArray(spec.values)
+            ? spec.values
+            : [];
+    if (values.length <= 0) {
+        return transformError(`${operator} transform requires a non-empty values array.`, details);
+    }
+    return values.map((value, index) =>
+        toTransformNumber(evaluateTransformValue(value, input), {
+            ...details,
+            index,
+        })
+    );
+}
+
 function evaluateTransformValue(value: unknown, input: TransformEvaluationInput): any {
     if (isRecord(value) && directTransformSpec(value) !== undefined) {
         return evaluateTransformSpec(value, input);
@@ -743,6 +776,46 @@ function evaluateTransformSpec(specInput: unknown, input: TransformEvaluationInp
         return transformError('Coalesce transform did not find a non-empty value.', details);
     }
 
+    if (operator === 'add') {
+        const total = numericTransformValues(spec, 'add', input, details)
+            .reduce((sum, value) => sum + value, 0);
+        return toTransformNumber(total, details);
+    }
+
+    if (operator === 'max') {
+        return Math.max(...numericTransformValues(spec, 'max', input, details));
+    }
+
+    if (operator === 'equals') {
+        const values = Array.isArray(spec.equals)
+            ? spec.equals
+            : Array.isArray(spec.values)
+                ? spec.values
+                : [];
+        if (values.length !== 2) {
+            return transformError('Equals transform requires exactly two values.', details);
+        }
+        return Object.is(
+            evaluateTransformValue(values[0], input),
+            evaluateTransformValue(values[1], input),
+        );
+    }
+
+    if (operator === 'if') {
+        const branches = isRecord(spec.if) ? spec.if : spec;
+        if (branches.condition === undefined) {
+            return transformError('If transform requires a condition.', details);
+        }
+        if (!Object.hasOwn(branches, 'then') || !Object.hasOwn(branches, 'else')) {
+            return transformError('If transform requires both then and else branches.', details);
+        }
+        const condition = toTransformBoolean(
+            evaluateTransformValue(branches.condition, input),
+            details,
+        );
+        return evaluateTransformValue(condition ? branches.then : branches.else, input);
+    }
+
     if (operator === 'jsonStringify') {
         return JSON.stringify(evaluateTransformValue(spec.jsonStringify ?? transformOperand(spec, input), input));
     }
@@ -817,6 +890,10 @@ function firstTransformOperator(spec: Record<string, unknown>): string | undefin
         'template',
         'concat',
         'coalesce',
+        'add',
+        'max',
+        'equals',
+        'if',
         'jsonStringify',
         'jsonParse',
         'urlEncode',

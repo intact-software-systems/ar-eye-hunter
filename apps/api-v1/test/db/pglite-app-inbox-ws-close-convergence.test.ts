@@ -3,11 +3,19 @@ import assert from 'node:assert/strict';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import {
   type GroupCreateAppInboxPayload,
   type GroupPresenceConnectAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
+// deno-fmt-ignore: This package import exceeds the repository's 100-column checker limit.
+import {
+  APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC,
+} from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
 import {
   type GroupStateWritten,
@@ -127,6 +135,83 @@ Deno.test('PGlite group connect conflicts when cleanup commits after lifecycle r
       (await harness.groups.readSnapshot({ ...SCOPE, groupId }))
         ?.activeSessions ?? [],
       [],
+    );
+  });
+});
+
+Deno.test('PGlite group presence completion can precede its causal summary revision', async () => {
+  await withPGliteSql(async (sql) => {
+    const harness = await createHarness(sql);
+    const groupId = 'pglite-delayed-presence-summary';
+    const groupRef = { ...SCOPE, groupId };
+    const outboxReader = new OutboxQueueReader(new PSqlQueueBox(harness.resourceInbox));
+    const summaryWork = new GroupPresenceSummaryWork({
+      runtimeRepository: harness.runtime,
+      database: sql,
+      serviceId: 'pglite-close-test',
+    });
+    outboxReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
+      onMessage: async (message, entry) => await summaryWork.processReservedEntry(message, entry),
+    });
+    outboxReader.onOutboxMessageDo(AppOutboxType.RTC_TOPOLOGY_RECOMPUTE, {
+      onMessage: () => Promise.resolve(),
+    });
+
+    await createRoom(harness, groupId, sql);
+    await processNextOutbox(outboxReader);
+    const beforeConnect = await harness.groups.readSnapshot(groupRef);
+    assert.ok(beforeConnect);
+    assert.equal(beforeConnect.onlineMemberCount, 0);
+
+    const generationId = crypto.randomUUID();
+    const connectedAtEpochMs = Date.now() - 100;
+    const pending = harness.group.processAuthenticatedEntryUntilCompletion<
+      GroupPresenceConnectAppInboxPayload,
+      GroupStateWritten
+    >({
+      type: AppInboxType.GROUP_PRESENCE_CONNECT,
+      resourceId: `presence-${generationId}`,
+      contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:${groupId}`,
+      senderId: harness.authority.clientId,
+      data: {
+        scope: SCOPE,
+        groupId,
+        sessionId: harness.authority.sessionId,
+        request: {
+          principalId: harness.authority.clientId,
+          generationId,
+          connectedAtEpochMs,
+          lastHeartbeatAtEpochMs: connectedAtEpochMs,
+          expiresAtEpochMs: FUTURE_MS,
+          actorPrincipalId: harness.authority.clientId,
+          actorSessionId: harness.authority.sessionId,
+          requestId: `presence-${generationId}`,
+        },
+      },
+    }, harness.authority);
+    await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
+    await processNext(harness.reader);
+    assert.ok((await pending).right);
+    const [queuedSummary] = await sql<{ count: string | number }[]>`
+      select count(*) as count from resource_inbox
+      where ri_type_id = 'APP_OUTBOX'
+        and ri_topic_id = ${APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC}
+        and ri_status = 'NEW'
+    `;
+    assert.equal(Number(queuedSummary?.count ?? 0), 1);
+
+    const whileSummaryQueued = await harness.groups.readSnapshot(groupRef);
+    assert.ok(whileSummaryQueued);
+    assert.equal(whileSummaryQueued.onlineMemberCount, 0);
+    assert.deepEqual(whileSummaryQueued.causalRevision, beforeConnect.causalRevision);
+
+    await processNextOutbox(outboxReader);
+    const afterSummary = await harness.groups.readSnapshot(groupRef);
+    assert.ok(afterSummary);
+    assert.equal(afterSummary.onlineMemberCount, 1);
+    assert.equal(
+      afterSummary.causalRevision.presenceRevision,
+      beforeConnect.causalRevision.presenceRevision + 1,
     );
   });
 });
@@ -340,6 +425,10 @@ async function createRoom(
 
 async function processNext(reader: InboxQueueReader): Promise<void> {
   await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+}
+
+async function processNextOutbox(reader: OutboxQueueReader): Promise<void> {
+  await reader.dequeueOutbox(OutboxQueueReader.OUTBOX_DEQUEUE_TYPES, toResilienceDto());
 }
 
 type QueueKey = Readonly<{ topicId: string; resourceId: string; contextId: string }>;
