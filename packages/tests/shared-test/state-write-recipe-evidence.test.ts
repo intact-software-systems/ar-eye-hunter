@@ -45,8 +45,8 @@ describe('API-v1 state-write recipe evidence', () => {
         ), 'utf8')) as { steps: Array<Record<string, any>> };
         const terminalNames = [
             'assertPrimaryExactRevisions',
-            'assertSecondaryExactRevisions',
-            'assertTopologyPayloadsOnBothServers',
+            'assertTertiaryExactRevisions',
+            'assertTopologyPayloadsAcrossPrimaryAndTertiary',
             'closeAliceWebSocket',
             'closeBobWebSocket',
             'logoutAliceThroughPrimary',
@@ -75,8 +75,8 @@ describe('API-v1 state-write recipe evidence', () => {
             roleMutationRevision: 3, groupMutationRevision: 4,
             primaryFirstTopology: topology(3, 4),
             primarySecondTopology: topology(4, 5),
-            secondaryFirstTopology: topology(4, 5),
-            secondarySecondTopology: topology(3, 4),
+            tertiaryFirstTopology: topology(4, 5),
+            tertiarySecondTopology: topology(3, 4),
         };
         const interactions = [
             ...assertionSteps.map((step, index) => ({
@@ -113,15 +113,23 @@ describe('API-v1 state-write recipe evidence', () => {
     });
 
     it('observes committed socket authorization before clustered WS effects', () => {
-        for (const [name, terminalStep] of [
-            ['api-v1-rtc-topology-convergence.json', 'commitConcurrentGroupRevisions'],
-            ['api-v1-crdt-app-inbox.json', 'appendCrdtUpdateThroughPrimary'],
+        for (const [name, terminalStep, socketConnections] of [
+            [
+                'api-v1-rtc-topology-convergence.json',
+                'commitConcurrentGroupRevisions',
+                ['wsPrimary', 'wsTertiary'],
+            ],
+            [
+                'api-v1-crdt-app-inbox.json',
+                'appendCrdtUpdateThroughPrimary',
+                ['wsPrimary', 'wsTertiary'],
+            ],
         ] as const) {
             const recipe = JSON.parse(
                 readFileSync(path.join(recipeRoot, name), 'utf8'),
             ) as { steps: Array<Record<string, unknown>> };
             const terminalIndex = recipe.steps.findIndex(step => step.name === terminalStep);
-            for (const connection of ['wsPrimary', 'wsSecondary']) {
+            for (const connection of socketConnections) {
                 const readyIndex = recipe.steps.findIndex(step =>
                     step.name === `${connection}AuthorizationReady`
                 );

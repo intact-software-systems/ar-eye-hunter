@@ -163,15 +163,24 @@ async function runManagedApiRunner(port: number, artifactDir: string, timeoutMs 
 }
 
 describe('api-v1 black-box run helper', () => {
-    it('starts two API servers for the local Postgres black-box command', async () => {
+    it('starts three API servers for every managed Postgres cluster command', async () => {
         const packageJson = JSON.parse(await readFile(
             path.join(repoRoot, 'packages/shared-test/package.json'),
             'utf8',
         )) as { scripts?: Record<string, string> };
 
-        expect(packageJson.scripts?.['bb:api-v1:postgres']).toContain(
-            '--secondary-port=18081',
-        );
+        for (const scriptName of [
+            'bb:api-v1:postgres',
+            'bb:api-v1:postgres:crdt',
+            'bb:api-v1:postgres:medium-scale',
+        ]) {
+            expect(packageJson.scripts?.[scriptName], scriptName).toContain(
+                '--secondary-port=18081',
+            );
+            expect(packageJson.scripts?.[scriptName], scriptName).toContain(
+                '--tertiary-port=18082',
+            );
+        }
     });
 
     it('defaults to Postgres on port 18080', () => {
@@ -187,17 +196,20 @@ describe('api-v1 black-box run helper', () => {
             recipesOnly: false,
         });
         expect(options).not.toHaveProperty('secondaryPort');
+        expect(options).not.toHaveProperty('tertiaryPort');
     });
 
-    it('accepts a distinct secondary Postgres API port', () => {
+    it('accepts a complete set of pairwise-distinct Postgres cluster ports', () => {
         expect(parseApiV1BlackBoxArgs([
             '--backend=postgres',
             '--port=18080',
             '--secondary-port=18081',
+            '--tertiary-port=18082',
         ])).toMatchObject({
             backend: 'postgres',
             port: 18080,
             secondaryPort: 18081,
+            tertiaryPort: 18082,
         });
     });
 
@@ -205,17 +217,19 @@ describe('api-v1 black-box run helper', () => {
         expect(parseApiV1BlackBoxArgs([
             '--backend=postgres',
             '--secondary-port=18081',
+            '--tertiary-port=18082',
             '--cluster-only',
             '--cluster-profile=api-v1-black-box-medium-scale',
         ])).toMatchObject({
             backend: 'postgres',
             secondaryPort: 18081,
+            tertiaryPort: 18082,
             clusterOnly: true,
             clusterProfile: 'api-v1-black-box-medium-scale',
         });
 
         expect(() => parseApiV1BlackBoxArgs(['--cluster-only']))
-            .toThrow(/cluster-only.*secondary-port/i);
+            .toThrow(/cluster-only.*secondary-port.*tertiary-port/i);
     });
 
     it.each([
@@ -225,6 +239,31 @@ describe('api-v1 black-box run helper', () => {
         ['in recipes-only mode', ['--recipes-only', '--secondary-port=18081']],
     ])('rejects a secondary API port %s', (_label, args) => {
         expect(() => parseApiV1BlackBoxArgs(args)).toThrow(/secondary/i);
+    });
+
+    it.each([
+        ['without a secondary port', ['--tertiary-port=18082']],
+        ['when the secondary port has no tertiary peer', ['--secondary-port=18081']],
+        [
+            'when it duplicates the primary port',
+            ['--secondary-port=18081', '--tertiary-port=18080'],
+        ],
+        [
+            'when it duplicates the secondary port',
+            ['--secondary-port=18081', '--tertiary-port=18081'],
+        ],
+        ['outside the port range', ['--secondary-port=18081', '--tertiary-port=65536']],
+        ['without a value', ['--secondary-port=18081', '--tertiary-port']],
+        [
+            'with pglite-memory',
+            ['--backend=pglite-memory', '--secondary-port=18081', '--tertiary-port=18082'],
+        ],
+        [
+            'in recipes-only mode',
+            ['--recipes-only', '--secondary-port=18081', '--tertiary-port=18082'],
+        ],
+    ])('rejects an invalid managed three-server topology %s', (_label, args) => {
+        expect(() => parseApiV1BlackBoxArgs(args)).toThrow(/secondary|tertiary/i);
     });
 
     it('keeps recipes-only mode free of server and migration side effects', () => {
@@ -288,11 +327,12 @@ describe('api-v1 black-box run helper', () => {
         expect(env.RALLAR_LOGIN_USER_RATE_LIMIT).toBe('17');
     });
 
-    it('exposes secondary HTTP and WebSocket URLs only for a two-server run', () => {
+    it('exposes secondary and tertiary URLs only for a managed cluster run', () => {
         const options = parseApiV1BlackBoxArgs([
             '--backend=postgres',
             '--port=18080',
             '--secondary-port=18081',
+            '--tertiary-port=18082',
         ]);
         const env = toApiV1BlackBoxEnvironment(options, {});
 
@@ -304,13 +344,20 @@ describe('api-v1 black-box run helper', () => {
         expect(env.RALLAR_WS_BASE_URL_SECONDARY).toBe(
             'ws://127.0.0.1:18081',
         );
+        expect(env.RALLAR_API_BASE_URL_TERTIARY).toBe(
+            'http://127.0.0.1:18082',
+        );
+        expect(env.RALLAR_WS_BASE_URL_TERTIARY).toBe(
+            'ws://127.0.0.1:18082',
+        );
     });
 
-    it('plans isolated process URLs and log files for both managed servers', () => {
+    it('plans isolated process URLs and log files for all three managed servers', () => {
         const options = parseApiV1BlackBoxArgs([
             '--backend=postgres',
             '--port=18080',
             '--secondary-port=18081',
+            '--tertiary-port=18082',
         ]);
         const env = toApiV1BlackBoxEnvironment(options, {});
 
@@ -333,6 +380,16 @@ describe('api-v1 black-box run helper', () => {
                     PORT: '18081',
                     RALLAR_API_BASE_URL: 'http://127.0.0.1:18081',
                     RALLAR_WS_BASE_URL: 'ws://127.0.0.1:18081',
+                }),
+            }),
+            expect.objectContaining({
+                port: 18082,
+                baseUrl: 'http://127.0.0.1:18082',
+                logPath: '/tmp/api-v1-bb/api-v1-server-tertiary.log',
+                env: expect.objectContaining({
+                    PORT: '18082',
+                    RALLAR_API_BASE_URL: 'http://127.0.0.1:18082',
+                    RALLAR_WS_BASE_URL: 'ws://127.0.0.1:18082',
                 }),
             }),
         ]);
@@ -404,10 +461,11 @@ describe('api-v1 black-box run helper', () => {
         ]);
     });
 
-    it('runs every two-server cluster recipe through the cluster profile', () => {
+    it('runs every three-server cluster recipe through the cluster profile', () => {
         const options = parseApiV1BlackBoxArgs([
             '--backend=postgres',
             '--secondary-port=18081',
+            '--tertiary-port=18082',
         ]);
 
         expect(toClusterRecipeMatrixCommand(options, '/tmp/api-v1-bb')).toEqual([
@@ -425,6 +483,7 @@ describe('api-v1 black-box run helper', () => {
         const options = parseApiV1BlackBoxArgs([
             '--backend=postgres',
             '--secondary-port=18081',
+            '--tertiary-port=18082',
             '--cluster-only',
             '--cluster-profile=api-v1-black-box-medium-scale',
         ]);
@@ -442,10 +501,11 @@ describe('api-v1 black-box run helper', () => {
         ]);
     });
 
-    it('preserves the ordinary profile before the default two-server cluster profile', () => {
+    it('preserves the ordinary profile before the default three-server cluster profile', () => {
         const options = parseApiV1BlackBoxArgs([
             '--backend=postgres',
             '--secondary-port=18081',
+            '--tertiary-port=18082',
         ]);
 
         expect(toRecipeMatrixCommands(options, '/tmp/api-v1-bb').map(command =>

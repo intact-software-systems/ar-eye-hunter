@@ -12,6 +12,10 @@
       "env": "RALLAR_API_BASE_URL_SECONDARY",
       "default": "http://127.0.0.1:18081"
     },
+    "rallarApiBaseUrlTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
     "applicationId": {
       "env": "RALLAR_BB_APPLICATION_ID",
       "default": "api-v1-churn-{runId}"
@@ -61,6 +65,14 @@
     "apiSecondary": {
       "type": "http",
       "baseUrl": "{rallarApiBaseUrlSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "apiTertiary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlTertiary}",
       "headers": {
         "Content-Type": "application/json"
       },
@@ -278,7 +290,7 @@
             {
               "name": "primaryClientLoop",
               "type": "loop",
-              "count": 6,
+              "count": 4,
               "steps": [
                 {
                   "name": "registerPrimaryClient{loop.iteration}",
@@ -495,7 +507,7 @@
             {
               "name": "secondaryClientLoop",
               "type": "loop",
-              "count": 6,
+              "count": 4,
               "steps": [
                 {
                   "name": "registerSecondaryClient{loop.iteration}",
@@ -705,13 +717,230 @@
               ]
             }
           ]
+        },
+        {
+          "name": "tertiary-client-lane",
+          "steps": [
+            {
+              "name": "tertiaryClientLoop",
+              "type": "loop",
+              "count": 4,
+              "steps": [
+                {
+                  "name": "registerTertiaryClient{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/auth/register",
+                    "body": {
+                      "username": "churn-tertiary-{loop.iteration}-{runId}",
+                      "password": "{clientPassword}",
+                      "displayName": "Tertiary churn client {loop.iteration}"
+                    }
+                  },
+                  "expect": {
+                    "status": 201,
+                    "body": {
+                      "clientId": "string"
+                    }
+                  }
+                },
+                {
+                  "name": "loginTertiaryClient{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/auth/login",
+                    "body": {
+                      "username": "churn-tertiary-{loop.iteration}-{runId}",
+                      "password": "{clientPassword}"
+                    },
+                    "outputs": {
+                      "tertiaryClientId": "body.clientId",
+                      "tertiaryAccessToken": {
+                        "path": "body.accessToken",
+                        "secret": true
+                      },
+                      "tertiarySessionId": "body.sessionId"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "clientId": "string",
+                      "sessionId": "string"
+                    }
+                  }
+                },
+                {
+                  "name": "deriveTertiaryAuthHeader{loop.iteration}",
+                  "type": "set",
+                  "output": "tertiaryAuthHeader",
+                  "secret": true,
+                  "redactAs": "tertiaryAuthHeader",
+                  "transform": {
+                    "concat": [
+                      "Bearer ",
+                      {
+                        "path": "outputs.tertiaryAccessToken"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "name": "joinTertiaryClientToShared{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/members/{tertiaryClientId}",
+                    "headers": {
+                      "Authorization": "{tertiaryAuthHeader}",
+                      "x-client-id": "{tertiaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "join-tertiary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "status": "active"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "joinTertiaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/members/{tertiaryClientId}",
+                    "headers": {
+                      "Authorization": "{tertiaryAuthHeader}",
+                      "x-client-id": "{tertiaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "join-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "status": "active"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "connectTertiaryClientToShared{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}/sessions/{tertiarySessionId}",
+                    "headers": {
+                      "Authorization": "{tertiaryAuthHeader}",
+                      "x-client-id": "{tertiaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "presence-tertiary-{loop.iteration}-{sharedGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
+                      "principalId": "{tertiaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "connectTertiaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}",
+                    "headers": {
+                      "Authorization": "{tertiaryAuthHeader}",
+                      "x-client-id": "{tertiaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "presence-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
+                      "principalId": "{tertiaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "disconnectTertiaryClientFromChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "POST",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}/disconnect",
+                    "headers": {
+                      "Authorization": "{tertiaryAuthHeader}",
+                      "x-client-id": "{tertiaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "disconnect-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "generation-{runId}",
+                      "principalId": "{tertiaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                },
+                {
+                  "name": "reconnectTertiaryClientToChurn{loop.iteration}",
+                  "type": "http",
+                  "connection": "apiTertiary",
+                  "request": {
+                    "method": "PUT",
+                    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}/sessions/{tertiarySessionId}",
+                    "headers": {
+                      "Authorization": "{tertiaryAuthHeader}",
+                      "x-client-id": "{tertiaryClientId}"
+                    },
+                    "body": {
+                      "requestId": "reconnect-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
+                      "generationId": "reconnect-generation-{loop.iteration}-{runId}",
+                      "principalId": "{tertiaryClientId}"
+                    }
+                  },
+                  "expect": {
+                    "status": 200,
+                    "body": {
+                      "stateRevision": "integer"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     },
     {
-      "name": "readSharedGroupThroughSecondary",
+      "name": "readSharedGroupThroughTertiary",
       "type": "http",
-      "connection": "apiSecondary",
+      "connection": "apiTertiary",
       "request": {
         "method": "GET",
         "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}",

@@ -16,9 +16,13 @@
       "env": "RALLAR_API_BASE_URL_SECONDARY",
       "default": "http://127.0.0.1:18081"
     },
-    "rallarWsBaseUrlSecondary": {
-      "env": "RALLAR_WS_BASE_URL_SECONDARY",
-      "default": "ws://127.0.0.1:18081"
+    "rallarApiBaseUrlTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "rallarWsBaseUrlTertiary": {
+      "env": "RALLAR_WS_BASE_URL_TERTIARY",
+      "default": "ws://127.0.0.1:18082"
     },
     "applicationId": {
       "env": "RALLAR_BB_APPLICATION_ID",
@@ -78,11 +82,19 @@
       },
       "timeoutMs": 15000
     },
+    "apiTertiary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
     "wsPrimary": {
       "type": "ws",
       "timeoutMs": 15000
     },
-    "wsSecondary": {
+    "wsTertiary": {
       "type": "ws",
       "timeoutMs": 15000
     }
@@ -424,9 +436,9 @@
       }
     },
     {
-      "name": "createBobWebSocketTicketOnSecondary",
+      "name": "createBobWebSocketTicketOnTertiary",
       "type": "http",
-      "connection": "apiSecondary",
+      "connection": "apiTertiary",
       "request": {
         "method": "POST",
         "path": "/api/auth/ws-ticket",
@@ -458,7 +470,7 @@
       "transform": {
         "concat": [
           {
-            "path": "variables.rallarWsBaseUrlSecondary"
+            "path": "variables.rallarWsBaseUrlTertiary"
           },
           "/api/ws/",
           {
@@ -474,20 +486,20 @@
       }
     },
     {
-      "name": "openBobWebSocketOnSecondary",
+      "name": "openBobWebSocketOnTertiary",
       "type": "ws.open",
-      "connection": "wsSecondary",
+      "connection": "wsTertiary",
       "request": {
         "url": "{bobWsUrl}",
         "timeoutMs": 15000
       }
     },
     {
-      "name": "wsSecondaryAuthorizationReady",
+      "name": "wsTertiaryAuthorizationReady",
       "type": "ws.wait",
-      "connection": "wsSecondary",
+      "connection": "wsTertiary",
       "expect": {
-        "connection": "wsSecondary",
+        "connection": "wsTertiary",
         "withinMs": 15000,
         "consume": true,
         "messages": [{
@@ -610,17 +622,17 @@
       }
     },
     {
-      "name": "waitForBothRevisionsOnSecondary",
+      "name": "waitForBothRevisionsOnTertiary",
       "type": "ws.wait",
-      "connection": "wsSecondary",
+      "connection": "wsTertiary",
       "request": {
         "outputs": {
-          "secondaryFirstTopologyPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
-          "secondarySecondTopologyPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
+          "tertiaryFirstTopologyPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
+          "tertiarySecondTopologyPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
         }
       },
       "expect": {
-        "connection": "wsSecondary",
+        "connection": "wsTertiary",
         "withinMs": 20000,
         "consume": true,
         "ordered": false,
@@ -667,22 +679,22 @@
       }
     },
     {
-      "name": "parseSecondaryFirstTopology",
+      "name": "parseTertiaryFirstTopology",
       "type": "set",
-      "output": "secondaryFirstTopology",
+      "output": "tertiaryFirstTopology",
       "transform": {
         "jsonParse": {
-          "path": "outputs.secondaryFirstTopologyPayload"
+          "path": "outputs.tertiaryFirstTopologyPayload"
         }
       }
     },
     {
-      "name": "parseSecondarySecondTopology",
+      "name": "parseTertiarySecondTopology",
       "type": "set",
-      "output": "secondarySecondTopology",
+      "output": "tertiarySecondTopology",
       "transform": {
         "jsonParse": {
-          "path": "outputs.secondarySecondTopologyPayload"
+          "path": "outputs.tertiarySecondTopologyPayload"
         }
       }
     },
@@ -707,11 +719,11 @@
       }
     },
     {
-      "name": "assertSecondaryExactRevisions",
+      "name": "assertTertiaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{secondaryFirstTopology.sourceGroupStateCausalRevision.groupRevision}",
-        "secondRevision": "{secondarySecondTopology.sourceGroupStateCausalRevision.groupRevision}"
+        "firstRevision": "{tertiaryFirstTopology.sourceGroupStateCausalRevision.groupRevision}",
+        "secondRevision": "{tertiarySecondTopology.sourceGroupStateCausalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -727,13 +739,13 @@
       }
     },
     {
-      "name": "assertTopologyPayloadsOnBothServers",
+      "name": "assertTopologyPayloadsAcrossPrimaryAndTertiary",
       "type": "assert",
       "actual": {
         "primaryFirst": "{primaryFirstTopology}",
         "primarySecond": "{primarySecondTopology}",
-        "secondaryFirst": "{secondaryFirstTopology}",
-        "secondarySecond": "{secondarySecondTopology}"
+        "tertiaryFirst": "{tertiaryFirstTopology}",
+        "tertiarySecond": "{tertiarySecondTopology}"
       },
       "expect": {
         "body": {
@@ -765,7 +777,7 @@
             },
             "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
           },
-          "secondaryFirst": {
+          "tertiaryFirst": {
             "sourceGroupStateCausalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
@@ -779,7 +791,7 @@
             },
             "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
           },
-          "secondarySecond": {
+          "tertiarySecond": {
             "sourceGroupStateCausalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
@@ -808,7 +820,7 @@
     {
       "name": "closeBobWebSocket",
       "type": "ws.close",
-      "connection": "wsSecondary",
+      "connection": "wsTertiary",
       "request": {
         "code": 1000,
         "reason": "topology convergence complete"

@@ -389,7 +389,70 @@ describe('black-box runner recipe matrix', () => {
         });
     });
 
-    it('defines a no-browser two-server topology convergence recipe', () => {
+    it('requires the tertiary HTTP service for every built-in Postgres cluster recipe', () => {
+        const { entries } = readMatrix();
+        const clusterRecipeIds = [
+            'api-v1-state-read-convergence',
+            'api-v1-rtc-topology-convergence',
+            'api-v1-state-topology-churn',
+            'api-v1-state-write-convergence',
+            'api-v1-crdt-app-inbox',
+            'api-v1-state-medium-scale-churn',
+        ];
+
+        for (const recipeId of clusterRecipeIds) {
+            const entry = entries.find(candidate => candidate.id === recipeId);
+            expect(
+                entry?.requires?.httpServices?.map(service => service.env),
+                recipeId,
+            ).toEqual([
+                'RALLAR_API_BASE_URL',
+                'RALLAR_API_BASE_URL_SECONDARY',
+                'RALLAR_API_BASE_URL_TERTIARY',
+            ]);
+        }
+    });
+
+    it('routes REST floor reads through the tertiary API after primary warmup and secondary mutation', () => {
+        const { entries } = readMatrix();
+        const entry = entries.find(candidate =>
+            candidate.id === 'api-v1-state-read-convergence'
+        );
+
+        expect(entry?.requires?.httpServices?.map(service => service.env)).toEqual([
+            'RALLAR_API_BASE_URL',
+            'RALLAR_API_BASE_URL_SECONDARY',
+            'RALLAR_API_BASE_URL_TERTIARY',
+        ]);
+
+        const recipe = readRecipe(entry!.recipe);
+        const connections = recipe.connections as Record<string, { type?: string }>;
+        expect(Object.keys(connections)).toEqual(['primary', 'secondary', 'tertiary']);
+        const steps = recipe.steps as Array<Record<string, unknown>>;
+        expect(steps.find(step => step.name === 'warmPrimaryClient')).toMatchObject({
+            connection: 'primary',
+        });
+        expect(steps.find(step => step.name === 'mutateClientOnSecondary')).toMatchObject({
+            connection: 'secondary',
+        });
+        expect(steps.find(step => step.name === 'readClientFloorOnTertiary')).toMatchObject({
+            connection: 'tertiary',
+            expect: { status: 200 },
+        });
+        expect(steps.find(step => step.name === 'readGroupFloorOnTertiary')).toMatchObject({
+            connection: 'tertiary',
+            expect: { status: 200 },
+        });
+
+        const assertion = steps.find(step => step.name === 'assertReadConvergenceEvidence');
+        expect(JSON.stringify(assertion)).toContain('readClientFloorOnTertiary');
+        expect(JSON.stringify(assertion)).toContain('readGroupFloorOnTertiary');
+        expect(JSON.stringify(assertion)).toContain('rallar-state-revision');
+        expect(JSON.stringify(assertion)).toContain('rallar-group-revision');
+        expect(JSON.stringify(assertion)).toContain('rallar-presence-revision');
+    });
+
+    it('defines a no-browser three-server topology convergence recipe', () => {
         const { entries } = readMatrix();
         const entry = entries.find(candidate =>
             candidate.id === 'api-v1-rtc-topology-convergence'
@@ -412,6 +475,11 @@ describe('black-box runner recipe matrix', () => {
                         env: 'RALLAR_API_BASE_URL_SECONDARY',
                         default: 'http://127.0.0.1:18081',
                     },
+                    {
+                        name: 'Rallar API tertiary',
+                        env: 'RALLAR_API_BASE_URL_TERTIARY',
+                        default: 'http://127.0.0.1:18082',
+                    },
                 ],
             },
         });
@@ -425,10 +493,11 @@ describe('black-box runner recipe matrix', () => {
         >;
         expect(Object.values(connections).filter(connection =>
             connection.type === 'http'
-        )).toHaveLength(2);
+        )).toHaveLength(3);
         expect(Object.values(connections).filter(connection =>
             connection.type === 'ws'
         )).toHaveLength(2);
+        expect(connections.wsTertiary).toMatchObject({ type: 'ws' });
         expect(Object.values(connections).some(connection =>
             connection.type === 'rtc'
         )).toBe(false);
@@ -437,9 +506,16 @@ describe('black-box runner recipe matrix', () => {
         expect((recipe.steps as Array<{ type?: string }>).some(step =>
             step.type === 'parallel'
         )).toBe(true);
+        const allSteps = flattenRecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+        expect(allSteps.find(step =>
+            step.name === 'updateGroupThroughSecondary'
+        )).toMatchObject({ connection: 'apiSecondary' });
+        expect(allSteps.find(step =>
+            step.name === 'waitForBothRevisionsOnTertiary'
+        )).toMatchObject({ type: 'ws.wait', connection: 'wsTertiary' });
     });
 
-    it('defines bounded two-server multi-client and multi-group churn coverage', () => {
+    it('defines bounded three-server multi-client and multi-group churn coverage', () => {
         const { entries } = readMatrix();
         const entry = entries.find(candidate =>
             candidate.id === 'api-v1-state-topology-churn'
@@ -458,18 +534,34 @@ describe('black-box runner recipe matrix', () => {
             .find(step => step.name === 'runConcurrentClientChurn') as {
                 type?: string;
                 groups?: Array<{ steps?: Array<Record<string, unknown>> }>;
-            };
+        };
         expect(parallel.type).toBe('parallel');
-        expect(parallel.groups).toHaveLength(2);
+        expect(parallel.groups).toHaveLength(3);
         expect(parallel.groups?.map(group => {
             const loop = group.steps?.find(step => step.type === 'loop');
             return loop?.count;
-        })).toEqual([6, 6]);
+        })).toEqual([4, 4, 4]);
+        expect(parallel.groups?.map(group => {
+            const steps = flattenRecipeSteps(group.steps ?? []);
+            return new Set(steps.map(step => step.connection).filter(Boolean));
+        })).toEqual([
+            new Set(['apiPrimary']),
+            new Set(['apiSecondary']),
+            new Set(['apiTertiary']),
+        ]);
+        const finalReads = (recipe.steps as Array<Record<string, unknown>>)
+            .filter(step => String(step.name).startsWith('read'))
+            .filter(step =>
+                String((step.request as { path?: string })?.path).includes('/groups/')
+            );
+        expect(new Set(finalReads.map(step => step.connection))).toEqual(
+            new Set(['apiPrimary', 'apiTertiary']),
+        );
         expect(JSON.stringify(recipe)).toContain('disconnect');
         expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
     });
 
-    it('defines two-server API state-write convergence with bounded causal polling', () => {
+    it('defines three-server API state-write convergence with bounded causal polling', () => {
         const { entries } = readMatrix();
         const entry = entries.find(candidate =>
             candidate.id === 'api-v1-state-write-convergence'
@@ -484,7 +576,7 @@ describe('black-box runner recipe matrix', () => {
             expectedExitCode: 0,
         });
         if (!entry) return;
-        expect(entry.requires?.httpServices).toHaveLength(2);
+        expect(entry.requires?.httpServices).toHaveLength(3);
         expect(entry.requires?.playwright).not.toBe(true);
 
         const recipe = readRecipe(entry.recipe);
@@ -538,7 +630,7 @@ describe('black-box runner recipe matrix', () => {
         expect(race.groups).toHaveLength(4);
         expect(new Set(race.groups?.flatMap(group =>
             (group.steps ?? []).map(step => step.connection)
-        ))).toEqual(new Set(['apiPrimary', 'apiSecondary']));
+        ))).toEqual(new Set(['apiPrimary', 'apiSecondary', 'apiTertiary']));
         const capacityAssertion = steps.find(step =>
             step.name === 'assertExactlyOneCapacityWinner'
         );
@@ -646,7 +738,17 @@ describe('black-box runner recipe matrix', () => {
             maxConcurrency: 2,
             nonBlockingFailure: true,
         }));
-        for (const server of ['Primary', 'Secondary']) {
+        polls.forEach(step => {
+            const pollConnections = new Set(
+                flattenRecipeSteps([step])
+                    .map(candidate => candidate.connection)
+                    .filter(Boolean),
+            );
+            expect(pollConnections).toEqual(
+                new Set(['apiPrimary', 'apiSecondary', 'apiTertiary']),
+            );
+        });
+        for (const server of ['Primary', 'Secondary', 'Tertiary']) {
             expect(allSteps.find(step =>
                 step.name === `read${server}DurableConfig`
             )).toMatchObject({
@@ -676,6 +778,7 @@ describe('black-box runner recipe matrix', () => {
             actual: {
                 primary: expect.any(Object),
                 secondary: expect.any(Object),
+                tertiary: expect.any(Object),
                 causalHistory: expect.any(Object),
             },
             expect: {
@@ -703,6 +806,12 @@ describe('black-box runner recipe matrix', () => {
                     durableConfigVersion:
                         '{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}',
                 },
+                tertiary: {
+                    sourceGroupStateCausalRevision:
+                        '{resultsByName.readPrimaryGroupAttempt5.0.actual.body.causalRevision}',
+                    durableConfigVersion:
+                        '{resultsByName.putFinalTopologyConfig.0.actual.body.receipt.acceptedVersion}',
+                },
                 causalHistory: {
                     primary: {
                         topologyPresence: expect.any(Array),
@@ -718,6 +827,10 @@ describe('black-box runner recipe matrix', () => {
                             '{resultsByName.readPrimaryTopologyAttempt5.0.actual.body.snapshot.sourceGroupStateCausalRevision}',
                         ],
                     },
+                    tertiary: {
+                        topologyPresence: expect.any(Array),
+                        topologyTuples: expect.any(Array),
+                    },
                 },
             },
         });
@@ -725,6 +838,7 @@ describe('black-box runner recipe matrix', () => {
             .toEqual(expect.arrayContaining([
                 'causalHistory.primary.topologyPresence',
                 'causalHistory.secondary.topologyPresence',
+                'causalHistory.tertiary.topologyPresence',
             ]));
         for (const field of [
             '/members/', '/sessions/', '/topology/config',
@@ -733,6 +847,24 @@ describe('black-box runner recipe matrix', () => {
             'sourceGroupStateCausalRevision', 'topologyTuples',
         ]) expect(recipeText + JSON.stringify(finalAssertion)).toContain(field);
         expect(JSON.stringify(finalAssertion)).not.toContain('outboxIds');
+    });
+
+    it('uses the secondary auth boundary and tertiary fanout and catch-up for CRDT', () => {
+        const recipe = readRecipe('tests/api-v1/api-v1-crdt-app-inbox.json');
+        const steps = recipe.steps as Array<Record<string, unknown>>;
+
+        expect(steps.find(step => step.name === 'loginCrdtReader')).toMatchObject({
+            connection: 'apiSecondary',
+        });
+        expect(steps.find(step =>
+            step.name === 'appendCrdtUpdateThroughPrimary'
+        )).toMatchObject({ connection: 'wsPrimary' });
+        expect(steps.find(step =>
+            step.name === 'observeDurableFanoutOnTertiary'
+        )).toMatchObject({ connection: 'wsTertiary' });
+        expect(steps.find(step =>
+            step.name === 'readCommittedCrdtThroughTertiary'
+        )).toMatchObject({ connection: 'apiTertiary' });
     });
 
     it('defines the isolated 100-client five-group medium-scale state churn gate', () => {
@@ -748,7 +880,7 @@ describe('black-box runner recipe matrix', () => {
             profiles: ['api-v1-black-box-medium-scale'],
             expectedExitCode: 0,
         });
-        expect(entry?.requires?.httpServices).toHaveLength(2);
+        expect(entry?.requires?.httpServices).toHaveLength(3);
         expect(entry?.requires?.playwright).not.toBe(true);
 
         const recipe = readRecipe(entry!.recipe);
@@ -772,7 +904,7 @@ describe('black-box runner recipe matrix', () => {
         expect(parallel.timeoutMs).toBe(300_000);
         expect(parallel.groups).toHaveLength(15);
         expect(Object.values(recipe.connections as Record<string, { timeoutMs?: number }>)
-            .map(connection => connection.timeoutMs)).toEqual([15_000, 15_000]);
+            .map(connection => connection.timeoutMs)).toEqual([15_000, 15_000, 15_000]);
 
         const clientGroups = parallel.groups!.filter(group =>
             group.name?.startsWith('client-lane-')
@@ -781,6 +913,22 @@ describe('black-box runner recipe matrix', () => {
         const clientLoops = clientGroups.map(group => group.steps?.find(step => step.type === 'loop'));
         expect(clientLoops.map(loop => loop?.count)).toEqual(Array(10).fill(10));
         expect(clientLoops.reduce((total, loop) => total + Number(loop?.count), 0)).toBe(100);
+        const apiConnections = ['apiPrimary', 'apiSecondary', 'apiTertiary'];
+        clientLoops.forEach((loop, laneIndex) => {
+            const lane = laneIndex + 1;
+            const flow = flattenRecipeSteps([loop!]);
+            const writer = apiConnections[laneIndex % apiConnections.length];
+            const verifier = apiConnections[(laneIndex + 1) % apiConnections.length];
+            expect(flow.find(step =>
+                step.name === `registerLane${lane}Client{loop.iteration}`
+            )).toMatchObject({ connection: writer });
+            expect(flow.find(step =>
+                step.name === `heartbeatLane${lane}ClientSession{loop.iteration}`
+            )).toMatchObject({ connection: verifier });
+            expect(flow.find(step =>
+                step.name === `disconnectLane${lane}ClientSession{loop.iteration}`
+            )).toMatchObject({ connection: verifier });
+        });
 
         const controlGroups = parallel.groups!.filter(group =>
             group.name?.startsWith('group-control-lane-')
@@ -792,6 +940,12 @@ describe('black-box runner recipe matrix', () => {
             const label = ['one', 'two', 'three', 'four', 'five'][index]!;
             const loop = group.steps?.find(step => step.type === 'loop');
             const operations = loop?.steps as Array<Record<string, unknown>>;
+            expect(operations.map(operation => operation.connection)).toEqual([
+                apiConnections[index % apiConnections.length],
+                apiConnections[(index + 1) % apiConnections.length],
+                apiConnections[(index + 2) % apiConnections.length],
+                apiConnections[index % apiConnections.length],
+            ]);
             for (const operationName of [
                 `put${label}TopologyConfig{loop.iteration}`,
                 `delete${label}TopologyConfig{loop.iteration}`,
@@ -923,12 +1077,12 @@ describe('black-box runner recipe matrix', () => {
         }>;
         expect(firstPollGroups.filter(group => group.name.startsWith('last-client-lane-')))
             .toHaveLength(10);
-        expect(firstPollGroups.filter(group => group.name.startsWith('primary-group-')))
+        expect(firstPollGroups.filter(group => group.name.startsWith('cluster-group-')))
             .toHaveLength(5);
         for (let lane = 1; lane <= 10; lane += 1) {
             const read = firstPollGroups.find(group => group.name === `last-client-lane-${lane}`)
                 ?.steps[0];
-            expect(read?.connection).toBe(lane % 2 === 1 ? 'apiSecondary' : 'apiPrimary');
+            expect(read?.connection).toBe(apiConnections[lane % apiConnections.length]);
             expect(String((read?.request as { path?: string })?.path)).toContain(
                 `/clients/{lane${lane}ClientId}/presence`,
             );
@@ -945,11 +1099,15 @@ describe('black-box runner recipe matrix', () => {
 
         groupIds.forEach(groupId => {
             const groupLabel = groupId.replace(/^group/, '').replace(/Id$/, '').toLowerCase();
-            const primary = firstPollGroups.find(group =>
-                group.name === `primary-group-${groupLabel}`
+            const groupIndex = groupIds.indexOf(groupId);
+            const pollingConnection = apiConnections[groupIndex % apiConnections.length];
+            const verificationConnection = apiConnections[(groupIndex + 1) % apiConnections.length];
+            const reconfigureConnection = apiConnections[(groupIndex + 2) % apiConnections.length];
+            const polling = firstPollGroups.find(group =>
+                group.name === `cluster-group-${groupLabel}`
             )?.steps[0];
-            expect(primary?.connection).toBe('apiPrimary');
-            expect(primary?.request).toMatchObject({
+            expect(polling?.connection).toBe(pollingConnection);
+            expect(polling?.request).toMatchObject({
                 outputs: {
                     [`final${groupId[0].toUpperCase()}${groupId.slice(1)}StateCausalRevision`]:
                         'body.causalRevision.groupRevision',
@@ -958,11 +1116,11 @@ describe('black-box runner recipe matrix', () => {
                 },
             });
 
-            const secondary = afterChurn.find(step =>
-                step.name === `verify${groupLabel}GroupThroughSecondary`
+            const verification = afterChurn.find(step =>
+                step.name === `verify${groupLabel}GroupAcrossCluster`
             );
-            expect(secondary).toMatchObject({ connection: 'apiSecondary' });
-            expect(secondary?.expect).toMatchObject({
+            expect(verification).toMatchObject({ connection: verificationConnection });
+            expect(verification?.expect).toMatchObject({
                 body: {
                     causalRevision: {
                         groupRevision:
@@ -976,7 +1134,7 @@ describe('black-box runner recipe matrix', () => {
             const finalTopology = afterChurn.find(step =>
                 step.name === `finalReconfigure${groupLabel}Topology`
             );
-            expect(finalTopology).toMatchObject({ connection: 'apiSecondary' });
+            expect(finalTopology).toMatchObject({ connection: reconfigureConnection });
             expect(finalTopology?.expect).toMatchObject({
                 body: {
                     status: 'queued',
@@ -1070,6 +1228,7 @@ describe('black-box runner recipe matrix', () => {
 
         groupIds.forEach(groupId => {
             const groupLabel = groupId.replace(/^group/, '').replace(/Id$/, '').toLowerCase();
+            const groupIndex = groupIds.indexOf(groupId);
             const finalTopology = afterChurn.find(step =>
                 step.name === `finalReconfigure${groupLabel}Topology`
             );
@@ -1080,7 +1239,7 @@ describe('black-box runner recipe matrix', () => {
             );
             expect(observedEffect).toMatchObject({
                 type: 'http',
-                connection: 'apiPrimary',
+                connection: apiConnections[groupIndex % apiConnections.length],
                 request: {
                     method: 'GET',
                     path: expect.stringContaining('/topology'),
