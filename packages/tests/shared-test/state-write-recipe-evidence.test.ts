@@ -164,6 +164,31 @@ describe('API-v1 state-write recipe evidence', () => {
         }
     });
 
+    it('uses one bounded execution identity for the command and its evidence', () => {
+        const recipe = JSON.parse(readFileSync(path.join(
+            recipeRoot,
+            'api-v1-admin-operations.json',
+        ), 'utf8')) as {
+            variables: Record<string, unknown>;
+            steps: Array<Record<string, any>>;
+        };
+        const boundedPrune = recipe.steps.find(step =>
+            step.name === 'runBoundedPruneToCompletion'
+        );
+        const evidence = recipe.steps.find(step =>
+            step.output === 'stateWriteEvidence'
+        );
+
+        expect(boundedPrune?.request.body.requestId)
+            .toBe('prune-{executionToken}');
+        expect(evidence?.request.stateWriteEvidence.match)
+            .toBe('prune-{executionToken}');
+        expect(recipe.variables.executionToken).toEqual({
+            env: 'RALLAR_BB_EXECUTION_TOKEN',
+            required: true,
+        });
+    });
+
     it('rejects a literal stateWriteEvidence output in strict preflight', () => {
         const config = {
             steps: [{

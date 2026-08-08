@@ -146,6 +146,23 @@ describe('API-v1 runner options and process plans', () => {
     );
   });
 
+  it('creates a bounded execution token independently of caller-provided run IDs', () => {
+    const options = parseApiV1BlackBoxArgs([
+      '--backend=postgres',
+      `--run-id=${'x'.repeat(10_000)}`,
+    ]);
+    const first = toApiV1BlackBoxEnvironment(options, {
+      RALLAR_BB_EXECUTION_TOKEN: 'caller-controlled-token',
+    });
+    const second = toApiV1BlackBoxEnvironment(options, {});
+
+    expect(first.RALLAR_BB_RUN_ID).toHaveLength(10_000);
+    expect(first.RALLAR_BB_EXECUTION_TOKEN).toMatch(/^[a-f0-9]{24}$/);
+    expect(first.RALLAR_BB_EXECUTION_TOKEN).toHaveLength(24);
+    expect(second.RALLAR_BB_EXECUTION_TOKEN).toMatch(/^[a-f0-9]{24}$/);
+    expect(second.RALLAR_BB_EXECUTION_TOKEN).not.toBe(first.RALLAR_BB_EXECUTION_TOKEN);
+  });
+
   it('preserves an explicit managed API CRDT document policy', () => {
     const options = parseApiV1BlackBoxArgs(['--backend=pglite-memory']);
     const policy = '[{"documentType":"custom-map","rollout":"development"}]';

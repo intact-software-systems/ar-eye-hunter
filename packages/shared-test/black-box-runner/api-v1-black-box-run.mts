@@ -51,6 +51,10 @@ const API_ENTRYPOINT = 'apps/api-v1/src/main.ts';
 export const API_V1_STATE_WRITE_EVIDENCE_OUTPUT = 'stateWriteEvidence';
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 
+export function createApiV1BlackBoxExecutionToken(): string {
+  return crypto.randomUUID().replaceAll('-', '').slice(0, 24).toLowerCase();
+}
+
 export function toApiV1BlackBoxEnvironment(
   options: ApiV1BlackBoxOptions,
   baseEnv: Record<string, string | undefined>,
@@ -78,6 +82,7 @@ export function toApiV1BlackBoxEnvironment(
     env.RALLAR_WS_BASE_URL_TERTIARY = `ws://127.0.0.1:${options.tertiaryPort}`;
   }
   env.RALLAR_BB_RUN_ID = options.runId;
+  env.RALLAR_BB_EXECUTION_TOKEN = createApiV1BlackBoxExecutionToken();
   env.RALLAR_STATE_WRITE_EVIDENCE_OUTPUT = API_V1_STATE_WRITE_EVIDENCE_OUTPUT;
   env.RALLAR_ICE_MODE = env.RALLAR_ICE_MODE ?? 'local';
   env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET =

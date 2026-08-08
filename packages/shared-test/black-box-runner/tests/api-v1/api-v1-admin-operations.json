@@ -1,5 +1,9 @@
 {
   "variables": {
+    "executionToken": {
+      "env": "RALLAR_BB_EXECUTION_TOKEN",
+      "required": true
+    },
     "rallarApiBaseUrl": {
       "env": "RALLAR_API_BASE_URL",
       "default": "http://127.0.0.1:18080"
@@ -171,7 +175,7 @@
           "x-client-id": "{adminClientId}"
         },
         "body": {
-          "requestId": "bounded-prune-{adminClientId}",
+          "requestId": "prune-{executionToken}",
           "dryRun": false,
           "categories": ["runtime-state", "resource-inbox-results"],
           "reason": "black-box-bounded-prune"
@@ -200,7 +204,7 @@
       "output": "stateWriteEvidence",
       "request": {
         "stateWriteEvidence": {
-          "match": "bounded-prune-{adminClientId}",
+          "match": "prune-{executionToken}",
           "commandTypes": ["ADMIN_PRUNE_EXPIRED"],
           "minimumMatchedRows": 1,
           "expectedEffectsByCommandType": {
