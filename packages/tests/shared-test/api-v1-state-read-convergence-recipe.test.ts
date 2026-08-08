@@ -20,6 +20,18 @@ interface StateReadRecipeStep {
 }
 
 describe('API-v1 state-read convergence recipe', () => {
+  it('defines run-scoped identifiers as interpolated string values', () => {
+    const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {
+      variables: Record<string, unknown>;
+    };
+
+    expect(recipe.variables).toMatchObject({
+      applicationId: 'state-read-{runId}',
+      workspaceId: 'default-{runId}',
+      groupId: 'snapshot-room-{runId}',
+    });
+  });
+
   it('proves tertiary scalar and causal floors with revision and source headers', () => {
     const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {
       steps: StateReadRecipeStep[];

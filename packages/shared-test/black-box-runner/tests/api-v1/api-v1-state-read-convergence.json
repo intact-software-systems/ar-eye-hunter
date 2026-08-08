@@ -3,9 +3,9 @@
     "apiPrimary": { "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
     "apiSecondary": { "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
     "apiTertiary": { "env": "RALLAR_API_BASE_URL_TERTIARY", "default": "http://127.0.0.1:18082" },
-    "applicationId": { "default": "state-read-{runId}" },
-    "workspaceId": { "default": "default-{runId}" },
-    "groupId": { "default": "snapshot-room-{runId}" },
+    "applicationId": "state-read-{runId}",
+    "workspaceId": "default-{runId}",
+    "groupId": "snapshot-room-{runId}",
     "aliceUsername": { "env": "RALLAR_ALICE_USERNAME", "default": "alice" },
     "alicePassword": { "env": "RALLAR_ALICE_PASSWORD", "default": "secret", "secret": true },
     "runId": { "env": "RALLAR_BB_RUN_ID", "default": "local" }
