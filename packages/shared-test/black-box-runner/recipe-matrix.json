@@ -1082,6 +1082,73 @@
       "description": "Opt-in three-server PostgreSQL gate with 100 independently authenticated clients across five contended groups."
     },
     {
+      "id": "api-v1-group-formation-burst-small",
+      "recipe": "tests/api-v1/api-v1-group-formation-burst-small.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-formation-burst-small",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Formation-burst baseline small tier: 6 clients join one group in a burst, converge, then hold a ~60s steady-state heartbeat window while admin group-formation metrics are captured at T0/T1/T2."
+    },
+    {
+      "id": "api-v1-group-formation-burst-medium",
+      "recipe": "tests/api-v1/api-v1-group-formation-burst-medium.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-formation-burst-medium",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Formation-burst baseline medium tier: 20 clients join one group in a burst, converge, then hold a ~60s steady-state heartbeat window while admin group-formation metrics are captured at T0/T1/T2."
+    },
+    {
+      "id": "api-v1-group-formation-burst-large",
+      "recipe": "tests/api-v1/api-v1-group-formation-burst-large.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box-formation-large"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-formation-burst-large",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "Opt-in formation-burst baseline large tier: 50 clients join one group in a burst against the three-server PostgreSQL cluster, converge, then hold a ~60s steady-state heartbeat window while admin group-formation metrics are captured per server at T0/T1/T2."
+    },
+    {
       "id": "api-v1-scope-isolation",
       "recipe": "tests/api-v1/api-v1-scope-isolation.json",
       "category": "api-v1-black-box",
