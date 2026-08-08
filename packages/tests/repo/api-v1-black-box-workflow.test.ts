@@ -101,10 +101,10 @@ describe('API-v1 black-box workflow', () => {
             '.github/workflows/api-v1-medium-scale-gate.yml',
         );
         const mediumScaleStep = blackBoxActionStep(workflow, 'medium-scale');
-        const source = await readFile(
-            path.join(repoRoot, '.github/workflows/api-v1-medium-scale-gate.yml'),
-            'utf8',
+        const exactShaArtifactUploadStep = workflow.jobs?.['medium-scale']?.steps?.find(
+            step => step.name === 'Upload exact-SHA artifacts',
         );
+        const artifactPath = exactShaArtifactUploadStep?.with?.path;
 
         expect(mediumScaleStep?.with).toMatchObject({
             backend: 'postgres',
@@ -112,9 +112,19 @@ describe('API-v1 black-box workflow', () => {
             'secondary-api-port': '18081',
             'tertiary-api-port': '18082',
         });
-        expect(source).toContain('api-v1-server.log');
-        expect(source).toContain('api-v1-server-secondary.log');
-        expect(source).toContain('api-v1-server-tertiary.log');
+        expect(exactShaArtifactUploadStep?.uses).toBe('actions/upload-artifact@v4');
+        expect(exactShaArtifactUploadStep?.with?.name).toBe(
+            'api-v1-medium-scale-${{ github.sha }}',
+        );
+        expect(typeof artifactPath).toBe('string');
+
+        if (typeof artifactPath !== 'string') {
+            throw new Error('The exact-SHA artifact upload must declare a path.');
+        }
+
+        expect(artifactPath).toContain('api-v1-server.log');
+        expect(artifactPath).toContain('api-v1-server-secondary.log');
+        expect(artifactPath).toContain('api-v1-server-tertiary.log');
     });
 
     it('keeps Branch Release Gate reusing the three-server Release Gate', async () => {
