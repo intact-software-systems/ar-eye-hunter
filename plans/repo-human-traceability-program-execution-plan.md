@@ -152,25 +152,30 @@ resulting `main` `df9ab8d27de17c29b927c9ed9fcce9251ba7e62a`, whose default workf
 `31097790516` attempt 2 succeeded. It merged as exact `main`
 `6b75cfc5ec61f81b465be9072b746d24ecdb5f22` with the same tree, and default
 workflow `31100952224` attempt 1 succeeded for that exact SHA. The client-state
-child is `ledger-published`. The linked auth server child is drafted and
-unapproved; no auth implementation is authorized by this record.
+child is `ledger-published`. The linked auth server child was approved at exact
+blob `123990bceac9732660e1113101addd5b194d8347`. Planning PR #76 and implementation
+PRs #78, #81, and #90 are complete through exact resulting `main`
+`eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`; default workflow `31241669511`
+attempt 1 succeeded for that exact SHA. The auth implementation is `complete`. Its separately
+authorized evidence-only ledger publication is pending, and auth is not `ledger-published` in
+this tree.
 
 ## 1. Document Roles And Plan Graph
 
 The documents deliberately have different responsibilities:
 
-| Document                                                                                                    | Responsibility                                                                                                                           | Current state                                                                         |
-| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)                           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress.           | Published; approved for child-plan drafting.                                          |
-| This execution plan                                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                             | Published; human review remains pending.                                              |
-| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md)                 | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.                         | `ledger-published`; no further Wave 0 action pending.                                 |
-| [Browser room/group-state translation child](rallar-room-group-state-translation-boundary-plan.md)          | Defines the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                               | `ledger-published` through PR #55; no further browser-child work is pending.          |
-| [Server group-state structure child](rallar-group-state-server-structure-plan.md)                           | Defines authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.                     | Structure, QA, and hardening work is `ledger-published` through PR #66.               |
-| [Server group-state traceability QA child](rallar-group-state-server-traceability-qa-plan.md)               | Defines post-PR #59 guidance/independent lineage governance and behavior-neutral runtime traceability corrections in two sequential PRs. | PR #61/#62 and the later PR #66 ledger are complete.                                  |
-| [Server group-state traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md) | Adds durable navigation/guidance, then behavior-neutral protocol, transaction-owner, timing, presence-decision, and naming corrections.  | PR #64/#65 and the later PR #66 ledger are complete.                                  |
-| [API-v1 group-state route structure child](api-v1-group-state-route-structure-plan.md)                      | Defines API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.                             | `ledger-published` through PR #70; no further API-v1 child work is pending.           |
-| [Client-state server structure child](rallar-client-state-server-structure-plan.md)                         | Defines authoritative client-state mutation, persistence, AppInbox, lifecycle, snapshot, test, and durable-navigation ownership.         | `ledger-published` through PR #75; no further client-state-child work is pending.     |
-| [Auth server structure child](rallar-auth-server-structure-plan.md)                                         | Defines authoritative auth ingress, login, credentials, sessions, mutation, persistence, compatibility, tests, and durable navigation.   | Drafted and unapproved; planning publication and exact-blob human review are pending. |
+| Document                                                                                                    | Responsibility                                                                                                                           | Current state                                                                                |
+| ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| [Master refactoring program](repo-human-traceability-refactoring-program-plan.md)                           | Defines why the work exists, target organization, migration waves, shared entry and exit criteria, and program-level progress.           | Published; approved for child-plan drafting.                                                 |
+| This execution plan                                                                                         | Defines approval boundaries, reusable prompts, publication cadence, and completion handoffs.                                             | Published; human review remains pending.                                                     |
+| [Governance and checker child plan](repo-human-traceability-governance-and-checker-plan.md)                 | Implements Wave 0 governance, warning-only checks, fixtures, and measured baselines without production movement.                         | `ledger-published`; no further Wave 0 action pending.                                        |
+| [Browser room/group-state translation child](rallar-room-group-state-translation-boundary-plan.md)          | Defines the browser `room` to authoritative `group-state` translation boundary and consumer compatibility.                               | `ledger-published` through PR #55; no further browser-child work is pending.                 |
+| [Server group-state structure child](rallar-group-state-server-structure-plan.md)                           | Defines authoritative server group-state ownership, moves, AppInbox flow, persistence, presence, and mirrored tests.                     | Structure, QA, and hardening work is `ledger-published` through PR #66.                      |
+| [Server group-state traceability QA child](rallar-group-state-server-traceability-qa-plan.md)               | Defines post-PR #59 guidance/independent lineage governance and behavior-neutral runtime traceability corrections in two sequential PRs. | PR #61/#62 and the later PR #66 ledger are complete.                                         |
+| [Server group-state traceability hardening child](rallar-group-state-server-traceability-hardening-plan.md) | Adds durable navigation/guidance, then behavior-neutral protocol, transaction-owner, timing, presence-decision, and naming corrections.  | PR #64/#65 and the later PR #66 ledger are complete.                                         |
+| [API-v1 group-state route structure child](api-v1-group-state-route-structure-plan.md)                      | Defines API-v1 group-state routes, defaults, translation, composition, OpenAPI, and black-box compatibility.                             | `ledger-published` through PR #70; no further API-v1 child work is pending.                  |
+| [Client-state server structure child](rallar-client-state-server-structure-plan.md)                         | Defines authoritative client-state mutation, persistence, AppInbox, lifecycle, snapshot, test, and durable-navigation ownership.         | `ledger-published` through PR #75; no further client-state-child work is pending.            |
+| [Auth server structure child](rallar-auth-server-structure-plan.md)                                         | Defines authoritative auth ingress, login, credentials, sessions, mutation, persistence, compatibility, tests, and durable navigation.   | Implementation `complete` through PR #90; separate evidence-only ledger publication pending. |
 
 The dependency order is:
 
@@ -199,9 +204,74 @@ evaluation conclusions at the exact blobs above. The client-state server child
 applied all seven approved method corrections and completed planning PR #71 plus
 implementation PRs #72-#74. Its later evidence ledger is separately authorized
 and published through PR #75. The client-state child is `ledger-published`.
-The auth server structure child is drafted and unapproved, so its
-implementation remains blocked pending planning publication and exact-blob
-human approval.
+The auth server structure child completed planning PR #76 and implementation
+PRs #78, #81, and #90. Its separate evidence-only ledger is authorized but not
+yet published, so auth remains short of `ledger-published` and later Wave 2
+children remain blocked.
+
+### 1.1 Auth completion evidence
+
+The completed auth envelopes are planning PR #76: approved blob
+`123990bceac9732660e1113101addd5b194d8347`, feature
+`38a961c4ee184856422b3acf6f0494d04d8d6e5b`, frozen tree
+`aa82a21c85d7a6504aaa1a203aaabfe439d90af5`, Branch Release Gate `31103489838` attempt 2
+success, resulting main `61e708708f94328f095f1f1fa5690747bb933476`, tree
+`32fad7c720dcc1eb462f6b486ff64db4f687f67e`, default workflow `31106485616` attempt 1 success;
+PR A #78: feature `5118891effa1b9c856154ecab051c2df1b094145`, frozen tree
+`0082575cf0697a170c2125cf856ae07fedfe37e2`, Branch Release Gate `31159741601` attempt 1
+success, resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree
+`9a3084c2c78f90f004054924b99b97be67fe72bd`, default workflow `31163606362` attempt 1 success;
+PR B #81: feature `1f7d7b0682c93c7c831fc2a31c0f635829d50734`, frozen tree
+`2a5d756b83f44b6b8bbae166e8571f761371af29`, Branch Release Gate `31185044360` attempt 1
+success, resulting main `8152de39faf2d630158143366596d61346e20457` with the same tree, default
+workflow `31187663870` attempt 1 success; and PR C #90: feature
+`7245a40a1022192885ec3eaabc68d75c68ef61d4`, frozen tree
+`f3eb38ab4573198622f766f39af1cef20753e3ae`, Branch Release Gate `31228541734` attempt 1
+success, resulting main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree
+`0b6520fa7c9f642b252f56a0d009851730769cda`, default workflow `31241669511` attempt 1 success.
+
+PR C's resulting tree has exactly nine modified paths relative to its frozen feature tree, no
+additions or deletions, and every resulting blob already existed on merge parent
+`4192f4fe5d9a735d9dc24791d129e697a247da64`. No auth PR C path differs; the result is accepted
+concurrent-main base drift. Later auth diagnostic/snapshot test maintenance does not alter the
+historical PR C evidence, runtime, 33-row result, or ratchet policy.
+
+The controlled human sample was waived, so no timing, wrong-file,
+compatibility-hop, unresolved-question, productivity, causal, or statistical claim exists. All
+49 original warning rows retain the human-approved disposition and owner mapping from ignored
+Task 1 report SHA-256
+`804ef9174a91cd33e2d080671657ee3e8d6597c9b65531f1b8c32d93f62dd899`. Final focused
+warning-only evidence is exactly 33 inherited `boundary.unknown` rows: 13 credential/decoder, 18
+persistence, and two AppInbox/handler; layout modes are zero and changed-style introduced no new
+or worsened finding.
+
+The five complete family traces cover login/credential issuance, authenticated AppInbox
+mutation, session lifecycle/logout/expiry/revocation, ticket issue/consume, and
+authentication/authorization proof/query. Direct one-hop compatibility surfaces retain exact
+consumer owners and removal conditions, and canonical auth bypasses compatibility-only wrappers.
+Semantic security, transaction, ownership, routing, compatibility, exit-path, and navigation
+checks remain permanent primary evidence. Snapshot/source ratchets remain supplementary,
+fail-closed, child-owned evidence through PR C and are eligible for separately scoped cleanup
+only after the later ledger publishes; this task removes none.
+
+The accepted immutable PR B performance hashes are A1
+`ede88c02bfa57b02aa4f5c5ffe45c78f75e39be5d8378a8a55da2ccdd1e3ae14`, B1
+`d252ac681262924f21ce32b9e8e19e23712ec1f92cf9b4c21b234e1993c6f339`, B2
+`ec2e63eda73d18f726ed13aabcf243027ac68e9ea05a17c681db3eb9541e75c6`, A2
+`afb66ff1ac9f3df9554c992450f4008426f9e1f5d0c14f51f67400055ce91404`, pooled base
+`631f5d4a0208a537efd36cce5b520371d870d842512643888bbaf4c318ea0ed8`, pooled candidate
+`7bbae106a02f2b2ee89137530c525ce0019cf3098441705f2cbfaf6e2116c8de`, manifest
+`f8a031cedf7dd2bbbd3997f5695a5f5f6ac92da7a5772e7a848488d3dbda7430`, comparator log
+`9dba8bda5e968ef87cd6f578989faa3c0dcdc1f1b8b24f4fcc11eda3ba55407b` with retained exit 1
+for four recognized within-policy movements, and child evaluator
+`9b1681f20f2ca4e8ae23faa507cba020d1456d9763db484ee5499756c6ba1c80`, which passed without
+a conflict-depth exception. Rejected or superseded evidence remains historical and is not
+relabeled.
+
+The auth implementation is `complete`; its evidence-only ledger publication remains pending.
+This tree contains no future ledger tree, commit, PR number, Branch Release Gate, merge SHA, or
+default-workflow result. Auth reaches `ledger-published` only after that external publication
+envelope exists and succeeds.
 
 ## 2. Child-Plan State Model
 
@@ -928,5 +998,6 @@ not start another child plan.
 | Pilot evaluated                        | approved                 | Human approval binds master blob `4172437a6ca3ef6008446a1797582b4e4b9406a9` and execution-plan blob `3dc5495f5ee21b615a44f4e65c92deee8b42a940`; the seven migration-method corrections govern the next child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Client-state server implementation     | complete                 | Plan blob `71d2a48fa74f8eb03a2fea71c5adb6ab2ba3eb12` was approved. Planning PR #71 feature `73bda0999be39248f486f038cccb06e99be39d1f` / tree `930c866e5adab6544f1cf263f5bfd674696f555d` passed Branch Release Gate `30869481618` attempt 1, merged as `39b2b7e6312507addfb4629c9d84ab476e83c362`, and passed default workflow `30871724277` attempt 1. PR #72 feature `1e90c412855ea942a8b678aedde3b1c975efd5e8` / tree `e957db303770864fad04e6bb02b98cc03bcdc335` passed Branch Release Gate `30997710887` attempt 1, merged as `2fdba024bb347622727d337eb06fc13d2fe129fc`, and passed default workflow `31008375282` attempt 1. PR #73 feature `2dc7d8226e0b08026d992d72ee104bb9f638ed2a` / tree `3d5d4a90f66c290ed0c4c362fc6b200acc3788f3` passed Branch Release Gate `31069282516` attempt 1, merged as `21a807c7d303adbf10e3289468323b1ea6b0b01f`, and passed default workflow `31072851821` attempt 1. PR #74 feature `b57b6797e30139a6e77e669fb2c85291d40d9de7` / tree `b61e02f0ddb3f22d4f68948f5c227b49c9bcdcf7` passed Branch Release Gate `31091742579` attempt 1, merged as `df9ab8d27de17c29b927c9ed9fcce9251ba7e62a`, and passed default workflow `31095762444` attempt 1. |
 | Client-state server evidence ledger    | ledger-published         | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, frozen tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, and Branch Release Gate `31097790516` attempt 2 succeeded. It merged as exact `main` `6b75cfc5ec61f81b465be9072b746d24ecdb5f22` with the same tree; default workflow `31100952224` attempt 1 succeeded for that exact SHA. The client-state child is `ledger-published`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Auth server child plan                 | drafted, unapproved      | [Auth plan](rallar-auth-server-structure-plan.md) is the next bounded Wave 2 child. It characterizes authoritative auth and its consumers, fixes its structure/security/performance protocol, and records no future implementation or publication evidence. Exact-blob human approval remains required before implementation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Other Wave 2 children                  | blocked                  | API-v1 client-state organization, group topology, RTC/RTT, CRDT, and admin remain outside the auth planning scope. Auth implementation and every later child remain blocked until their respective exact child-plan approvals and prerequisite publication gates exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Auth server implementation             | complete                 | [Auth plan](rallar-auth-server-structure-plan.md) records approved blob `123990bceac9732660e1113101addd5b194d8347`; planning PR #76 and implementation PRs #78/#81/#90 completed through exact main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree `0b6520fa7c9f642b252f56a0d009851730769cda`; default workflow `31241669511` attempt 1 succeeded.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Auth server evidence ledger            | publication pending      | Separate authorization exists for this evidence-only ledger update. Its own future tree, commit, PR, Branch Release Gate, merge, and default workflow remain external under the non-circular contract, so auth is not `ledger-published` in this tree.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Other Wave 2 children                  | blocked                  | API-v1 client-state organization, group topology, RTC/RTT, CRDT, and admin remain outside the auth child. They remain blocked until the auth ledger independently reaches `ledger-published` and their respective plans and publication gates exist.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
