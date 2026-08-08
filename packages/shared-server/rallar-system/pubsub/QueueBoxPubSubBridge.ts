@@ -19,7 +19,7 @@ import {
     type QueueBoxPubSubMessage,
     type QueueBoxPubSubMessageKey,
 } from './queuebox-pubsub-contracts.ts';
-import { toResourceEntryFromPubSubMessage } from './queuebox-pubsub-entry.ts';
+import { toResourceEntryFromPubSubMessage } from './to-resource-entry-from-pub-sub-message.ts';
 
 export {
     type QueueBoxPubSubBridge,
@@ -29,7 +29,7 @@ export {
     type QueueBoxPubSubMessage,
     type QueueBoxPubSubMessageKey,
 } from './queuebox-pubsub-contracts.ts';
-export { toResourceEntryFromPubSubMessage } from './queuebox-pubsub-entry.ts';
+export { toResourceEntryFromPubSubMessage } from './to-resource-entry-from-pub-sub-message.ts';
 
 export type InstallQueueBoxPubSubBridgeOptions = Readonly<{
     wsQBoxServerService: WsQueueBoxServerService;
