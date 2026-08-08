@@ -6776,7 +6776,7 @@
           "name": "cluster-group-two",
           "steps": [
             {
-              "name": "readtwoGroupThroughPrimary",
+              "name": "readtwoGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -6808,7 +6808,7 @@
           "name": "cluster-group-three",
           "steps": [
             {
-              "name": "readthreeGroupThroughPrimary",
+              "name": "readthreeGroupThroughTertiary",
               "type": "http",
               "connection": "apiTertiary",
               "request": {
@@ -6872,7 +6872,7 @@
           "name": "cluster-group-five",
           "steps": [
             {
-              "name": "readfiveGroupThroughPrimary",
+              "name": "readfiveGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -7287,7 +7287,7 @@
           "name": "cluster-group-two",
           "steps": [
             {
-              "name": "readtwoGroupThroughPrimary",
+              "name": "readtwoGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -7319,7 +7319,7 @@
           "name": "cluster-group-three",
           "steps": [
             {
-              "name": "readthreeGroupThroughPrimary",
+              "name": "readthreeGroupThroughTertiary",
               "type": "http",
               "connection": "apiTertiary",
               "request": {
@@ -7383,7 +7383,7 @@
           "name": "cluster-group-five",
           "steps": [
             {
-              "name": "readfiveGroupThroughPrimary",
+              "name": "readfiveGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -7798,7 +7798,7 @@
           "name": "cluster-group-two",
           "steps": [
             {
-              "name": "readtwoGroupThroughPrimary",
+              "name": "readtwoGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -7830,7 +7830,7 @@
           "name": "cluster-group-three",
           "steps": [
             {
-              "name": "readthreeGroupThroughPrimary",
+              "name": "readthreeGroupThroughTertiary",
               "type": "http",
               "connection": "apiTertiary",
               "request": {
@@ -7894,7 +7894,7 @@
           "name": "cluster-group-five",
           "steps": [
             {
-              "name": "readfiveGroupThroughPrimary",
+              "name": "readfiveGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -8309,7 +8309,7 @@
           "name": "cluster-group-two",
           "steps": [
             {
-              "name": "readtwoGroupThroughPrimary",
+              "name": "readtwoGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -8341,7 +8341,7 @@
           "name": "cluster-group-three",
           "steps": [
             {
-              "name": "readthreeGroupThroughPrimary",
+              "name": "readthreeGroupThroughTertiary",
               "type": "http",
               "connection": "apiTertiary",
               "request": {
@@ -8405,7 +8405,7 @@
           "name": "cluster-group-five",
           "steps": [
             {
-              "name": "readfiveGroupThroughPrimary",
+              "name": "readfiveGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -8820,7 +8820,7 @@
           "name": "cluster-group-two",
           "steps": [
             {
-              "name": "readtwoGroupThroughPrimary",
+              "name": "readtwoGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -8852,7 +8852,7 @@
           "name": "cluster-group-three",
           "steps": [
             {
-              "name": "readthreeGroupThroughPrimary",
+              "name": "readthreeGroupThroughTertiary",
               "type": "http",
               "connection": "apiTertiary",
               "request": {
@@ -8916,7 +8916,7 @@
           "name": "cluster-group-five",
           "steps": [
             {
-              "name": "readfiveGroupThroughPrimary",
+              "name": "readfiveGroupThroughSecondary",
               "type": "http",
               "connection": "apiSecondary",
               "request": {
@@ -9022,34 +9022,34 @@
           },
           "groupTwo": {
             "state": [
-              "{resultsByName.readtwoGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+              "{resultsByName.readtwoGroupThroughSecondary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.4.actual.body.causalRevision.groupRevision}"
             ],
             "presence": [
-              "{resultsByName.readtwoGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readtwoGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+              "{resultsByName.readtwoGroupThroughSecondary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readtwoGroupThroughSecondary.4.actual.body.causalRevision.presenceRevision}"
             ]
           },
           "groupThree": {
             "state": [
-              "{resultsByName.readthreeGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+              "{resultsByName.readthreeGroupThroughTertiary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.4.actual.body.causalRevision.groupRevision}"
             ],
             "presence": [
-              "{resultsByName.readthreeGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readthreeGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+              "{resultsByName.readthreeGroupThroughTertiary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readthreeGroupThroughTertiary.4.actual.body.causalRevision.presenceRevision}"
             ]
           },
           "groupFour": {
@@ -9070,18 +9070,18 @@
           },
           "groupFive": {
             "state": [
-              "{resultsByName.readfiveGroupThroughPrimary.0.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.1.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.2.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.3.actual.body.causalRevision.groupRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.4.actual.body.causalRevision.groupRevision}"
+              "{resultsByName.readfiveGroupThroughSecondary.0.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.1.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.2.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.3.actual.body.causalRevision.groupRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.4.actual.body.causalRevision.groupRevision}"
             ],
             "presence": [
-              "{resultsByName.readfiveGroupThroughPrimary.0.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.1.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.2.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.3.actual.body.causalRevision.presenceRevision}",
-              "{resultsByName.readfiveGroupThroughPrimary.4.actual.body.causalRevision.presenceRevision}"
+              "{resultsByName.readfiveGroupThroughSecondary.0.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.1.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.2.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.3.actual.body.causalRevision.presenceRevision}",
+              "{resultsByName.readfiveGroupThroughSecondary.4.actual.body.causalRevision.presenceRevision}"
             ]
           }
         }

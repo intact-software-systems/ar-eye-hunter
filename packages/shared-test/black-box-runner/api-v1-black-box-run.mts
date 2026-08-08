@@ -3,7 +3,6 @@ import { verifyApiV1FairnessProof } from './state-write-evidence/api-v1-fairness
 import {
   startManagedApiServer,
   stopManagedApiServer,
-  type ManagedApiServer,
   type ManagedPGliteRunStorage,
   withManagedPGliteRunStorage,
 } from './managed-api/api-v1-managed-process-lifecycle.mts';
@@ -19,6 +18,10 @@ import {
   type ApiV1BlackBoxOptions,
   parseApiV1BlackBoxArgs,
 } from './parse-api-v1-black-box-options.mts';
+import {
+  type ManagedApiServerPlan,
+  withManagedApiServerPlans,
+} from './managed-api/with-managed-api-server-plans.mts';
 
 export {
   managedApiDiagnosticSecrets,
@@ -33,13 +36,10 @@ export {
   type ApiV1BlackBoxOptions,
   parseApiV1BlackBoxArgs,
 } from './parse-api-v1-black-box-options.mts';
-
-export type ManagedApiServerPlan = Readonly<{
-  port: number;
-  baseUrl: string;
-  logPath: string;
-  env: Record<string, string>;
-}>;
+export {
+  type ManagedApiServerPlan,
+  withManagedApiServerPlans,
+} from './managed-api/with-managed-api-server-plans.mts';
 
 const SCRIPT_DIR = new URL('.', import.meta.url);
 const REPO_ROOT = new URL('../../../', SCRIPT_DIR);
@@ -259,12 +259,6 @@ async function main(): Promise<void> {
   const options = parseApiV1BlackBoxArgs(Deno.args);
   const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
   const artifactDir = resolveArtifactDir(options.artifactDir);
-  const servers: Array<
-    Readonly<{
-      plan: ManagedApiServerPlan;
-      server: ManagedApiServer;
-    }>
-  > = [];
   await Deno.mkdir(artifactDir, { recursive: true });
   const runWithStorage = async (
     pgliteStorage: ManagedPGliteRunStorage | undefined,
@@ -277,39 +271,22 @@ async function main(): Promise<void> {
     if (options.runMigrations) {
       await runCommand(['npm', 'run', 'db:migrate'], env);
     }
-    try {
-      if (!options.recipesOnly) {
-        for (const plan of serverPlans) {
-          await Deno.writeTextFile(plan.logPath, '');
-          servers.push({
-            plan,
-            server: startManagedApiServer(toApiV1ServerCommand(options), plan, repoRootPath()),
-          });
-        }
-        await Promise.all(
-          servers.map(({ plan, server }) =>
-            waitForManagedApiReady({
-              baseUrl: plan.baseUrl,
-              logPath: plan.logPath,
-              childStatus: server.child.status,
-              startup: server.startup,
-              streamsDrained: server.streamsDrained,
-              diagnosticSecrets: managedApiDiagnosticSecrets(plan.env),
-            }),
-          ),
-        );
-      }
-
-      await runRecipeMatrix(options, env, artifactDir);
-      await verifyApiV1FairnessProof(
-        artifactDir,
-        servers.map(({ plan }) => plan.logPath),
-      );
-    } finally {
-      await Promise.allSettled(
-        [...servers].reverse().map(({ server }) => stopManagedApiServer(server.child)),
-      );
-    }
+    await withManagedApiServerPlans({
+      plans: options.recipesOnly ? [] : serverPlans,
+      serverCommand: toApiV1ServerCommand(options),
+      repoRootPath: repoRootPath(),
+      artifactDir,
+    }, {
+      writeEmptyLogFile: async (path) => await Deno.writeTextFile(path, ''),
+      startServer: startManagedApiServer,
+      waitForReady: waitForManagedApiReady,
+      toDiagnosticSecrets: managedApiDiagnosticSecrets,
+      runRecipes: async () => await runRecipeMatrix(options, env, artifactDir),
+      verifyFairness: async (fairnessArtifactDir, serverLogPaths) => {
+        await verifyApiV1FairnessProof(fairnessArtifactDir, serverLogPaths);
+      },
+      stopServer: stopManagedApiServer,
+    });
   };
   await runManagedBlackBoxBackend(options, env, runWithStorage);
 }

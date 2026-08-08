@@ -18,6 +18,22 @@ export interface ApiV1BlackBoxOptions {
 }
 
 const API_V1_CLUSTER_MATRIX_PROFILE = 'api-v1-black-box-cluster';
+const MANAGED_API_V1_CLUSTER_PROFILES = new Set([
+  API_V1_CLUSTER_MATRIX_PROFILE,
+  'api-v1-black-box-crdt',
+  'api-v1-black-box-medium-scale',
+]);
+
+interface ApiV1ClusterOptionValues {
+  readonly backend: ApiV1BlackBoxBackend;
+  readonly port: number;
+  readonly secondaryPort: number | undefined;
+  readonly tertiaryPort: number | undefined;
+  readonly profile: string;
+  readonly recipesOnly: boolean;
+  readonly clusterOnly: boolean;
+  readonly hasClusterProfile: boolean;
+}
 
 export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
   const values = readApiV1BlackBoxArgValues(args);
@@ -29,38 +45,23 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
   const port = toApiPort(values.get('--port') ?? '18080', '--port');
   const secondaryPort = toOptionalApiPort(values.get('--secondary-port'), '--secondary-port');
   const tertiaryPort = toOptionalApiPort(values.get('--tertiary-port'), '--tertiary-port');
-  const hasIncompleteClusterPorts = (secondaryPort === undefined) !== (tertiaryPort === undefined);
-  if (hasIncompleteClusterPorts) {
-    throw new Error(
-      '--secondary-port and --tertiary-port must be provided together for a managed cluster.',
-    );
-  }
-  if (secondaryPort === port) {
-    throw new Error('--secondary-port must differ from --port.');
-  }
-  if (
-    tertiaryPort !== undefined &&
-    (tertiaryPort === port || tertiaryPort === secondaryPort)
-  ) {
-    throw new Error('--tertiary-port must differ from --port and --secondary-port.');
-  }
-
-  const hasManagedClusterPorts = secondaryPort !== undefined && tertiaryPort !== undefined;
-  if (hasManagedClusterPorts && backend !== 'postgres') {
-    throw new Error('--secondary-port and --tertiary-port require --backend=postgres.');
-  }
-
   const recipesOnly = values.get('--recipes-only') === true;
-  if (recipesOnly && hasManagedClusterPorts) {
-    throw new Error(
-      '--secondary-port and --tertiary-port are not available with --recipes-only.',
-    );
-  }
+  const profile = String(
+    values.get('--profile') ?? (recipesOnly ? 'api-v1-black-box-recipes' : 'api-v1-black-box'),
+  );
   const clusterOnly = values.get('--cluster-only') === true;
-  if ((clusterOnly || values.has('--cluster-profile')) && !hasManagedClusterPorts) {
-    throw new Error(
-      '--cluster-only and --cluster-profile require --secondary-port and --tertiary-port.',
-    );
+  const clusterOptionIssues = validateApiV1ClusterOptionValues({
+    backend,
+    port,
+    secondaryPort,
+    tertiaryPort,
+    profile,
+    recipesOnly,
+    clusterOnly,
+    hasClusterProfile: values.has('--cluster-profile'),
+  });
+  if (clusterOptionIssues.length > 0) {
+    throw new Error(clusterOptionIssues[0]);
   }
 
   return {
@@ -68,9 +69,7 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
     port,
     ...(secondaryPort === undefined ? {} : { secondaryPort }),
     ...(tertiaryPort === undefined ? {} : { tertiaryPort }),
-    profile: String(
-      values.get('--profile') ?? (recipesOnly ? 'api-v1-black-box-recipes' : 'api-v1-black-box'),
-    ),
+    profile,
     clusterProfile: String(
       values.get('--cluster-profile') ?? API_V1_CLUSTER_MATRIX_PROFILE,
     ),
@@ -83,6 +82,49 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
     runMigrations: backend === 'postgres' && !recipesOnly && values.get('--no-migrate') !== true,
     recipesOnly,
   };
+}
+
+function validateApiV1ClusterOptionValues(
+  values: ApiV1ClusterOptionValues,
+): readonly string[] {
+  const issues: string[] = [];
+  const hasIncompletePorts =
+    (values.secondaryPort === undefined) !== (values.tertiaryPort === undefined);
+  const hasManagedPorts = values.secondaryPort !== undefined && values.tertiaryPort !== undefined;
+  const usesManagedProfile = !values.recipesOnly &&
+    MANAGED_API_V1_CLUSTER_PROFILES.has(values.profile);
+  if (hasIncompletePorts) {
+    issues.push(
+      '--secondary-port and --tertiary-port must be provided together for a managed cluster.',
+    );
+  }
+  if (values.secondaryPort === values.port) {
+    issues.push('--secondary-port must differ from --port.');
+  }
+  if (
+    values.tertiaryPort !== undefined &&
+    (values.tertiaryPort === values.port || values.tertiaryPort === values.secondaryPort)
+  ) {
+    issues.push('--tertiary-port must differ from --port and --secondary-port.');
+  }
+  if (hasManagedPorts && values.backend !== 'postgres') {
+    issues.push('--secondary-port and --tertiary-port require --backend=postgres.');
+  }
+  if (values.recipesOnly && hasManagedPorts) {
+    issues.push('--secondary-port and --tertiary-port are not available with --recipes-only.');
+  }
+  if (usesManagedProfile && values.backend !== 'postgres') {
+    issues.push(`--profile=${values.profile} requires --backend=postgres.`);
+  }
+  if (usesManagedProfile && !hasManagedPorts) {
+    issues.push(`--profile=${values.profile} requires --secondary-port and --tertiary-port.`);
+  }
+  if ((values.clusterOnly || values.hasClusterProfile) && !hasManagedPorts) {
+    issues.push(
+      '--cluster-only and --cluster-profile require --secondary-port and --tertiary-port.',
+    );
+  }
+  return issues;
 }
 
 function toOptionalApiPort(
