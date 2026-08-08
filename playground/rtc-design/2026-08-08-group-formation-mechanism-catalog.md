@@ -361,3 +361,14 @@ Primary mechanism in **bold**; others are supporting.
   the two top root causes and make the server's existing topology machinery
   actually take effect — both are wiring/precedence changes over code that
   already exists.
+
+## Beyond formation
+
+This catalog is scoped to the formation storm scenarios (S1–S7). The wider
+sweep of planes a distributed group communication system needs beyond
+formation — time, room-log sequencing, repair, failure detection, flow
+control, agreement-lite, interest management, trust, evolution, tenant
+governance, operational truth, and more — continues in
+`2026-08-08-rallar-system-planes-catalog.md` (P1–P14), which follows the
+same convention: named mechanisms, existing Rallar seeds, and black-box
+scenario families per plane.
