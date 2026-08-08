@@ -1,5 +1,8 @@
 /// <reference lib="deno.ns" />
-import { verifyApiV1FairnessProof } from './state-write-evidence/api-v1-fairness-proof.ts';
+import {
+  removeApiV1FairnessProofArtifact,
+  verifyApiV1FairnessProof,
+} from './state-write-evidence/api-v1-fairness-proof.ts';
 import {
   startManagedApiServer,
   stopManagedApiServer,
@@ -260,6 +263,7 @@ async function main(): Promise<void> {
   const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
   const artifactDir = resolveArtifactDir(options.artifactDir);
   await Deno.mkdir(artifactDir, { recursive: true });
+  await removeApiV1FairnessProofArtifact(artifactDir);
   const runWithStorage = async (
     pgliteStorage: ManagedPGliteRunStorage | undefined,
   ): Promise<void> => {

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -743,6 +743,50 @@ describe('api-v1 black-box run helper', () => {
             expect(result.stderr).toContain('AddrInUse');
             expect(result.stdout).not.toContain('Matrix profile remote-dry:');
             expect(configRequests).toBe(0);
+        } finally {
+            await closeServer(listener);
+            await rm(artifactDir, { recursive: true, force: true });
+        }
+    }, 30_000);
+
+    it('removes stale fairness proof evidence before each failed managed invocation', async () => {
+        const listener = createServer((request, response) => {
+            if (request.url === '/api/config') {
+                response.writeHead(200, { 'content-type': 'application/json' });
+                response.end('{}');
+                return;
+            }
+            response.writeHead(404);
+            response.end();
+        });
+        await new Promise<void>((resolve, reject) => {
+            listener.once('error', reject);
+            listener.listen(0, '0.0.0.0', () => {
+                listener.off('error', reject);
+                resolve();
+            });
+        });
+
+        const address = listener.address();
+        if (!address || typeof address === 'string') {
+            await closeServer(listener);
+            throw new Error('Occupied-port listener did not expose a TCP address.');
+        }
+        const artifactDir = await mkdtemp(path.join(tmpdir(), 'api-v1-stale-fairness-proof-'));
+        const staleProofPath = path.join(artifactDir, 'fairness-proof.json');
+        const matrixArtifactPath = path.join(artifactDir, 'matrix-summary.json');
+        await writeFile(staleProofPath, '{"proofs":["stale"]}\n');
+        await writeFile(matrixArtifactPath, '{"currentRun":"failed"}\n');
+
+        try {
+            const firstResult = await runManagedApiRunner(address.port, artifactDir);
+            expect(firstResult.code).toBe(1);
+            await expect(readFile(staleProofPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+            await expect(readFile(matrixArtifactPath, 'utf8')).resolves.toBe('{"currentRun":"failed"}\n');
+
+            const secondResult = await runManagedApiRunner(address.port, artifactDir);
+            expect(secondResult.code).toBe(1);
+            await expect(readFile(matrixArtifactPath, 'utf8')).resolves.toBe('{"currentRun":"failed"}\n');
         } finally {
             await closeServer(listener);
             await rm(artifactDir, { recursive: true, force: true });
