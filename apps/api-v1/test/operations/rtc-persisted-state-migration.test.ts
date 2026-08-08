@@ -137,11 +137,16 @@ Deno.test('RTC migration operator task and runbook expose dry-run and cutover ac
   assert.match(readme, /rollback/i);
   assert.match(readme, /durable recompute request/i);
   assert.match(readme, /restart/i);
-  assert.match(middleware, /initRtcTopologyScalarRecomputeWorker/);
-  assert.match(middleware, /writeRtcTopologyOutbox/);
-  assert.match(middleware, /deriveRtcTopologyEntryResourceId/);
+  const scalarWorkerRegistration = await Deno.readTextFile(
+    new URL('../../src/services/init-api-rtc-topology-scalar-recompute-worker.ts', import.meta.url),
+  );
+  assert.match(middleware, /initApiRtcTopologyScalarRecomputeWorker/);
+  assert.match(scalarWorkerRegistration, /initRtcTopologyScalarRecomputeWorker/);
+  assert.match(scalarWorkerRegistration, /writeRtcTopologyOutbox/);
+  assert.match(scalarWorkerRegistration, /deriveRtcTopologyEntryResourceId/);
   assert.doesNotMatch(middleware, /enqueueForStateMutation/);
-  assert.match(middleware, /group-absent-terminal/);
+  assert.doesNotMatch(scalarWorkerRegistration, /enqueueForStateMutation/);
+  assert.match(scalarWorkerRegistration, /group-absent-terminal/);
   assert.match(middleware, /registerMiddlewareBackgroundTask/);
 });
 
