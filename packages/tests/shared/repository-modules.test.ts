@@ -45,7 +45,9 @@ import {
     getAllOverlays,
     onOverlayChange,
     OverlayRevisionConflictError,
+    readOverlayAdoptionDiagnostics,
     removeOverlayById,
+    resetOverlayAdoptionDiagnostics,
     setOverlayAdoptionDiagnosticsSink,
     setOverlayById,
     updateNextHopSessionIds,
@@ -670,6 +672,7 @@ describe('repository modules', () => {
 
     it('reports every overlay adoption outcome through the diagnostics sink', () => {
         const outcomes: string[] = [];
+        resetOverlayAdoptionDiagnostics();
         setOverlayAdoptionDiagnosticsSink((event) => {
             outcomes.push(event.outcome);
         });
@@ -731,6 +734,14 @@ describe('repository modules', () => {
                 'incomparable-conflict',
             ]);
 
+            expect(readOverlayAdoptionDiagnostics()).toEqual({
+                initialSetCount: 1,
+                adoptedCount: 1,
+                equalCount: 1,
+                dominatedDroppedCount: 1,
+                incomparableConflictCount: 2,
+            });
+
             setOverlayAdoptionDiagnosticsSink(() => {
                 throw new Error('diagnostics sink failure');
             });
@@ -740,6 +751,10 @@ describe('repository modules', () => {
             } satisfies OverlayInfo;
             setOverlayById(overlayId, adoptedDespiteSinkFailure);
             expect(findOverlayById(overlayId)?.overlayVersion).toBe(3);
+            expect(readOverlayAdoptionDiagnostics().adoptedCount).toBe(2);
+
+            resetOverlayAdoptionDiagnostics();
+            expect(readOverlayAdoptionDiagnostics().adoptedCount).toBe(0);
         } finally {
             setOverlayAdoptionDiagnosticsSink(undefined);
         }

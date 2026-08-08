@@ -1,6 +1,7 @@
 import type { GroupRef } from './group-types.ts';
 import type { GroupTopologyConfigPatch } from './graph-topology-management-types.ts';
 import type { StateScope } from './state-types.ts';
+import type { RallarGroupFormationMetrics } from '../rtc/group-formation-metrics.ts';
 
 export const ADMIN_METRICS_RESET_CATEGORIES = ['rtc-topology', 'group-formation'] as const;
 
@@ -66,7 +67,7 @@ export type AdminOperationsOverviewResponse = AdminOperationBaseResponse & Reado
     }>;
     realtime?: Readonly<{
         topologyMetrics?: unknown;
-        groupFormationMetrics?: unknown;
+        groupFormationMetrics?: RallarGroupFormationMetrics;
     }>;
     state?: Readonly<{
         activeSessions: number;
@@ -113,7 +114,7 @@ export type AdminOperationsRealtimeResponse = AdminOperationBaseResponse & Reado
         processLocal: boolean;
     }>;
     groupFormation: Readonly<{
-        metrics?: unknown;
+        metrics?: RallarGroupFormationMetrics;
         processLocal: boolean;
     }>;
 }>;

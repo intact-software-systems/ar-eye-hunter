@@ -1,25 +1,25 @@
 import { AppTopics } from '@shared/api/api-config.ts';
+import {
+  GROUP_FORMATION_MUTATION_OUTCOMES,
+  type GroupFormationMutationOutcome,
+  type GroupFormationOperationKind,
+  type RallarGroupFormationMetrics,
+} from '@shared/rtc/group-formation-metrics.ts';
 import type {
   WsDeliveryDiagnosticsEvent,
   WsDeliveryDiagnosticsSink,
-} from '@shared/services/WsQueueBoxServerService.ts';
+} from '@shared/services/ws-queue-box-server-contracts.ts';
 
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../services/rtc-topology-outbox-entry.ts';
 
-export const GROUP_FORMATION_OPERATION_KINDS = [
-  'join',
-  'presenceConnect',
-  'heartbeat',
-  'disconnect',
-  'membership',
-  'other',
-] as const;
-
-export type GroupFormationOperationKind = (typeof GROUP_FORMATION_OPERATION_KINDS)[number];
-
-export const GROUP_FORMATION_MUTATION_OUTCOMES = ['write', 'noOp', 'rejected'] as const;
-
-export type GroupFormationMutationOutcome = (typeof GROUP_FORMATION_MUTATION_OUTCOMES)[number];
+export {
+  GROUP_FORMATION_MUTATION_OUTCOMES,
+  GROUP_FORMATION_OPERATION_KINDS,
+  type GroupFormationMutationOutcome,
+  type GroupFormationMutationOutcomeCounts,
+  type GroupFormationOperationKind,
+  type RallarGroupFormationMetrics,
+} from '@shared/rtc/group-formation-metrics.ts';
 
 export type GroupFormationGroupMutationEvent = Readonly<{
   operation: string;
@@ -42,29 +42,6 @@ export type GroupFormationRttMutationEvent = Readonly<{
 
 export type GroupFormationRttMutationSink = (event: GroupFormationRttMutationEvent) => void;
 
-export type GroupFormationMutationOutcomeCounts = Readonly<
-  Record<GroupFormationMutationOutcome, number>
->;
-
-export type RallarGroupFormationMetrics = Readonly<{
-  groupMutationCount: Readonly<
-    Record<GroupFormationOperationKind, GroupFormationMutationOutcomeCounts>
-  >;
-  presenceSummaryExpansionCount: number;
-  presenceSummaryWsRowCount: Readonly<{
-    event: number;
-    snapshot: number;
-    directory: number;
-  }>;
-  presenceSummaryTopologyEntryCount: number;
-  topologyRecomputeTriggeredCount: number;
-  wsOutboxSendCountByTopicId: Readonly<Record<string, number>>;
-  wsOutboxRecipientCountByTopicId: Readonly<Record<string, number>>;
-  wsOutboxNoLocalRecipientCount: number;
-  rttAcceptedWriteCount: number;
-  rttRecomputeIntentCount: number;
-}>;
-
 export type RallarGroupFormationMetricsRecorder = Readonly<{
   groupMutation: GroupFormationGroupMutationSink;
   presenceSummary: GroupFormationPresenceSummarySink;
@@ -79,9 +56,13 @@ export type RallarGroupFormationMetricsRecorder = Readonly<{
 const MAX_TRACKED_TOPIC_COUNT = 50;
 const TOPIC_OVERFLOW_KEY = 'untracked-topic-overflow';
 
-type MutableOutcomeCounts = Record<GroupFormationMutationOutcome, number>;
+interface MutableOutcomeCounts {
+  write: number;
+  noOp: number;
+  rejected: number;
+}
 
-type MutableGroupFormationMetrics = {
+interface MutableGroupFormationMetrics {
   groupMutationCount: Record<GroupFormationOperationKind, MutableOutcomeCounts>;
   presenceSummaryExpansionCount: number;
   presenceSummaryWsRowCount: { event: number; snapshot: number; directory: number };
@@ -92,7 +73,7 @@ type MutableGroupFormationMetrics = {
   wsOutboxNoLocalRecipientCount: number;
   rttAcceptedWriteCount: number;
   rttRecomputeIntentCount: number;
-};
+}
 
 export function emptyGroupFormationMetrics(): RallarGroupFormationMetrics {
   return createMutableGroupFormationMetrics();
@@ -169,7 +150,11 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
     try {
       if (event.kind === 'live-send') {
         incrementByTopic(metrics.wsOutboxSendCountByTopicId, event.topicId, 1);
-        incrementByTopic(metrics.wsOutboxRecipientCountByTopicId, event.topicId, event.recipientCount);
+        incrementByTopic(
+          metrics.wsOutboxRecipientCountByTopicId,
+          event.topicId,
+          event.recipientCount,
+        );
       } else if (event.kind === 'outbox-send') {
         incrementByTopic(metrics.wsOutboxSendCountByTopicId, event.topicId, 1);
         incrementByTopic(metrics.wsOutboxRecipientCountByTopicId, event.topicId, 1);

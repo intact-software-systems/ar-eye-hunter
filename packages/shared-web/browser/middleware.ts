@@ -46,9 +46,6 @@ import {
     initBrowserALRuntimeExpiryEviction,
 } from '@shared-web/browser/browser-al-runtime-stores.ts';
 import { initBrowserQueueBoxExpiryEviction } from '@shared-web/browser/browser-queuebox.ts';
-import {
-    initOverlayAdoptionDiagnostics,
-} from '@shared-web/browser/rtc-overlay-adoption-diagnostics.ts';
 
 export type Middleware = {
     qboxEngine: InboxOutboxEngine;
@@ -149,7 +146,6 @@ export async function initialiseMiddleware(
         isOnline: true,
     };
     initialiseBrowserCacheRepositories();
-    initOverlayAdoptionDiagnostics();
     configureBrowserALRuntimeStores(clientData.sessionId);
     initBrowserALRuntimeExpiryEviction().catch((error) =>
         console.error('Failed to initialise browser AL runtime expiry eviction:', error)

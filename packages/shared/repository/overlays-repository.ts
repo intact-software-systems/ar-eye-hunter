@@ -77,8 +77,19 @@ export type OverlayAdoptionDiagnosticsSink = (
     event: OverlayAdoptionDiagnosticsEvent,
 ) => void;
 
-// One process-wide sink keeps the adoption surface additive and opt-in.
+interface MutableOverlayAdoptionDiagnostics {
+    initialSetCount: number;
+    adoptedCount: number;
+    equalCount: number;
+    dominatedDroppedCount: number;
+    incomparableConflictCount: number;
+}
+
+export type RallarOverlayAdoptionDiagnostics = Readonly<MutableOverlayAdoptionDiagnostics>;
+
+// One process-wide sink and counter object keep the adoption surface additive and opt-in.
 let adoptionDiagnosticsSink: OverlayAdoptionDiagnosticsSink | undefined;
+const adoptionCounters: MutableOverlayAdoptionDiagnostics = emptyOverlayAdoptionDiagnostics();
 
 export function setOverlayAdoptionDiagnosticsSink(
     sink: OverlayAdoptionDiagnosticsSink | undefined,
@@ -86,7 +97,36 @@ export function setOverlayAdoptionDiagnosticsSink(
     adoptionDiagnosticsSink = sink;
 }
 
+export function readOverlayAdoptionDiagnostics(): RallarOverlayAdoptionDiagnostics {
+    return { ...adoptionCounters };
+}
+
+export function resetOverlayAdoptionDiagnostics(): void {
+    Object.assign(adoptionCounters, emptyOverlayAdoptionDiagnostics());
+}
+
+function emptyOverlayAdoptionDiagnostics(): MutableOverlayAdoptionDiagnostics {
+    return {
+        initialSetCount: 0,
+        adoptedCount: 0,
+        equalCount: 0,
+        dominatedDroppedCount: 0,
+        incomparableConflictCount: 0,
+    };
+}
+
 function emitOverlayAdoption(overlayId: string, outcome: OverlayAdoptionOutcome): void {
+    if (outcome === 'initial-set') {
+        adoptionCounters.initialSetCount += 1;
+    } else if (outcome === 'adopted') {
+        adoptionCounters.adoptedCount += 1;
+    } else if (outcome === 'equal') {
+        adoptionCounters.equalCount += 1;
+    } else if (outcome === 'dominated-dropped') {
+        adoptionCounters.dominatedDroppedCount += 1;
+    } else {
+        adoptionCounters.incomparableConflictCount += 1;
+    }
     try {
         adoptionDiagnosticsSink?.({ overlayId, outcome });
     } catch {

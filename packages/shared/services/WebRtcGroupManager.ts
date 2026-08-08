@@ -17,63 +17,27 @@ import {
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers,
 } from '../rtc/rtt-reporting-policy.ts';
+import {
+    clonePeerOwners,
+    emptyGroupManagerDiagnostics,
+    type RetainedPeerConnection,
+    type WebRtcGroupManagerDeleteOptions,
+    type WebRtcGroupManagerDiagnostics,
+    type WebRtcGroupManagerOptions,
+    type WebRtcGroupManagerState,
+    type WebRtcRttReportingPeerOptions,
+} from './webrtc-group-manager-contracts.ts';
 
-export type WebRtcGroupManagerState = {
-    readonly groupIds: readonly GroupId[];
-    readonly desiredPeerIds: readonly PeerId[];
-    readonly onlinePeerIds: readonly PeerId[];
-    readonly onlineDesiredPeerIds: readonly PeerId[];
-    readonly connectablePeerIds: readonly PeerId[];
-    readonly peerIdsWithNoReconnectableLanes: readonly PeerId[];
-    readonly peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>;
-};
+export type {
+    WebRtcGroupManagerDeleteOptions,
+    WebRtcGroupManagerDiagnostics,
+    WebRtcGroupManagerOptions,
+    WebRtcGroupManagerState,
+    WebRtcRttReportingPeerOptions,
+} from './webrtc-group-manager-contracts.ts';
 
 export const DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS = 10;
 export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
-
-export type WebRtcGroupManagerOptions = Readonly<{
-    maxPeerConnections?: number;
-    onDesiredPeerIdsChanged?: () => void;
-}>;
-
-export type WebRtcGroupManagerDeleteOptions = Readonly<{
-    retainConnections?: boolean;
-}>;
-
-export type WebRtcRttReportingPeerOptions = Readonly<{
-    degreeLimit?: number;
-}>;
-
-export type WebRtcGroupManagerDiagnostics = Readonly<{
-    reconcileRunCount: number;
-    reconcileAwaitedInFlightCount: number;
-    lastDesiredPeerCount: number;
-    connectAttemptCount: number;
-    connectFailureCount: number;
-    disconnectCount: number;
-    retainedEvictionCount: number;
-}>;
-
-type MutableWebRtcGroupManagerDiagnostics = {
-    -readonly [K in keyof WebRtcGroupManagerDiagnostics]: number;
-};
-
-const emptyGroupManagerDiagnostics = (): MutableWebRtcGroupManagerDiagnostics => ({
-    reconcileRunCount: 0,
-    reconcileAwaitedInFlightCount: 0,
-    lastDesiredPeerCount: 0,
-    connectAttemptCount: 0,
-    connectFailureCount: 0,
-    disconnectCount: 0,
-    retainedEvictionCount: 0,
-});
-
-type RetainedPeerConnection = Readonly<{
-    peerId: PeerId;
-    groupKey: string;
-    groupId: GroupId;
-    retainedOrder: number;
-}>;
 
 export class WebRtcGroupManager {
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
@@ -641,14 +605,4 @@ export class WebRtcGroupManager {
             Math.floor(requested),
         );
     }
-}
-
-function clonePeerOwners(
-    peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>,
-): ReadonlyMap<PeerId, readonly GroupId[]> {
-    const copy = new Map<PeerId, readonly GroupId[]>();
-    for (const [peerId, groupIds] of peerOwners.entries()) {
-        copy.set(peerId, [...groupIds]);
-    }
-    return copy;
 }

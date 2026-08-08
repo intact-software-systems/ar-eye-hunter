@@ -1,6 +1,5 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
-  AdminMetricsResetCategory,
   AdminMetricsResetRequest,
   AdminOperationBaseResponse,
   AdminOperationResultResponse,
@@ -15,22 +14,32 @@ import type {
   AdminPruneExpiredRequest,
   AdminTopologyRecomputeRequest,
 } from '@shared/api/admin-operations-types.ts';
-import { ADMIN_METRICS_RESET_CATEGORIES } from '@shared/api/admin-operations-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
+import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
 import {
   type RallarCrdtAdminLogRepository,
-  type RallarCrdtDocumentRef,
   type RallarCrdtLifecycleInput,
 } from '@shared/crdt/mod.ts';
 import {
   nowMs,
-  type RallarTimingDetails,
   type RallarTimingEventInput,
   type RallarTimingSink,
   recordRallarTiming,
 } from '../services/timing.ts';
 import type { AdminOperationsMutationGateway } from './admin-operations-mutation-gateway.ts';
 import type { AdminPruneExpiredOptions } from './admin-prune-options.ts';
+import {
+  compactTimingDetails,
+  readDocument,
+  readMetricsResetCategories,
+  readObject,
+  readReason,
+  readResultTimingDetails,
+  readTimingBoolean,
+  readTimingString,
+  readTimingStringList,
+  readTimingTarget,
+} from './admin-operations-request-reading.ts';
 export type { AdminPruneExpiredOptions } from './admin-prune-options.ts';
 export type AdminOperationsReadInput = Readonly<{
   adminSession: AuthSession;
@@ -66,7 +75,7 @@ export type AdminOperationsServiceOptions = Readonly<{
   wsStatus?: () => AdminRealtimeWsStatus;
   readRtcTopologyMetrics?: () => unknown;
   resetRtcTopologyMetrics?: () => void;
-  readGroupFormationMetrics?: () => unknown;
+  readGroupFormationMetrics?: () => RallarGroupFormationMetrics;
   resetGroupFormationMetrics?: () => void;
   crdtAdminRepository?: Partial<RallarCrdtAdminLogRepository>;
   timing?: RallarTimingSink;
@@ -79,12 +88,6 @@ export type AdminRealtimeWsStatus = Readonly<{
   connectionIds: readonly string[];
   openConnectionIds: readonly string[];
   connections?: readonly unknown[];
-}>;
-
-type AdminOperationRequest = Readonly<{
-  requestId?: string;
-  reason?: string;
-  [key: string]: unknown;
 }>;
 
 export class AdminOperationsService {
@@ -375,126 +378,4 @@ export class AdminOperationsService {
       & Partial<RallarCrdtAdminLogRepository>
       & Pick<RallarCrdtAdminLogRepository, K>;
   }
-}
-
-function readObject(input: unknown): Record<string, unknown> {
-  return input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
-}
-
-function readRecord(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === 'object' ? (input as Record<string, unknown>) : undefined;
-}
-
-function readDocument(input: unknown): RallarCrdtDocumentRef {
-  const body = readObject(input);
-  const document = body.document ?? input;
-  if (!document || typeof document !== 'object') {
-    throw new Error('CRDT admin operation requires a document ref.');
-  }
-  return document as RallarCrdtDocumentRef;
-}
-
-function readReason(input: AdminOperationRequest, fallback: string): string {
-  return typeof input.reason === 'string' && input.reason.trim().length > 0
-    ? input.reason
-    : fallback;
-}
-
-function readMetricsResetCategories(value: unknown): readonly AdminMetricsResetCategory[] {
-  return readAdminCategoryList(
-    value,
-    ADMIN_METRICS_RESET_CATEGORIES,
-    ADMIN_METRICS_RESET_CATEGORIES,
-    'Admin metrics reset categories',
-    'admin metrics reset category',
-  );
-}
-
-function readAdminCategoryList<TCategory extends string>(
-  value: unknown,
-  fallback: readonly TCategory[],
-  allowed: readonly TCategory[],
-  fieldLabel: string,
-  itemLabel: string,
-): readonly TCategory[] {
-  if (value === undefined) {
-    return fallback;
-  }
-  if (!Array.isArray(value)) {
-    throw new Error(`${fieldLabel} must be an array.`);
-  }
-
-  const allowedSet = new Set<string>(allowed);
-  return value.map((item) => {
-    if (typeof item !== 'string' || !allowedSet.has(item)) {
-      throw new Error(`Unsupported ${itemLabel}: ${String(item)}`);
-    }
-    return item as TCategory;
-  });
-}
-
-function readResultTimingDetails(result: unknown): RallarTimingDetails {
-  const body = readObject(result);
-  return compactTimingDetails({
-    operationStatus: readTimingString(body.status),
-    changed: readTimingBoolean(body.changed),
-  });
-}
-
-function readTimingTarget(input: unknown): Readonly<{
-  applicationId?: string;
-  workspaceId?: string;
-  groupId?: string;
-  documentScope?: string;
-  documentType?: string;
-  documentId?: string;
-}> {
-  const body = readObject(input);
-  const groupRef = readRecord(body.groupRef);
-  const directDocument = readTimingString(body.documentId) ? body : undefined;
-  const document = readRecord(body.document) ?? directDocument;
-  const roomRef = readRecord(document?.roomRef);
-
-  return {
-    applicationId: readTimingString(groupRef?.applicationId) ??
-      readTimingString(document?.applicationId) ??
-      readTimingString(body.applicationId),
-    workspaceId: readTimingString(groupRef?.workspaceId) ??
-      readTimingString(document?.workspaceId) ??
-      readTimingString(body.workspaceId),
-    groupId: readTimingString(groupRef?.groupId) ??
-      readTimingString(roomRef?.groupId) ??
-      readTimingString(body.groupId),
-    documentScope: readTimingString(document?.scope) ?? readTimingString(document?.documentScope),
-    documentType: readTimingString(document?.documentType),
-    documentId: readTimingString(document?.documentId),
-  };
-}
-
-function readTimingString(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function readTimingBoolean(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
-}
-
-function readTimingStringList(value: unknown): string | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const strings = value
-    .map((item) => readTimingString(item))
-    .filter((item): item is string => item !== undefined);
-  return strings.length > 0 ? strings.join(',') : undefined;
-}
-
-function compactTimingDetails(details: RallarTimingDetails): RallarTimingDetails {
-  return Object.fromEntries(
-    Object.entries(details).filter(([, value]) => value !== undefined),
-  ) as RallarTimingDetails;
 }

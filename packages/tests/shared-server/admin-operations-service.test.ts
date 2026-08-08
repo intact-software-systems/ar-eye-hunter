@@ -9,6 +9,10 @@ import type {
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import type { AdminOperationsMutationGateway } from '@shared-server/rallar-system/admin-operations/admin-operations-mutation-gateway.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
+// prettier-ignore
+import {
+  emptyGroupFormationMetrics,
+} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
@@ -65,8 +69,12 @@ describe('AdminOperationsService', () => {
   });
 
   it('exposes group-formation metrics beside rtc-topology in realtime and overview', async () => {
+    const formationMetrics = {
+      ...emptyGroupFormationMetrics(),
+      presenceSummaryExpansionCount: 4,
+    };
     const service = createService({
-      readGroupFormationMetrics: () => ({ presenceSummaryExpansionCount: 4 }),
+      readGroupFormationMetrics: () => formationMetrics,
     });
 
     const realtime = await service.readRealtime({ adminSession: createAdminSession() });
@@ -75,20 +83,23 @@ describe('AdminOperationsService', () => {
       processLocal: true,
     });
     expect(realtime.groupFormation).toEqual({
-      metrics: { presenceSummaryExpansionCount: 4 },
+      metrics: formationMetrics,
       processLocal: true,
     });
 
     const overview = await service.readOverview({ adminSession: createAdminSession() });
     expect(overview.realtime).toEqual({
       topologyMetrics: { recomputeCount: 0 },
-      groupFormationMetrics: { presenceSummaryExpansionCount: 4 },
+      groupFormationMetrics: formationMetrics,
     });
   });
 
   it('resets group-formation metrics without touching rtc-topology metrics', async () => {
     const calls: string[] = [];
-    let formationMetrics = { presenceSummaryExpansionCount: 4 };
+    let formationMetrics = {
+      ...emptyGroupFormationMetrics(),
+      presenceSummaryExpansionCount: 4,
+    };
     const service = createService({
       readRtcTopologyMetrics: () => ({ recomputeCount: 2 }),
       resetRtcTopologyMetrics: () => {
@@ -97,7 +108,7 @@ describe('AdminOperationsService', () => {
       readGroupFormationMetrics: () => formationMetrics,
       resetGroupFormationMetrics: () => {
         calls.push('reset-group-formation');
-        formationMetrics = { presenceSummaryExpansionCount: 0 };
+        formationMetrics = emptyGroupFormationMetrics();
       },
     });
 

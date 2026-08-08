@@ -39,51 +39,16 @@ import {
 } from '../alm/ALOutboundMessageRuntime.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
-export type WsServerResolvedRecipient = Readonly<{
-    peerId: string;
-    connectionId: string;
-}>;
-
-export type WsServerLiveSendStatus =
-    | 'sent-live'
-    | 'no-recipients'
-    | 'partial-failure'
-    | 'failed';
-
-export type WsServerLiveSendFailure = Readonly<{
-    peerId: string;
-    connectionId: string;
-    reason: string;
-}>;
-
-export type WsServerLiveSendResult = Readonly<{
-    status: WsServerLiveSendStatus;
-    message: ALMessage;
-    recipients: readonly WsServerResolvedRecipient[];
-    recipientCount: number;
-    sentCount: number;
-    failedCount: number;
-    failures: readonly WsServerLiveSendFailure[];
-}>;
-
-export type WsServerTargetResolver = Readonly<{
-    resolvePeerRecipients?: (
-        peerId: string,
-        message: ALMessage,
-    ) => readonly WsServerResolvedRecipient[];
-    resolveGroupRecipients?: (
-        groupId: string,
-        message: ALMessage,
-    ) => readonly WsServerResolvedRecipient[];
-    resolveBroadcastRecipients?: (
-        scope: 'room' | 'world' | 'all',
-        message: ALMessage,
-    ) => readonly WsServerResolvedRecipient[];
-    resolvePeerIdForConnection?: (
-        connectionId: string,
-        message: ALMessage,
-    ) => string | undefined;
-}>;
+import {
+    type WsDeliveryDiagnosticsEvent,
+    type WsDeliveryDiagnosticsSink,
+    type WsOutboxDeliveryOutcome,
+    type WsServerLiveSendFailure,
+    type WsServerLiveSendResult,
+    type WsServerLiveSendStatus,
+    type WsServerResolvedRecipient,
+    type WsServerTargetResolver,
+} from './ws-queue-box-server-contracts.ts';
 
 export type WsQueueBoxServerServiceOptions = Readonly<{
     qosProvider?: ALQosInputProvider;
@@ -94,39 +59,6 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
     outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
     deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
 }>;
-
-export type WsDeliveryDiagnosticsEvent =
-    | Readonly<{
-        kind: 'live-send';
-        topicId: string;
-        recipientCount: number;
-        sentCount: number;
-    }>
-    | Readonly<{
-        kind: 'outbox-send';
-        topicId: string;
-    }>
-    | Readonly<{
-        kind: 'no-local-recipient';
-        topicId: string;
-    }>;
-
-export type WsDeliveryDiagnosticsSink = (event: WsDeliveryDiagnosticsEvent) => void;
-
-export type WsOutboxDeliveryOutcome =
-    | Readonly<{
-        status: 'sent';
-        messageId: string;
-    }>
-    | Readonly<{
-        status: 'no-current-recipient';
-        messageId: string;
-    }>
-    | Readonly<{
-        status: 'retryable-transport-failure';
-        messageId: string;
-        reason: string;
-    }>;
 
 type WsServerPreparedMessage = Readonly<
     | { kind: 'recipient'; peerId: string; connectionId: string; message: ALMessage }
@@ -1040,3 +972,14 @@ function toWsServerLiveSendStatus(
 function errorToReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
+
+export type {
+    WsDeliveryDiagnosticsEvent,
+    WsDeliveryDiagnosticsSink,
+    WsOutboxDeliveryOutcome,
+    WsServerLiveSendFailure,
+    WsServerLiveSendResult,
+    WsServerLiveSendStatus,
+    WsServerResolvedRecipient,
+    WsServerTargetResolver,
+} from './ws-queue-box-server-contracts.ts';
