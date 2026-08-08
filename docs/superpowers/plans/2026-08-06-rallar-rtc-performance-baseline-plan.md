@@ -469,6 +469,7 @@ deno check --config apps/api-v1/deno.json \
   scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
   scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
   scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+  scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
   scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
   scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
   scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -503,6 +504,7 @@ for RTC_TYPESCRIPT_FILE in \
   scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
   scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
   scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+  scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
   scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
   scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
   scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -807,10 +809,11 @@ and the roadmap coordinator activates them.
 After activation, reserve exactly:
 
 - this baseline plan for its durable progress record;
-- the six feature-folder TypeScript files:
+- the seven feature-folder TypeScript files:
   - `scripts/perf/rtc-baseline/rtc-baseline-contracts.ts`;
   - `scripts/perf/rtc-baseline/rtc-baseline-validation.ts`;
   - `scripts/perf/rtc-baseline/rtc-baseline-envelope.ts`;
+  - `scripts/perf/rtc-baseline/rtc-baseline-cli.ts`;
   - `scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts`;
   - `scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts`;
   - `scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts`;
@@ -847,17 +850,18 @@ other test path is part of the B01-B05 reservation.
 
 ### B01-B05 responsibility and interface map
 
-| Owner                   | Exact files                                                      | Responsibility and stable interface                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Foundation contracts    | `rtc-baseline/rtc-baseline-contracts.ts`                         | Own the persisted `RtcBaselineCaptureRequestDto`, `RtcBaselineConfigurationDto`, `RtcBaselineConditionalEnvironmentDecisionDto`, `RtcBaselineSampleIdentityDto`, `RtcBaselineSampleDto`, `RtcBaselineFailureDto`, `RtcBaselineExternalAttemptDto`, policy-free `RtcBaselineExternalCohortAssertionDto`, `RtcBaselineMetricSummaryDto`, `RtcBaselineSummaryDto`, `RtcBaselineValidationIssue`, and closed workload/environment/phase unions. No I/O or workload policy.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| Pure validation         | `rtc-baseline/rtc-baseline-validation.ts`                        | Export `validateRtcBaselineId`, `validateRtcBaselineJsonValue`, `validateRtcBaselineCaptureRequest`, `validateRtcBaselineConditionalEnvironmentDecision`, `validateRtcBaselineSample`, `validateRtcBaselineExternalAttempt`, `validateRtcBaselineExternalCohortAssertion`, `validateRtcBaselineSummary`, `computeRtcBaselineExpectedSampleIdentities`, `validateRtcBaselineAggregation`, and `validateRtcBaselinePairedComparison`. Each validator returns all issues. External attempt/cohort ingestion validates only shared identity, exact member-set, configuration, JSON, and typed assertion shape; it contains no B06 threshold. Aggregation groups raw retained samples only when head, tree, environment, provider, browser build, database mode, configuration values and sources, workload, case, input, metric, and unit are identical, rejects any mixed field, and recomputes count/minimum/median/maximum/MAD/CV. Paired comparison accepts two separately validated, internally homogeneous cohorts with distinct Git identities only when every other frozen grouping field matches, and never pools them. |
-| Stateful evidence shell | `rtc-baseline/rtc-baseline-envelope.ts`                          | Export `createRtcBaselineEnvelope` from explicit clock, Git, hash, runtime-version, process-runner, and file-store dependencies plus `createDefaultRtcBaselineEnvelope` at the CLI boundary. The returned `RtcBaselineEnvelope` owns `initialize`, `captureWorkload`, `recordExternalAttempt`, `recordExternalCohortAssertion`, `writeSample`, `writeFailure`, `writeNotRun`, and `finalize`, including fresh-child isolation, locking, create-new writes, Git/source/config reconciliation, and nonzero CLI failure mapping.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| B01 runtime             | `rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts`        | Export `runRtcPeerConnectionDiagnostics` with explicit frozen input and fake-peer dependencies; return raw counters and cleanup state. The existing burst script owns argument decoding and envelope writes, not peer lifecycle policy.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| B02 direct drain        | `rtc-baseline/rtc-data-channel-drain-bench.ts`                   | Export `runRtcDataChannelDrain` for the exact 256-byte/depth matrix and keep setup outside the measured interval. Its CLI supports existing diagnostic output rules and accepted-envelope mode.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| B03 repository filter   | `rtc-baseline/rtc-rtt-repository-filter-bench.ts`                | Export `runRtcRttRepositoryFilter` for deterministic repository prepopulation and the exact timed production repository call. Its result exposes returned pairs and pre/post repository counts for invariant validation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Harness contract tests  | `packages/tests/repo/rtc-performance-baseline-harnesses.test.ts` | Prove semantic accepted/failed capture behavior and supplement it with the exact reserved-file inventory. Inventory assertions never replace runtime artifact tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Owner                   | Exact files                                                      | Responsibility and stable interface                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation contracts    | `rtc-baseline/rtc-baseline-contracts.ts`                         | Own the persisted `RtcBaselineCaptureRequestDto`, `RtcBaselineConfigurationDto`, `RtcBaselineConditionalEnvironmentDecisionDto`, `RtcBaselineSampleIdentityDto`, `RtcBaselineSampleDto`, `RtcBaselineFailureDto`, `RtcBaselineExternalAttemptDto`, policy-free `RtcBaselineExternalCohortAssertionDto`, `RtcBaselineMetricSummaryDto`, `RtcBaselineSummaryDto`, `RtcBaselineValidationIssue`, and closed workload/environment/phase unions. No I/O, file-store port, process/runtime dependency, command dispatch, reservation inventory, or workload policy.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Pure validation         | `rtc-baseline/rtc-baseline-validation.ts`                        | Export `validateRtcBaselineId`, `validateRtcBaselineJsonValue`, `validateRtcBaselineCaptureRequest`, `validateRtcBaselineConditionalEnvironmentDecision`, `validateRtcBaselineSample`, `validateRtcBaselineExternalAttempt`, `validateRtcBaselineExternalCohortAssertion`, `validateRtcBaselineSummary`, `computeRtcBaselineExpectedSampleIdentities`, `validateRtcBaselineAggregation`, and `validateRtcBaselinePairedComparison`. Each validator returns all issues. External attempt/cohort ingestion validates only shared identity, exact member-set, configuration, JSON, and typed assertion shape; it contains no B06 threshold. Aggregation groups raw retained samples only when head, tree, environment, provider, browser build, database mode, configuration values and sources, workload, case, input, metric, and unit are identical, rejects any mixed field, and recomputes count/minimum/median/maximum/MAD/CV. Paired comparison accepts two separately validated, internally homogeneous cohorts with distinct Git identities only when every other frozen grouping field matches, and never pools them. It performs no I/O, process execution, stdout/stderr, exit mapping, or reservation ownership. |
+| Stateful evidence shell | `rtc-baseline/rtc-baseline-envelope.ts`                          | Export the `RtcBaselineFileStore` port beside `RtcBaselineEnvelopeDependencies` and `createRtcBaselineEnvelope` from explicit clock, Git, hash, runtime-version, process-runner, and file-store dependencies. The returned `RtcBaselineEnvelope` owns typed `initialize`, `captureWorkload`, `recordBrowser`, `recordExternalAttempt`, `recordExternalCohortAssertion`, `writeSample`, `writeFailure`, `writeNotRun`, `readExternalAttempts`, `readRepeatRequirement`, `readPairedComparison`, `readBaselineValidation`, and `finalize` operations, including artifact policy/state, fresh-child isolation, path confinement, staged-raw reads through its file-store port, locking, create-new writes, Git/source/config reconciliation, accepted-evidence operations, and typed results. It contains no real Deno adapter, `Deno.args`, stdout/stderr write, process-exit mapping, or `import.meta.main` boundary.                                                                                                                                                                                                                                                                                                       |
+| Deno application        | `rtc-baseline/rtc-baseline-cli.ts`                               | Export `createDefaultRtcBaselineEnvelope` as the only composition owner for the real filesystem, Git, hash, runtime-version, and process-runner adapters. Decode and dispatch the exact accepted `Deno.args` subcommands to typed envelope operations, map their typed results to exact stdout, stderr, and process exit statuses, and invoke that runner only under `import.meta.main`. It passes staged-raw paths through without reading artifacts. It owns no artifact schema, validation/statistics policy, file-store port, lock, Git/config reconciliation rule, accepted-evidence state transition, workload correctness policy, or reservation inventory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| B01 runtime             | `rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts`        | Export `runRtcPeerConnectionDiagnostics` with explicit frozen input and fake-peer dependencies; return raw counters and cleanup state. The existing burst script owns argument decoding and envelope writes, not peer lifecycle policy.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| B02 direct drain        | `rtc-baseline/rtc-data-channel-drain-bench.ts`                   | Export `runRtcDataChannelDrain` for the exact 256-byte/depth matrix and keep setup outside the measured interval. Its CLI supports existing diagnostic output rules and accepted-envelope mode.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| B03 repository filter   | `rtc-baseline/rtc-rtt-repository-filter-bench.ts`                | Export `runRtcRttRepositoryFilter` for deterministic repository prepopulation and the exact timed production repository call. Its result exposes returned pairs and pre/post repository counts for invariant validation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Harness contract tests  | `packages/tests/repo/rtc-performance-baseline-harnesses.test.ts` | Prove semantic accepted/failed capture behavior and supplement it with the exact reserved-file inventory. Inventory assertions never replace runtime artifact tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
-Accepted TypeScript capture starts only at the envelope CLI's `capture`
+Accepted TypeScript capture starts only at the Deno application CLI's `capture`
 subcommand with one workload ID and a baseline-ID argument matching Section 8,
 such as the contract fixture
 `--baseline-id=20260807-0123456789ab-e1-local`. The controller derives the frozen
@@ -881,10 +885,11 @@ finalize, or label a complete accepted baseline.
 The Node/Playwright browser soak remains a Node entrypoint. Its
 `--capture=raw-evidence` mode fixes the B05 process/iteration matrix and writes
 one create-new JSON-safe raw file under the validated baseline directory. Raw
-browser output has no accepted status. The Deno envelope CLI subcommand
-`record-browser` ingests that file, recomputes every B05 invariant, and writes
-the accepted samples or failed attempt before the calling shell propagates the
-Node or bridge exit status.
+browser output has no accepted status. The Deno application CLI dispatches
+`record-browser` with that staged path. The envelope confines and reads the file
+through its file-store port, recomputes every B05 invariant, and writes the
+accepted samples or failed attempt before the calling shell propagates the Node
+or bridge exit status.
 
 ### Later B06 reservation — inactive
 
@@ -925,7 +930,9 @@ reservation update before editing.
 
 ### Cross-program overlap
 
-The proposed, currently inactive Ontology Task 1 reservation is exactly:
+Ontology Task 1 was merged through PR #89 at
+`f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41`; its published write set was
+exactly:
 
 - `packages/shared/ontology/rallar-ontology-contracts.ts`;
 - `packages/shared/ontology/rallar-domain-ontology-term.ts`;
@@ -947,7 +954,7 @@ The proposed, currently inactive Ontology Task 1 reservation is exactly:
 
 | Other track                                          | Path overlap                                                                                                                          | Phase 1 rule                                                                                                                                                                                                                                                                                      |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ontology Task 1                                      | The exact 17 proposed paths above, including the two checker paths; none overlaps this RTC plan's active or proposed reservation.     | Remains held until its own revised exact blob is human-approved and separately activated by the coordinator. Only then may the independently activated tracks run in parallel; neither touches another shared path without a new reservation.                                                     |
+| Ontology Task 1 — merged through PR #89              | The exact 17 published paths above, including the two checker paths; none overlaps this RTC plan's proposed reservation.              | Treat the resulting `f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41` main tree as read-only current-base context. This RTC amendment neither reopens nor edits ontology work, and any future overlap still requires its own new approval and reservation.                                               |
 | Auth PR A — merged and externally verified           | PR A's exact auth cohort is already on `main`; it is read-only context for this plan, not a proposed or active competing reservation. | Reconcile the RTC branch against the resulting verified auth tree. This RTC plan does not activate or deactivate human-program work; the cross-program roadmap owns its current status. Service-backed B06 serializes with any externally active auth child and waits for its stable, exact tree. |
 | Separately activated future auth or RTC/RTT children | State-write, session, topology, WebRTC, multicast, or shared integration paths may intersect measured call paths.                     | Only an independently approved/activated future child may overlap. Serialize service-backed B06/B07 with it; evidence captured before its change is historical and affected workloads must be rerun on the exact post-change tree.                                                                |
 
@@ -1021,13 +1028,14 @@ commit, push, or exact named workflow fall through.
 **Exit:** a clean current-main branch with the exact approved plan blob and no
 source edit.
 
-### Task 1: Foundation commit — contracts, validation, and evidence shell
+### Task 1: Foundation commit — contracts, validation, evidence shell, and Deno application
 
 **Files:**
 
 - Create: `scripts/perf/rtc-baseline/rtc-baseline-contracts.ts`
 - Create: `scripts/perf/rtc-baseline/rtc-baseline-validation.ts`
 - Create: `scripts/perf/rtc-baseline/rtc-baseline-envelope.ts`
+- Create: `scripts/perf/rtc-baseline/rtc-baseline-cli.ts`
 - Create: `packages/tests/repo/rtc-performance-baseline-contract.test.ts`
 - Create: `packages/tests/repo/rtc-performance-baseline-harnesses.test.ts`
 
@@ -1065,12 +1073,18 @@ policy, or summary validator.
   finalized primary's repeat-required state, selects exactly one workload,
   requires the unique finalized linked repeat when triggered, emits primary and
   repeat evidence separately without pooling, and exits nonzero for incomplete,
-  same-Git, otherwise mismatched, or still-noisy repeat evidence. Add a
-  supplementary declaration test for the exact six
-  feature-file and 16 existing-harness allowlist that proves the three
-  historical probes are absent; do not require not-yet-created slice files to
-  exist. Add each workload's semantic recomputation and final existence checks
-  in its owning B01-B05 task.
+  same-Git, otherwise mismatched, or still-noisy repeat evidence. Add
+  behavior-named application cases for the exact `Deno.args` option grammar and
+  ten-subcommand dispatch to typed envelope operations without direct artifact
+  reads, default real-adapter composition, success/no-repeat/evidence-failure/
+  usage exit mapping, exact stdout versus stderr ownership, and import without
+  execution when `import.meta.main` is false. Add a
+  supplementary declaration test with a test-owned literal inventory for the
+  exact seven feature files and 16 existing harnesses in Section 10 that proves
+  the three historical probes are absent; do not export or derive reservation
+  arrays from production-owned contracts, validation, envelope, or CLI modules,
+  and do not require not-yet-created slice files to exist. Add each workload's
+  semantic recomputation and final existence checks in its owning B01-B05 task.
 
 - [ ] **Step 2: Run RED tests**
 
@@ -1080,13 +1094,16 @@ policy, or summary validator.
     packages/tests/repo/rtc-performance-baseline-harnesses.test.ts
   ```
 
-  Expected: FAIL because the three foundation modules and their exported
+  Expected: FAIL because the four foundation modules and their exported
   contracts do not exist.
 
 - [ ] **Step 3: Implement the minimal foundation**
 
-  Keep contracts data-only and complete; keep validation pure and issue-based;
-  keep Git/hash/runtime/file effects in the explicit envelope dependencies.
+  Keep contracts data-only and complete; keep validation pure and issue-based.
+  Export the file-store port beside the envelope and keep artifact policy/state,
+  locks, reconciliation, and accepted-evidence operations in the envelope's
+  explicit dependencies. Keep every real Git/hash/runtime/filesystem/process
+  effect plus Deno application behavior in `rtc-baseline-cli.ts`.
   `initialize` creates the new baseline directory under a short-lived
   create-new lock and writes the initial environment and expected-sample
   manifest plus any declarative, policy-free external-cohort assertion identity
@@ -1109,14 +1126,25 @@ policy, or summary validator.
   count, minimum, median, maximum, MAD, and CV; `repeat-required` derives the
   strict greater-than-10% local boundary from those recomputed values rather
   than trusting a producer summary.
-  `recordExternalAttempt` ingests a
-  normalized shared external-attempt DTO plus its producer exit status and
-  applies the common identity, Git/config/path, JSON, and persistence contracts
-  without importing any B06 timing or retention implementation. A nonzero
+  `recordBrowser`, `recordExternalAttempt`, and
+  `recordExternalCohortAssertion` accept staged-raw paths plus producer exit
+  status, confine and read those paths through the envelope's file-store port,
+  and decode the normalized shared DTOs before applying common identity,
+  Git/config/path, JSON, and persistence contracts without importing any B06
+  timing or retention implementation. A nonzero
   producer status, missing/invalid staged JSON, or reported correctness issue
   writes the expected identity as failed, writes every remaining expected
   identity for that workload as causally `not-run`, and only then exits nonzero;
-  a valid-looking DTO cannot mask a nonzero producer. The CLI exposes exact subcommands
+  a valid-looking DTO cannot mask a nonzero producer. The Deno application CLI
+  exports `createDefaultRtcBaselineEnvelope`, supplies the real filesystem, Git,
+  hash, runtime-version, and process-runner adapters, decodes and dispatches the
+  exact `Deno.args`, owns stdout/stderr plus process-exit mapping, and invokes
+  its runner only under `import.meta.main`. The envelope also exposes typed,
+  read-side `readExternalAttempts`, `readRepeatRequirement`,
+  `readPairedComparison`, and `readBaselineValidation` operations; those
+  operations own artifact reads, policy, and validation, while the CLI only
+  dispatches them and formats or maps their results. The CLI exposes exact
+  subcommands
   `initialize`, `capture`, `list-external-attempts`, `record-browser`,
   `record-external`, `record-external-cohort`, `repeat-required`,
   `compare-paired`, `validate`, and `finalize`.
@@ -1140,12 +1168,28 @@ policy, or summary validator.
   exits 3 with no output when no repeat is required, and exits 1 for an invalid
   or incomplete primary. `recordExternalCohortAssertion` validates only the
   predeclared assertion identity, exact expected member IDs, JSON-safe
-  supporting evidence, typed outcome/issues, and producer status; it does not
-  compute a workload threshold. A nonzero cohort-producer status overrides
-  valid-looking staged JSON, persists the failed assertion before returning
-  nonzero, and still permits finalization to account that failed assertion. Any
+  supporting evidence, typed outcome/issues, and producer status after the
+  envelope confines and reads its staged path; it does not compute a workload
+  threshold. A nonzero cohort-producer status overrides valid-looking staged
+  JSON, persists the failed assertion before returning nonzero, and still
+  permits finalization to account that failed assertion. Any
   left value maps to the required failure record when exclusive ownership
-  exists, then to exit code 1.
+  exists, then the CLI maps it to exit code 1. Neither contracts, validation,
+  nor envelope exports a hard-coded reservation inventory; neither contracts
+  nor validation owns the file-store port or any real adapter.
+
+  The CLI output contract is exact: successful mutation, validation, and
+  finalization commands are silent and exit 0; `list-external-attempts` writes
+  only its requested TSV to stdout; `repeat-required --format=workload-csv`
+  writes only the stable CSV to stdout and exits 0 when triggered, writes
+  nothing and exits 3 when no repeat is required, and writes typed issues to
+  stderr and exits 1 for invalid or incomplete evidence; `compare-paired`
+  writes only its JSON-safe comparison result to stdout on success. Unknown
+  subcommands plus missing, positional, malformed, duplicate, or unsupported
+  options write typed usage issues to stderr and exit 64. Every other typed
+  envelope, producer, reconciliation, or adapter failure writes JSON-safe typed
+  issues to stderr and exits 1. No command mixes machine-readable stdout with
+  diagnostics, and importing the CLI performs no effect.
 
 - [ ] **Step 4: Run GREEN foundation checks**
 
@@ -1157,12 +1201,14 @@ policy, or summary validator.
   deno check --config apps/api-v1/deno.json \
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts
+    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts
 
   npx prettier --check \
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     packages/tests/repo/rtc-performance-baseline-contract.test.ts \
     packages/tests/repo/rtc-performance-baseline-harnesses.test.ts
 
@@ -1171,6 +1217,7 @@ policy, or summary validator.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     packages/tests/repo/rtc-performance-baseline-contract.test.ts \
     packages/tests/repo/rtc-performance-baseline-harnesses.test.ts
   do
@@ -1193,12 +1240,14 @@ policy, or summary validator.
     packages/tests/repo/rtc-performance-baseline-contract.test.ts \
     packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts | sort)"
   git add \
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     packages/tests/repo/rtc-performance-baseline-contract.test.ts \
     packages/tests/repo/rtc-performance-baseline-harnesses.test.ts
   test "$(git status --porcelain=v1 --untracked-files=all | cut -c4- | sort -u)" = "${RTC_FOUNDATION_EXPECTED_PATHS}"
@@ -1258,6 +1307,7 @@ capture boundary.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
     scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
     scripts/perf/rtc-ice-candidate-queue-bench.ts \
@@ -1352,6 +1402,7 @@ send, byte, and interval evidence required by Section 8.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
     scripts/perf/rtc-data-channel-replace-key-bench.ts \
     scripts/perf/rtc-data-channel-close-retention-bench.ts \
@@ -1426,9 +1477,10 @@ authoritative state.
   Cover all session/global-row sizes, exact deterministic IDs/RTT values/version
   order, graph invariants, room-only repository results, unchanged repository
   counts, retain/cleanup characterization, complete expected identities, and
-  the final on-disk existence of all six allowed feature files plus all 16
-  allowed existing TypeScript harnesses. Prove the three unreserved historical
-  probes remain absent from the allowlist and accepted execution matrix.
+  the final on-disk existence of all seven reserved feature files plus all 16
+  reserved existing TypeScript harnesses, using only the test-owned literal
+  inventory from Task 1. Prove the three unreserved historical probes remain
+  absent from that test inventory and the accepted execution matrix.
 
   ```bash
   npx vitest run packages/tests/repo/rtc-performance-baseline-harnesses.test.ts -t "RTC-B03"
@@ -1455,6 +1507,7 @@ authoritative state.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
     scripts/perf/rtc-topology-star-bench.ts \
     scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
@@ -1563,6 +1616,7 @@ benchmark abstraction.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-multicast-serialization-bench.ts \
     scripts/perf/webrtc-group-cache-fallback-bench.ts \
     scripts/perf/webrtc-group-manager-state-bench.ts \
@@ -1715,6 +1769,7 @@ is not a measurement anchor until Task 7 passes unchanged.
     packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
     scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -1751,6 +1806,7 @@ is not a measurement anchor until Task 7 passes unchanged.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
     scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
     scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -1779,6 +1835,7 @@ is not a measurement anchor until Task 7 passes unchanged.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
     scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
     scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -1836,6 +1893,7 @@ is not a measurement anchor until Task 7 passes unchanged.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
     scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
     scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -1992,7 +2050,7 @@ B06 commit or artifact may redefine it.
     --allow-read \
     --allow-write=tmp/perf/rtc-baseline \
     --allow-run=git,node,npm,deno,uname,sysctl \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     initialize \
     --baseline-id="${RTC_BASELINE_ID}" \
     --workloads=RTC-B01,RTC-B02,RTC-B03,RTC-B04
@@ -2000,7 +2058,7 @@ B06 commit or artifact may redefine it.
 
 - [ ] **Step 3: Run each accepted workload serially**
 
-  Invoke the envelope controller once per workload. It starts one fresh Deno
+  Invoke the Deno application controller once per workload. The envelope starts one fresh Deno
   worker process per precomputed outer identity, so the 3 warmups plus 15
   retained samples for lightweight B02-B04 cases, 1 plus 5 for heavy churn and
   B01, and every fixed inner run cannot collapse into one process. Keep the
@@ -2013,13 +2071,13 @@ B06 commit or artifact may redefine it.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e1-local'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e1-local"
   set +e
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B01
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B01
   RTC_B01_CAPTURE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B02
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B02
   RTC_B02_CAPTURE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B03
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B03
   RTC_B03_CAPTURE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B04
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B04
   RTC_B04_CAPTURE_STATUS="$?"
   set -e
   printf 'export RTC_B01_CAPTURE_STATUS=%q\n' "${RTC_B01_CAPTURE_STATUS}"
@@ -2045,9 +2103,9 @@ B06 commit or artifact may redefine it.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e1-local'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e1-local"
   set +e
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
   RTC_E1_FINALIZE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts validate --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
   RTC_E1_VALIDATE_STATUS="$?"
   set -e
 
@@ -2075,21 +2133,21 @@ B06 commit or artifact may redefine it.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e1-local'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e1-local"
   set +e
-  RTC_E1_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
+  RTC_E1_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
   RTC_E1_REPEAT_REQUIRED_STATUS="$?"
   set -e
 
   if [ "${RTC_E1_REPEAT_REQUIRED_STATUS}" -eq 0 ]; then
     RTC_E1_PRIMARY_ID="${RTC_BASELINE_ID}"
     RTC_BASELINE_ID="${RTC_E1_PRIMARY_ID}-repeat-01"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads="${RTC_E1_REPEAT_WORKLOADS}" --repeat-of="${RTC_E1_PRIMARY_ID}" --retained-sample-multiplier=2
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads="${RTC_E1_REPEAT_WORKLOADS}" --repeat-of="${RTC_E1_PRIMARY_ID}" --retained-sample-multiplier=2
 
     RTC_E1_REPEAT_CAPTURE_STATUS=0
     for RTC_E1_REPEAT_WORKLOAD in RTC-B01 RTC-B02 RTC-B03 RTC-B04; do
       case ",${RTC_E1_REPEAT_WORKLOADS}," in
         *,"${RTC_E1_REPEAT_WORKLOAD}",*)
           set +e
-          deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload="${RTC_E1_REPEAT_WORKLOAD}"
+          deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload="${RTC_E1_REPEAT_WORKLOAD}"
           RTC_E1_REPEAT_WORKLOAD_STATUS="$?"
           set -e
           if [ "${RTC_E1_REPEAT_WORKLOAD_STATUS}" -ne 0 ]; then RTC_E1_REPEAT_CAPTURE_STATUS=1; fi
@@ -2098,9 +2156,9 @@ B06 commit or artifact may redefine it.
     done
 
     set +e
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
     RTC_E1_REPEAT_FINALIZE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts validate --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
     RTC_E1_REPEAT_VALIDATE_STATUS="$?"
     set -e
 
@@ -2141,16 +2199,16 @@ evidence remains ignored and whose summary preserves every attempt.
   printf 'export RTC_E2_PRIMARY_ID=%q\n' "${RTC_E2_PRIMARY_ID}"
   RTC_BROWSER_RAW="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/staging/rtc-b05-browser-raw.json"
 
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05
 
   set +e
   node --expose-gc scripts/perf/rtc-data-channel-browser-soak.mjs --capture=raw-evidence --baseline-id="${RTC_BASELINE_ID}" --out="${RTC_BROWSER_RAW}"
   RTC_BROWSER_PROCESS_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --producer-exit-status="${RTC_BROWSER_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --producer-exit-status="${RTC_BROWSER_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
   RTC_BROWSER_BRIDGE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
   RTC_BROWSER_FINALIZE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts validate --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
   RTC_BROWSER_VALIDATE_STATUS="$?"
   set -e
 
@@ -2180,7 +2238,7 @@ evidence remains ignored and whose summary preserves every attempt.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e2-browser'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e2-browser"
   set +e
-  RTC_E2_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
+  RTC_E2_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
   RTC_E2_REPEAT_REQUIRED_STATUS="$?"
   set -e
 
@@ -2189,16 +2247,16 @@ evidence remains ignored and whose summary preserves every attempt.
     RTC_E2_PRIMARY_ID="${RTC_BASELINE_ID}"
     RTC_BASELINE_ID="${RTC_E2_PRIMARY_ID}-repeat-01"
     RTC_BROWSER_RAW="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/staging/rtc-b05-browser-raw.json"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05 --repeat-of="${RTC_E2_PRIMARY_ID}" --retained-sample-multiplier=2
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05 --repeat-of="${RTC_E2_PRIMARY_ID}" --retained-sample-multiplier=2
 
     set +e
     node --expose-gc scripts/perf/rtc-data-channel-browser-soak.mjs --capture=raw-evidence --baseline-id="${RTC_BASELINE_ID}" --out="${RTC_BROWSER_RAW}"
     RTC_E2_REPEAT_PROCESS_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --producer-exit-status="${RTC_E2_REPEAT_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --producer-exit-status="${RTC_E2_REPEAT_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
     RTC_E2_REPEAT_BRIDGE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
     RTC_E2_REPEAT_FINALIZE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts validate --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
     RTC_E2_REPEAT_VALIDATE_STATUS="$?"
     set -e
 
@@ -2271,6 +2329,7 @@ activation.
     packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
     scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -2471,6 +2530,7 @@ activation.
     scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
     scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
     scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
     scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
     scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
     scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
@@ -2758,7 +2818,7 @@ activation.
   esac
   RTC_BASELINE_ID="$(date -u +%Y%m%d)-$(git rev-parse --short=12 HEAD)-e3-memory"
 
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --conditional-environment=e4-pg --conditional-environment-decision="${RTC_B06_E4_DECISION}" --conditional-environment-reason="${RTC_B06_E4_DECISION_REASON}"
+  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --conditional-environment=e4-pg --conditional-environment-decision="${RTC_B06_E4_DECISION}" --conditional-environment-reason="${RTC_B06_E4_DECISION_REASON}"
 
   rtc_capture_b06_attempt() {
     RTC_B06_CASE_ID="$1"
@@ -2794,7 +2854,7 @@ activation.
     esac
     RTC_B06_PRODUCER_STATUS="$?"
 
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts record-external --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --case-id="${RTC_B06_CASE_ID}" --input-key="${RTC_B06_ENVIRONMENT}-${RTC_B06_CASE_ID}" --intended-phase="${RTC_B06_PHASE}" --outer-ordinal="${RTC_B06_ORDINAL}" --producer-exit-status="${RTC_B06_PRODUCER_STATUS}" --raw-result="${RTC_B06_RAW}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-external --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --case-id="${RTC_B06_CASE_ID}" --input-key="${RTC_B06_ENVIRONMENT}-${RTC_B06_CASE_ID}" --intended-phase="${RTC_B06_PHASE}" --outer-ordinal="${RTC_B06_ORDINAL}" --producer-exit-status="${RTC_B06_PRODUCER_STATUS}" --raw-result="${RTC_B06_RAW}"
     RTC_B06_BRIDGE_STATUS="$?"
     set -e
 
@@ -2805,7 +2865,7 @@ activation.
 
   rtc_capture_b06_manifest() {
     set +e
-    RTC_B06_ATTEMPTS="$(deno run --config apps/api-v1/deno.json --allow-read scripts/perf/rtc-baseline/rtc-baseline-envelope.ts list-external-attempts --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --format=tsv)"
+    RTC_B06_ATTEMPTS="$(deno run --config apps/api-v1/deno.json --allow-read scripts/perf/rtc-baseline/rtc-baseline-cli.ts list-external-attempts --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --format=tsv)"
     RTC_B06_ATTEMPT_LIST_STATUS="$?"
     set -e
     RTC_B06_CAPTURE_STATUS="${RTC_B06_ATTEMPT_LIST_STATUS}"
@@ -2822,11 +2882,11 @@ activation.
     RTC_B06_COHORT_RAW="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/staging/rtc-b06-retention-100-cohort.json"
     npx tsx tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts --capture=cohort-assertion --baseline-id="${RTC_BASELINE_ID}" --cohort-id=retention-100 --out="${RTC_B06_COHORT_RAW}"
     RTC_B06_COHORT_PRODUCER_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts record-external-cohort --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --cohort-id=retention-100 --producer-exit-status="${RTC_B06_COHORT_PRODUCER_STATUS}" --raw-result="${RTC_B06_COHORT_RAW}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-external-cohort --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --cohort-id=retention-100 --producer-exit-status="${RTC_B06_COHORT_PRODUCER_STATUS}" --raw-result="${RTC_B06_COHORT_RAW}"
     RTC_B06_COHORT_BRIDGE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
     RTC_B06_FINALIZE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts validate --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
     RTC_B06_VALIDATE_STATUS="$?"
     set -e
 
@@ -2839,13 +2899,13 @@ activation.
   rtc_capture_b06_manifest
 
   set +e
-  RTC_B06_E3_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts repeat-required --baseline-id="${RTC_B06_E3_PRIMARY_ID}" --format=workload-csv)"
+  RTC_B06_E3_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_B06_E3_PRIMARY_ID}" --format=workload-csv)"
   RTC_B06_E3_REPEAT_REQUIRED_STATUS="$?"
   set -e
   if [ "${RTC_B06_E3_REPEAT_REQUIRED_STATUS}" -eq 0 ]; then
     test "${RTC_B06_E3_REPEAT_WORKLOADS}" = "RTC-B06"
     RTC_BASELINE_ID="${RTC_B06_E3_PRIMARY_ID}-repeat-01"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --repeat-of="${RTC_B06_E3_PRIMARY_ID}" --retained-sample-multiplier=2
+    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --repeat-of="${RTC_B06_E3_PRIMARY_ID}" --retained-sample-multiplier=2
     rtc_capture_b06_manifest
   elif [ "${RTC_B06_E3_REPEAT_REQUIRED_STATUS}" -ne 3 ]; then
     exit "${RTC_B06_E3_REPEAT_REQUIRED_STATUS}"
@@ -2866,17 +2926,17 @@ activation.
 
       RTC_BASELINE_ID="$(date -u +%Y%m%d)-$(git rev-parse --short=12 HEAD)-e4-pg"
       RTC_B06_E4_PRIMARY_ID="${RTC_BASELINE_ID}"
-      deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06
+      deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06
       rtc_capture_b06_manifest
 
       set +e
-      RTC_B06_E4_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts repeat-required --baseline-id="${RTC_B06_E4_PRIMARY_ID}" --format=workload-csv)"
+      RTC_B06_E4_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_B06_E4_PRIMARY_ID}" --format=workload-csv)"
       RTC_B06_E4_REPEAT_REQUIRED_STATUS="$?"
       set -e
       if [ "${RTC_B06_E4_REPEAT_REQUIRED_STATUS}" -eq 0 ]; then
         test "${RTC_B06_E4_REPEAT_WORKLOADS}" = "RTC-B06"
         RTC_BASELINE_ID="${RTC_B06_E4_PRIMARY_ID}-repeat-01"
-        deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-envelope.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --repeat-of="${RTC_B06_E4_PRIMARY_ID}" --retained-sample-multiplier=2
+        deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --repeat-of="${RTC_B06_E4_PRIMARY_ID}" --retained-sample-multiplier=2
         rtc_capture_b06_manifest
       elif [ "${RTC_B06_E4_REPEAT_REQUIRED_STATUS}" -ne 3 ]; then
         exit "${RTC_B06_E4_REPEAT_REQUIRED_STATUS}"
@@ -2967,7 +3027,7 @@ activation.
   : "${RTC_B06_RERUN_COMPARISON_BASELINE_ID:?export that primary ID or its required finalized repeat ID}"
   : "${RTC_CANDIDATE_WORKLOAD:?export the same RTC-B01 through RTC-B05 workload}"
   deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts compare-paired \
+    scripts/perf/rtc-baseline/rtc-baseline-cli.ts compare-paired \
     --left-primary-baseline-id="${RTC_ORIGINAL_PRIMARY_BASELINE_ID}" \
     --left-comparison-baseline-id="${RTC_ORIGINAL_COMPARISON_BASELINE_ID}" \
     --right-primary-baseline-id="${RTC_B06_RERUN_PRIMARY_BASELINE_ID}" \
@@ -3153,7 +3213,8 @@ incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
 
-| Date       | Plan revision                                                                                   | State              | Evidence                                                                                                                                                                                                                                                                                                                                             | Next action                                                                                                                   |
-| ---------- | ----------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-06 | Accepted Phase 0 blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d`                                | `accepted-design`  | Frozen B01-B06 workloads, environments, gates, artifacts, reproducibility, and stop rules were accepted. No baseline was executed.                                                                                                                                                                                                                   | Reconcile the approved structural decision without starting instrumentation.                                                  |
-| 2026-08-07 | Phase 1 structural amendment envelope at coordinator `1dba71d7b2bebaa2738b7e36a6f8fb510fee3f71` | `plan-publication` | Exact B01-B05 feature-folder/test split, 16 accepted harnesses, browser soak, ordered six-commit branch, later five-path B06 hold, README/coverage/B07/production holds, and distinct-anchor rules are approved for this plan-only publication. The old prototype supplied design input only; no source, capture, or completion evidence is current. | Publish this plan-only revision, record its exact blob and gates, and stop for human approval of that blob before activation. |
+| Date       | Plan revision                                                                                       | State              | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Next action                                                                                                                                            |
+| ---------- | --------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-08-06 | Accepted Phase 0 blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d`                                    | `accepted-design`  | Frozen B01-B06 workloads, environments, gates, artifacts, reproducibility, and stop rules were accepted. No baseline was executed.                                                                                                                                                                                                                                                                                                                                                                                                                   | Reconcile the approved structural decision without starting instrumentation.                                                                           |
+| 2026-08-07 | Phase 1 structural amendment envelope at coordinator `1dba71d7b2bebaa2738b7e36a6f8fb510fee3f71`     | `plan-publication` | Exact B01-B05 feature-folder/test split, 16 accepted harnesses, browser soak, ordered six-commit branch, later five-path B06 hold, README/coverage/B07/production holds, and distinct-anchor rules are approved for this plan-only publication. The old prototype supplied design input only; no source, capture, or completion evidence is current.                                                                                                                                                                                                 | Publish this plan-only revision, record its exact blob and gates, and stop for human approval of that blob before activation.                          |
+| 2026-08-08 | CLI-boundary feasibility amendment based on PR #89 merge `f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41` | `plan-amendment`   | The clean Task 1 feasibility review proved the five-path foundation could not keep the stateful envelope readable and at or below 400 lines while also owning real Deno composition. This amendment adds only `rtc-baseline-cli.ts`, moves the file-store port beside the envelope, keeps contracts data-only and validation pure, and preserves every workload, environment, correctness, reproducibility, anchor, and hold rule. No RTC source, capture, service, production, B06, B07, optimization, or Phase 2 work was authorized or completed. | Publish this exact plan blob, obtain new human blob approval and a separately updated coordinator activation, then restart Task 0 from current `main`. |
