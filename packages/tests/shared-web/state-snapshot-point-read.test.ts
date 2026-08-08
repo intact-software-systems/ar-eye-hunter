@@ -30,7 +30,7 @@ describe('browser state snapshot point reads', () => {
 
   it('returns client metadata and sends one canonical scalar floor', async () => {
     const snapshot = createClientSnapshotFixture({ ...scope, principalId: 'alice' });
-    const fetchMock = vi.fn(async () => jsonSnapshotResponse(snapshot, {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonSnapshotResponse(snapshot, {
       'rallar-state-source': 'cache',
       'rallar-state-revision': '1',
     }));
@@ -48,7 +48,7 @@ describe('browser state snapshot point reads', () => {
 
   it('returns group causal metadata while preserving the body-only wrapper', async () => {
     const snapshot = createGroupSnapshotFixture({ ...scope, groupId: 'room-1', sessionIds: [] });
-    const fetchMock = vi.fn(async () => jsonSnapshotResponse(snapshot, {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonSnapshotResponse(snapshot, {
       'rallar-state-source': 'durable',
       'rallar-group-revision': '1',
       'rallar-presence-revision': '0',

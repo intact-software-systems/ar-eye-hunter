@@ -25,6 +25,18 @@ const missingClientStateMessage =
 const missingClientStateServiceMessage =
   `'${clientStateModule}' has no exported member named 'ClientStateService'. ` +
   "Did you mean 'createClientStateService'?";
+const layoutRulesPath = '<repo>/scripts/repo-style-check/layout-rules.mjs';
+const layoutRulesDiagnosticMessage =
+  `Could not find a declaration file for module '${layoutRulesPath}'. ` +
+  `'${layoutRulesPath}' implicitly has an 'any' type.`;
+const implicitFindingMessage = "Parameter 'finding' implicitly has an 'any' type.";
+const implicitItemMessage = "Parameter 'item' implicitly has an 'any' type.";
+const ratchetOwner = 'it:keeps every ratcheted source within the mechanical code-standard tiers';
+const ratchetPath = 'packages/tests/repo/group-state-server-source-ratchet.test.ts';
+const layoutRulesTestPath = 'packages/tests/repo/repo-style-layout-rules.test.ts';
+const untypedScannerRationale =
+  'Repo-style governance consumes the untyped JavaScript scanner findings.';
+const untypedScannerRemoval = 'Remove when the scanner publishes a checked declaration.';
 const inheritedDiagnosticLedger = [
   disposition({
     column: 39,
@@ -35,6 +47,94 @@ const inheritedDiagnosticLedger = [
     responsibility: 'Auth shell-lineage governance consumes the repository source scanner.',
     rationale: 'The JavaScript scanner has no TypeScript declaration in the exact PR C base.',
     removalCondition: 'Remove when the scanner publishes a checked declaration or typed entry.',
+  }),
+  untypedScannerDisposition({
+    column: 25,
+    code: 7006,
+    message: implicitFindingMessage,
+    owner: ratchetOwner,
+    ownerRelativeLine: 11,
+    path: ratchetPath,
+    responsibility: 'The group-state ratchet filters untyped scanner findings by tier.',
+  }),
+  untypedScannerDisposition({
+    column: 8,
+    code: 7006,
+    message: implicitFindingMessage,
+    owner: ratchetOwner,
+    ownerRelativeLine: 23,
+    path: ratchetPath,
+    responsibility: 'The group-state ratchet reports untyped scanner findings on failure.',
+  }),
+  untypedScannerDisposition({
+    column: 39,
+    code: 7016,
+    message: scannerDiagnosticMessage,
+    ownerRelativeLine: 6,
+    path: ratchetPath,
+    responsibility: 'The group-state ratchet consumes the repository source scanner.',
+  }),
+  untypedScannerDisposition({
+    column: 34,
+    code: 7006,
+    message: implicitFindingMessage,
+    owner: 'details',
+    ownerRelativeLine: 2,
+    path: layoutRulesTestPath,
+    responsibility: 'details renders untyped layout-rule findings for assertion messages.',
+  }),
+  untypedScannerDisposition({
+    column: 27,
+    code: 7006,
+    message: implicitFindingMessage,
+    owner: 'findingsFor',
+    ownerRelativeLine: 1,
+    path: layoutRulesTestPath,
+    responsibility: 'findingsFor selects untyped layout-rule findings by rule name.',
+  }),
+  untypedScannerDisposition({
+    column: 26,
+    code: 7006,
+    message: implicitItemMessage,
+    owner: 'it:recognizes all server group-state module criteria and whole identifier tokens',
+    ownerRelativeLine: 17,
+    path: layoutRulesTestPath,
+    responsibility: 'The module-criteria case maps untyped scanner cluster members.',
+  }),
+  untypedScannerDisposition({
+    column: 28,
+    code: 7006,
+    message: implicitItemMessage,
+    owner: 'it:reproduces the 22-cluster planning count deterministically',
+    ownerRelativeLine: 4,
+    path: layoutRulesTestPath,
+    responsibility: 'The cluster-count case filters untyped scanner cluster members.',
+  }),
+  untypedScannerDisposition({
+    column: 34,
+    code: 7006,
+    message: implicitItemMessage,
+    owner: 'it:reproduces the 22-cluster planning count deterministically',
+    ownerRelativeLine: 5,
+    path: layoutRulesTestPath,
+    responsibility: 'The cluster-count case maps untyped scanner cluster members.',
+  }),
+  untypedScannerDisposition({
+    column: 60,
+    code: 7006,
+    message: implicitItemMessage,
+    owner: 'it:sorts findings by code units across punctuation and non-ASCII paths',
+    ownerRelativeLine: 4,
+    path: layoutRulesTestPath,
+    responsibility: 'The ordering case projects untyped scanner findings to paths.',
+  }),
+  untypedScannerDisposition({
+    column: 8,
+    code: 7016,
+    message: layoutRulesDiagnosticMessage,
+    ownerRelativeLine: 8,
+    path: layoutRulesTestPath,
+    responsibility: 'Layout-rule governance consumes the JavaScript layout-rule module.',
   }),
   disposition({
     column: 8,
@@ -115,8 +215,8 @@ it('keeps the broad tests compiler honestly red without new or worsened diagnost
   expect(evidence.baseStatus).not.toBe(0);
   expect(evidence.headStatus).not.toBe(0);
   expect(evidence.touchedPaths).toHaveLength(evidence.pathEvidence.length);
-  expect(evidence.baseDiagnostics).toHaveLength(18);
-  expect(evidence.headDiagnostics).toHaveLength(7);
+  expect(evidence.baseDiagnostics).toHaveLength(28);
+  expect(evidence.headDiagnostics).toHaveLength(17);
   expect(readDiagnosticRegressions(evidence.baseDiagnostics, evidence.headDiagnostics)).toEqual([]);
   expect(dispositionEvidence.inheritedDiagnosticLedger).toEqual(inheritedDiagnosticLedger);
   expect(dispositionEvidence.diagnosticDispositionViolations).toEqual([]);
@@ -231,6 +331,16 @@ function disposition(overrides: Partial<DiagnosticDisposition>): DiagnosticDispo
     removalCondition: 'Remove when the fixture is typed.',
     ...overrides,
   };
+}
+
+function untypedScannerDisposition(
+  overrides: Partial<DiagnosticDisposition>,
+): DiagnosticDisposition {
+  return disposition({
+    rationale: untypedScannerRationale,
+    removalCondition: untypedScannerRemoval,
+    ...overrides,
+  });
 }
 
 function toDiagnostic(entry: DiagnosticDisposition): TypeScriptDiagnostic {
