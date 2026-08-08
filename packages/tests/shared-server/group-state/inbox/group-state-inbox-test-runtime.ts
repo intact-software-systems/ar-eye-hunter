@@ -4,6 +4,7 @@ import {
   type AppInboxTestDatabase,
   createAppInboxTestDatabase,
 } from '../../app-inbox-test-database.ts';
+import type { AppInboxTestDatabaseOptions } from '../../app-inbox-test-database-contracts.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -12,6 +13,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
@@ -224,7 +226,13 @@ export async function runOperationMatrix(
 
 export async function createAuthorityHarness(
   principalIds: readonly string[],
-  options: Readonly<{ wakeQueue?: () => void }> = {},
+  options: Readonly<{
+    wakeQueue?: () => void;
+    databaseOptions?: Pick<
+      AppInboxTestDatabaseOptions,
+      'onTransactionRollback' | 'shouldFailOutboxWrite'
+    >;
+  }> = {},
 ): Promise<AuthorityHarness> {
   const nowEpochMs = Date.now();
   const runtimeRepository = new FakeRuntimeStateRepository();
@@ -246,7 +254,10 @@ export async function createAuthorityHarness(
   const queue = new TestResourceInbox();
   const reader = new InboxQueueReader(queue);
   const results = new TestResourceInboxResults();
-  const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
+  const database = createAppInboxTestDatabase(queue, results, {
+    runtimeRepository,
+    ...options.databaseOptions,
+  });
   const groupStateService = createGroupStateService({
     runtimeRepository,
     createGroupStateEventStore: () => database.groupEventStore,

@@ -8,7 +8,12 @@ import {
 import {
     toTopologyAppInboxCommand,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { readAuthenticatedTopologyCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import type { TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
+import {
+    readAuthenticatedTopologyCommand,
+    readDurableTopologyAppInboxCommand,
+    toTopologyConfigMutationCommand,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
     serializeCanonicalJsonWire,
@@ -17,6 +22,98 @@ import {
 } from '@shared-server/rallar-system/services/app-inbox-command-wire.ts';
 
 describe('topology AppInbox durable command contract', () => {
+    it.each([
+        {
+            operation: 'putConfig',
+            type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            payload: { operation: 'putConfig', config: { topologyKind: 'tree' } },
+            target: 'config',
+        },
+        {
+            operation: 'deleteConfig',
+            type: AppInboxType.TOPOLOGY_CONFIG_DELETE,
+            payload: { operation: 'deleteConfig', target: 'config' },
+            target: 'config',
+        },
+        {
+            operation: 'putOverride',
+            type: AppInboxType.TOPOLOGY_OVERRIDE_PUT,
+            payload: {
+                operation: 'putOverride',
+                config: { degreeLimit: 4 },
+                ttlMs: 60_000,
+                expiresAtEpochMs: null,
+            },
+            target: 'override',
+        },
+        {
+            operation: 'deleteOverride',
+            type: AppInboxType.TOPOLOGY_OVERRIDE_DELETE,
+            payload: { operation: 'deleteOverride', target: 'override' },
+            target: 'override',
+        },
+        {
+            operation: 'reconfigureTopology',
+            type: AppInboxType.TOPOLOGY_RECONFIGURE,
+            payload: {
+                operation: 'reconfigureTopology',
+                requestOptions: { meshParamK: 3 },
+                publish: false,
+            },
+            target: null,
+        },
+    ] satisfies readonly Readonly<{
+        operation: string;
+        type: AppInboxType;
+        payload: TopologyAppInboxRequestPayload;
+        target: 'config' | 'override' | null;
+    }>[])('binds $operation to its exact queue type and durable payload', async (testCase) => {
+        const command = await toTopologyAppInboxCommand({
+            actor: { principalId: 'owner', sessionId: 'owner-session' },
+            groupRef: {
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+            },
+            requestId: `request-${testCase.operation}`,
+            capturedAtEpochMs: 1_000,
+            payload: testCase.payload,
+        });
+        const durable = structuredClone(command);
+
+        expect(readDurableTopologyAppInboxCommand(durable)).toBe(durable);
+        await expect(readAuthenticatedTopologyCommand({
+            type: testCase.type,
+            resourceId: command.requestId,
+            data: command,
+        }, {
+            clientId: command.actor.principalId,
+            sessionId: command.actor.sessionId,
+        } as never)).resolves.toBe(command);
+        await expect(readAuthenticatedTopologyCommand({
+            type: AppInboxType.GROUP_UPDATE,
+            resourceId: command.requestId,
+            data: command,
+        }, {
+            clientId: command.actor.principalId,
+            sessionId: command.actor.sessionId,
+        } as never)).rejects.toThrow(/does not match authenticated authority/i);
+
+        if (testCase.target === null) {
+            expect(() => toTopologyConfigMutationCommand(command)).toThrow(
+                'Reconfigure is not a topology config mutation',
+            );
+        } else {
+            expect(toTopologyConfigMutationCommand(command)).toMatchObject({
+                operation: testCase.operation,
+                aggregateRef: command.groupRef,
+                commandId: command.requestId,
+                requestId: command.requestId,
+                input: { updatedByPrincipalId: command.actor.principalId },
+            });
+        }
+    });
+
     it('keeps HTTP topology identity stable across retry clocks and durable preparation changes', async () => {
         const first = await topologyCommand(1_000);
         const replay = await topologyCommand(9_000);

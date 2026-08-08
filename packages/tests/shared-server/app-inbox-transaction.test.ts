@@ -831,6 +831,15 @@ describe('AppInbox retry exhaustion', () => {
             operation: AppInboxType.GROUP_CREATE,
         },
         {
+            name: 'valid topology config outer nested and topic agreement',
+            resource: toPersistedAppInboxResource({
+                outerType: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                nestedType: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            }),
+            operationSource: 'command',
+            operation: AppInboxType.TOPOLOGY_CONFIG_PUT,
+        },
+        {
             name: 'unknown removed outer dispatch type',
             resource: toPersistedAppInboxResource({
                 outerType: 'REMOVED_GROUP_OPERATION_password',
