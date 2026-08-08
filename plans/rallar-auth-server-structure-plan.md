@@ -48,6 +48,9 @@ persistence, Web Crypto, Hono API-v1 consumers, and warning-only repository styl
 **Predecessor:**
 [Rallar Client-State Server Structure Plan](rallar-client-state-server-structure-plan.md)
 
+**Successor:**
+[Rallar Group Topology Server Structure Plan](rallar-group-topology-server-structure-plan.md)
+
 **Status:** Approved at exact blob `123990bceac9732660e1113101addd5b194d8347`.
 Planning PR #76 published feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`,
 tree `aa82a21c85d7a6504aaa1a203aaabfe439d90af5`, passed Branch Release Gate
@@ -74,8 +77,13 @@ merged as exact main `8152de39faf2d630158143366596d61346e20457`, tree
 attempt 1. It merged as exact main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree
 `0b6520fa7c9f642b252f56a0d009851730769cda`; Run Hetzner Supported Distributed Manifests
 `31241669511` attempt 1 succeeded for that exact main SHA. The auth implementation is complete.
-Its separately authorized evidence-only ledger publication is pending, and auth is not
-`ledger-published` in this tree.
+Evidence-ledger PR #93 published feature `aeff6435794dd70816789e4794b78e84fdfc89b0`
+and frozen tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, then merged as exact main
+`c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree under the
+human-approved plan-only build-gate exception. Run Hetzner Supported Distributed Manifests
+`31251480014` attempt 1 failed and is retained only as non-gating external evidence for that
+plan-only publication. It is not diagnosed or relabeled. The auth child is `ledger-published`.
+The successor group-topology plan is drafted and unapproved; it authorizes no implementation.
 
 The PR C resulting tree differs from its frozen feature tree in exactly nine modified paths and
 has no additions or deletions. Every resulting blob on those nine paths already existed on merge
@@ -1507,7 +1515,7 @@ changed tree.
 - [x] PR A review/gates and exact resulting-main workflow succeeded.
 - [x] PR B review/gates, governed performance, and exact resulting-main workflow succeeded.
 - [x] PR C review/gates and exact resulting-main workflow succeeded.
-- [ ] The separate evidence ledger independently reached `ledger-published`.
+- [x] The separate evidence ledger independently reached `ledger-published`.
 - [x] API-v1 organization and all later Wave 2 domains remained unstarted.
 
 ## 15. Risks And Stop Conditions
@@ -1529,15 +1537,16 @@ changed tree.
 
 ## 16. Progress Record
 
-| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Client-state prerequisite  | ledger-published    | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.                                                                                                                                                          |
-| Auth child plan            | approved            | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`, tree `aa82a21c85d7a6504aaa1a203aaabfe439d90af5`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`, tree `32fad7c720dcc1eb462f6b486ff64db4f687f67e`; default workflow `31106485616` attempt 1 success.                                          |
-| PR A mutation/login core   | merged              | PR #78 feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601` attempt 1 success; resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; Hetzner workflow `31163606362` attempt 1 success.                                                                                                 |
-| PR B authoritative shell   | complete            | PR #81 feature `1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree `2a5d756b83f44b6b8bbae166e8571f761371af29`; Branch Release Gate `31185044360` attempt 1 succeeded; resulting main `8152de39faf2d630158143366596d61346e20457` has the same tree; Hetzner workflow `31187663870` attempt 1 succeeded.                                                                                                                            |
-| PR C alignment/final trace | complete            | PR #90 feature `7245a40a1022192885ec3eaabc68d75c68ef61d4`, tree `f3eb38ab4573198622f766f39af1cef20753e3ae`; Branch Release Gate `31228541734` attempt 1 succeeded; resulting main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree `0b6520fa7c9f642b252f56a0d009851730769cda`; Hetzner workflow `31241669511` attempt 1 succeeded. The nine-path tree difference is accepted concurrent-main drift with no auth PR C mutation. |
-| Later auth ledger          | publication pending | Separately authorized evidence-only ledger work records only already-existing envelopes. Its own future tree, commit, PR, Branch Release Gate, merge, and default workflow remain external; auth is not `ledger-published` in this tree.                                                                                                                                                                                       |
-| Later Wave 2 domains       | blocked             | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                                                                                                                                                                          |
+| Milestone                  | State              | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Client-state prerequisite  | ledger-published   | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.                                                                                                                                                          |
+| Auth child plan            | approved           | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`, tree `aa82a21c85d7a6504aaa1a203aaabfe439d90af5`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`, tree `32fad7c720dcc1eb462f6b486ff64db4f687f67e`; default workflow `31106485616` attempt 1 success.                                          |
+| PR A mutation/login core   | merged             | PR #78 feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601` attempt 1 success; resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; Hetzner workflow `31163606362` attempt 1 success.                                                                                                 |
+| PR B authoritative shell   | complete           | PR #81 feature `1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree `2a5d756b83f44b6b8bbae166e8571f761371af29`; Branch Release Gate `31185044360` attempt 1 succeeded; resulting main `8152de39faf2d630158143366596d61346e20457` has the same tree; Hetzner workflow `31187663870` attempt 1 succeeded.                                                                                                                            |
+| PR C alignment/final trace | complete           | PR #90 feature `7245a40a1022192885ec3eaabc68d75c68ef61d4`, tree `f3eb38ab4573198622f766f39af1cef20753e3ae`; Branch Release Gate `31228541734` attempt 1 succeeded; resulting main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree `0b6520fa7c9f642b252f56a0d009851730769cda`; Hetzner workflow `31241669511` attempt 1 succeeded. The nine-path tree difference is accepted concurrent-main drift with no auth PR C mutation. |
+| Later auth ledger          | ledger-published   | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0` and tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff` merged as exact main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree under the accepted plan-only build-gate exception. Hetzner run `31251480014` attempt 1 failed and remains non-gating plan-only external evidence.                                                                             |
+| Group-topology successor   | drafted/unapproved | [Group-topology plan](rallar-group-topology-server-structure-plan.md) is planning-only. No implementation, API-v1 reorganization, RTC/RTT work, or future publication fact is authorized.                                                                                                                                                                                                                                      |
+| Later Wave 2 domains       | blocked            | RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## 17. Planning Self-Review Record
 

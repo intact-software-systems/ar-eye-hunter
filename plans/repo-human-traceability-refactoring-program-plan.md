@@ -133,8 +133,15 @@ attempt 1 succeeded for that exact SHA. Evidence-ledger PR #75 then reached
 `123990bceac9732660e1113101addd5b194d8347`. Planning PR #76 and implementation PRs #78,
 #81, and #90 are complete through exact resulting main
 `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`; default workflow `31241669511` attempt 1
-succeeded for that exact SHA. The auth implementation is complete, its separately authorized
-evidence-only ledger publication is pending, and auth is not `ledger-published` in this tree.
+succeeded for that exact SHA. Evidence-ledger PR #93 then published feature
+`aeff6435794dd70816789e4794b78e84fdfc89b0` and frozen tree
+`8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, and merged as exact `main`
+`c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree under the
+human-approved plan-only build-gate exception. Run Hetzner Supported Distributed Manifests
+`31251480014` attempt 1 failed and is retained only as non-gating external evidence for that
+plan-only publication. The auth child is `ledger-published`. The linked
+[group-topology server structure child](rallar-group-topology-server-structure-plan.md) is
+drafted and unapproved; no implementation is authorized.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -1064,7 +1071,7 @@ exact blob `123990bceac9732660e1113101addd5b194d8347`. It remained limited to au
 shared-server mutation, credential, session, persistence, AppInbox, compatibility, test, and
 durable-navigation ownership. API-v1 and other authorization consumers were characterized and
 verified but not reorganized. Planning PR #76 and implementation PRs #78, #81, and #90 are
-complete; the separately authorized later ledger is pending publication.
+complete. Its separately authorized later ledger was published through PR #93.
 
 #### 8.1.2 Auth implementation completion ledger
 
@@ -1090,6 +1097,12 @@ The completed publication envelopes are:
    success, resulting main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree
    `0b6520fa7c9f642b252f56a0d009851730769cda`, and default workflow `31241669511` attempt 1
    success.
+5. Evidence-ledger PR #93: feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, frozen tree
+   `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, and resulting main
+   `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree under the explicitly accepted
+   plan-only build-gate exception. Run Hetzner Supported Distributed Manifests `31251480014`
+   attempt 1 failed and remains non-gating external evidence for that plan-only publication. It
+   is not diagnosed or relabeled.
 
 PR C's resulting tree differs from its frozen feature tree in exactly nine modified paths, with
 no additions or deletions. All nine resulting blobs already existed on merge parent
@@ -1129,10 +1142,11 @@ recognized within-policy movements; child evaluator
 conflict-depth exception. Rejected or superseded evidence remains historical and is not
 relabeled.
 
-The auth implementation is `complete`. The separately authorized evidence-only ledger
-publication remains pending. Under the non-circular contract, this tree records no future ledger
-tree, commit, PR number, Branch Release Gate, merge SHA, or default-workflow result; auth may be
-marked `ledger-published` only in the external envelope after those facts exist and succeed.
+The auth child is `ledger-published`. The next bounded Wave 2 child is the
+[group-topology server structure plan](rallar-group-topology-server-structure-plan.md), drafted
+from exact main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530`. It is planning-only and unapproved.
+It authorizes no topology implementation, API-v1 reorganization, RTC/RTT work, or future
+publication fact.
 
 ### Wave 2: Remaining authoritative mutation domains
 
@@ -1481,8 +1495,7 @@ to write, review, approve, execute, and hand off these child plans in order:
     `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, and default workflow
     `31100952224` attempt 1 succeeded; child `ledger-published`.
 - [x] [Rallar auth server structure](rallar-auth-server-structure-plan.md)
-  - state: implementation `complete`; separately authorized evidence-only
-    ledger publication pending; not `ledger-published` in this tree;
+  - state: `ledger-published` through evidence-ledger PR #93;
   - planning PR #76 approved blob
     `123990bceac9732660e1113101addd5b194d8347`, feature
     `38a961c4ee184856422b3acf6f0494d04d8d6e5b` / tree
@@ -1513,6 +1526,14 @@ to write, review, approve, execute, and hand off these child plans in order:
     tests, security characterization, and durable navigation;
   - API-v1, WebSocket, CRDT, room/topic, admin, and other domain consumers are
     characterized and verified without reorganization.
+- [ ] [Rallar group-topology server structure](rallar-group-topology-server-structure-plan.md)
+  - state: drafted and unapproved from exact main
+    `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530`;
+  - scope: authoritative group-topology config protocol, mutation, persistence,
+    AppInbox, query, reconfigure, compatibility, mirrored tests, and durable
+    navigation;
+  - API-v1 organization, RTC topology/RTT, WS delivery, browser consumers,
+    CRDT, and admin remain characterized-only or out of scope.
 
 Only after the pilot is `verified` should the program copy its migration method
 to client-state, auth, topology, RTC, and CRDT. Adjust the method when the pilot
@@ -1589,5 +1610,8 @@ resulting `main` `df9ab8d27de17c29b927c9ed9fcce9251ba7e62a`; default workflow
 `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, and passed default workflow
 `31100952224` attempt 1. The client-state child is `ledger-published`. The
 [auth server structure child](rallar-auth-server-structure-plan.md) is
-implementation `complete`. Its separately authorized evidence-only ledger publication is pending,
-so no later Wave 2 implementation begins and auth is not `ledger-published` in this tree.
+`ledger-published` through PR #93 at exact resulting main
+`c2cb79c020bceee7f67e6fbc364ba96ea0d6a530`. The
+[group-topology server structure child](rallar-group-topology-server-structure-plan.md) is drafted
+and unapproved. No group-topology implementation, API-v1 reorganization, RTC/RTT work, or later
+Wave 2 child begins in this planning tree.
