@@ -50,7 +50,8 @@ persistence, Web Crypto, Hono API-v1 consumers, and warning-only repository styl
 
 **Status:** Approved at exact blob `123990bceac9732660e1113101addd5b194d8347`.
 Planning PR #76 published feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`,
-passed Branch Release Gate `31103489838` attempt 2, and merged as exact main
+tree `aa82a21c85d7a6504aaa1a203aaabfe439d90af5`, passed Branch Release Gate
+`31103489838` attempt 2, and merged as exact main
 `61e708708f94328f095f1f1fa5690747bb933476`, tree
 `32fad7c720dcc1eb462f6b486ff64db4f687f67e`. Run Hetzner Supported Distributed
 Manifests `31106485616` attempt 1 succeeded for that exact main SHA. PR A Tasks 1-2 are
@@ -62,19 +63,30 @@ attempt 1 success, resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tr
 Manifests `31163606362` attempt 1 success for that exact main SHA. Deploy Web + API run
 `31163606018` separately failed its Cloudflare main-only branch-control job on that main SHA;
 it is not relabeled as the named predecessor gate. PR B #81 published final feature
-`1f7d7b0682c93c7c831fc2a31c0f635829d50734`, passed Branch Release Gate `31185044360`, and
+`1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree
+`2a5d756b83f44b6b8bbae166e8571f761371af29`, passed Branch Release Gate `31185044360`
+attempt 1, and
 merged as exact main `8152de39faf2d630158143366596d61346e20457`, tree
 `2a5d756b83f44b6b8bbae166e8571f761371af29`. Run Hetzner Supported Distributed Manifests
-`31187663870` attempt 1 succeeded for that exact main SHA. PR C starts from that exact base.
-PR C #90 then merged as exact main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree
-`0b6520fa7c9f642b252f56a0d009851730769cda`. Branch Release Gate
-`31228541734` succeeded, and Run Hetzner Supported Distributed Manifests
-`31241669511` succeeded for the exact resulting main. Push run `31241668811`
-succeeded. Deploy Web + API `31241669543` failed only its external Cloudflare
-branch-control/API-configuration path; that does not relabel deployment as
-passed. PR C implementation, publication, and resulting-main Hetzner evidence
-are complete. The separately authorized later auth evidence ledger remains
-pending.
+`31187663870` attempt 1 succeeded for that exact main SHA. PR C #90 published final feature
+`7245a40a1022192885ec3eaabc68d75c68ef61d4`, tree
+`f3eb38ab4573198622f766f39af1cef20753e3ae`, and passed Branch Release Gate `31228541734`
+attempt 1. It merged as exact main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree
+`0b6520fa7c9f642b252f56a0d009851730769cda`; Run Hetzner Supported Distributed Manifests
+`31241669511` attempt 1 succeeded for that exact main SHA. The auth implementation is complete.
+Its separately authorized evidence-only ledger publication is pending, and auth is not
+`ledger-published` in this tree.
+
+The PR C resulting tree differs from its frozen feature tree in exactly nine modified paths and
+has no additions or deletions. Every resulting blob on those nine paths already existed on merge
+parent `4192f4fe5d9a735d9dc24791d129e697a247da64`; no auth PR C path differs. This is accepted
+concurrent-main base drift, not an unexplained PR C mutation. Later auth diagnostic/snapshot test
+maintenance on current main changes only
+`packages/tests/repo/auth-server-inherited-diagnostic-ledger.ts`,
+`packages/tests/repo/auth-server-reviewed-source-snapshot.ts`, and
+`packages/tests/repo/auth-server-touched-typescript-diagnostics.test.ts`. That maintenance does
+not alter PR C's historical evidence, its runtime, the final 33 warning rows, or the ratchet
+policy recorded below.
 
 ## 1. Scope, Prerequisite, And Review-Size Decision
 
@@ -684,6 +696,13 @@ Exact file, line, symbol, source-span, or inventory ratchets are supplementary. 
 owns them. PR C records whether each is removed, replaced by a semantic owner, or retained with
 a reason. The later ledger records that existing decision; it does not invent one.
 
+The accepted PR C decision retains the fail-closed reviewed-source snapshots and source/style
+ratchets as supplementary, child-owned evidence through PR C. They are eligible for removal or
+semantic replacement only in a separately scoped cleanup after this later ledger publishes; this
+three-plan-only ledger task removes none of them and does not claim their removal. Permanent
+semantic security, transaction, ownership, routing, compatibility, exit-path, and durable
+navigation checks remain permanent primary evidence.
+
 ## 6. Construction, Registration, And Runtime Traces
 
 ### 6.1 Current construction and registration timeline
@@ -839,6 +858,10 @@ The target moves the canonical auth proof and persistence owners only. Domain-sp
 authorization policies remain in their existing domains and are compatibility-verified, not
 reorganized.
 
+These five family traces are complete. The controlled human navigation sample was waived: no
+timings, wrong-file counts, compatibility-hop counts, unresolved-question counts, productivity
+claim, causal claim, or statistical claim exists.
+
 ## 7. Ownership, Compatibility, And Locked Security Invariants
 
 ### 7.1 Exact ownership decisions
@@ -882,6 +905,10 @@ Only logout creates a final auth-owned `WS_OUTBOX` intent. The plan preserves th
 old supported path remains one direct re-export hop. Canonical auth code and moved auth tests do
 not import supported old paths. The temporary codec wrapper has been removed after its active-
 consumer scan found no supported consumer.
+
+PR C retained every direct one-hop compatibility owner and removal condition in the table above
+exactly. The canonical auth implementation bypasses all compatibility-only wrappers; the wrappers
+exist only for their named external/package consumers.
 
 PR B moves `readAuthMutation` and `writeAuthMutation` to canonical phase owners.
 `services/auth-state-mutations.ts` keeps the supported direct identity binding for
@@ -1193,9 +1220,14 @@ fail-closed and temporary until the already-stated resulting-main-plus-ledger co
 The refinement removed 29 interpreter/helper files from the working design and retained the
 400-line and 60-line source ratchets. Independent review found one omitted-allowlist fail-close
 gap in compatibility consumer discovery; a RED regression and post-traversal reconciliation
-closed it. The final re-review reported Critical 0 and Important 0. PR C #90
-then supplied the completed publication evidence recorded at the top of this
-plan; only the separately authorized later evidence ledger remains pending.
+closed it. The final re-review reported Critical 0 and Important 0. Task 7 validation and
+publication completed through the exact PR C envelope recorded below.
+
+Final focused warning-only evidence is exactly 33 inherited `boundary.unknown` rows: 13
+credential/decoder, 18 persistence, and two AppInbox/handler. Layout modes are zero, and
+changed-style introduced no new or worsened finding. All 49 original warning rows retain the
+approved human disposition and owner mapping from ignored Task 1 report SHA-256
+`804ef9174a91cd33e2d080671657ee3e8d6597c9b65531f1b8c32d93f62dd899`.
 
 ### Task 7: Freeze, Review, And Publish PR C
 
@@ -1208,21 +1240,21 @@ plan; only the separately authorized later evidence ledger remains pending.
       mark ready, and stop for human merge.
 - [x] After merge, verify exact resulting-main/default-workflow evidence externally.
 
-PR C #90 merged as `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree
-`0b6520fa7c9f642b252f56a0d009851730769cda`. Branch Release Gate `31228541734`
-and the exact resulting-main Run Hetzner Supported Distributed Manifests
-`31241669511` both succeeded. Deploy Web + API `31241669543` remains an
-external Cloudflare branch-control/API-configuration failure only; it is not
-claimed as a deployment success.
+PR C #90 froze feature `7245a40a1022192885ec3eaabc68d75c68ef61d4`, tree
+`f3eb38ab4573198622f766f39af1cef20753e3ae`. Branch Release Gate `31228541734` attempt 1
+succeeded. It merged as exact main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree
+`0b6520fa7c9f642b252f56a0d009851730769cda`, and Run Hetzner Supported Distributed Manifests
+`31241669511` attempt 1 succeeded for that exact main SHA. The accepted nine-path
+concurrent-main reconciliation is recorded in the status above.
 
 ### Task 8: Publish The Later Evidence Ledger Separately
 
-- [ ] After PR C's exact main workflow succeeds, obtain separate human authorization for an
+- [x] After PR C's exact main workflow succeeds, obtain separate human authorization for an
       evidence-only ledger branch.
-- [ ] Modify only this child, master program, and execution plan to record already-existing
+- [x] Modify only this child, master program, and execution plan to record already-existing
       planning/PR A/PR B/PR C envelopes, final warning dispositions, sample evidence, ratchet
       decisions, and accepted/rejected performance history.
-- [ ] Preserve the non-circular contract: ledger tree/commit/PR/release/merge/default-workflow
+- [x] Preserve the non-circular contract: ledger tree/commit/PR/release/merge/default-workflow
       facts remain external until they exist.
 - [ ] Publish and merge the ledger only after its own gates and human decision; mark auth
       `ledger-published` externally only after its exact default workflow succeeds.
@@ -1311,6 +1343,21 @@ exact resulting-main tree. If byte-identical, record the exact comparison and re
 result. If any differs, run one new non-rerolled A-B-B-A under Section 10.3 using PR B's exact
 resulting-main as A1/A2 and exact PR C candidate as B1/B2. Any change to the harness, environment,
 comparator, evaluator, threshold, or classification stops for human review.
+
+The PR C comparison found every production/runtime and benchmark-harness blob byte-identical to
+PR B's exact resulting-main tree, so PR B's accepted immutable comparison remains applicable.
+The accepted records are A1 `ede88c02bfa57b02aa4f5c5ffe45c78f75e39be5d8378a8a55da2ccdd1e3ae14`,
+B1 `d252ac681262924f21ce32b9e8e19e23712ec1f92cf9b4c21b234e1993c6f339`, B2
+`ec2e63eda73d18f726ed13aabcf243027ac68e9ea05a17c681db3eb9541e75c6`, A2
+`afb66ff1ac9f3df9554c992450f4008426f9e1f5d0c14f51f67400055ce91404`, pooled base
+`631f5d4a0208a537efd36cce5b520371d870d842512643888bbaf4c318ea0ed8`, pooled candidate
+`7bbae106a02f2b2ee89137530c525ce0019cf3098441705f2cbfaf6e2116c8de`, manifest
+`f8a031cedf7dd2bbbd3997f5695a5f5f6ac92da7a5772e7a848488d3dbda7430`, comparator log
+`9dba8bda5e968ef87cd6f578989faa3c0dcdc1f1b8b24f4fcc11eda3ba55407b` with retained exit 1
+for four recognized within-policy movements, and child evaluator
+`9b1681f20f2ca4e8ae23faa507cba020d1456d9763db484ee5499756c6ba1c80`, which passed without
+a conflict-depth exception. Rejected or superseded evidence remains historical and is not
+relabeled.
 
 ## 11. Validation Matrix
 
@@ -1427,9 +1474,8 @@ after the human merge and before the next PR.
 
 ## 13. Non-Circular Completion Evidence
 
-This planning tree records existing prerequisite/base facts and the completed
-PR C #90 publication envelope. It cannot contain a future later-ledger tree,
-commit, PR, Branch Release Gate, merge SHA, or default workflow.
+This planning tree records only existing prerequisite/base facts. It cannot contain its own
+future tree, commit, PR, Branch Release Gate, merge SHA, or default workflow.
 
 Each implementation PR may record completed local tasks and already-existing predecessor
 publication facts. Its future merge, resulting-main SHA, and default workflow remain in the PR
@@ -1451,18 +1497,18 @@ changed tree.
 - [x] Controlled before/after human samples were honestly recorded or separately waived.
 - [x] Every focused warning row received explicit human owner/rationale disposition.
 - [x] Three implementation PRs remained independently reviewable.
-- [ ] Every target filename matches its primary symbol and every owner is cohesive/direct.
-- [ ] Canonical auth callers bypass compatibility-only wrappers.
-- [ ] Every supported export/path remains direct one-hop compatible.
-- [ ] Every public/persisted/security/credential/session/ticket/legacy contract is exact.
-- [ ] AppInbox, transaction, retry, durable result, receipt, logout outbox, and completion are
+- [x] Every target filename matches its primary symbol and every owner is cohesive/direct.
+- [x] Canonical auth callers bypass compatibility-only wrappers.
+- [x] Every supported export/path remains direct one-hop compatible.
+- [x] Every public/persisted/security/credential/session/ticket/legacy contract is exact.
+- [x] AppInbox, transaction, retry, durable result, receipt, logout outbox, and completion are
       exact.
-- [ ] Semantic security/ownership/exit tests remain primary and all ratchets have decisions.
+- [x] Semantic security/ownership/exit tests remain primary and all ratchets have decisions.
 - [x] PR A review/gates and exact resulting-main workflow succeeded.
 - [x] PR B review/gates, governed performance, and exact resulting-main workflow succeeded.
 - [x] PR C review/gates and exact resulting-main workflow succeeded.
 - [ ] The separate evidence ledger independently reached `ledger-published`.
-- [ ] API-v1 organization and all later Wave 2 domains remained unstarted.
+- [x] API-v1 organization and all later Wave 2 domains remained unstarted.
 
 ## 15. Risks And Stop Conditions
 
@@ -1483,15 +1529,15 @@ changed tree.
 
 ## 16. Progress Record
 
-| Milestone                  | State                                         | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| -------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Client-state prerequisite  | ledger-published                              | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.                                                                                                                                                                                           |
-| Auth child plan            | approved                                      | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`; default workflow `31106485616` attempt 1 success.                                                                                                                                                                             |
-| PR A mutation/login core   | merged                                        | PR #78 feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601` attempt 1 success; resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; Hetzner workflow `31163606362` attempt 1 success.                                                                                                                                  |
-| PR B authoritative shell   | merged                                        | PR #81 feature `1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree `2a5d756b83f44b6b8bbae166e8571f761371af29`; Branch Release Gate `31185044360` succeeded; resulting main `8152de39faf2d630158143366596d61346e20457` has the same tree; Hetzner workflow `31187663870` attempt 1 succeeded.                                                                                                                                                                       |
-| PR C alignment/final trace | merged; resulting-main verified              | Task 6 starts from exact PR B main `8152de39faf2d630158143366596d61346e20457`. PR #90 merged as `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree `0b6520fa7c9f642b252f56a0d009851730769cda`; Branch Release Gate `31228541734` and exact resulting-main Hetzner `31241669511` succeeded. Deploy Web + API `31241669543` failed only external Cloudflare branch-control/API configuration, while Push `31241668811` succeeded. |
-| Later auth ledger          | pending                                       | PR C's merge/default workflow requirement is complete; the ledger still requires separate human authorization and its own publication envelope.                                                                                                                                                                                                                                                                                                                               |
-| Later Wave 2 domains       | blocked                                       | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Client-state prerequisite  | ledger-published    | PR #75 feature `2858bf0c2a9b882a82ae4c33abf58d6e0408be8d`, tree `104478f66bcabbbcf101ea97a80d2a2060cb10ec`, Branch Release Gate `31097790516` attempt 2, resulting main `6b75cfc5ec61f81b465be9072b746d24ecdb5f22`, default workflow `31100952224` attempt 1 success.                                                                                                                                                          |
+| Auth child plan            | approved            | Exact blob `123990bceac9732660e1113101addd5b194d8347`; PR #76 feature `38a961c4ee184856422b3acf6f0494d04d8d6e5b`, tree `aa82a21c85d7a6504aaa1a203aaabfe439d90af5`; Branch Release Gate `31103489838` attempt 2 success; resulting main `61e708708f94328f095f1f1fa5690747bb933476`, tree `32fad7c720dcc1eb462f6b486ff64db4f687f67e`; default workflow `31106485616` attempt 1 success.                                          |
+| PR A mutation/login core   | merged              | PR #78 feature `5118891effa1b9c856154ecab051c2df1b094145`, tree `0082575cf0697a170c2125cf856ae07fedfe37e2`; Branch Release Gate `31159741601` attempt 1 success; resulting main `a90042398448776b0972aaaaa0f5cca762163fde`, tree `9a3084c2c78f90f004054924b99b97be67fe72bd`; Hetzner workflow `31163606362` attempt 1 success.                                                                                                 |
+| PR B authoritative shell   | complete            | PR #81 feature `1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree `2a5d756b83f44b6b8bbae166e8571f761371af29`; Branch Release Gate `31185044360` attempt 1 succeeded; resulting main `8152de39faf2d630158143366596d61346e20457` has the same tree; Hetzner workflow `31187663870` attempt 1 succeeded.                                                                                                                            |
+| PR C alignment/final trace | complete            | PR #90 feature `7245a40a1022192885ec3eaabc68d75c68ef61d4`, tree `f3eb38ab4573198622f766f39af1cef20753e3ae`; Branch Release Gate `31228541734` attempt 1 succeeded; resulting main `eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2`, tree `0b6520fa7c9f642b252f56a0d009851730769cda`; Hetzner workflow `31241669511` attempt 1 succeeded. The nine-path tree difference is accepted concurrent-main drift with no auth PR C mutation. |
+| Later auth ledger          | publication pending | Separately authorized evidence-only ledger work records only already-existing envelopes. Its own future tree, commit, PR, Branch Release Gate, merge, and default workflow remain external; auth is not `ledger-published` in this tree.                                                                                                                                                                                       |
+| Later Wave 2 domains       | blocked             | Topology, RTC/RTT, CRDT, and admin do not begin here.                                                                                                                                                                                                                                                                                                                                                                          |
 
 ## 17. Planning Self-Review Record
 
