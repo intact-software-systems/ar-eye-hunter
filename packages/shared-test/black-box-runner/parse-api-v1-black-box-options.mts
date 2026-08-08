@@ -1,5 +1,3 @@
-import { readApiV1BlackBoxArgValues } from './read-api-v1-black-box-arg-values.mts';
-
 export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory';
 
 export interface ApiV1BlackBoxOptions {
@@ -143,4 +141,15 @@ function toApiPort(value: string | boolean, argumentName: string): number {
     throw new Error(`${argumentName} must be an integer from 1 to 65535.`);
   }
   return port;
+}
+
+function readApiV1BlackBoxArgValues(
+  args: readonly string[],
+): ReadonlyMap<string, string | boolean> {
+  const values = new Map<string, string | boolean>();
+  for (const arg of args) {
+    const [name, value] = arg.includes('=') ? arg.split(/=(.*)/s, 2) : [arg, true];
+    values.set(name, value);
+  }
+  return values;
 }
