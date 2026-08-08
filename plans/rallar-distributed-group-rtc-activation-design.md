@@ -1430,6 +1430,35 @@ counter.
 
 ## Validation Strategy
 
+### Black-box size tiers
+
+Batch behavior is validated end to end at three canonical group sizes,
+chosen against the topology-kind boundaries (star 1-4, tree 5-15, mesh
+16+):
+
+| Tier   | Sessions | Topology kind | Approximate work (degree limit 5)   |
+| ------ | -------- | ------------- | ----------------------------------- |
+| Small  | 6        | tree          | ~5 edges, ~10 confirmation units    |
+| Medium | 20       | mesh          | ~50 edges, ~100 confirmation units  |
+| Large  | 50       | mesh          | ~125 edges, ~250 confirmation units |
+
+Every tier asserts the full batch lifecycle: activation request and `202`
+ticket, ticket polling from `QUEUED` to terminal, planning and sealing,
+chunk expansion under the capacity ceiling, both-role confirmations,
+counter consistency (`terminal_chunk_count`, `terminal_remote_count`, and
+`in_flight_remote_count` returning to zero), finalization, promotion, and
+the RTC activation status projection.
+
+Two tier-specific additions: the small recipe starts the group at three
+sessions and joins up to six, so the star-to-tree boundary is crossed and a
+topology-kind transition is replanned at least once (no tier runs a
+star-only activation; star coverage comes from this crossing). The medium
+recipe runs a join mid-batch to assert debounced supersession and replan.
+
+The large tier doubles as the measurement rig for the Scale Posture
+observations: batch-row counter throughput, `resource_inbox` churn, and the
+partition/dedicated-table follow-up triggers.
+
 ### Focused unit tests
 
 - Deterministic activation, batch, chunk, remote, dispatch, ack, and
@@ -1524,10 +1553,30 @@ counter.
 - Exhaust a browser retry budget and verify `PARTIAL` versus `FAILED` using
   the topology invariants.
 
+### Hetzner distributed recipes
+
+The same three size tiers exist as distributed black-box recipes executed on
+the Hetzner fleet through the supported distributed-manifest machinery
+(`rallar-hetzner-ops`): real multi-server API processes over shared
+PostgreSQL, real `LISTEN/NOTIFY`, and headless browser agents performing the
+commanded RTC work.
+
+- **Small (6)** joins the supported distributed manifests that run on
+  regular `main` builds (the Run Hetzner Supported Distributed Manifests
+  workflow).
+- **Medium (20)** and **Large (50)** exist as manifests but run on demand or
+  on a schedule, not on every `main` build.
+
+Promoting medium or large into the regular `main` gate is a deliberate
+follow-up decision after measuring fleet cost and duration.
+
 For REST behavior, add or update Rallar black-box recipes in
-`packages/shared-test/black-box-runner` as part of implementation. API-v1
-mutation-path changes run the medium-scale convergence gate
-(`test:api-v1:black-box:postgres:medium-scale`) unweakened.
+`packages/shared-test/black-box-runner` as part of implementation. The
+api-v1 batch recipes exist at all three size tiers: small and medium join
+the standard recipe matrix (and therefore branch CI); large runs behind a
+focused Postgres command beside the existing medium-scale convergence gate
+(`test:api-v1:black-box:postgres:medium-scale`), which activation
+mutation-path changes continue to run unweakened.
 
 ## Recommended Implementation Sequence
 
@@ -1554,7 +1603,10 @@ mutation-path changes run the medium-scale convergence gate
 9. Add join/leave supersession, debounce and minimum-batch-age policies, and
    reconfiguration behavior.
 10. Add focused, PostgreSQL, browser, and multi-server black-box validation
-    plus operational metrics with the cardinality policy.
+    plus operational metrics with the cardinality policy, including the
+    api-v1 batch recipes at the small (6), medium (20), and large (50) size
+    tiers and the Hetzner distributed-manifest tiers (small on regular
+    `main` builds; medium and large on demand).
 
 Follow-ups tracked outside this sequence: the committed
 partition/dedicated-table successor (Scale Posture), unifying
