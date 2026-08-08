@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -135,16 +135,30 @@ it('freezes the auth diagnostic cohort at the merged PR C test range', () => {
 }, 30_000);
 
 it('excludes an unrelated untracked test from the auth diagnostic cohort', () => {
-  const unrelatedPath = 'packages/tests/repo/untracked-later-test.ts';
-  const unrelatedAbsolutePath = path.join(process.cwd(), unrelatedPath);
-  writeFileSync(unrelatedAbsolutePath, 'export {};\n');
+  withTemporaryAuthDiagnosticProbe((unrelatedPath) => {
+    expect(readTouchedTypeScriptDiagnostics().touchedPaths).not.toContain(unrelatedPath);
+  });
+}, 30_000);
+
+it('keeps existing untracked files intact while creating a diagnostic cohort probe', () => {
+  const protectedDirectory = mkdtempSync(
+    path.join(process.cwd(), 'packages/tests/repo/.auth-diagnostic-cohort-protected-'),
+  );
+  const protectedPath = path.join(protectedDirectory, 'pre-existing-untracked-test.ts');
+  writeFileSync(protectedPath, 'export const preserved = true;\n');
 
   try {
-    expect(readTouchedTypeScriptDiagnostics().touchedPaths).not.toContain(unrelatedPath);
+    const probePaths = [
+      withTemporaryAuthDiagnosticProbe((unrelatedPath) => unrelatedPath),
+      withTemporaryAuthDiagnosticProbe((unrelatedPath) => unrelatedPath),
+    ];
+
+    expect(new Set(probePaths)).toHaveLength(2);
+    expect(readFileSync(protectedPath, 'utf8')).toBe('export const preserved = true;\n');
   } finally {
-    rmSync(unrelatedAbsolutePath, { force: true });
+    rmSync(protectedDirectory, { force: true, recursive: true });
   }
-}, 30_000);
+});
 
 describe('inherited diagnostic disposition ledger fixtures', () => {
   const diagnostics = inheritedDiagnosticLedger.map(toDiagnostic);
@@ -257,6 +271,26 @@ function readAuthPrCTouchedTypeScriptPaths(): readonly string[] {
     .filter((filePath) => /\.(?:[cm]?ts|tsx)$/u.test(filePath));
 
   return [...new Set(paths)].sort();
+}
+
+function withTemporaryAuthDiagnosticProbe<T>(
+  operation: (unrelatedPath: string) => T,
+): T {
+  const repoRoot = process.cwd();
+  const probeDirectory = mkdtempSync(
+    path.join(repoRoot, 'packages/tests/repo/.auth-diagnostic-cohort-'),
+  );
+  const unrelatedPath = path.relative(
+    repoRoot,
+    path.join(probeDirectory, 'unrelated-later-test.ts'),
+  );
+  writeFileSync(path.join(repoRoot, unrelatedPath), 'export {};\n');
+
+  try {
+    return operation(unrelatedPath);
+  } finally {
+    rmSync(probeDirectory, { force: true, recursive: true });
+  }
 }
 
 interface DiagnosticDisposition extends LocatedDiagnostic {
