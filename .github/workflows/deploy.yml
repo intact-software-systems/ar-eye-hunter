@@ -23,7 +23,8 @@ concurrency:
 jobs:
   cloudflare-branch-controls:
     name: Enforce Cloudflare main-only branch controls
-    if: ${{ github.ref == 'refs/heads/main' }}
+    # Temporarily disabled while Cloudflare remains manually configured for main only.
+    if: ${{ false }}
     runs-on: ubuntu-latest
 
     steps:
