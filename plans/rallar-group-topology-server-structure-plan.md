@@ -28,9 +28,8 @@ harness.
 
 Date: 2026-08-08
 
-Status: Drafted and unapproved. This planning revision authorizes no production
-or test implementation. The exact Git blob requires human approval before any
-implementation goal, branch, or pull request is created.
+Status: Approved and in execution. The human approved exact planning Git blob
+`c9b5e92686ebbc5d4ff136dbea678c93fea1579f`; PR A executes only Tasks 1-2.
 
 ## 0. Prerequisite And Planning Publication Evidence
 
@@ -151,8 +150,10 @@ The direct current scope is 13 production modules with 5,633 physical lines and
 13 mirrored test/support modules with 4,580 physical lines: 26 files and 10,213
 lines before new semantic tests, README/navigation evidence, wrappers, or
 consumer import edits. Mechanical relocation alone predicts more than 20,000
-added/deleted lines. The inspected compatibility footprint is 57 files and
-42,181 lines across more than six control-flow families.
+added/deleted lines. The retained 31-file behavior footprint is 32,713 physical
+lines. Together with the 26 direct production/test paths, the complete
+inspected footprint is 42,926 physical lines across more than six control-flow
+families.
 
 That exceeds the pilot threshold of approximately 10,000 changed lines even
 though the direct move is currently below 100 files. One implementation PR is
@@ -226,6 +227,11 @@ explicit human approval of all dispositions before PR A production movement.
 Warning-only checker behavior remains unchanged. Checker exit zero never
 substitutes for human disposition.
 
+The exact Task 1 report at SHA-256
+`06a14055415c46e81957cc776c9435c2c4abd57d571080ca36d649127a0e0093`
+contains 63 union rows. The human approved every proposed disposition and owner
+mapping with no exception before Task 2 production movement.
+
 ### 2.3 Controlled human navigation sample
 
 Before implementation, a human uses the exact implementation base and records,
@@ -242,6 +248,12 @@ The same prompts are repeated on PR D's final candidate. The report may compare
 only the recorded observations. Missing data is reported as missing; no timing,
 productivity, causal, or statistical claim may be fabricated. Waiving the
 comparison requires a separate explicit Task 1 evidence-protocol amendment.
+
+The human supplied that explicit amendment for this child: no valid controlled
+sample was collected, the comparison is waived, and the independently reviewed
+code-derived family traces remain qualitative baseline evidence only. No human
+timing, wrong-file count, compatibility-hop count, unresolved-question count,
+or productivity claim is inferred.
 
 ## 3. Exact Current Trees
 
@@ -1027,25 +1039,27 @@ retry re-entry, terminal failure, and cleanup.
 
 ### Task 0: Approve and publish the exact child plan
 
-- [ ] Human approves or revises the exact plan Git blob.
-- [ ] Human merges the planning PR under the plan-only publication policy.
-- [ ] Resolve and record the exact resulting-main SHA before implementation.
-- [ ] Create one child-specific goal and PR A branch only.
-- [ ] Do not create PR B-D, a ledger branch, or another child yet.
+- [x] Human approved exact plan Git blob
+      `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`.
+- [x] Human merged planning PR #95 under the plan-only publication policy.
+- [x] Resulting main resolved to
+      `3fa0c94b748281dc326b814e700c06f6c4dd9d07` before implementation.
+- [x] One child-specific goal and PR A branch were created.
+- [x] PR B-D, a ledger branch, and other children remain uncreated.
 
 ### Task 1: Freeze the implementation baseline and review evidence
 
-- [ ] Recreate exact current production, test, consumer, import/export,
+- [x] Recreate exact current production, test, consumer, import/export,
       case/assertion, size, and call-edge inventories.
-- [ ] Record the five code-derived current traces and target traces.
-- [ ] Collect the controlled human navigation sample from Section 2.3.
-- [ ] Run every warning-only mode on the exact production set.
-- [ ] Produce one row-by-row disposition report with exact owner and target PR.
-- [ ] Obtain human approval of the navigation sample and every warning row.
-- [ ] Add semantic tests for uncovered command/authority, handler, exact-read,
+- [x] Record the five code-derived current traces and target traces.
+- [x] Record the explicit controlled-navigation-sample waiver from Section 2.3.
+- [x] Run every warning-only mode on the exact production set.
+- [x] Produce one row-by-row disposition report with exact owner and target PR.
+- [x] Obtain human approval of the sample waiver and every warning row.
+- [x] Add semantic tests for uncovered command/authority, handler, exact-read,
       transaction collision/exhaustion, concurrent idempotency, and convergence
       boundaries before relying on source ratchets.
-- [ ] Decide exact per-PR lineage manifests only for mechanical movement; no
+- [x] Decide exact per-PR lineage manifests only for mechanical movement; no
       semantically new code receives historical debt capacity.
 
 ### Task 2: PR A — protocol and pure config mutation core
@@ -1230,9 +1244,9 @@ mutation, transaction, retry, and concurrency boundaries. PR D is alignment
 only when runtime blobs remain exact.
 
 The existing medium-scale recipe fixes 100 independently authenticated clients,
-five groups, two API processes, ten client lanes, and five control lanes. The
-state-write harness includes topology-source operations and exact durable
-receipt/result evidence.
+five groups, three PostgreSQL-backed API processes on ports 18080, 18081, and
+18082, ten client lanes, and five control lanes. The state-write harness
+includes topology-source operations and exact durable receipt/result evidence.
 
 ### 13.2 Freeze before candidate
 
@@ -1551,11 +1565,12 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 17. Acceptance Checklist
 
-- [ ] Human approved this exact plan Git blob.
-- [ ] Planning PR merged under the plan-only policy.
-- [ ] Task 1 exact baseline and controlled human sample are approved or
+- [x] Human approved exact plan Git blob
+      `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`.
+- [x] Planning PR #95 merged under the plan-only policy.
+- [x] Task 1 exact baseline and controlled human sample are approved or
       separately waived.
-- [ ] Every focused warning row has an explicit human owner/rationale
+- [x] Every focused warning row has an explicit human owner/rationale
       disposition.
 - [ ] Four implementation PRs remain independently reviewable.
 - [ ] Exact current-to-target production and test ownership is reconciled.
@@ -1595,16 +1610,16 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 19. Progress Record
 
-| Milestone                  | State                  | Evidence                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth prerequisite          | ledger-published       | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence. |
-| Group-topology child plan  | drafted and unapproved | This exact plan revision predicts no plan/implementation blob, tree, PR, merge, release, workflow, performance, or ledger fact.                                                                                                                                                                                                               |
-| PR A protocol/core         | blocked                | Requires exact plan approval and planning PR merge.                                                                                                                                                                                                                                                                                           |
-| PR B persistence           | blocked                | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
-| PR C authoritative shell   | blocked                | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
-| PR D alignment/final trace | blocked                | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
-| Later topology ledger      | blocked                | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                            |
-| RTC/RTT and later domains  | blocked                | Remain outside this child.                                                                                                                                                                                                                                                                                                                    |
+| Milestone                  | State            | Evidence                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth prerequisite          | ledger-published | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence. |
+| Group-topology child plan  | approved         | Planning PR #95, exact approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, resulting main `3fa0c94b748281dc326b814e700c06f6c4dd9d07`.                                                                                                                                                                                                   |
+| PR A protocol/core         | in progress      | Draft PR #103. Task 1 accepted at head `7c03c1c7b96d6203742e68426a52298d1b05d2d2`, tree `66d48b5def11b813d3889e0ff7a515cc9b817c00`; Branch Release Gate `31264619538`, attempt 1, succeeded. Task 2 remains in progress and no final PR A publication fact is predicted here.                                                                 |
+| PR B persistence           | blocked          | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
+| PR C authoritative shell   | blocked          | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
+| PR D alignment/final trace | blocked          | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
+| Later topology ledger      | blocked          | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                            |
+| RTC/RTT and later domains  | blocked          | Remain outside this child.                                                                                                                                                                                                                                                                                                                    |
 
 ## 20. Self-Review Checklist
 
