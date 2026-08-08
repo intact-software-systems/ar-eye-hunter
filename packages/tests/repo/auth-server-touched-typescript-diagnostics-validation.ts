@@ -65,6 +65,7 @@ interface AstNode extends Record<string, unknown> {
 
 const repoRoot = process.cwd();
 const exactBaseSha = '8152de39faf2d630158143366596d61346e20457';
+const exactHeadSha = 'eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2';
 const sourceExtensions = ['.ts', '.tsx', '.mts', '.cts'] as const;
 
 export function readTouchedTypeScriptDiagnostics(): DiagnosticEvidence {
@@ -145,17 +146,19 @@ function readTouchedPaths(): readonly string[] {
   const tracked = lines(
     execFileSync(
       'git',
-      ['diff', '--name-only', '--diff-filter=ACMRD', exactBaseSha, '--', 'packages/tests'],
+      [
+        'diff',
+        '--name-only',
+        '--diff-filter=ACMRD',
+        exactBaseSha,
+        exactHeadSha,
+        '--',
+        'packages/tests',
+      ],
       { cwd: repoRoot, encoding: 'utf8' },
     ),
   );
-  const untracked = lines(
-    execFileSync('git', ['ls-files', '--others', '--exclude-standard', '--', 'packages/tests'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    }),
-  );
-  return [...new Set([...tracked, ...untracked])].filter(isTypeScriptPath).sort();
+  return [...new Set(tracked)].filter(isTypeScriptPath).sort();
 }
 
 function createBaseWorktree(): string {

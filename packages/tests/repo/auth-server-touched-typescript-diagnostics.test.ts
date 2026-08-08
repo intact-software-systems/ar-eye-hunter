@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -12,6 +13,8 @@ import {
 
 const validationPath =
   'packages/tests/repo/auth-server-touched-typescript-diagnostics-validation.ts';
+const authPrCBaseCommit = '8152de39faf2d630158143366596d61346e20457';
+const authPrCMergedCommit = 'eb0c58c9ffbeb290dafa5cfaba6e5a005b2418b2';
 const acceptedDisposition = 'accepted inherited debt';
 const scannerPath = '<repo>/scripts/repo-style-check/repository-scan.mjs';
 const scannerDiagnosticMessage =
@@ -122,6 +125,27 @@ it('keeps the broad tests compiler honestly red without new or worsened diagnost
   expect(dispositionEvidence.diagnosticDispositionViolations).toEqual([]);
 }, 30_000);
 
+it('freezes the auth diagnostic cohort at the merged PR C test range', () => {
+  const evidence = readTouchedTypeScriptDiagnostics();
+
+  expect(evidence.touchedPaths).toEqual(readAuthPrCTouchedTypeScriptPaths());
+  expect(evidence.touchedPaths).not.toContain(
+    'packages/tests/shared-server/rest-state-snapshot-read-selectors.test.ts',
+  );
+}, 30_000);
+
+it('excludes an unrelated untracked test from the auth diagnostic cohort', () => {
+  const unrelatedPath = 'packages/tests/repo/untracked-later-test.ts';
+  const unrelatedAbsolutePath = path.join(process.cwd(), unrelatedPath);
+  writeFileSync(unrelatedAbsolutePath, 'export {};\n');
+
+  try {
+    expect(readTouchedTypeScriptDiagnostics().touchedPaths).not.toContain(unrelatedPath);
+  } finally {
+    rmSync(unrelatedAbsolutePath, { force: true });
+  }
+}, 30_000);
+
 describe('inherited diagnostic disposition ledger fixtures', () => {
   const diagnostics = inheritedDiagnosticLedger.map(toDiagnostic);
 
@@ -213,6 +237,26 @@ function diagnostic(overrides: Partial<LocatedDiagnostic> = {}): LocatedDiagnost
     path: 'packages/tests/shared-server/fixture.test.ts',
     ...overrides,
   };
+}
+
+function readAuthPrCTouchedTypeScriptPaths(): readonly string[] {
+  const paths = execFileSync(
+    'git',
+    [
+      'diff',
+      '--name-only',
+      '--diff-filter=ACMRD',
+      authPrCBaseCommit,
+      authPrCMergedCommit,
+      '--',
+      'packages/tests',
+    ],
+    { cwd: process.cwd(), encoding: 'utf8' },
+  )
+    .split(/\r?\n/u)
+    .filter((filePath) => /\.(?:[cm]?ts|tsx)$/u.test(filePath));
+
+  return [...new Set(paths)].sort();
 }
 
 interface DiagnosticDisposition extends LocatedDiagnostic {
