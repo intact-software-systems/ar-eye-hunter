@@ -49,7 +49,8 @@ describe('Deploy workflow release gate', () => {
       'cd apps/rallar-black-box-control-server && deno task check',
     );
     expect(releaseGateWorkflow).toContain('npm run db:migrate');
-    expect(releaseGateWorkflow).toContain('npm run test:postgres:presence-expiry');
+    expect(releaseGateWorkflow.match(/npm run test:postgres:presence-expiry/gu))
+      .toHaveLength(2);
     expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:rest');
     expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:control');
 

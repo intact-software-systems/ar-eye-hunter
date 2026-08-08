@@ -43,6 +43,8 @@ import {
   expectWorkerOutboxLifecycleEvidence,
   type WorkerOutboxEffect,
 } from "../../../postgres-worker-outbox-evidence.ts";
+import { createPostgresTestRequestIdFactory } from
+  "../../../fixtures/create-postgres-test-request-id-factory.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
   process.env.RALLAR_POSTGRES_INTEGRATION === "1";
@@ -116,6 +118,7 @@ const STATE_MUTATION_WORKER_PATH = fileURLToPath(
 );
 
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
+const requestIdFor = createPostgresTestRequestIdFactory();
 
 describe("Postgres presence expiry concurrency", () => {
   postgresIt(
@@ -190,7 +193,7 @@ describe("Postgres presence expiry concurrency", () => {
           createdByPrincipalId: "alice",
           actorPrincipalId: "alice",
           actorSessionId: "alice-session",
-          requestId: "worker-request-id-create",
+          requestId: requestIdFor("worker-request-id-create"),
         });
         await Promise.all(inputs.map((input) =>
           writeFile(input.barrier.releaseFilePath, "release", "utf8")
@@ -254,7 +257,7 @@ describe("Postgres presence expiry concurrency", () => {
           expiresAtEpochMs: atEpochMs + 61_000 + index,
           actorPrincipalId: sessionRef.principalId,
           actorSessionId: sessionRef.sessionId,
-          requestId: `worker-client-heartbeat-${index}`,
+          requestId: requestIdFor(`worker-client-heartbeat-${index}`),
         },
       }));
       const handles: WorkerHandle[] = [];
@@ -270,9 +273,13 @@ describe("Postgres presence expiry concurrency", () => {
         const outputs = await Promise.all(handles.map((handle) => handle.done));
 
         outputs.forEach(expectCompactWorkerOutput);
-        expect(outputs.find((output) => output.requestId === "worker-client-heartbeat-1"))
+        expect(outputs.find((output) =>
+          output.requestId === requestIdFor("worker-client-heartbeat-1")
+        ))
           .toMatchObject({ domainStatus: "applied" });
-        expect(outputs.find((output) => output.requestId === "worker-client-heartbeat-0")
+        expect(outputs.find((output) =>
+          output.requestId === requestIdFor("worker-client-heartbeat-0")
+        )
           ?.domainStatus).toMatch(/^(applied|no-op)$/u);
         expect(outputs.map((output) => output.attemptCount).sort()).toEqual([1, 2]);
         const traces = await Promise.all(inputs.map((input) => readTrace(input.traceFilePath)));
@@ -332,7 +339,7 @@ describe("Postgres presence expiry concurrency", () => {
             disconnectedAtEpochMs: atEpochMs + 1_000,
             actorPrincipalId: sessionRef.principalId,
             actorSessionId: sessionRef.sessionId,
-            requestId: "worker-client-disconnect",
+            requestId: requestIdFor("worker-client-disconnect"),
           },
         },
         {
@@ -355,7 +362,7 @@ describe("Postgres presence expiry concurrency", () => {
             expiresAtEpochMs: atEpochMs + 61_001,
             actorPrincipalId: sessionRef.principalId,
             actorSessionId: sessionRef.sessionId,
-            requestId: "worker-client-reconnect",
+            requestId: requestIdFor("worker-client-reconnect"),
           },
         },
       ];
@@ -428,7 +435,7 @@ describe("Postgres presence expiry concurrency", () => {
           request: {
             actorPrincipalId: "bob",
             actorSessionId: "bob-session",
-            requestId: "worker-group-join-bob",
+            requestId: requestIdFor("worker-group-join-bob"),
           },
         },
         {
@@ -445,7 +452,7 @@ describe("Postgres presence expiry concurrency", () => {
           request: {
             actorPrincipalId: "alice",
             actorSessionId: "alice-session",
-            requestId: "worker-group-ban-carol",
+            requestId: requestIdFor("worker-group-ban-carol"),
           },
         },
       ];
@@ -469,13 +476,13 @@ describe("Postgres presence expiry concurrency", () => {
           createdByPrincipalId: "alice",
           actorPrincipalId: "alice",
           actorSessionId: "alice-session",
-          requestId: "worker-group-create",
+          requestId: requestIdFor("worker-group-create"),
         });
         await setup.upsertMember(scope, groupRef.groupId, "carol", {
           status: "active",
           actorPrincipalId: "carol",
           actorSessionId: "carol-session",
-          requestId: "worker-group-add-carol",
+          requestId: requestIdFor("worker-group-add-carol"),
         });
         handles.push(...inputs.map((input) => spawnWorker(databaseUrl, input)));
         await waitForPostgresAppInboxWorkerParticipants(
@@ -543,14 +550,14 @@ describe("Postgres presence expiry concurrency", () => {
           createdByPrincipalId: "alice",
           actorPrincipalId: "alice",
           actorSessionId: "alice-session",
-          requestId: "worker-presence-create",
+          requestId: requestIdFor("worker-presence-create"),
         });
         for (const principalId of principals) {
           await setup.upsertMember(scope, groupRef.groupId, principalId, {
             status: "active",
             actorPrincipalId: principalId,
             actorSessionId: `${principalId}-session`,
-            requestId: `worker-presence-member-${principalId}`,
+            requestId: requestIdFor(`worker-presence-member-${principalId}`),
           });
         }
 
@@ -570,7 +577,7 @@ describe("Postgres presence expiry concurrency", () => {
             expiresAtEpochMs: atEpochMs + 61_000,
             actorPrincipalId: principalId,
             actorSessionId: sessions[index],
-            requestId: `worker-presence-connect-${index}`,
+            requestId: requestIdFor(`worker-presence-connect-${index}`),
           },
         }));
         const connected = await runBarrierWorkerPair(databaseUrl, connectInputs);
@@ -596,7 +603,7 @@ describe("Postgres presence expiry concurrency", () => {
             expiresAtEpochMs: atEpochMs + 62_000,
             actorPrincipalId: principalId,
             actorSessionId: sessions[index],
-            requestId: `worker-presence-heartbeat-${index}`,
+            requestId: requestIdFor(`worker-presence-heartbeat-${index}`),
           },
         }));
         const heartbeats = await runBarrierWorkerPair(databaseUrl, heartbeatInputs);
@@ -621,7 +628,7 @@ describe("Postgres presence expiry concurrency", () => {
             disconnectedAtEpochMs: atEpochMs + 3_000,
             actorPrincipalId: principalId,
             actorSessionId: sessions[index],
-            requestId: `worker-presence-disconnect-${index}`,
+            requestId: requestIdFor(`worker-presence-disconnect-${index}`),
           },
         }));
         const disconnected = await runBarrierWorkerPair(databaseUrl, disconnectInputs);
@@ -663,7 +670,10 @@ describe("Postgres presence expiry concurrency", () => {
       const scope = uniqueScope("group-last-slot-capacity");
       const groupRef: GroupRef = { ...scope, groupId: "room-1" };
       const atEpochMs = Date.now();
-      const contenderRequestIds = ["postgres-join-bob", "postgres-join-carol"];
+      const contenderRequestIds = [
+        requestIdFor("postgres-join-bob"),
+        requestIdFor("postgres-join-carol"),
+      ];
 
       try {
         await createPostgresGroupRuntime(
@@ -677,7 +687,7 @@ describe("Postgres presence expiry concurrency", () => {
           joinMode: "open",
           maxMembers: 2,
           createdByPrincipalId: "alice",
-          requestId: "postgres-create-last-slot",
+          requestId: requestIdFor("postgres-create-last-slot"),
         });
 
         const barrier = new GroupPresenceReadBarrier(2);
@@ -777,14 +787,14 @@ describe("Postgres presence expiry concurrency", () => {
           joinMode: "open",
           maxMembers: sessionCount + 1,
           createdByPrincipalId: "alice",
-          requestId: "postgres-heartbeat-create",
+          requestId: requestIdFor("postgres-heartbeat-create"),
         });
         for (let index = 0; index < sessionCount; index += 1) {
           const principalId = `member-${index}`;
           await setup.upsertMember(scope, groupRef.groupId, principalId, {
             status: "active",
             actorPrincipalId: principalId,
-            requestId: `postgres-heartbeat-member-${index}`,
+            requestId: requestIdFor(`postgres-heartbeat-member-${index}`),
           });
           await setup.connectPresenceSession(
             scope,
@@ -797,7 +807,7 @@ describe("Postgres presence expiry concurrency", () => {
               lastHeartbeatAtEpochMs: atEpochMs,
               expiresAtEpochMs: atEpochMs + 60_000,
               actorPrincipalId: principalId,
-              requestId: `postgres-heartbeat-connect-${index}`,
+              requestId: requestIdFor(`postgres-heartbeat-connect-${index}`),
             },
           );
         }
@@ -823,7 +833,7 @@ describe("Postgres presence expiry concurrency", () => {
         });
         const heartbeatRequestIds = Array.from(
           { length: sessionCount },
-          (_, index) => `postgres-heartbeat-${index}`,
+          (_, index) => requestIdFor(`postgres-heartbeat-${index}`),
         );
         const authorities = heartbeatRequestIds.map((_, index) =>
           testAuthority(`member-${index}`, `session-${index}`)
@@ -975,7 +985,7 @@ describe("Postgres presence expiry concurrency", () => {
                 connectedAtEpochMs: atEpochMs + 1,
                 lastHeartbeatAtEpochMs: atEpochMs + 1,
                 expiresAtEpochMs: atEpochMs + 60_000,
-                requestId: "postgres-reconnect-generation-2",
+                requestId: requestIdFor("postgres-reconnect-generation-2"),
               },
             ),
         ]);
@@ -1227,7 +1237,7 @@ async function seedExpiredClientSession(
       expiresAtEpochMs: atEpochMs - 1_000,
       actorPrincipalId: sessionRef.principalId,
       actorSessionId: sessionRef.sessionId,
-      requestId: "seed-client-session",
+      requestId: requestIdFor("seed-client-session"),
     },
   );
 }
@@ -1255,7 +1265,7 @@ async function seedExpiredGroupPresenceSession(
     createdByPrincipalId: "alice",
     actorPrincipalId: "alice",
     actorSessionId: sessionId,
-    requestId: "seed-group",
+    requestId: requestIdFor("seed-group"),
   });
   await service.connectPresenceSession(scope, groupRef.groupId, sessionId, {
     generationId: "generation-1",
@@ -1265,7 +1275,7 @@ async function seedExpiredGroupPresenceSession(
     expiresAtEpochMs: atEpochMs - 1_000,
     actorPrincipalId: "alice",
     actorSessionId: sessionId,
-    requestId: "seed-group-presence-session",
+    requestId: requestIdFor("seed-group-presence-session"),
   });
 }
 
@@ -1456,7 +1466,7 @@ async function seedConnectedClientSession(
     expiresAtEpochMs: atEpochMs + 60_000,
     actorPrincipalId: sessionRef.principalId,
     actorSessionId: sessionRef.sessionId,
-    requestId: "worker-client-seed",
+    requestId: requestIdFor("worker-client-seed"),
   });
 }
 
