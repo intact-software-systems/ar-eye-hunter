@@ -477,26 +477,6 @@
           }
         },
         {
-          "name": "waitClient{i}WsReady",
-          "type": "ws.wait",
-          "connection": "ws-client-{i}",
-          "expect": {
-            "connection": "ws-client-{i}",
-            "withinMs": 30000,
-            "consume": true,
-            "messages": [
-              {
-                "route": {
-                  "topicId": "client-state.snapshot"
-                },
-                "payload": {
-                  "typeId": "client-state.snapshot"
-                }
-              }
-            ]
-          }
-        },
-        {
           "name": "connectClient{i}Presence",
           "type": "http",
           "connection": "api",

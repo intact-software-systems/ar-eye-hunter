@@ -2341,8 +2341,9 @@ async function writeArtifacts(report: any, dir: string): Promise<void> {
         correlation: artifactReport.correlation,
         command: sync.redactBlackBoxData(process.argv, resolvedVariables.redactions),
     };
-    const boundedReport = artifactBounds.withBoundedArtifactReportResults(artifactReport,
-        configuredArtifactOptions().maxReportResults);
+    const boundedReport = artifactBounds.withBoundedArtifactReportStores(
+        artifactBounds.withBoundedArtifactReportResults(artifactReport,
+            configuredArtifactOptions().maxReportResults));
     await Deno.writeTextFile(artifactPath(dir, 'report.json'), JSON.stringify(boundedReport, null, 2));
     await Deno.writeTextFile(artifactPath(dir, 'events.jsonl'), events.map(toJsonLine).join(''));
     await Deno.writeTextFile(artifactPath(dir, 'failures.json'), JSON.stringify(failureBundle(artifactReport), null, 2));
@@ -3406,8 +3407,9 @@ if (preflightMode) {
             if (artifactDir) {
                 await writeArtifacts(report, artifactDir);
             }
-            console.log(JSON.stringify(artifactBounds.withBoundedArtifactReportResults(
-                report, configuredArtifactOptions().maxReportResults), null, 2));
+            console.log(JSON.stringify(artifactBounds.withBoundedArtifactReportStores(
+                artifactBounds.withBoundedArtifactReportResults(
+                    report, configuredArtifactOptions().maxReportResults)), null, 2));
 
             if (hasReportFailures(report)) {
                 process.exit(1);
