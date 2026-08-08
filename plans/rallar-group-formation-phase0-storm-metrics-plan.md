@@ -1,6 +1,35 @@
 # Rallar Group Formation Phase 0: Storm Metrics And Formation-Burst Baseline
 
-Status: proposed plan; implementation not started.
+Status: implemented on `codex/group-formation-phase0-storm-metrics`
+(PR #113); awaiting merge and the default-branch Hetzner manifests run.
+
+## Progress notes (2026-08-09)
+
+- Final feature-branch commit `e6ba759c` ("test: align api-v1 deno fakes
+  and migration pins with the formation wiring"); instrumentation commits
+  `31824133` (server metrics), `063fb7f1` (browser diagnostics), `3a757fce`
+  (style-budget splits with `plans/repo-style-lineages/` declarations),
+  `1d6b60e2` + `752e3ddc` (recipes and storm-safe runner fixes), `c2ce5fd6`
+  (baseline document), `5fc67a14` (pinning-suite registration).
+- Completion gates from the final tree at `e6ba759c`: `npm run test:unit`
+  (6493 passed / 22 skipped), `npm run test:ci`, and `npm run build` all
+  passed; `npm run check:repo-style:changed -- origin/main` passed with
+  zero findings. **Branch Release Gate** run 31282733981 succeeded on
+  `e6ba759c`; the PR-triggered **API v1 Medium-Scale Gate** run 31282735230
+  also succeeded. **Run Hetzner Supported Distributed Manifests** is
+  pending the resulting default-branch commit after merge.
+- Black-box evidence: memory 13/13; postgres 13/13 standard + 5/5 cluster;
+  formation-large 1/1; medium-scale convergence gate 1/1 (unweakened).
+  Baseline recorded in
+  `playground/rtc-design/baselines/2026-08-08-formation-burst-baseline.md`.
+- Open items flagged in PR #113: the state-write perf comparison gate
+  failed as run and, as designed, requires strict shared-throughput
+  improvement, so it cannot pass an observation-only change (recorded
+  artifacts under `tmp/perf/`; local Docker Postgres also proved unstable
+  under the bench); the live-rtc-3 browser validation fails identically on
+  the merge base in this environment (peer establishment timeouts), so the
+  live capture of the new diagnostics fields remains open on a healthy RTC
+  host.
 
 ## Context
 
