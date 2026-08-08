@@ -53,9 +53,17 @@ not an acceptance criterion.
 - API-v1 client, group, topology, runtime-state, or database-concurrency work:
   run focused tests first, then the unweakened
   `npm run test:api-v1:black-box:postgres:medium-scale` gate. It means 100
-  independently authenticated clients, five groups, two Postgres-backed API
+  independently authenticated clients, five groups, three Postgres-backed API
   processes, 10 client lanes plus 5 control lanes. Never reduce these constants,
   the operation matrix, or its assertions to make a change pass.
+- API-v1 black-box topology: memory mode manages one API process. Built-in
+  Postgres cluster profiles manage three Deno API processes sharing one Postgres
+  database on ports 18080, 18081, and 18082. Their isolated logs are
+  `api-v1-server.log`, `api-v1-server-secondary.log`, and
+  `api-v1-server-tertiary.log`; recipes-only mode is externally managed.
+  Standard/default, CRDT, and medium-scale cluster recipes must make node C
+  meaningful. See `references/test-commands.md` for the commands, artifacts,
+  and failure-triage expectations.
 - A mutation-path or concurrency-domain change also requires
   `npm run perf:api-v1:state-write` and the comparative result gate implemented
   by `node scripts/perf/compare-api-v1-state-write-results.mjs`.

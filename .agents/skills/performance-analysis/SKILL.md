@@ -17,12 +17,18 @@ Treat static analysis as hypothesis generation unless the issue is obvious from 
 For an api-v1 state mutation-path or concurrency-domain change, run
 `npm run perf:api-v1:state-write` and require the comparative result gate:
 `node scripts/perf/compare-api-v1-state-write-results.mjs <baseline> <candidate>`.
-Also preserve the medium-scale correctness gate after focused tests: 100
-independently authenticated clients, five groups, two Postgres-backed API
-processes, 10 client lanes plus 5 control lanes; never reduce those constants.
+Also preserve the medium-scale correctness gate after focused tests:
+`npm run test:api-v1:black-box:postgres:medium-scale`, with 100 independently
+authenticated clients, five groups, three Postgres-backed API processes, 10
+client lanes plus 5 control lanes; never reduce those constants.
 Repository/SQL call counts and transaction duration may be reported only from
 retained focused-test, trace, or performance artifacts that directly measure
 them. State an uncaptured metric as uncaptured; never estimate it from source.
+
+A three-server API-v1 black-box topology change requires its correctness and
+load gates, but not a new production performance benchmark or numeric SLO by
+itself. Require the state-write performance comparison only when the same
+change alters a production mutation path or concurrency domain.
 
 ## Default workflow
 

@@ -174,13 +174,13 @@ tuple rather than forcing both domains through one scalar write guard.
 
 Group and client caches use the following policy:
 
-| Current cache              | Incoming snapshot                   | Result                                  |
-| -------------------------- | ----------------------------------- | --------------------------------------- |
-| Missing    | Any                                 | Insert              |
-| Revision N | Revision greater than N             | Advance             |
-| Revision N | Revision less than N                | Ignore as stale     |
-| Revision N | Same revision and same content      | Duplicate/no-op     |
-| Revision N | Same revision and different content | Invariant violation |
+| Current cache | Incoming snapshot                   | Result              |
+| ------------- | ----------------------------------- | ------------------- |
+| Missing       | Any                                 | Insert              |
+| Revision N    | Revision greater than N             | Advance             |
+| Revision N    | Revision less than N                | Ignore as stale     |
+| Revision N    | Same revision and same content      | Duplicate/no-op     |
+| Revision N    | Same revision and different content | Invariant violation |
 
 An equal causal revision with different content throws
 `StateSnapshotRevisionConflictError`. Silently choosing one would make a data
@@ -266,7 +266,7 @@ RTT refresh is a latest-value workload and may coalesce while pending:
 
 ```ts
 type RtcTopologyRttRefreshWork = {
-  kind: "rtt-refresh";
+  kind: 'rtt-refresh';
   groupSnapshot: GroupSnapshot;
   requestedGroupStateRevision: number;
   requestedRttVersion: number;
@@ -521,10 +521,21 @@ claimed.
 
 The unweakened Postgres medium-scale gate is
 `npm run test:api-v1:black-box:postgres:medium-scale`: 100 independently
-authenticated clients, five groups, two Postgres-backed API processes, 10
+authenticated clients, five groups, three Postgres-backed API processes, 10
 client lanes plus 5 control lanes. Never reduce those constants or the
 operation matrix to make a change pass. The Task 8 retained run completed all
 2,721 assertions and proved cross-process state/topology convergence.
+
+The API-v1 black-box runner keeps memory as a one-process mode. Its built-in
+Postgres cluster profiles instead manage three Deno API processes sharing one
+Postgres database on ports 18080, 18081, and 18082. Inspect the isolated
+`api-v1-server.log`, `api-v1-server-secondary.log`, and
+`api-v1-server-tertiary.log` artifacts together; recipes-only mode is
+externally managed. Standard/default, CRDT, and medium-scale cluster recipes
+all give node C meaningful work. The runner clears an old fairness proof before
+each invocation, so a failed run cannot leave stale proof presented as current.
+This topology-only test change requires correctness and load gates, not a new
+production benchmark or numeric latency SLO.
 
 A mutation-path or concurrency-domain change must also run
 `npm run perf:api-v1:state-write` and pass

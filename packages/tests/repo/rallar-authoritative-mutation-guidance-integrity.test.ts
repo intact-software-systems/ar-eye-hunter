@@ -64,7 +64,7 @@ const mediumScaleRequirements = [
   'npm run test:api-v1:black-box:postgres:medium-scale',
   '100 independently authenticated clients',
   'five groups',
-  'two Postgres-backed API processes',
+  'three Postgres-backed API processes',
   '10 client lanes plus 5 control lanes',
 ] as const;
 const performanceGateRequirements = [
@@ -210,6 +210,15 @@ describe('authoritative mutation guidance integrity', () => {
       'stale revisions',
       'equal revisions with different canonical content',
     ]);
+  });
+
+  it.each([
+    '.agents/skills/rallar-testing/SKILL.md',
+    '.agents/skills/rallar-testing/references/test-commands.md',
+    '.agents/skills/performance-analysis/SKILL.md',
+    'docs/rallar-convergent-state-and-rtc-topology.md',
+  ])('%s preserves the governed three-server medium-scale topology', (filePath) => {
+    expectAllNormalized(readRepo(filePath), mediumScaleRequirements);
   });
 
   it('requires code-derived authoritative mutation traces and canonical realtime owners', () => {
