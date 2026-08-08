@@ -404,17 +404,17 @@ describe('repository modules', () => {
                 applicationId: 'app|with:delimiters',
                 workspaceId: '',
                 groupId: 'group%2Fname',
-            },
+            } as GroupSnapshot['group'],
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: '_',
                 groupId: 'group%2Fname',
-            },
+            } as GroupSnapshot['group'],
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: 'workspace:%25',
                 groupId: 'group%2Fname',
-            },
+            } as GroupSnapshot['group'],
         ] satisfies readonly GroupSnapshot['group'][];
 
         const keys = refs.map(toGroupStateSnapshotRepositoryKey);

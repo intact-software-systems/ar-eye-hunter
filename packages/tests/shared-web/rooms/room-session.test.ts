@@ -68,7 +68,10 @@ it('refreshes a bound room with one tokenless durable point read', async () => {
     },
   };
   seedRoomSnapshots([observed]);
-  const fetchMock = vi.fn(async () => new Response(JSON.stringify(current), {
+  const fetchMock = vi.fn(async (
+    _input: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => new Response(JSON.stringify(current), {
     status: 200,
     headers: {
       'cache-control': 'no-store',
