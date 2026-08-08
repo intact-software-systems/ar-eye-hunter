@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
+import { toBoundedWsWaitMessages } from './artifacts/with-bounded-artifact-report-results.ts';
 import {
     createMissingRtcProvider,
     rememberRtcCloseEvent,
@@ -2131,19 +2132,13 @@ function waitForWsMessage(interaction: any, config: any, context: any, details: 
                 resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket message was not received', {
                     ...details,
                     connection: connectionName,
-                    expectedMessage,
-                    receivedMessageCount: messages.length,
-                    messages: messages.slice(-WS_WAIT_DIAGNOSTIC_MESSAGE_LIMIT),
+                    expectedMessage, ...toBoundedWsWaitMessages(messages),
                     waitedMs: Date.now() - startedAt,
                 }));
             }
         }, 25);
     });
 }
-
-// Failure diagnostics embed received messages; unbounded buffers from storm-scale
-// runs can exceed the JSON.stringify string-length limit when writing artifacts.
-const WS_WAIT_DIAGNOSTIC_MESSAGE_LIMIT = 10;
 
 function waitForWsMessages(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
     const request = interaction.request;
@@ -2222,9 +2217,7 @@ function waitForWsMessages(interaction: any, config: any, context: any, details:
                     missingMessages: expectedMessages.filter((expectedMessage: any) => {
                         return matchedMessages.every(match => match.expectedMessage !== expectedMessage);
                     }),
-                    ordered,
-                    receivedMessageCount: messages.length,
-                    messages: messages.slice(-WS_WAIT_DIAGNOSTIC_MESSAGE_LIMIT),
+                    ordered, ...toBoundedWsWaitMessages(messages),
                     waitedMs: Date.now() - startedAt,
                 }));
             }

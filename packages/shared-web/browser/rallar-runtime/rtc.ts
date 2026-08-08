@@ -350,7 +350,7 @@ class BrowserRallarRtcController implements RallarRtcController {
             ).length,
             relayPeerCount: peers.filter((peer) => peer.usesRelay).length,
             peers,
-            groupManager: ctx.middleware.webRtcGroupManager.readDiagnostics(),
+            groupManager: ctx.middleware.webRtcGroupManager.readDiagnostics?.(),
             overlayAdoption: readOverlayAdoptionDiagnostics(),
         };
     }

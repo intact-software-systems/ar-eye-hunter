@@ -25,15 +25,32 @@ const BOUNDED_ARTIFACT_STORE_NAMES = [
   'rtcCloseEvents',
 ] as const;
 
+// Failure diagnostics embed received messages; unbounded storm-scale buffers can
+// exceed the artifact JSON string-length limit, so waits keep a bounded tail.
+const WS_WAIT_DIAGNOSTIC_MESSAGE_LIMIT = 10;
+
+export function toBoundedWsWaitMessages(messages: readonly Result[]): any {
+  return {
+    receivedMessageCount: messages.length,
+    messages: messages.slice(-WS_WAIT_DIAGNOSTIC_MESSAGE_LIMIT),
+  };
+}
+
+export function toBoundedArtifactReport(report: any, maxReportResults: any): any {
+  return withBoundedArtifactReportStores(
+    withBoundedArtifactReportResults(report, maxReportResults),
+  );
+}
+
 export function withBoundedArtifactReportStores(report: any): any {
   let total = 0;
   let omitted = 0;
-  const boundedStores: Record<string, unknown> = {};
+  const boundedStores: Record<string, any> = {};
   for (const storeName of BOUNDED_ARTIFACT_STORE_NAMES) {
     const store = report?.[storeName];
     if (!store || typeof store !== 'object' || Array.isArray(store)) continue;
-    const boundedStore: Record<string, unknown> = {};
-    for (const [key, entries] of Object.entries(store as Record<string, unknown>)) {
+    const boundedStore: Record<string, any> = {};
+    for (const [key, entries] of Object.entries(store as Record<string, any>)) {
       if (!Array.isArray(entries)) {
         boundedStore[key] = entries;
         continue;
