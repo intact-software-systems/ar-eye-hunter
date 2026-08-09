@@ -92,8 +92,11 @@ describe('Deploy workflow release gate', () => {
     expect(workflow).not.toContain('pull_request:');
   });
 
-  it('stages three explicit main-only Deno Deploy applications without placeholder jobs', async () => {
+  it('uploads the root Deno workspace to three explicit main-only applications', async () => {
     const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
+    const rootConfig = JSON.parse(
+      await readFile(path.join(repoRoot, 'deno.json'), 'utf8'),
+    ) as Record<string, unknown>;
 
     const expectedDeployments = [
       {
@@ -122,8 +125,9 @@ describe('Deploy workflow release gate', () => {
       expect(jobBlock).toContain(deployDenoAfterPreflightCondition);
       expect(jobBlock).toContain('DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}');
       expect(jobBlock).toContain(
-        `deno deploy . --config ${deployment.configPath} --org intact-software-systems --app ${deployment.appName} --prod --json --non-interactive`,
+        `deno deploy . --config deno.json --org intact-software-systems --app ${deployment.appName} --prod --json --non-interactive`,
       );
+      expect(jobBlock).not.toMatch(/deno deploy \. --config apps\//u);
 
       const config = JSON.parse(
         await readFile(path.join(repoRoot, deployment.configPath), 'utf8'),
@@ -148,6 +152,7 @@ describe('Deploy workflow release gate', () => {
       });
     }
 
+    expect(rootConfig).not.toHaveProperty('deploy');
     expect(workflow).not.toContain('deploy-in-memory-api:');
     expect(workflow).not.toContain('Deno Deploy auto-deploys from GitHub main branch');
   });
@@ -192,6 +197,11 @@ describe('Deploy workflow release gate', () => {
       'Production branch: `main`',
       'Builds for non-production branches: disabled',
       'Disconnect the Deno GitHub integration',
+      'Every push to a linked GitHub repository starts a Deno build',
+      'source discovery at the repository-root `deno.json`',
+      'App-level `deno.json` files remain authoritative for local checks',
+      '`DENO_DEPLOY_ACTIONS_ENABLED=false`',
+      'Deploy Default Branch',
       '`DENO_DEPLOY_TOKEN`',
       '`DENO_DEPLOY_ACTIONS_ENABLED=true`',
       'Branch Release Gate',
