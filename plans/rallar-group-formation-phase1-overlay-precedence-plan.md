@@ -1,8 +1,45 @@
 # Rallar Group Formation Phase 1: Overlay Precedence And Bounded Bootstrap
 
-Status: in progress. Branch `codex/group-formation-phase1-overlay-precedence`,
-based on `main` at `76e5a1b3`. This document is the initial review checkpoint
-for the phase; implementation proceeds on the same branch and draft PR.
+Status: implementation and local validation complete on
+`codex/group-formation-phase1-overlay-precedence` (PR #138), based on `main`
+at `76e5a1b3`; awaiting **Branch Release Gate** confirmation on the final
+build-affecting commit, human review/merge, and the post-merge **Run Hetzner
+Supported Distributed Manifests** gate before the plan can be marked
+complete.
+
+## Progress notes (2026-08-09)
+
+- Commits: plan checkpoint `2755122b`; implementation `7eca6b18` (provenance
+  admission, conditional bounded star, dial budget, flag threading, style
+  splits); tier simulation `16561c46`; measured results
+  `aebe9393`; headless bundle ratchet `5466ccca` (final build-affecting
+  commit — the Phase 1 modules add ~0.7 KiB brotli, budget 194 → 196 with
+  boundary assertions unchanged).
+- Local completion gates from the final tree at `5466ccca`:
+  `npm run test:unit` (717 files, 6,562 passed), `npm run test:ci` (exit 0;
+  unit + Deno + Playwright e2e 38 + 211 + full-stack 7), `npm run build`
+  (exit 0). `npm run check:repo-style:changed -- origin/main HEAD` passed
+  with zero findings; `check:browser-bundles` passed;
+  `apps/api-v1 deno task check` passed.
+- Tier evidence (Decision 4 mapping): simulation asserts 100%
+  server-overlay adoption, zero conflicts, dials ≤ budget at N=6/20/50 and
+  the 49-dial legacy contrast; live-rtc-3 (memory) passed with captured
+  diagnostics (zero admission conflicts, dials ≤ desired, deferrals 0);
+  recipes rerun green — memory 13/13, postgres 13/13 + 5/5 cluster,
+  formation-large 1/1 (1,324 steps, 0 failures) — with baseline-matching
+  server-side signatures. Committed record:
+  `playground/rtc-design/baselines/2026-08-09-phase1-overlay-precedence-results.md`.
+- Gates that do not bind (evidence): `git diff origin/main...HEAD` contains
+  no `packages/shared-server` or `apps/**` changes, so the api-v1
+  medium-scale convergence and state-write perf gates are not required by
+  the mutation-path rule; the PR-triggered **API v1 Medium-Scale Gate**
+  nevertheless ran and succeeded on `7eca6b18`, `16561c46`, `aebe9393`,
+  and `5466ccca` (run 31326547901).
+- Remote gates: **Branch Release Gate** failed on `7eca6b18`/`16561c46`
+  solely on the headless bundle ratchet (194.61 > 194), fixed in
+  `5466ccca`; the run on `5466ccca` is recorded in the PR record when it
+  completes. **Run Hetzner Supported Distributed Manifests** pends the
+  resulting default-branch commit after merge.
 
 ## Context
 
