@@ -37,9 +37,9 @@ complete.
   and `5466ccca` (run 31326547901).
 - Remote gates: **Branch Release Gate** failed on `7eca6b18`/`16561c46`
   solely on the headless bundle ratchet (194.61 > 194), fixed in
-  `5466ccca`; the run on `5466ccca` is recorded in the PR record when it
-  completes. **Run Hetzner Supported Distributed Manifests** pends the
-  resulting default-branch commit after merge.
+  `5466ccca`; run 31326545612 **succeeded on `5466ccca`**. **Run Hetzner
+  Supported Distributed Manifests** pends the resulting default-branch
+  commit after merge; the plan is not complete until it is green there.
 
 ## Context
 
