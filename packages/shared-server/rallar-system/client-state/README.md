@@ -63,6 +63,40 @@ The legacy `client-presence-state.ts`, `client-state-storage-keys.ts`, and
 to these owners. The package `mod.ts` exports the canonical repository owner
 directly.
 
+### Workspace identity and canonical physical keys
+
+Every client-state runtime and persisted record has a mandatory, nonempty
+`workspaceId`. Requests, storage-key builders, and persisted-value
+normalization reject an omitted or empty workspace identity; a persisted value
+whose scope differs from its canonical key is corruption, not a legacy shape
+to repair.
+
+Client-state runtime and SQL keys use labelled, colon-delimited physical
+segments. Segment values use `encodeURIComponent`, except that the semantic
+workspace identity `_` is encoded as `%5F`. This avoids its collision with the
+repository's underscore sentinel while retaining one canonical physical key.
+For example:
+
+```text
+applicationId = app:/%, workspaceId = _, principalId = alice smith
+app=app%3A%2F%25:ws=%5F:principal=alice%20smith
+
+clientInstanceId = web/1, sessionId = session:1
+app=app%3A%2F%25:ws=%5F:principal=alice%20smith:instance=web%2F1:session=session%3A1
+```
+
+The raw `:` characters shown above delimit labelled segments; a colon inside a
+semantic value is `%3A`. Literal percent signs are `%25`, so the workspace
+identity `%5F` is stored as `%255F` and remains distinct from `_` stored as
+`%5F`. Decoders require the exact canonical encoding and reject empty or
+lookalike physical segments.
+
+Issue #120 is a direct repository correction, not a persisted client-key
+migration. Affected disposable development and test client-state databases are
+reset and recreated; they are never transformed. There is no legacy read,
+dual write, backfill, inventory, repair, schema migration, or compatibility
+window for prior client-state persistence.
+
 ## Service, ordinary transaction, and inbox owners
 
 - [`ClientStateService` and its narrow mutation capability](./client-state-service-contracts.ts)
