@@ -70,9 +70,14 @@ import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-opti
 import {
   parseGroupTopologyRegressionReasons,
 } from './pool-group-topology-state-write-position-balanced-results.mjs';
+import {
+  RTC_TOPOLOGY_REGRESSION_REASON_PROFILE,
+  selectStateWriteRegressionReasons,
+} from './rtc-topology/state-write-reasons.ts';
 export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
 export { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 export { parseGroupTopologyRegressionReasons };
+export { selectStateWriteRegressionReasons };
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const CLIENT_COUNT = 100;
@@ -298,7 +303,11 @@ async function main(): Promise<void> {
   const gitIdentity = await readBenchmarkGitIdentity();
   const reasonsText = options.regressionReasonsFile === undefined
     ? undefined : await Deno.readTextFile(options.regressionReasonsFile);
-  const regressionReasons = parseGroupTopologyRegressionReasons(reasonsText, gitIdentity);
+  const precommittedReasons = parseGroupTopologyRegressionReasons(reasonsText, gitIdentity);
+  const regressionReasons = selectStateWriteRegressionReasons(
+    options.regressionReasonProfile,
+    precommittedReasons,
+  );
 
   const databaseUrl = Deno.env.get('DATABASE_URL')?.trim() || DEFAULT_DATABASE_URL;
   const runId = `state-write-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
@@ -1677,6 +1686,7 @@ export function parseBenchmarkOptions(args: readonly string[]): {
   concurrency: number;
   out: string;
   regressionReasonsFile?: string;
+  regressionReasonProfile?: typeof RTC_TOPOLOGY_REGRESSION_REASON_PROFILE;
 } {
   const values = new Map(
     args.map((argument) => {
@@ -1685,7 +1695,19 @@ export function parseBenchmarkOptions(args: readonly string[]): {
     }),
   );
   const regressionReasonsFile = values.get('regression-reasons-file');
+  const regressionReasonProfile = values.get('regression-reason-profile');
   if (regressionReasonsFile !== undefined) assertPerfInputPath(regressionReasonsFile);
+  if (
+    regressionReasonProfile !== undefined &&
+    regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
+  ) {
+    throw new Error(
+      `Unsupported state-write regression reason profile: ${regressionReasonProfile}`,
+    );
+  }
+  if (regressionReasonsFile !== undefined && regressionReasonProfile !== undefined) {
+    throw new Error('--regression-reasons-file and --regression-reason-profile cannot be combined');
+  }
   return {
     backend: values.get('backend') || 'postgres',
     warmup: parseIntegerOption('warmup', values.get('warmup'), 1, 1, MAX_WARMUP_RUNS),
@@ -1699,6 +1721,7 @@ export function parseBenchmarkOptions(args: readonly string[]): {
     ),
     out: values.get('out') || 'tmp/perf/api-v1-state-write-results.json',
     ...(regressionReasonsFile === undefined ? {} : { regressionReasonsFile }),
+    ...(regressionReasonProfile === undefined ? {} : { regressionReasonProfile }),
   };
 }
 

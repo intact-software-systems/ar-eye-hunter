@@ -4,6 +4,9 @@ import {
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 import {
+  STATE_WRITE_REASONS,
+} from '../../../scripts/perf/rtc-topology/state-write-reasons.ts';
+import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
 } from './state-write-performance-artifact-fixture.ts';
@@ -193,6 +196,36 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         expect.stringContaining('summary.throughputPerSecond does not match raw samples'),
         expect.stringContaining('summary.outcomes.exhausted does not match raw samples'),
         expect.stringContaining('summary.sql.statements does not match sample median'),
+      ]),
+    );
+  });
+
+  it('records durable append resource costs without weakening hard throughput gates', () => {
+    const reasons = STATE_WRITE_REASONS;
+    expect(reasons).toHaveLength(12);
+    expect(
+      new Set(reasons.map(({ workload, metric }) => `${workload}:${metric}`)),
+    ).toEqual(
+      new Set(
+        ['uncontended', 'shared', 'hot'].flatMap((workload) =>
+          [
+            'sql.statements',
+            'sql.rowsRead',
+            'sql.serializedResultBytes',
+            'postgres.transactionDurationMs',
+          ].map((metric) => `${workload}:${metric}`)
+        ),
+      ),
+    );
+
+    const baseline = createStateWritePerformanceArtifact();
+    const candidate = createStateWritePerformanceArtifact();
+    candidate.regressionReasons = [...reasons];
+    setThroughputAdverseRatio(candidate, 0.06);
+    expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('shared throughput regressed by more than 5%'),
+        expect.stringContaining('hot throughput regressed by more than 5%'),
       ]),
     );
   });
