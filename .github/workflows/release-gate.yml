@@ -126,4 +126,7 @@ jobs:
           npm run test:rallar:full-stack:postgres:control
 
       - name: Run Postgres presence-expiry integration tests
-        run: npm run test:postgres:presence-expiry
+        run: |
+          # The second invocation proves retained direct-outbox rows cannot contaminate a later run.
+          npm run test:postgres:presence-expiry
+          npm run test:postgres:presence-expiry
