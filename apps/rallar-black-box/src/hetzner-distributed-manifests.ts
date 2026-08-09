@@ -12,12 +12,14 @@ import {
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
-    createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+import {
+    createHetznerProviderParityRecipe,
+} from './hetzner/create-hetzner-provider-parity-recipe.ts';
 
 export const HETZNER_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -134,7 +136,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             title: 'Provider parity 2-agent',
             description: 'Broader browser-rallar provider parity check for connect, direct, multicast, broadcast, health, close, and reset.',
             distributedRunId: 'hetzner-provider-parity-2-agent',
-            recipe: createHetznerProviderParityRecipe(),
+            recipe: createHetznerProviderParityRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
             agentCount: 2,
             profiles: ['rtc', 'parity'],
             live: true,
@@ -970,62 +972,4 @@ function fixtureRecipe(fixtureId: string): RallarBlackBoxTestRecipe {
         schemaVersion: 1,
         ...fixture.recipe,
     };
-}
-
-function createHetznerProviderParityRecipe(): RallarBlackBoxTestRecipe {
-    const recipe = withoutDemoCredentials(createRallarBlackBoxProviderParityLiveRecipe({
-        group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-        readyPeerCount: 1,
-        readyTimeoutMs: 10_000,
-    }));
-    const closeIndex = recipe.commands.findIndex(command => command.kind === 'close');
-    if (closeIndex < 0) {
-        throw new Error('Provider parity recipe must close its browser runtime.');
-    }
-
-    return {
-        ...recipe,
-        commands: [
-            ...recipe.commands.slice(0, closeIndex),
-            {
-                kind: 'loop',
-                commandId: 'parity-peer-overlap-hold',
-                durationMs: 12_000,
-                intervalMs: 1_000,
-                maxCommands: 12,
-                metadata: {
-                    purpose: 'keep-all-parity-peers-online-through-connect-readiness',
-                },
-                commands: [
-                    {
-                        kind: 'health',
-                        commandId: 'parity-peer-overlap-health',
-                    },
-                ],
-            },
-            ...recipe.commands.slice(closeIndex),
-        ],
-    };
-}
-
-function withoutDemoCredentials(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestRecipe {
-    const copy = structuredClone(recipe) as RallarBlackBoxTestRecipe;
-    for (const command of copy.commands) {
-        if (command.kind !== 'configure') {
-            continue;
-        }
-        const config = command.config as unknown;
-        if (!config || typeof config !== 'object' || Array.isArray(config)) {
-            continue;
-        }
-        const rallar = (config as { rallar?: unknown }).rallar;
-        if (!rallar || typeof rallar !== 'object' || Array.isArray(rallar)) {
-            continue;
-        }
-        delete (rallar as { username?: unknown }).username;
-        delete (rallar as { password?: unknown }).password;
-        delete (rallar as { token?: unknown }).token;
-        delete (rallar as { restoreSession?: unknown }).restoreSession;
-    }
-    return copy;
 }
