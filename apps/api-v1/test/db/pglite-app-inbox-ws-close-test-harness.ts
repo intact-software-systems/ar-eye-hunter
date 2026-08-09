@@ -100,6 +100,8 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
   );
   return {
     authority,
+    runtime,
+    resourceInbox,
     reader,
     secondReader,
     client,
