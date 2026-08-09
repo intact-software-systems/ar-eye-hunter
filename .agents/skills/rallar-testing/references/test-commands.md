@@ -154,9 +154,15 @@ node scripts/perf/compare-api-v1-state-write-results.mjs \
 
 The comparative result gate must pass. It validates artifact correctness,
 receipts/outbox linkage and retry exhaustion, then compares latency,
-throughput, SQL/row/byte counts, and transaction duration. Record the exact
-artifact paths and command output; do not relabel an older diagnostic artifact
-as the governed candidate.
+throughput, SQL/row/byte counts, and transaction duration. Latency and
+throughput comparisons tolerate 5% run-to-run variance; SQL and
+transaction-duration median increases require recorded regression reasons.
+Benchmark each side against a freshly migrated database — a database dirtied
+by an earlier bench run biases the later run's numbers. On noisy hosts,
+escalate to the order-balanced A-B-B-A pooling protocol
+(`pool-api-v1-state-write-results.mjs`) before concluding a regression. Record
+the exact artifact paths and command output; do not relabel an older
+diagnostic artifact as the governed candidate.
 
 ## PostgreSQL Shared-Server Integration
 

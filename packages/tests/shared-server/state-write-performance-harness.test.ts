@@ -10,8 +10,8 @@ import {
 import { swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
-  it('accepts a complete AppInbox/ResourceInbox candidate and legacy baseline', () => {
-    const candidate = createStateWritePerformanceArtifact(true);
+  it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
+    const candidate = createStateWritePerformanceArtifact();
     expect(candidate.measurement.counterSources.outbox).toBe('resource_inbox');
     expect(candidate.measurement.counterSources.attempts).toBe(
       'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation',
@@ -20,12 +20,40 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       [],
     );
     expect(candidate.workloads[0].samples[0].correctness.atomicCompletionFailures).toBe(0);
-    expect(validateStateWriteArtifact(createStateWritePerformanceArtifact(false))).toEqual([]);
+    expect(candidate.features).toBeUndefined();
     expect(validateStateWriteArtifact(candidate)).toEqual([]);
   });
 
+  it('tolerates equal throughput between baseline and candidate', () => {
+    expect(
+      compareStateWriteArtifacts(
+        createStateWritePerformanceArtifact(),
+        createStateWritePerformanceArtifact(),
+      ),
+    ).toEqual([]);
+  });
+
+  it('tolerates throughput variance within 5% and rejects beyond it', () => {
+    const withinTolerance = createStateWritePerformanceArtifact();
+    setThroughputAdverseRatio(withinTolerance, 0.04);
+    expect(
+      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), withinTolerance),
+    ).toEqual([]);
+
+    const beyondTolerance = createStateWritePerformanceArtifact();
+    setThroughputAdverseRatio(beyondTolerance, 0.06);
+    expect(
+      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), beyondTolerance),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('shared throughput regressed by more than 5%'),
+        expect.stringContaining('hot throughput regressed by more than 5%'),
+      ]),
+    );
+  });
+
   it('rejects intermediate intents and service-local attempt evidence', () => {
-    const candidate = createStateWritePerformanceArtifact(true);
+    const candidate = createStateWritePerformanceArtifact();
     const sample = candidate.workloads[0].samples[0];
     sample.durableEvidence.intermediateMutationIntents.push({ intentId: 'forbidden' });
     sample.attemptObservations[0].source = 'group-state-service.mutation.conflict';
@@ -43,7 +71,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       (sample: any) => sample.durableEvidence.receipts.shift(),
       (sample: any) => sample.durableEvidence.resourceOutbox.shift(),
     ]) {
-      const candidate = createStateWritePerformanceArtifact(true);
+      const candidate = createStateWritePerformanceArtifact();
       mutate(candidate.workloads[0].samples[0]);
       refreshStateWritePerformanceWorkload(candidate.workloads[0]);
       expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
@@ -52,19 +80,19 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
 
   it('rejects malformed retry delay, due age, lane, and transaction evidence', () => {
     for (const field of ['retryDelayMs', 'dueAgeMs', 'transactionDurationMs'] as const) {
-      const candidate = createStateWritePerformanceArtifact(true);
+      const candidate = createStateWritePerformanceArtifact();
       candidate.workloads[0].samples[0].durableEvidence.appInbox[0][field] = -1;
       expect(validateStateWriteArtifact(candidate)).toEqual(
         expect.arrayContaining([expect.stringContaining('appInbox[0] is malformed')]),
       );
     }
-    const lane = createStateWritePerformanceArtifact(true);
+    const lane = createStateWritePerformanceArtifact();
     lane.workloads[0].samples[0].durableEvidence.appInbox[0].selectedLane = 'unknown';
     expect(validateStateWriteArtifact(lane)).not.toEqual([]);
   });
 
   it('rejects invented retry history and zero-delay nonterminal conflicts', () => {
-    const invented = createStateWritePerformanceArtifact(true);
+    const invented = createStateWritePerformanceArtifact();
     const inventedSample = invented.workloads[0].samples[0];
     inventedSample.attemptObservations.splice(1, 0, {
       ...inventedSample.attemptObservations[0],
@@ -76,7 +104,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       ]),
     );
 
-    const zeroDelay = createStateWritePerformanceArtifact(true);
+    const zeroDelay = createStateWritePerformanceArtifact();
     const sample = zeroDelay.workloads[0].samples[0];
     const first = sample.attemptObservations[0];
     first.outcome = 'conflicted';
@@ -97,7 +125,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
   });
 
   it('distinguishes typed transient retries from optimistic conflicts', () => {
-    const candidate = createStateWritePerformanceArtifact(true);
+    const candidate = createStateWritePerformanceArtifact();
     const sample = candidate.workloads[0].samples[0];
     const first = sample.attemptObservations[0];
     first.outcome = 'transient-retry';
@@ -122,13 +150,13 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
   });
 
   it('rejects malformed durable results and receipt/effect identity mismatches', () => {
-    const malformed = createStateWritePerformanceArtifact(true);
+    const malformed = createStateWritePerformanceArtifact();
     delete malformed.workloads[0].samples[0].durableEvidence.appInbox[0].durableResult;
     expect(validateStateWriteArtifact(malformed)).toEqual(
       expect.arrayContaining([expect.stringContaining('persisted durable result is malformed')]),
     );
 
-    const mismatched = createStateWritePerformanceArtifact(true);
+    const mismatched = createStateWritePerformanceArtifact();
     mismatched.workloads[0].samples[0].durableEvidence.receipts[0].outboxIds = ['invented-effect'];
     expect(validateStateWriteArtifact(mismatched)).toEqual(
       expect.arrayContaining([
@@ -136,7 +164,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       ]),
     );
 
-    const embeddedTamper = createStateWritePerformanceArtifact(true);
+    const embeddedTamper = createStateWritePerformanceArtifact();
     const embedded = embeddedTamper.workloads[0].samples[0].durableEvidence.appInbox.find(
       (entry: any) => entry.commandType.startsWith('GROUP_PRESENCE_'),
     );
@@ -149,7 +177,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       ]),
     );
 
-    const arbitraryKey = createStateWritePerformanceArtifact(true);
+    const arbitraryKey = createStateWritePerformanceArtifact();
     const client = arbitraryKey.workloads[0].samples[0].durableEvidence.appInbox.find(
       (entry: any) => entry.commandType.startsWith('CLIENT_'),
     );
@@ -158,18 +186,18 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       expect.arrayContaining([expect.stringContaining('persisted durable result is malformed')]),
     );
     for (const prefix of ['CLIENT_', 'GROUP_']) {
-      const swapped = createStateWritePerformanceArtifact(true);
+      const swapped = createStateWritePerformanceArtifact();
       swapCompleteDurableResults(swapped, prefix);
       expect(validateStateWriteArtifact(swapped)).not.toEqual([]);
     }
-    const missingTopologySibling = createStateWritePerformanceArtifact(true);
+    const missingTopologySibling = createStateWritePerformanceArtifact();
     const missingEntry =
       missingTopologySibling.workloads[0].samples[0].durableEvidence.appInbox.find(
         (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
       );
     delete missingEntry.durableResult.config;
     expect(validateStateWriteArtifact(missingTopologySibling)).not.toEqual([]);
-    const swappedTopologySibling = createStateWritePerformanceArtifact(true);
+    const swappedTopologySibling = createStateWritePerformanceArtifact();
     const topologyEntries =
       swappedTopologySibling.workloads[0].samples[0].durableEvidence.appInbox.filter(
         (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
@@ -189,19 +217,19 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       (candidate: any) =>
         (candidate.workloads[0].samples[0].durableEvidence.resourceOutbox[0] = null),
     ]) {
-      const candidate = createStateWritePerformanceArtifact(true);
+      const candidate = createStateWritePerformanceArtifact();
       mutate(candidate);
       expect(() => validateStateWriteArtifact(candidate)).not.toThrow();
       expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
       expect(() =>
-        compareStateWriteArtifacts(createStateWritePerformanceArtifact(false), candidate),
+        compareStateWriteArtifacts(createStateWritePerformanceArtifact(), candidate),
       ).not.toThrow();
     }
   });
 
   it('preserves scale, retry-exhaustion, latency, throughput, and resource gates', () => {
-    const baseline = createStateWritePerformanceArtifact(false);
-    const candidate = createStateWritePerformanceArtifact(true);
+    const baseline = createStateWritePerformanceArtifact();
+    const candidate = createStateWritePerformanceArtifact();
     candidate.workloads[0].scale.clients = 99;
     candidate.workloads[0].summary.latencyMs.p95 *= 2;
     candidate.workloads[1].summary.throughputPerSecond = 1;
@@ -329,3 +357,13 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     });
   });
 });
+
+function setThroughputAdverseRatio(artifact: any, ratio: number): void {
+  for (const workload of artifact.workloads) {
+    for (const sample of workload.samples) {
+      sample.durationMs = 100 / (1 - ratio);
+      sample.throughputPerSecond = 700 / (sample.durationMs / 1000);
+    }
+    refreshStateWritePerformanceWorkload(workload);
+  }
+}

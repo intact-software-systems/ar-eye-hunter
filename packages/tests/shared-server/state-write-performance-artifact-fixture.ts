@@ -22,15 +22,14 @@ interface StateWritePerformanceArtifactOverrides {
 }
 
 export function createStateWritePerformanceArtifact(
-  candidate: boolean,
   overrides: StateWritePerformanceArtifactOverrides = {},
 ): any {
   const measuredRuns = overrides.measuredRuns ?? 3;
   const artifactId = overrides.artifactId ?? 'run';
   const workloads = [
-    createWorkload({ name: 'uncontended', groups: 100, candidate, measuredRuns, artifactId }),
-    createWorkload({ name: 'shared', groups: 5, candidate, measuredRuns, artifactId }),
-    createWorkload({ name: 'hot', groups: 1, candidate, measuredRuns, artifactId }),
+    createWorkload({ name: 'uncontended', groups: 100, measuredRuns, artifactId }),
+    createWorkload({ name: 'shared', groups: 5, measuredRuns, artifactId }),
+    createWorkload({ name: 'hot', groups: 1, measuredRuns, artifactId }),
   ];
   return {
     schemaVersion: STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
@@ -43,19 +42,8 @@ export function createStateWritePerformanceArtifact(
       concurrency: 10,
       mutationTimingExcludes: ['setup', 'auth-session insertion', 'http', 'evidence queries'],
       tailSamplesDiscarded: false,
-      counterSources: createCounterSources(candidate),
+      counterSources: createCounterSources(),
     },
-    features: candidate
-      ? {
-          presenceSplitFromGroupAggregate: true,
-          governance: 'task10-post-remediation-candidate',
-          evidence: 'AppInbox transactional completion and final ResourceInbox effects',
-        }
-      : {
-          presenceSplitFromGroupAggregate: false,
-          governance: 'pre-remediation-baseline',
-          evidence: 'Task 0B baseline recorded before Task 1',
-        },
     regressionReasons: [],
     workloads,
   };
@@ -64,15 +52,14 @@ export function createStateWritePerformanceArtifact(
 interface CreateWorkloadInput {
   readonly name: string;
   readonly groups: number;
-  readonly candidate: boolean;
   readonly measuredRuns: number;
   readonly artifactId: string;
 }
 
 function createWorkload(input: CreateWorkloadInput): any {
-  const { name, groups, candidate, measuredRuns, artifactId } = input;
+  const { name, groups, measuredRuns, artifactId } = input;
   const samples = Array.from({ length: measuredRuns }, (_, index) =>
-    createSample(index, candidate, artifactId),
+    createSample(index, artifactId),
   );
   const workload = {
     name,
@@ -87,7 +74,7 @@ function createWorkload(input: CreateWorkloadInput): any {
   return workload;
 }
 
-function createSample(runIndex: number, candidate: boolean, artifactId: string): any {
+function createSample(runIndex: number, artifactId: string): any {
   const commands = MUTATION_MIX.flatMap((kind) =>
     Array.from({ length: 100 }, (_, ordinal) => ({
       commandId: `${artifactId}-${runIndex}:${kind}:${ordinal}`,
@@ -98,9 +85,9 @@ function createSample(runIndex: number, candidate: boolean, artifactId: string):
     })),
   );
   const latencySamplesMs = commands.map((command) => command.latencyMs);
-  const evidence = candidate ? createFinalEvidence(commands) : createLegacyEvidence(commands);
-  const attemptObservations = createAttemptObservations(commands, evidence, candidate);
-  const required = candidate ? evidence.resourceOutbox.length : evidence.outboxIntents.length;
+  const evidence = createFinalEvidence(commands);
+  const attemptObservations = createAttemptObservations(evidence);
+  const required = evidence.resourceOutbox.length;
   return {
     runIndex,
     durationMs: 100,
@@ -110,7 +97,7 @@ function createSample(runIndex: number, candidate: boolean, artifactId: string):
     commands,
     attemptObservations,
     stackCommandCounts: [350, 350],
-    ...(candidate ? { durableEvidence: evidence } : { durable: evidence }),
+    durableEvidence: evidence,
     outcomes: {
       accepted: 700,
       conflicted: 0,
@@ -132,44 +119,33 @@ function createSample(runIndex: number, candidate: boolean, artifactId: string):
     correctness: {
       acceptedCommandCount: 700,
       receiptCount: 700,
-      effectfulCommandCount: candidate ? 700 : 600,
+      effectfulCommandCount: 700,
       requiredOutboxIntentCount: required,
       outboxIntentCount: required,
-      ...(candidate ? { atomicCompletionFailures: 0 } : {}),
+      atomicCompletionFailures: 0,
       dbwFindings: [],
     },
   };
 }
 
-function createAttemptObservations(commands: any[], evidence: any, candidate: boolean): any[] {
-  return candidate
-    ? evidence.appInbox.flatMap((entry: any) =>
-        Array.from({ length: entry.attempts }, (_, index) => ({
-          commandId: entry.commandId,
-          operationId: entry.operationId,
-          attempt: index + 1,
-          outcome: index + 1 === entry.attempts ? 'accepted' : 'conflicted',
-          terminal: index + 1 === entry.attempts,
-          source: 'resource_inbox.release.telemetry',
-          retryDelayMs: 0,
-          dueAgeMs: 0,
-          selectedLane: 'fast',
-          failure:
-            index + 1 === entry.attempts
-              ? { kind: 'none' }
-              : { kind: 'retryable', code: 'runtime-state-write-conflict', name: 'Error' },
-        })),
-      )
-    : commands.flatMap((command) =>
-        operationIds(command).map((operationId) => ({
-          commandId: command.commandId,
-          operationId,
-          attempt: 1,
-          outcome: 'accepted',
-          terminal: true,
-          source: `${command.kind}.production-operation`,
-        })),
-      );
+function createAttemptObservations(evidence: any): any[] {
+  return evidence.appInbox.flatMap((entry: any) =>
+    Array.from({ length: entry.attempts }, (_, index) => ({
+      commandId: entry.commandId,
+      operationId: entry.operationId,
+      attempt: index + 1,
+      outcome: index + 1 === entry.attempts ? 'accepted' : 'conflicted',
+      terminal: index + 1 === entry.attempts,
+      source: 'resource_inbox.release.telemetry',
+      retryDelayMs: 0,
+      dueAgeMs: 0,
+      selectedLane: 'fast',
+      failure:
+        index + 1 === entry.attempts
+          ? { kind: 'none' }
+          : { kind: 'retryable', code: 'runtime-state-write-conflict', name: 'Error' },
+    })),
+  );
 }
 
 function createFinalEvidence(commands: any[]): any {
@@ -227,33 +203,6 @@ function createFinalEvidence(commands: any[]): any {
   };
 }
 
-function createLegacyEvidence(commands: any[]): any {
-  const kinds: Record<string, string[]> = {
-    'profile-instance': [
-      'client-snapshot:profile',
-      'client-event:profile',
-      'client-snapshot:instance',
-      'client-event:instance',
-    ],
-    membership: ['group-snapshot', 'group-event', 'topology-publication'],
-    'presence-connect': ['group-snapshot', 'group-event', 'topology-publication'],
-    'presence-heartbeat': [],
-    'presence-disconnect': ['group-snapshot', 'group-event', 'topology-publication'],
-    config: ['group-snapshot', 'group-event', 'topology-publication'],
-    'topology-source': ['topology-publication'],
-  };
-  return {
-    receiptCommandIds: commands.map((command) => command.commandId),
-    outboxIntents: commands.flatMap((command) =>
-      kinds[command.kind].map((intentKind, index) => ({
-        intentId: `${command.commandId}:intent:${index}`,
-        commandId: command.commandId,
-        intentKind,
-      })),
-    ),
-  };
-}
-
 function operationIds(command: any): string[] {
   return command.kind === 'profile-instance' ? ['profile', 'instance'] : ['command'];
 }
@@ -299,9 +248,7 @@ function createSummary(samples: any[]): any {
         samples.map((sample) => sample.correctness.requiredOutboxIntentCount),
       ),
       outboxIntentCount: sum(samples.map((sample) => sample.correctness.outboxIntentCount)),
-      ...(samples[0].correctness.atomicCompletionFailures === undefined
-        ? {}
-        : { atomicCompletionFailures: 0 }),
+      atomicCompletionFailures: 0,
       dbwFindings: [],
     },
   };
@@ -317,7 +264,7 @@ function toPercentiles(values: number[]): { p50: number; p95: number; p99: numbe
   return { p50: at(0.5), p95: at(0.95), p99: at(0.99) };
 }
 
-function createCounterSources(candidate: boolean): Record<string, string> {
+function createCounterSources(): Record<string, string> {
   return {
     sql: 'instrumented postgres.js',
     rowsRead: 'returned SQL rows',
@@ -332,12 +279,10 @@ function createCounterSources(candidate: boolean): Record<string, string> {
     validateTiming: 'AppInbox validate phase',
     writeTiming: 'AppInbox write phase',
     outboxTiming: 'ResourceInbox SQL',
-    attempts: candidate
-      ? 'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation'
-      : 'legacy service timing',
+    attempts: 'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation',
     receipts: 'same-observation mutation receipts',
-    outboxIntents: 'legacy compatibility disclosure',
-    ...(candidate ? { outbox: 'resource_inbox' } : {}),
+    outboxIntents: 'ResourceInbox effect disclosure',
+    outbox: 'resource_inbox',
   };
 }
 

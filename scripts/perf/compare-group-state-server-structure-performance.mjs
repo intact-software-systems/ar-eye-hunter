@@ -19,8 +19,6 @@ const RESOURCE_METRICS = [
   { owner: 'postgres', metric: 'transactionDurationMs' },
 ];
 const WORKLOAD_NAMES = ['uncontended', 'shared', 'hot'];
-const SHARED_IMPROVEMENT_ERROR =
-  'shared throughput must improve after presence is split from the group aggregate';
 
 export function compareGroupStateServerStructurePerformance(baseline, candidate) {
   const globalErrors = compareStateWriteArtifacts(baseline, candidate);
@@ -56,6 +54,7 @@ export function applyGroupStateServerStructurePerformancePolicy(input) {
     baselineByName,
     candidateByName,
     permittedGlobalErrors,
+    childErrors,
   });
   applyResourcePolicy({
     baseline,
@@ -72,23 +71,22 @@ export function applyGroupStateServerStructurePerformancePolicy(input) {
 function applyThroughputPolicy(input) {
   const sharedBaseline = getThroughput(input.baselineByName, 'shared');
   const sharedCandidate = getThroughput(input.candidateByName, 'shared');
-  if (
-    isAdverseWithinRatio(
-      sharedBaseline,
-      sharedCandidate,
-      GROUP_STATE_SERVER_STRUCTURE_EQUIVALENCE_RATIO,
-    )
-  ) {
-    input.permittedGlobalErrors.add(SHARED_IMPROVEMENT_ERROR);
-    input.permittedGlobalErrors.add(
-      toThroughputRegressionError('shared', sharedBaseline, sharedCandidate),
+  if (sharedCandidate < sharedBaseline * (1 - GROUP_STATE_SERVER_STRUCTURE_EQUIVALENCE_RATIO)) {
+    input.childErrors.push(
+      toStructureThroughputBandError('shared', sharedBaseline, sharedCandidate),
     );
   }
 
   const hotBaseline = getThroughput(input.baselineByName, 'hot');
   const hotCandidate = getThroughput(input.candidateByName, 'hot');
-  if (isAdverseWithinRatio(hotBaseline, hotCandidate, 0.1)) {
-    input.permittedGlobalErrors.add(toThroughputRegressionError('hot', hotBaseline, hotCandidate));
+  if (hotCandidate < hotBaseline * 0.9) {
+    input.childErrors.push(toStructureThroughputBandError('hot', hotBaseline, hotCandidate));
+  } else {
+    // Must equal the global comparator's compareMinimumThroughput message exactly.
+    input.permittedGlobalErrors.add(
+      `hot throughput regressed by more than 5%: ` +
+        `baseline=${hotBaseline}, candidate=${hotCandidate}`,
+    );
   }
 }
 
@@ -170,10 +168,6 @@ function hasRegressionReason(candidate, workload, metric) {
       entry.metric === metric &&
       isSubstantiveRegressionReason(entry.reason),
   );
-}
-
-function isAdverseWithinRatio(baseline, candidate, maximumRatio) {
-  return baseline === 0 ? candidate === 0 : candidate >= baseline * (1 - maximumRatio);
 }
 
 function conflictDepth(workload) {
@@ -331,8 +325,13 @@ function toNonNegativeNumber(value) {
   return value;
 }
 
-function toThroughputRegressionError(workloadName, baseline, candidate) {
-  return `${workloadName} throughput regressed: baseline=${baseline}, candidate=${candidate}`;
+const STRUCTURE_THROUGHPUT_BANDS = { shared: '1.5%', hot: '10%' };
+
+function toStructureThroughputBandError(workloadName, baseline, candidate) {
+  return (
+    `${workloadName} throughput fell below the ${STRUCTURE_THROUGHPUT_BANDS[workloadName]} ` +
+    `structure-equivalence band: baseline=${baseline}, candidate=${candidate}`
+  );
 }
 
 function toResourceRegressionError(input) {

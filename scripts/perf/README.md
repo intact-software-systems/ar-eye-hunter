@@ -125,7 +125,7 @@ membership, presence connect/heartbeat/disconnect, group config, and topology
 source config. Workload group counts are 100 (`uncontended`), five (`shared`),
 and one (`hot`).
 
-Artifacts use schema `rallar.api-v1.state-write.v4`. Each measured run retains
+Artifacts use schema `rallar.api-v1.state-write.v5`. Each measured run retains
 exactly 700 command records and latencies (100 of every mutation kind), balanced
 service-stack counts, and durable AppInbox attempt observations.
 It also includes latency percentiles, throughput, SQL/row/serialized-byte
@@ -139,7 +139,7 @@ reconciled exactly with durable `resource_inbox.ri_attempts` values for
 `APP_INBOX` rows. Each operation has a one-based attempt number, observed retry
 delay and due age, selected `fast`, `fairness`, or `timeout` lane, and a final
 accepted or exhausted outcome. Profile and instance remain separate operations;
-the other mutation kinds use one command operation. Candidate artifacts reject
+the other mutation kinds use one command operation. Both comparison roles reject
 service-local retry timing, invented attempt expansion, and synthetic
 prerequisite records. Every release carries the actual typed exception
 code/name, or an explicit no-failure marker for acceptance. Only recognized
@@ -179,20 +179,19 @@ node scripts/perf/compare-api-v1-state-write-results.mjs \
 ```
 
 The comparison rejects invalid artifacts, uncontended p95/p99 regressions above
-5%, shared or hot throughput regressions, unreasoned median SQL/row/byte/
-transaction increases, disallowed retry exhaustion, and any candidate receipt or
-outbox contract failure. A candidate must declare the governed Task 10
-presence-split feature with evidence and must improve shared-group throughput.
-Consequently, comparing a pre-remediation baseline with itself is expected to
-fail. A baseline correctness failure remains a failure sample and must link to a
-DBW finding; it never weakens candidate expectations. The validator recomputes
-all percentiles, throughput, outcome, attempt, median, and correctness summaries
-from raw records before applying comparison gates. Standalone validation
-preserves the immutable governed pre-remediation legacy contract. A
-non-candidate production diagnostic may retain only the exact DBW-06/DBW-12
-topology-source receipt/effect gap. Candidate comparison always applies the
-production durable contract with strict unique receipt/final-effect ID, command, and
-effect linkage; candidate DBW tags cannot waive those invariants.
+5%, shared or hot throughput regressions above 5%, unreasoned median
+SQL/row/byte/transaction increases, disallowed retry exhaustion, and any
+baseline or candidate receipt or outbox contract failure. Comparing an artifact
+with itself passes: the gate asserts no-regression within tolerance, not
+improvement. Benchmark each side against a freshly migrated database; on noisy
+hosts use the order-balanced A-B-B-A pooling protocol
+(`pool-api-v1-state-write-results.mjs`) before concluding a regression. A
+correctness failure on either side is a comparison failure. The validator
+recomputes all percentiles, throughput, outcome, attempt, median, and
+correctness summaries from raw records before applying comparison gates. Both
+roles are validated against the production durable contract with strict unique
+receipt/final-effect ID, command, and effect linkage; DBW tags cannot waive
+those invariants.
 DBW retention never waives record structure: every receipt is a nonempty raw
 command ID, every final ResourceInbox record has nonempty effect/command/topic/type
 identity and a raw-command reference, and finding IDs must match the governed `DBW-...`
@@ -206,7 +205,7 @@ All contract arrays must be dense: workloads, samples, raw commands, attempt and
 latency records, stack counts, AppInbox rows, receipts, ResourceInbox effects,
 DBW findings, mutation
 mix/exclusions, and regression reasons reject JavaScript holes before any
-iteration, equality check, derivation, or baseline waiver.
+iteration, equality check, or derivation.
 
 Resource-regression reasons contain exactly `workload`, `metric`, and `reason`.
 The workload must be uncontended, shared, or hot; the metric must be one of

@@ -7,27 +7,8 @@ import {
   validateReceiptResultBindings,
 } from './api-v1-state-write-result-binding.mjs';
 
-export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v4';
+export const STATE_WRITE_ARTIFACT_SCHEMA_VERSION = 'rallar.api-v1.state-write.v5';
 export const STATE_WRITE_COMMANDS_PER_RUN = 700;
-
-export const LEGACY_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
-  'profile-instance': Object.freeze([
-    'client-snapshot:profile',
-    'client-event:profile',
-    'client-snapshot:instance',
-    'client-event:instance',
-  ]),
-  membership: Object.freeze(['group-snapshot', 'group-event', 'topology-publication']),
-  'presence-connect': Object.freeze(['group-snapshot', 'group-event', 'topology-publication']),
-  'presence-heartbeat': Object.freeze([]),
-  'presence-disconnect': Object.freeze([
-    'group-snapshot',
-    'group-event',
-    'topology-publication',
-  ]),
-  config: Object.freeze(['group-snapshot', 'group-event', 'topology-publication']),
-  'topology-source': Object.freeze(['topology-publication']),
-});
 
 export const PRODUCTION_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
   'profile-instance': Object.freeze([
@@ -44,14 +25,12 @@ export const PRODUCTION_STATE_WRITE_MUTATION_CONTRACT = Object.freeze({
   'topology-source': Object.freeze(['rtc-topology-recompute']),
 });
 
-export const STATE_WRITE_MUTATION_CONTRACT = LEGACY_STATE_WRITE_MUTATION_CONTRACT;
-
 const WORKLOADS = new Map([
   ['uncontended', { clients: 100, groups: 100, concurrency: 10 }],
   ['shared', { clients: 100, groups: 5, concurrency: 10 }],
   ['hot', { clients: 100, groups: 1, concurrency: 10 }],
 ]);
-const MUTATION_MIX = Object.keys(LEGACY_STATE_WRITE_MUTATION_CONTRACT);
+const MUTATION_MIX = Object.keys(PRODUCTION_STATE_WRITE_MUTATION_CONTRACT);
 const TIMING_BUCKETS = ['read', 'compute', 'validate', 'write', 'transaction', 'outbox'];
 const SQL_METRICS = ['statements', 'rowsRead', 'serializedResultBytes'];
 const POSTGRES_METRICS = [
@@ -103,12 +82,9 @@ const REGRESSION_REASON_METRICS = new Set([
   'postgres.transactionDurationMs',
 ]);
 
-export function validateStateWriteArtifact(
-  artifact,
-  options = {},
-) {
+export function validateStateWriteArtifact(artifact) {
   try {
-    return validateStateWriteArtifactInternal(artifact, options);
+    return validateStateWriteArtifactInternal(artifact);
   } catch (error) {
     return [
       `artifact contains malformed nested data that could not be derived safely: ${
@@ -118,10 +94,7 @@ export function validateStateWriteArtifact(
   }
 }
 
-function validateStateWriteArtifactInternal(
-  artifact,
-  { allowDbwLinkedDurableDefects = true } = {},
-) {
+function validateStateWriteArtifactInternal(artifact) {
   const errors = [];
   if (!isObject(artifact)) {
     return ['artifact must be an object'];
@@ -142,11 +115,7 @@ function validateStateWriteArtifactInternal(
   }
 
   validateMeasurement(artifact.measurement, errors);
-  validateFeatures(artifact.features, errors);
-  const durableContract = durableContractForArtifact(artifact);
-  if (durableContract.name === 'production') {
-    validateFinalEvidenceSources(artifact.measurement, errors);
-  }
+  validateFinalEvidenceSources(artifact.measurement, errors);
 
   if (!isDenseArray(artifact.workloads)) {
     errors.push('workloads must be a dense array');
@@ -162,14 +131,7 @@ function validateStateWriteArtifactInternal(
     errors.push('workloads must contain uncontended, shared, and hot exactly once');
   }
   for (const [index, workload] of artifact.workloads.entries()) {
-    validateWorkload(
-      workload,
-      artifact.measurement,
-      `workloads[${index}]`,
-      errors,
-      allowDbwLinkedDurableDefects,
-      durableContract,
-    );
+    validateWorkload(workload, artifact.measurement, `workloads[${index}]`, errors);
   }
   validateRegressionReasons(artifact.regressionReasons, errors);
   return errors;
@@ -189,13 +151,10 @@ export function compareStateWriteArtifacts(baseline, candidate) {
 
 function compareStateWriteArtifactsInternal(baseline, candidate) {
   const baselineValidation = validateStateWriteArtifact(baseline);
-  const candidateValidation = validateStateWriteArtifact(candidate, {
-    allowDbwLinkedDurableDefects: false,
-  });
+  const candidateValidation = validateStateWriteArtifact(candidate);
   const errors = [
     ...baselineValidation.map((error) => `baseline: ${error}`),
     ...candidateValidation.map((error) => `candidate: ${error}`),
-    ...validateCandidatePresenceSplit(candidate),
   ];
   appendCorrectnessGateErrors(errors, baseline, candidate);
   if (errors.length > 0) {
@@ -222,20 +181,13 @@ function compareStateWriteArtifactsInternal(baseline, candidate) {
   );
 
   for (const name of ['shared', 'hot']) {
-    const baselineThroughput = baselineByName.get(name).throughputPerSecond;
-    const candidateThroughput = candidateByName.get(name).throughputPerSecond;
-    if (candidateThroughput < baselineThroughput) {
-      errors.push(
-        `${name} throughput regressed: baseline=${baselineThroughput}, ` +
-          `candidate=${candidateThroughput}`,
-      );
-    }
-  }
-  if (
-    candidateByName.get('shared').throughputPerSecond <=
-      baselineByName.get('shared').throughputPerSecond
-  ) {
-    errors.push('shared throughput must improve after presence is split from the group aggregate');
+    compareMinimumThroughput(
+      errors,
+      `${name} throughput`,
+      baselineByName.get(name).throughputPerSecond,
+      candidateByName.get(name).throughputPerSecond,
+      0.05,
+    );
   }
 
   for (const name of WORKLOADS.keys()) {
@@ -293,13 +245,8 @@ function appendCorrectnessGateErrors(errors, baseline, candidate) {
     if (!baselineCorrectness || !candidateCorrectness) {
       continue;
     }
-    const baselineFailures = correctnessFailures(baselineCorrectness);
-    if (baselineFailures.length > 0 && baselineCorrectness.dbwFindings.length === 0) {
-      errors.push(
-        `${name} baseline correctness already fails (${
-          baselineFailures.join(', ')
-        }) but has no DBW finding linkage`,
-      );
+    for (const failure of correctnessFailures(baselineCorrectness)) {
+      errors.push(`${name} baseline correctness failed: ${failure}`);
     }
     for (const failure of correctnessFailures(candidateCorrectness)) {
       errors.push(`${name} candidate correctness failed: ${failure}`);
@@ -369,36 +316,6 @@ function validateFinalEvidenceSources(measurement, errors) {
   }
 }
 
-function validateFeatures(features, errors) {
-  if (!isObject(features)) {
-    errors.push('features must be an object with governed presence-split metadata');
-    return;
-  }
-  if (typeof features.presenceSplitFromGroupAggregate !== 'boolean') {
-    errors.push('features.presenceSplitFromGroupAggregate must be boolean');
-  }
-  for (const field of ['governance', 'evidence']) {
-    if (typeof features[field] !== 'string' || features[field].trim().length === 0) {
-      errors.push(`features.${field} must be a non-empty string`);
-    }
-  }
-}
-
-function durableContractForArtifact(artifact) {
-  return artifact?.features?.governance === 'pre-remediation-baseline'
-    ? {
-      name: 'legacy',
-      mutations: LEGACY_STATE_WRITE_MUTATION_CONTRACT,
-      topologyDiagnostic: false,
-    }
-    : {
-      name: 'production',
-      mutations: PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
-      topologyDiagnostic:
-        artifact?.features?.governance === 'task4-production-evidence-diagnostic',
-    };
-}
-
 function validateRegressionReasons(reasons, errors) {
   if (!isDenseArray(reasons)) {
     errors.push('regressionReasons must be a dense array');
@@ -431,30 +348,7 @@ export function isSubstantiveRegressionReason(value) {
   return typeof value === 'string' && value.replaceAll(/\s/g, '').length >= 10;
 }
 
-function validateCandidatePresenceSplit(candidate) {
-  const features = candidate?.features;
-  if (
-    features?.presenceSplitFromGroupAggregate !== true ||
-    features?.governance !== 'task10-post-remediation-candidate' ||
-    typeof features?.evidence !== 'string' ||
-    features.evidence.trim().length === 0
-  ) {
-    return [
-      'candidate must declare presenceSplitFromGroupAggregate=true with ' +
-      'task10-post-remediation-candidate governance and evidence',
-    ];
-  }
-  return [];
-}
-
-function validateWorkload(
-  workload,
-  measurement,
-  path,
-  errors,
-  allowDbwLinkedDurableDefects,
-  durableContract,
-) {
+function validateWorkload(workload, measurement, path, errors) {
   if (!isObject(workload)) {
     errors.push(`${path} must be an object`);
     return;
@@ -487,17 +381,10 @@ function validateWorkload(
     );
   } else {
     for (const [index, sample] of workload.samples.entries()) {
-      validateSample(
-        sample,
-        `${path}.samples[${index}]`,
-        index,
-        errors,
-        allowDbwLinkedDurableDefects,
-        durableContract,
-      );
+      validateSample(sample, `${path}.samples[${index}]`, index, errors);
     }
     if (workload.samples.length > 0 && workload.samples.every(canDeriveWorkloadSample)) {
-      const derived = deriveWorkloadSummary(workload.samples, durableContract.mutations);
+      const derived = deriveWorkloadSummary(workload.samples);
       validateDerivedSummary(workload.summary, derived, `${path}.summary`, errors);
     } else if (workload.samples.length > 0) {
       errors.push(`${path}.summary cannot be derived from structurally malformed samples`);
@@ -505,14 +392,7 @@ function validateWorkload(
   }
 }
 
-function validateSample(
-  sample,
-  path,
-  runIndex,
-  errors,
-  allowDbwLinkedDurableDefects,
-  durableContract,
-) {
+function validateSample(sample, path, runIndex, errors) {
   validateMetrics(sample, path, errors);
   if (!isObject(sample)) {
     return;
@@ -595,15 +475,11 @@ function validateSample(
     errors.push(`${path}.stackCommandCounts does not match raw commands`);
   }
 
-  const dbwFindings = Array.isArray(sample.correctness?.dbwFindings)
-    ? sample.correctness.dbwFindings
-    : [];
   const attempts = deriveAttempts(
     sample.attemptObservations,
     commandsById,
     path,
     errors,
-    durableContract,
     sample.durableEvidence?.appInbox,
   );
   compareNumber(
@@ -641,15 +517,7 @@ function validateSample(
     errors,
     'attempt observations',
   );
-  const durable = deriveDurableCorrectness(
-    sample,
-    commandsById,
-    dbwFindings,
-    path,
-    errors,
-    allowDbwLinkedDurableDefects,
-    durableContract,
-  );
+  const durable = deriveFinalDurableCorrectness(sample, commandsById, path, errors);
   compareNumber(
     sample.correctness?.acceptedCommandCount,
     attempts.accepted,
@@ -717,7 +585,6 @@ function deriveAttempts(
   commandsById,
   path,
   errors,
-  durableContract,
   appInboxEvidence,
 ) {
   if (!isDenseArray(observations)) {
@@ -746,9 +613,7 @@ function deriveAttempts(
     if (typeof observation.source !== 'string' || observation.source.trim().length === 0) {
       errors.push(`${observationPath}.source must disclose a timing-sink source`);
     }
-    if (durableContract.name === 'production') {
-      validateAttemptFailure(observation, observationPath, errors);
-    }
+    validateAttemptFailure(observation, observationPath, errors);
     const terminalOutcome = observation.outcome === 'accepted' ||
       observation.outcome === 'exhausted';
     if (observation.terminal !== terminalOutcome) {
@@ -767,9 +632,6 @@ function deriveAttempts(
   const historiesByCommand = new Map(
     [...commandsById.keys()].map((commandId) => [commandId, []]),
   );
-  const commandOrderById = new Map(
-    [...commandsById.keys()].map((commandId, index) => [commandId, index]),
-  );
   for (const [historyKey, history] of histories) {
     const separator = historyKey.indexOf('\u0000');
     const commandId = historyKey.slice(0, separator);
@@ -782,70 +644,17 @@ function deriveAttempts(
         'state-write-command-envelope.prerequisite-exhausted:',
       );
     if (prerequisiteHistory) {
-      if (durableContract.name === 'production') {
-        errors.push(`${path}: ${commandId}/${operationId} service-local prerequisite evidence is forbidden`);
-      }
-      const prerequisite = history[0].source.slice(
-        'state-write-command-envelope.prerequisite-exhausted:'.length,
+      errors.push(
+        `${path}: ${commandId}/${operationId} service-local prerequisite evidence is forbidden`,
       );
-      const kind = commandsById.get(commandId)?.kind;
-      const validPair = prerequisite === 'membership'
-        ? kind === 'presence-connect' || kind === 'presence-heartbeat' ||
-          kind === 'presence-disconnect'
-        : prerequisite === 'presence-connect'
-        ? kind === 'presence-heartbeat' || kind === 'presence-disconnect'
-        : false;
-      if (!validPair) {
-        errors.push(`${path}: ${commandId}/${operationId} invalid prerequisite-exhausted command pair`);
-      } else {
-        const dependent = commandsById.get(commandId);
-        const identity = parseRawCommandClientIdentity(dependent);
-        const prerequisiteCommandId = identity === undefined
-          ? undefined
-          : `${identity.prefix}:${prerequisite}:${identity.clientOrdinal}`;
-        const prerequisiteCommand = prerequisiteCommandId === undefined
-          ? undefined
-          : commandsById.get(prerequisiteCommandId);
-        if (!prerequisiteCommand || prerequisiteCommand.kind !== prerequisite) {
-          errors.push(
-            `${path}: ${commandId}/${operationId} missing same-client prerequisite command`,
-          );
-        } else {
-          if (
-            (commandOrderById.get(prerequisiteCommandId) ?? Number.MAX_SAFE_INTEGER) >=
-              (commandOrderById.get(commandId) ?? -1) ||
-            MUTATION_MIX.indexOf(prerequisiteCommand.kind) >= MUTATION_MIX.indexOf(dependent.kind)
-          ) {
-            errors.push(
-              `${path}: ${commandId}/${operationId} prerequisite command must precede dependent command`,
-            );
-          }
-          if (prerequisiteCommand.status !== 'exhausted') {
-            errors.push(
-              `${path}: ${commandId}/${operationId} prerequisite command must be production-exhausted`,
-            );
-          } else {
-            const prerequisiteHistory = histories.get(
-              `${prerequisiteCommandId}\u0000command`,
-            );
-            if (!isRealGroupProductionExhaustion(prerequisiteHistory)) {
-              errors.push(
-                `${path}: ${commandId}/${operationId} prerequisite command must end in ` +
-                  'production conflict exhaustion',
-              );
-            }
-          }
-        }
-      }
     }
     const expectedFirstAttempt = 1;
     if (firstAttempt !== expectedFirstAttempt) {
       errors.push(
-        `${path}: ${commandId}/${operationId} ${durableContract.name} attempts must ` +
-          `start at ${expectedFirstAttempt}`,
+        `${path}: ${commandId}/${operationId} attempts must start at ${expectedFirstAttempt}`,
       );
     }
-    if (durableContract.name === 'production' && !prerequisiteHistory) {
+    if (!prerequisiteHistory) {
       for (const observation of history) {
         if (
           observation.source !== 'resource_inbox.release.telemetry' ||
@@ -869,7 +678,7 @@ function deriveAttempts(
         break;
       }
     }
-    if (durableContract.name === 'production' && !prerequisiteHistory) {
+    if (!prerequisiteHistory) {
       const durableAttempt = Array.isArray(appInboxEvidence)
         ? appInboxEvidence.find((entry) => entry?.commandId === commandId &&
           entry?.operationId === operationId)
@@ -1022,136 +831,6 @@ function parseRawCommandClientIdentity(command) {
     return undefined;
   }
   return { prefix, clientOrdinal };
-}
-
-function isRealGroupProductionExhaustion(history) {
-  return Array.isArray(history) && history.length >= 2 &&
-    history.slice(0, -1).every((observation) =>
-      observation.outcome === 'conflicted' && observation.terminal === false &&
-      observation.source === 'group-state-service.mutation.conflict'
-    ) &&
-    history.at(-1)?.outcome === 'exhausted' && history.at(-1)?.terminal === true &&
-    history.at(-1)?.source === 'group-state-service.mutation.conflict';
-}
-
-function deriveDurableCorrectness(
-  sample,
-  commandsById,
-  dbwFindings,
-  path,
-  errors,
-  allowDbwLinkedDurableDefects,
-  durableContract,
-) {
-  if (durableContract.name === 'production' && !durableContract.topologyDiagnostic) {
-    return deriveFinalDurableCorrectness(sample, commandsById, path, errors);
-  }
-  const receipts = sample.durable?.receiptCommandIds;
-  const intents = sample.durable?.outboxIntents;
-  const receiptIds = Array.isArray(receipts) ? receipts : [];
-  const intentRecords = Array.isArray(intents) ? intents : [];
-  if (!isDenseArray(receipts)) {
-    errors.push(`${path}.durable.receiptCommandIds must be a dense array`);
-  }
-  if (!isDenseArray(intents)) {
-    errors.push(`${path}.durable.outboxIntents must be a dense array`);
-  }
-  const canRetainLegacyBaselineDefect = durableContract.name === 'legacy' &&
-    allowDbwLinkedDurableDefects &&
-    dbwFindings.length > 0 && dbwFindings.every(isValidDbwFinding);
-  const canRetainTopologyDiagnostic = durableContract.name === 'production' &&
-    durableContract.topologyDiagnostic === true &&
-    allowDbwLinkedDurableDefects && dbwFindings.length === 2 &&
-    new Set(dbwFindings).size === 2 &&
-    dbwFindings.includes('DBW-06') && dbwFindings.includes('DBW-12');
-  const acceptedCommands = [...commandsById.values()].filter((command) =>
-    command.status === 'accepted'
-  );
-  for (const [index, receiptCommandId] of receiptIds.entries()) {
-    if (
-      typeof receiptCommandId !== 'string' || receiptCommandId.trim().length === 0 ||
-      !commandsById.has(receiptCommandId)
-    ) {
-      errors.push(
-        `${path}.durable.receiptCommandIds[${index}] must be a non-empty raw command ID`,
-      );
-    }
-  }
-  const receiptSet = new Set(receiptIds);
-  if (receiptSet.size !== receiptIds.length && !canRetainLegacyBaselineDefect) {
-    errors.push(`${path}.durable receipt command IDs must be unique`);
-  }
-  const acceptedIds = acceptedCommands.map((command) => command.commandId).sort();
-  const acceptedNonTopologyIds = acceptedCommands
-    .filter((command) => command.kind !== 'topology-source')
-    .map((command) => command.commandId)
-    .sort();
-  const exactTopologyReceiptGap = canRetainTopologyDiagnostic &&
-    sameStringArray([...receiptSet].sort(), acceptedNonTopologyIds);
-  if (
-    !sameStringArray([...receiptSet].sort(), acceptedIds) &&
-    !canRetainLegacyBaselineDefect && !exactTopologyReceiptGap
-  ) {
-    errors.push(`${path}.durable receipts must match accepted command IDs exactly`);
-  }
-
-  const intentIds = intentRecords.map((intent) => intent?.intentId);
-  if (new Set(intentIds).size !== intentIds.length && !canRetainLegacyBaselineDefect) {
-    errors.push(`${path}.durable outbox intent IDs must be unique`);
-  }
-  const expected = acceptedCommands.flatMap((command) =>
-    (durableContract.mutations[command.kind] ?? []).map((intentKind, index) =>
-      durableContract.name === 'legacy'
-        ? `${command.commandId}:intent:${index}\u0000${command.commandId}\u0000${intentKind}`
-        : `${command.commandId}\u0000${intentKind}`
-    )
-  ).sort();
-  const actual = intentRecords.map((intent, index) => {
-    if (
-      !isObject(intent) ||
-      typeof intent.intentId !== 'string' || intent.intentId.trim().length === 0 ||
-      typeof intent.commandId !== 'string' || intent.commandId.trim().length === 0 ||
-      !commandsById.has(intent.commandId) ||
-      typeof intent.intentKind !== 'string' || intent.intentKind.trim().length === 0
-    ) {
-      errors.push(
-        `${path}.durable.outboxIntents[${index}] must contain non-empty intentId, commandId, ` +
-          'and intentKind fields and reference a raw command',
-      );
-    }
-    return durableContract.name === 'legacy'
-      ? `${intent?.intentId}\u0000${intent?.commandId}\u0000${intent?.intentKind}`
-      : `${intent?.commandId}\u0000${intent?.intentKind}`;
-  }).sort();
-  const expectedWithoutTopology = acceptedCommands
-    .filter((command) => command.kind !== 'topology-source')
-    .flatMap((command) =>
-      (durableContract.mutations[command.kind] ?? []).map((intentKind) =>
-        `${command.commandId}\u0000${intentKind}`
-      )
-    ).sort();
-  const exactTopologyIntentGap = canRetainTopologyDiagnostic &&
-    sameStringArray(actual, expectedWithoutTopology);
-  if (
-    !sameStringArray(actual, expected) &&
-    !canRetainLegacyBaselineDefect && !exactTopologyIntentGap
-  ) {
-    errors.push(
-      `${path}.durable outbox intents do not match the mutation contract ` +
-        `(${durableContract.name} durable contract)`,
-    );
-  }
-  const effectfulCommandCount =
-    acceptedCommands.filter((command) =>
-      (durableContract.mutations[command.kind]?.length ?? 0) > 0
-    )
-      .length;
-  return {
-    receiptCount: receiptIds.length,
-    effectfulCommandCount,
-    requiredOutboxIntentCount: expected.length,
-    outboxIntentCount: intentRecords.length,
-  };
 }
 
 function deriveFinalDurableCorrectness(sample, commandsById, path, errors) {
@@ -1317,10 +996,6 @@ function embeddedResultReceipt(entry) {
     : undefined;
 }
 
-function hasExactKeys(value, keys) {
-  return isObject(value) && sameStringArray(Object.keys(value).toSorted(), [...keys].toSorted());
-}
-
 function deriveAtomicCompletionFailures(commands, appInbox, receipts, resourceOutbox) {
   return commands.filter((command) => {
     const expectedOperations = command.kind === 'profile-instance'
@@ -1416,14 +1091,11 @@ function canDeriveWorkloadSample(sample) {
       typeof observation.terminal === 'boolean' &&
       typeof observation.source === 'string'
     ) &&
-    ((isObject(sample.durable) &&
-      isDenseArray(sample.durable.receiptCommandIds) &&
-      isDenseArray(sample.durable.outboxIntents)) ||
-      (isObject(sample.durableEvidence) &&
-        isDenseArray(sample.durableEvidence.appInbox) &&
-        isDenseArray(sample.durableEvidence.receipts) &&
-        isDenseArray(sample.durableEvidence.resourceOutbox) &&
-        isDenseArray(sample.durableEvidence.intermediateMutationIntents))) &&
+    isObject(sample.durableEvidence) &&
+    isDenseArray(sample.durableEvidence.appInbox) &&
+    isDenseArray(sample.durableEvidence.receipts) &&
+    isDenseArray(sample.durableEvidence.resourceOutbox) &&
+    isDenseArray(sample.durableEvidence.intermediateMutationIntents) &&
     isObject(sample.correctness) &&
     isDenseArray(sample.correctness.dbwFindings) &&
     isObject(sample.sql) &&
@@ -1431,7 +1103,7 @@ function canDeriveWorkloadSample(sample) {
     isObject(sample.timingsMs);
 }
 
-function deriveWorkloadSummary(samples, mutationContract) {
+function deriveWorkloadSummary(samples) {
   const latencySamples = samples.flatMap((sample) =>
     sample.commands.map((command) => command.latencyMs)
   );
@@ -1467,14 +1139,12 @@ function deriveWorkloadSummary(samples, mutationContract) {
     timingsMs: medianObject(samples.map((sample) => sample.timingsMs)),
     correctness: {
       acceptedCommandCount: accepted,
-      receiptCount: sum(samples.map((sample) =>
-        sample.durableEvidence?.receipts?.length ?? sample.durable.receiptCommandIds.length
-      )),
+      receiptCount: sum(samples.map((sample) => sample.durableEvidence.receipts.length)),
       effectfulCommandCount: sum(
         samples.map((sample) =>
           sample.commands.filter((command) =>
             command.status === 'accepted' &&
-            mutationContract[command.kind].length > 0
+            PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0
           ).length
         ),
       ),
@@ -1482,21 +1152,17 @@ function deriveWorkloadSummary(samples, mutationContract) {
         sample.commands.reduce(
           (total, command) =>
             total + (
-              command.status === 'accepted' ? mutationContract[command.kind].length : 0
+              command.status === 'accepted'
+                ? PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length
+                : 0
             ),
           0,
         )
       )),
-      outboxIntentCount: sum(samples.map((sample) =>
-        sample.durableEvidence?.resourceOutbox?.length ?? sample.durable.outboxIntents.length
+      outboxIntentCount: sum(samples.map((sample) => sample.durableEvidence.resourceOutbox.length)),
+      atomicCompletionFailures: sum(samples.map((sample) =>
+        sample.durableEvidence.atomicCompletionFailures ?? 0
       )),
-      ...(samples.some((sample) => sample.durableEvidence)
-        ? {
-          atomicCompletionFailures: sum(samples.map((sample) =>
-            sample.durableEvidence?.atomicCompletionFailures ?? 0
-          )),
-        }
-        : {}),
       dbwFindings,
     },
   };
@@ -1585,10 +1251,9 @@ function validateDerivedSummary(summary, derived, path, errors) {
 }
 
 function derivedWorkloads(artifact) {
-  const contract = durableContractForArtifact(artifact).mutations;
   return new Map(artifact.workloads.map((workload) => [
     workload.name,
-    deriveWorkloadSummary(workload.samples, contract),
+    deriveWorkloadSummary(workload.samples),
   ]));
 }
 
@@ -1596,12 +1261,14 @@ function correctnessFailures(correctness) {
   const failures = [];
   if (correctness.acceptedCommandCount !== correctness.receiptCount) {
     failures.push(
-      `accepted commands (${correctness.acceptedCommandCount}) != receipts (${correctness.receiptCount})`,
+      `accepted commands (${correctness.acceptedCommandCount}) != ` +
+        `receipts (${correctness.receiptCount})`,
     );
   }
   if (correctness.requiredOutboxIntentCount !== correctness.outboxIntentCount) {
     failures.push(
-      `required outbox intents (${correctness.requiredOutboxIntentCount}) != actual intents (${correctness.outboxIntentCount})`,
+      `required outbox intents (${correctness.requiredOutboxIntentCount}) != ` +
+        `actual intents (${correctness.outboxIntentCount})`,
     );
   }
   if ((correctness.atomicCompletionFailures ?? 0) !== 0) {
@@ -1637,6 +1304,16 @@ function median(values) {
 
 function compareMaximumRegression(errors, label, baseline, candidate, ratio) {
   if (candidate > baseline * (1 + ratio)) {
+    errors.push(
+      `${label} regressed by more than ${
+        ratio * 100
+      }%: baseline=${baseline}, candidate=${candidate}`,
+    );
+  }
+}
+
+function compareMinimumThroughput(errors, label, baseline, candidate, ratio) {
+  if (candidate < baseline * (1 - ratio)) {
     errors.push(
       `${label} regressed by more than ${
         ratio * 100
