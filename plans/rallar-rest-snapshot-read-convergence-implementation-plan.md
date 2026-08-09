@@ -42,12 +42,11 @@ the required Release Gate job `93111803475` in Deploy Web + API run
 because the separately owned Cloudflare branch-control job failed; issue #98
 owns that provider account/API configuration work.
 
-Issue #120 is a direct repository correction through
-`c15ffc258faf556885fc0f0db8a8d7eb6f1fa0af`: client workspace identities are
-mandatory and nonempty, and semantic `_` uses the canonical physical encoding
-`%5F`. Disposable development and test client-state persistence is reset, not
-migrated. PR #124 remains draft and unmerged; this record makes no publication
-completion claim for that correction.
+Issue #120 is addressed by open PR #124 as a direct repository correction:
+client workspace identities are mandatory and nonempty, and semantic `_` uses
+the canonical physical encoding `%5F`. Disposable development and test
+client-state persistence is reset, not migrated. PR #124 remains unmerged; this
+record makes no publication completion claim for that correction.
 
 The local checkpoint also exposed a pre-existing PostgreSQL admin-prune defect:
 postgres.js encoded the row-ID array as a JSON scalar, so deleting two expired

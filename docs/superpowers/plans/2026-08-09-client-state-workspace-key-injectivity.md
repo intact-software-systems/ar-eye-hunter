@@ -125,7 +125,7 @@ Run the Step 2 command and all client-state Vitest tests. Expected: all pass.
 **Files:**
 - Create: `apps/api-v1/test/db/pglite-client-state-workspace-isolation.test.ts`
 - Modify: `apps/api-v1/test/db/admin-operations-postgres-reader.test.ts`
-- Modify: `packages/tests/shared-server/postgres-runtime-state-prefix.test.ts`
+- Modify: `packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts`
 - Modify: `packages/shared-server/postgres/rallar-system/PSqlStateEventRepository.ts`
 - Modify: `packages/shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts`
 
@@ -167,9 +167,7 @@ the persisted field to be present.
 Run the Step 2 command, API-v1 `deno task check`, and:
 
 ```bash
-RALLAR_POSTGRES_INTEGRATION=1 \
-DATABASE_URL=${DATABASE_URL:-postgres://app:app@localhost:5432/appdb} \
-npx vitest run packages/tests/shared-server/postgres-runtime-state-prefix.test.ts
+npm run test:postgres:integration
 ```
 
 Expected: all enabled tests pass with literal isolated keys.
