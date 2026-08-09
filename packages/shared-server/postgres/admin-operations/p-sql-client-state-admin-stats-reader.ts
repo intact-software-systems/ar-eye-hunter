@@ -26,6 +26,7 @@ export type ClientStateAdminActivityStats = Readonly<{
 }>;
 
 export type PSqlClientStateAdminStatsReaderOptions = Readonly<{
+  now: () => number;
   recentEventWindowMs?: number;
 }>;
 
@@ -80,11 +81,11 @@ export class PSqlClientStateAdminStatsReader {
     };
   }
 
-  async readGlobal(activityCutoffEpochMs: number): Promise<ClientStateAdminActivityStats> {
+  async readGlobal(): Promise<ClientStateAdminActivityStats> {
     const [totalPrincipals, onlinePrincipals, activeSessions] = await Promise.all([
       this.countLivePrincipals(),
-      this.countActivePrincipals(activityCutoffEpochMs),
-      this.countActiveSessions(activityCutoffEpochMs),
+      this.countActivePrincipals(this.options.now()),
+      this.countActiveSessions(this.options.now()),
     ]);
     return {
       totalPrincipals,
@@ -93,12 +94,9 @@ export class PSqlClientStateAdminStatsReader {
     };
   }
 
-  async countRecentEvents(
-    scope: StateScope | undefined,
-    observedAtEpochMs: number,
-  ): Promise<number> {
+  async countRecentEvents(scope?: StateScope): Promise<number> {
     const recentSinceEpochMs =
-      observedAtEpochMs - (this.options.recentEventWindowMs ?? DEFAULT_RECENT_EVENT_WINDOW_MS);
+      this.options.now() - (this.options.recentEventWindowMs ?? DEFAULT_RECENT_EVENT_WINDOW_MS);
     if (scope) {
       return toNumber(
         (

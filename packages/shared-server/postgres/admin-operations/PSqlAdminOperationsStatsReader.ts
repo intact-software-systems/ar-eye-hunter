@@ -93,7 +93,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         this.queueGroups('resource_inbox_results'),
       ]);
     return {
-      ...this.base(this.options.now()),
+      ...this.base(),
       queueRows: {
         total: queueTotal,
         expired: queueExpired,
@@ -113,21 +113,22 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       return await this.readGlobalState();
     }
     const scope = input.scope;
-    const [clientFacts, groupRows, memberRows, groupSessionRows] = await Promise.all([
+    const [
+      clientFacts, groupRows, memberRows, groupSessionRows,
+      recentClientEvents, recentGroupEvents,
+    ] = await Promise.all([
       this.clientStateStatsReader.readScopedFacts(scope),
       this.readLiveRuntimeRows('group-state:groups', scope),
       this.readLiveRuntimeRows('group-state:members', scope),
       this.readLiveRuntimeRows('group-state:sessions', scope),
+      this.clientStateStatsReader.countRecentEvents(scope),
+      this.countRecentGroupEvents(scope),
     ]);
     validateScopedGroupRuntimeRows('group-state:groups', groupRows, scope);
     validateScopedGroupRuntimeRows('group-state:members', memberRows, scope);
     validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows, scope);
     const cutoffEpochMs = this.options.now();
     const clientStats = this.clientStateStatsReader.summarizeScoped(clientFacts, cutoffEpochMs);
-    const [recentClientEvents, recentGroupEvents] = await Promise.all([
-      this.clientStateStatsReader.countRecentEvents(scope, cutoffEpochMs),
-      this.countRecentGroupEvents(scope, cutoffEpochMs),
-    ]);
     const activeMembers = memberRows.filter(isActiveGroupMemberRow);
     const onlineGroupMemberIds = new Set(
       groupSessionRows
@@ -136,7 +137,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         .filter((identity): identity is string => identity !== undefined),
     );
     return {
-      ...this.base(cutoffEpochMs, scope),
+      ...this.base(scope),
       clients: clientStats,
       groups: {
         activeGroups: groupRows.filter((row) => isActiveGroupRow(row, cutoffEpochMs)).length,
@@ -153,7 +154,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     };
   }
   private async readGlobalState(): Promise<AdminOperationsStateResponse> {
-    const cutoffEpochMs = this.options.now();
     const [
       clientStats,
       groupRows,
@@ -162,16 +162,17 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       recentClientEvents,
       recentGroupEvents,
     ] = await Promise.all([
-      this.clientStateStatsReader.readGlobal(cutoffEpochMs),
+      this.clientStateStatsReader.readGlobal(),
       this.readLiveRuntimeRows('group-state:groups', undefined),
       this.readLiveRuntimeRows('group-state:members', undefined),
       this.readLiveRuntimeRows('group-state:sessions', undefined),
-      this.clientStateStatsReader.countRecentEvents(undefined, cutoffEpochMs),
-      this.countRecentGroupEvents(undefined, cutoffEpochMs),
+      this.clientStateStatsReader.countRecentEvents(),
+      this.countRecentGroupEvents(),
     ]);
     validateScopedGroupRuntimeRows('group-state:groups', groupRows);
     validateScopedGroupRuntimeRows('group-state:members', memberRows);
     validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows);
+    const cutoffEpochMs = this.options.now();
     const activeMembers = memberRows.filter(isActiveGroupMemberRow);
     const onlineGroupMemberIds = new Set(
       groupSessionRows
@@ -180,7 +181,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         .filter((identity): identity is string => identity !== undefined),
     );
     return {
-      ...this.base(cutoffEpochMs),
+      ...this.base(),
       clients: clientStats,
       groups: {
         activeGroups: groupRows.filter((row) => isActiveGroupRow(row, cutoffEpochMs)).length,
@@ -205,7 +206,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.readCrdtStorage(scope),
     ]);
     return {
-      ...this.base(this.options.now(), scope),
+      ...this.base(scope),
       documents: {
         total,
         byLifecycle,
@@ -235,7 +236,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.countGroupEvents(),
     ]);
     return {
-      ...this.base(this.options.now()),
+      ...this.base(),
       runtimeState: {
         rows: runtimeRows,
         expiredRows: runtimeExpiredRows,
@@ -256,9 +257,9 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       },
     };
   }
-  private base(generatedAtEpochMs: number, scope?: StateScope) {
+  private base(scope?: StateScope) {
     return {
-      generatedAtEpochMs,
+      generatedAtEpochMs: this.options.now(),
       serverId: this.options.serverId,
       scope,
       warnings: [],
@@ -391,11 +392,8 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     );
   }
 
-  private async countRecentGroupEvents(
-    scope: StateScope | undefined,
-    observedAtEpochMs: number,
-  ): Promise<number> {
-    const recentSinceEpochMs = observedAtEpochMs -
+  private async countRecentGroupEvents(scope?: StateScope): Promise<number> {
+    const recentSinceEpochMs = this.options.now() -
       (this.options.recentEventWindowMs ?? DEFAULT_RECENT_EVENT_WINDOW_MS);
     if (scope) {
       return toNumber(

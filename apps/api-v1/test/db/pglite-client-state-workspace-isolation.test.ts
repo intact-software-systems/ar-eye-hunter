@@ -5,6 +5,7 @@ import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-op
 import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { delayAdminRuntimeFactQueries } from './pglite-admin-query-scheduling-test-boundary.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const WORKSPACE_CASES = [
@@ -208,40 +209,116 @@ Deno.test('PGlite admin online principals exclude non-string persisted workspace
   });
 });
 
-Deno.test('PGlite admin state uses one shared post-query activity cutoff', async () => {
+Deno.test('PGlite scoped admin state starts events before facts and shares activity cutoff', async () => {
   await withPGliteSql(async (sql) => {
-    const cutoffEpochMs = 1_700_000_000_000;
+    const recentEventWindowMs = 100;
+    const activityCutoffEpochMs = 3_000;
     const applicationId = 'shared-activity-cutoff';
     await insertClientSession(sql, {
       applicationId,
       keyWorkspace: '%5F',
       principalId: 'boundary-client',
       workspaceId: '_',
-      expiresAtEpochMs: cutoffEpochMs + 1,
+      expiresAtEpochMs: activityCutoffEpochMs + 1,
     });
     await insertActiveGroup(sql, {
       applicationId,
       workspaceId: '_',
       groupId: 'boundary-group',
-      expiresAtEpochMs: cutoffEpochMs + 1,
+      expiresAtEpochMs: activityCutoffEpochMs + 1,
     });
+    await insertAdminStateEventBoundaries(sql, {
+      applicationId,
+      clientObservedAtEpochMs: 1_000,
+      groupObservedAtEpochMs: 2_000,
+      recentEventWindowMs,
+    });
+    const delayed = delayAdminRuntimeFactQueries(sql);
+    const clockValues = [1_000, 2_000, activityCutoffEpochMs, 4_000];
     let clockCalls = 0;
-    const reader = new PSqlAdminOperationsStatsReader(sql, {
+    const reader = new PSqlAdminOperationsStatsReader(delayed.sql, {
       now: () => {
+        const value = clockValues[clockCalls];
         clockCalls += 1;
-        return clockCalls === 1 ? cutoffEpochMs : cutoffEpochMs + 1;
+        assert.notEqual(value, undefined, 'unexpected clock observation');
+        return value;
       },
+      recentEventWindowMs,
     });
 
-    const state = await reader.readState({
+    const statePromise = reader.readState({
       adminSession: createAdminSession(),
       scope: { applicationId, workspaceId: '_' },
     });
+    const launchEvidence = delayed.readLaunchEvidence();
+    const clockCallsBeforeRelease = clockCalls;
+    delayed.releaseRuntimeFacts();
+    const state = await statePromise;
 
-    assert.equal(clockCalls, 1);
-    assert.equal(state.generatedAtEpochMs, cutoffEpochMs);
+    assert.deepEqual(launchEvidence.recentEventQueries, ['client', 'group']);
+    assert.equal(launchEvidence.runtimeFactQueries, 5);
+    assert.equal(clockCallsBeforeRelease, 2);
+    assert.equal(clockCalls, 4);
+    assert.equal(state.generatedAtEpochMs, 4_000);
     assert.equal(state.clients.activeSessions, 1);
     assert.equal(state.groups.activeGroups, 1);
+    assert.equal(state.events.recentClientEvents, 1);
+    assert.equal(state.events.recentGroupEvents, 1);
+  });
+});
+
+Deno.test('PGlite global admin state preserves independent query and response clocks', async () => {
+  await withPGliteSql(async (sql) => {
+    const recentEventWindowMs = 100;
+    const applicationId = 'global-query-clocks';
+    await insertClientSession(sql, {
+      applicationId,
+      keyWorkspace: '%5F',
+      principalId: 'boundary-client',
+      workspaceId: '_',
+      expiresAtEpochMs: 1_500,
+    });
+    await insertActiveGroup(sql, {
+      applicationId,
+      workspaceId: '_',
+      groupId: 'boundary-group',
+      expiresAtEpochMs: 5_001,
+    });
+    await insertAdminStateEventBoundaries(sql, {
+      applicationId,
+      clientObservedAtEpochMs: 3_000,
+      groupObservedAtEpochMs: 4_000,
+      recentEventWindowMs,
+    });
+    const delayed = delayAdminRuntimeFactQueries(sql);
+    const clockValues = [1_000, 2_000, 3_000, 4_000, 5_000, 6_000];
+    let clockCalls = 0;
+    const reader = new PSqlAdminOperationsStatsReader(delayed.sql, {
+      now: () => {
+        const value = clockValues[clockCalls];
+        clockCalls += 1;
+        assert.notEqual(value, undefined, 'unexpected clock observation');
+        return value;
+      },
+      recentEventWindowMs,
+    });
+
+    const statePromise = reader.readState({ adminSession: createAdminSession() });
+    const launchEvidence = delayed.readLaunchEvidence();
+    const clockCallsBeforeRelease = clockCalls;
+    delayed.releaseRuntimeFacts();
+    const state = await statePromise;
+
+    assert.deepEqual(launchEvidence.recentEventQueries, ['client', 'group']);
+    assert.equal(launchEvidence.runtimeFactQueries, 6);
+    assert.equal(clockCallsBeforeRelease, 4);
+    assert.equal(clockCalls, 6);
+    assert.equal(state.generatedAtEpochMs, 6_000);
+    assert.equal(state.clients.onlinePrincipals, 1);
+    assert.equal(state.clients.activeSessions, 0);
+    assert.equal(state.groups.activeGroups, 1);
+    assert.equal(state.events.recentClientEvents, 1);
+    assert.equal(state.events.recentGroupEvents, 1);
   });
 });
 
@@ -349,6 +426,43 @@ async function insertActiveGroup(
       ${value},
       ${new Date('9999-12-31T23:59:59Z')}
     )
+  `;
+}
+
+async function insertAdminStateEventBoundaries(
+  sql: PGliteSql,
+  input: Readonly<{
+    applicationId: string;
+    clientObservedAtEpochMs: number;
+    groupObservedAtEpochMs: number;
+    recentEventWindowMs: number;
+  }>,
+): Promise<void> {
+  await sql`
+    insert into client_state_events (
+      application_id, workspace_key, principal_id, event_id, event_type,
+      snapshot_version, occurred_at_epoch_ms, event_json
+    )
+    values
+      (${input.applicationId}, ${'%5F'}, ${'boundary-client'}, ${'client-old'},
+        ${'session-connected'}, ${1},
+        ${input.clientObservedAtEpochMs - input.recentEventWindowMs - 1}, ${'{}'}),
+      (${input.applicationId}, ${'%5F'}, ${'boundary-client'}, ${'client-recent'},
+        ${'session-connected'}, ${1},
+        ${input.clientObservedAtEpochMs - input.recentEventWindowMs + 1}, ${'{}'})
+  `;
+  await sql`
+    insert into group_state_events (
+      application_id, workspace_key, group_id, event_id, event_type,
+      snapshot_version, occurred_at_epoch_ms, event_json
+    )
+    values
+      (${input.applicationId}, ${'%5F'}, ${'boundary-group'}, ${'group-old'},
+        ${'session-connected'}, ${1},
+        ${input.groupObservedAtEpochMs - input.recentEventWindowMs - 1}, ${'{}'}),
+      (${input.applicationId}, ${'%5F'}, ${'boundary-group'}, ${'group-recent'},
+        ${'session-connected'}, ${1},
+        ${input.groupObservedAtEpochMs - input.recentEventWindowMs + 1}, ${'{}'})
   `;
 }
 
