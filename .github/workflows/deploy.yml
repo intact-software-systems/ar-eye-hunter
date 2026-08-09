@@ -210,7 +210,7 @@ jobs:
       - name: Deploy rallar-server to Deno Deploy
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
-        run: deno deploy . --config apps/api-v1/deno.json --org intact-software-systems --app rallar-server --prod --json --non-interactive
+        run: deno deploy . --config deno.json --org intact-software-systems --app rallar-server --prod --json --non-interactive
 
   deploy-control-server:
     name: Deploy Black Box Control Server (Deno Deploy)
@@ -251,7 +251,7 @@ jobs:
       - name: Deploy rallar-bb-server to Deno Deploy
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
-        run: deno deploy . --config apps/rallar-black-box-control-server/deno.json --org intact-software-systems --app rallar-bb-server --prod --json --non-interactive
+        run: deno deploy . --config deno.json --org intact-software-systems --app rallar-bb-server --prod --json --non-interactive
 
   deploy-relic-api:
     name: Deploy Relic API (Deno Deploy)
@@ -309,4 +309,4 @@ jobs:
       - name: Deploy relic-hunters to Deno Deploy
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
-        run: deno deploy . --config apps/relic-hunter-server-v1/deno.json --org intact-software-systems --app relic-hunters --prod --json --non-interactive
+        run: deno deploy . --config deno.json --org intact-software-systems --app relic-hunters --prod --json --non-interactive
