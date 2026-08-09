@@ -1436,6 +1436,8 @@ function compactRtcDiagnosticsResult(
     connectedPeerCount: numberValue(diagnostics.connectedPeerCount),
     relayPeerCount: numberValue(diagnostics.relayPeerCount),
     rtcDiagnosticsError: rallar.rtcDiagnosticsError,
+    groupManager: diagnostics.groupManager,
+    overlayAdoption: diagnostics.overlayAdoption,
     peers: peers.map(compactRtcPeerDiagnostics),
   };
 }
