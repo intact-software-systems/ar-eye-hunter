@@ -121,6 +121,7 @@ describe('repo code style checker integrity', () => {
       'packages/tests/repo/repo-style-construction-check.test.ts',
       'packages/tests/repo/repo-style-construction-edge-cases.test.ts',
       'packages/tests/repo/repo-style-layout-rules.test.ts',
+      'packages/tests/repo/repo-style-reviewed-dispositions.test.ts',
       'packages/tests/repo/repo-style-changed-check.test.ts',
       'packages/tests/rallar-black-box/rallar-testing-skill.test.ts',
     ]) {

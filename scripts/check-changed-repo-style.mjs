@@ -7,6 +7,7 @@ import {
   isProductionCodeFile,
   scanProductionSources,
 } from './repo-style-check/repository-scan.mjs';
+import { isReviewedDisposition } from './repo-style-check/reviewed-dispositions.mjs';
 import {
   readStructuralLineageMap,
   StructuralLineageValidationError,
@@ -82,7 +83,12 @@ async function main() {
     logicalSourceByTargetPath: new Map([...renameByTargetPath, ...structuralLineageByTargetPath]),
   });
 
-  printChangedFindings({ repoRoot, mergeBase, targetReference, newFindings });
+  printChangedFindings({
+    repoRoot,
+    mergeBase,
+    targetReference,
+    newFindings: newFindings.filter((finding) => !isReviewedDisposition(repoRoot, finding)),
+  });
 }
 
 function printChangedFindings(result) {
@@ -242,6 +248,9 @@ function groupStructuralBoundaryCapacity(input) {
 }
 
 function boundaryUnknownMagnitude(finding) {
+  if (Number.isInteger(finding.affectedCount) && finding.affectedCount > 0) {
+    return finding.affectedCount;
+  }
   const summaryPrefix = '... and ';
   const summarySuffix =
     ' additional unknown occurrences. Reduce unknown propagation at domain boundaries.';
