@@ -1,5 +1,7 @@
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
-import type { RtcTopologyDeliveryAppendPort } from '../../rallar-system/topology/replay/rtc-topology-delivery-append-port.ts';
+import type {
+  RtcTopologyDeliveryAppendPort,
+} from '../../rallar-system/topology/replay/rtc-topology-delivery-append-port.ts';
 import type {
   RtcTopologyDeliveryAppendInput,
   RtcTopologyDeliveryAppendResult,
