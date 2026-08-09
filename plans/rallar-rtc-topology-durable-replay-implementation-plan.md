@@ -46,6 +46,14 @@ Stack record:
 
 No implementation milestone or completion gate is yet claimed complete.
 
+PR 1 progress:
+
+- Schema milestone implemented: the migration, Prisma models, idempotent PGlite
+  mirror, named constraints, and bootstrap/invariant proof are present. The
+  focused PGlite test passed 6/6 and `prisma validate` accepted the schema.
+  Live PostgreSQL migration/integration evidence remains pending with the later
+  PR 1 database gate.
+
 ## Goal
 
 Make committed RTC topology state converge to browsers attached to every live
@@ -533,7 +541,7 @@ and gets its own focused/local evidence. Merge and deploy in order.
 
 Purpose: additive schema and write-only expansion. Replay remains disabled.
 
-- [ ] Add migration, Prisma schema models, PGlite mirror, SQL constraints, and
+- [x] Add migration, Prisma schema models, PGlite mirror, SQL constraints, and
       schema/bootstrap tests.
 - [ ] Add canonical contracts, safe BIGINT codec, validation, append port, and
       `PSqlRtcTopologyDeliveryRepository`.
