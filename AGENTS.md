@@ -49,6 +49,11 @@ standard.
   secrets. Link every created or reused issue in the final handoff, or state
   explicitly that there were none. If issue search or creation is unavailable
   or prohibited, preserve the complete draft and state the exact reason instead.
+  An issue is not authorization to shrink the active task: work required by its
+  declared behavior, ownership, acceptance criteria, or promised validation
+  stays in the plan until fixed and validated. A created issue may record an
+  approved re-scope, but it never replaces that work or permits a dependent
+  milestone or plan to be called complete.
 - When concurrent local work causes material CPU or memory contention, publish
   a safe non-default-branch checkpoint and monitor the GitHub workflow for its
   exact head SHA rather than stalling on heavyweight local checks. Record every

@@ -52,11 +52,42 @@ the task's promised validation. It is mature once the required issue headings
 can contain known facts and clearly named unknowns. File it promptly after that
 classification, not only at handoff. Use the narrowest correct outcome:
 
+## Active-Plan Boundary
+
+Before calling any discovery outside the task, trace it against the active plan
+or, when there is no written plan, the task's declared outcome. Name the owning
+task, declared behavior, owner, acceptance criterion, and promised validation
+that could be affected. Work is in scope when it is required to deliver or
+prove any of those things, regardless of how many modules it touches, how hard
+it appears, how near a deadline is, or how slowly a normal test runs.
+
+For every dimension concluded not affected, record the concrete contract,
+call path, test, or other evidence that supports that conclusion. Package or
+directory separation, a passing nearby test, or an unsupported assertion of
+independence is not enough.
+
+A missing planned behavior, known regression, failed required validation, or
+unmet acceptance criterion stays in the active plan. Fix it and pass its exact
+validation before marking its owning milestone, slice, or plan complete. An
+issue can record a human-approved re-scope and the resulting incomplete
+dependency; opening it never authorizes a re-scope, substitutes for the fix, or
+makes dependent work complete.
+
+A re-scope is approved only by explicit current user direction that names the
+removed or changed behavior/criterion, affected milestone, and resulting
+incomplete obligation. Update the active plan and PR in the same checkpoint.
+An issue, a pending review, deadline pressure, or assumed user preference is
+not re-scope approval.
+
+An independent discovery stays outside the active plan even if its fix seems
+small or nearby. Track it in a focused issue without expanding the plan unless
+the user explicitly changes scope.
+
 | Discovery | Required action |
 | --- | --- |
-| Safe, in-scope fix | Fix and validate it in the current task; do not create a separate issue merely to narrate completed work. |
+| Active-plan behavior, owner, acceptance criterion, promised validation, or a regression in changed behavior | Keep it in the active plan. Fix and validate it before marking the owning work complete; do not create an issue as a substitute. |
 | Existing matching issue | Reuse and link it. Add evidence only when it is precise, material, and safe to publish. |
-| Verified material work outside the task, uncertain priority, or a separately scoped concern | Create a native GitHub Issue promptly, then link it from the active PR and final handoff. |
+| Verified material work proven independent of the active plan, uncertain priority, or a separately scoped concern | Create a native GitHub Issue promptly, then link it from the active PR and final handoff. |
 | Product, ownership, compatibility, or permission decision | Create or reuse an issue, ask the user for direction, and continue only work independent of that decision. Do not claim the dependent work is complete. |
 
 Treat an issue as matching only when its observed behavior, required outcome,
@@ -71,6 +102,7 @@ why a heading is inapplicable:
 ```markdown
 ## Problem
 ## Why deferred
+## Active-plan boundary
 ## Evidence
 ## Decision needed or desired outcome
 ## Acceptance criteria or first safe step
@@ -87,6 +119,21 @@ filed. Link the issue from the active PR when one exists, or add it when the PR
 is created. End every handoff with URLs of created or reused follow-up issues,
 `Follow-up issues: none` when no material follow-up exists, or
 `Follow-up issue not filed: <reason>` when a required issue could not be filed.
+
+### Deferral Red Flags
+
+The following are not evidence that active-plan work is independent:
+
+| Rationalization | Required action |
+| --- | --- |
+| “The fix spans more modules than expected.” | Keep it in the plan; update the plan only for a real material impact, then implement and validate it. |
+| “We are out of time” or “the normal test is slow.” | Record the work as incomplete or use the resource-contention procedure only when its observed condition exists; never issue-and-complete. |
+| “A review finding or regression can be fixed later.” | Fix and validate it when it affects declared behavior or acceptance; link a follow-up only after an approved re-scope. |
+| “The issue makes this separately scoped.” | An issue records an already-proven independent boundary or approved re-scope; it does not create either one. |
+
+If the active-plan boundary is genuinely disputed, create or reuse the decision
+issue, ask the user, and mark the dependent work incomplete while independent
+work continues.
 
 ## Local Resource Contention
 
