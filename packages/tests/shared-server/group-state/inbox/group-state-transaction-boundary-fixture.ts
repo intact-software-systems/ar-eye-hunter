@@ -47,6 +47,10 @@ export interface GroupStateTransactionBoundaryHarness {
   readonly outboxEntries: ReadonlyMap<string, ResourceEntry>;
   readonly reachedStages: readonly string[];
   readonly observedSnapshots: readonly GroupSnapshot[];
+  readonly formationMutationEvents: readonly Readonly<{
+    operation: string;
+    outcome: string;
+  }>[];
   readonly transactionWriter: AppInboxTransactionWriter;
   readonly groupRef: typeof SCOPE & Readonly<{ groupId: string }>;
   readWakeCount(): number;
@@ -83,6 +87,7 @@ export async function createGroupStateTransactionBoundaryHarness(
     toTimingDetails: () => ({}),
   });
   transactionWriter.begin(context);
+  const formationMutationEvents: Array<Readonly<{ operation: string; outcome: string }>> = [];
   const handler = new GroupStateInboxHandler({
     mutationService: groupState.service,
     sessionGenerationLifecycle: groupState.service.sessionGenerationLifecycle,
@@ -90,6 +95,9 @@ export async function createGroupStateTransactionBoundaryHarness(
     transactionWriter,
     wakeQueue: () => {
       wakeCount += 1;
+    },
+    formationMetrics: (event) => {
+      formationMutationEvents.push(event);
     },
   });
   return {
@@ -103,6 +111,7 @@ export async function createGroupStateTransactionBoundaryHarness(
     outboxEntries: storage.database.outboxEntries,
     reachedStages: storage.reachedStages,
     observedSnapshots: groupState.observedSnapshots,
+    formationMutationEvents,
     transactionWriter,
     groupRef: { ...SCOPE, groupId: GROUP_ID },
     readWakeCount: () => wakeCount,

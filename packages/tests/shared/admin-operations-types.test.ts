@@ -9,7 +9,7 @@ import {
 
 describe('admin operations public API contracts', () => {
     it('exports stable category and status constants for REST clients', () => {
-        expect(ADMIN_METRICS_RESET_CATEGORIES).toEqual(['rtc-topology']);
+        expect(ADMIN_METRICS_RESET_CATEGORIES).toEqual(['rtc-topology', 'group-formation']);
         expect(ADMIN_PRUNE_EXPIRED_CATEGORIES).toEqual([
             'runtime-state',
             'resource-inbox',

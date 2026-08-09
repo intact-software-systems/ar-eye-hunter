@@ -83,6 +83,7 @@ export const expectedGroupStateTestTree = [
   'presence/group-presence-retry-test-runtime.ts',
   'presence/group-presence-retry.test.ts',
   'presence/group-presence-summary-evaluation-time.test.ts',
+  'presence/group-presence-summary-formation-metrics.test.ts',
   'presence/group-presence-summary-storage-revision.test.ts',
   'presence/group-presence-summary-validation.test.ts',
   'presence/group-presence-summary-work.test.ts',

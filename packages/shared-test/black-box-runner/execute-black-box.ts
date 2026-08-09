@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
+import { toBoundedWsWaitMessages } from './artifacts/with-bounded-artifact-report-results.ts';
 import {
     createMissingRtcProvider,
     rememberRtcCloseEvent,
@@ -2131,8 +2132,7 @@ function waitForWsMessage(interaction: any, config: any, context: any, details: 
                 resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket message was not received', {
                     ...details,
                     connection: connectionName,
-                    expectedMessage,
-                    messages,
+                    expectedMessage, ...toBoundedWsWaitMessages(messages),
                     waitedMs: Date.now() - startedAt,
                 }));
             }
@@ -2217,8 +2217,7 @@ function waitForWsMessages(interaction: any, config: any, context: any, details:
                     missingMessages: expectedMessages.filter((expectedMessage: any) => {
                         return matchedMessages.every(match => match.expectedMessage !== expectedMessage);
                     }),
-                    ordered,
-                    messages,
+                    ordered, ...toBoundedWsWaitMessages(messages),
                     waitedMs: Date.now() - startedAt,
                 }));
             }

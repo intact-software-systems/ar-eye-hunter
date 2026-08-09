@@ -17,39 +17,27 @@ import {
     normalizeRttReportingDegreeLimit,
     selectRttReportingPeers,
 } from '../rtc/rtt-reporting-policy.ts';
+import {
+    clonePeerOwners,
+    emptyGroupManagerDiagnostics,
+    type RetainedPeerConnection,
+    type WebRtcGroupManagerDeleteOptions,
+    type WebRtcGroupManagerDiagnostics,
+    type WebRtcGroupManagerOptions,
+    type WebRtcGroupManagerState,
+    type WebRtcRttReportingPeerOptions,
+} from './webrtc-group-manager-contracts.ts';
 
-export type WebRtcGroupManagerState = {
-    readonly groupIds: readonly GroupId[];
-    readonly desiredPeerIds: readonly PeerId[];
-    readonly onlinePeerIds: readonly PeerId[];
-    readonly onlineDesiredPeerIds: readonly PeerId[];
-    readonly connectablePeerIds: readonly PeerId[];
-    readonly peerIdsWithNoReconnectableLanes: readonly PeerId[];
-    readonly peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>;
-};
+export type {
+    WebRtcGroupManagerDeleteOptions,
+    WebRtcGroupManagerDiagnostics,
+    WebRtcGroupManagerOptions,
+    WebRtcGroupManagerState,
+    WebRtcRttReportingPeerOptions,
+} from './webrtc-group-manager-contracts.ts';
 
 export const DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS = 10;
 export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
-
-export type WebRtcGroupManagerOptions = Readonly<{
-    maxPeerConnections?: number;
-    onDesiredPeerIdsChanged?: () => void;
-}>;
-
-export type WebRtcGroupManagerDeleteOptions = Readonly<{
-    retainConnections?: boolean;
-}>;
-
-export type WebRtcRttReportingPeerOptions = Readonly<{
-    degreeLimit?: number;
-}>;
-
-type RetainedPeerConnection = Readonly<{
-    peerId: PeerId;
-    groupKey: string;
-    groupId: GroupId;
-    retainedOrder: number;
-}>;
 
 export class WebRtcGroupManager {
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
@@ -57,6 +45,7 @@ export class WebRtcGroupManager {
     private peerOwnersCache: ReadonlyMap<PeerId, readonly GroupId[]> | undefined;
     private reconcileInFlight: Promise<void> | undefined;
     private retainedOrder = 0;
+    private readonly diagnostics = emptyGroupManagerDiagnostics();
 
     constructor(
         public readonly rtcQBox: WebRtcConnectionService,
@@ -65,6 +54,14 @@ export class WebRtcGroupManager {
         public readonly overlayCache?: ReadableKeyedValues<string, OverlayInfo>,
         public readonly options: WebRtcGroupManagerOptions = {},
     ) {
+    }
+
+    readDiagnostics(): WebRtcGroupManagerDiagnostics {
+        return { ...this.diagnostics };
+    }
+
+    resetDiagnostics(): void {
+        Object.assign(this.diagnostics, emptyGroupManagerDiagnostics());
     }
 
     getOrCreate(group: GroupRef): WebRtcGroupService {
@@ -252,11 +249,13 @@ export class WebRtcGroupManager {
 
     private async reconcileAllGroups(): Promise<void> {
         if (this.reconcileInFlight) {
+            this.diagnostics.reconcileAwaitedInFlightCount += 1;
             await this.reconcileInFlight;
             return;
         }
 
         const run = (async () => {
+            this.diagnostics.reconcileRunCount += 1;
             const peerOwners = this.peerOwners();
             const desiredPeerIds = new Set(peerOwners.keys());
             const onlinePeerIds = this.onlinePeerIds();
@@ -265,6 +264,7 @@ export class WebRtcGroupManager {
             );
             let knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
             this.removeRetainedDesiredPeers(desiredPeerIds);
+            this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
 
             const connectablePeerIds = Array.from(desiredPeerIds).filter(
                 (peerId) => onlinePeerIds.has(peerId),
@@ -275,8 +275,10 @@ export class WebRtcGroupManager {
             );
 
             for (const peerId of peersToConnect) {
+                this.diagnostics.connectAttemptCount += 1;
                 const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
                 if (connected.left) {
+                    this.diagnostics.connectFailureCount += 1;
                     const error = connected.left.kind === 'self'
                         ? undefined
                         : connected.left.error;
@@ -300,6 +302,7 @@ export class WebRtcGroupManager {
                 try {
                     this.rtcQBox.disconnectPeer(peerId);
                     this.retainedPeerConnections.delete(peerId);
+                    this.diagnostics.disconnectCount += 1;
                 } catch (error) {
                     console.error(`Failed to disconnect peer ${peerId}`, error);
                 }
@@ -309,6 +312,7 @@ export class WebRtcGroupManager {
                 try {
                     this.rtcQBox.disconnectPeer(peerId);
                     this.retainedPeerConnections.delete(peerId);
+                    this.diagnostics.retainedEvictionCount += 1;
                 } catch (error) {
                     console.error(`Failed to disconnect retained peer ${peerId}`, error);
                 }
@@ -601,14 +605,4 @@ export class WebRtcGroupManager {
             Math.floor(requested),
         );
     }
-}
-
-function clonePeerOwners(
-    peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>,
-): ReadonlyMap<PeerId, readonly GroupId[]> {
-    const copy = new Map<PeerId, readonly GroupId[]>();
-    for (const [peerId, groupIds] of peerOwners.entries()) {
-        copy.set(peerId, [...groupIds]);
-    }
-    return copy;
 }

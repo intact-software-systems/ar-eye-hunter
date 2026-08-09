@@ -87,6 +87,17 @@ describe('group-state AppInbox transaction result boundary', () => {
     expect(harness.outboxEntries.size).toBe(1);
   });
 
+  it('records one formation mutation metric only after the commit succeeds', async () => {
+    const harness = await createGroupStateTransactionBoundaryHarness();
+
+    expect(harness.formationMutationEvents).toEqual([]);
+    await harness.handler.processGroupStateMutation(harness.context);
+
+    expect(harness.formationMutationEvents).toEqual([
+      { operation: 'createGroup', outcome: 'write' },
+    ]);
+  });
+
   it('persists an inactive presence result once without active mutation effects', async () => {
     const actions: string[] = [];
     const writeMutation = vi.fn(async (_context, write) => {

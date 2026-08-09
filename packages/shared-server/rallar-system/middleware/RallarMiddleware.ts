@@ -10,6 +10,7 @@ import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
   WsQueueBoxServerService,
+  type WsDeliveryDiagnosticsSink,
   type WsServerTargetResolver,
 } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -72,6 +73,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
   now?: RallarSnapshotPresenceClock;
   inboundStores?: ALInboundRuntimeStores;
   outboundStores?: ALOutboundRuntimeStores;
+  wsDeliveryDiagnostics?: WsDeliveryDiagnosticsSink;
   createAppGroupInboxService: (
     input: Readonly<{
       inboxQueueReader: InboxQueueReader;
@@ -133,6 +135,7 @@ export function createRallarMiddleware(
       targetResolver,
       inboundStores: options.inboundStores,
       outboundStores: options.outboundStores,
+      deliveryDiagnostics: options.wsDeliveryDiagnostics,
     },
   );
   const queuePubSubBridgeReadiness = options.queuePubSubBridge

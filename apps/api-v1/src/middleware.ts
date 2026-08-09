@@ -1,6 +1,4 @@
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import {
@@ -42,7 +40,8 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repo
 import {
   backfillAllGroupTopologyConfigGenerations,
 } from '@shared-server/rallar-system/services/group-topology-config-generation-backfill.ts';
-import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
+import { createClientStateService }
+  from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService }
   from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
@@ -92,18 +91,22 @@ import {
   RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
   RtcRttRepository,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import { RtcTopologyExecutionRepository }
+  from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
-  initRtcTopologyScalarRecomputeWorker,
-} from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';
-import {
-  deriveRtcTopologyEntryResourceId,
-  writeRtcTopologyOutbox,
+  setRtcTopologyOutboxWriteSink,
 } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import {
+  createGroupFormationMetricsRecorder,
+} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
+import {
+  initApiRtcTopologyScalarRecomputeWorker,
+} from './services/init-api-rtc-topology-scalar-recompute-worker.ts';
 import {
   createRtcTopologyPublicationFanout,
 } from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
-import { createApiV1RtcTopologyClusterTransport } from './db/api-v1-rtc-topology-cluster-transport.ts';
+import { createApiV1RtcTopologyClusterTransport }
+  from './db/api-v1-rtc-topology-cluster-transport.ts';
 import { type Middleware, requireApiMiddleware } from './middleware-contract.ts';
 export type { Middleware };
 let middleware: Middleware | undefined = undefined;
@@ -148,6 +151,8 @@ function initialise(
   const timing = getApiTimingSink();
   const now = () => Date.now();
   const appInboxOptions = getApiAppInboxServiceOptions();
+  const groupFormationMetrics = createGroupFormationMetricsRecorder();
+  setRtcTopologyOutboxWriteSink(groupFormationMetrics.topologyOutboxWritten);
   const pubSubConfig = readApiV1DatabasePubSubConfig();
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
@@ -264,6 +269,7 @@ function initialise(
     findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(clientSnapshotReadThroughCache, ref),
     inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
+    wsDeliveryDiagnostics: groupFormationMetrics.wsDelivery,
     createAppGroupInboxService: ({
       inboxQueueReader,
       outboxQueueReader,
@@ -287,6 +293,7 @@ function initialise(
         wakeQueue: wakeQueueEngine,
         now,
         timing,
+        formationMetrics: groupFormationMetrics.presenceSummary,
       });
       outboxQueueReader.onOutboxMessageDo(
         AppOutboxType.GROUP_PRESENCE_SUMMARY,
@@ -305,6 +312,7 @@ function initialise(
         timing,
         appInboxOptions,
         wakeQueueEngine,
+        groupFormationMetrics.groupMutation,
       );
     },
     createAppClientInboxService: ({ inboxQueueReader, wakeQueueEngine }) => {
@@ -373,37 +381,13 @@ function initialise(
       : undefined,
     readiness: rtcTopologyPublicationFanout.readiness,
   });
-  const scalarRecomputeWorker = initRtcTopologyScalarRecomputeWorker({
-    runtime: runtimeStateRepository,
-    process: async (groupRef, requestId) => {
-      const groupSnapshot = await groupsRepository.readSnapshot(groupRef);
-      if (!groupSnapshot) return 'group-absent-terminal';
-      const createdAtEpochMs = now();
-      const identity = {
-        commandId: requestId,
-        effectKind: 'rtc-topology-recompute' as const,
-        payloadKind: 'group-revision' as const,
-        acceptedCausalRevision: groupSnapshot.causalRevision,
-      };
-      await postgresSql.begin(async (transaction) => {
-        await writeRtcTopologyOutbox(transaction, {
-          ...identity,
-          resourceId: deriveRtcTopologyEntryResourceId(identity),
-          aggregateRef: groupRef,
-          groupSnapshot,
-          createdAtEpochMs,
-          expireAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP,
-          senderId: myServerId,
-          requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-          publish: true,
-        });
-      });
-      runtime.qboxEngine.wake();
-      return 'enqueued';
-    },
-    onError: (error) => {
-      console.error('Failed to drain RTC topology scalar recompute requests:', error);
-    },
+  const scalarRecomputeWorker = initApiRtcTopologyScalarRecomputeWorker({
+    runtimeStateRepository,
+    groupsRepository,
+    database: postgresSql,
+    serviceId: myServerId,
+    now,
+    wake: () => runtime.qboxEngine.wake(),
   });
   registerMiddlewareBackgroundTask(scalarRecomputeWorker.stop);
   void scalarRecomputeWorker.firstRun.catch(() => undefined);
@@ -416,7 +400,7 @@ function initialise(
     clientDurable: clientsRepository, clientCache: clientSnapshotReadThroughCache,
     groupDurable: groupsRepository, groupCache: groupSnapshotReadThroughCache,
   }, timing);
-  return requireApiMiddleware(runtime, selectors);
+  return requireApiMiddleware(runtime, selectors, groupFormationMetrics);
 }
 function readRequiredAuthCredentialSecret(): string {
   const secret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();

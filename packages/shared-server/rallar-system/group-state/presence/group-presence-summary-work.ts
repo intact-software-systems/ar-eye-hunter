@@ -37,6 +37,10 @@ import {
 } from '../../state-sync-publisher.ts';
 import { computeRtcTopologyEntry } from '../../services/RtcTopologyOutboxWork.ts';
 // prettier-ignore
+import type {
+  GroupFormationPresenceSummarySink,
+} from '../../formation-metrics/formation-metrics.ts';
+// prettier-ignore
 import {
   decodeCanonicalGroupPresenceSummaryWork,
 } from './decode-canonical-group-presence-summary-work.ts';
@@ -48,6 +52,7 @@ export type GroupPresenceSummaryWorkOptions = Readonly<{
   serviceId: string;
   wakeQueue?: () => void;
   timing?: import('../../services/timing.ts').RallarTimingSink;
+  formationMetrics?: GroupFormationPresenceSummarySink;
 }>;
 
 export type GroupPresenceSummaryComputedWork = Readonly<{
@@ -199,6 +204,15 @@ export class GroupPresenceSummaryWork {
       }
     });
     this.options.wakeQueue?.();
+    try {
+      this.options.formationMetrics?.({
+        downstreamTopicIds: computed.downstreamOutboxEntries.map(
+          (outboxEntry) => outboxEntry.key.topicId,
+        ),
+      });
+    } catch {
+      // Recording must never affect presence-summary behavior.
+    }
   }
 }
 

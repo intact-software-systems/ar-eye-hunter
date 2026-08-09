@@ -567,6 +567,109 @@ describe('WebRtcGroupManager', () => {
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual([]);
         expect(manager.ownerGroupsOfPeer('peer-b')).toEqual(['group-1']);
     });
+
+    it('counts reconcile runs, connects, and disconnects in diagnostics', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self', ['peer-orphan']);
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+        );
+
+        expect(manager.readDiagnostics()).toEqual({
+            reconcileRunCount: 0,
+            reconcileAwaitedInFlightCount: 0,
+            lastDesiredPeerCount: 0,
+            connectAttemptCount: 0,
+            connectFailureCount: 0,
+            disconnectCount: 0,
+            retainedEvictionCount: 0,
+        });
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        clientCache.set('peer-b', createClientInfo('peer-b', false));
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a', 'peer-b']),
+        );
+
+        const afterFirstReconcile = manager.readDiagnostics();
+        expect(afterFirstReconcile.reconcileRunCount).toBe(1);
+        expect(afterFirstReconcile.lastDesiredPeerCount).toBe(2);
+        expect(afterFirstReconcile.connectAttemptCount).toBe(1);
+        expect(afterFirstReconcile.connectFailureCount).toBe(0);
+        expect(afterFirstReconcile.disconnectCount).toBe(1);
+
+        const first = manager.ensureAllGroupsConnected();
+        const second = manager.notifyClientPresenceChanged();
+        await Promise.all([first, second]);
+
+        const afterConcurrentReconcile = manager.readDiagnostics();
+        expect(afterConcurrentReconcile.reconcileRunCount).toBe(2);
+        expect(afterConcurrentReconcile.reconcileAwaitedInFlightCount).toBe(1);
+
+        manager.resetDiagnostics();
+        expect(manager.readDiagnostics().reconcileRunCount).toBe(0);
+    });
+
+    it('counts connect failures in diagnostics', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const failingService = {
+            input: { sessionId: 'self' },
+            knownPeerIds: () => [] as string[],
+            peerIdsWithNoReconnectableLanes: () => [] as string[],
+            ensurePeerConnectionStarted: vi.fn(() =>
+                Either.ofLeft({ kind: 'error', error: new Error('dial failed') })
+            ),
+            disconnectPeer: vi.fn(),
+        };
+        const manager = new WebRtcGroupManager(
+            failingService as never,
+            groupCache,
+            clientCache,
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a']),
+        );
+
+        const diagnostics = manager.readDiagnostics();
+        expect(diagnostics.connectAttemptCount).toBe(1);
+        expect(diagnostics.connectFailureCount).toBe(1);
+    });
+
+    it('counts retained peer evictions in diagnostics', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self', [], (peerId, connectedPeerIds) => {
+            connectedPeerIds.delete(peerId);
+        });
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 5 },
+        );
+        const peerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e', 'peer-f', 'peer-g'];
+        for (const peerId of peerIds) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        const group = createGroupSnapshot('group-1', 1, ['self', ...peerIds]);
+        await manager.acceptGroupUpdate(group);
+        expect(rtcQBox.knownPeerIds()).toHaveLength(7);
+
+        await manager.delete(group.group, { retainConnections: true });
+
+        const diagnostics = manager.readDiagnostics();
+        expect(diagnostics.retainedEvictionCount).toBe(2);
+        expect(rtcQBox.knownPeerIds()).toHaveLength(5);
+    });
 });
 
 function createRtcQBoxHarness(

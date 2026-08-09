@@ -61,6 +61,79 @@ export class OverlayRevisionConflictError extends Error {
     }
 }
 
+export type OverlayAdoptionOutcome =
+    | 'initial-set'
+    | 'adopted'
+    | 'equal'
+    | 'dominated-dropped'
+    | 'incomparable-conflict';
+
+export type OverlayAdoptionDiagnosticsEvent = Readonly<{
+    overlayId: string;
+    outcome: OverlayAdoptionOutcome;
+}>;
+
+export type OverlayAdoptionDiagnosticsSink = (
+    event: OverlayAdoptionDiagnosticsEvent,
+) => void;
+
+interface MutableOverlayAdoptionDiagnostics {
+    initialSetCount: number;
+    adoptedCount: number;
+    equalCount: number;
+    dominatedDroppedCount: number;
+    incomparableConflictCount: number;
+}
+
+export type RallarOverlayAdoptionDiagnostics = Readonly<MutableOverlayAdoptionDiagnostics>;
+
+// One process-wide sink and counter object keep the adoption surface additive and opt-in.
+let adoptionDiagnosticsSink: OverlayAdoptionDiagnosticsSink | undefined;
+const adoptionCounters: MutableOverlayAdoptionDiagnostics = emptyOverlayAdoptionDiagnostics();
+
+export function setOverlayAdoptionDiagnosticsSink(
+    sink: OverlayAdoptionDiagnosticsSink | undefined,
+): void {
+    adoptionDiagnosticsSink = sink;
+}
+
+export function readOverlayAdoptionDiagnostics(): RallarOverlayAdoptionDiagnostics {
+    return { ...adoptionCounters };
+}
+
+export function resetOverlayAdoptionDiagnostics(): void {
+    Object.assign(adoptionCounters, emptyOverlayAdoptionDiagnostics());
+}
+
+function emptyOverlayAdoptionDiagnostics(): MutableOverlayAdoptionDiagnostics {
+    return {
+        initialSetCount: 0,
+        adoptedCount: 0,
+        equalCount: 0,
+        dominatedDroppedCount: 0,
+        incomparableConflictCount: 0,
+    };
+}
+
+function emitOverlayAdoption(overlayId: string, outcome: OverlayAdoptionOutcome): void {
+    if (outcome === 'initial-set') {
+        adoptionCounters.initialSetCount += 1;
+    } else if (outcome === 'adopted') {
+        adoptionCounters.adoptedCount += 1;
+    } else if (outcome === 'equal') {
+        adoptionCounters.equalCount += 1;
+    } else if (outcome === 'dominated-dropped') {
+        adoptionCounters.dominatedDroppedCount += 1;
+    } else {
+        adoptionCounters.incomparableConflictCount += 1;
+    }
+    try {
+        adoptionDiagnosticsSink?.({ overlayId, outcome });
+    } catch {
+        // Recording must never affect overlay adoption behavior.
+    }
+}
+
 export const overlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
     'shared.repository.overlays',
     'Overlay repository is not configured',
@@ -208,12 +281,14 @@ export function setOverlayById(
     const repository = requireOverlayRepository(manager);
     const current = repository.read(id);
     if (!current) {
+        emitOverlayAdoption(id, 'initial-set');
         repository.set(id, overlay);
         return;
     }
 
     const comparison = compareOverlayInfoTuple(overlay, current);
     if (comparison === 'dominates') {
+        emitOverlayAdoption(id, 'adopted');
         console.log(`Received updated overlay details: ${JSON.stringify(overlay)}`);
         repository.set(id, overlay);
         return;
@@ -221,15 +296,19 @@ export function setOverlayById(
 
     if (comparison === 'equal') {
         if (JSON.stringify(overlay) === JSON.stringify(current)) {
+            emitOverlayAdoption(id, 'equal');
             return;
         }
+        emitOverlayAdoption(id, 'incomparable-conflict');
         throw new OverlayRevisionConflictError(id);
     }
 
     if (comparison === 'incomparable') {
+        emitOverlayAdoption(id, 'incomparable-conflict');
         throw new OverlayRevisionConflictError(id);
     }
 
+    emitOverlayAdoption(id, 'dominated-dropped');
     console.log(
         'Received stale overlay data: ' +
         JSON.stringify(overlay) +

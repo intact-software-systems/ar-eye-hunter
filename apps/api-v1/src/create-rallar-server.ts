@@ -118,6 +118,7 @@ export function createRallarServer(
     now: rtcTopologyOptions.now,
   });
   const adminClientIds = readAdminClientIds();
+
   const topologyManagement = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref, cacheOptions) =>
       middleware.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
@@ -138,8 +139,10 @@ export function createRallarServer(
   middleware.appGroupInboxService.setTopologyManagementService(
     topologyManagement,
   );
+
   middleware.appGroupInboxService.setRtcRttAppInboxDependencies({
     repository: rttRepository,
+    formationMetrics: middleware.groupFormationMetrics.rttMutation,
     readPolicyInputs: async (command) => {
       const sessionsByGroupKey = new Map<string, {
         ref: GroupRef;
@@ -191,6 +194,7 @@ export function createRallarServer(
       };
     },
   });
+
   const databaseConfig = readApiV1DatabaseBackendConfig();
   const databasePubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
   const emptyWsStatus = {
@@ -204,6 +208,7 @@ export function createRallarServer(
   if (!middleware.appAdminInboxService || !middleware.appCrdtInboxService) {
     throw new Error('Admin database mutations require AppInbox services');
   }
+
   const adminOperations = new AdminOperationsService({
     now,
     serverId: myServerId,
@@ -216,6 +221,8 @@ export function createRallarServer(
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
     readRtcTopologyMetrics: () => rtcTopologyService.readMetrics(),
     resetRtcTopologyMetrics: () => rtcTopologyService.resetMetrics(),
+    readGroupFormationMetrics: () => middleware.groupFormationMetrics.readMetrics(),
+    resetGroupFormationMetrics: () => middleware.groupFormationMetrics.resetMetrics(),
     crdtAdminRepository: crdtLogRepository,
     mutationGateway: createApiAdminMutationGateway({
       appAdmin: middleware.appAdminInboxService,

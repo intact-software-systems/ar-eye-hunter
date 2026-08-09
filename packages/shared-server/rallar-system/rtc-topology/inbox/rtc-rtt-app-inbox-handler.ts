@@ -83,6 +83,13 @@ export class RtcRttAppInboxHandler {
     if (computed.outcome === 'write') {
       rtcRttDependencies.observeCommitted?.(computed.measurementGuard.value);
       this.dependencies.wakeQueue?.();
+      try {
+        rtcRttDependencies.formationMetrics?.({
+          recomputeIntentCount: computed.recomputeIntents.length,
+        });
+      } catch {
+        // Recording must never affect RTT mutation behavior.
+      }
     }
     return result;
   }
