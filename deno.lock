@@ -27,6 +27,9 @@
     "npm:typescript@7.0.2": "7.0.2"
   },
   "jsr": {
+    "@deno/deploy@0.0.9904": {
+      "integrity": "e75ce4d8f3f38b9a93ab0814bd4fcb4e33752245d5fbcbc95b7872082d552aa3"
+    },
     "@hono/hono@4.11.9": {
       "integrity": "c82c6b846abc3c1879d921d8365287d77cdef8073019f509ff80bf53033bdcba"
     },

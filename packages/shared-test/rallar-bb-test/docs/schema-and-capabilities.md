@@ -66,6 +66,27 @@ failures are documented in
 The capabilities are the source for UI help, catalog filtering, and future
 distributed recipe preflight checks.
 
+## RTC Connect Readiness
+
+`rtc.connect.readiness` waits for actual ready-peer health before the command
+returns successfully. Its defaults are `minReadyPeers: 1`, `timeoutMs: 5000`,
+and `intervalMs: 100`. The command-level timeout should be longer than the
+readiness timeout so connection setup does not consume the readiness budget.
+
+For the `browser-rallar` runtime used by browser control agents and
+`rallar-remote-browser` distributed runs, missing peers trigger an immediate
+exact-room point refresh and no more than one refresh per second afterward.
+Refresh receives cancellation and the remaining readiness deadline. Transient
+refresh errors are retried, permanent errors fail, and only a later health
+result with enough ready peer IDs satisfies readiness.
+
+The command or its active `configure` command must therefore resolve either an
+exact `roomRef`, or `applicationId` plus `roomId`; omitted `workspaceId`
+defaults to `default`. Preflight emits a warning rather than an error when that
+identity is not recipe-resolvable because simulated providers and external
+runtime configuration can remain valid. `refreshRoom` is an internal runtime
+bridge operation, not a recipe command or public command-schema field.
+
 ## Validation
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.

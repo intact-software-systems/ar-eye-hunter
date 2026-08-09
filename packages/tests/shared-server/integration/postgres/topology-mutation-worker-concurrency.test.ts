@@ -12,16 +12,16 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repo
 import {
   expectPendingDirectResourceOutboxEvidence,
   findDirectResourceOutboxEvidence,
-} from './direct-resource-outbox-evidence.ts';
-import { findSingleRetriedAppInboxAttemptSequence } from './fixtures/postgres-app-inbox-worker-runtime.ts';
-import { toOwnedAppInboxResourceIds } from './postgres-app-inbox-attempt-evidence.ts';
+} from '../../direct-resource-outbox-evidence.ts';
+import { findSingleRetriedAppInboxAttemptSequence } from '../../fixtures/postgres-app-inbox-worker-runtime.ts';
+import { toOwnedAppInboxResourceIds } from '../../postgres-app-inbox-attempt-evidence.ts';
 import {
   cleanupTopologyApplicationRows,
   createPostgresSql as createSql,
   topologyGroupSnapshot,
   type PostgresSql,
   waitForTopologyWorkerParticipants,
-} from './postgres-topology-concurrency-fixtures.ts';
+} from '../../postgres-topology-concurrency-fixtures.ts';
 import {
   readTopologyMutationWorkerTrace as readTopologyWorkerTrace,
   spawnTopologyMutationWorker as spawnTopologyWorker,
@@ -29,7 +29,7 @@ import {
   type TopologyMutationWorkerInput as TopologyWorkerInput,
   type TopologyMutationWorkerOutput as TopologyWorkerOutput,
   type TopologyMutationWorkerTrace as TopologyWorkerTrace,
-} from './postgres-topology-mutation-worker-fixtures.ts';
+} from '../../postgres-topology-mutation-worker-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 

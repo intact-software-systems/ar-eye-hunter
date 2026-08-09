@@ -291,6 +291,7 @@ describe('rallar-bb-test composite conformance matrix', () => {
                     return { status: 'sent', frame: sendCount };
                 },
                 sendWs: async () => ({ status: 'sent' }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },

@@ -158,6 +158,22 @@ throughput, SQL/row/byte counts, and transaction duration. Record the exact
 artifact paths and command output; do not relabel an older diagnostic artifact
 as the governed candidate.
 
+## PostgreSQL Shared-Server Integration
+
+The default unit suite excludes `packages/tests/shared-server/integration/**`.
+Run the live PostgreSQL behavior separately against a migrated test database:
+
+```bash
+npm run db:test:up
+npm run test:postgres:integration
+npm run test:postgres:presence-expiry
+```
+
+`test:postgres:integration` owns the reusable repository and true-overlap
+concurrency cases. Run `test:postgres:presence-expiry` separately and last
+because it retains fixed-ID outbox evidence that can affect later global
+outbox workers. Release Gate follows this same order.
+
 ## Plan Completion Gate
 
 Plan-only branches do not wait for local or Branch Release Gate builds. This

@@ -20,12 +20,12 @@ import {
   createGroupStateRepository,
 } from "@shared-server/postgres/rallar-system/createStateRepositories.ts";
 import { PSqlRuntimeStateRepository } from "@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts";
-import { createTestGroupStateRuntime } from "./group-state/group-state-test-runtime.ts";
+import { createTestGroupStateRuntime } from "../../../group-state/group-state-test-runtime.ts";
 import type { StateSyncPublisher } from "@shared-server/rallar-system/state-sync-publisher.ts";
 import { groupStateMaintenanceRequestId } from "@shared-server/rallar-system/services/group-state-service.ts";
 import type { GroupMutationReceipt } from "@shared-server/rallar-system/services/group-state-mutations.ts";
 import { AppInboxType } from "@shared-server/rallar-system/services/AppInboxService.ts";
-import { createPostgresClientPhaseDriver } from "./client-state/postgres-client-mutation-test-driver.ts";
+import { createPostgresClientPhaseDriver } from "../../../client-state/postgres-client-mutation-test-driver.ts";
 import {
   createPostgresAppInboxTestAuthority as testAuthority,
   createPostgresAppInboxWorkerRuntime,
@@ -36,13 +36,13 @@ import {
   unwrapAppInboxResult as unwrapAppInbox,
   waitForPostgresAppInboxWorkerParticipants,
 } from
-  "./fixtures/postgres-app-inbox-worker-runtime.ts";
-import { findDirectResourceOutboxEvidence } from "./direct-resource-outbox-evidence.ts";
-import { readOwnedAppInboxResourceIds } from "./postgres-app-inbox-attempt-evidence.ts";
+  "../../../fixtures/postgres-app-inbox-worker-runtime.ts";
+import { findDirectResourceOutboxEvidence } from "../../../direct-resource-outbox-evidence.ts";
+import { readOwnedAppInboxResourceIds } from "../../../postgres-app-inbox-attempt-evidence.ts";
 import {
   expectWorkerOutboxLifecycleEvidence,
   type WorkerOutboxEffect,
-} from "./postgres-worker-outbox-evidence.ts";
+} from "../../../postgres-worker-outbox-evidence.ts";
 
 const POSTGRES_INTEGRATION_ENABLED =
   process.env.RALLAR_POSTGRES_INTEGRATION === "1";
@@ -108,9 +108,11 @@ interface AssertOneWorkerRebasedInput {
   readonly traces: readonly WorkerTrace[];
 }
 
-const ROOT_DENO_CONFIG_PATH = fileURLToPath(new URL("../../../deno.json", import.meta.url));
+const ROOT_DENO_CONFIG_PATH = fileURLToPath(
+  new URL("../../../../../../deno.json", import.meta.url),
+);
 const STATE_MUTATION_WORKER_PATH = fileURLToPath(
-  new URL("./fixtures/postgres-expiry-worker.ts", import.meta.url),
+  new URL("../../../fixtures/postgres-expiry-worker.ts", import.meta.url),
 );
 
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -1463,7 +1465,7 @@ function spawnWorker(databaseUrl: string, input: WorkerInput): WorkerHandle {
     "run", "-A", "--unstable-temporal", "--node-modules-dir=none", "--no-lock",
     "--config", ROOT_DENO_CONFIG_PATH, STATE_MUTATION_WORKER_PATH,
   ], {
-    cwd: fileURLToPath(new URL("../../../", import.meta.url)),
+    cwd: fileURLToPath(new URL("../../../../../../", import.meta.url)),
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,

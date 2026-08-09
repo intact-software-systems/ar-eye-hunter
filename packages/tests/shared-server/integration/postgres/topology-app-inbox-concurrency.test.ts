@@ -12,9 +12,9 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repo
 import {
   expectPendingDirectResourceOutboxEvidence,
   findDirectResourceOutboxEvidence,
-} from './direct-resource-outbox-evidence.ts';
-import { findSingleRetriedAppInboxAttemptSequence } from './fixtures/postgres-app-inbox-worker-runtime.ts';
-import { toOwnedAppInboxResourceIds } from './postgres-app-inbox-attempt-evidence.ts';
+} from '../../direct-resource-outbox-evidence.ts';
+import { findSingleRetriedAppInboxAttemptSequence } from '../../fixtures/postgres-app-inbox-worker-runtime.ts';
+import { toOwnedAppInboxResourceIds } from '../../postgres-app-inbox-attempt-evidence.ts';
 import {
   cleanupTopologyApplicationRows,
   createPostgresSql,
@@ -24,7 +24,7 @@ import {
   topologyGroupSnapshot,
   type TopologyAppInboxWorkerInput,
   waitForTopologyWorkerParticipants,
-} from './postgres-topology-concurrency-fixtures.ts';
+} from '../../postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 

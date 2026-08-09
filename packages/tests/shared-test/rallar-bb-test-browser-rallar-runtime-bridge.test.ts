@@ -16,11 +16,13 @@ describe('browser Rallar runtime bridge', () => {
     });
 
     it('delegates SPA browser Rallar runtime calls to the window runtime', async () => {
+        const refreshRoom = vi.fn(async input => ({ action: 'refreshRoom', input }));
         const runtime: RallarBlackBoxBrowserRallarRuntime = {
             authenticate: vi.fn(async input => ({ action: 'authenticate', input })),
             connect: vi.fn(async input => ({ action: 'connect', input })),
             send: vi.fn(async input => ({ action: 'send', input })),
             sendWs: vi.fn(async input => ({ action: 'sendWs', input })),
+            refreshRoom,
             director: {
                 appoint: vi.fn(async input => ({ action: 'appoint', input })),
                 resign: vi.fn(async input => ({ action: 'resign', input })),
@@ -37,6 +39,7 @@ describe('browser Rallar runtime bridge', () => {
             __blackBoxRallar: runtime,
         });
         const bridge = createSpaBrowserRallarRuntime();
+        const refreshController = new AbortController();
         const connectInput = {
             connection: 'aliceRtc',
             actor: 'alice',
@@ -58,6 +61,10 @@ describe('browser Rallar runtime bridge', () => {
             .resolves.toMatchObject({ action: 'send' });
         await expect(bridge.sendWs?.({ connection: 'ws', data: { text: 'hello' } }))
             .resolves.toMatchObject({ action: 'sendWs' });
+        await expect(bridge.refreshRoom({
+            signal: refreshController.signal,
+            timeoutMs: 321,
+        })).resolves.toMatchObject({ action: 'refreshRoom' });
         await expect(bridge.director?.appoint({ roomId: 'room-1', principalId: 'alice' }))
             .resolves.toMatchObject({ action: 'appoint' });
         await expect(bridge.director?.relayStop({ relayId: 'relay-1' }))
@@ -79,6 +86,10 @@ describe('browser Rallar runtime bridge', () => {
                 text: 'hello',
             },
         });
+        expect(refreshRoom).toHaveBeenCalledWith({
+            signal: refreshController.signal,
+            timeoutMs: 321,
+        });
         expect(runtime.director?.appoint).toHaveBeenCalledWith({
             roomId: 'room-1',
             principalId: 'alice',
@@ -89,6 +100,7 @@ describe('browser Rallar runtime bridge', () => {
         const runtime: RallarBlackBoxBrowserRallarRuntime = {
             connect: vi.fn(async input => ({ action: 'connect', input })),
             send: vi.fn(async input => ({ action: 'send', input })),
+            refreshRoom: vi.fn(async () => ({ action: 'refreshRoom' })),
             close: vi.fn(async () => ({ action: 'close' })),
             health: vi.fn(async () => ({ action: 'health' })),
         };

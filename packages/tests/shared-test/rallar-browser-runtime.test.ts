@@ -8,8 +8,10 @@ const facade = vi.hoisted(() => {
         sessionId: 'session-1',
         expiresAtEpochMs: Date.now() + 60_000,
     };
+    const roomRefresh = vi.fn();
     return {
         session,
+        roomRefresh,
         unsubscribeRealtime: vi.fn(),
         unsubscribeMessagesRtc: vi.fn(),
         unsubscribeMessagesWs: vi.fn(),
@@ -27,6 +29,9 @@ const facade = vi.hoisted(() => {
                 join: vi.fn(),
                 leave: vi.fn(),
                 refresh: vi.fn(),
+                session: vi.fn(() => ({
+                    refresh: roomRefresh,
+                })),
             },
             realtime: {
                 onJson: vi.fn(),
@@ -88,18 +93,22 @@ type Runtime = Readonly<{
         rallar: Record<string, unknown>;
     }): Promise<unknown>;
     send(input: unknown): Promise<unknown>;
-        sendWs(input: unknown): Promise<unknown>;
-        director: {
-            appoint(input: unknown): Promise<unknown>;
-            resign(input: unknown): Promise<unknown>;
-            status(input: unknown): Promise<unknown>;
-            relayStart(input: unknown): Promise<unknown>;
-            intent(input: unknown): Promise<unknown>;
-            syncRequest(input: unknown): Promise<unknown>;
-            relayStop(input: unknown): Promise<unknown>;
-        };
-        crdt: {
-            open(input: unknown): Promise<unknown>;
+    sendWs(input: unknown): Promise<unknown>;
+    refreshRoom(options: Readonly<{
+        signal?: AbortSignal;
+        timeoutMs: number;
+    }>): Promise<void>;
+    director: {
+        appoint(input: unknown): Promise<unknown>;
+        resign(input: unknown): Promise<unknown>;
+        status(input: unknown): Promise<unknown>;
+        relayStart(input: unknown): Promise<unknown>;
+        intent(input: unknown): Promise<unknown>;
+        syncRequest(input: unknown): Promise<unknown>;
+        relayStop(input: unknown): Promise<unknown>;
+    };
+    crdt: {
+        open(input: unknown): Promise<unknown>;
         apply(input: unknown): Promise<unknown>;
         read(input: unknown): Promise<unknown>;
         sync(input: unknown): Promise<unknown>;
@@ -134,6 +143,10 @@ function resetFacade(): void {
     facade.rallar.rooms.join.mockResolvedValue({});
     facade.rallar.rooms.leave.mockResolvedValue({});
     facade.rallar.rooms.refresh.mockResolvedValue({});
+    facade.rallar.rooms.session.mockReturnValue({
+        refresh: facade.roomRefresh,
+    });
+    facade.roomRefresh.mockResolvedValue({});
     facade.rallar.realtime.onJson.mockReturnValue(facade.unsubscribeRealtime);
     facade.rallar.messages.rtc.onMessage.mockReturnValue(facade.unsubscribeMessagesRtc);
     facade.rallar.messages.ws.onMessage.mockReturnValue(facade.unsubscribeMessagesWs);
@@ -399,6 +412,69 @@ describe('browser Rallar black-box runtime', () => {
             leftRoom: true,
         });
         expect(facade.unsubscribeRealtime).toHaveBeenCalledTimes(1);
+    });
+
+    it('point-refreshes the connected room with the caller deadline and signal', async () => {
+        const runtime = await loadRuntime();
+        const controller = new AbortController();
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+                applicationId: 'app-a',
+                workspaceId: 'workspace-a',
+                timeoutMs: 1_234,
+            },
+        });
+
+        await runtime.refreshRoom({
+            signal: controller.signal,
+            timeoutMs: 321,
+        });
+
+        expect(facade.rallar.rooms.session).toHaveBeenCalledWith({
+            applicationId: 'app-a',
+            workspaceId: 'workspace-a',
+            groupId: 'room-1',
+        });
+        expect(facade.roomRefresh).toHaveBeenCalledWith({
+            signal: controller.signal,
+            timeoutMs: 321,
+        });
+        expect(facade.rallar.rooms.refresh).not.toHaveBeenCalled();
+    });
+
+    it('rejects room refresh when the connected config has no exact room reference', async () => {
+        const runtime = await loadRuntime();
+
+        await runtime.connect({
+            connection: 'aliceRtc',
+            actor: 'alice',
+            roomId: 'room-1',
+            rallar: {
+                apiBaseUrl: 'https://api.example.test',
+                username: 'alice',
+                password: 'secret',
+            },
+        });
+        await expect(runtime.refreshRoom({ timeoutMs: 321 })).rejects.toMatchObject({
+            name: 'RallarValidationError',
+            issues: [
+                {
+                    path: '$.roomRef',
+                    code: 'room-ref-required',
+                },
+            ],
+        });
+
+        expect(facade.rallar.rooms.session).not.toHaveBeenCalled();
+        expect(facade.roomRefresh).not.toHaveBeenCalled();
+        expect(facade.rallar.rooms.refresh).not.toHaveBeenCalled();
     });
 
     it('deduplicates auth bootstrap and reuses its restored session for full connect', async () => {

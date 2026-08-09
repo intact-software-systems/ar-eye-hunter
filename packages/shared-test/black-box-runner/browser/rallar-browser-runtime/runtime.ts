@@ -1,5 +1,5 @@
 import type { AuthSession, LoginResponse } from '@shared/api/api-config.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import { throwRallarValidation } from '@shared/api/rallar-validation.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import {
     createRallarFacade,
@@ -13,6 +13,8 @@ import {
     blackBoxRallarConnectionOperationKeyOf,
     blackBoxRallarConnectionTargetOf,
     blackBoxRallarRoomRefOf,
+    blackBoxRallarScopeDiagnosticsOf,
+    blackBoxRallarScopeOf,
     decideBlackBoxRallarLifecycleRequest,
     isSameBlackBoxRallarSession,
     mergeBlackBoxRallarAuthenticationConfig,
@@ -25,10 +27,13 @@ import { createBlackBoxRallarCrdtController } from './crdt-controller.ts';
 import { createBlackBoxRallarDirectorController } from './director-controller.ts';
 import { createBlackBoxRallarMessagingController } from './messaging-controller.ts';
 import { createBlackBoxRallarConsoleDiagnostics, createBlackBoxRallarRuntimeDiagnostics } from './diagnostics.ts';
+import type {
+    BlackBoxRallarRoomRefreshOptions,
+    BlackBoxRallarRuntime,
+} from './black-box-rallar-runtime-contract.ts';
 
 import type {
     BlackBoxRallarScope,
-    ResolvedBlackBoxRallarScope,
     BlackBoxRallarRoomRef,
     BlackBoxRallarTransport,
     BlackBoxRallarConfig,
@@ -40,7 +45,6 @@ import type {
     BlackBoxRallarCloseDiagnostics,
     BlackBoxRallarHealthDiagnostics,
     BlackBoxRallarHealthInput,
-    BlackBoxRallarRuntime,
 } from './contracts.ts';
 
 export type {
@@ -78,8 +82,12 @@ export type {
     BlackBoxRallarDirectorRelaySummary,
     BlackBoxRallarDirectorCommandDiagnostics,
     BlackBoxRallarDirectorRuntime,
-    BlackBoxRallarRuntime,
 } from './contracts.ts';
+
+export type {
+    BlackBoxRallarRoomRefreshOptions,
+    BlackBoxRallarRuntime,
+} from './black-box-rallar-runtime-contract.ts';
 
 type RuntimeSessionDiagnostic = Pick<AuthSession, 'clientId' | 'sessionId' | 'username'>;
 
@@ -117,7 +125,6 @@ declare global {
 }
 
 const DEFAULT_LANE_ID = 'realtime';
-const DEFAULT_WORKSPACE_ID = 'default';
 
 type BlackBoxRallarRuntimeInstallation = Readonly<{
     runtime: BlackBoxRallarRuntime;
@@ -152,7 +159,7 @@ function createBlackBoxRallarRuntimeInstallation(
         },
         transportOf,
         laneIdOf,
-        scopeDiagnostics,
+        scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
     });
     const emit = runtimeDiagnostics.emit;
     const emitDiagnostic = runtimeDiagnostics.emitDiagnostic;
@@ -180,7 +187,7 @@ function createBlackBoxRallarRuntimeInstallation(
         delay: wait,
         currentConnectionConfig: () => state?.config,
         ensureLiveConnection: ensureCrdtLiveConnection,
-        scopeDiagnostics,
+        scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
         emit,
         emitError,
     });
@@ -191,9 +198,9 @@ function createBlackBoxRallarRuntimeInstallation(
         now,
         requireConfig: () => requireState().config,
         transportOf,
-        roomRefOf,
-        scopeOf,
-        scopeDiagnostics,
+        roomRefOf: blackBoxRallarRoomRefOf,
+        scopeOf: blackBoxRallarScopeOf,
+        scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
         emit,
         emitError,
     });
@@ -206,8 +213,8 @@ function createBlackBoxRallarRuntimeInstallation(
         laneIdOf,
         typeIdOf,
         topicIdOf,
-        roomRefOf,
-        scopeDiagnostics,
+        roomRefOf: blackBoxRallarRoomRefOf,
+        scopeDiagnostics: blackBoxRallarScopeDiagnosticsOf,
         toOptionalNumber,
         readHealth,
         wsStatus: wsStatusFor,
@@ -247,61 +254,9 @@ function createBlackBoxRallarRuntimeInstallation(
         return config.rallar.topicId ?? config.rallar.typeId;
     }
 
-    function isRecord(value: unknown): value is Record<string, unknown> {
-        return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-    }
-
-    function scopeOf(
-        config: BlackBoxRallarConnectionConfig,
-        input?: BlackBoxRallarSendInput,
-    ): ResolvedBlackBoxRallarScope | undefined {
-        const scope = isRecord(input?.scope) ? input.scope : config.rallar.scope;
-        const roomRef = roomRefOf(config, input);
-        const applicationId = String(
-            input?.applicationId ?? scope?.applicationId ?? roomRef?.applicationId ?? config.rallar.applicationId ?? '',
-        ).trim();
-        if (!applicationId) {
-            return undefined;
-        }
-
-        const workspaceId =
-            input?.workspaceId ??
-            scope?.workspaceId ??
-            roomRef?.workspaceId ??
-            config.rallar.workspaceId ??
-            DEFAULT_WORKSPACE_ID;
-
-        return {
-            applicationId,
-            workspaceId: String(workspaceId),
-        };
-    }
-
-    function roomRefOf(
-        config: BlackBoxRallarConnectionConfig,
-        input?: BlackBoxRallarSendInput,
-    ): GroupRef | undefined {
-        return blackBoxRallarRoomRefOf(config, input);
-    }
-
-    function scopeDiagnostics(
-        config: BlackBoxRallarConnectionConfig,
-        input?: BlackBoxRallarSendInput,
-    ): Record<string, unknown> {
-        const scope = scopeOf(config, input);
-        const roomRef = roomRefOf(config, input);
-
-        return {
-            ...(scope?.applicationId ? { applicationId: scope.applicationId } : {}),
-            ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
-            ...(scope ? { scope } : {}),
-            ...(roomRef ? { roomRef } : {}),
-        };
-    }
-
     function toRallarDefaults(config: BlackBoxRallarConnectionConfig): Record<string, unknown> | undefined {
-        const scope = scopeOf(config);
-        const roomRef = roomRefOf(config);
+        const scope = blackBoxRallarScopeOf(config);
+        const roomRef = blackBoxRallarRoomRefOf(config);
         const roomId = config.roomId ?? roomRef?.groupId;
         if (!scope?.applicationId) {
             return undefined;
@@ -816,7 +771,7 @@ function createBlackBoxRallarRuntimeInstallation(
                 status: 'authenticated',
                 connection: config.connection,
                 actor: config.actor,
-                ...scopeDiagnostics(config),
+                ...blackBoxRallarScopeDiagnosticsOf(config),
                 clientId: session.clientId,
                 sessionId: session.sessionId,
                 username: session.username,
@@ -868,7 +823,7 @@ function createBlackBoxRallarRuntimeInstallation(
             phase = 'configure';
             emitConnectPhaseStarted(config, phase, {
                 apiBaseUrl: config.rallar.apiBaseUrl,
-                ...scopeDiagnostics(config),
+                ...blackBoxRallarScopeDiagnosticsOf(config),
             });
             requireCredentialsForAuthenticationIdentityChange(config);
             const defaults = configureRallarConnection(config);
@@ -904,8 +859,8 @@ function createBlackBoxRallarRuntimeInstallation(
             });
 
             if (config.roomId) {
-                const roomRef = roomRefOf(config);
-                const scope = scopeOf(config);
+                const roomRef = blackBoxRallarRoomRefOf(config);
+                const scope = blackBoxRallarScopeOf(config);
                 phase = 'room-join';
                 emitConnectPhaseStarted(config, phase, {
                     roomId: config.roomId,
@@ -942,7 +897,7 @@ function createBlackBoxRallarRuntimeInstallation(
                               actor: config.actor,
                               transport,
                               roomId: config.roomId,
-                              ...scopeDiagnostics(config),
+                              ...blackBoxRallarScopeDiagnosticsOf(config),
                               laneId: message.laneId,
                               peerId: session.sessionId,
                               remotePeerId: message.peerId,
@@ -960,7 +915,7 @@ function createBlackBoxRallarRuntimeInstallation(
                               actor: config.actor,
                               transport,
                               roomId: message.roomId ?? config.roomId,
-                              ...scopeDiagnostics(config),
+                              ...blackBoxRallarScopeDiagnosticsOf(config),
                               peerId: session.sessionId,
                               remotePeerId: message.senderId,
                               senderId: message.senderId,
@@ -995,7 +950,7 @@ function createBlackBoxRallarRuntimeInstallation(
                 actor: config.actor,
                 transport,
                 roomId: config.roomId,
-                ...scopeDiagnostics(config),
+                ...blackBoxRallarScopeDiagnosticsOf(config),
                 clientId: session.clientId,
                 sessionId: session.sessionId,
                 username: session.username,
@@ -1091,7 +1046,7 @@ function createBlackBoxRallarRuntimeInstallation(
                 if (config.roomId) {
                     await rallar.rooms.join(config.roomId, {
                         timeoutMs: config.rallar.timeoutMs,
-                        scope: scopeOf(config),
+                        scope: blackBoxRallarScopeOf(config),
                     });
                     context.assertCurrent();
                 }
@@ -1139,7 +1094,7 @@ function createBlackBoxRallarRuntimeInstallation(
             if (config) {
                 emitDiagnostic(config, 'rallar.browser.cleanup.started', {
                     roomId: config.roomId,
-                    ...scopeDiagnostics(config),
+                    ...blackBoxRallarScopeDiagnosticsOf(config),
                     logoutOnClose: config.rallar.logoutOnClose === true,
                     leaveRoomOnClose: config.rallar.leaveRoomOnClose !== false,
                 });
@@ -1161,8 +1116,8 @@ function createBlackBoxRallarRuntimeInstallation(
             }
 
             if (config?.roomId && config.rallar.leaveRoomOnClose !== false) {
-                const roomRef = roomRefOf(config);
-                const scope = scopeOf(config);
+                const roomRef = blackBoxRallarRoomRefOf(config);
+                const scope = blackBoxRallarScopeOf(config);
                 emitDiagnostic(config, 'rallar.browser.cleanup.room_leave_started', {
                     roomId: config.roomId,
                     roomRef,
@@ -1222,7 +1177,7 @@ function createBlackBoxRallarRuntimeInstallation(
                 actor: config?.actor,
                 transport: config ? transportOf(config) : undefined,
                 roomId: config?.roomId,
-                ...(config ? scopeDiagnostics(config) : {}),
+                ...(config ? blackBoxRallarScopeDiagnosticsOf(config) : {}),
                 unsubscribed,
                 leftRoom,
                 logout,
@@ -1236,7 +1191,7 @@ function createBlackBoxRallarRuntimeInstallation(
                 actor: config?.actor,
                 transport: config ? transportOf(config) : undefined,
                 roomId: config?.roomId,
-                ...(config ? scopeDiagnostics(config) : {}),
+                ...(config ? blackBoxRallarScopeDiagnosticsOf(config) : {}),
                 data: diagnostics,
             });
             return diagnostics;
@@ -1322,7 +1277,7 @@ function createBlackBoxRallarRuntimeInstallation(
             actor: config?.actor,
             transport,
             roomId: config?.roomId,
-            ...(config ? scopeDiagnostics(config) : {}),
+            ...(config ? blackBoxRallarScopeDiagnosticsOf(config) : {}),
             session: rallar.session(),
             health: config ? readHealth(config) : [],
             ...(rtcDiagnostics !== undefined ? { rtcDiagnostics } : {}),
@@ -1332,11 +1287,27 @@ function createBlackBoxRallarRuntimeInstallation(
         };
     }
 
+    async function refreshRoom(options: BlackBoxRallarRoomRefreshOptions): Promise<void> {
+        const roomRef = blackBoxRallarRoomRefOf(requireState().config);
+        if (!roomRef) {
+            throwRallarValidation([
+                {
+                    path: '$.roomRef',
+                    code: 'room-ref-required',
+                    message: 'Room refresh requires an exact room reference.',
+                },
+            ]);
+        }
+
+        await rallar.rooms.session(roomRef).refresh(options);
+    }
+
     const runtime: BlackBoxRallarRuntime = {
         authenticate,
         connect,
         send: messagingController.send,
         sendWs: messagingController.sendWs,
+        refreshRoom,
         crdt: crdtController,
         director: directorController,
         close,

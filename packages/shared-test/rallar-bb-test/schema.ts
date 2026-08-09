@@ -978,7 +978,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'rtc.connect',
         title: 'RTC Connect',
-        description: 'Connects an RTC/realtime provider connection for the configured actor and room.',
+        description: 'Connects an RTC/realtime provider and can wait for exact-room ready peers.',
         requiredFields: [],
         optionalFields: [
             'connection',
@@ -1001,22 +1001,21 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['Rallar API and signaling when provider mode is browser-rallar or rallar-browser'],
-        artifactExpectations: ['connect diagnostics', 'lane readiness events', 'RTC stats'],
+        artifactExpectations: ['connect diagnostics', 'readiness diagnostics', 'RTC stats'],
         example: {
             kind: 'rtc.connect',
             commandId: 'connect-alice-rtc',
             connection: 'aliceRtc',
             actor: 'alice',
             roomId: 'bb-group',
-            applicationId: 'rallar-server',
-            workspaceId: 'default',
+            roomRef: { applicationId: 'rallar-server', groupId: 'bb-group' },
             transport: 'realtime',
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 10_000,
                 intervalMs: 100,
             },
-            timeoutMs: 10_000,
+            timeoutMs: 15_000,
         },
     },
     {

@@ -64,6 +64,7 @@ import {
     distributedRunMonitorExpectedTargetMultiplicity,
     distributedRunMonitorRecipeTargetCount,
 } from './distributed-run-monitor-membership-index.ts';
+import { rtcReadinessWarnings } from './browser/rtc-readiness-warnings.ts';
 
 export type DistributedRecipeRolePattern =
     | 'all-agents'
@@ -1004,65 +1005,6 @@ export function distributedRecipePreflight(
 }
 
 type CommandCapability = typeof RALLAR_BLACK_BOX_COMMAND_CAPABILITIES[number];
-
-type RecipeCommandNode = Readonly<{
-    command: RallarBlackBoxTestCommand;
-    insideLoop: boolean;
-}>;
-
-function recipeCommandNodes(
-    commands: readonly RallarBlackBoxTestCommand[],
-    insideLoop = false,
-): readonly RecipeCommandNode[] {
-    return commands.flatMap((command): readonly RecipeCommandNode[] => {
-        const current = [{ command, insideLoop }];
-        if (command.kind === 'loop') {
-            return [
-                ...current,
-                ...recipeCommandNodes(command.commands, true),
-            ];
-        }
-        if (command.kind === 'parallel') {
-            return [
-                ...current,
-                ...command.groups.flatMap(group => recipeCommandNodes(group.commands, insideLoop)),
-            ];
-        }
-        if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
-            return [
-                ...current,
-                ...recipeCommandNodes(command.recipe.commands, insideLoop),
-            ];
-        }
-        return current;
-    });
-}
-
-function hasRtcConnectReadiness(command: RallarBlackBoxTestCommand): boolean {
-    return command.kind === 'rtc.connect' && command.readiness !== undefined;
-}
-
-function rtcReadinessWarnings(recipe: RallarBlackBoxTestRecipe): readonly string[] {
-    const nodes = recipeCommandNodes(recipe.commands);
-    const sends = nodes.filter(node => node.command.kind === 'rtc.send' || node.command.kind === 'rtc.stream');
-    if (sends.length === 0 || nodes.some(node => hasRtcConnectReadiness(node.command))) {
-        return [];
-    }
-
-    const hasStream = sends.some(node => node.command.kind === 'rtc.stream');
-    const warnings = [
-        hasStream
-            ? 'RTC stream traffic starts without an explicit rtc.connect readiness contract; frames can race signaling and data-channel readiness.'
-            : 'RTC send traffic starts without an explicit rtc.connect readiness contract; sends can race signaling and data-channel readiness.',
-    ];
-    if (sends.some(node => node.insideLoop)) {
-        warnings.push('Looped RTC sends are especially sensitive to missing ready-peer checks before the first frame.');
-    }
-    if (hasStream) {
-        warnings.push('Streamed RTC frames are especially sensitive to missing ready-peer checks before the first frame.');
-    }
-    return warnings;
-}
 
 type DistributedRecipeCommandAnalysis = Readonly<{
     effectiveCommandCount: number;

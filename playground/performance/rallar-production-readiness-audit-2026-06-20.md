@@ -84,7 +84,7 @@ repo's own validation suite stopping it.
 ### 3. A named Postgres presence-expiry validation script is broken
 
 `package.json:71` defines `test:postgres:presence-expiry` to run
-`packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts`.
+`packages/tests/shared-server/integration/postgres/presence/presence-expiry-concurrency.test.ts`.
 However, the root Vitest config excludes that same file at `vitest.config.ts:18`.
 
 Observed result:
@@ -327,7 +327,7 @@ Use small, focused prompts rather than asking for all readiness work at once:
    network, server logs, and runtime diagnostics; identify the first failing
    transition."
 2. "Fix the root `test:postgres:presence-expiry` script/config so it runs
-   `packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts`
+   `packages/tests/shared-server/integration/postgres/presence/presence-expiry-concurrency.test.ts`
    without adding that opt-in file to default `npm run test:unit`, then run it
    against local Postgres."
 3. "Add a GitHub Actions release gate that runs root `test:ci`, app builds, Deno

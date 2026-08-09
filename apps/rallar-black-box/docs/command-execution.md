@@ -77,6 +77,20 @@ RTC commands can carry scoped Rallar addressing fields directly on `rtc.connect`
 `workspaceId`, `scope`, `roomRef`, and `minSnapshotVersion`. Manual Rallar exposes these fields and the browser adapter
 passes them through to the real provider instead of inferring them in the SPA.
 
+An `rtc.connect` command can add a `readiness` contract before later RTC traffic starts. The defaults are one ready
+peer, a 5 second readiness timeout, and 100 ms health polling. When `browser-rallar` health does not yet report enough
+ready peers, the browser agent immediately point-refreshes the exact room and repeats that refresh no more than once
+per second. The point read receives the distributed-run cancellation signal and the remaining readiness deadline.
+Transient refresh failures are recorded and retried; validation and other permanent failures fail the command.
+Readiness succeeds only when a later health result contains enough ready peer IDs, never merely because refresh
+completed.
+
+Browser-Rallar readiness therefore needs an exact room identity: either `roomRef`, or `applicationId` plus `roomId`,
+on the command or its active `configure` command. `workspaceId` defaults to `default`. `refreshRoom` is an internal
+browser-runtime operation and is not a recipe command. Preflight reports a non-blocking warning when recipe-local
+addressing cannot resolve the exact room, because simulated providers or external runtime configuration may still make
+the recipe executable.
+
 Real-provider cleanup is observable. Close/reset commands unsubscribe realtime and `messages.rtc` listeners, leave the
 joined room by default, then either disconnect or log out when `rallarLogoutOnClose=1` is configured. Remote reset
 commands also clear browser `localStorage` and `sessionStorage` before executing the runtime reset.
@@ -339,11 +353,21 @@ RTC connect:
   "connection": "aliceRtc",
   "actor": "alice",
   "roomId": "demo-room",
+  "roomRef": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "demo-room"
+  },
   "transport": "realtime",
   "rallar": {
     "sessionId": "alice-session"
   },
-  "timeoutMs": 5000
+  "readiness": {
+    "minReadyPeers": 1,
+    "timeoutMs": 10000,
+    "intervalMs": 100
+  },
+  "timeoutMs": 15000
 }
 ```
 

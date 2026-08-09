@@ -99,16 +99,19 @@ describe('Deploy workflow release gate', () => {
       {
         jobName: 'deploy-api',
         configPath: 'apps/api-v1/deno.json',
+        organizationName: 'intact-software-systems',
         appName: 'rallar-server',
       },
       {
         jobName: 'deploy-control-server',
         configPath: 'apps/rallar-black-box-control-server/deno.json',
+        organizationName: 'intact-software-systems',
         appName: 'rallar-bb-server',
       },
       {
         jobName: 'deploy-relic-api',
         configPath: 'apps/relic-hunter-server-v1/deno.json',
+        organizationName: 'intact-software-systems',
         appName: 'relic-hunters',
       },
     ];
@@ -126,6 +129,8 @@ describe('Deploy workflow release gate', () => {
         await readFile(path.join(repoRoot, deployment.configPath), 'utf8'),
       ) as {
         deploy?: {
+          org?: string;
+          app?: string;
           runtime?: {
             type?: string;
             entrypoint?: string;
@@ -134,6 +139,8 @@ describe('Deploy workflow release gate', () => {
         };
       };
 
+      expect(config.deploy?.org).toBe(deployment.organizationName);
+      expect(config.deploy?.app).toBe(deployment.appName);
       expect(config.deploy?.runtime).toEqual({
         type: 'dynamic',
         entrypoint: './src/main.ts',

@@ -8,7 +8,7 @@ import {
   requirePostgresClient as requireClient,
   requirePostgresDatabaseUrl as requireDatabaseUrl,
   withPostgresClients,
-} from './postgres-runtime-state-client-fixtures.ts';
+} from '../../postgres-runtime-state-client-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 

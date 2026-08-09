@@ -2,6 +2,7 @@ import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarRoomRef,
     BlackBoxRallarSendInput,
+    ResolvedBlackBoxRallarScope,
 } from './contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -295,4 +296,56 @@ export function decideBlackBoxRallarLifecycleRequest(
         };
     }
     return { kind: 'allow' };
+}
+
+export type BlackBoxRallarScopeDiagnostics = Readonly<{
+    applicationId?: string;
+    workspaceId?: string;
+    scope?: ResolvedBlackBoxRallarScope;
+    roomRef?: GroupRef;
+}>;
+
+export function blackBoxRallarScopeOf(
+    config: ConnectionConfig,
+    input?: BlackBoxRallarSendInput,
+): ResolvedBlackBoxRallarScope | undefined {
+    const scope = input?.scope ?? config.rallar.scope;
+    const roomRef = blackBoxRallarRoomRefOf(config, input);
+    const applicationId = String(
+        input?.applicationId ??
+        scope?.applicationId ??
+        roomRef?.applicationId ??
+        config.rallar.applicationId ??
+        '',
+    ).trim();
+    if (!applicationId) {
+        return undefined;
+    }
+
+    const workspaceId =
+        input?.workspaceId ??
+        scope?.workspaceId ??
+        roomRef?.workspaceId ??
+        config.rallar.workspaceId ??
+        DEFAULT_WORKSPACE_ID;
+
+    return {
+        applicationId,
+        workspaceId: String(workspaceId),
+    };
+}
+
+export function blackBoxRallarScopeDiagnosticsOf(
+    config: ConnectionConfig,
+    input?: BlackBoxRallarSendInput,
+): BlackBoxRallarScopeDiagnostics {
+    const scope = blackBoxRallarScopeOf(config, input);
+    const roomRef = blackBoxRallarRoomRefOf(config, input);
+
+    return {
+        ...(scope?.applicationId ? { applicationId: scope.applicationId } : {}),
+        ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
+        ...(scope ? { scope } : {}),
+        ...(roomRef ? { roomRef } : {}),
+    };
 }

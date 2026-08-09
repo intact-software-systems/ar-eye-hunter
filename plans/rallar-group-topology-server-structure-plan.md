@@ -512,7 +512,6 @@ packages/tests/shared-server/
   authoritative-mutation-read-compute-validate-write.test.ts
   guarded-batch-write-contract.test.ts
   mutation-boundary-analysis.ts
-  postgres-task8-runtime-evidence.test.ts
   rtc-topology-outbox-work.test.ts
   ws-system-topics-rtc-topology.test.ts
   fixtures/
@@ -1087,7 +1086,7 @@ PR regenerates this inventory before removing its predecessor path:
   `services/group-topology-management-service.ts`,
   `packages/tests/shared-server/app-inbox-transaction.test.ts`,
   `packages/tests/shared-server/group-topology-config-service.test.ts`,
-  `packages/tests/shared-server/postgres-topology-config-override-concurrency.test.ts`, and
+  `packages/tests/shared-server/integration/postgres/topology-config-override-concurrency.test.ts`, and
   `scripts/perf/api-v1-state-write-concurrency-bench.ts`.
 - `services/group-topology-management-service.ts`:
   `apps/api-v1/src/create-rallar-server.ts`,
@@ -1124,10 +1123,9 @@ PR regenerates this inventory before removing its predecessor path:
   `packages/tests/shared-server/fixtures/postgres-app-inbox-worker-services.ts`,
   `packages/tests/shared-server/group-topology-config-repository.test.ts`,
   `packages/tests/shared-server/mutation-boundary-analysis.ts`,
-  `packages/tests/shared-server/postgres-task8-runtime-evidence.test.ts`,
-  `packages/tests/shared-server/postgres-topology-app-inbox-concurrency.test.ts`,
-  `packages/tests/shared-server/postgres-topology-config-override-concurrency.test.ts`,
-  `packages/tests/shared-server/postgres-topology-mutation-worker-concurrency.test.ts`, and
+  `packages/tests/shared-server/integration/postgres/topology-app-inbox-concurrency.test.ts`,
+  `packages/tests/shared-server/integration/postgres/topology-config-override-concurrency.test.ts`,
+  `packages/tests/shared-server/integration/postgres/topology-mutation-worker-concurrency.test.ts`, and
   `scripts/perf/api-v1-state-write-concurrency-bench.ts`.
 - `repositories/group-topology-mutation-exact-read.ts` and
   `repositories/group-topology-stored-source-values.ts`: each is consumed only
@@ -1995,7 +1993,7 @@ deno run -A --unstable-temporal --node-modules-dir=none --no-lock \
   npm:vitest@4.0.17 run --no-file-parallelism \
   --config packages/tests/shared-server/vitest.deno.config.mjs \
   packages/tests/shared-server/topology/concurrency/postgres-topology-app-inbox-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-app-outbox-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-app-outbox-concurrency.test.ts \
   packages/tests/shared-server/topology/concurrency/postgres-topology-config-override-concurrency.test.ts \
   packages/tests/shared-server/topology/concurrency/postgres-topology-mutation-worker-concurrency.test.ts
 ```

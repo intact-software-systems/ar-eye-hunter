@@ -12,8 +12,8 @@ import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/service
 import {
   expectPendingDirectResourceOutboxEvidence,
   findDirectResourceOutboxEvidence,
-} from './direct-resource-outbox-evidence.ts';
-import { toOwnedAppInboxResourceIds } from './postgres-app-inbox-attempt-evidence.ts';
+} from '../../direct-resource-outbox-evidence.ts';
+import { toOwnedAppInboxResourceIds } from '../../postgres-app-inbox-attempt-evidence.ts';
 import {
   cleanupTopologyApplicationRows,
   createPostgresSql,
@@ -25,7 +25,7 @@ import {
   type TopologyAppInboxWorkerOutput,
   type TopologyWorkerTrace,
   waitForTopologyWorkerParticipants,
-} from './postgres-topology-concurrency-fixtures.ts';
+} from '../../postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 const DURABLE_CONFIG: EffectiveGroupTopologyConfig = {

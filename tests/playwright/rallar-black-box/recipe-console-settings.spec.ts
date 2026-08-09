@@ -24,8 +24,11 @@ test('saves, restores, resets, and closes personal defaults from the command bar
     await trigger.click();
     const panel = page.getByRole('dialog', { name: 'Account and settings' });
     await expect(panel).toBeVisible();
-    await expect(panel.getByLabel('API URL')).toBeDisabled();
-    await expect(panel.getByText('Managed by deployment')).toBeVisible();
+    const apiUrlInput = panel.getByLabel('API URL');
+    await expect(apiUrlInput).toBeDisabled();
+    await expect(
+        apiUrlInput.locator('..').getByText('Managed by deployment', { exact: true }),
+    ).toBeVisible();
 
     await panel.getByLabel('Application').fill('personal-operator-app');
     await panel.getByLabel('Control read timeout (ms)').fill('30000');

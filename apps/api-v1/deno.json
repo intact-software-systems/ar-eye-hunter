@@ -36,6 +36,8 @@
     "rtc:migrate-persisted-state": "deno run --allow-env --allow-net --allow-read --allow-write scripts/migrate-rtc-persisted-state.ts"
   },
   "deploy": {
+    "org": "intact-software-systems",
+    "app": "rallar-server",
     "runtime": {
       "type": "dynamic",
       "entrypoint": "./src/main.ts",

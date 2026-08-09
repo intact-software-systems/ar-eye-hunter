@@ -97,6 +97,9 @@ jobs:
       - name: Run Postgres migrations
         run: npm run db:migrate
 
+      - name: Run Postgres shared-server integration tests
+        run: npm run test:postgres:integration
+
       - name: Run API v1 black-box recipes
         uses: ./.github/actions/api-v1-black-box-test
         with:
@@ -119,6 +122,8 @@ jobs:
 
       - name: Run Postgres full-stack smoke tests
         run: |
-          npm run test:postgres:presence-expiry
           npm run test:rallar:full-stack:postgres:rest
           npm run test:rallar:full-stack:postgres:control
+
+      - name: Run Postgres presence-expiry integration tests
+        run: npm run test:postgres:presence-expiry

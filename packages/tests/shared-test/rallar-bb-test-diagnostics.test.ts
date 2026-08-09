@@ -109,6 +109,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
                     peerIds: ['bob-session'],
                     health: [],
                 }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
