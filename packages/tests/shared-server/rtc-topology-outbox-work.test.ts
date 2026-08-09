@@ -40,23 +40,23 @@ describe('RTC topology APP_OUTBOX work', () => {
      */
     it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {
         const source = readFileSync(new URL(
-            '../../shared-server/rallar-system/services/RtcTopologyOutboxWork.ts',
+            '../../shared-server/rallar-system/topology/replay/create-rtc-topology-work-handler.ts',
             import.meta.url,
         ), 'utf8');
         const handlerStart = source.indexOf('export function createRtcTopologyWorkHandler');
-        const handlerEnd = source.indexOf(
-            'export class RtcTopologyExecutionConflictError',
-            handlerStart,
-        );
-        const handler = source.slice(handlerStart, handlerEnd);
+        const handler = source.slice(handlerStart);
 
         expect(handlerStart).toBeGreaterThanOrEqual(0);
         expect(handler).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(handler).not.toMatch(/\bfor\s*\([^)]*attempt/);
         expect(handler).toMatch(/runInTransaction/);
         expect(handler).toMatch(/writeTopologyMutation\(\s*transaction/);
+        expect(handler).toMatch(/appendOrValidate\(\s*transaction/);
         expect(handler).toMatch(/new ResourceInboxRepository\(transaction\)\.finishReserved/);
         expect(handler.indexOf('writeTopologyMutation')).toBeLessThan(
+            handler.indexOf('appendOrValidate'),
+        );
+        expect(handler.indexOf('appendOrValidate')).toBeLessThan(
             handler.indexOf('finishReserved'),
         );
     });

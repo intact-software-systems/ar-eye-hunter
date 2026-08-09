@@ -8,17 +8,22 @@
 
 Status: active; implementation is in progress as the three-PR stack below.
 
-Plan evidence base: `origin/main` at
-`726edc7c33386f9282f6594ec4b5c3c02033fbf1` on 2026-08-09. Revalidate the
-checkout, issue, paths, contracts, and commands before implementation and after
-every rebase. Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
+Plan evidence base: `origin/main` was
+`726edc7c33386f9282f6594ec4b5c3c02033fbf1` when execution started on
+2026-08-09. The latest publication review revalidated `origin/main` at
+`108933a97c7a40ee0831ecd185725aea243122bd`; revalidate the checkout, issue,
+paths, contracts, and commands before implementation and after every rebase.
+Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
 
 ## Implementation Progress
 
 Current exact-tree checkpoint on 2026-08-09:
 
-- `origin/main` remains `726edc7c33386f9282f6594ec4b5c3c02033fbf1`, so the
-  plan evidence base has not moved and has no compatibility delta.
+- `origin/main` advanced to `108933a97c7a40ee0831ecd185725aea243122bd` through
+  PR #145. The compatibility review found style-checker governance changes and
+  one additive `package.json` test-list edit only: no runtime, schema, realtime,
+  benchmark, public-contract, or acceptance-criterion delta. PR 1 remains
+  stacked on the still-open PR #141 as required.
 - Plan PR [#141](https://github.com/intact-software-systems/ar-eye-hunter/pull/141)
   remains open at `8e277691f3bcd618c556d57ab5ee61cac248f1db`. PR 1 is
   therefore based on that exact head. If #141 merges, PR 1 must be rebased onto
@@ -44,15 +49,47 @@ Stack record:
 | PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | pending |
 | PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | pending |
 
-No implementation milestone or completion gate is yet claimed complete.
+PR 1 implementation is functionally complete on the working tree; its final
+exact-tree local, performance, publication, and workflow gates remain pending.
 
 PR 1 progress:
 
-- Schema milestone implemented: the migration, Prisma models, idempotent PGlite
-  mirror, named constraints, and bootstrap/invariant proof are present. The
-  focused PGlite test passed 6/6 and `prisma validate` accepted the schema.
-  Live PostgreSQL migration/integration evidence remains pending with the later
-  PR 1 database gate.
+- The additive migration, Prisma models, idempotent PGlite mirror, named
+  constraints, and bootstrap/invariant proof are implemented. Prisma validation
+  and the focused bootstrap suite pass; the migration also deployed cleanly to
+  fresh PostgreSQL databases.
+- Canonical strict-number contracts, validation, append port, per-process stream
+  repository, database-time registration/heartbeat lease, and bounded
+  fixed-retention compaction are implemented. Compaction remains active even
+  while replay consumption is disabled.
+- One process UUID now owns the public publisher ID, QueueBox server suffix, and
+  durable publisher stream. Readiness waits for stream registration before
+  QueueBox workers start; post-readiness lease loss triggers ordered process
+  shutdown.
+- Both accepted and loaded topology work paths append or exactly validate the
+  durable row in the existing publication/outbox/reservation transaction.
+  Same-stream and named uniqueness conflicts retry; lease loss and invariant
+  mismatch fail closed.
+- Focused proof currently passes: delivery-log/service/outbox/middleware/
+  benchmark and source-phase Vitest cases; 58 focused Deno/PGlite cases; three
+  true-overlap PostgreSQL cases proving same-stream conflict/rollback,
+  independent A/B HEADs, and duplicate-publication loser rollback; root
+  typecheck; API check; and changed-style validation.
+- Broad working-tree evidence passes: API Deno 415/415; PostgreSQL integration
+  25/25; unit 6,582/6,582 across 721 files; repository governance 371/371;
+  `test:ci`; all-workspace build; full warning-only style scan; shared-web
+  browser-bundle budgets; and `git diff --check`. These results must be rerun or
+  confirmed on the final exact PR 1 tree after its evidence record is frozen.
+- The fixed delivery-log benchmark passes 300 equal-total appends for one stream
+  and three streams, 30 duplicate races, and 100 rollbacks with exact row/HEAD
+  counts and contiguous sequences. It lives under `scripts/perf/rtc-topology/`
+  because the repository style gate rejected another direct `scripts/perf`
+  feature file.
+- A preliminary three-run #141/candidate state-write pair had zero correctness
+  failures but failed the hot-throughput/noise comparison. It is not exact-tree
+  evidence because the candidate was uncommitted. The required pinned,
+  nine-run-per-position A-B-B-A evidence remains pending after the final PR 1
+  commit.
 
 ## Goal
 
@@ -543,18 +580,18 @@ Purpose: additive schema and write-only expansion. Replay remains disabled.
 
 - [x] Add migration, Prisma schema models, PGlite mirror, SQL constraints, and
       schema/bootstrap tests.
-- [ ] Add canonical contracts, safe BIGINT codec, validation, append port, and
+- [x] Add canonical contracts, safe BIGINT codec, validation, append port, and
       `PSqlRtcTopologyDeliveryRepository`.
-- [ ] Consolidate runtime identity around `myProcessInstanceId` and register the
+- [x] Consolidate runtime identity around `myProcessInstanceId` and register the
       process stream before QueueBox startup.
-- [ ] Add stream heartbeat/lease ownership needed by writers.
-- [ ] Add bounded fixed-retention log compaction so write-only deployments and
+- [x] Add stream heartbeat/lease ownership needed by writers.
+- [x] Add bounded fixed-retention log compaction so write-only deployments and
       rollback mode do not grow the new tables without limit.
-- [ ] Integrate `appendOrValidate` in both accepted and loaded
+- [x] Integrate `appendOrValidate` in both accepted and loaded
       `RtcTopologyOutboxWork` transaction paths.
-- [ ] Map HEAD/unique conflicts into the existing retry boundary; map invariant
+- [x] Map HEAD/unique conflicts into the existing retry boundary; map invariant
       mismatch and exhausted sequence into typed fail-closed corruption.
-- [ ] Add unit, PGlite, and true-overlap PostgreSQL tests for gap-free sequence,
+- [x] Add unit, PGlite, and true-overlap PostgreSQL tests for gap-free sequence,
       rollback, same-stream conflict, independent A/B appends, duplicate
       publication races, exact outbox identity, expiry, and lease loss.
 - [ ] Capture baseline/candidate state-write performance evidence.
@@ -646,9 +683,9 @@ New feature files:
 - `packages/shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts`
 - `packages/shared-server/rallar-system/topology/replay/rtc-topology-reconnect-hydrator.ts`
 - `packages/shared-server/rallar-system/topology/replay/rtc-topology-replay-diagnostics.ts`
-- `packages/shared-server/postgres/rtc-topology/PSqlRtcTopologyDeliveryRepository.ts`
+- `packages/shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts`
 - `packages/shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-replay-proof.mts`
-- `scripts/perf/rtc-topology-delivery-log-bench.ts`
+- `scripts/perf/rtc-topology/delivery-log-bench.ts`
 
 Primary integrations:
 
@@ -767,7 +804,7 @@ performance evidence is required.
    candidate using the documented A-B-B-A pooling method when local variance
    requires it. Compare with
    `scripts/perf/compare-api-v1-state-write-results.mjs`.
-2. Add `scripts/perf/rtc-topology-delivery-log-bench.ts` with fixed workloads:
+2. Add `scripts/perf/rtc-topology/delivery-log-bench.ts` with fixed workloads:
    one stream versus three streams, equal total appends, same-stream contention,
    independent-stream concurrency, duplicate publication race, and rollback.
    Record throughput, p50/p95/p99, transaction retries, row counts, and

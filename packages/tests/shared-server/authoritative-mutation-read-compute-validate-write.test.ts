@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts';
 import {
-  readBranchBody as branchBody,
   readFunctionBody as functionBody,
   readMethodBody as methodBody,
 } from './authoritative-mutation-source-analysis.ts';
@@ -89,9 +88,6 @@ const removedIntermediateOutboxSymbols = [
   'StateMutation' + 'OutboxRepository',
   'StateMutation' + 'OutboxWork',
 ] as const;
-const rtcOutboxAtomicityCase =
-  'keeps the RTC APP_OUTBOX worker to one attempt with atomic WS_OUTBOX and reservation completion';
-
 it('contains no intermediate state-mutation outbox runtime wiring', () => {
   for (const forbidden of removedIntermediateOutboxSymbols) {
     expect(trackedRuntimeSource).not.toContain(forbidden);
@@ -324,35 +320,6 @@ it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomi
   ]);
   expect(seam).not.toContain('insertRecomputeIntent');
   expect(seam).not.toContain('StateMutation' + 'Outbox');
-});
-
-it(rtcOutboxAtomicityCase, () => {
-  const handler = functionBody(sources.topologyWorker, 'createRtcTopologyWorkHandler');
-  expect(handler).toContain('readTopologyMutation(');
-  const claimMiss = handler.slice(handler.indexOf('const authority'));
-  expectInOrder(claimMiss, [
-    'computeTopologyMutation(',
-    'validateTopologyMutation(',
-    'runInTransaction(',
-    'writeTopologyMutation(',
-    'writeRtcTopologyPublicationOutbox(',
-    'finishRtcTopologyReservation(',
-  ]);
-  expect(handler).not.toMatch(/publicationFanout\.publish/);
-  expect(handler).not.toMatch(/waitForRuntimeStateWriteRetry/);
-  expect(handler).not.toMatch(/for\s*\([^)]*attempt/);
-});
-
-it('validates exact replay before reasserting WS_OUTBOX and completing the reservation', () => {
-  const handler = functionBody(sources.topologyWorker, 'createRtcTopologyWorkHandler');
-  const replay = branchBody(handler, 'if (read.publicationClaim)');
-  expectInOrder(replay, [
-    'computeTopologyMutation(replayInput)',
-    'validateTopologyMutation({ ...replayInput, computed })',
-    'writeRtcTopologyPublicationOutbox(',
-    'finishRtcTopologyReservation(',
-  ]);
-  expect(replay).not.toMatch(/publicationFanout\.publish/);
 });
 
 it('keeps all topology and RTT computed effects direct and mandatory', () => {

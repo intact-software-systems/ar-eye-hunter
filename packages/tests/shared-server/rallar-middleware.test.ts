@@ -145,6 +145,23 @@ describe('createRallarMiddleware', () => {
     reportFailure.mockRestore();
   });
 
+  it('exposes the process health failure channel without changing readiness', async () => {
+    const healthFailure = new Promise<never>(() => undefined);
+    const runtime = createRallarMiddleware({
+      ...createReadinessMiddlewareOptions(
+        Promise.resolve(),
+        {
+          publish: async () => undefined,
+          subscribe: async () => undefined,
+        },
+      ),
+      healthFailure,
+    });
+
+    await expect(runtime.readiness).resolves.toBeUndefined();
+    expect(runtime.healthFailure).toBe(healthFailure);
+  });
+
   it('registers an app inbox engine task that drains inbox messages', async () => {
     const inbox = new InMemoryQueueBox();
     const runtime = createRallarMiddleware({

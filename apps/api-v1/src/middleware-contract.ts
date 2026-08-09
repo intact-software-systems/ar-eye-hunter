@@ -23,6 +23,7 @@ export type Middleware =
     | 'rtcTopologyPublicationRepository'
     | 'rtcTopologyExecutionRepository'
     | 'rtcTopologyPublicationFanout'
+    | 'rtcTopologyDelivery'
     | 'appAuthInboxService'
   >
   & Readonly<{
@@ -31,6 +32,7 @@ export type Middleware =
     rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
     rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
     rtcTopologyPublicationFanout: RtcTopologyPublicationFanout;
+    rtcTopologyDelivery: NonNullable<RallarMiddlewareRuntime['rtcTopologyDelivery']>;
     appAuthInboxService: AppAuthInboxService;
     clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
@@ -60,6 +62,9 @@ export function requireApiMiddleware(
   if (!runtime.rtcTopologyPublicationFanout) {
     throw new Error('API middleware requires the RTC topology publication fanout');
   }
+  if (!runtime.rtcTopologyDelivery) {
+    throw new Error('API middleware requires RTC topology durable delivery');
+  }
   if (!runtime.appAuthInboxService) {
     throw new Error('API middleware requires the auth AppInbox service');
   }
@@ -70,6 +75,7 @@ export function requireApiMiddleware(
     rtcTopologyPublicationRepository: runtime.rtcTopologyPublicationRepository,
     rtcTopologyExecutionRepository: runtime.rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout: runtime.rtcTopologyPublicationFanout,
+    rtcTopologyDelivery: runtime.rtcTopologyDelivery,
     appAuthInboxService: runtime.appAuthInboxService,
     ...selectors,
     groupFormationMetrics,

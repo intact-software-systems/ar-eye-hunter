@@ -13,6 +13,9 @@ import { shutdownMiddlewareBackgroundTasks } from './middleware.ts';
 import {
   STATE_SNAPSHOT_READ_EXPOSED_HEADERS,
 } from './routes/state-snapshot-read-exposed-headers.ts';
+import {
+  stopApiOnRtcTopologyDeliveryHealthFailure,
+} from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
 
 const app: Hono = new Hono();
 addEventListener('unload', () => {
@@ -78,7 +81,31 @@ await rallar.runtime.readiness;
 rallar.start();
 
 const port = readServerPort();
-Deno.serve({ port }, app.fetch);
+const httpServer = Deno.serve({ port }, app.fetch);
+if (rallar.runtime.healthFailure) {
+  void stopApiOnRtcTopologyDeliveryHealthFailure({
+    healthFailure: rallar.runtime.healthFailure,
+    onHealthFailure: (error) => {
+      console.error('RTC topology delivery health failed; stopping API process:', error);
+    },
+    stopQueueWorkers: () => rallar.runtime.qboxEngine.stop(),
+    closeWebSockets: () => {
+      const socketServer = rallar.runtime.wsQBoxServerService.socket;
+      for (const connectionId of socketServer.connections.keys()) {
+        socketServer.closeConnection(
+          connectionId,
+          1012,
+          'rtc-topology-delivery-lease-lost',
+        );
+      }
+    },
+    stopBackgroundTasks: shutdownMiddlewareBackgroundTasks,
+    shutdownHttp: async () => await httpServer.shutdown(),
+    onShutdownStepFailure: (step, error) => {
+      console.error(`RTC topology delivery shutdown step ${step} failed:`, error);
+    },
+  });
+}
 console.log(`Server started on port ${port}. http://localhost:${port}/api/docs`);
 
 function readCorsOrigins(): readonly string[] {
