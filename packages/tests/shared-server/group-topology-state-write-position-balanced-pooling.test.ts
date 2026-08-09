@@ -11,7 +11,7 @@ import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../sc
 import { createStateWritePerformanceArtifact } from './state-write-performance-artifact-fixture.ts';
 
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
-const BASE_TREE = '1d2a577ff1e70c7b9d8fcbe72b80d2c0b9857be7';
+const BASE_TREE = '1d2a577f2a5f8fea71e3e1f60a8ed5fc25d36703';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const HASHES = {
   outerPooler: '1'.repeat(64),
