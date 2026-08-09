@@ -12,65 +12,63 @@ import type {
 } from './group-topology-config-mutation-contracts.ts';
 import {
   requireTopologyString,
-  readTopologyConfigReceiptBoundary,
   sameTopologyGroupRef,
   validateAcceptedTopologyConfig,
   validateTopologyConfigExactKeys,
   validateTopologyGroupRef,
   validateTopologyPositiveInteger,
   validateTopologyStorageRevision,
-} from './topology-config-mutation-boundary.ts';
-import type { TopologyConfigRecord } from './topology-config-mutation-boundary.ts';
+} from './topology-config-mutation-validation-values.ts';
 import { validateTopologyConfigReceipt } from './validate-topology-config-receipt.ts';
 
 export function validateGroupTopologyConfigGeneration(
-  candidate: TopologyConfigRecord | GroupTopologyConfigGeneration,
+  candidate: GroupTopologyConfigGeneration,
   expectedRef: GroupRef,
   expectedTarget: GroupTopologyConfigGenerationTarget,
 ): GroupTopologyConfigGeneration {
-  const value = candidate as TopologyConfigRecord;
+  const value = candidate;
   validateTopologyConfigExactKeys(
     value,
     ['groupRef', 'target', 'version'],
     'Topology config generation',
   );
   validateTopologyGroupRef(value.groupRef, 'Topology config generation groupRef');
-  if (!sameTopologyGroupRef(value.groupRef as GroupRef, expectedRef)) {
+  if (!sameTopologyGroupRef(value.groupRef, expectedRef)) {
     throw new TypeError('Topology config generation has the wrong groupRef');
   }
   if (value.target !== expectedTarget) {
     throw new TypeError('Topology config generation has the wrong target');
   }
   validateTopologyPositiveInteger(value.version, 'Topology config generation version');
-  return value as TopologyConfigRecord & GroupTopologyConfigGeneration;
+  return value;
 }
 
 export function validateGroupTopologyConfigInvariantGeneration(
-  candidate: TopologyConfigRecord | GroupTopologyConfigInvariantGeneration,
+  candidate: GroupTopologyConfigInvariantGeneration,
   expectedRef: GroupRef,
 ): GroupTopologyConfigInvariantGeneration {
-  const value = candidate as TopologyConfigRecord;
+  const value = candidate;
   validateTopologyConfigExactKeys(
     value,
     ['groupRef', 'version'],
     'Topology config invariant generation',
   );
   validateTopologyGroupRef(value.groupRef, 'Topology config invariant generation groupRef');
-  if (!sameTopologyGroupRef(value.groupRef as GroupRef, expectedRef)) {
+  if (!sameTopologyGroupRef(value.groupRef, expectedRef)) {
     throw new TypeError('Topology config invariant generation has the wrong groupRef');
   }
   validateTopologyPositiveInteger(value.version, 'Topology config invariant generation version');
-  return value as TopologyConfigRecord & GroupTopologyConfigInvariantGeneration;
+  return value;
 }
 
 export function validateStoredGroupTopologyConfig(
-  candidate: TopologyConfigRecord | StoredGroupTopologyConfig,
+  candidate: StoredGroupTopologyConfig,
   expectedRef: GroupRef,
 ): StoredGroupTopologyConfig {
-  const value = candidate as TopologyConfigRecord;
+  const value = candidate;
   validateTopologyConfigExactKeys(value, storedTopologyConfigKeys, 'Stored topology config');
   validateTopologyGroupRef(value.groupRef, 'Stored topology config groupRef');
-  if (!sameTopologyGroupRef(value.groupRef as GroupRef, expectedRef)) {
+  if (!sameTopologyGroupRef(value.groupRef, expectedRef)) {
     throw new TypeError('Stored topology config has the wrong groupRef');
   }
   validateAcceptedTopologyConfig(value.config, 'Stored topology config config');
@@ -84,15 +82,17 @@ export function validateStoredGroupTopologyConfig(
   if (value.requestId !== null) {
     requireTopologyString(value.requestId, 'Stored topology config requestId');
   }
-  return value as TopologyConfigRecord & StoredGroupTopologyConfig;
+  return value;
 }
 
 export function validateStoredGroupTopologyOverride(
-  candidate: TopologyConfigRecord | StoredGroupTopologyOverride,
+  candidate: StoredGroupTopologyOverride,
   expectedRef: GroupRef,
 ): StoredGroupTopologyOverride {
-  const value = candidate as TopologyConfigRecord;
-  const base = { ...value };
+  const value = candidate;
+  const base = { ...value } as StoredGroupTopologyConfig & {
+    expiresAtEpochMs?: number;
+  };
   delete base.expiresAtEpochMs;
   validateStoredGroupTopologyConfig(base, expectedRef);
   validateTopologyConfigExactKeys(
@@ -104,21 +104,21 @@ export function validateStoredGroupTopologyOverride(
   if (Number(value.expiresAtEpochMs) <= Number(value.updatedAtEpochMs)) {
     throw new TypeError('Stored topology override expiry must follow update');
   }
-  return value as TopologyConfigRecord & StoredGroupTopologyOverride;
+  return value;
 }
 
 export function validateGroupTopologyConfigMutationRecord(
-  candidate: TopologyConfigRecord | GroupTopologyConfigMutationRecord,
+  candidate: GroupTopologyConfigMutationRecord,
   expected: Readonly<{ groupRef: GroupRef; requestId: string }>,
 ): GroupTopologyConfigMutationRecord {
-  const value = candidate as TopologyConfigRecord;
+  const value = candidate;
   validateTopologyConfigExactKeys(
     value,
     ['groupRef', 'requestId', 'commandHash', 'receipt'],
     'Topology config mutation record',
   );
   validateTopologyGroupRef(value.groupRef, 'Topology config mutation record groupRef');
-  if (!sameTopologyGroupRef(value.groupRef as GroupRef, expected.groupRef)) {
+  if (!sameTopologyGroupRef(value.groupRef, expected.groupRef)) {
     throw new TypeError('Topology config mutation record has the wrong groupRef');
   }
   requireTopologyString(value.requestId, 'Topology config mutation requestId');
@@ -128,10 +128,7 @@ export function validateGroupTopologyConfigMutationRecord(
   if (!/^sha256:[0-9a-f]{64}$/.test(String(value.commandHash))) {
     throw new TypeError('Topology config mutation record hash is invalid');
   }
-  const receipt = validateTopologyConfigReceipt(
-    readTopologyConfigReceiptBoundary(value.receipt),
-    expected.groupRef,
-  );
+  const receipt = validateTopologyConfigReceipt(value.receipt, expected.groupRef);
   if (receipt.commandHash !== value.commandHash) {
     throw new TypeError('Topology config receipt hash differs from record');
   }
@@ -141,7 +138,7 @@ export function validateGroupTopologyConfigMutationRecord(
   if (receipt.requestId !== value.requestId) {
     throw new TypeError('Topology config receipt requestId differs from record');
   }
-  return value as TopologyConfigRecord & GroupTopologyConfigMutationRecord;
+  return value;
 }
 
 export function normalizeGroupTopologyConfigPatch(

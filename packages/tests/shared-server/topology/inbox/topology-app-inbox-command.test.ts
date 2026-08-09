@@ -313,8 +313,12 @@ describe('topology AppInbox durable command contract', () => {
         return Reflect.ownKeys(target);
       },
       get(target, property, receiver) {
-        if (property === 'operation') observations.operationReads += 1;
-        if (property === 'config') observations.configReads += 1;
+        if (property === 'operation') {
+          observations.operationReads += 1;
+        }
+        if (property === 'config') {
+          observations.configReads += 1;
+        }
         return Reflect.get(target, property, receiver);
       },
     });

@@ -14,7 +14,9 @@ describe('topology config mutation result reconstruction', () => {
     (operation) => {
       const mutation = createTopologyConfigMutationTestInput({ operation });
       const computed = computeTopologyConfigMutation(mutation);
-      if (computed.outcome !== 'write') throw new Error('Expected topology config write');
+      if (computed.outcome !== 'write') {
+        throw new Error('Expected topology config write');
+      }
 
       expect(resultFromTopologyConfigReceipt(mutation.command, computed.receipt)).toEqual(
         computed.result,

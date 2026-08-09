@@ -2,20 +2,21 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createTopologyTestAtomOwnership,
+  topologyTargetAtomKey,
   topologyTestAtomOwnershipDigest,
   type TopologyTestAtomOwnership,
 } from './group-topology-server-test-atom-ownership.ts';
 import { discoverTopologyTargetAtoms } from './group-topology-server-test-atom-inventory.ts';
-import {
-  validateTopologySupportDestinationSpecificity,
-  validateTopologyTestAtomOwnership,
-} from './group-topology-server-test-atom-ownership-validation.ts';
+import { validateTopologyTestAtomOwnership } from './group-topology-server-test-atom-ownership-validation.ts';
+import { declaredTopologyTestAtomEndpoints } from './group-topology-server-test-atom-endpoint-declarations.ts';
 import { read } from './group-topology-server-test-semantic-atoms.ts';
 
 const commandOwner =
   'packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts';
 const fixtureOwner =
   'packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-test-fixtures.ts';
+const resolutionOwner =
+  'packages/tests/shared-server/topology/config/group-topology-config-resolution.test.ts';
 
 describe('group topology server PR-A exact test atom ownership', () => {
   it('partitions every moved and additive target atom behind a pinned endpoint digest', () => {
@@ -23,9 +24,9 @@ describe('group topology server PR-A exact test atom ownership', () => {
 
     expect(() => validateTopologyTestAtomOwnership(ownership)).not.toThrow();
     expect(ownership.moved).toHaveLength(710);
-    expect(ownership.additive).toHaveLength(89);
+    expect(ownership.additive).toHaveLength(160);
     expect(topologyTestAtomOwnershipDigest(ownership)).toBe(
-      'ed9abaa6f5bc41a6aa2350ff15010a5ac94669de6e282b7d2baa197812aaf731',
+      'cfa238f4bb10aa966062f493d7a497061b89bc8ef6048451c19b23c477d7a73c',
     );
   });
 
@@ -58,6 +59,100 @@ describe('group topology server PR-A exact test atom ownership', () => {
     expect(revision?.ownerAtomId).toContain('property:revision:0');
   });
 
+  it('never treats a generic same-value literal as moved semantic evidence', () => {
+    const ownership = createTopologyTestAtomOwnership();
+    const degreeLimit = ownership.moved.find(
+      ({ sourceCaseId, sourceAtomId }) =>
+        sourceCaseId ===
+          'rejects compact replay receipt operation corruption against the verified command' &&
+        sourceAtomId.includes('property:durableDegreeLimit:5'),
+    );
+    const override = ownership.moved.find(
+      ({ sourceCaseId, sourceAtomId }) =>
+        sourceCaseId ===
+          'rejects compact replay receipt operation corruption against the verified command' &&
+        sourceAtomId.includes('property:overrideDegreeLimit:null'),
+    );
+    const deleteTarget = ownership.moved.find(
+      ({ sourceCaseId, sourceAtomId }) =>
+        sourceCaseId === 'rejects an elapsed stable override expiry with explicit pure facts' &&
+        sourceAtomId.includes('property:deleteTarget:null'),
+    );
+
+    expect(degreeLimit?.ownerAtomId).not.toContain('property:treeMinSize:5');
+    expect(override?.ownerAtomId).not.toContain('property:ttlMs:null');
+    expect(deleteTarget?.ownerAtomId).not.toContain(
+      'property:resolvedOverrideExpiresAtEpochMs:null',
+    );
+  });
+
+  it('materializes every contextual endpoint with reviewable family evidence', () => {
+    const contextual = declaredTopologyTestAtomEndpoints.filter(({ disposition }) =>
+      ['semantic', 'shared-fixture'].includes(disposition),
+    );
+    const declaredExact = declaredTopologyTestAtomEndpoints.filter(
+      ({ disposition }) => disposition === 'declared-exact',
+    );
+    const falseValueOnlyMappings = contextual.filter(({ sourceAtomId }) =>
+      [
+        'property:durableDegreeLimit:5',
+        'property:overrideDegreeLimit:null',
+        'property:deleteTarget:null',
+      ].some((suffix) => sourceAtomId.endsWith(suffix)),
+    );
+
+    expect(contextual).toHaveLength(210);
+    expect(declaredExact).toHaveLength(56);
+    expect(
+      new Set(contextual.map(({ declarationReason }) => declarationReason)).size,
+    ).toBeGreaterThan(10);
+    expect(falseValueOnlyMappings.map(({ declarationReason }) => declarationReason)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('never to an unrelated treeMinSize 5'),
+        expect.stringContaining('never to an unrelated ttlMs null'),
+        expect.stringContaining('never to resolved expiry null'),
+      ]),
+    );
+  });
+
+  it('rejects reordered target atoms instead of rebuilding ownership by traversal order', () => {
+    const canonical = read(fixtureOwner);
+    const changed = canonical.replace(
+      "      ttlMs: operation === 'putOverride' ? 5_000 : null,\n      expiresAtEpochMs: null,",
+      "      expiresAtEpochMs: null,\n      ttlMs: operation === 'putOverride' ? 5_000 : null,",
+    );
+
+    expect(changed).not.toBe(canonical);
+    expect(() => createTopologyTestAtomOwnership(targetReader([[fixtureOwner, changed]]))).toThrow(
+      /declared|endpoint|target atom/u,
+    );
+  });
+
+  it('rejects ambiguous equal-fingerprint targets instead of selecting the first one', () => {
+    const canonical = read(fixtureOwner);
+    const changed = canonical.replace(
+      '      expiresAtEpochMs: null,',
+      '      expiresAtEpochMs: null ?? null,',
+    );
+
+    expect(changed).not.toBe(canonical);
+    expect(() => createTopologyTestAtomOwnership(targetReader([[fixtureOwner, changed]]))).toThrow(
+      /ambiguous|declared|endpoint/u,
+    );
+  });
+
+  it('rejects a generic same-value field swap with unchanged literal counts', () => {
+    const canonical = read(resolutionOwner);
+    const changed = canonical
+      .replace('      degreeLimit: 5,', '      degreeLimit: 6,')
+      .replace('      treeMinSize: 6,', '      treeMinSize: 5,');
+
+    expect(changed).not.toBe(canonical);
+    expect(() =>
+      createTopologyTestAtomOwnership(targetReader([[resolutionOwner, changed]])),
+    ).toThrow(/declared|endpoint|target atom/u);
+  });
+
   it('rejects a generic literal target when a field-slot target is available', () => {
     const ownership = createTopologyTestAtomOwnership();
     const revision = ownership.moved.find(({ sourceAtomId }) =>
@@ -75,9 +170,30 @@ describe('group topology server PR-A exact test atom ownership', () => {
       ownerMatchKeys: timestamp.matchKeys,
     };
 
-    expect(() => validateTopologySupportDestinationSpecificity([weaker], targets)).toThrow(
-      /less specific/u,
+    const changed: TopologyTestAtomOwnership = {
+      ...ownership,
+      moved: ownership.moved.map((endpoint) => (endpoint === revision ? weaker : endpoint)),
+    };
+
+    expect(() => validateTopologyTestAtomOwnership(changed)).toThrow(
+      /declared atom endpoint|target claim/u,
     );
+  });
+
+  it('rejects a semantic declaration supported only by a bare equal value', () => {
+    const ownership = createTopologyTestAtomOwnership();
+    const semantic = ownership.moved.find(({ disposition }) => disposition === 'semantic')!;
+    const genericOnly = {
+      ...semantic,
+      sourceMatchKeys: ['literal:null'],
+      ownerMatchKeys: ['literal:null'],
+    };
+    const changed: TopologyTestAtomOwnership = {
+      ...ownership,
+      moved: ownership.moved.map((endpoint) => (endpoint === semantic ? genericOnly : endpoint)),
+    };
+
+    expect(() => validateTopologyTestAtomOwnership(changed)).toThrow(/specific normalized key/u);
   });
 
   it('fails closed when a target literal endpoint is deleted', () => {
@@ -110,6 +226,52 @@ describe('group topology server PR-A exact test atom ownership', () => {
     };
 
     expect(() => validateTopologyTestAtomOwnership(duplicate)).toThrow(/target claim/u);
+  });
+
+  it('rejects consolidation metadata on a uniquely claimed target', () => {
+    const ownership = createTopologyTestAtomOwnership();
+    const claimsByTarget = Map.groupBy(ownership.moved, topologyTargetAtomKey);
+    const uniqueExact = ownership.moved.find(
+      (endpoint) =>
+        endpoint.disposition === 'exact' &&
+        claimsByTarget.get(topologyTargetAtomKey(endpoint))?.length === 1,
+    )!;
+    const changed: TopologyTestAtomOwnership = {
+      ...ownership,
+      moved: ownership.moved.map((endpoint) =>
+        endpoint === uniqueExact
+          ? {
+              ...endpoint,
+              consolidationId: 'support:invented-unique-claim',
+              consolidationReason: 'Invented duplicate evidence.',
+            }
+          : endpoint,
+      ),
+    };
+
+    expect(uniqueExact.consolidationId).toBeNull();
+    expect(() => validateTopologyTestAtomOwnership(changed)).toThrow(/unique target claim/u);
+  });
+
+  it('pins the exact consolidation identifier and reason for duplicate target claims', () => {
+    const ownership = createTopologyTestAtomOwnership();
+    const claimsByTarget = Map.groupBy(ownership.moved, topologyTargetAtomKey);
+    const duplicateClaims = [...claimsByTarget.values()].find(
+      (claims) => claims.length > 1 && claims[0]?.ownerCaseId.startsWith('support:'),
+    )!;
+    for (const replacement of [
+      { consolidationId: 'support:invented-duplicate-target' },
+      { consolidationReason: 'Invented duplicate evidence.' },
+    ]) {
+      const changed: TopologyTestAtomOwnership = {
+        ...ownership,
+        moved: ownership.moved.map((endpoint) =>
+          duplicateClaims.includes(endpoint) ? { ...endpoint, ...replacement } : endpoint,
+        ),
+      };
+
+      expect(() => validateTopologyTestAtomOwnership(changed)).toThrow(/exact consolidation/u);
+    }
   });
 
   it('fails closed when a target test case has no moved or Task-2 classification', () => {

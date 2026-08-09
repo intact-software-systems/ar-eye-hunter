@@ -6,6 +6,10 @@ import {
   type MovedTopologyTestCaseMapping,
 } from './group-topology-server-pr-a-test-ownership.ts';
 import {
+  declaredTopologyTargetConsolidation,
+  declaredTopologyTestAtomEndpoints,
+} from './group-topology-server-test-atom-endpoint-declarations.ts';
+import {
   discoverTopologySourceAtoms,
   discoverTopologyTargetAtoms,
   discoveredSourceAtomKey,
@@ -16,98 +20,83 @@ import {
   type DiscoveredTargetAtom,
   type TopologyTestTargetReader,
 } from './group-topology-server-test-atom-inventory.ts';
-import { read, sourceKey, type SemanticAtom } from './group-topology-server-test-semantic-atoms.ts';
-import type {
-  TopologyTestAdditiveAtom,
-  TopologyTestAtomEndpoint,
-  TopologyTestAtomOwnership,
+import { read, sourceKey } from './group-topology-server-test-semantic-atoms.ts';
+import {
+  topologyCaseConsolidationReason,
+  type TopologyTestAdditiveAtom,
+  type TopologyTestAtomEndpoint,
+  type TopologyTestAtomOwnership,
 } from './group-topology-server-test-atom-ownership-contracts.ts';
 import { topologyTestAtomTranslations } from './group-topology-server-test-atom-translations.ts';
 
-const caseConsolidationReason =
-  'Two frozen source cases intentionally converge on one target scenario while retaining both source claims.';
-const supportConsolidationReason =
-  'One mechanically extracted fixture/helper atom represents repeated identical frozen source atoms.';
+interface AtomAssignmentState {
+  readonly usedTargets: Set<string>;
+  readonly assignments: Map<string, TopologyTestAtomEndpoint>;
+}
+
+interface AtomAssignmentEvidence {
+  readonly disposition: TopologyTestAtomEndpoint['disposition'];
+  readonly translationReason: string | null;
+  readonly declarationReason: string | null;
+  readonly consolidation: Readonly<{ id: string; reason: string }> | null;
+}
 
 export function createTopologyTestAtomOwnership(
   targetReader: TopologyTestTargetReader = read,
 ): TopologyTestAtomOwnership {
-  const sourceAtoms = discoverTopologySourceAtoms();
-  const targetAtoms = discoverTopologyTargetAtoms(targetReader);
-  const usedTargets = new Set<string>();
-  const assignments = new Map<string, TopologyTestAtomEndpoint>();
-  assignCaseAtoms(sourceAtoms, targetAtoms, usedTargets, assignments);
-  assignTranslatedBehaviorAtoms(sourceAtoms, targetAtoms, usedTargets, assignments);
-  assignExactBehaviorAtoms(sourceAtoms, targetAtoms, usedTargets, assignments);
-  assignSemanticBehaviorAtoms(sourceAtoms, targetAtoms, usedTargets, assignments);
-  assertAllSourceAtomsAssigned(sourceAtoms, assignments);
-  const moved = sourceAtoms.map((sourceAtom) =>
-    assignments.get(topologySourceAtomKey(sourceAtom))!,
-  );
-  const additive = targetAtoms
-    .filter((targetAtom) => !usedTargets.has(topologyTargetAtomKey(targetAtom)))
+  const sources = discoverTopologySourceAtoms();
+  const targets = discoverTopologyTargetAtoms(targetReader);
+  const state: AtomAssignmentState = {
+    usedTargets: new Set<string>(),
+    assignments: new Map<string, TopologyTestAtomEndpoint>(),
+  };
+  assignCaseAtoms(sources, targets, state);
+  assignTranslatedBehaviorAtoms(sources, targets, state);
+  assignDeclaredBehaviorAtoms(sources, targets, state, [
+    'declared-exact',
+    'semantic',
+    'shared-fixture',
+  ]);
+  assertDeclaredBehaviorAtomsAssigned(state.assignments);
+  assignUniqueExactBehaviorAtoms(sources, targets, state);
+  assertAllSourceAtomsAssigned(sources, state.assignments);
+  const moved = sources.map((source) => state.assignments.get(topologySourceAtomKey(source))!);
+  const additive = targets
+    .filter((target) => !state.usedTargets.has(topologyTargetAtomKey(target)))
     .map(additiveTargetAtom);
   return { sourceCommit: topologyTestSourceCommit, moved, additive };
-}
-
-function assignSemanticBehaviorAtoms(
-  sources: readonly DiscoveredSourceAtom[],
-  targets: readonly DiscoveredTargetAtom[],
-  usedTargets: Set<string>,
-  assignments: Map<string, TopologyTestAtomEndpoint>,
-): void {
-  for (const source of unassignedBehaviorAtoms(sources, assignments)) {
-    const target = chooseSemanticTarget(source, targets, usedTargets);
-    if (target) {
-      recordAssignment(source, target, usedTargets, assignments, 'semantic', null);
-    }
-  }
 }
 
 function assignCaseAtoms(
   sources: readonly DiscoveredSourceAtom[],
   targets: readonly DiscoveredTargetAtom[],
-  usedTargets: Set<string>,
-  assignments: Map<string, TopologyTestAtomEndpoint>,
+  state: AtomAssignmentState,
 ): void {
   for (const source of sources.filter(({ kind }) => kind === 'case')) {
-    const target = targetCaseAtom(source, targets);
-    recordAssignment(
-      source,
-      target,
-      usedTargets,
-      assignments,
-      caseDisposition(source, target),
-      null,
+    const candidates = targets.filter(
+      (target) =>
+        target.category === 'moved-case' &&
+        target.kind === 'case' &&
+        target.ownerPath === source.mapping.ownerPath &&
+        target.ownerCaseId === source.mapping.ownerCaseId,
     );
-  }
-}
-
-function assignExactBehaviorAtoms(
-  sources: readonly DiscoveredSourceAtom[],
-  targets: readonly DiscoveredTargetAtom[],
-  usedTargets: Set<string>,
-  assignments: Map<string, TopologyTestAtomEndpoint>,
-): void {
-  for (const source of unassignedBehaviorAtoms(sources, assignments)) {
-    const target = targets.find(
-      (candidate) =>
-        candidate.kind === source.kind &&
-        candidate.fingerprint === source.fingerprint &&
-        targetAllowed(source.mapping, candidate) &&
-        !usedTargets.has(topologyTargetAtomKey(candidate)),
+    const target = requireUniqueTarget(
+      candidates,
+      `target case for ${topologySourceAtomKey(source)}`,
     );
-    if (target) {
-      recordAssignment(source, target, usedTargets, assignments, 'exact', null);
-    }
+    recordAssignment(source, target, state, {
+      disposition: caseDisposition(source, target),
+      translationReason: null,
+      declarationReason: null,
+      consolidation: caseConsolidation(source, target),
+    });
   }
 }
 
 function assignTranslatedBehaviorAtoms(
   sources: readonly DiscoveredSourceAtom[],
   targets: readonly DiscoveredTargetAtom[],
-  usedTargets: Set<string>,
-  assignments: Map<string, TopologyTestAtomEndpoint>,
+  state: AtomAssignmentState,
 ): void {
   const translations = new Map(
     topologyTestAtomTranslations.map((translation) => [
@@ -119,39 +108,170 @@ function assignTranslatedBehaviorAtoms(
       translation,
     ]),
   );
-  for (const source of unassignedBehaviorAtoms(sources, assignments)) {
+  for (const source of unassignedBehaviorAtoms(sources, state.assignments)) {
     const translation = translations.get(topologySourceAtomKey(source));
     if (!translation) {
       continue;
     }
-    const target = targets.find(
-      (candidate) =>
-        candidate.ownerPath === translation.ownerPath &&
-        candidate.ownerCaseId === translation.ownerCaseId &&
-        candidate.id === translation.ownerAtomId,
+    const target = requireUniqueTarget(
+      targets.filter(
+        (candidate) =>
+          candidate.ownerPath === translation.ownerPath &&
+          candidate.ownerCaseId === translation.ownerCaseId &&
+          candidate.id === translation.ownerAtomId,
+      ),
+      `declared target translation for ${topologySourceAtomKey(source)}`,
     );
-    if (!target || !targetAllowed(source.mapping, target)) {
-      throw new Error(`Missing declared target translation: ${topologySourceAtomKey(source)}`);
+    if (!targetAllowed(source.mapping, target) || target.kind !== source.kind) {
+      throw new Error(`Invalid declared target translation: ${topologySourceAtomKey(source)}`);
     }
-    if (target.kind !== source.kind) {
-      throw new Error(`Translated target kind differs: ${topologySourceAtomKey(source)}`);
-    }
-    recordAssignment(source, target, usedTargets, assignments, 'translated', translation.reason);
+    recordAssignment(source, target, state, {
+      disposition: 'translated',
+      translationReason: translation.reason,
+      declarationReason: null,
+      consolidation: declaredTopologyTargetConsolidation(
+        target.ownerPath,
+        target.ownerCaseId,
+        target.id,
+      ),
+    });
   }
   for (const sourceKey of translations.keys()) {
-    if (assignments.get(sourceKey)?.disposition !== 'translated') {
+    if (state.assignments.get(sourceKey)?.disposition !== 'translated') {
       throw new Error(`Unused declared target translation: ${sourceKey}`);
     }
   }
+}
+
+function assignDeclaredBehaviorAtoms(
+  sources: readonly DiscoveredSourceAtom[],
+  targets: readonly DiscoveredTargetAtom[],
+  state: AtomAssignmentState,
+  dispositions: readonly DeclaredDisposition[],
+): void {
+  const sourcesByKey = new Map(sources.map((source) => [topologySourceAtomKey(source), source]));
+  for (const declaration of declaredTopologyTestAtomEndpoints.filter(({ disposition }) =>
+    dispositions.includes(disposition),
+  )) {
+    const sourceKey = topologyAtomSourceKey(
+      declaration.sourcePath,
+      declaration.sourceCaseId,
+      declaration.sourceAtomId,
+    );
+    if (state.assignments.has(sourceKey)) {
+      throw new Error(`Duplicate declared atom endpoint: ${sourceKey}`);
+    }
+    const source = sourcesByKey.get(sourceKey);
+    if (!source || source.fingerprint !== declaration.sourceFingerprint) {
+      throw new Error(`Missing declared source atom endpoint: ${sourceKey}`);
+    }
+    const target = requireUniqueTarget(
+      targets.filter(
+        (candidate) =>
+          candidate.ownerPath === declaration.ownerPath &&
+          candidate.ownerCaseId === declaration.ownerCaseId &&
+          candidate.id === declaration.ownerAtomId,
+      ),
+      `declared target atom endpoint for ${sourceKey}`,
+    );
+    if (
+      target.fingerprint !== declaration.ownerFingerprint ||
+      target.kind !== source.kind ||
+      !targetAllowed(source.mapping, target)
+    ) {
+      throw new Error(`Invalid declared target atom endpoint: ${sourceKey}`);
+    }
+    recordAssignment(source, target, state, {
+      disposition: declaration.disposition,
+      translationReason: null,
+      declarationReason: declaration.declarationReason,
+      consolidation:
+        declaration.consolidationId && declaration.consolidationReason
+          ? {
+              id: declaration.consolidationId,
+              reason: declaration.consolidationReason,
+            }
+          : null,
+    });
+  }
+}
+
+type DeclaredDisposition = (typeof declaredTopologyTestAtomEndpoints)[number]['disposition'];
+
+function assertDeclaredBehaviorAtomsAssigned(
+  assignments: ReadonlyMap<string, TopologyTestAtomEndpoint>,
+): void {
+  for (const declaration of declaredTopologyTestAtomEndpoints) {
+    const sourceKey = topologyAtomSourceKey(
+      declaration.sourcePath,
+      declaration.sourceCaseId,
+      declaration.sourceAtomId,
+    );
+    if (assignments.get(sourceKey)?.disposition !== declaration.disposition) {
+      throw new Error(`Unused declared atom endpoint: ${sourceKey}`);
+    }
+  }
+}
+
+function assignUniqueExactBehaviorAtoms(
+  sources: readonly DiscoveredSourceAtom[],
+  targets: readonly DiscoveredTargetAtom[],
+  state: AtomAssignmentState,
+): void {
+  for (const source of unassignedBehaviorAtoms(sources, state.assignments)) {
+    const candidates = targets.filter(
+      (target) =>
+        target.kind === source.kind &&
+        target.fingerprint === source.fingerprint &&
+        targetAllowed(source.mapping, target),
+    );
+    const target = requireUniqueTarget(
+      candidates,
+      `unique exact target endpoint for ${topologySourceAtomKey(source)}`,
+    );
+    if (state.usedTargets.has(topologyTargetAtomKey(target))) {
+      throw new Error(`Exact target already claimed: ${topologyTargetAtomKey(target)}`);
+    }
+    recordAssignment(source, target, state, {
+      disposition: 'exact',
+      translationReason: null,
+      declarationReason: null,
+      consolidation: null,
+    });
+  }
+}
+
+function recordAssignment(
+  source: DiscoveredSourceAtom,
+  target: DiscoveredTargetAtom,
+  state: AtomAssignmentState,
+  evidence: AtomAssignmentEvidence,
+): void {
+  const targetKey = topologyTargetAtomKey(target);
+  if (state.usedTargets.has(targetKey) && !evidence.consolidation) {
+    throw new Error(`Duplicate target without declared consolidation: ${targetKey}`);
+  }
+  state.usedTargets.add(targetKey);
+  state.assignments.set(topologySourceAtomKey(source), endpoint(source, target, evidence));
+}
+
+function requireUniqueTarget(
+  candidates: readonly DiscoveredTargetAtom[],
+  label: string,
+): DiscoveredTargetAtom {
+  if (candidates.length !== 1) {
+    throw new Error(`${label} count differs: ${candidates.length}`);
+  }
+  return candidates[0];
 }
 
 function assertAllSourceAtomsAssigned(
   sources: readonly DiscoveredSourceAtom[],
   assignments: ReadonlyMap<string, TopologyTestAtomEndpoint>,
 ): void {
-  const missing = unassignedBehaviorAtoms(sources, assignments);
-  if (missing.length > 0) {
-    throw new Error(`Missing explicit target translation: ${topologySourceAtomKey(missing[0])}`);
+  const [missing] = unassignedBehaviorAtoms(sources, assignments);
+  if (missing) {
+    throw new Error(`Missing explicit target endpoint: ${topologySourceAtomKey(missing)}`);
   }
 }
 
@@ -164,9 +284,8 @@ function unassignedBehaviorAtoms(
   );
 }
 
-export function topologyTestAtomOwnershipDigest(ownership: TopologyTestAtomOwnership): string {
-  return createHash('sha256').update(JSON.stringify(ownership)).digest('hex');
-}
+export const topologyTestAtomOwnershipDigest = (value: TopologyTestAtomOwnership): string =>
+  createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
 export function topologySourceAtomKey(
   atom: DiscoveredSourceAtom | TopologyTestAtomEndpoint,
@@ -182,114 +301,6 @@ export function topologyTargetAtomKey(
   return 'category' in atom
     ? discoveredTargetAtomKey(atom)
     : topologyAtomTargetKey(atom.ownerPath, atom.ownerCaseId, atom.ownerAtomId);
-}
-
-function recordAssignment(
-  sourceAtom: DiscoveredSourceAtom,
-  target: DiscoveredTargetAtom,
-  usedTargets: Set<string>,
-  assignments: Map<string, TopologyTestAtomEndpoint>,
-  disposition: TopologyTestAtomEndpoint['disposition'],
-  translationReason: string | null,
-): void {
-  const targetKey = topologyTargetAtomKey(target);
-  const repeatedSupport = usedTargets.has(targetKey) && target.category === 'support';
-  if (!repeatedSupport || sharedMatchScore(sourceAtom, target) < 100) {
-    usedTargets.add(targetKey);
-  } else {
-    throw new Error(`No exact reusable target for ${topologySourceAtomKey(sourceAtom)}`);
-  }
-  const consolidation = targetConsolidation(sourceAtom, target);
-  assignments.set(
-    topologySourceAtomKey(sourceAtom),
-    endpoint(
-      sourceAtom,
-      target,
-      repeatedSupport ? 'shared-fixture' : disposition,
-      translationReason,
-      consolidation,
-    ),
-  );
-}
-
-function chooseSemanticTarget(
-  source: DiscoveredSourceAtom,
-  targets: readonly DiscoveredTargetAtom[],
-  usedTargets: ReadonlySet<string>,
-): DiscoveredTargetAtom | undefined {
-  if (source.kind === 'assertion') {
-    return undefined;
-  }
-  const eligible = targets.filter(
-    (target) =>
-      target.kind === source.kind &&
-      targetAllowed(source.mapping, target) &&
-      sharedMatchScore(source, target) < 100,
-  );
-  const unused = bestTarget(
-    source,
-    eligible.filter((target) => !usedTargets.has(topologyTargetAtomKey(target))),
-  );
-  const reused = reusableSupport(source, eligible, usedTargets);
-  return reused && (!unused || targetScore(source, reused) < targetScore(source, unused))
-    ? reused
-    : unused;
-}
-
-function bestTarget(
-  sourceAtom: DiscoveredSourceAtom,
-  candidates: readonly DiscoveredTargetAtom[],
-): DiscoveredTargetAtom | undefined {
-  return candidates.toSorted(
-    (left, right) => targetScore(sourceAtom, left) - targetScore(sourceAtom, right),
-  )[0];
-}
-
-function targetScore(source: DiscoveredSourceAtom, target: DiscoveredTargetAtom): number {
-  if (source.fingerprint === target.fingerprint) {
-    return target.category === 'moved-case' ? 0 : 1;
-  }
-  return sharedMatchScore(source, target) + (target.category === 'moved-case' ? 0 : 1);
-}
-
-function sharedMatchScore(source: SemanticAtom, target: SemanticAtom): number {
-  return source.matchKeys.reduce((best, key, sourceIndex) => {
-    const targetIndex = target.matchKeys.indexOf(key);
-    return targetIndex < 0 ? best : Math.min(best, 10 + sourceIndex * 4 + targetIndex);
-  }, 100);
-}
-
-function reusableSupport(
-  source: DiscoveredSourceAtom,
-  candidates: readonly DiscoveredTargetAtom[],
-  usedTargets: ReadonlySet<string>,
-): DiscoveredTargetAtom | undefined {
-  return bestTarget(
-    source,
-    candidates.filter(
-      (target) =>
-        target.category === 'support' &&
-        sharedMatchScore(source, target) < 100 &&
-        usedTargets.has(topologyTargetAtomKey(target)),
-    ),
-  );
-}
-
-function targetCaseAtom(
-  source: DiscoveredSourceAtom,
-  targets: readonly DiscoveredTargetAtom[],
-): DiscoveredTargetAtom {
-  const target = targets.find(
-    (candidate) =>
-      candidate.category === 'moved-case' &&
-      candidate.kind === 'case' &&
-      candidate.ownerPath === source.mapping.ownerPath &&
-      candidate.ownerCaseId === source.mapping.ownerCaseId,
-  );
-  if (!target) {
-    throw new Error(`Missing target case for ${topologySourceAtomKey(source)}`);
-  }
-  return target;
 }
 
 function targetAllowed(
@@ -308,13 +319,10 @@ function targetAllowed(
   );
 }
 
-function targetConsolidation(
+function caseConsolidation(
   source: DiscoveredSourceAtom,
   target: DiscoveredTargetAtom,
 ): Readonly<{ id: string; reason: string }> | null {
-  if (target.category === 'support') {
-    return { id: `support:${topologyTargetAtomKey(target)}`, reason: supportConsolidationReason };
-  }
   const peers = movedTopologyTestCases.filter(
     ({ ownerPath, ownerCaseId }) =>
       ownerPath === source.mapping.ownerPath && ownerCaseId === source.mapping.ownerCaseId,
@@ -322,7 +330,7 @@ function targetConsolidation(
   return source.kind === 'case' && peers.length > 1
     ? {
         id: `case:${sourceKey(target.ownerPath, target.ownerCaseId)}`,
-        reason: caseConsolidationReason,
+        reason: topologyCaseConsolidationReason,
       }
     : null;
 }
@@ -344,9 +352,7 @@ function caseDisposition(
 function endpoint(
   source: DiscoveredSourceAtom,
   target: DiscoveredTargetAtom,
-  disposition: TopologyTestAtomEndpoint['disposition'],
-  translationReason: string | null,
-  consolidation: Readonly<{ id: string; reason: string }> | null,
+  evidence: AtomAssignmentEvidence,
 ): TopologyTestAtomEndpoint {
   return {
     sourceCommit: topologyTestSourceCommit,
@@ -363,10 +369,11 @@ function endpoint(
     ownerFingerprint: target.fingerprint,
     ownerMatchKeys: target.matchKeys,
     coverage: 'moved',
-    disposition,
-    translationReason,
-    consolidationId: consolidation?.id ?? null,
-    consolidationReason: consolidation?.reason ?? null,
+    disposition: evidence.disposition,
+    translationReason: evidence.translationReason,
+    declarationReason: evidence.declarationReason,
+    consolidationId: evidence.consolidation?.id ?? null,
+    consolidationReason: evidence.consolidation?.reason ?? null,
   };
 }
 

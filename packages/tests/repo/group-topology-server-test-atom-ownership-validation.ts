@@ -1,3 +1,4 @@
+import { declaredTopologyTestAtomEndpoints } from './group-topology-server-test-atom-endpoint-declarations.ts';
 import {
   discoverTopologySourceAtoms,
   discoverTopologyTargetAtoms,
@@ -6,16 +7,21 @@ import {
   type TopologyTestTargetReader,
 } from './group-topology-server-test-atom-inventory.ts';
 import {
-  topologySourceAtomKey,
-  topologyTargetAtomKey,
+  topologyCaseConsolidationReason,
+  topologySupportConsolidationReason,
   type TopologyTestAdditiveAtom,
   type TopologyTestAtomEndpoint,
   type TopologyTestAtomOwnership,
+} from './group-topology-server-test-atom-ownership-contracts.ts';
+import {
+  topologySourceAtomKey,
+  topologyTargetAtomKey,
 } from './group-topology-server-test-atom-ownership.ts';
 import {
-  movedTopologyTestSupportDeclarations,
   movedTopologyTestCases,
+  movedTopologyTestSupportDeclarations,
   topologyTestSourceCommit,
+  type MovedTopologyTestCaseMapping,
 } from './group-topology-server-pr-a-test-ownership.ts';
 import { topologyTestAtomTranslations } from './group-topology-server-test-atom-translations.ts';
 
@@ -29,53 +35,13 @@ export function validateTopologyTestAtomOwnership(
   const discoveredSources = discoverTopologySourceAtoms();
   const discoveredTargets = discoverTopologyTargetAtoms(targetReader);
   validateTargetClaims(ownership);
+  validateDispositions(ownership.moved);
   validateSourcePartition(ownership.moved, discoveredSources);
   validateTargetPartition(ownership, discoveredTargets);
   validateDeclaredDestinations(ownership.moved);
-  validateDispositions(ownership.moved);
-  validateTopologySupportDestinationSpecificity(ownership.moved, discoveredTargets);
+  validateDeclaredEndpointTable(ownership.moved);
+  validateAutomaticExactEndpoints(ownership.moved, discoveredTargets);
   validateTranslations(ownership.moved);
-}
-
-export function validateTopologySupportDestinationSpecificity(
-  endpoints: readonly TopologyTestAtomEndpoint[],
-  targets: readonly DiscoveredTargetAtom[],
-): void {
-  const declarations = new Map(
-    movedTopologyTestSupportDeclarations.map((declaration) => [
-      `${declaration.sourcePath}\0support:${declaration.sourceSymbol}`,
-      declaration,
-    ]),
-  );
-  for (const endpoint of endpoints) {
-    const declaration = declarations.get(`${endpoint.sourcePath}\0${endpoint.sourceCaseId}`);
-    if (!declaration || !['semantic', 'shared-fixture'].includes(endpoint.disposition)) {
-      continue;
-    }
-    const candidates = targets.filter(
-      (target) =>
-        target.category === 'support' &&
-        target.ownerPath === declaration.ownerPath &&
-        declaration.allowedOwnerSymbols.includes(target.ownerCaseId.slice('support:'.length)) &&
-        target.kind === endpoint.sourceKind,
-    );
-    const bestScore = Math.min(
-      ...candidates.map((target) => semanticMatchScore(endpoint.sourceMatchKeys, target.matchKeys)),
-    );
-    const assignedScore = semanticMatchScore(endpoint.sourceMatchKeys, endpoint.ownerMatchKeys);
-    if (assignedScore !== bestScore) {
-      throw new Error(
-        `Support target is less specific than an eligible target: ${endpoint.sourceAtomId}`,
-      );
-    }
-  }
-}
-
-function semanticMatchScore(source: readonly string[], target: readonly string[]): number {
-  return source.reduce((best, key, sourceIndex) => {
-    const targetIndex = target.indexOf(key);
-    return targetIndex < 0 ? best : Math.min(best, 10 + sourceIndex * 4 + targetIndex);
-  }, 100);
 }
 
 function validateSourcePartition(
@@ -105,8 +71,11 @@ function validateTargetPartition(
 ): void {
   const targets = uniqueBy(discovered, topologyTargetAtomKey, 'discovered target atom');
   const claims = [...ownership.moved, ...ownership.additive];
-  const claimKeys = new Set(claims.map(topologyTargetAtomKey));
-  assertExactKeySets(claimKeys, new Set(targets.keys()), 'target atom');
+  assertExactKeySets(
+    new Set(claims.map(topologyTargetAtomKey)),
+    new Set(targets.keys()),
+    'target atom',
+  );
   for (const claim of claims) {
     const key = topologyTargetAtomKey(claim);
     const target = targets.get(key);
@@ -126,9 +95,16 @@ function validateTargetClaims(ownership: TopologyTestAtomOwnership): void {
   const grouped = Map.groupBy([...ownership.moved, ...ownership.additive], topologyTargetAtomKey);
   for (const [key, claims] of grouped) {
     if (claims.length === 1) {
+      const [claim] = claims;
+      if (
+        claim.coverage === 'moved' &&
+        (claim.consolidationId !== null || claim.consolidationReason !== null)
+      ) {
+        throw new Error(`Consolidation metadata on unique target claim: ${key}`);
+      }
       continue;
     }
-    if (!isValidConsolidation(claims)) {
+    if (claims.length > 1 && !isValidConsolidation(claims)) {
       throw new Error(`Duplicate target claim without exact consolidation: ${key}`);
     }
   }
@@ -141,16 +117,22 @@ function isValidConsolidation(
     return false;
   }
   const moved = claims as readonly TopologyTestAtomEndpoint[];
-  const consolidationIds = new Set(moved.map(({ consolidationId }) => consolidationId));
+  const ids = new Set(moved.map(({ consolidationId }) => consolidationId));
   const reasons = new Set(moved.map(({ consolidationReason }) => consolidationReason));
-  if (consolidationIds.size !== 1 || consolidationIds.has(null) || reasons.has(null)) {
+  if (ids.size !== 1 || ids.has(null) || reasons.size !== 1 || reasons.has(null)) {
     return false;
   }
+  const first = moved[0]!;
   if (moved.every(({ sourceKind }) => sourceKind === 'case')) {
-    return String(moved[0].consolidationId).startsWith('case:');
+    return (
+      first.consolidationId === `case:${sourceMappingKey(first.ownerPath, first.ownerCaseId)}` &&
+      first.consolidationReason === topologyCaseConsolidationReason
+    );
   }
   return (
-    String(moved[0].consolidationId).startsWith('support:') &&
+    moved.every(({ ownerCaseId }) => ownerCaseId.startsWith('support:')) &&
+    first.consolidationId === `support:${topologyTargetAtomKey(first)}` &&
+    first.consolidationReason === topologySupportConsolidationReason &&
     moved.every(
       ({ sourceMatchKeys, ownerMatchKeys, disposition, translationReason }) =>
         sourceMatchKeys.some((key) => ownerMatchKeys.includes(key)) ||
@@ -160,39 +142,12 @@ function isValidConsolidation(
 }
 
 function validateDeclaredDestinations(endpoints: readonly TopologyTestAtomEndpoint[]): void {
-  const mappings = new Map(
-    [
-      ...movedTopologyTestCases,
-      ...movedTopologyTestSupportDeclarations.map((declaration) => ({
-        sourcePath: declaration.sourcePath,
-        sourceCaseId: `support:${declaration.sourceSymbol}`,
-        ownerPath: declaration.ownerPath,
-        ownerCaseId: `support:${declaration.ownerSymbol}`,
-        allowedSupportSymbols: declaration.allowedOwnerSymbols,
-      })),
-    ].map((mapping) => [[mapping.sourcePath, mapping.sourceCaseId].join('\0'), mapping]),
-  );
+  const mappings = sourceMappings();
   for (const endpoint of endpoints) {
-    const mapping = mappings.get([endpoint.sourcePath, endpoint.sourceCaseId].join('\0'));
-    if (
-      !mapping ||
-      (endpoint.ownerPath !== mapping.ownerPath &&
-        !mapping.supportPaths?.includes(endpoint.ownerPath))
-    ) {
+    const mapping = mappings.get(sourceMappingKey(endpoint.sourcePath, endpoint.sourceCaseId));
+    if (!mapping || !endpointAllowed(mapping, endpoint.ownerPath, endpoint.ownerCaseId)) {
       throw new Error(
         `Target atom leaves its declared owner set: ${topologySourceAtomKey(endpoint)}`,
-      );
-    }
-    const isTargetCase =
-      endpoint.ownerPath === mapping.ownerPath && endpoint.ownerCaseId === mapping.ownerCaseId;
-    const isSupport = endpoint.ownerCaseId.startsWith('support:');
-    const supportSymbol = endpoint.ownerCaseId.slice('support:'.length);
-    const isAllowedSupport =
-      isSupport &&
-      (!mapping.allowedSupportSymbols || mapping.allowedSupportSymbols.includes(supportSymbol));
-    if (!isTargetCase && !isAllowedSupport) {
-      throw new Error(
-        `Target atom leaves its declared case/support: ${topologySourceAtomKey(endpoint)}`,
       );
     }
   }
@@ -203,16 +158,18 @@ function validateDispositions(endpoints: readonly TopologyTestAtomEndpoint[]): v
     if (endpoint.ownerKind !== endpoint.sourceKind) {
       throw new Error(`Target atom kind differs: ${topologySourceAtomKey(endpoint)}`);
     }
-    const sharedKey = endpoint.sourceMatchKeys.some((key) => endpoint.ownerMatchKeys.includes(key));
+    const contextualSharedKey = endpoint.sourceMatchKeys.some(
+      (key) => isContextualMatchKey(key) && endpoint.ownerMatchKeys.includes(key),
+    );
     if (
-      endpoint.disposition === 'exact' &&
+      ['declared-exact', 'exact'].includes(endpoint.disposition) &&
       endpoint.sourceFingerprint !== endpoint.ownerFingerprint
     ) {
       throw new Error(`Exact atom fingerprint differs: ${topologySourceAtomKey(endpoint)}`);
     }
     if (
       endpoint.disposition === 'semantic' &&
-      (!sharedKey || endpoint.sourceKind === 'assertion')
+      (!contextualSharedKey || endpoint.sourceKind === 'assertion')
     ) {
       throw new Error(
         `Semantic atom lacks a specific normalized key: ${topologySourceAtomKey(endpoint)}`,
@@ -237,8 +194,74 @@ function validateDispositions(endpoints: readonly TopologyTestAtomEndpoint[]): v
         `Combined case lacks exact consolidation: ${topologySourceAtomKey(endpoint)}`,
       );
     }
+    const isDeclared = ['declared-exact', 'semantic', 'shared-fixture'].includes(
+      endpoint.disposition,
+    );
+    if (isDeclared !== (endpoint.declarationReason !== null)) {
+      throw new Error(`Declaration reason disposition differs: ${topologySourceAtomKey(endpoint)}`);
+    }
     if ((endpoint.disposition === 'translated') !== (endpoint.translationReason !== null)) {
       throw new Error(`Translation reason disposition differs: ${topologySourceAtomKey(endpoint)}`);
+    }
+  }
+}
+
+function validateDeclaredEndpointTable(endpoints: readonly TopologyTestAtomEndpoint[]): void {
+  const declared = uniqueBy(
+    declaredTopologyTestAtomEndpoints,
+    (entry) => sourceMappingKey(entry.sourcePath, entry.sourceCaseId, entry.sourceAtomId),
+    'declared atom endpoint',
+  );
+  const claimed = uniqueBy(
+    endpoints.filter(({ disposition }) =>
+      ['declared-exact', 'semantic', 'shared-fixture'].includes(disposition),
+    ),
+    topologySourceAtomKey,
+    'claimed declared atom endpoint',
+  );
+  assertExactKeys(claimed, declared, 'declared atom endpoint');
+  for (const [key, declaration] of declared) {
+    const endpoint = claimed.get(key)!;
+    if (
+      endpoint.sourceFingerprint !== declaration.sourceFingerprint ||
+      endpoint.ownerPath !== declaration.ownerPath ||
+      endpoint.ownerCaseId !== declaration.ownerCaseId ||
+      endpoint.ownerAtomId !== declaration.ownerAtomId ||
+      endpoint.ownerFingerprint !== declaration.ownerFingerprint ||
+      endpoint.disposition !== declaration.disposition ||
+      endpoint.declarationReason !== declaration.declarationReason ||
+      endpoint.consolidationId !== declaration.consolidationId ||
+      endpoint.consolidationReason !== declaration.consolidationReason
+    ) {
+      throw new Error(`Declared atom endpoint differs: ${key}`);
+    }
+  }
+}
+
+function validateAutomaticExactEndpoints(
+  endpoints: readonly TopologyTestAtomEndpoint[],
+  targets: readonly DiscoveredTargetAtom[],
+): void {
+  const mappings = sourceMappings();
+  for (const endpoint of endpoints.filter(
+    ({ disposition, sourceKind }) => disposition === 'exact' && sourceKind !== 'case',
+  )) {
+    const mapping = mappings.get(sourceMappingKey(endpoint.sourcePath, endpoint.sourceCaseId))!;
+    const candidates = targets.filter(
+      (target) =>
+        target.kind === endpoint.sourceKind &&
+        target.fingerprint === endpoint.sourceFingerprint &&
+        endpointAllowed(mapping, target.ownerPath, target.ownerCaseId),
+    );
+    if (candidates.length !== 1) {
+      throw new Error(
+        `Automatic exact target endpoint count differs: ${topologySourceAtomKey(endpoint)}`,
+      );
+    }
+    if (topologyTargetAtomKey(candidates[0]) !== topologyTargetAtomKey(endpoint)) {
+      throw new Error(
+        `Automatic exact target endpoint differs: ${topologySourceAtomKey(endpoint)}`,
+      );
     }
   }
 }
@@ -253,8 +276,10 @@ function validateTranslations(endpoints: readonly TopologyTestAtomEndpoint[]): v
     throw new Error('Translated target atom count differs from the declared table');
   }
   for (const declaration of topologyTestAtomTranslations) {
-    const key = [declaration.sourcePath, declaration.sourceCaseId, declaration.sourceAtomId].join(
-      '\0',
+    const key = sourceMappingKey(
+      declaration.sourcePath,
+      declaration.sourceCaseId,
+      declaration.sourceAtomId,
     );
     const endpoint = translated.get(key);
     if (
@@ -267,6 +292,41 @@ function validateTranslations(endpoints: readonly TopologyTestAtomEndpoint[]): v
       throw new Error(`Declared target translation differs: ${key}`);
     }
   }
+}
+
+function sourceMappings(): ReadonlyMap<string, MovedTopologyTestCaseMapping> {
+  const mappings = [
+    ...movedTopologyTestCases,
+    ...movedTopologyTestSupportDeclarations.map((declaration) => ({
+      sourcePath: declaration.sourcePath,
+      sourceCaseId: `support:${declaration.sourceSymbol}`,
+      ownerPath: declaration.ownerPath,
+      ownerCaseId: `support:${declaration.ownerSymbol}`,
+      allowedSupportSymbols: declaration.allowedOwnerSymbols,
+    })),
+  ];
+  return new Map(
+    mappings.map((mapping) => [
+      sourceMappingKey(mapping.sourcePath, mapping.sourceCaseId),
+      mapping,
+    ]),
+  );
+}
+
+function endpointAllowed(
+  mapping: MovedTopologyTestCaseMapping,
+  ownerPath: string,
+  ownerCaseId: string,
+): boolean {
+  if (ownerPath === mapping.ownerPath && ownerCaseId === mapping.ownerCaseId) {
+    return true;
+  }
+  const supportSymbol = ownerCaseId.slice('support:'.length);
+  return (
+    ownerCaseId.startsWith('support:') &&
+    [mapping.ownerPath, ...(mapping.supportPaths ?? [])].includes(ownerPath) &&
+    (!mapping.allowedSupportSymbols || mapping.allowedSupportSymbols.includes(supportSymbol))
+  );
 }
 
 function validateAdditiveReason(
@@ -285,6 +345,10 @@ function validateAdditiveReason(
   if (claim.coverage !== 'task-2-only' || claim.reason !== expected) {
     throw new Error(`Incorrect additive target classification: ${topologyTargetAtomKey(claim)}`);
   }
+}
+
+function sourceMappingKey(...parts: readonly string[]): string {
+  return parts.join('\0');
 }
 
 function uniqueBy<T>(
@@ -316,15 +380,17 @@ function assertExactKeySets(
   right: ReadonlySet<string>,
   label: string,
 ): void {
-  const missing = [...right].filter((key) => !left.has(key));
-  const extra = [...left].filter((key) => !right.has(key));
-  if (missing.length > 0 || extra.length > 0) {
-    throw new Error(
-      `${label} partition differs: missing=${missing[0] ?? '-'} extra=${extra[0] ?? '-'}`,
-    );
+  const missing = [...right].find((key) => !left.has(key));
+  const extra = [...left].find((key) => !right.has(key));
+  if (missing || extra) {
+    throw new Error(`${label} partition differs: missing=${missing ?? '-'} extra=${extra ?? '-'}`);
   }
 }
 
 function sameValues(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isContextualMatchKey(key: string): boolean {
+  return !/^literal:[^:]+$/u.test(key);
 }

@@ -26,6 +26,7 @@ export const authoritativeMutationRuntimeSourcePaths = [
   `${topologyMutationRoot}/compute-topology-config-mutation.ts`,
   `${topologyMutationRoot}/validate-topology-config-mutation-input.ts`,
   `${topologyMutationRoot}/topology-config-mutation-boundary.ts`,
+  `${topologyMutationRoot}/topology-config-mutation-validation-values.ts`,
   `${topologyMutationRoot}/validate-topology-config-records.ts`,
   `${topologyMutationRoot}/validate-topology-config-receipt.ts`,
   `${topologyMutationRoot}/validate-topology-config-mutation.ts`,

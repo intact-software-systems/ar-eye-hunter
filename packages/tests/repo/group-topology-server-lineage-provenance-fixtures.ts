@@ -15,11 +15,13 @@ export const base = '8b1ebf542d12c05a5ac226d3d07e543a171a2626';
 const manifestPath = 'plans/repo-style-lineages/rallar-group-topology-server-pr-a.json';
 const evidencePath = 'plans/repo-style-lineages/rallar-group-topology-server-pr-a-provenance.jsonc';
 export const expectedEvidenceHash =
-  'f82b5b47e2fc14a609c4d273770c2e4471c5fdb06eb0f85cd5ce7ebf79d63416';
+  '394d4405637b356acfd8ed9973ca7210737b5b40feb30e84d8186d576be2baa6';
 export const mutationSource =
   'packages/shared-server/rallar-system/services/group-topology-config-mutations.ts';
 export const mutationBoundaryOwner =
   'packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
+export const mutationValidationValueOwner =
+  'packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts';
 export const mutationRecordValidator =
   'packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 export const mutationReceiptValidator =
@@ -39,7 +41,7 @@ type ProvenanceRow = Readonly<{
   magnitude: Readonly<Record<string, number | string>>;
   derivation: Readonly<Record<string, boolean | string>>;
 }>;
-type ProvenanceEvidence = Readonly<{ version: number; rows: readonly ProvenanceRow[] }>;
+export type ProvenanceEvidence = Readonly<{ version: number; rows: readonly ProvenanceRow[] }>;
 
 export const manifest = JSON.parse(read(manifestPath)) as {
   version: number;
@@ -53,32 +55,6 @@ export const evidenceSource = read(evidencePath);
 export const evidence = parsePinnedJsonc(evidenceSource) as ProvenanceEvidence;
 export const evidenceLeafPaths = leafPaths(evidence);
 
-export function createDriftedEvidence(fieldPath: string): ProvenanceEvidence {
-  const candidate = structuredClone(evidence) as MutableEvidence;
-  mutateLeaf(candidate, fieldPath);
-  return candidate as ProvenanceEvidence;
-}
-
-export function createEvidenceWithoutBoundaryRow(): ProvenanceEvidence {
-  const firstBoundary = evidence.rows.find(
-    ({ derivation }) => derivation.capacityEligible === true,
-  );
-  return {
-    ...evidence,
-    rows: evidence.rows.filter(({ id }) => id !== firstBoundary?.id),
-  };
-}
-
-export function createEvidenceWithDuplicatedBoundaryRow(): ProvenanceEvidence {
-  const firstBoundary = evidence.rows.find(
-    ({ derivation }) => derivation.capacityEligible === true,
-  );
-  if (!firstBoundary) {
-    throw new Error('Missing eligible boundary row fixture');
-  }
-  return { ...evidence, rows: [...evidence.rows, structuredClone(firstBoundary)] };
-}
-
 export function validateBoundaryBijection(candidate: ProvenanceEvidence): void {
   const targetPaths = candidate.rows.flatMap(({ targets }) => targets.map(({ path }) => path));
   const sourcesByPath = Object.fromEntries(
@@ -89,6 +65,7 @@ export function validateBoundaryBijection(candidate: ProvenanceEvidence): void {
     rows: candidate.rows as readonly LineageBoundaryRow[],
     sourcePath: mutationSource,
     boundaryOwnerPath: mutationBoundaryOwner,
+    validationValueOwnerPath: mutationValidationValueOwner,
     sourcesByPath,
   });
 }
@@ -142,15 +119,22 @@ function validateMagnitudeAndDerivation(row: ProvenanceRow, rowPath: string): vo
   );
   validateOptionalDeclarationMagnitude(row, source, targets, rowPath);
 
-  if (row.derivation.capacityEligible !== true) {
+  if (row.magnitude.rule !== 'boundary.unknown') {
     return;
   }
-  if (
-    row.source.path !== mutationSource ||
-    row.magnitude.rule !== 'boundary.unknown' ||
-    row.magnitude.sourceUnknownBoundaryLines !== 1 ||
-    row.magnitude.targetUnknownBoundaryLines !== 1 ||
-    !row.targets.some(({ path: targetPath }) => targetPath === mutationBoundaryOwner)
+  if (row.source.path !== mutationSource || row.magnitude.sourceUnknownBoundaryLines !== 1) {
+    throw new Error(`${rowPath}.derivation.sourceDerivation`);
+  }
+  const boundaryTargets = row.targets.filter(({ path }) => path === mutationBoundaryOwner);
+  if (row.derivation.capacityEligible === true) {
+    if (row.magnitude.targetUnknownBoundaryLines !== 1 || boundaryTargets.length !== 1) {
+      throw new Error(`${rowPath}.derivation.capacityEligible`);
+    }
+  } else if (
+    row.derivation.capacityEligible !== false ||
+    row.derivation.kind !== 'resolved-to-named-domain-continuation' ||
+    row.magnitude.targetUnknownBoundaryLines !== 0 ||
+    boundaryTargets.length !== 0
   ) {
     throw new Error(`${rowPath}.derivation.capacityEligible`);
   }
@@ -322,20 +306,6 @@ function firstLeafDrift(candidate: unknown, pinned: unknown): string | null {
   return null;
 }
 
-function mutateLeaf(candidate: MutableEvidence, fieldPath: string): void {
-  const segments = fieldPath.split('.');
-  const key = segments.pop();
-  let owner: unknown = candidate;
-  for (const segment of segments) {
-    owner = readIndexed(owner, segment);
-  }
-  if (!key || (!isRecord(owner) && !Array.isArray(owner))) {
-    throw new Error(`Cannot mutate ${fieldPath}`);
-  }
-  const current = readIndexed(owner, key);
-  owner[key] = typeof current === 'number' ? current + 1 : `${String(current)}-drift`;
-}
-
 function readLeaf(value: unknown, fieldPath: string): unknown {
   return fieldPath.split('.').reduce(readIndexed, value);
 }
@@ -387,5 +357,3 @@ export function read(relativePath: string): string {
 function absolute(relativePath: string): string {
   return path.join(repoRoot, relativePath);
 }
-
-type MutableEvidence = { [key: string]: unknown };

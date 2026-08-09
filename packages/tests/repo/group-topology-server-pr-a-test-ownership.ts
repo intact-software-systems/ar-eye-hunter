@@ -37,6 +37,8 @@ const validationOwner =
   'packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-validation.test.ts';
 const resultOwner =
   'packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-result.test.ts';
+const boundaryOwner =
+  'packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-boundary.test.ts';
 const fixtureOwner =
   'packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-test-fixtures.ts';
 const commandOwner =
@@ -240,6 +242,7 @@ export const movedTopologyTestCases = [
     ownershipSource,
     'keeps materially changed Task 6 test support within the hard file limit',
     ownershipOwner,
+    'keeps directly owned mutation-routing and authoritative test support within the limit',
   ),
 ] as const;
 
@@ -305,6 +308,8 @@ export const movedTopologyTestSupportDeclarations = [
 ] as const satisfies readonly MovedTopologyTestSupportDeclaration[];
 
 export const topologyTestSupportDeclarations = [
+  { ownerPath: boundaryOwner, symbol: 'boundaryFixtures' },
+  { ownerPath: boundaryOwner, symbol: 'expectGenericBoundaryRecordsRejected' },
   { ownerPath: resolutionOwner, symbol: 'storedConfig' },
   { ownerPath: computeOwner, symbol: 'deterministicMutationInput' },
   { ownerPath: computeOwner, symbol: 'validateMutationRecord' },
@@ -340,6 +345,9 @@ export const topologyTestSupportDeclarations = [
 ] as const satisfies readonly TopologyTestSupportDeclaration[];
 
 export const taskTwoOnlyTopologyCoverage = [
+  [boundaryOwner, 'owns complete operation validation before returning named domain contracts'],
+  [boundaryOwner, 'preserves the validated object identity at every raw handoff'],
+  [boundaryOwner, 'hands only exact named contracts to typed continuation validators'],
   [commandOwner, 'names the command map before indexing its exact operation union'],
   [commandOwner, 'binds every operation discriminant to exactly its request and durable payload'],
   [idempotencyOwner, 'returns a durable replay for the same command hash'],

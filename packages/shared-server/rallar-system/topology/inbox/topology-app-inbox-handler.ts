@@ -108,7 +108,9 @@ export class TopologyAppInboxHandler {
       }
       return topologyManagementService.toTopologyConfigMutationResult(computed);
     });
-    if (computed.outcome === 'write') this.dependencies.wakeQueue?.();
+    if (computed.outcome === 'write') {
+      this.dependencies.wakeQueue?.();
+    }
     return result;
   }
 

@@ -29,6 +29,7 @@ const productionOwners = [
   'packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation.ts',
   'packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-input.ts',
   'packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts',
+  'packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts',
   'packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts',
   'packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-receipt.ts',
   'packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-receipt.ts',

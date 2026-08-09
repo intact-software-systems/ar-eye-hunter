@@ -9,7 +9,9 @@ describe('topology config mutation validation', () => {
   it('rejects a candidate that differs from its deterministic recomputation', () => {
     const mutation = createTopologyConfigMutationTestInput();
     const computed = computeTopologyConfigMutation(mutation);
-    if (computed.outcome !== 'write') throw new Error('Expected topology config write');
+    if (computed.outcome !== 'write') {
+      throw new Error('Expected topology config write');
+    }
 
     expect(() =>
       validateTopologyConfigMutation({
@@ -95,7 +97,7 @@ describe('topology config mutation validation', () => {
     expect(() =>
       computeTopologyConfigMutation({
         ...mutation,
-        facts: { ...mutation.facts, policyNowEpochMs: 7_000 },
+        facts: { ...mutation.facts, policyNowEpochMs: 7_000, deleteTarget: null },
       }),
     ).toThrow(GroupTopologyConfigValidationError);
   });

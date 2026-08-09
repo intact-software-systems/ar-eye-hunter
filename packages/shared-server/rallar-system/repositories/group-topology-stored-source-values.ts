@@ -5,10 +5,6 @@ import type {
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
-  validateStoredGroupTopologyConfig,
-  validateStoredGroupTopologyOverride,
-} from '../topology/config/mutation/validate-topology-config-records.ts';
-import {
   readStoredTopologyConfigBoundary,
   readStoredTopologyOverrideBoundary,
 } from '../topology/config/mutation/topology-config-mutation-boundary.ts';
@@ -32,10 +28,7 @@ export function decodeStoredGroupTopologyConfig(
     ? { ...value, requestId: null }
     : value;
   const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
-  return validateStoredGroupTopologyConfig(
-    readStoredTopologyConfigBoundary(normalized),
-    validationRef,
-  );
+  return readStoredTopologyConfigBoundary(normalized, validationRef);
 }
 
 export function decodeStoredGroupTopologyOverride(
@@ -46,10 +39,7 @@ export function decodeStoredGroupTopologyOverride(
     ? { ...value, requestId: null }
     : value;
   const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
-  return validateStoredGroupTopologyOverride(
-    readStoredTopologyOverrideBoundary(normalized),
-    validationRef,
-  );
+  return readStoredTopologyOverrideBoundary(normalized, validationRef);
 }
 
 export function storedTopologyGroupRef(value: unknown): GroupRef {

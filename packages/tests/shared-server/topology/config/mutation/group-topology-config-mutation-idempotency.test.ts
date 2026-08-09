@@ -56,9 +56,14 @@ describe('topology config mutation idempotency', () => {
   });
 
   it('rejects compact replay receipt operation corruption against the verified command', () => {
-    const mutation = createTopologyConfigMutationTestInput();
+    const mutation = createTopologyConfigMutationTestInput({
+      durableDegreeLimit: 5,
+      overrideDegreeLimit: null,
+    });
     const accepted = computeTopologyConfigMutation(mutation);
-    if (accepted.outcome !== 'write') throw new Error('Expected topology config write');
+    if (accepted.outcome !== 'write') {
+      throw new Error('Expected topology config write');
+    }
     const corruptRecord = {
       groupRef: mutation.command.aggregateRef,
       requestId: mutation.command.requestId!,

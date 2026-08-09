@@ -50,9 +50,17 @@ hash. The source regions are:
 | `requireString`                                  | 1371–1375 |
 | `isRecord`                                       | 1377–1379 |
 
-The six composite validators preserve their exact initial record-normalization
-errors in the boundary owner, then continue through typed record/receipt
-owners. The remaining eight helpers moved wholly into the boundary owner.
-`validate-topology-config-records.ts` and
-`validate-topology-config-receipt.ts` therefore introduce zero new literal
-`unknown` boundaries while preserving the original validation and error order.
+The six composite validators are now complete raw operation readers in the
+boundary owner. Each preserves the exact initial record-normalization error,
+runs the existing operation-specific validation in its original order, and
+returns the same object under its exact named domain contract. These six rows
+retain mechanically derived `boundary.unknown` capacity.
+
+The remaining eight source occurrences are resolved into named typed helpers
+in `topology-config-mutation-validation-values.ts`; they transfer no
+`unknown` capacity. `validate-topology-config-records.ts` and
+`validate-topology-config-receipt.ts` accept only named domain contracts and
+also contain zero literal `unknown`. The structured bijection proves exact
+coverage of all fourteen inherited source regions as six raw ingress rows plus
+eight resolved typed-continuation rows, with no alias or generic record crossing
+the handoff.

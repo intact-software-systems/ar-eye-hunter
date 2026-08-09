@@ -12,6 +12,7 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
@@ -32,8 +33,6 @@ import { type ClientMutationIdempotencyRecord, validateClientMutationIdempotency
 import { type GroupMutationIdempotencyRecord, validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { readTopologyConfigMutationRecordBoundary } from
   '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
-import { validateGroupTopologyConfigMutationRecord } from
-  '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
@@ -1114,15 +1113,13 @@ async function queryDurableEvidence(
         return projectClientReceiptEvidence(command.commandId, receipts);
       }
       if (command.kind === 'topology-source') {
-        const receipt = await topology.findMutationRecord(
-          { ...scope, groupId: `group-${clientIndex % groupCount}` },
+        const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
+        const receipt = readValidatedTopologyMutationReceipt(
+          await topology.findMutationRecord(groupRef, command.commandId),
+          groupRef,
           command.commandId,
         );
-        if (!isValidatedTopologyReceipt(
-          receipt,
-          { ...scope, groupId: `group-${clientIndex % groupCount}` },
-          command.commandId,
-        )) {
+        if (!receipt) {
           return undefined;
         }
         return projectTopologyReceiptEvidence(command.commandId, receipt);
@@ -1396,15 +1393,16 @@ function isValidatedReceiptIdentity(
   }
   return value.requestId === requestId && value.receipt.commandId === requestId;
 }
-function isValidatedTopologyReceipt(
+function readValidatedTopologyMutationReceipt(
   value: unknown, groupRef: GroupRef, requestId: string,
-): value is ReturnType<typeof validateGroupTopologyConfigMutationRecord> {
+): GroupTopologyConfigMutationReceipt | undefined {
   try {
-    const stored = readTopologyConfigMutationRecordBoundary(value);
-    const record = validateGroupTopologyConfigMutationRecord(stored, { groupRef, requestId });
-    return record.requestId === requestId && record.receipt.commandId === requestId;
+    const record = readTopologyConfigMutationRecordBoundary(value, { groupRef, requestId });
+    return record.requestId === requestId && record.receipt.commandId === requestId
+      ? record.receipt
+      : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
 

@@ -54,6 +54,31 @@ const movedOwnerPaths = [
 const repoEvidenceOwnerPaths = [
   'packages/tests/repo/group-topology-server-pr-a-test-ownership.ts',
   'packages/tests/repo/group-topology-server-test-ast.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoint-declaration.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoint-declarations.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-compute-case.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-compute-input.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-compute-support.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-elapsed-input.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-elapsed-read.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-elapsed-validation.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-exact-authority.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-exact-command.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-exact-config-mutation.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-exact-config-resolution.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-exact-ownership.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-fallback.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-input-command.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-input-read-values.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-input-runtime-values.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-ownership.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-resolution.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-snapshot-audit.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-snapshot-group.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-snapshot-members.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-snapshot-revisions.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-support.ts',
+  'packages/tests/repo/group-topology-server-test-atom-endpoints-validation.ts',
   'packages/tests/repo/group-topology-server-test-atom-inventory.ts',
   'packages/tests/repo/group-topology-server-test-atom-ownership-contracts.ts',
   'packages/tests/repo/group-topology-server-test-atom-ownership-validation.ts',
@@ -63,7 +88,10 @@ const repoEvidenceOwnerPaths = [
   'packages/tests/repo/group-topology-server-test-ownership.test.ts',
   'packages/tests/repo/group-topology-server-test-semantic-atoms.ts',
 ] as const;
-const ownerPaths = [...new Set([...movedOwnerPaths, ...retainedTopologyCharacterizationOwners])];
+const taskTwoOwnerPaths = [...new Set(taskTwoOnlyTopologyCoverage.map(([ownerPath]) => ownerPath))];
+const ownerPaths = [
+  ...new Set([...movedOwnerPaths, ...taskTwoOwnerPaths, ...retainedTopologyCharacterizationOwners]),
+];
 const sourceCases = new Map(
   sourcePaths.map((sourcePath) => [
     sourcePath,
@@ -179,13 +207,13 @@ describe('group topology server PR-A retained and additive test coverage', () =>
   });
 
   it('keeps every moved test and support owner within 400 physical lines', () => {
-    for (const ownerPath of [...movedOwnerPaths, ...repoEvidenceOwnerPaths]) {
+    for (const ownerPath of [...movedOwnerPaths, ...taskTwoOwnerPaths, ...repoEvidenceOwnerPaths]) {
       expect(read(ownerPath).split('\n').length, ownerPath).toBeLessThanOrEqual(401);
     }
   });
 
   it('keeps every moved test and support owner general function within 60 lines', () => {
-    for (const ownerPath of [...movedOwnerPaths, ...repoEvidenceOwnerPaths]) {
+    for (const ownerPath of [...movedOwnerPaths, ...taskTwoOwnerPaths, ...repoEvidenceOwnerPaths]) {
       expect(oversizedGeneralFunctions(read(ownerPath)), ownerPath).toEqual([]);
     }
   });

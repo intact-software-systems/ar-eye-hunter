@@ -21,7 +21,7 @@ import {
   validateTopologyGroupRef,
   validateTopologyPositiveInteger,
   validateTopologyStorageRevision,
-} from './topology-config-mutation-boundary.ts';
+} from './topology-config-mutation-validation-values.ts';
 import {
   validateGroupTopologyConfigGeneration,
   validateGroupTopologyConfigInvariantGeneration,

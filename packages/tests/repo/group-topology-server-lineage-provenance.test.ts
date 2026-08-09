@@ -2,9 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   base,
-  createEvidenceWithDuplicatedBoundaryRow,
-  createEvidenceWithoutBoundaryRow,
-  createDriftedEvidence,
   evidence,
   evidenceLeafPaths,
   evidenceSource,
@@ -14,6 +11,7 @@ import {
   mutationReceiptValidator,
   mutationRecordValidator,
   mutationSource,
+  mutationValidationValueOwner,
   read,
   sha256,
   unknownBoundaryLineCount,
@@ -21,7 +19,17 @@ import {
   validateBoundaryBijection,
   validateEvidence,
 } from './group-topology-server-lineage-provenance-fixtures.ts';
-import { expectedBoundaryOwners } from './group-topology-server-lineage-boundary-bijection.ts';
+import {
+  createDriftedEvidence,
+  createEvidenceWithDuplicatedBoundaryRow,
+  createEvidenceWithDuplicatedResolvedBoundaryRow,
+  createEvidenceWithoutBoundaryRow,
+  createEvidenceWithoutResolvedBoundaryRow,
+} from './group-topology-server-lineage-provenance-mutants.ts';
+import {
+  expectedBoundaryOwners,
+  expectedResolvedBoundaryOwners,
+} from './group-topology-server-lineage-boundary-bijection.ts';
 
 describe('group topology server PR-A lineage provenance', () => {
   it('maps the deleted mutation source to its genuine canonical boundary owner', () => {
@@ -36,13 +44,22 @@ describe('group topology server PR-A lineage provenance', () => {
       targets: [mutationBoundaryOwner],
     });
     const boundarySource = read(mutationBoundaryOwner);
-    expect(unknownBoundaryLineCount(boundarySource)).toBe(14);
+    expect(unknownBoundaryLineCount(boundarySource)).toBe(6);
     expect(unknownBoundaryOwners(boundarySource).toSorted()).toEqual(
       [...expectedBoundaryOwners].toSorted(),
     );
-    for (const target of [mutationRecordValidator, mutationReceiptValidator]) {
+    for (const target of [
+      mutationValidationValueOwner,
+      mutationRecordValidator,
+      mutationReceiptValidator,
+    ]) {
       expect(unknownBoundaryLineCount(read(target)), target).toBe(0);
       expect(read(target), target).not.toContain('TopologyConfigBoundaryValue');
+      expect(read(target), target).not.toContain('TopologyConfigRecord');
+    }
+    const valueSource = read(mutationValidationValueOwner);
+    for (const owner of expectedResolvedBoundaryOwners) {
+      expect(valueSource, owner).toContain(`function ${owner}`);
     }
   });
 
@@ -78,6 +95,7 @@ describe('group topology server PR-A lineage provenance', () => {
     for (const ownerPath of [
       'packages/tests/repo/group-topology-server-lineage-boundary-bijection.ts',
       'packages/tests/repo/group-topology-server-lineage-provenance-fixtures.ts',
+      'packages/tests/repo/group-topology-server-lineage-provenance-mutants.ts',
       'packages/tests/repo/group-topology-server-lineage-provenance.test.ts',
     ]) {
       expect(read(ownerPath).split('\n').length, ownerPath).toBeLessThanOrEqual(401);
@@ -91,6 +109,12 @@ describe('group topology server PR-A lineage provenance', () => {
     expect(() => validateBoundaryBijection(createEvidenceWithDuplicatedBoundaryRow())).toThrow(
       'boundary-bijection',
     );
+    expect(() => validateBoundaryBijection(createEvidenceWithoutResolvedBoundaryRow())).toThrow(
+      'boundary-bijection',
+    );
+    expect(() =>
+      validateBoundaryBijection(createEvidenceWithDuplicatedResolvedBoundaryRow()),
+    ).toThrow('boundary-bijection');
   });
 
   it.each(evidenceLeafPaths)('fails closed when provenance field %s drifts', (fieldPath) => {

@@ -7,23 +7,24 @@ move into this feature.
 
 ## Current PR-A owners
 
-| Boundary                                            | Canonical owner                                                                                                            | Primary symbol                              |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| Config defaults, validation, expiry, and resolution | [config/group-topology-config.ts](config/group-topology-config.ts)                                                         | `resolveGroupTopologyConfig`                |
-| Mutation phase contracts                            | [config/mutation/group-topology-config-mutation-contracts.ts](config/mutation/group-topology-config-mutation-contracts.ts) | `GroupTopologyConfigMutationComputed`       |
-| Idempotency decision                                | [config/mutation/topology-config-mutation-idempotency.ts](config/mutation/topology-config-mutation-idempotency.ts)         | `probeTopologyConfigMutationIdempotency`    |
-| Pure mutation computation                           | [config/mutation/compute-topology-config-mutation.ts](config/mutation/compute-topology-config-mutation.ts)                 | `computeTopologyConfigMutation`             |
-| Deterministic recomputation                         | [config/mutation/validate-topology-config-mutation.ts](config/mutation/validate-topology-config-mutation.ts)               | `validateTopologyConfigMutation`            |
-| Input and attempt-time validation                   | [config/mutation/validate-topology-config-mutation-input.ts](config/mutation/validate-topology-config-mutation-input.ts)   | `validateTopologyConfigMutationInput`       |
-| Untrusted record boundaries and shared primitives   | [config/mutation/topology-config-mutation-boundary.ts](config/mutation/topology-config-mutation-boundary.ts)               | `readTopologyConfigMutationRecordBoundary`  |
-| Stored state and mutation-record validation         | [config/mutation/validate-topology-config-records.ts](config/mutation/validate-topology-config-records.ts)                 | `validateGroupTopologyConfigMutationRecord` |
-| Durable receipt validation                          | [config/mutation/validate-topology-config-receipt.ts](config/mutation/validate-topology-config-receipt.ts)                 | `validateTopologyConfigReceipt`             |
-| Receipt creation and result reconstruction          | [config/mutation/topology-config-mutation-receipt.ts](config/mutation/topology-config-mutation-receipt.ts)                 | `resultFromTopologyConfigReceipt`           |
-| AppInbox protocol contracts                         | [inbox/topology-app-inbox-contracts.ts](inbox/topology-app-inbox-contracts.ts)                                             | `TopologyAppInboxCommand`                   |
-| Command normalization, durable decoding, and hashes | [inbox/topology-app-inbox-command.ts](inbox/topology-app-inbox-command.ts)                                                 | `toTopologyAppInboxCommand`                 |
-| Enqueue and attempt-time session authority          | [inbox/topology-app-inbox-authority.ts](inbox/topology-app-inbox-authority.ts)                                             | `verifyTopologyAppInboxAuthority`           |
-| Shared topology and RTC RTT proof                   | [inbox/topology-mutation-authority-proof.ts](inbox/topology-mutation-authority-proof.ts)                                   | `createTopologyMutationAuthorityProof`      |
-| Existing AppInbox dispatch boundary                 | [inbox/topology-app-inbox-handler.ts](inbox/topology-app-inbox-handler.ts)                                                 | `TopologyAppInboxHandler`                   |
+| Boundary                                            | Canonical owner                                                                                                                | Primary symbol                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| Config defaults, validation, expiry, and resolution | [config/group-topology-config.ts](config/group-topology-config.ts)                                                             | `resolveGroupTopologyConfig`                |
+| Mutation phase contracts                            | [config/mutation/group-topology-config-mutation-contracts.ts](config/mutation/group-topology-config-mutation-contracts.ts)     | `GroupTopologyConfigMutationComputed`       |
+| Idempotency decision                                | [config/mutation/topology-config-mutation-idempotency.ts](config/mutation/topology-config-mutation-idempotency.ts)             | `probeTopologyConfigMutationIdempotency`    |
+| Pure mutation computation                           | [config/mutation/compute-topology-config-mutation.ts](config/mutation/compute-topology-config-mutation.ts)                     | `computeTopologyConfigMutation`             |
+| Deterministic recomputation                         | [config/mutation/validate-topology-config-mutation.ts](config/mutation/validate-topology-config-mutation.ts)                   | `validateTopologyConfigMutation`            |
+| Input and attempt-time validation                   | [config/mutation/validate-topology-config-mutation-input.ts](config/mutation/validate-topology-config-mutation-input.ts)       | `validateTopologyConfigMutationInput`       |
+| Untrusted raw-value validation and typed handoff    | [config/mutation/topology-config-mutation-boundary.ts](config/mutation/topology-config-mutation-boundary.ts)                   | `readTopologyConfigMutationRecordBoundary`  |
+| Typed mutation validation values                    | [config/mutation/topology-config-mutation-validation-values.ts](config/mutation/topology-config-mutation-validation-values.ts) | `validateTopologyGroupRef`                  |
+| Stored state and mutation-record validation         | [config/mutation/validate-topology-config-records.ts](config/mutation/validate-topology-config-records.ts)                     | `validateGroupTopologyConfigMutationRecord` |
+| Durable receipt validation                          | [config/mutation/validate-topology-config-receipt.ts](config/mutation/validate-topology-config-receipt.ts)                     | `validateTopologyConfigReceipt`             |
+| Receipt creation and result reconstruction          | [config/mutation/topology-config-mutation-receipt.ts](config/mutation/topology-config-mutation-receipt.ts)                     | `resultFromTopologyConfigReceipt`           |
+| AppInbox protocol contracts                         | [inbox/topology-app-inbox-contracts.ts](inbox/topology-app-inbox-contracts.ts)                                                 | `TopologyAppInboxCommand`                   |
+| Command normalization, durable decoding, and hashes | [inbox/topology-app-inbox-command.ts](inbox/topology-app-inbox-command.ts)                                                     | `toTopologyAppInboxCommand`                 |
+| Enqueue and attempt-time session authority          | [inbox/topology-app-inbox-authority.ts](inbox/topology-app-inbox-authority.ts)                                                 | `verifyTopologyAppInboxAuthority`           |
+| Shared topology and RTC RTT proof                   | [inbox/topology-mutation-authority-proof.ts](inbox/topology-mutation-authority-proof.ts)                                       | `createTopologyMutationAuthorityProof`      |
+| Existing AppInbox dispatch boundary                 | [inbox/topology-app-inbox-handler.ts](inbox/topology-app-inbox-handler.ts)                                                     | `TopologyAppInboxHandler`                   |
 
 Canonical internal imports use these owners directly. The supported public
 compatibility boundaries remain `packages/shared-server/mod.ts`, the public

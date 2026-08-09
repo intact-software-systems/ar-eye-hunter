@@ -89,7 +89,7 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     }
   });
 
-  it('keeps materially changed Task 6 test support within the hard file limit', () => {
+  it('keeps directly owned mutation-routing and authoritative test support within the limit', () => {
     for (const relativePath of materiallyChangedTestSupport) {
       const source = readFileSync(`${testsRoot}${relativePath}`, 'utf8');
       expect(source.split('\n').length, relativePath).toBeLessThanOrEqual(400);

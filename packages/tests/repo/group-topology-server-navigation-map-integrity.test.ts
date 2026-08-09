@@ -27,6 +27,7 @@ const currentOwners = [
     'config/mutation/topology-config-mutation-boundary.ts',
     'readTopologyConfigMutationRecordBoundary',
   ],
+  ['config/mutation/topology-config-mutation-validation-values.ts', 'validateTopologyGroupRef'],
   [
     'config/mutation/validate-topology-config-records.ts',
     'validateGroupTopologyConfigMutationRecord',

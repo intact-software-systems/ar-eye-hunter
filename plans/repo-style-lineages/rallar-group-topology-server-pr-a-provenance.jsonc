@@ -55,7 +55,7 @@
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-mutation-input.ts",
-          "blob": "7e4656475bc52a659ab50ad2533a06bdd65cad73",
+          "blob": "96f240ba779d6ebb8197b650befb1d9eeaba4651",
           "regions": [
             {
               "symbol": "$moduleDeclarations",
@@ -67,37 +67,49 @@
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "blob": "96e1b7b6a12675a0e508819d20f3f12ed2849a75",
           "regions": [
             {
               "symbol": "$moduleDeclarations",
-              "startLine": 5,
-              "endLine": 147,
-              "sha256": "2cb8d4d17feded07cba3563315f4bbd674636c57088a94978e5a798361f753f2",
+              "startLine": 23,
+              "endLine": 92,
+              "sha256": "f3574215e5ff8895e92487daae58ee3ae4a84ddb737f1672f67590d40c9e6798",
+            },
+          ],
+        },
+        {
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
+          "regions": [
+            {
+              "symbol": "$moduleDeclarations",
+              "startLine": 8,
+              "endLine": 106,
+              "sha256": "14b7c73182cba32dcd9766fcd40e3dc110413c7afd2215e5166ccd762a8787b3",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
-          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "blob": "7ec66ef4b3702f4f11a97b5fc2d1626d1aa31226",
           "regions": [
             {
               "symbol": "$moduleDeclarations",
-              "startLine": 26,
-              "endLine": 167,
-              "sha256": "ce34acb140e7ec41bfebe51495906a1821cc7fada149ec615db66ecc62c370cc",
+              "startLine": 24,
+              "endLine": 164,
+              "sha256": "ad5d9da4e97bee5b75614074d502a94112d5edd5236a4d15b8fb20aa3592f8e4",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-receipt.ts",
-          "blob": "82395e7bc7b1de4309e76a4f1c5ac111fd48043e",
+          "blob": "7fb7f996c7e6bc8dddf97f65ee93510f6d33d318",
           "regions": [
             {
               "symbol": "$moduleDeclarations",
-              "startLine": 19,
-              "endLine": 236,
-              "sha256": "efd82025e131bd8f5dcc37f2fabecad9a95322b8c54bd4d73cda9385b2eb96ce",
+              "startLine": 20,
+              "endLine": 237,
+              "sha256": "1a4dbbea0996a3a5e9d2b243c4a2b97dd86966842c2129184762f0b6444975e5",
             },
           ],
         },
@@ -128,14 +140,14 @@
       ],
       "magnitude": {
         "sourceDeclarations": 53,
-        "targetDeclarations": 91,
+        "targetDeclarations": 90,
         "sourceUnknownBoundaryLines": 14,
-        "targetUnknownBoundaryLines": 14,
+        "targetUnknownBoundaryLines": 6,
       },
       "derivation": {
         "capacityEligible": false,
         "kind": "split-inventory",
-        "sourceDerivation": "Exact source declaration inventory to all contracts, idempotency, compute, input, boundary, record, receipt, validation, and result owners; warning capacity is governed only by the boundary rows.",
+        "sourceDerivation": "Exact source declaration inventory to all contracts, idempotency, compute, input, raw boundary, typed validation-value, record, receipt, validation, and result owners; warning capacity is governed only by the six raw operation-boundary rows.",
       },
     },
     {
@@ -234,25 +246,25 @@
       "targets": [
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "blob": "96e1b7b6a12675a0e508819d20f3f12ed2849a75",
           "regions": [
             {
               "symbol": "readTopologyConfigGenerationBoundary",
-              "startLine": 5,
-              "endLine": 10,
-              "sha256": "bea2f6f3d61f6eb69ba13be585f1db8573be8e9fa797c3fbf044bdbb448d910d",
+              "startLine": 23,
+              "endLine": 36,
+              "sha256": "775b705f3f94d3decf1fa22cf458a4d8aca07b5c218f7419448ec36e8afabe62",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
-          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "blob": "7ec66ef4b3702f4f11a97b5fc2d1626d1aa31226",
           "regions": [
             {
               "symbol": "validateGroupTopologyConfigGeneration",
-              "startLine": 26,
-              "endLine": 46,
-              "sha256": "cfd08382387a2708b084b52cedc78302f23f8525372a89e0c30f335251d76c16",
+              "startLine": 24,
+              "endLine": 44,
+              "sha256": "aa55340d4928f9c2f9644d78507ae473c80ebc4017127b360ddec8fe361a07c2",
             },
           ],
         },
@@ -264,8 +276,8 @@
       },
       "derivation": {
         "capacityEligible": true,
-        "kind": "boundary-extraction-with-typed-continuation",
-        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+        "kind": "mechanical-raw-boundary-transfer",
+        "sourceDerivation": "The source validator untrusted parameter and complete operation checks now reside in one exact raw decoder; its typed continuation preserves the same validation order and returns the named domain contract.",
       },
     },
     {
@@ -286,25 +298,25 @@
       "targets": [
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "blob": "96e1b7b6a12675a0e508819d20f3f12ed2849a75",
           "regions": [
             {
               "symbol": "readTopologyConfigInvariantGenerationBoundary",
-              "startLine": 12,
-              "endLine": 17,
-              "sha256": "1d214777409ced794c07d5bed75cbcfebff129e70c86da99a637dc376360548c",
+              "startLine": 38,
+              "endLine": 49,
+              "sha256": "360221d722d19fcccf33d43f567a4741e93d65202ff9914e75f1fb8de8026e54",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
-          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "blob": "7ec66ef4b3702f4f11a97b5fc2d1626d1aa31226",
           "regions": [
             {
               "symbol": "validateGroupTopologyConfigInvariantGeneration",
-              "startLine": 48,
-              "endLine": 64,
-              "sha256": "abebf5fdc0256ad979de32e7f78a140b071e223b21fb8a4ce83eaced5f267533",
+              "startLine": 46,
+              "endLine": 62,
+              "sha256": "8958cc0cd296e80614e18532629f907af4cc612f017e2c80d960baf95031ee6b",
             },
           ],
         },
@@ -316,8 +328,8 @@
       },
       "derivation": {
         "capacityEligible": true,
-        "kind": "boundary-extraction-with-typed-continuation",
-        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+        "kind": "mechanical-raw-boundary-transfer",
+        "sourceDerivation": "The source validator untrusted parameter and complete operation checks now reside in one exact raw decoder; its typed continuation preserves the same validation order and returns the named domain contract.",
       },
     },
     {
@@ -338,25 +350,25 @@
       "targets": [
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "blob": "96e1b7b6a12675a0e508819d20f3f12ed2849a75",
           "regions": [
             {
               "symbol": "readStoredTopologyConfigBoundary",
-              "startLine": 19,
-              "endLine": 24,
-              "sha256": "3c282d504d9d77114e68a149a7f0a159be044758b9c7bc04c75386386251c62f",
+              "startLine": 51,
+              "endLine": 59,
+              "sha256": "98e30baeeecf1b837c8b3ae301759b8ffaab24b4b140661c1f5ec71922a1c13c",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
-          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "blob": "7ec66ef4b3702f4f11a97b5fc2d1626d1aa31226",
           "regions": [
             {
               "symbol": "validateStoredGroupTopologyConfig",
-              "startLine": 66,
-              "endLine": 88,
-              "sha256": "0af51796894531fa291e412f734936e9a46fff105983f56e431ae7526d13b319",
+              "startLine": 64,
+              "endLine": 86,
+              "sha256": "f3798e19e9cdbb5fd029044bc3c8671b2368334f16fe025f8ceda42f6caa58b9",
             },
           ],
         },
@@ -368,8 +380,8 @@
       },
       "derivation": {
         "capacityEligible": true,
-        "kind": "boundary-extraction-with-typed-continuation",
-        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+        "kind": "mechanical-raw-boundary-transfer",
+        "sourceDerivation": "The source validator untrusted parameter and complete operation checks now reside in one exact raw decoder; its typed continuation preserves the same validation order and returns the named domain contract.",
       },
     },
     {
@@ -390,25 +402,25 @@
       "targets": [
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "blob": "96e1b7b6a12675a0e508819d20f3f12ed2849a75",
           "regions": [
             {
               "symbol": "readStoredTopologyOverrideBoundary",
-              "startLine": 26,
-              "endLine": 31,
-              "sha256": "405a76464c33324f76e1b87574f969444a17ede6b33b8d8f70c11dac03b8384f",
+              "startLine": 61,
+              "endLine": 69,
+              "sha256": "78b49e71e179fe059b19a93d8c4eeb61fdfa6f9f5296bed5fc40066e837678e8",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
-          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "blob": "7ec66ef4b3702f4f11a97b5fc2d1626d1aa31226",
           "regions": [
             {
               "symbol": "validateStoredGroupTopologyOverride",
-              "startLine": 90,
+              "startLine": 88,
               "endLine": 108,
-              "sha256": "5157e291865e68ebef4d49e5f04508eee3fca2a1637eb2373bb5d6c6080ea60e",
+              "sha256": "74207f57132c11566523a170eb4d220aa67964b860f64e26b8b87a63050eb8f4",
             },
           ],
         },
@@ -420,8 +432,8 @@
       },
       "derivation": {
         "capacityEligible": true,
-        "kind": "boundary-extraction-with-typed-continuation",
-        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+        "kind": "mechanical-raw-boundary-transfer",
+        "sourceDerivation": "The source validator untrusted parameter and complete operation checks now reside in one exact raw decoder; its typed continuation preserves the same validation order and returns the named domain contract.",
       },
     },
     {
@@ -442,25 +454,25 @@
       "targets": [
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "blob": "96e1b7b6a12675a0e508819d20f3f12ed2849a75",
           "regions": [
             {
               "symbol": "readTopologyConfigMutationRecordBoundary",
-              "startLine": 33,
-              "endLine": 38,
-              "sha256": "9ff85375df5f16a094a4ba1236162303ba1d6db69c9018b33de7f578c8b1acf7",
+              "startLine": 71,
+              "endLine": 82,
+              "sha256": "e8f1a6765b68829e4d50455410015d2ea533467287b17b8efb71d5f36a331fc3",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts",
-          "blob": "4b8789a4f5adef959eabcd9d258b87a7e71f3f33",
+          "blob": "7ec66ef4b3702f4f11a97b5fc2d1626d1aa31226",
           "regions": [
             {
               "symbol": "validateGroupTopologyConfigMutationRecord",
               "startLine": 110,
-              "endLine": 145,
-              "sha256": "9ad9aec5b73ddc8fbb8215edb84998dfee7a6847e6941938f38ed388ff26c96d",
+              "endLine": 142,
+              "sha256": "3746c28a1e2a5faf21701d79716fef8ec2971d08b475a67b3bd8237546798283",
             },
           ],
         },
@@ -472,8 +484,8 @@
       },
       "derivation": {
         "capacityEligible": true,
-        "kind": "boundary-extraction-with-typed-continuation",
-        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+        "kind": "mechanical-raw-boundary-transfer",
+        "sourceDerivation": "The source validator untrusted parameter and complete operation checks now reside in one exact raw decoder; its typed continuation preserves the same validation order and returns the named domain contract.",
       },
     },
     {
@@ -494,55 +506,55 @@
       "targets": [
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "blob": "96e1b7b6a12675a0e508819d20f3f12ed2849a75",
           "regions": [
             {
               "symbol": "readTopologyConfigReceiptBoundary",
-              "startLine": 40,
-              "endLine": 45,
-              "sha256": "6a32856cfd631914e4ecbef3ce2a8ab649f9cdaa5051c73f6ebc8cfd542039d3",
+              "startLine": 84,
+              "endLine": 92,
+              "sha256": "6e0d8669d43f20a46d065d79e0416f7cc8268840defb2449014e5814a761d48b",
             },
           ],
         },
         {
           "path": "packages/shared-server/rallar-system/topology/config/mutation/validate-topology-config-receipt.ts",
-          "blob": "82395e7bc7b1de4309e76a4f1c5ac111fd48043e",
+          "blob": "7fb7f996c7e6bc8dddf97f65ee93510f6d33d318",
           "regions": [
             {
               "symbol": "validateTopologyConfigReceipt",
-              "startLine": 23,
-              "endLine": 35,
-              "sha256": "0f951a892a659f3e67fde11a1b0e805b9529774d4d7780cf2b7aebbd92d64526",
+              "startLine": 20,
+              "endLine": 32,
+              "sha256": "ec1069cbb87056c4e7bee510146e35a39d7a17269e0dede06d8f664375838e07",
             },
             {
               "symbol": "validateTopologyConfigReceiptIdentity",
-              "startLine": 37,
-              "endLine": 63,
-              "sha256": "b2bbfd6f99a36de5f589114cb6220f71182d32331299b51f0d1680519b0a937b",
+              "startLine": 34,
+              "endLine": 60,
+              "sha256": "62479edf6322de0efcd68bbe4f3c3772bab7d37a6ff06ef129cdad703953c2aa",
             },
             {
               "symbol": "validateTopologyConfigReceiptAcceptedState",
-              "startLine": 65,
-              "endLine": 95,
-              "sha256": "1a38d0b84ed52bf4f49e13fccb4deba77c8eddc75211a0f9c6fc656cf252e366",
+              "startLine": 62,
+              "endLine": 94,
+              "sha256": "59b45a24e2739d57d9e2b59d8f8082dadf4e6bfaa24af27e55b374ab9a1c2288",
             },
             {
               "symbol": "validateTopologyConfigReceiptEffect",
-              "startLine": 97,
-              "endLine": 127,
-              "sha256": "12c1e47f8aa94e3e1244dcea14fee5e570d1adae72db3578c06317bed5873c09",
+              "startLine": 96,
+              "endLine": 126,
+              "sha256": "9a6e9df4ac1df8a7830c7cedde098fbedfd9929e2b66826901c76fac331cc1e7",
             },
             {
               "symbol": "validateTopologyConfigReceiptCausalRevision",
-              "startLine": 129,
-              "endLine": 162,
-              "sha256": "2f6d15043a5ef599e3f75d04e324edc3972ff4042e98cba97e5c6ace90ca3848",
+              "startLine": 128,
+              "endLine": 161,
+              "sha256": "2e53172519d8c0d168058d09a1d32f4425feb71ca410674472c0d2cd72568d28",
             },
             {
               "symbol": "validateTopologyConfigReceiptTimestamps",
-              "startLine": 164,
-              "endLine": 194,
-              "sha256": "884901f59e09b9dc58dcbe09bdafcf09bd5fd42b5c4d5cc20632f090f8c5df46",
+              "startLine": 163,
+              "endLine": 195,
+              "sha256": "cccc5a95ec05c0246e636191a7357f46b48fa677b8c99d7f9da4089071805a2a",
             },
           ],
         },
@@ -554,8 +566,8 @@
       },
       "derivation": {
         "capacityEligible": true,
-        "kind": "boundary-extraction-with-typed-continuation",
-        "sourceDerivation": "The exact source record-normalization boundary moved to the canonical boundary owner; the remaining source validation and error order continue in the listed typed owner.",
+        "kind": "mechanical-raw-boundary-transfer",
+        "sourceDerivation": "The source validator untrusted parameter and complete operation checks now reside in one exact raw decoder; its typed continuation preserves the same validation order and returns the named domain contract.",
       },
     },
     {
@@ -575,14 +587,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
               "symbol": "validateAcceptedTopologyConfig",
-              "startLine": 101,
-              "endLine": 133,
-              "sha256": "9b6c3ee20a5e1b11e449110e1ff9bed9fd9044385301e59e72b40b1c03e9b5b6",
+              "startLine": 59,
+              "endLine": 89,
+              "sha256": "ed0a69f0e301d4290f031e6cc5d45787e7b660584ff9db1be4e0c6f2b483b50e",
             },
           ],
         },
@@ -590,12 +602,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
     {
@@ -615,14 +627,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
               "symbol": "validateTopologyGroupRef",
-              "startLine": 62,
-              "endLine": 71,
-              "sha256": "c7cc48597ba1cd4c5f633e3306f8283e31c578db1365d4677fa5fc7c4cb13cfb",
+              "startLine": 42,
+              "endLine": 49,
+              "sha256": "6a700ed66520142bffc1284525f96bd2ab47eac67f38aa6bf745c0f117e9554f",
             },
           ],
         },
@@ -630,12 +642,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
     {
@@ -655,14 +667,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
               "symbol": "validateTopologyCausalRevision",
-              "startLine": 135,
-              "endLine": 145,
-              "sha256": "ce1b2c0a0c024151de3d915d74a9ed698b27257f4713c1a3ec7c8a89d388b123",
+              "startLine": 98,
+              "endLine": 106,
+              "sha256": "14ab8f7d190a680a57922252fbf64e6e3af5fc0ace25d9815873c73819f5db7f",
             },
           ],
         },
@@ -670,12 +682,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
     {
@@ -695,14 +707,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
               "symbol": "validateTopologyConfigExactKeys",
-              "startLine": 91,
-              "endLine": 99,
-              "sha256": "4ebe7bf6305bf6d7115eccb8cc939f12b74a57af840a74122508c40405129f53",
+              "startLine": 14,
+              "endLine": 22,
+              "sha256": "94567895829f95b2ce577201a11c156e230261d3d703269ec1e6009beb896b99",
             },
           ],
         },
@@ -710,12 +722,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
     {
@@ -735,14 +747,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
               "symbol": "validateTopologyPositiveInteger",
-              "startLine": 53,
-              "endLine": 60,
-              "sha256": "247837555a076f4585cd0451b8044036d2583c2a3e8320dd5de83bc200e19a77",
+              "startLine": 30,
+              "endLine": 34,
+              "sha256": "9b3424caf11d9ab35204804e86435da4d79965414bf0d926776e816fe5e8c903",
             },
           ],
         },
@@ -750,12 +762,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
     {
@@ -775,14 +787,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
               "symbol": "validateTopologyStorageRevision",
-              "startLine": 47,
-              "endLine": 51,
-              "sha256": "3207224eb4a73b9d82c77c149c97d0e57aad6e059b5b107e626f35488cd22be9",
+              "startLine": 24,
+              "endLine": 28,
+              "sha256": "a1463423c19dbefa26d212bff6db12c36d8a6eba6845d938895127fad5389f6b",
             },
           ],
         },
@@ -790,12 +802,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
     {
@@ -815,14 +827,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
               "symbol": "requireTopologyString",
-              "startLine": 81,
-              "endLine": 85,
-              "sha256": "e5605fe7ac3d353c61cb9dbb9f1aa7f78a024ed7acd3e6a8e901412644ca6c6e",
+              "startLine": 36,
+              "endLine": 40,
+              "sha256": "d62443acb9fb96bf9e7575caa00f565b6d9a268ee8425ed2d73ce80d38b44c67",
             },
           ],
         },
@@ -830,12 +842,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
     {
@@ -855,14 +867,14 @@
       },
       "targets": [
         {
-          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts",
-          "blob": "032e0933b7d2ac35a77ddbb5fe878b182a6dcab8",
+          "path": "packages/shared-server/rallar-system/topology/config/mutation/topology-config-mutation-validation-values.ts",
+          "blob": "133c463e9bcc4c7ace59d51d9f178923e61852e2",
           "regions": [
             {
-              "symbol": "isTopologyConfigRecord",
-              "startLine": 87,
-              "endLine": 89,
-              "sha256": "a5432458684d9b3e0259e2706158d8e2775bc35af6e26962ec72ccbe7ec9f176",
+              "symbol": "validateTopologyConfigObject",
+              "startLine": 8,
+              "endLine": 12,
+              "sha256": "3c89d316eb13e980fbc98a9b880b07f341d09dcfd5c019187313280fcf1d583c",
             },
           ],
         },
@@ -870,12 +882,12 @@
       "magnitude": {
         "rule": "boundary.unknown",
         "sourceUnknownBoundaryLines": 1,
-        "targetUnknownBoundaryLines": 1,
+        "targetUnknownBoundaryLines": 0,
       },
       "derivation": {
-        "capacityEligible": true,
-        "kind": "mechanical-helper-relocation",
-        "sourceDerivation": "The complete source helper and its immediate narrowing behavior moved to the canonical boundary owner.",
+        "capacityEligible": false,
+        "kind": "resolved-to-named-domain-continuation",
+        "sourceDerivation": "The mechanically derived validation behavior remains in this typed helper, while its inherited unknown parameter is eliminated at the six complete raw operation boundaries; no warning capacity transfers to this target.",
       },
     },
   ],

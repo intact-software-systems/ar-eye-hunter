@@ -79,7 +79,7 @@ export const topologyTestAtomTranslations = [
     'assertion:180:4:expect().toThrow:8b8ceede53ef30c1',
     validationOwner,
     'rejects an invalid durable config even when a temporary override hides it until expiry',
-    'assertion:30:4:expect().toThrow:f37d380b08c38bc4',
+    'assertion:32:4:expect().toThrow:f37d380b08c38bc4',
     'The extracted fixture and compute owner preserve the same invalid durable-config rejection.',
   ),
   translation(
@@ -87,7 +87,7 @@ export const topologyTestAtomTranslations = [
     'assertion:214:6:expect().toThrow:bcdd88f28f2868a1',
     validationOwner,
     'denies expired and terminal lifecycle mutations to platform admins',
-    'assertion:74:6:expect().toThrow:f90388e58a7b12ad',
+    'assertion:76:6:expect().toThrow:f90388e58a7b12ad',
     'The extracted lifecycle fixture preserves the same status and denial-code predicate.',
   ),
   translation(
@@ -95,7 +95,7 @@ export const topologyTestAtomTranslations = [
     'assertion:273:4:expect().toThrow:2e66f3001171f043',
     idempotencyOwner,
     replayCase,
-    'assertion:75:4:expect().toThrow:a65cd8995ec19fdd',
+    'assertion:80:4:expect().toThrow:a65cd8995ec19fdd',
     'The direct idempotency probe preserves the exact receipt-operation corruption error.',
   ),
   translation(
@@ -103,7 +103,7 @@ export const topologyTestAtomTranslations = [
     'raw-literal:260:15:property:read/property:idempotency/property:key:"corrupt-replay"',
     idempotencyOwner,
     'support:runtimeEntry',
-    'raw-literal:83:9:function:runtimeEntry/property:key:"idempotency"',
+    'raw-literal:88:9:function:runtimeEntry/property:key:"idempotency"',
     'The extracted runtimeEntry helper owns the stable idempotency lookup key.',
   ),
   translation(
@@ -111,7 +111,7 @@ export const topologyTestAtomTranslations = [
     'raw-literal:263:17:property:idempotency/property:entry/property:key:"corrupt-replay"',
     idempotencyOwner,
     'support:runtimeEntry',
-    'raw-literal:86:11:function:runtimeEntry/property:entry/property:key:"idempotency"',
+    'raw-literal:91:11:function:runtimeEntry/property:entry/property:key:"idempotency"',
     'The extracted runtimeEntry helper owns the stable persisted entry key.',
   ),
   translation(
@@ -119,7 +119,7 @@ export const topologyTestAtomTranslations = [
     'assertion:359:4:expect().toThrow:8320c0ff2ec9b12d',
     validationOwner,
     'rejects an elapsed stable override expiry from pure facts',
-    'assertion:95:4:expect().toThrow:9bf4ade59511c604',
+    'assertion:97:4:expect().toThrow:c7e158975549d584',
     'The extracted fixture preserves the same explicit expiry facts and validation error.',
   ),
   translation(
@@ -129,6 +129,14 @@ export const topologyTestAtomTranslations = [
     'support:createTopologyConfigMutationTestInput',
     'raw-literal:45:27:variable:facts/property:commandHash/call:.repeat:"c"',
     'The extracted fixture owns a deterministic valid command-hash seed; the exact hash shape is unchanged.',
+  ),
+  translation(
+    ambientCase,
+    'raw-literal:368:6:variable:mutationSource/call:readFileSync:"utf8"',
+    computeOwner,
+    'support:readProductionSource',
+    'raw-literal:201:4:function:readProductionSource/call:readFileSync:"utf8"',
+    'The extracted source reader owns the same UTF-8 read mode; this explicit translation avoids treating a bare equal string as contextual evidence.',
   ),
   translation(
     ambientCase,

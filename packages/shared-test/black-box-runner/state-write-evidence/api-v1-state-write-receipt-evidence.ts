@@ -11,8 +11,6 @@ import { validateClientMutationIdempotencyRecord } from
     '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { validateGroupMutationCommand } from
     '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { validateGroupTopologyConfigMutationRecord } from
-    '@shared-server/rallar-system/topology/config/mutation/validate-topology-config-records.ts';
 import { readTopologyConfigMutationRecordBoundary } from
     '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import { validatePersistedAppInboxCommandIdentity } from
@@ -337,8 +335,8 @@ async function readTopologyReceipt(
     }
     const stored = await new GroupTopologyConfigRepository(runtime)
         .findMutationRecord(groupRef, requestId);
-    const record = validateGroupTopologyConfigMutationRecord(
-        readTopologyConfigMutationRecordBoundary(stored),
+    const record = readTopologyConfigMutationRecordBoundary(
+        stored,
         { groupRef, requestId },
     );
     if (record.commandHash !== commandHash || record.receipt.commandHash !== commandHash) {
