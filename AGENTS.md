@@ -39,6 +39,35 @@ standard.
 - For written implementation plans and clearly long-running repository
   implementation, including docs, scripts, and operations, use
   `publishing-plan-progress`.
+- During every task, first search this repository's native GitHub Issues for a
+  verified material follow-up. Reuse and link an existing issue rather than
+  creating a duplicate; otherwise create an issue promptly when the work is
+  separately scoped, needs a user decision, or cannot safely be completed now.
+  Its body must state the problem, why it is deferred, safe evidence, the
+  requested decision or desired outcome, concrete acceptance criteria or first
+  step, guardrails, and related plan, PR, and issue links. Never include
+  secrets. Link every created or reused issue in the final handoff, or state
+  explicitly that there were none. If issue search or creation is unavailable
+  or prohibited, preserve the complete draft and state the exact reason instead.
+  An issue is not authorization to shrink the active task: work required by its
+  declared behavior, ownership, acceptance criteria, or promised validation
+  stays in the plan until fixed and validated. A created issue may record an
+  approved re-scope, but it never replaces that work or permits a dependent
+  milestone or plan to be called complete.
+- When concurrent local work causes material CPU or memory contention, publish
+  a safe non-default-branch checkpoint and monitor the GitHub workflow for its
+  exact head SHA rather than stalling on heavyweight local checks. Record every
+  skipped command and the reason; this never waives the final local or remote
+  completion gates.
+- Keep an initial plan or design checkpoint and its implementation in one draft
+  PR unless the review-pressure rule requires a written stacked decision.
+  Request review, but continue unless the user requires approval, gives
+  conflicting direction, or a real blocker prevents the affected work. Before
+  each published milestone and completion, a moved default branch requires one
+  compatibility review, not an automatic re-plan: record either no material
+  impact or the smallest plan delta, and fully replan only when a product
+  decision, contract, integration, or acceptance criterion is materially
+  invalidated.
 - No AI or agent may create or place a commit on `main`, `master`, or the local
   default branch without stating the exact branch, operation, staged file list,
   staged diff summary and staged Git tree ID from `git write-tree`, proposed
@@ -136,7 +165,8 @@ standard.
   - What changed (files + behavior).
   - Why those changes were chosen (risk/compatibility rationale).
   - Validation evidence (exact command outputs and results).
-  - Any follow-up needed.
+  - Any follow-up needed, including created or reused GitHub Issue URLs, or an
+    explicit statement that there were none.
 - Keep the handoff structured, not just an action list. If tradeoffs were made,
   call them out explicitly.
 - Every final handoff ends with a Markdown `### Commands executed and what they
