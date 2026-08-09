@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 120
     env:
       APPROVED_BASE_SHA: 8e277691f3bcd618c556d57ab5ee61cac248f1db
-      CANDIDATE_SHA: 8cd706b4630718a871776fa50a85cd7362a44bd7
+      CANDIDATE_SHA: b0564bdba96f554b623d802ae599ad61a7471f7a
       DATABASE_URL: postgresql://app:app@127.0.0.1:55432/appdb
       PINNED_POSTGRES_IMAGE: postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171
       PINNED_POSTGRES_IMAGE_ID: sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171
@@ -323,7 +323,8 @@ jobs:
           cmp "${evidence_dir}/approved-base-first.environment" "${evidence_dir}/candidate-second.environment"
           cmp "${evidence_dir}/approved-base-first.environment" "${evidence_dir}/approved-base-second.environment"
 
-          node "${RUNNER_TEMP}/candidate/scripts/perf/write-api-v1-state-write-pooled-results.mjs" \
+          node --max-old-space-size=16384 \
+            "${RUNNER_TEMP}/candidate/scripts/perf/write-api-v1-state-write-pooled-results.mjs" \
             --expected-approved-base-commit="${APPROVED_BASE_SHA}" \
             --expected-candidate-commit="${CANDIDATE_SHA}" \
             --approved-base-first="${evidence_dir}/approved-base-first.json" \
@@ -338,7 +339,8 @@ jobs:
             --candidate-out="${evidence_dir}/candidate-pooled.json" \
             --manifest-out="${evidence_dir}/manifest.json"
 
-          node "${RUNNER_TEMP}/candidate/scripts/perf/compare-api-v1-state-write-results.mjs" \
+          node --max-old-space-size=16384 \
+            "${RUNNER_TEMP}/candidate/scripts/perf/compare-api-v1-state-write-results.mjs" \
             "${evidence_dir}/approved-base-pooled.json" \
             "${evidence_dir}/candidate-pooled.json" | tee "${evidence_dir}/comparison.txt"
 
