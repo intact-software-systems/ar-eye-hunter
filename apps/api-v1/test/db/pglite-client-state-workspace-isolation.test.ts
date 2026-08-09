@@ -188,6 +188,63 @@ Deno.test('PGlite admin online principals exclude empty persisted workspace iden
   });
 });
 
+Deno.test('PGlite admin online principals exclude non-string persisted workspace identity', async () => {
+  await withPGliteSql(async (sql) => {
+    await insertClientSession(sql, {
+      keyWorkspace: '%5F',
+      principalId: 'kept',
+      workspaceId: '_',
+    });
+    await insertClientSession(sql, {
+      keyWorkspace: 'malformed',
+      principalId: 'malformed',
+      workspaceId: ['x'],
+    });
+
+    const state = await readGlobalAdminState(sql);
+
+    assert.equal(state.clients.onlinePrincipals, 1);
+    assert.equal(state.clients.activeSessions, 2);
+  });
+});
+
+Deno.test('PGlite admin state uses one shared post-query activity cutoff', async () => {
+  await withPGliteSql(async (sql) => {
+    const cutoffEpochMs = 1_700_000_000_000;
+    const applicationId = 'shared-activity-cutoff';
+    await insertClientSession(sql, {
+      applicationId,
+      keyWorkspace: '%5F',
+      principalId: 'boundary-client',
+      workspaceId: '_',
+      expiresAtEpochMs: cutoffEpochMs + 1,
+    });
+    await insertActiveGroup(sql, {
+      applicationId,
+      workspaceId: '_',
+      groupId: 'boundary-group',
+      expiresAtEpochMs: cutoffEpochMs + 1,
+    });
+    let clockCalls = 0;
+    const reader = new PSqlAdminOperationsStatsReader(sql, {
+      now: () => {
+        clockCalls += 1;
+        return clockCalls === 1 ? cutoffEpochMs : cutoffEpochMs + 1;
+      },
+    });
+
+    const state = await reader.readState({
+      adminSession: createAdminSession(),
+      scope: { applicationId, workspaceId: '_' },
+    });
+
+    assert.equal(clockCalls, 1);
+    assert.equal(state.generatedAtEpochMs, cutoffEpochMs);
+    assert.equal(state.clients.activeSessions, 1);
+    assert.equal(state.groups.activeGroups, 1);
+  });
+});
+
 function createClientEvent(
   input: Readonly<{
     applicationId: string;
@@ -214,17 +271,20 @@ function createClientEvent(
 async function insertClientSession(
   sql: PGliteSql,
   input: Readonly<{
+    applicationId?: string;
     keyWorkspace: string;
     principalId: string;
-    workspaceId?: string;
+    workspaceId?: unknown;
+    expiresAtEpochMs?: number;
   }>,
 ): Promise<void> {
+  const applicationId = input.applicationId ?? 'workspace-required';
   const value = JSON.stringify({
-    applicationId: 'workspace-required',
+    applicationId,
     workspaceId: input.workspaceId,
     status: 'active',
     principalId: input.principalId,
-    expiresAtEpochMs: 1_700_000_060_000,
+    expiresAtEpochMs: input.expiresAtEpochMs ?? 1_700_000_060_000,
   });
   await sql`
     insert into runtime_state_store (
@@ -232,7 +292,60 @@ async function insertClientSession(
     )
     values (
       ${'client-state:sessions'},
-      ${`app=workspace-required:ws=${input.keyWorkspace}:principal=${input.principalId}:instance=browser:session=${input.principalId}`},
+      ${`app=${applicationId}:ws=${input.keyWorkspace}:principal=${input.principalId}:instance=browser:session=${input.principalId}`},
+      ${value},
+      ${new Date('9999-12-31T23:59:59Z')}
+    )
+  `;
+}
+
+async function insertActiveGroup(
+  sql: PGliteSql,
+  input: Readonly<{
+    applicationId: string;
+    workspaceId: string;
+    groupId: string;
+    expiresAtEpochMs: number;
+  }>,
+): Promise<void> {
+  const audit = {
+    atEpochMs: 1_700_000_000_000,
+    actor: { kind: 'principal', principalId: 'boundary-owner' },
+    reason: null,
+    traceId: null,
+    requestId: 'shared-cutoff-request',
+  };
+  const value = JSON.stringify({
+    ...input,
+    slug: null,
+    displayName: input.groupId,
+    description: null,
+    kind: 'room',
+    status: 'active',
+    joinMode: 'open',
+    maxMembers: null,
+    maxSessionsPerMember: null,
+    metadata: {},
+    activeMemberCount: 1,
+    ownerPrincipalId: 'boundary-owner',
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 0,
+    created: audit,
+    updated: audit,
+    archived: null,
+    deleted: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
+  });
+  await sql`
+    insert into runtime_state_store (
+      store_namespace, store_key, store_value, expire_at_ts
+    )
+    values (
+      ${'group-state:groups'},
+      ${`app=${input.applicationId}:ws=%5F:group=${input.groupId}`},
       ${value},
       ${new Date('9999-12-31T23:59:59Z')}
     )

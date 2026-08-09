@@ -93,7 +93,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         this.queueGroups('resource_inbox_results'),
       ]);
     return {
-      ...this.base(),
+      ...this.base(this.options.now()),
       queueRows: {
         total: queueTotal,
         expired: queueExpired,
@@ -113,39 +113,33 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       return await this.readGlobalState();
     }
     const scope = input.scope;
-    const [
-      clientStats,
-      groupRows,
-      memberRows,
-      groupSessionRows,
-      recentGroupEvents,
-    ] = await Promise.all([
-      this.clientStateStatsReader.read(scope),
+    const [clientFacts, groupRows, memberRows, groupSessionRows] = await Promise.all([
+      this.clientStateStatsReader.readScopedFacts(scope),
       this.readLiveRuntimeRows('group-state:groups', scope),
       this.readLiveRuntimeRows('group-state:members', scope),
       this.readLiveRuntimeRows('group-state:sessions', scope),
-      this.countRecentGroupEvents(scope),
     ]);
     validateScopedGroupRuntimeRows('group-state:groups', groupRows, scope);
     validateScopedGroupRuntimeRows('group-state:members', memberRows, scope);
     validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows, scope);
-    const nowEpochMs = this.options.now();
+    const cutoffEpochMs = this.options.now();
+    const clientStats = this.clientStateStatsReader.summarizeScoped(clientFacts, cutoffEpochMs);
+    const [recentClientEvents, recentGroupEvents] = await Promise.all([
+      this.clientStateStatsReader.countRecentEvents(scope, cutoffEpochMs),
+      this.countRecentGroupEvents(scope, cutoffEpochMs),
+    ]);
     const activeMembers = memberRows.filter(isActiveGroupMemberRow);
     const onlineGroupMemberIds = new Set(
       groupSessionRows
-        .filter((row) => isActiveGroupSessionRow(row, nowEpochMs))
+        .filter((row) => isActiveGroupSessionRow(row, cutoffEpochMs))
         .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
         .filter((identity): identity is string => identity !== undefined),
     );
     return {
-      ...this.base(scope),
-      clients: {
-        totalPrincipals: clientStats.totalPrincipals,
-        onlinePrincipals: clientStats.onlinePrincipals,
-        activeSessions: clientStats.activeSessions,
-      },
+      ...this.base(cutoffEpochMs, scope),
+      clients: clientStats,
       groups: {
-        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, nowEpochMs)).length,
+        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, cutoffEpochMs)).length,
         totalActiveMembers: activeMembers.length,
         onlineMembers: activeMembers.filter((member) => {
           const identity = readCanonicalGroupMemberIdentity(member, 'member');
@@ -153,45 +147,43 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         }).length,
       },
       events: {
-        recentClientEvents: clientStats.recentEvents,
+        recentClientEvents,
         recentGroupEvents,
       },
     };
   }
   private async readGlobalState(): Promise<AdminOperationsStateResponse> {
+    const cutoffEpochMs = this.options.now();
     const [
       clientStats,
       groupRows,
       memberRows,
       groupSessionRows,
+      recentClientEvents,
       recentGroupEvents,
     ] = await Promise.all([
-      this.clientStateStatsReader.read(),
+      this.clientStateStatsReader.readGlobal(cutoffEpochMs),
       this.readLiveRuntimeRows('group-state:groups', undefined),
       this.readLiveRuntimeRows('group-state:members', undefined),
       this.readLiveRuntimeRows('group-state:sessions', undefined),
-      this.countRecentGroupEvents(),
+      this.clientStateStatsReader.countRecentEvents(undefined, cutoffEpochMs),
+      this.countRecentGroupEvents(undefined, cutoffEpochMs),
     ]);
     validateScopedGroupRuntimeRows('group-state:groups', groupRows);
     validateScopedGroupRuntimeRows('group-state:members', memberRows);
     validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows);
-    const nowEpochMs = this.options.now();
     const activeMembers = memberRows.filter(isActiveGroupMemberRow);
     const onlineGroupMemberIds = new Set(
       groupSessionRows
-        .filter((row) => isActiveGroupSessionRow(row, nowEpochMs))
+        .filter((row) => isActiveGroupSessionRow(row, cutoffEpochMs))
         .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
         .filter((identity): identity is string => identity !== undefined),
     );
     return {
-      ...this.base(),
-      clients: {
-        totalPrincipals: clientStats.totalPrincipals,
-        onlinePrincipals: clientStats.onlinePrincipals,
-        activeSessions: clientStats.activeSessions,
-      },
+      ...this.base(cutoffEpochMs),
+      clients: clientStats,
       groups: {
-        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, nowEpochMs)).length,
+        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, cutoffEpochMs)).length,
         totalActiveMembers: activeMembers.length,
         onlineMembers: activeMembers.filter((member) => {
           const identity = readCanonicalGroupMemberIdentity(member, 'member');
@@ -199,7 +191,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         }).length,
       },
       events: {
-        recentClientEvents: clientStats.recentEvents,
+        recentClientEvents,
         recentGroupEvents,
       },
     };
@@ -213,7 +205,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.readCrdtStorage(scope),
     ]);
     return {
-      ...this.base(scope),
+      ...this.base(this.options.now(), scope),
       documents: {
         total,
         byLifecycle,
@@ -243,7 +235,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.countGroupEvents(),
     ]);
     return {
-      ...this.base(),
+      ...this.base(this.options.now()),
       runtimeState: {
         rows: runtimeRows,
         expiredRows: runtimeExpiredRows,
@@ -264,9 +256,9 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       },
     };
   }
-  private base(scope?: StateScope) {
+  private base(generatedAtEpochMs: number, scope?: StateScope) {
     return {
-      generatedAtEpochMs: this.options.now(),
+      generatedAtEpochMs,
       serverId: this.options.serverId,
       scope,
       warnings: [],
@@ -399,8 +391,11 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     );
   }
 
-  private async countRecentGroupEvents(scope?: StateScope): Promise<number> {
-    const recentSinceEpochMs = this.options.now() -
+  private async countRecentGroupEvents(
+    scope: StateScope | undefined,
+    observedAtEpochMs: number,
+  ): Promise<number> {
+    const recentSinceEpochMs = observedAtEpochMs -
       (this.options.recentEventWindowMs ?? DEFAULT_RECENT_EVENT_WINDOW_MS);
     if (scope) {
       return toNumber(
