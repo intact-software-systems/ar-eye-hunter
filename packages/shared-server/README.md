@@ -39,9 +39,12 @@ means api-v1 owns:
 
 `shared-server` owns the reusable behaviour once those dependencies are supplied:
 
-- `createRallarMiddleware(...)` constructs the queuebox engine and websocket queue service.
+- `createRallarMiddleware(...)` constructs the queuebox engine and websocket queue service. When an app supplies a
+  queue pub/sub bridge, this builder also installs it and includes its actual subscription promise in runtime
+  readiness.
 - `createRallarServerApplication(...)` composes facade, REST route installers, and WS route installer.
-- `installQueueBoxPubSubBridge(...)` wires queuebox inbox/outbox events to a generic pub/sub bridge.
+- `installQueueBoxPubSubBridge(...)` wires queuebox inbox/outbox events to a generic pub/sub bridge and returns only
+  when the transport listener subscription is active. Subscription failure rejects runtime readiness.
 - `registerAuthUser(...)` and `loginAuthUser(...)` implement auth domain rules without app-local JSON loading.
 - `rallar-system/services/timing.ts` defines timing events and no-op-safe instrumentation helpers. API apps decide
   whether those events go to console, metrics, traces, or tests.
@@ -54,6 +57,15 @@ IDs. They do not emit request bodies, auth tokens, or mutation payloads.
 
 `apps/api-v1` owns the HTTP middleware and console sink. Its default sink logs one JSON line per timing event and can be
 disabled with `RALLAR_TIMING_LOGS=false`.
+
+Queue pub/sub emits bounded `listener-subscribe` and `cluster-receive` timing events. These events identify the static
+channel, delivery shape, and queue-entry kind; they do not add application, workspace, principal, group, session,
+request, topic, context, or resource IDs as dimensions.
+
+The readiness barrier prevents api-v1 from starting its queue engine or HTTP listener before the configured queue
+transport can receive notifications. It is not notification replay: PostgreSQL `NOTIFY` remains transient, and the
+bridge does not scan durable queue rows to recover a notification sent before subscription or during a later listener
+outage. The durable queue row is authoritative when a key notification is received.
 
 App-inbox wait behaviour is configurable by the API app. `apps/api-v1` currently reads:
 

@@ -15,6 +15,8 @@ import {
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import { normalizePersistedClientEvent } from
     '@shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts';
+import { clientStateWorkspaceStorageKey } from
+    '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
 import { validatePersistedClientEvent } from
     '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
 
@@ -47,8 +49,6 @@ type GroupStateEventCollisionRow = GroupStateEventRow & Readonly<{
     workspace_key: string;
     group_id: string;
 }>;
-
-const DEFAULT_WORKSPACE_KEY = '_';
 
 export class GroupStateEventCollisionError extends Error {
     readonly code = 'group-state-event-collision';
@@ -98,7 +98,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                                              session_id,
                                              event_json)
             values (${event.applicationId},
-                    ${toWorkspaceKey(event.workspaceId)},
+                    ${clientStateWorkspaceStorageKey(event.workspaceId)},
                     ${event.principalId},
                     ${event.eventId},
                     ${event.eventType},
@@ -121,7 +121,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                    client_instance_id, session_id, event_json
             from client_state_events
             where application_id = ${event.applicationId}
-              and workspace_key = ${toWorkspaceKey(event.workspaceId)}
+              and workspace_key = ${clientStateWorkspaceStorageKey(event.workspaceId)}
               and principal_id = ${event.principalId}
               and event_id = ${event.eventId}
         `;
@@ -138,7 +138,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                    client_instance_id, session_id, event_json
             from client_state_events
             where application_id = ${ref.applicationId}
-              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and workspace_key = ${clientStateWorkspaceStorageKey(ref.workspaceId)}
               and principal_id = ${ref.principalId}
             order by snapshot_version, occurred_at_epoch_ms, event_id
         `;
@@ -189,7 +189,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                        client_instance_id, session_id, event_json
                 from client_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${clientStateWorkspaceStorageKey(ref.workspaceId)}
                   and principal_id = ${ref.principalId}
                   and event_type in ${this.sql(eventTypes)}
                   and (snapshot_version, occurred_at_epoch_ms, event_id) >
@@ -205,7 +205,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                        client_instance_id, session_id, event_json
                 from client_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${clientStateWorkspaceStorageKey(ref.workspaceId)}
                   and principal_id = ${ref.principalId}
                   and event_type in ${this.sql(eventTypes)}
                 order by snapshot_version, occurred_at_epoch_ms, event_id
@@ -219,7 +219,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                        client_instance_id, session_id, event_json
                 from client_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${clientStateWorkspaceStorageKey(ref.workspaceId)}
                   and principal_id = ${ref.principalId}
                   and (snapshot_version, occurred_at_epoch_ms, event_id) >
                       (${after.snapshotVersion}, ${after.occurredAtEpochMs}, ${after.eventId})
@@ -233,7 +233,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                    client_instance_id, session_id, event_json
             from client_state_events
             where application_id = ${ref.applicationId}
-              and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+              and workspace_key = ${clientStateWorkspaceStorageKey(ref.workspaceId)}
               and principal_id = ${ref.principalId}
             order by snapshot_version, occurred_at_epoch_ms, event_id
             limit ${limit}
@@ -259,7 +259,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                            session_id
                     from client_state_events
                     where application_id = ${ref.applicationId}
-                      and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                      and workspace_key = ${clientStateWorkspaceStorageKey(ref.workspaceId)}
                       and principal_id = ${ref.principalId}
                       and event_type in ${this.sql(eventTypes)}
                     order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
@@ -278,7 +278,7 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
                        session_id
                 from client_state_events
                 where application_id = ${ref.applicationId}
-                  and workspace_key = ${toWorkspaceKey(ref.workspaceId)}
+                  and workspace_key = ${clientStateWorkspaceStorageKey(ref.workspaceId)}
                   and principal_id = ${ref.principalId}
                 order by snapshot_version desc, occurred_at_epoch_ms desc, event_id desc
                 limit ${limit}
@@ -494,17 +494,13 @@ function isExactPersistedGroupEvent(
         row.event_json === eventJson;
 }
 
-function toWorkspaceKey(workspaceId: string | undefined): string {
-    return workspaceId ?? DEFAULT_WORKSPACE_KEY;
-}
-
 function isExactPersistedClientEvent(
     row: ClientStateEventCollisionRow,
     event: ClientEvent,
     eventJson: string,
 ): boolean {
     return row.application_id === event.applicationId &&
-        row.workspace_key === toWorkspaceKey(event.workspaceId) &&
+        row.workspace_key === clientStateWorkspaceStorageKey(event.workspaceId) &&
         row.principal_id === event.principalId &&
         row.event_id === event.eventId &&
         row.event_type === event.eventType &&

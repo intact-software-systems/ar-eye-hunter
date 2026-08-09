@@ -7,7 +7,10 @@ import {
     buildHetznerDistributedManifestCatalog,
 } from '../../../apps/rallar-black-box/src/hetzner-distributed-manifests.ts';
 import { distributedArtifactSnapshotsFromFiles } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import { deriveDistributedRunMonitor } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
+import {
+    deriveDistributedRunMonitor,
+    distributedRecipePreflight,
+} from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../apps/rallar-black-box/src/rtc-diagnostics.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
@@ -290,6 +293,31 @@ describe('Hetzner distributed manifest catalog', () => {
                 intervalMs: 100,
             });
         }
+    });
+
+    it('keeps readiness-enabled recipes resolvable to exact rooms', () => {
+        const checkedPaths: string[] = [];
+
+        for (const entry of buildHetznerDistributedManifestCatalog()) {
+            for (const selection of entry.manifest.recipes) {
+                const recipe = selection.recipe;
+                if (!recipe || !manifestCommands(entry.manifest).some(command => command.readiness)) {
+                    continue;
+                }
+
+                checkedPaths.push(entry.filePath);
+                expect(
+                    distributedRecipePreflight(recipe).warnings.filter(warning =>
+                        warning.includes('cannot point-refresh room state without an exact room reference')
+                    ),
+                    entry.filePath,
+                ).toEqual([]);
+            }
+        }
+
+        expect(checkedPaths).toContain(
+            'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json',
+        );
     });
 
     it('uses lower-rate rtc.stream baselines for non-diagnostic realtime Hetzner manifests', () => {

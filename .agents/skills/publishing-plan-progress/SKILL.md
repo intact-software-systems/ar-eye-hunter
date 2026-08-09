@@ -20,9 +20,15 @@ Human review observes checkpoints; it does not pause execution by default.
    work directly on the default branch. A default-branch override changes where
    uncommitted edits are made; it authorizes neither a default-branch commit nor
    a default-branch push.
-5. On a non-default branch, after the first meaningful commit, open a draft
-   pull request. A committed plan or design already on the branch is meaningful
-   progress.
+5. On a non-default branch, after the first meaningful commit, open or update
+   one draft pull request for the whole plan-to-implementation lifecycle. A
+   committed plan or design is meaningful progress and is the initial review
+   checkpoint, not a separate plan-only pull request. The written
+   stacked-versus-single decision under **Draft Pull Request Record** is the
+   only exception. When it selects a stack, the existing lifecycle PR is the
+   first stack layer; create follow-on PRs only for the documented review
+   slices, link their parent and shared plan, and maintain the required record
+   on every active layer.
 6. After each completed plan milestone or cohesive vertical slice, run focused
    verification and, subject to **Default Branch Commit and Push Permission**
    below, commit only in-scope files, push, and update the draft pull request
@@ -36,6 +42,149 @@ Human review observes checkpoints; it does not pause execution by default.
    uncommitted local plan work. Report publication, push, pull request,
    validation, and skipped-check failures honestly; stop only for a real
    blocker, conflicting direction, or an explicit request to wait.
+
+## Follow-Up Issues
+
+When a discovery is mature enough to describe safely, search this repository's
+native GitHub Issues before deferring it. A material discovery affects
+correctness, security, compatibility, reliability, operator/customer value, or
+the task's promised validation. It is mature once the required issue headings
+can contain known facts and clearly named unknowns. File it promptly after that
+classification, not only at handoff. Use the narrowest correct outcome:
+
+## Active-Plan Boundary
+
+Before calling any discovery outside the task, trace it against the active plan
+or, when there is no written plan, the task's declared outcome. Name the owning
+task, declared behavior, owner, acceptance criterion, and promised validation
+that could be affected. Work is in scope when it is required to deliver or
+prove any of those things, regardless of how many modules it touches, how hard
+it appears, how near a deadline is, or how slowly a normal test runs.
+
+For every dimension concluded not affected, record the concrete contract,
+call path, test, or other evidence that supports that conclusion. Package or
+directory separation, a passing nearby test, or an unsupported assertion of
+independence is not enough.
+
+A missing planned behavior, known regression, failed required validation, or
+unmet acceptance criterion stays in the active plan. Fix it and pass its exact
+validation before marking its owning milestone, slice, or plan complete. An
+issue can record a human-approved re-scope and the resulting incomplete
+dependency; opening it never authorizes a re-scope, substitutes for the fix, or
+makes dependent work complete.
+
+A re-scope is approved only by explicit current user direction that names the
+removed or changed behavior/criterion, affected milestone, and resulting
+incomplete obligation. Update the active plan and PR in the same checkpoint.
+An issue, a pending review, deadline pressure, or assumed user preference is
+not re-scope approval.
+
+An independent discovery stays outside the active plan even if its fix seems
+small or nearby. Track it in a focused issue without expanding the plan unless
+the user explicitly changes scope.
+
+| Discovery | Required action |
+| --- | --- |
+| Active-plan behavior, owner, acceptance criterion, promised validation, or a regression in changed behavior | Keep it in the active plan. Fix and validate it before marking the owning work complete; do not create an issue as a substitute. |
+| Existing matching issue | Reuse and link it. Add evidence only when it is precise, material, and safe to publish. |
+| Verified material work proven independent of the active plan, uncertain priority, or a separately scoped concern | Create a native GitHub Issue promptly, then link it from the active PR and final handoff. |
+| Product, ownership, compatibility, or permission decision | Create or reuse an issue, ask the user for direction, and continue only work independent of that decision. Do not claim the dependent work is complete. |
+
+Treat an issue as matching only when its observed behavior, required outcome,
+and scope are the same. A broad parent or loosely related issue is not a match:
+link it as context and create a narrow issue if the discovery otherwise needs
+one.
+
+An issue must let a human or a later agent start without rediscovering the
+context. Include these headings, omitting none unless the issue itself explains
+why a heading is inapplicable:
+
+```markdown
+## Problem
+## Why deferred
+## Active-plan boundary
+## Evidence
+## Decision needed or desired outcome
+## Acceptance criteria or first safe step
+## Guardrails
+## Related plan, PR, and issues
+```
+
+Use concise reproduction facts, affected behavior, and safe command or workflow
+references as evidence. Do not include credentials, tokens, authorization
+headers, environment-file contents, private personal data, or other secrets. If
+issue search or creation is unavailable or the user prohibits it, preserve the
+complete issue draft and exact reason in the handoff; do not pretend it was
+filed. Link the issue from the active PR when one exists, or add it when the PR
+is created. End every handoff with URLs of created or reused follow-up issues,
+`Follow-up issues: none` when no material follow-up exists, or
+`Follow-up issue not filed: <reason>` when a required issue could not be filed.
+
+### Deferral Red Flags
+
+The following are not evidence that active-plan work is independent:
+
+| Rationalization | Required action |
+| --- | --- |
+| “The fix spans more modules than expected.” | Keep it in the plan; update the plan only for a real material impact, then implement and validate it. |
+| “We are out of time” or “the normal test is slow.” | Record the work as incomplete or use the resource-contention procedure only when its observed condition exists; never issue-and-complete. |
+| “A review finding or regression can be fixed later.” | Fix and validate it when it affects declared behavior or acceptance; link a follow-up only after an approved re-scope. |
+| “The issue makes this separately scoped.” | An issue records an already-proven independent boundary or approved re-scope; it does not create either one. |
+
+If the active-plan boundary is genuinely disputed, create or reuse the decision
+issue, ask the user, and mark the dependent work incomplete while independent
+work continues.
+
+## Local Resource Contention
+
+Observed CPU or memory contention from concurrent worktrees is a valid reason
+to avoid heavyweight local checks at an intermediate checkpoint; it is not a
+reason to stall safe branch work or weaken a completion claim. Record the
+observable contention symptom, such as constrained available memory, a stalled
+job, or sustained competing load; do not assert contention without evidence.
+
+1. Run the focused validation that is practical without worsening contention.
+2. Commit and push the cohesive non-default-branch checkpoint, preserving
+   unrelated work. Update the existing draft PR rather than opening a separate
+   plan-only PR.
+3. Record the exact head SHA, completed behavior, passed commands, and every
+   skipped heavyweight command with `skipped due to local CPU/memory contention`.
+4. Monitor **Branch Release Gate** for that exact head SHA when the checkpoint's
+   paths schedule it. Record its run, attempt, conclusion, and verified SHA;
+   record `not triggered` when its path rules exclude the checkpoint, and
+   `pending or unavailable` with the reason when no exact-SHA run starts.
+   Continue unrelated safe work while it runs, but do not call pending or
+   skipped evidence green.
+5. Run every final local and remote completion gate required by this skill once
+   the final tree is ready. Local contention never waives those gates.
+
+Do not terminate other users' work, discard their artifacts, or suppress a
+memory-pressure failure. If pressure risks data loss, stop only the affected
+operation and report the condition honestly.
+
+## Plan Revalidation
+
+Record the default-branch base used by the active plan. Refresh and compare the
+default branch before each published milestone and before completion. When a
+newly observed default-branch SHA appears, perform one compatibility review for
+that SHA and write one of these outcomes in the active PR:
+
+- `Compatible — no plan delta`: the base change does not alter a touched
+  contract, owner, dependency, validation path, or acceptance criterion; keep
+  executing the existing plan. Name the compared base range and the touched
+  contracts, owners, dependencies, validation paths, or acceptance criteria
+  checked.
+- `Material impact — plan delta`: name the changed assumption and the smallest
+  affected task, interface, validation, or compatibility update. Preserve
+  completed work and amend only that active plan in the same PR.
+
+A default branch moving, review still being pending, or a desire for a cleaner
+design is not a re-planning trigger. Fully replace the plan only when a product
+decision changes, a public or ownership contract becomes incompatible, an
+integration or merge conflict changes the required behavior, or new evidence
+invalidates an acceptance criterion. Do not repeat a review for the same base
+SHA without new material evidence. A discovered but independent follow-up
+belongs in a reused or new issue rather than restarting the current plan.
 
 ## Default Branch Commit and Push Permission
 
@@ -89,9 +238,16 @@ branch. It does apply when any source branch is pushed to the remote default ref
 
 ## Draft Pull Request Record
 
-Keep the draft pull request current with the written-plan link, milestone
-checklist, current behavior and incomplete areas, plus exact passed, failed, and
-skipped validation results.
+Keep the one draft pull request current with the written-plan link, requested
+review, milestone checklist, current behavior and incomplete areas, exact
+passed, failed, and skipped validation results, created or reused follow-up
+issues, current default-branch base, and the latest plan-revalidation outcome.
+When contention defers a local command, retain its exact reason and the exact
+head SHA/workflow evidence in the same record. If the written review-pressure
+decision selects a stack, the initial PR remains the first layer and each active
+layer records its parent, shared plan, owned milestone/slice, exact base and
+head SHA, revalidation outcome, validation evidence, and related issues. A
+stack never creates a separate plan-only PR.
 
 Review pressure exists when a change has more than 100 changed files, more than
 10,000 changed lines (`additions + deletions`), more than 20 changed production

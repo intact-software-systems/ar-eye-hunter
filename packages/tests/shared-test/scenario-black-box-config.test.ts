@@ -728,6 +728,8 @@ describe('scenario-black-box CLI', () => {
                             user: {
                                 idText: '42',
                             },
+                            revision: 46,
+                            onlineMemberCount: 13,
                             enabledText: 'true',
                             payload: {
                                 roomId: 'room-1',
@@ -758,6 +760,53 @@ describe('scenario-black-box CLI', () => {
                         },
                         userId: {
                             number: { path: 'body.user.idText' },
+                        },
+                        nextRevision: {
+                            add: [
+                                { path: 'body.revision' },
+                                1,
+                            ],
+                        },
+                        maximumRevision: {
+                            max: [
+                                44,
+                                { path: 'body.revision' },
+                                45,
+                            ],
+                        },
+                        convergedRevision: {
+                            if: {
+                                condition: {
+                                    equals: [
+                                        { path: 'body.onlineMemberCount' },
+                                        13,
+                                    ],
+                                },
+                                then: { path: 'body.revision' },
+                                else: {
+                                    add: [
+                                        { path: 'body.revision' },
+                                        1,
+                                    ],
+                                },
+                            },
+                        },
+                        pendingRevision: {
+                            if: {
+                                condition: {
+                                    equals: [
+                                        { path: 'body.onlineMemberCount' },
+                                        12,
+                                    ],
+                                },
+                                then: { path: 'body.revision' },
+                                else: {
+                                    add: [
+                                        { path: 'body.revision' },
+                                        1,
+                                    ],
+                                },
+                            },
                         },
                         enabled: {
                             boolean: { path: 'body.enabledText' },
@@ -802,6 +851,10 @@ describe('scenario-black-box CLI', () => {
                         authHeader: '{authHeader}',
                         encodedToken: '{encodedToken}',
                         userId: '{userId}',
+                        nextRevision: '{nextRevision}',
+                        maximumRevision: '{maximumRevision}',
+                        convergedRevision: '{convergedRevision}',
+                        pendingRevision: '{pendingRevision}',
                         enabled: '{enabled}',
                         parsedPayload: '{parsedPayload}',
                         fallbackValue: '{fallbackValue}',
@@ -811,6 +864,10 @@ describe('scenario-black-box CLI', () => {
                             authHeader: 'Bearer secret token/123',
                             encodedToken: 'secret%20token%2F123',
                             userId: 42,
+                            nextRevision: 47,
+                            maximumRevision: 46,
+                            convergedRevision: 46,
+                            pendingRevision: 47,
                             enabled: true,
                             parsedPayload: ['room.join', true],
                             fallbackValue: 'fallback-value',
@@ -842,6 +899,10 @@ describe('scenario-black-box CLI', () => {
             authHeader: 'Bearer <redacted:accessToken>',
             encodedToken: '<redacted:encodedToken>',
             userId: 42,
+            nextRevision: 47,
+            maximumRevision: 46,
+            convergedRevision: 46,
+            pendingRevision: 47,
             enabled: true,
             parsedPayload: ['room.join', true],
             payloadJson: '{"roomId":"room-1"}',

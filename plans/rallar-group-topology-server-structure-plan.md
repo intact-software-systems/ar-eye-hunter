@@ -28,9 +28,14 @@ harness.
 
 Date: 2026-08-08
 
-Status: Approved child in execution, with PR A's prospective performance
-tooling undergoing final gate-disposition implementation and validation. The
-preserved failed performance result remains historical evidence. The human
+Status: Approved child in execution, with PR A in post-measurement publication
+reconciliation after Branch Release Gate run `31334618112`, attempt 1, failed
+only because its structural-lineage manifest named Task 1 head
+`8b1ebf542d12c05a5ac226d3d07e543a171a2626` while the workflow resolved merge
+base `20020977507c3104949da07d27b95e89d3b91c96`. The three predecessor blobs are
+identical at both commits. The preserved failed performance results remain
+historical evidence, and the exact-candidate human performance disposition is
+accepted externally. The human
 approved original planning Git blob
 `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, performance-amendment blob
 `f83cc311369fff2bf255116253ec0f4fe911a43f`, and pooler-order correction blob
@@ -114,12 +119,12 @@ feature head `cf67bc313584b7183780990e8a51c787ab5c3bd2`, frozen tree
 `19c0cd37d6f5e1b9dda9eeb73367f01b965d7558`. No local build or Branch Release
 Gate was required under the repository plan-only policy.
 
-The immutable PR A candidate remains exact commit
+The immutable production candidate remains exact commit
 `74a62eb22583216e8c6651de069209d7e1a8ca67`, tree
-`7f971bcf84aa494265992d17e3c9b99227bd8122`. Draft PR #103 and its remote
-branch remain unchanged at older head
-`8b1ebf542d12c05a5ac226d3d07e543a171a2626`; the immutable candidate has not
-been pushed, published, or sent through Branch Release Gate.
+`7f971bcf84aa494265992d17e3c9b99227bd8122`. The exact tooling-integrated PR A
+candidate `ed7e77cd560a701ec41bc544769c60a715f68744`, tree
+`161e125131adb87dcd90bba737dfe91cb8d624b7`, was pushed to draft PR #103 only
+after the human accepted its exact-candidate performance disposition.
 
 The completed governed A-B-B-A sequence is retained permanently as failed
 historical evidence:
@@ -1435,15 +1440,18 @@ final Task 2 checkbox remains open.
 - [x] Obtain human approval of target-path correction blob
       `cf4d92db310c928b2e020f926efa4f731a2fd3b6`, merge plan-only PR #131, and
       move only the artifact owner and its direct evidence references.
-- [ ] Rerun every tooling-invalidated focused and repository completion gate,
+- [x] Rerun every tooling-invalidated focused and repository completion gate,
       then obtain final independent tooling and whole-PR review with Critical 0
       and Important 0.
-- [ ] Freeze one new exact candidate, its complete tool/hash/environment
-      envelope, and the prospective conflict-reason input before measurement.
-- [ ] Obtain explicit human authorization for that exact frozen envelope.
-- [ ] Run the single Section 13.6 eight-position sequence with no rerolls.
-- [ ] Require both v1 block evaluations to pass before non-forced publication,
-      Branch Release Gate, and ready-for-review state.
+- [x] Freeze exact candidate `ed7e77cd560a701ec41bc544769c60a715f68744`,
+      tree `161e125131adb87dcd90bba737dfe91cb8d624b7`, its complete environment, tool,
+      and conflict-reason envelope, and obtain explicit human authorization.
+- [x] Preserve the non-rerolled eight-position attempt: seven positions passed;
+      B4 failed its continuous isolation guard and remains failed evidence.
+- [x] Record the human exact-candidate disposition accepting balanced block 1
+      plus the seven-successful-position diagnostic without relabeling B4.
+- [ ] Reconcile the exact concurrent-main merge and lineage base, require Branch
+      Release Gate success for the resulting exact head, and mark PR #103 ready.
 
 ### Task 3: PR B — persistence, exact reads, generations, and migration
 
@@ -1631,11 +1639,11 @@ PR A may finish the following performance-tooling changes test-first:
   sole owner of `BenchmarkGitIdentity`, `StateWriteBenchmarkArtifactInput`,
   `StateWriteBenchmarkArtifact`, `readBenchmarkGitIdentity`, and
   `createStateWriteBenchmarkArtifact`;
-- modify
-  `packages/tests/shared-server/state-write-performance-harness.test.ts` to
-  prove exact reason-file parsing, commit/tree binding, canonical ordering,
-  exact emission when supplied, empty emission when omitted, and fail-closed
-  behavior;
+- keep general state-write artifact validation in
+  `packages/tests/shared-server/state-write-performance-harness.test.ts`, and
+  colocate topology reason-file parsing, commit/tree binding, canonical order,
+  supplied/omitted emission, and fail-closed evidence in
+  `packages/tests/shared-server/state-write-performance-topology-reasons.test.ts`;
 - modify `scripts/perf/pool-api-v1-state-write-results.mjs` only to export the
   pure `poolApiV1StateWriteResultsForPositions(input, sourcePositions)` entry
   described below while preserving the existing
@@ -2022,6 +2030,7 @@ new candidate freezes, run:
 ```bash
 npx vitest run \
   packages/tests/shared-server/state-write-performance-harness.test.ts \
+  packages/tests/shared-server/state-write-performance-topology-reasons.test.ts \
   packages/tests/shared-server/state-write-performance-pooling.test.ts \
   packages/tests/shared-server/group-state-server-structure-performance-policy.test.ts \
   packages/tests/shared-server/group-topology-state-write-position-balanced-pooling.test.ts
@@ -2043,7 +2052,7 @@ npm run check:repo-style:layout-details
 npm run check:repo-style:output-contracts
 npm run check:repo-style:object-interfaces
 node scripts/check-changed-repo-style.mjs \
-  74a62eb22583216e8c6651de069209d7e1a8ca67
+  108933a97c7a40ee0831ecd185725aea243122bd
 test "$(wc -l < scripts/perf/api-v1-state-write-concurrency-bench.ts | tr -d ' ')" -le 1763
 npx prettier --check \
   scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts \
@@ -2051,6 +2060,7 @@ npx prettier --check \
   scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs \
   scripts/perf/write-group-topology-state-write-position-balanced-results.mjs \
   packages/tests/shared-server/state-write-performance-harness.test.ts \
+  packages/tests/shared-server/state-write-performance-topology-reasons.test.ts \
   packages/tests/shared-server/state-write-performance-pooling.test.ts \
   packages/tests/shared-server/group-topology-state-write-position-balanced-pooling.test.ts \
   plans/rallar-group-topology-server-structure-plan.md \
@@ -2343,14 +2353,15 @@ measurements remain historical and are never relabeled for a changed tree.
 - [x] The exception registry contains only the authorized benchmark-file and
       `main` entries, with the separately approved architecture-child removal
       condition.
-- [ ] The Section 13.3 tooling implementation preserves every production and
+- [x] The Section 13.3 tooling implementation preserves every production and
       runtime blob from `74a62eb22583216e8c6651de069209d7e1a8ca67`.
-- [ ] The existing v1 pooler entry retains exact API, behavior, output, error,
+- [x] The existing v1 pooler entry retains exact API, behavior, output, error,
       and A-B-B-A compatibility evidence.
-- [ ] The explicit-position entry proves chronological B-A-A-B validation and
+- [x] The explicit-position entry proves chronological B-A-A-B validation and
       true-role pooling without changing numerical aggregation.
-- [ ] Both precommitted position-balanced blocks independently pass without a
-      rerun, outlier removal, threshold change, or artifact rewrite.
+- [x] Balanced block 1 and the seven successful positions are human-accepted
+      exact-candidate evidence; B4 remains failed historical evidence and is
+      excluded without rerun, outlier removal, threshold change, or rewrite.
 - [ ] Four implementation PRs remain independently reviewable.
 - [ ] Exact current-to-target production and test ownership is reconciled.
 - [ ] Canonical topology callers bypass compatibility-only wrappers.
@@ -2401,16 +2412,16 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 19. Progress Record
 
-| Milestone                  | State                 | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth prerequisite          | ledger-published      | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Group-topology child plan  | approved/in execution | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f`. Planning PR #127 merged approved correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` as feature `8e36fe1c303f695f0a6ec3d99be30eda12c96b11`, frozen/resulting tree `3d6cdf6abb46866e74895fe49150a4a9a4bde77c`, resulting main `df8346aaf39e8d8730e73a530da3e6f182aa071b`. Planning PR #129 merged approved gate-disposition blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` as feature `05c75cf2ad52589901e6983a687d28aa5b910582`, frozen/resulting tree `e3b309e9b913395e28645f1355400d380697c658`, resulting main `c7d6d4ec017edb23de239bba18c6d79f2ebb5dac`. Planning PR #131 merged approved target-path correction blob `cf4d92db310c928b2e020f926efa4f731a2fd3b6` as feature `42eb663177d731f3759fc2a2664db2ad3297f149`, frozen/resulting tree `3560eaa0677f219e109f3cad86b169145658cb7e`, resulting main `5e892aaff06cce0d994fbf79cfbcc12b235c7e48`. |
-| PR A protocol/core         | tooling validation    | Draft PR #103 remains on older remote head `8b1ebf542d12c05a5ac226d3d07e543a171a2626`. Immutable production candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`, tree `7f971bcf84aa494265992d17e3c9b99227bd8122`, completed correctness and Critical 0/Important 0 production review but is non-exempt. The approved artifact owner and exact exception entries are implemented locally; final validation, review, candidate freeze, and separate measurement-envelope authorization remain pending. The exact v1 A-B-B-A evidence remains failed. No candidate push, PR update, Branch Release Gate, or new benchmark occurred.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| PR B persistence           | blocked               | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| PR C authoritative shell   | blocked               | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| PR D alignment/final trace | blocked               | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Later topology ledger      | blocked               | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| RTC/RTT and later domains  | blocked               | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Milestone                  | State                      | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth prerequisite          | ledger-published           | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Group-topology child plan  | approved/in execution      | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f`. Planning PR #127 merged approved correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` as feature `8e36fe1c303f695f0a6ec3d99be30eda12c96b11`, frozen/resulting tree `3d6cdf6abb46866e74895fe49150a4a9a4bde77c`, resulting main `df8346aaf39e8d8730e73a530da3e6f182aa071b`. Planning PR #129 merged approved gate-disposition blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` as feature `05c75cf2ad52589901e6983a687d28aa5b910582`, frozen/resulting tree `e3b309e9b913395e28645f1355400d380697c658`, resulting main `c7d6d4ec017edb23de239bba18c6d79f2ebb5dac`. Planning PR #131 merged approved target-path correction blob `cf4d92db310c928b2e020f926efa4f731a2fd3b6` as feature `42eb663177d731f3759fc2a2664db2ad3297f149`, frozen/resulting tree `3560eaa0677f219e109f3cad86b169145658cb7e`, resulting main `5e892aaff06cce0d994fbf79cfbcc12b235c7e48`. |
+| PR A protocol/core         | publication reconciliation | Exact candidate `ed7e77cd560a701ec41bc544769c60a715f68744`, tree `161e125131adb87dcd90bba737dfe91cb8d624b7`, preserves production candidate `74a62eb22583216e8c6651de069209d7e1a8ca67` and completed correctness plus Critical 0/Important 0 review. The v1 A-B-B-A failure and B4 isolation-guard failure remain historical evidence. The human accepted balanced block 1 and the seven-successful-position diagnostic for this exact candidate. Draft PR #103 was pushed, but Branch Release Gate run `31334618112`, attempt 1, failed only because the lineage manifest named Task 1 head `8b1ebf542d12c05a5ac226d3d07e543a171a2626` while the workflow resolved merge base `20020977507c3104949da07d27b95e89d3b91c96`; their three predecessor blobs are identical. Concurrent-main and exact-lineage-base reconciliation is in progress.                                                                                                                                                                                                                             |
+| PR B persistence           | blocked                    | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| PR C authoritative shell   | blocked                    | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| PR D alignment/final trace | blocked                    | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Later topology ledger      | blocked                    | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| RTC/RTT and later domains  | blocked                    | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ## 20. Self-Review Checklist
 

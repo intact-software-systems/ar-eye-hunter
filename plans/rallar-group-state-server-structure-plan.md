@@ -242,17 +242,17 @@ packages/tests/shared-server/
   mutation-boundary-traversal.ts
   mutation-routing-inventory.ts
   mutation-routing-markers.ts
-  postgres-presence-expiry-concurrency.test.ts
-  postgres-rtt-runtime-concurrency.test.ts
+  integration/postgres/
+    presence/presence-expiry-concurrency.test.ts
+    rtt-runtime-concurrency.test.ts
+    runtime-state-optimistic-concurrency.test.ts
+    topology-app-inbox-concurrency.test.ts
+    topology-app-outbox-concurrency.test.ts
+    topology-config-override-concurrency.test.ts
+    topology-mutation-worker-concurrency.test.ts
   postgres-runtime-state-client-fixtures.ts
   postgres-runtime-state-client-lifecycle.test.ts
-  postgres-runtime-state-optimistic-concurrency.test.ts
-  postgres-task8-runtime-evidence.test.ts
-  postgres-topology-app-inbox-concurrency.test.ts
-  postgres-topology-app-outbox-concurrency.test.ts
   postgres-topology-concurrency-fixtures.ts
-  postgres-topology-config-override-concurrency.test.ts
-  postgres-topology-mutation-worker-concurrency.test.ts
   postgres-topology-mutation-worker-fixtures.ts
   fixtures/postgres-topology-app-inbox-worker.ts
   fixtures/postgres-topology-app-outbox-worker.ts
@@ -875,8 +875,8 @@ helpers.
 | `presence-expiry-reconciliation-service.test.ts`                                                        | `presence/reconcile-expired-group-presence.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `group-receipt-causal-invariants.test.ts`                                                               | `mutation/group-mutation-result.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `group-state-snapshot-read-through-cache.test.ts`                                                       | matching `snapshot/group-state-snapshot-read-through-cache.test.ts`; the snapshot-presence cases currently in `group-state-concurrency.test.ts` move to `snapshot/group-state-snapshot-presence.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `postgres-presence-expiry-concurrency.test.ts`                                                          | Remains at its current path as the PostgreSQL presence concurrency compatibility gate.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| deleted predecessor `postgres-runtime-state-concurrency.test.ts`                                        | Remove after preserving all cases in exact cohesive successors: client acquisition/cleanup failures in `postgres-runtime-state-client-lifecycle.test.ts`; `preserves protected RTC receipt families during generic live expiry`, conditional writes, revision overflow, savepoints, and nested transaction rollback in `postgres-runtime-state-optimistic-concurrency.test.ts`; topology put/delete process rebasing and missing-request rejection in `postgres-topology-mutation-worker-concurrency.test.ts`; live Task 8 artifact/database binding in `postgres-task8-runtime-evidence.test.ts`; RTT overlap in `postgres-rtt-runtime-concurrency.test.ts`; config/config convergence and archive-fence rejection in `postgres-topology-app-inbox-concurrency.test.ts`; mixed config/override invariant retry outcomes in `postgres-topology-config-override-concurrency.test.ts`; and RTC topology execution convergence in `postgres-topology-app-outbox-concurrency.test.ts`. `postgres-runtime-state-client-fixtures.ts`, `postgres-topology-mutation-worker-fixtures.ts`, and `postgres-topology-concurrency-fixtures.ts` own only their named client, legacy topology-worker, and canonical AppInbox/APP_OUTBOX process/barrier/cleanup support. `fixtures/postgres-topology-app-inbox-worker.ts` and `fixtures/postgres-topology-app-outbox-worker.ts` own the two Deno process entry points. No predecessor case, assertion, literal, retry, barrier, receipt, outbox, final-state, or cleanup invariant is removed. |
+| `integration/postgres/presence/presence-expiry-concurrency.test.ts`                                     | Remains the separately executed PostgreSQL presence concurrency compatibility gate and runs last.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| deleted predecessor `postgres-runtime-state-concurrency.test.ts`                                        | Remove after preserving all reusable cases in exact cohesive successors: client acquisition/cleanup failures in `postgres-runtime-state-client-lifecycle.test.ts`; `preserves protected RTC receipt families during generic live expiry`, conditional writes, revision overflow, savepoints, and nested transaction rollback in `integration/postgres/runtime-state-optimistic-concurrency.test.ts`; topology put/delete process rebasing and missing-request rejection in `integration/postgres/topology-mutation-worker-concurrency.test.ts`; RTT overlap in `integration/postgres/rtt-runtime-concurrency.test.ts`; config/config convergence and archive-fence rejection in `integration/postgres/topology-app-inbox-concurrency.test.ts`; mixed config/override invariant retry outcomes in `integration/postgres/topology-config-override-concurrency.test.ts`; and RTC topology execution convergence in `integration/postgres/topology-app-outbox-concurrency.test.ts`. `postgres-runtime-state-client-fixtures.ts`, `postgres-topology-mutation-worker-fixtures.ts`, and `postgres-topology-concurrency-fixtures.ts` own only their named client, legacy topology-worker, and canonical AppInbox/APP_OUTBOX process/barrier/cleanup support. `fixtures/postgres-topology-app-inbox-worker.ts` and `fixtures/postgres-topology-app-outbox-worker.ts` own the two Deno process entry points. The scenario-specific Task 8 artifact verifier is deliberately removed; no reusable predecessor semantic case is removed. |
 | broad AppInbox, routing, policy, topology, RTC, public-package, API-v1, and PGlite tests in Section 2.2 | Remain at current paths and serve as compatibility/architecture gates; Task 6 adds `topology-app-inbox-ownership.test.ts` and splits only the materially changed owner-path/route-row constants into `mutation-routing-owner-inventory.ts`. The routing inventory distinguishes the new domain owner from the retained facade dispatch path. No behavior assertion moves.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | persistence mutation-read fixtures extracted from the three persistence successors                      | `group-state-persistence-mutation-read-fixtures.ts`; retain three independently written named fixture bodies and the exact semantic-literal cohort.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | persistence owner and read/compute/write source architecture evidence                                   | `group-state-persistence-ownership.test.ts` and `read-compute-write-source-analysis.ts`; these root owners prove exact path ownership and direct phase/source structure without replacing runtime assertions.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -1564,27 +1564,19 @@ npx vitest run \
   packages/tests/shared-server/rallar-middleware.test.ts \
   packages/tests/shared-server/task10-route-closure-correction.test.ts
 
-DATABASE_URL="${RALLAR_TASK8_DATABASE_URL:?set to the database paired with the Task 8 report}" \
-RALLAR_POSTGRES_INTEGRATION=1 \
-RALLAR_TASK8_REPORT_PATH="${RALLAR_TASK8_REPORT_PATH:?set to the Task 8 report.json}" \
-deno run -A --unstable-temporal --node-modules-dir=none --no-lock \
-  npm:vitest@4.0.17 run --no-file-parallelism \
-  --config packages/tests/shared-server/vitest.deno.config.mjs \
-  packages/tests/shared-server/postgres-task8-runtime-evidence.test.ts
-
 DATABASE_URL="${RALLAR_TASK9_DATABASE_URL:?set to a fresh migrated Task 9 database}" \
 RALLAR_POSTGRES_INTEGRATION=1 \
 deno run -A --unstable-temporal --node-modules-dir=none --no-lock \
   npm:vitest@4.0.17 run --no-file-parallelism \
   --config packages/tests/shared-server/vitest.deno.config.mjs \
   packages/tests/api-v1/client-and-group-state-repositories.test.ts \
-  packages/tests/shared-server/postgres-rtt-runtime-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/rtt-runtime-concurrency.test.ts \
   packages/tests/shared-server/postgres-runtime-state-client-lifecycle.test.ts \
-  packages/tests/shared-server/postgres-runtime-state-optimistic-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-app-inbox-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-app-outbox-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-config-override-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-mutation-worker-concurrency.test.ts
+  packages/tests/shared-server/integration/postgres/runtime-state-optimistic-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-app-inbox-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-app-outbox-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-config-override-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-mutation-worker-concurrency.test.ts
 
 npx vitest run packages/tests/shared-server/group-state
 
@@ -1604,13 +1596,13 @@ deno run -A --unstable-temporal --node-modules-dir=none --no-lock \
   packages/tests/shared-server/group-topology-config-repository.test.ts \
   packages/tests/shared-server/group-topology-config-service.test.ts \
   packages/tests/shared-server/group-topology-management-service.test.ts \
-  packages/tests/shared-server/postgres-rtt-runtime-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/rtt-runtime-concurrency.test.ts \
   packages/tests/shared-server/postgres-runtime-state-client-lifecycle.test.ts \
-  packages/tests/shared-server/postgres-runtime-state-optimistic-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-app-inbox-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-app-outbox-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-config-override-concurrency.test.ts \
-  packages/tests/shared-server/postgres-topology-mutation-worker-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/runtime-state-optimistic-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-app-inbox-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-app-outbox-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-config-override-concurrency.test.ts \
+  packages/tests/shared-server/integration/postgres/topology-mutation-worker-concurrency.test.ts \
   packages/tests/shared-server/rallar-middleware.test.ts \
   packages/tests/shared-server/read-compute-write-contract.test.ts \
   packages/tests/shared-server/rtc-topology-mutations.test.ts \
@@ -1622,12 +1614,7 @@ deno run -A --unstable-temporal --node-modules-dir=none --no-lock \
   packages/tests/shared/authoritative-state-contracts.test.ts
 
 DATABASE_URL="${RALLAR_TASK9_DATABASE_URL:?set to a fresh migrated Task 9 database}" \
-RALLAR_POSTGRES_INTEGRATION=1 \
-RALLAR_POSTGRES_PRESENCE_EXPIRY=1 \
-deno run -A --unstable-temporal --node-modules-dir=none --no-lock \
-  npm:vitest@4.0.17 run --no-file-parallelism \
-  --config packages/tests/shared-server/vitest.deno.config.mjs \
-  packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts
+npm run test:postgres:presence-expiry
 
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 (cd apps/api-v1 && deno task check)
@@ -1635,8 +1622,7 @@ npm run test:api-v1:black-box:memory
 npm run test:api-v1:black-box:postgres:medium-scale
 ```
 
-The Task 8 artifact check uses only the database that produced its named report.
-The remaining PostgreSQL concurrency files use one separately migrated database
+The PostgreSQL concurrency files use one separately migrated database
 whose `APP_OUTBOX` queue has no `NEW` or `RETRY` rows before the first command.
 Run the presence-expiry owner last because it deliberately retains fixed-ID
 outbox evidence that can starve the later global APP_OUTBOX worker even when

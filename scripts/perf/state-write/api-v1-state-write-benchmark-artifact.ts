@@ -39,11 +39,6 @@ export interface StateWriteBenchmarkArtifact {
     tailSamplesDiscarded: boolean;
     counterSources: Readonly<Record<string, string>>;
   }>;
-  readonly features: Readonly<{
-    presenceSplitFromGroupAggregate: boolean;
-    governance: string;
-    evidence: string;
-  }>;
   readonly regressionReasons: readonly StateWriteBenchmarkRegressionReason[];
   readonly workloads: readonly object[];
 }
@@ -104,11 +99,6 @@ export function createStateWriteBenchmarkArtifact(
           'subreceipt is valid',
         outboxIntents: 'legacy counter name retained only for governed baseline compatibility',
       },
-    },
-    features: {
-      presenceSplitFromGroupAggregate: true,
-      governance: 'task10-post-remediation-candidate',
-      evidence: 'Transactional AppInbox completion, receipts, and direct ResourceInbox effects',
     },
     regressionReasons: input.regressionReasons,
     workloads: input.workloads,

@@ -15,7 +15,7 @@ import {
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import { findOverlayById } from '@shared/repository/overlays-repository.ts';
+import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
 import * as dataCaches from '@shared-web/browser/data-caches.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
@@ -732,6 +732,119 @@ describe('browser data caches state scope filtering', () => {
         });
 
         unsubscribe();
+    });
+
+    it('creates a bounded bootstrap overlay for active group snapshots', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        const memberSessionIds = Array.from(
+            { length: 8 },
+            (_, index) => `session-${String.fromCharCode(97 + index)}`,
+        );
+        const group = createGroupSnapshot(
+            'room-bootstrap',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
+            memberSessionIds,
+            1,
+        );
+
+        await dataCaches.hydrateStateCaches(manager, clientData, [], [group]);
+
+        const overlay = findOverlayById(toScopedOverlayId(group.group));
+        expect(overlay).toMatchObject({
+            provenance: 'bootstrap',
+            topology: 'star',
+            degreeLimit: 5,
+        });
+        expect(overlay?.nextHopSessionIds).toHaveLength(5);
+        expect(overlay?.nextHopSessionIds).not.toContain('session-a');
+    });
+
+    it('does not restamp a bootstrap overlay over an existing server overlay', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        const group = createGroupSnapshot(
+            'room-server-owned',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
+            ['session-a', 'session-b', 'session-c'],
+            1,
+        );
+        const overlayId = toScopedOverlayId(group.group);
+        setOverlayById(overlayId, {
+            sourceGroupStateCausalRevision: {
+                groupRevision: 1,
+                presenceRevision: 1,
+            },
+            provenance: 'server',
+            state: 'active',
+            overlayId,
+            groupRef: group.group,
+            topology: 'tree',
+            name: 'room-server-owned',
+            createdByClientId: 'server',
+            createdAtEpochMs: 1,
+            nextHopSessionIds: ['session-c'],
+            degreeLimit: 5,
+            overlayVersion: 1,
+            updatedAtEpochMs: 1,
+        });
+
+        const newerGroup = createGroupSnapshot(
+            'room-server-owned',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
+            ['session-a', 'session-b', 'session-c'],
+            5,
+        );
+        await dataCaches.hydrateStateCaches(manager, clientData, [], [newerGroup]);
+
+        expect(findOverlayById(overlayId)).toMatchObject({
+            provenance: 'server',
+            topology: 'tree',
+            nextHopSessionIds: ['session-c'],
+        });
+    });
+
+    it('restores the unconditional full-membership star in legacy-star mode', async () => {
+        const manager = createWebRtcGroupManager();
+        const clientData: ClientInfo = {
+            clientId: 'alice',
+            sessionId: 'session-a',
+            isOnline: true,
+        };
+        const memberSessionIds = Array.from(
+            { length: 8 },
+            (_, index) => `session-${String.fromCharCode(97 + index)}`,
+        );
+        const group = createGroupSnapshot(
+            'room-legacy',
+            DEFAULT_STATE_APPLICATION_ID,
+            DEFAULT_STATE_WORKSPACE_ID,
+            memberSessionIds,
+            1,
+        );
+
+        await dataCaches.hydrateStateCaches(manager, clientData, [], [group], {
+            groupFormation: { mode: 'legacy-star', bootstrapDegree: 5 },
+        });
+
+        const overlay = findOverlayById(toScopedOverlayId(group.group));
+        expect(overlay).toMatchObject({
+            provenance: 'bootstrap',
+            topology: 'star',
+            degreeLimit: 7,
+        });
+        expect(overlay?.nextHopSessionIds).toEqual(memberSessionIds);
     });
 });
 

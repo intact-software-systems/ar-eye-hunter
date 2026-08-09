@@ -494,14 +494,3 @@ export type BlackBoxRallarDirectorRuntime = Readonly<{
     ): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
     relayStop(input: BlackBoxRallarDirectorHandleInput | unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
 }>;
-
-export type BlackBoxRallarRuntime = Readonly<{
-    authenticate?(config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarAuthenticateDiagnostics>;
-    connect(config: BlackBoxRallarConnectionConfig): Promise<BlackBoxRallarConnectDiagnostics>;
-    send(input: BlackBoxRallarSendInput | unknown): Promise<BlackBoxRallarSendDiagnostics>;
-    sendWs(input: unknown): Promise<BlackBoxRallarWsSendDiagnostics>;
-    crdt: BlackBoxRallarCrdtRuntime;
-    director: BlackBoxRallarDirectorRuntime;
-    close(): Promise<BlackBoxRallarCloseDiagnostics>;
-    health(input?: BlackBoxRallarHealthInput | unknown): Promise<BlackBoxRallarHealthDiagnostics>;
-}>;

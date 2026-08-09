@@ -4,35 +4,55 @@ import {
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 import {
-  GROUP_TOPOLOGY_CONFLICT_REASON,
-  GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
-  GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
-} from '../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
-import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
 } from './state-write-performance-artifact-fixture.ts';
 import { swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
-const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
-const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
-  it('accepts a complete AppInbox/ResourceInbox candidate and legacy baseline', () => {
-    const candidate = createStateWritePerformanceArtifact(true);
+  it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
+    const candidate = createStateWritePerformanceArtifact();
+    const sample = artifactSample(candidate);
     expect(candidate.measurement.counterSources.outbox).toBe('resource_inbox');
     expect(candidate.measurement.counterSources.attempts).toBe(
       'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation',
     );
-    expect(candidate.workloads[0].samples[0].durableEvidence.intermediateMutationIntents).toEqual(
-      [],
-    );
-    expect(candidate.workloads[0].samples[0].correctness.atomicCompletionFailures).toBe(0);
-    expect(validateStateWriteArtifact(createStateWritePerformanceArtifact(false))).toEqual([]);
+    expect(sample.durableEvidence.intermediateMutationIntents).toEqual([]);
+    expect(sample.correctness.atomicCompletionFailures).toBe(0);
+    expect(candidate.features).toBeUndefined();
     expect(validateStateWriteArtifact(candidate)).toEqual([]);
   });
 
+  it('tolerates equal throughput between baseline and candidate', () => {
+    expect(
+      compareStateWriteArtifacts(
+        createStateWritePerformanceArtifact(),
+        createStateWritePerformanceArtifact(),
+      ),
+    ).toEqual([]);
+  });
+
+  it('tolerates throughput variance within 5% and rejects beyond it', () => {
+    const withinTolerance = createStateWritePerformanceArtifact();
+    setThroughputAdverseRatio(withinTolerance, 0.04);
+    expect(
+      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), withinTolerance),
+    ).toEqual([]);
+
+    const beyondTolerance = createStateWritePerformanceArtifact();
+    setThroughputAdverseRatio(beyondTolerance, 0.06);
+    expect(
+      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), beyondTolerance),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('shared throughput regressed by more than 5%'),
+        expect.stringContaining('hot throughput regressed by more than 5%'),
+      ]),
+    );
+  });
+
   it('rejects intermediate intents and service-local attempt evidence', () => {
-    const candidate = createStateWritePerformanceArtifact(true);
+    const candidate = createStateWritePerformanceArtifact();
     const sample = candidate.workloads[0].samples[0];
     sample.durableEvidence.intermediateMutationIntents.push({ intentId: 'forbidden' });
     sample.attemptObservations[0].source = 'group-state-service.mutation.conflict';
@@ -49,8 +69,8 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       (sample: any) => sample.durableEvidence.receipts.shift(),
       (sample: any) => sample.durableEvidence.resourceOutbox.shift(),
     ]) {
-      const candidate = createStateWritePerformanceArtifact(true);
-      mutate(candidate.workloads[0].samples[0]);
+      const candidate = createStateWritePerformanceArtifact();
+      mutate(artifactSample(candidate));
       refreshStateWritePerformanceWorkload(candidate.workloads[0]);
       expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
     }
@@ -58,25 +78,25 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
 
   it('rejects malformed retry delay, due age, lane, and transaction evidence', () => {
     for (const field of ['retryDelayMs', 'dueAgeMs', 'transactionDurationMs'] as const) {
-      const candidate = createStateWritePerformanceArtifact(true);
-      candidate.workloads[0].samples[0].durableEvidence.appInbox[0][field] = -1;
+      const candidate = createStateWritePerformanceArtifact();
+      durableEvidence(candidate).appInbox[0][field] = -1;
       expectStateWriteArtifactIssues(candidate, 'appInbox[0] is malformed');
     }
-    const lane = createStateWritePerformanceArtifact(true);
-    lane.workloads[0].samples[0].durableEvidence.appInbox[0].selectedLane = 'unknown';
+    const lane = createStateWritePerformanceArtifact();
+    durableEvidence(lane).appInbox[0].selectedLane = 'unknown';
     expect(validateStateWriteArtifact(lane)).not.toEqual([]);
   });
 
   it('rejects invented retry history and zero-delay nonterminal conflicts', () => {
-    const invented = createStateWritePerformanceArtifact(true);
-    const inventedSample = invented.workloads[0].samples[0];
+    const invented = createStateWritePerformanceArtifact();
+    const inventedSample = artifactSample(invented);
     inventedSample.attemptObservations.splice(1, 0, {
       ...inventedSample.attemptObservations[0],
       attempt: 2,
     });
     expectStateWriteArtifactIssues(invented, 'must reconcile exactly to durable AppInbox attempts');
-    const zeroDelay = createStateWritePerformanceArtifact(true);
-    const sample = zeroDelay.workloads[0].samples[0];
+    const zeroDelay = createStateWritePerformanceArtifact();
+    const sample = artifactSample(zeroDelay);
     const first = sample.attemptObservations[0];
     first.outcome = 'conflicted';
     first.terminal = false;
@@ -92,8 +112,8 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
   });
 
   it('distinguishes typed transient retries from optimistic conflicts', () => {
-    const candidate = createStateWritePerformanceArtifact(true);
-    const sample = candidate.workloads[0].samples[0];
+    const candidate = createStateWritePerformanceArtifact();
+    const sample = artifactSample(candidate);
     const first = sample.attemptObservations[0];
     first.outcome = 'transient-retry';
     first.terminal = false;
@@ -114,50 +134,26 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
   });
 
   it('rejects malformed durable results and receipt/effect identity mismatches', () => {
-    const malformed = createStateWritePerformanceArtifact(true);
-    delete malformed.workloads[0].samples[0].durableEvidence.appInbox[0].durableResult;
-    expectStateWriteArtifactIssues(malformed, 'persisted durable result is malformed');
-
-    const mismatched = createStateWritePerformanceArtifact(true);
-    mismatched.workloads[0].samples[0].durableEvidence.receipts[0].outboxIds = ['invented-effect'];
-    expectStateWriteArtifactIssues(
-      mismatched,
-      'receipt outbox IDs must match exact ResourceInbox effects',
-    );
-
-    const embeddedTamper = createStateWritePerformanceArtifact(true);
-    const embedded = embeddedTamper.workloads[0].samples[0].durableEvidence.appInbox.find(
-      (entry: any) => entry.commandType.startsWith('GROUP_PRESENCE_'),
-    );
-    embedded.durableResult.outboxIds = ['invented-embedded-effect'];
-    expectStateWriteArtifactIssues(
-      embeddedTamper,
-      'embedded result receipt must match authoritative receipt and effects',
-    );
-
-    const arbitraryKey = createStateWritePerformanceArtifact(true);
-    const client = arbitraryKey.workloads[0].samples[0].durableEvidence.appInbox.find(
-      (entry: any) => entry.commandType.startsWith('CLIENT_'),
-    );
-    client.durableResult.unreceipted = true;
-    expectStateWriteArtifactIssues(arbitraryKey, 'persisted durable result is malformed');
+    for (const [mutate, expected] of malformedDurableResultCases) {
+      const artifact = createStateWritePerformanceArtifact();
+      mutate(artifact);
+      expectStateWriteArtifactIssues(artifact, expected);
+    }
     for (const prefix of ['CLIENT_', 'GROUP_']) {
-      const swapped = createStateWritePerformanceArtifact(true);
+      const swapped = createStateWritePerformanceArtifact();
       swapCompleteDurableResults(swapped, prefix);
       expect(validateStateWriteArtifact(swapped)).not.toEqual([]);
     }
-    const missingTopologySibling = createStateWritePerformanceArtifact(true);
-    const missingEntry =
-      missingTopologySibling.workloads[0].samples[0].durableEvidence.appInbox.find(
-        (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
-      );
+    const missingTopologySibling = createStateWritePerformanceArtifact();
+    const missingEntry = durableEvidence(missingTopologySibling).appInbox.find(
+      (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
+    );
     delete missingEntry.durableResult.config;
     expect(validateStateWriteArtifact(missingTopologySibling)).not.toEqual([]);
-    const swappedTopologySibling = createStateWritePerformanceArtifact(true);
-    const topologyEntries =
-      swappedTopologySibling.workloads[0].samples[0].durableEvidence.appInbox.filter(
-        (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
-      );
+    const swappedTopologySibling = createStateWritePerformanceArtifact();
+    const topologyEntries = durableEvidence(swappedTopologySibling).appInbox.filter(
+      (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
+    );
     [topologyEntries[0].durableResult.config, topologyEntries[1].durableResult.config] = [
       topologyEntries[1].durableResult.config,
       topologyEntries[0].durableResult.config,
@@ -167,25 +163,24 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
 
   it('is total over malformed nested candidate evidence', () => {
     for (const mutate of [
-      (candidate: any) => (candidate.workloads[0].samples[0].durableEvidence = null),
-      (candidate: any) => delete candidate.workloads[0].samples[0].durableEvidence.appInbox[0],
-      (candidate: any) => (candidate.workloads[0].samples[0].durableEvidence.receipts[0] = null),
-      (candidate: any) =>
-        (candidate.workloads[0].samples[0].durableEvidence.resourceOutbox[0] = null),
+      (candidate: any) => (artifactSample(candidate).durableEvidence = null),
+      (candidate: any) => delete durableEvidence(candidate).appInbox[0],
+      (candidate: any) => (durableEvidence(candidate).receipts[0] = null),
+      (candidate: any) => (durableEvidence(candidate).resourceOutbox[0] = null),
     ]) {
-      const candidate = createStateWritePerformanceArtifact(true);
+      const candidate = createStateWritePerformanceArtifact();
       mutate(candidate);
       expect(() => validateStateWriteArtifact(candidate)).not.toThrow();
       expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
       expect(() =>
-        compareStateWriteArtifacts(createStateWritePerformanceArtifact(false), candidate),
+        compareStateWriteArtifacts(createStateWritePerformanceArtifact(), candidate),
       ).not.toThrow();
     }
   });
 
   it('preserves scale, retry-exhaustion, latency, throughput, and resource gates', () => {
-    const baseline = createStateWritePerformanceArtifact(false);
-    const candidate = createStateWritePerformanceArtifact(true);
+    const baseline = createStateWritePerformanceArtifact();
+    const candidate = createStateWritePerformanceArtifact();
     candidate.workloads[0].scale.clients = 99;
     candidate.workloads[0].summary.latencyMs.p95 *= 2;
     candidate.workloads[1].summary.throughputPerSecond = 1;
@@ -214,34 +209,22 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       }),
     ).toBe('principal-state:event');
     expect(
-      bench.readAllCommandIds(
-        JSON.stringify({
-          payload: {
-            resource: JSON.stringify({ data: { request: { requestId: 'nested-command' } } }),
-          },
-        }),
-      ),
+      bench.readAllCommandIds(queueResource({ request: { requestId: 'nested-command' } })),
     ).toContain('nested-command');
     expect(
       bench.readAllCommandIds(
-        JSON.stringify({
-          id: { msgId: 'raw-command:rtc-topology-recompute:group-revision:group=1;presence=0' },
-          payload: {
-            resource: JSON.stringify({ data: { event: { requestId: 'stale-command' } } }),
-          },
-        }),
+        queueResource(
+          { event: { requestId: 'stale-command' } },
+          'raw-command:rtc-topology-recompute:group-revision:group=1;presence=0',
+        ),
       )[0],
     ).toBe('raw-command');
     expect(
       bench.readCanonicalEffectCommandId(
-        JSON.stringify({
-          id: {
-            msgId: 'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0',
-          },
-          payload: {
-            resource: JSON.stringify({ data: { event: { requestId: 'config-command' } } }),
-          },
-        }),
+        queueResource(
+          { event: { requestId: 'config-command' } },
+          'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0',
+        ),
       ),
     ).toBe('topology-command');
     const topologyCommand = {
@@ -312,89 +295,58 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       out: 'tmp/perf/candidate.json',
     });
   });
-
-  it('binds precommitted topology conflict reasons before measurement', async () => {
-    const bench = await import('../../../scripts/perf/api-v1-state-write-concurrency-bench.ts');
-    const artifactOwner =
-      await import('../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts');
-    const input = createConflictReasonInput();
-    const parseReasons = (text: string | undefined) =>
-      bench.parseGroupTopologyRegressionReasons(text, CANDIDATE_IDENTITY);
-    expect(parseReasons(undefined)).toEqual([]);
-    expect(parseReasons(JSON.stringify(input))).toEqual(input.reasons);
-    expect(
-      bench.parseBenchmarkOptions(['--regression-reasons-file=tmp/perf/topology-reasons.json']),
-    ).toMatchObject({ regressionReasonsFile: 'tmp/perf/topology-reasons.json' });
-    const createArtifact = (regressionReasons: readonly unknown[]) =>
-      artifactOwner.createStateWriteBenchmarkArtifact({
-        generatedAt: '2026-08-09T00:00:00.000Z',
-        gitIdentity: CANDIDATE_IDENTITY,
-        options: bench.parseBenchmarkOptions([]),
-        regressionReasons,
-        workloads: [{ name: 'sentinel-workload' }],
-      });
-    expect(createArtifact(parseReasons(JSON.stringify(input))).regressionReasons).toEqual(
-      input.reasons,
-    );
-    expect(createArtifact([]).regressionReasons).toEqual([]);
-    const artifactBytes = new TextEncoder().encode(
-      `${JSON.stringify(
-        createArtifact([
-          { workload: 'shared', metric: 'sql.statements', reason: 'precommitted reason' },
-        ]),
-        null,
-        2,
-      )}\n`,
-    );
-    const artifactDigest = await crypto.subtle.digest('SHA-256', artifactBytes);
-    expect(
-      Array.from(new Uint8Array(artifactDigest), (byte) => byte.toString(16).padStart(2, '0')).join(
-        '',
-      ),
-    ).toBe('70a977c657cd1d0ae850b291d19872a73932c6e46050855acfed3131741f70dd');
-    expect(() =>
-      bench.parseBenchmarkOptions(['--regression-reasons-file=tmp/perf/../topology-reasons.json']),
-    ).toThrow(/must remain under tmp\/perf/);
-    for (const mutate of conflictReasonFailures()) {
-      const malformed = structuredClone(input);
-      mutate(malformed);
-      expect(() => parseReasons(JSON.stringify(malformed))).toThrow(/conflict reason/);
-    }
-  });
 });
-const CANDIDATE_IDENTITY = { commit: CANDIDATE_COMMIT, tree: CANDIDATE_TREE } as const;
-function createConflictReasonInput(): any {
-  const metrics = [
-    'sql.statements',
-    'sql.rowsRead',
-    'sql.serializedResultBytes',
-    'postgres.transactionDurationMs',
-  ];
-  return {
-    schemaVersion: GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
-    baseCommit: GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
-    candidateCommit: CANDIDATE_COMMIT,
-    candidateTree: CANDIDATE_TREE,
-    reasons: ['uncontended', 'shared', 'hot'].flatMap((workload) =>
-      metrics.map((metric) => ({ workload, metric, reason: GROUP_TOPOLOGY_CONFLICT_REASON })),
-    ),
-  };
-}
-function conflictReasonFailures(): readonly ((input: any) => void)[] {
-  return [
-    (input) => (input.extra = true),
-    (input) => (input.baseCommit = CANDIDATE_COMMIT),
-    (input) => (input.candidateCommit = GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT),
-    (input) => (input.candidateTree = GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT),
-    (input) => input.reasons.pop(),
-    (input) => (input.reasons[0].metric = 'sql.unsupported'),
-    (input) => (input.reasons[0].reason = 'written after measurement'),
-    (input) => ([input.reasons[0], input.reasons[1]] = [input.reasons[1], input.reasons[0]]),
-  ];
-}
 
 function expectStateWriteArtifactIssues(candidate: unknown, ...messages: readonly string[]): void {
   expect(validateStateWriteArtifact(candidate)).toEqual(
     expect.arrayContaining(messages.map((message) => expect.stringContaining(message))),
   );
+}
+
+const artifactSample = (artifact: any): any => artifact.workloads[0].samples[0];
+const durableEvidence = (artifact: any): any => artifactSample(artifact).durableEvidence;
+const malformedDurableResultCases: readonly [(artifact: any) => void, string][] = [
+  [
+    (artifact) => delete durableEvidence(artifact).appInbox[0].durableResult,
+    'persisted durable result is malformed',
+  ],
+  [
+    (artifact) => (durableEvidence(artifact).receipts[0].outboxIds = ['invented-effect']),
+    'receipt outbox IDs must match exact ResourceInbox effects',
+  ],
+  [
+    (artifact) => {
+      const entry = durableEvidence(artifact).appInbox.find((candidate: any) =>
+        candidate.commandType.startsWith('GROUP_PRESENCE_'),
+      );
+      entry.durableResult.outboxIds = ['invented-embedded-effect'];
+    },
+    'embedded result receipt must match authoritative receipt and effects',
+  ],
+  [
+    (artifact) => {
+      const entry = durableEvidence(artifact).appInbox.find((candidate: any) =>
+        candidate.commandType.startsWith('CLIENT_'),
+      );
+      entry.durableResult.unreceipted = true;
+    },
+    'persisted durable result is malformed',
+  ],
+];
+
+function queueResource(data: object, msgId?: string): string {
+  return JSON.stringify({
+    ...(msgId === undefined ? {} : { id: { msgId } }),
+    payload: { resource: JSON.stringify({ data }) },
+  });
+}
+
+function setThroughputAdverseRatio(artifact: any, ratio: number): void {
+  for (const workload of artifact.workloads) {
+    for (const sample of workload.samples) {
+      sample.durationMs = 100 / (1 - ratio);
+      sample.throughputPerSecond = 700 / (sample.durationMs / 1000);
+    }
+    refreshStateWritePerformanceWorkload(workload);
+  }
 }

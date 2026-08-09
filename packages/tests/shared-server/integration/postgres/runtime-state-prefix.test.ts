@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
+
+import type {
+  AuditStamp,
+  Group,
+  GroupMember,
+  GroupPresenceSession,
+  GroupRef,
+} from '@shared/api/group-types.ts';
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import {
+  clientStateWorkspaceStorageKey,
+} from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
 
 const POSTGRES_INTEGRATION_ENABLED = readEnv('RALLAR_POSTGRES_INTEGRATION') === '1';
 const postgresIt = POSTGRES_INTEGRATION_ENABLED ? it : it.skip;
@@ -165,6 +176,8 @@ describe('Postgres runtime-state prefix selection', () => {
           applicationId,
           workspaceId,
           principalId: 'alice',
+          clientInstanceId: 'browser',
+          sessionId: 'alice-session',
           status: 'active',
           expiresAtEpochMs: liveSessionExpiry,
         }),
@@ -173,31 +186,28 @@ describe('Postgres runtime-state prefix selection', () => {
       await repository.upsert(
         'group-state:groups',
         `${scopePrefix}group=room-1`,
-        JSON.stringify({ applicationId, workspaceId, groupId: 'room-1', status: 'active' }),
+        JSON.stringify(groupFixture({ applicationId, workspaceId, groupId: 'room-1' })),
         FUTURE_MS,
       );
       await repository.upsert(
         'group-state:members',
         `${scopePrefix}group=room-1:member=alice`,
-        JSON.stringify({
-          applicationId,
-          workspaceId,
-          groupId: 'room-1',
-          principalId: 'alice',
-          status: 'active',
-        }),
+        JSON.stringify(
+          activeMemberFixture({ applicationId, workspaceId, groupId: 'room-1' }, 'alice'),
+        ),
         FUTURE_MS,
       );
       await repository.upsert(
         'group-state:sessions',
         `${scopePrefix}group=room-1:session=alice-session`,
-        JSON.stringify({
-          applicationId,
-          workspaceId,
-          groupId: 'room-1',
-          principalId: 'alice',
-          expiresAtEpochMs: liveSessionExpiry,
-        }),
+        JSON.stringify(
+          activePresenceFixture(
+            { applicationId, workspaceId, groupId: 'room-1' },
+            'alice',
+            'alice-session',
+            liveSessionExpiry,
+          ),
+        ),
         FUTURE_MS,
       );
 
@@ -232,7 +242,129 @@ describe('Postgres runtime-state prefix selection', () => {
       await sql.end();
     }
   });
+
+  postgresIt('isolates lookalike client-state workspace prefixes', async () => {
+    const sql = await createSql(requireDatabaseUrl());
+    const repository = new PSqlRuntimeStateRepository(sql);
+    const namespace = `runtime-workspace-isolation-${crypto.randomUUID()}`;
+    const applicationId = `runtime-workspace-app-${crypto.randomUUID()}`;
+    const workspaceCases = [
+      { workspaceId: '_', workspaceKey: '%5F' },
+      { workspaceId: '%5F', workspaceKey: '%255F' },
+      { workspaceId: 'a:b', workspaceKey: 'a%3Ab' },
+      { workspaceId: 'a%3Ab', workspaceKey: 'a%253Ab' },
+    ] as const;
+
+    try {
+      for (const { workspaceId, workspaceKey } of workspaceCases) {
+        expect(clientStateWorkspaceStorageKey(workspaceId)).toBe(workspaceKey);
+        const scopePrefix = `app=${applicationId}:ws=${workspaceKey}:`;
+        await repository.upsert(
+          namespace,
+          `${scopePrefix}principal=shared-principal`,
+          JSON.stringify({ applicationId, workspaceId, principalId: 'shared-principal' }),
+          FUTURE_MS,
+        );
+      }
+
+      for (const { workspaceId, workspaceKey } of workspaceCases) {
+        const scopePrefix = `app=${applicationId}:ws=${workspaceKey}:`;
+        const entries = await repository.findEntriesByPrefix(namespace, scopePrefix);
+
+        expect(entries).toHaveLength(1);
+        expect(JSON.parse(entries[0]?.value ?? '{}')).toEqual({
+          applicationId,
+          workspaceId,
+          principalId: 'shared-principal',
+        });
+      }
+    } finally {
+      await sql`
+        delete from runtime_state_store
+        where store_namespace = ${namespace}
+      `;
+      await sql.end();
+    }
+  });
 });
+
+function groupFixture(ref: GroupRef): Group {
+  const audit = auditStamp();
+  return {
+    ...ref,
+    slug: null,
+    displayName: ref.groupId,
+    description: null,
+    kind: 'room',
+    status: 'active',
+    joinMode: 'open',
+    maxMembers: null,
+    maxSessionsPerMember: null,
+    metadata: {},
+    activeMemberCount: 1,
+    ownerPrincipalId: 'alice',
+    snapshotVersion: 1,
+    metadataVersion: 1,
+    rosterVersion: 1,
+    presenceVersion: 1,
+    created: audit,
+    updated: audit,
+    archived: null,
+    deleted: null,
+    expiresAtEpochMs: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
+  };
+}
+
+function activeMemberFixture(ref: GroupRef, principalId: string): GroupMember {
+  const audit = auditStamp();
+  return {
+    ...ref,
+    principalId,
+    role: 'owner',
+    status: 'active',
+    joined: audit,
+    updated: audit,
+    left: null,
+    removed: null,
+    banned: null,
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
+  };
+}
+
+function activePresenceFixture(
+  ref: GroupRef,
+  principalId: string,
+  sessionId: string,
+  expiresAtEpochMs: number,
+): GroupPresenceSession {
+  const connectedAtEpochMs = expiresAtEpochMs - 60_000;
+  return {
+    ...ref,
+    principalId,
+    sessionId,
+    generationId: `${sessionId}-generation`,
+    generationVersion: connectedAtEpochMs,
+    connectedAtEpochMs,
+    lastHeartbeatAtEpochMs: connectedAtEpochMs,
+    expiresAtEpochMs,
+    disconnectedAtEpochMs: null,
+    disconnectReason: null,
+    status: 'active',
+  };
+}
+
+function auditStamp(): AuditStamp {
+  return {
+    atEpochMs: 1,
+    actor: { kind: 'service', serviceId: 'runtime-prefix-integration-test' },
+    reason: null,
+    traceId: null,
+    requestId: null,
+  };
+}
 
 async function createSql(databaseUrl: string): Promise<PostgresSql> {
   const postgres = await import('postgres') as PostgresModule;

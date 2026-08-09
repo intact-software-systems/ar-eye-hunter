@@ -43,6 +43,13 @@ Useful constraints:
   for system traffic.
 - Include `applicationId`, `workspaceId`, `groupId`, and `roomRef` where RTC or
   WS delivery is group-scoped.
+- When `rtc.connect` uses `readiness` with `browser-rallar`, make its exact room
+  identity recipe-resolvable through `roomRef` or `applicationId` plus
+  `roomId`, directly or through the active `configure` command.
+- Add readiness only when the expected peers are already connecting or can
+  connect concurrently. Do not add it blindly to a sequential multi-client
+  recipe: the first connect can otherwise wait for a later connect command
+  that cannot execute yet.
 - Prefer `targetPolicy.mode: "all-online-group-members"` for whole-group runs,
   or `role-map` when only selected senders should execute a send recipe.
 - Include timeouts that match live signaling realities. RTC connect/send
@@ -399,6 +406,9 @@ Before running AI-generated JSON against live browsers:
 - Check that all live WS topics are `room.*` or `app.*`.
 - Check that RTC commands include the intended `roomId`, `roomRef`,
   `applicationId`, and `workspaceId`.
+- Check that every readiness-enabled RTC connect has an exact room identity and
+  that the expected peers can become ready without waiting for a later
+  sequential command.
 - Check that sends are role-scoped when only one browser should send.
 - Check that no secrets are embedded in the JSON.
 - Keep the first run small, then scale participant count or payload volume.

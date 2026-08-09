@@ -567,6 +567,188 @@ describe('WebRtcGroupManager', () => {
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual([]);
         expect(manager.ownerGroupsOfPeer('peer-b')).toEqual(['group-1']);
     });
+
+    it('counts reconcile runs, connects, and disconnects in diagnostics', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self', ['peer-orphan']);
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+        );
+
+        expect(manager.readDiagnostics()).toEqual({
+            reconcileRunCount: 0,
+            reconcileAwaitedInFlightCount: 0,
+            lastDesiredPeerCount: 0,
+            connectAttemptCount: 0,
+            connectFailureCount: 0,
+            connectDeferredBudgetCount: 0,
+            disconnectCount: 0,
+            retainedEvictionCount: 0,
+        });
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        clientCache.set('peer-b', createClientInfo('peer-b', false));
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a', 'peer-b']),
+        );
+
+        const afterFirstReconcile = manager.readDiagnostics();
+        expect(afterFirstReconcile.reconcileRunCount).toBe(1);
+        expect(afterFirstReconcile.lastDesiredPeerCount).toBe(2);
+        expect(afterFirstReconcile.connectAttemptCount).toBe(1);
+        expect(afterFirstReconcile.connectFailureCount).toBe(0);
+        expect(afterFirstReconcile.disconnectCount).toBe(1);
+
+        const first = manager.ensureAllGroupsConnected();
+        const second = manager.notifyClientPresenceChanged();
+        await Promise.all([first, second]);
+
+        const afterConcurrentReconcile = manager.readDiagnostics();
+        expect(afterConcurrentReconcile.reconcileRunCount).toBe(2);
+        expect(afterConcurrentReconcile.reconcileAwaitedInFlightCount).toBe(1);
+
+        manager.resetDiagnostics();
+        expect(manager.readDiagnostics().reconcileRunCount).toBe(0);
+    });
+
+    it('caps outbound dials at the connection budget and counts deferrals', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 5 },
+        );
+        const peerIds = Array.from({ length: 8 }, (_, index) => `peer-${index}`);
+        for (const peerId of peerIds) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', ...peerIds]),
+        );
+
+        expect(rtcQBox.knownPeerIds()).toHaveLength(5);
+        expect(manager.readDiagnostics().connectDeferredBudgetCount).toBe(3);
+    });
+
+    it('dials server-overlay next hops before bootstrap peers under the budget', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const overlayCache = new LatestRepository<string, OverlayInfo>();
+        const rtcQBox = createRtcQBoxHarness('self');
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            overlayCache,
+            { maxPeerConnections: 5 },
+        );
+        const bootstrapPeerIds = Array.from(
+            { length: 6 },
+            (_, index) => `peer-x${index + 1}`,
+        );
+        const bootstrapGroup = createGroupSnapshot('group-boot', 1, [
+            'self',
+            ...bootstrapPeerIds,
+        ]);
+        const serverGroup = createGroupSnapshot('group-server', 1, [
+            'self',
+            'peer-s1',
+        ]);
+        for (const peerId of ['peer-s1', ...bootstrapPeerIds]) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+        overlayCache.set(
+            toScopedOverlayId(serverGroup.group),
+            createOverlayInfo(serverGroup, ['peer-s1']),
+        );
+
+        await manager.acceptGroupUpdate(serverGroup);
+        await manager.acceptGroupUpdate(bootstrapGroup);
+
+        // The server-overlay hop keeps its slot; the remaining budget goes to
+        // the first bootstrap peers and the rest are deferred.
+        expect(rtcQBox.knownPeerIds()).toEqual([
+            'peer-s1',
+            'peer-x1',
+            'peer-x2',
+            'peer-x3',
+            'peer-x4',
+        ]);
+        expect(manager.readDiagnostics().connectDeferredBudgetCount).toBe(2);
+    });
+
+    it('counts connect failures in diagnostics', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const failingService = {
+            input: { sessionId: 'self' },
+            knownPeerIds: () => [] as string[],
+            peerIdsWithNoReconnectableLanes: () => [] as string[],
+            ensurePeerConnectionStarted: vi.fn(() =>
+                Either.ofLeft({ kind: 'error', error: new Error('dial failed') })
+            ),
+            disconnectPeer: vi.fn(),
+        };
+        const manager = new WebRtcGroupManager(
+            failingService as never,
+            groupCache,
+            clientCache,
+        );
+
+        clientCache.set('peer-a', createClientInfo('peer-a', true));
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-1', 1, ['self', 'peer-a']),
+        );
+
+        const diagnostics = manager.readDiagnostics();
+        expect(diagnostics.connectAttemptCount).toBe(1);
+        expect(diagnostics.connectFailureCount).toBe(1);
+    });
+
+    it('counts retained peer evictions in diagnostics', async () => {
+        const groupCache = new LatestRepository<string, GroupSnapshot>();
+        const clientCache = new LatestRepository<string, ClientInfo>();
+        const rtcQBox = createRtcQBoxHarness('self', [], (peerId, connectedPeerIds) => {
+            connectedPeerIds.delete(peerId);
+        });
+        const manager = new WebRtcGroupManager(
+            rtcQBox.service as never,
+            groupCache,
+            clientCache,
+            undefined,
+            { maxPeerConnections: 5 },
+        );
+        const retainedPeerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d'];
+        const replacementPeerIds = ['peer-e', 'peer-f', 'peer-g'];
+        for (const peerId of [...retainedPeerIds, ...replacementPeerIds]) {
+            clientCache.set(peerId, createClientInfo(peerId, true));
+        }
+
+        const oldGroup = createGroupSnapshot('group-1', 1, [
+            'self',
+            ...retainedPeerIds,
+        ]);
+        await manager.acceptGroupUpdate(oldGroup);
+        expect(rtcQBox.knownPeerIds()).toHaveLength(4);
+        await manager.delete(oldGroup.group, { retainConnections: true });
+
+        await manager.acceptGroupUpdate(
+            createGroupSnapshot('group-2', 1, ['self', ...replacementPeerIds]),
+        );
+
+        const diagnostics = manager.readDiagnostics();
+        expect(diagnostics.retainedEvictionCount).toBe(2);
+        expect(rtcQBox.knownPeerIds()).toHaveLength(5);
+    });
 });
 
 function createRtcQBoxHarness(
@@ -749,5 +931,6 @@ function createOverlayInfo(
         degreeLimit: Math.max(1, nextHopSessionIds.length),
         overlayVersion,
         updatedAtEpochMs: overlayVersion,
+        provenance: 'server',
     };
 }

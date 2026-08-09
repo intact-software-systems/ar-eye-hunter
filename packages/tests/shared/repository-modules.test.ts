@@ -44,7 +44,11 @@ import {
     findOverlayById,
     getAllOverlays,
     onOverlayChange,
+    OverlayRevisionConflictError,
+    readOverlayAdoptionDiagnostics,
     removeOverlayById,
+    resetOverlayAdoptionDiagnostics,
+    setOverlayAdoptionDiagnosticsSink,
     setOverlayById,
     updateNextHopSessionIds,
     waitForOverlayChangesIdle,
@@ -574,6 +578,7 @@ describe('repository modules', () => {
 
         expect(findOverlayById(overlayId)).toEqual({
             sourceGroupStateCausalRevision: group.causalRevision,
+            provenance: 'bootstrap',
             state: 'active',
             overlayId,
             groupRef: group.group,
@@ -624,6 +629,7 @@ describe('repository modules', () => {
                     groupRevision: 1,
                     presenceRevision: 1,
                 },
+                provenance: 'server',
                 state: 'active',
                 overlayId: 'group-1',
                 groupRef: {
@@ -666,6 +672,194 @@ describe('repository modules', () => {
         }
     });
 
+    it('reports every overlay adoption outcome through the diagnostics sink', () => {
+        const outcomes: string[] = [];
+        resetOverlayAdoptionDiagnostics();
+        setOverlayAdoptionDiagnosticsSink((event) => {
+            outcomes.push(event.outcome);
+        });
+
+        try {
+            const overlayId = 'group-adoption';
+            const first = {
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 1,
+                    presenceRevision: 1,
+                },
+                provenance: 'server',
+                state: 'active',
+                overlayId,
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: overlayId,
+                },
+                topology: 'star',
+                name: 'Alpha',
+                createdByClientId: 'owner',
+                createdAtEpochMs: 1,
+                nextHopSessionIds: ['self'],
+                degreeLimit: 1,
+                overlayVersion: 1,
+                updatedAtEpochMs: 1,
+            } satisfies OverlayInfo;
+            const stale = { ...first, overlayVersion: 0 } satisfies OverlayInfo;
+            const newer = { ...first, overlayVersion: 2 } satisfies OverlayInfo;
+            const conflicting = {
+                ...newer,
+                nextHopSessionIds: ['peer-x'],
+            } satisfies OverlayInfo;
+            const incomparable = {
+                ...first,
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 2,
+                    presenceRevision: 0,
+                },
+            } satisfies OverlayInfo;
+
+            setOverlayById(overlayId, first);
+            setOverlayById(overlayId, first);
+            setOverlayById(overlayId, stale);
+            setOverlayById(overlayId, newer);
+            expect(() => setOverlayById(overlayId, conflicting)).toThrow(
+                OverlayRevisionConflictError,
+            );
+            expect(() => setOverlayById(overlayId, incomparable)).toThrow(
+                OverlayRevisionConflictError,
+            );
+
+            expect(outcomes).toEqual([
+                'initial-set',
+                'equal',
+                'dominated-dropped',
+                'adopted',
+                'incomparable-conflict',
+                'incomparable-conflict',
+            ]);
+
+            expect(readOverlayAdoptionDiagnostics()).toEqual({
+                initialSetCount: 1,
+                adoptedCount: 1,
+                equalCount: 1,
+                dominatedDroppedCount: 1,
+                incomparableConflictCount: 2,
+                serverSupersededBootstrapCount: 0,
+                bootstrapDroppedOverServerCount: 0,
+            });
+
+            setOverlayAdoptionDiagnosticsSink(() => {
+                throw new Error('diagnostics sink failure');
+            });
+            const adoptedDespiteSinkFailure = {
+                ...newer,
+                overlayVersion: 3,
+            } satisfies OverlayInfo;
+            setOverlayById(overlayId, adoptedDespiteSinkFailure);
+            expect(findOverlayById(overlayId)?.overlayVersion).toBe(3);
+            expect(readOverlayAdoptionDiagnostics().adoptedCount).toBe(2);
+
+            resetOverlayAdoptionDiagnostics();
+            expect(readOverlayAdoptionDiagnostics().adoptedCount).toBe(0);
+        } finally {
+            setOverlayAdoptionDiagnosticsSink(undefined);
+        }
+    });
+
+    it('admits server overlays over bootstrap overlays regardless of the causal tuple', () => {
+        const outcomes: string[] = [];
+        resetOverlayAdoptionDiagnostics();
+        setOverlayAdoptionDiagnosticsSink((event) => {
+            outcomes.push(event.outcome);
+        });
+
+        try {
+            const overlayId = 'group-provenance';
+            const bootstrap = {
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 5,
+                    presenceRevision: 5,
+                },
+                provenance: 'bootstrap',
+                state: 'active',
+                overlayId,
+                groupRef: {
+                    applicationId: 'app-1',
+                    workspaceId: 'workspace-1',
+                    groupId: overlayId,
+                },
+                topology: 'star',
+                name: 'Alpha',
+                createdByClientId: 'owner',
+                createdAtEpochMs: 1,
+                nextHopSessionIds: ['peer-bootstrap'],
+                degreeLimit: 1,
+                overlayVersion: 5,
+                updatedAtEpochMs: 5,
+            } satisfies OverlayInfo;
+            const dominatedServer = {
+                ...bootstrap,
+                provenance: 'server',
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 1,
+                    presenceRevision: 1,
+                },
+                nextHopSessionIds: ['peer-server'],
+                overlayVersion: 1,
+            } satisfies OverlayInfo;
+            const dominatingBootstrap = {
+                ...bootstrap,
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 9,
+                    presenceRevision: 9,
+                },
+                overlayVersion: 9,
+            } satisfies OverlayInfo;
+            const newerServer = {
+                ...dominatedServer,
+                sourceGroupStateCausalRevision: {
+                    groupRevision: 2,
+                    presenceRevision: 2,
+                },
+                nextHopSessionIds: ['peer-server-2'],
+                overlayVersion: 2,
+            } satisfies OverlayInfo;
+
+            setOverlayById(overlayId, bootstrap);
+            setOverlayById(overlayId, dominatedServer);
+            expect(findOverlayById(overlayId)?.nextHopSessionIds)
+                .toEqual(['peer-server']);
+
+            setOverlayById(overlayId, dominatingBootstrap);
+            expect(findOverlayById(overlayId)?.provenance).toBe('server');
+            expect(findOverlayById(overlayId)?.nextHopSessionIds)
+                .toEqual(['peer-server']);
+
+            setOverlayById(overlayId, newerServer);
+            setOverlayById(overlayId, {
+                ...dominatedServer,
+                nextHopSessionIds: ['peer-server-stale'],
+            });
+            expect(findOverlayById(overlayId)?.nextHopSessionIds)
+                .toEqual(['peer-server-2']);
+
+            expect(outcomes).toEqual([
+                'initial-set',
+                'server-superseded-bootstrap',
+                'bootstrap-dropped-over-server',
+                'adopted',
+                'dominated-dropped',
+            ]);
+            expect(readOverlayAdoptionDiagnostics()).toMatchObject({
+                serverSupersededBootstrapCount: 1,
+                bootstrapDroppedOverServerCount: 1,
+                incomparableConflictCount: 0,
+            });
+        } finally {
+            setOverlayAdoptionDiagnosticsSink(undefined);
+            resetOverlayAdoptionDiagnostics();
+        }
+    });
+
     it('orders revisioned overlays by source group revision and retains removal tombstones', () => {
         const first = {
             overlayId: 'overlay-1',
@@ -673,6 +867,7 @@ describe('repository modules', () => {
                 groupRevision: 2,
                 presenceRevision: 2,
             },
+            provenance: 'server',
             state: 'active',
             groupRef: {
                 applicationId: 'app-1',

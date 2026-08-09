@@ -1,6 +1,6 @@
 # Rallar group topology server PR-A lineage provenance
 
-Base: `8b1ebf542d12c05a5ac226d3d07e543a171a2626`
+Base: `108933a97c7a40ee0831ecd185725aea243122bd`
 
 The fail-closed structured evidence is
 [`rallar-group-topology-server-pr-a-provenance.jsonc`](rallar-group-topology-server-pr-a-provenance.jsonc).

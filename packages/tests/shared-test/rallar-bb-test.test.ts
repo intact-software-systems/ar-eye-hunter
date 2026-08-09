@@ -1609,6 +1609,7 @@ describe('rallar-bb-test', () => {
                         sent: true,
                     };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => {
                     calls.push({ name: 'close' });
                     return {
@@ -1737,6 +1738,7 @@ describe('rallar-bb-test', () => {
             rallarRuntime: {
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
                 crdt: crdt as any,
@@ -1895,6 +1897,7 @@ describe('rallar-bb-test', () => {
             rallarRuntime: {
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
                 director: director as any,
@@ -2000,6 +2003,7 @@ describe('rallar-bb-test', () => {
             rallarRuntime: {
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2023,6 +2027,7 @@ describe('rallar-bb-test', () => {
             rallarRuntime: {
                 connect: async () => ({ connected: true }),
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2050,6 +2055,7 @@ describe('rallar-bb-test', () => {
                     sendCallEpochMs.push(Date.now());
                     return { sent: true };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2086,6 +2092,7 @@ describe('rallar-bb-test', () => {
                         input,
                     };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2139,6 +2146,7 @@ describe('rallar-bb-test', () => {
                         status: 'sent',
                     };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2187,6 +2195,7 @@ describe('rallar-bb-test', () => {
             rallarRuntime: {
                 connect: async () => ({ connected: true }),
                 send: async () => ({ status: 'sent' }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2468,6 +2477,7 @@ describe('rallar-bb-test', () => {
                 sendWs: async () => {
                     throw new Error('raw socket should handle ws.send while open');
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2568,6 +2578,7 @@ describe('rallar-bb-test', () => {
                     return { connected: true };
                 },
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => {
                     rallarCalls.push('close');
                     return { closed: true };
@@ -2639,6 +2650,7 @@ describe('rallar-bb-test', () => {
                         transport: 'ws',
                     };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -2771,6 +2783,7 @@ describe('rallar-bb-test', () => {
                         transport: 'ws',
                     };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },

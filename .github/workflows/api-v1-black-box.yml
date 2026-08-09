@@ -39,8 +39,8 @@ jobs:
       AUTH_STATIC_CLIENTS_MODE: demo
       AUTH_REGISTRATION_MODE: public
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -60,7 +60,7 @@ jobs:
           run-id: "${{ github.run_id }}-${{ github.run_attempt }}-postgres"
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-v1-black-box-postgres
           path: .artifacts/api-v1-black-box/postgres
@@ -78,8 +78,8 @@ jobs:
       AUTH_STATIC_CLIENTS_MODE: demo
       AUTH_REGISTRATION_MODE: public
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -98,7 +98,7 @@ jobs:
           run-id: "${{ github.run_id }}-${{ github.run_attempt }}-memory"
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-v1-black-box-memory
           path: .artifacts/api-v1-black-box/memory

@@ -132,7 +132,9 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
   it('rejects incompatible same-role metadata and duplicate raw command identities', () => {
     const metadataMismatch = createPoolingInput();
     const approvedBaseSecond = JSON.parse(metadataMismatch.sources.approvedBaseSecond.artifactText);
-    approvedBaseSecond.features.evidence = 'different evidence owner';
+    approvedBaseSecond.regressionReasons = [
+      { workload: 'shared', metric: 'sql.statements', reason: 'metadata mismatch probe fixture' },
+    ];
     metadataMismatch.sources.approvedBaseSecond.artifactText = JSON.stringify(approvedBaseSecond);
     expect(() => poolApiV1StateWriteResults(metadataMismatch)).toThrow(
       /approved-base artifact metadata must match/,
@@ -283,25 +285,21 @@ function createPoolingInput(): PoolingInput {
     expectedCandidateCommit: CANDIDATE_COMMIT,
     sources: {
       approvedBaseFirst: createSource({
-        candidate: true,
         artifactId: 'a1',
         gitCommit: APPROVED_BASE_COMMIT,
         time: '00:01:00',
       }),
       candidateFirst: createSource({
-        candidate: true,
         artifactId: 'b2',
         gitCommit: CANDIDATE_COMMIT,
         time: '00:02:00',
       }),
       candidateSecond: createSource({
-        candidate: true,
         artifactId: 'b3',
         gitCommit: CANDIDATE_COMMIT,
         time: '00:03:00',
       }),
       approvedBaseSecond: createSource({
-        candidate: true,
         artifactId: 'a4',
         gitCommit: APPROVED_BASE_COMMIT,
         time: '00:04:00',
@@ -310,16 +308,15 @@ function createPoolingInput(): PoolingInput {
   };
 }
 interface CreateSourceInput {
-  readonly candidate: boolean;
   readonly artifactId: string;
   readonly gitCommit: string;
   readonly time: string;
 }
 function createSource(input: CreateSourceInput): PoolingSourceText {
-  const { candidate, artifactId, gitCommit, time } = input;
+  const { artifactId, gitCommit, time } = input;
   return {
     artifactText: JSON.stringify(
-      createStateWritePerformanceArtifact(candidate, {
+      createStateWritePerformanceArtifact({
         artifactId,
         generatedAt: `2026-08-01T${time}.000Z`,
         gitCommit,

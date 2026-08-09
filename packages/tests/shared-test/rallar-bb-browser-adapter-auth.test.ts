@@ -164,6 +164,7 @@ describe('rallar-bb browser adapter auth', () => {
                     throw new Error('full connect must not run for HTTP authentication');
                 },
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -229,6 +230,7 @@ describe('rallar-bb browser adapter auth', () => {
                     return { connected: true };
                 },
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -289,6 +291,7 @@ describe('rallar-bb browser adapter auth', () => {
                     throw new Error('full connect must not run for HTTP authentication');
                 },
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -463,6 +466,7 @@ describe('rallar-bb browser adapter auth', () => {
                     throw new Error('full connect must not run for HTTP authentication');
                 },
                 send: async () => ({ sent: true }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -560,6 +564,7 @@ describe('rallar-bb browser adapter auth', () => {
                     return { connected: true };
                 },
                 send: async () => ({ status: 'sent', peerIds: ['bob-session'], results: [], health: [] }),
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ connected: true }),
             },
@@ -635,6 +640,7 @@ describe('rallar-bb browser adapter auth', () => {
                         health: [],
                     };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({
                     rtcStatus: {
@@ -892,6 +898,7 @@ describe('rallar-bb browser adapter auth', () => {
                     sends.push(input);
                     return { sent: true };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ ok: true }),
             },
@@ -943,6 +950,7 @@ describe('rallar-bb browser adapter auth', () => {
                     sends.push(input);
                     return { sent: true };
                 },
+                refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
                 health: async () => ({ ok: true }),
             },

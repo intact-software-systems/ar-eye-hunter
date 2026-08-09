@@ -127,6 +127,87 @@ describe('API-v1 three-server recipe semantics', () => {
     expect(new Set(finalReads.map((step) => step.connection))).toEqual(
       new Set(['apiPrimary', 'apiTertiary']),
     );
+    const latestObservation = (recipe.steps as Array<Record<string, unknown>>).find(
+      (step) => step.name === 'deriveLatestChurnObservation',
+    );
+    expect(latestObservation).toMatchObject({
+      type: 'set',
+      output: 'latestChurnObservation',
+      transform: {
+        value: {
+          groupRevision: { max: expect.any(Array) },
+          presenceRevision: { max: expect.any(Array) },
+          onlineMemberCount: {
+            if: {
+              condition: { equals: expect.any(Array) },
+              then: { path: 'outputs.primaryChurnOnlineMemberCount' },
+              else: {
+                if: {
+                  condition: { equals: expect.any(Array) },
+                  then: { path: 'outputs.secondaryChurnOnlineMemberCount' },
+                  else: { path: 'outputs.tertiaryChurnOnlineMemberCount' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const floor = (recipe.steps as Array<Record<string, unknown>>).find(
+      (step) => step.name === 'deriveChurnReadFloor',
+    );
+    expect(floor).toMatchObject({
+      type: 'set',
+      output: 'churnReadFloor',
+      transform: {
+        value: {
+          groupRevision: {
+            path: 'outputs.latestChurnObservation.groupRevision',
+          },
+          presenceRevision: {
+            if: {
+              condition: {
+                equals: [
+                  { path: 'outputs.latestChurnObservation.onlineMemberCount' },
+                  13,
+                ],
+              },
+              then: { path: 'outputs.latestChurnObservation.presenceRevision' },
+              else: {
+                add: [
+                  { path: 'outputs.latestChurnObservation.presenceRevision' },
+                  1,
+                ],
+              },
+            },
+          },
+        },
+      },
+    });
+    const churnRead = (recipe.steps as Array<Record<string, unknown>>).find(
+      (step) => step.name === 'readChurnGroupThroughPrimary',
+    );
+    expect(churnRead).toMatchObject({
+      connection: 'apiPrimary',
+      request: {
+        path: expect.stringContaining(
+          'minGroupRevision={churnReadFloor.groupRevision}&minPresenceRevision={churnReadFloor.presenceRevision}',
+        ),
+        retry: {
+          maxAttempts: 6,
+          backoffMs: 250,
+          backoffMultiplier: 2,
+          onStatus: [409],
+          onException: false,
+        },
+      },
+      expect: {
+        status: 200,
+        body: {
+          onlineMemberCount: 13,
+        },
+      },
+    });
     expect(JSON.stringify(recipe)).toContain('disconnect');
     expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
   });

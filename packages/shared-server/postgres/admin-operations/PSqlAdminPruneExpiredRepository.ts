@@ -173,7 +173,7 @@ async function deletePageRows(
                 with expired as (
                     select value::jsonb ->> 0 as store_namespace,
                            value::jsonb ->> 1 as store_key
-                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                    from jsonb_array_elements_text(${rowIds}::jsonb)
                 )
                 delete from runtime_state_store target using expired
                 where target.store_namespace = expired.store_namespace
@@ -186,7 +186,7 @@ async function deletePageRows(
             return (await sql<ResourceRow[]>`
                 with expired as (
                     select value::bigint as ri_row_id
-                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                    from jsonb_array_elements_text(${rowIds}::jsonb)
                 )
                 delete from resource_inbox target using expired
                 where target.ri_row_id = expired.ri_row_id
@@ -197,7 +197,7 @@ async function deletePageRows(
             return (await sql<ResultsRow[]>`
                 with expired as (
                     select value::bigint as ris_row_id
-                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                    from jsonb_array_elements_text(${rowIds}::jsonb)
                 )
                 delete from resource_inbox_results target using expired
                 where target.ris_row_id = expired.ris_row_id
@@ -210,7 +210,7 @@ async function deletePageRows(
                 with expired as (
                     select value::jsonb ->> 0 as store_name,
                            value::jsonb ->> 1 as data_key
-                    from jsonb_array_elements_text(${JSON.stringify(rowIds)}::jsonb)
+                    from jsonb_array_elements_text(${rowIds}::jsonb)
                 )
                 delete from app_data_store target using expired
                 where target.app_namespace = ${command.appData.namespace}

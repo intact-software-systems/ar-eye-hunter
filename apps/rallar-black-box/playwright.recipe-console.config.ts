@@ -2,6 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 const RECIPE_CONSOLE_TEST_ENV = {
     VITE_RALLAR_API_BASE_URL: 'http://localhost:8080',
+    VITE_RALLAR_APPLICATION_ID: '',
+    VITE_RALLAR_CONTROL_URL: '',
+    VITE_RALLAR_ROOM_ID: '',
+    VITE_RALLAR_WORKSPACE_ID: '',
 };
 
 export default defineConfig({

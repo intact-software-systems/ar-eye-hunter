@@ -623,7 +623,7 @@ Verification:
 
 - `packages/tests/shared-server/rallar-server-app-data.test.ts` covers fresh reads, explicit cache-first reads,
   compare-and-set conflict rejection, insert-if-absent winner stability, and retry after a simulated revision conflict.
-- `packages/tests/shared-server/postgres-app-data-concurrency.test.ts` is an opt-in Postgres integration proof gated by
+- `packages/tests/shared-server/integration/postgres/app-data-concurrency.test.ts` is an opt-in Postgres integration proof gated by
   `RALLAR_POSTGRES_INTEGRATION=1` and `DATABASE_URL`.
 
 ## 6. `runtime_state_store` Is A Flexible JSON Store With Limited Domain Indexing

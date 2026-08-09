@@ -42,7 +42,9 @@ describe('rallar-black-box-headless bundle boundary', () => {
     }
 
     // Validated snapshot point reads and race-fenced repair add a bounded browser cost.
-    expect(result.brotliKiB).toBeLessThan(194);
+    // Group-formation Phase 1 (overlay provenance admission, bounded bootstrap
+    // selection, outbound dial plan) adds ~0.7 KiB; measured 194.61 at that change.
+    expect(result.brotliKiB).toBeLessThan(196);
   });
 });
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { RallarValidationError } from '../../../packages/shared/api/rallar-validation.ts';
 import { createRallarBlackBoxBrowserTestRuntime } from '../../../packages/shared-test/rallar-bb-test/browser-adapter.ts';
 import { selectRallarBlackBoxDiagnostics } from '../../../packages/shared-test/rallar-bb-test/selectors.ts';
 import {
@@ -289,6 +290,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     },
                 })),
                 send: vi.fn(),
+                refreshRoom: vi.fn(),
                 close: vi.fn(),
                 health,
             },
@@ -320,6 +322,308 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         ]));
     });
 
+    it('does not refresh room state when rtc.connect is already ready', async () => {
+        const refreshRoom = vi.fn();
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: vi.fn(async () => ({ connected: true })),
+                send: vi.fn(),
+                close: vi.fn(),
+                health: vi.fn(async () => ({
+                    rtcStatus: {
+                        readyPeerIds: ['peer-a'],
+                    },
+                })),
+                refreshRoom,
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-already-ready',
+            connection: 'rtc',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 50,
+                intervalMs: 1,
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(refreshRoom).not.toHaveBeenCalled();
+    });
+
+    it('refreshes room state while waiting for an initially undiscovered RTC peer', async () => {
+        let roomStateRefreshed = false;
+        const refreshRoom = vi.fn(async () => {
+            roomStateRefreshed = true;
+        });
+        const health = vi.fn(async () => ({
+            rtcStatus: {
+                readyPeerIds: roomStateRefreshed ? ['peer-a'] : [],
+            },
+        }));
+        const runtime = createRallarBlackBoxBrowserTestRuntime({
+            rallarRuntime: {
+                connect: vi.fn(async () => ({
+                    connected: true,
+                    rtcStatus: {
+                        readyPeerIds: [],
+                    },
+                })),
+                send: vi.fn(),
+                close: vi.fn(),
+                health,
+                refreshRoom,
+            },
+        });
+
+        const result = await runtime.execute({
+            kind: 'rtc.connect',
+            commandId: 'connect-after-room-refresh',
+            connection: 'rtc',
+            readiness: {
+                minReadyPeers: 1,
+                timeoutMs: 50,
+                intervalMs: 1,
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(refreshRoom).toHaveBeenCalledTimes(1);
+        expect(refreshRoom).toHaveBeenCalledWith({
+            signal: expect.any(AbortSignal),
+            timeoutMs: expect.any(Number),
+        });
+        const refreshOptions = refreshRoom.mock.calls[0]?.[0];
+        expect(refreshOptions?.timeoutMs).toBeGreaterThan(0);
+        expect(refreshOptions?.timeoutMs).toBeLessThanOrEqual(50);
+        expect(health).toHaveBeenCalledTimes(2);
+        expect(result.value).toMatchObject({
+            readiness: {
+                readyPeerIds: ['peer-a'],
+            },
+        });
+    });
+
+    it('does not let a pending room refresh overrun rtc.connect readiness', async () => {
+        vi.useFakeTimers();
+        try {
+            const refreshRoom = vi.fn((_options: Readonly<{
+                signal?: AbortSignal;
+                timeoutMs: number;
+            }>) => new Promise<unknown>(() => undefined));
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: {
+                    connect: vi.fn(async () => ({ connected: true })),
+                    send: vi.fn(),
+                    close: vi.fn(),
+                    health: vi.fn(async () => ({
+                        rtcStatus: {
+                            readyPeerIds: [],
+                        },
+                    })),
+                    refreshRoom,
+                },
+            });
+
+            const pending = runtime.execute({
+                kind: 'rtc.connect',
+                commandId: 'connect-pending-room-refresh',
+                connection: 'rtc',
+                readiness: {
+                    minReadyPeers: 1,
+                    timeoutMs: 10,
+                    intervalMs: 1,
+                },
+            });
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(refreshRoom).toHaveBeenCalledTimes(1);
+            const signal = refreshRoom.mock.calls[0]?.[0].signal;
+            expect(signal?.aborted).toBe(false);
+
+            await vi.advanceTimersByTimeAsync(10);
+            const result = await pending;
+
+            expect(result.ok).toBe(false);
+            expect(result.error).toMatchObject({
+                code: 'RALLAR_BB_RTC_READY_TIMEOUT',
+            });
+            expect(signal?.aborted).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('cancels a pending room refresh when distributed execution is cancelled', async () => {
+        vi.useFakeTimers();
+        try {
+            const refreshRoom = vi.fn((_options: Readonly<{
+                signal?: AbortSignal;
+                timeoutMs: number;
+            }>) => new Promise<unknown>(() => undefined));
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: {
+                    connect: vi.fn(async () => ({ connected: true })),
+                    send: vi.fn(),
+                    close: vi.fn(),
+                    health: vi.fn(async () => ({
+                        rtcStatus: {
+                            readyPeerIds: [],
+                        },
+                    })),
+                    refreshRoom,
+                },
+            });
+
+            const pendingConnect = runtime.execute({
+                kind: 'rtc.connect',
+                commandId: 'connect-cancelled-room-refresh',
+                connection: 'rtc',
+                readiness: {
+                    minReadyPeers: 1,
+                    timeoutMs: 10_000,
+                    intervalMs: 1,
+                },
+            });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(refreshRoom).toHaveBeenCalledTimes(1);
+            const signal = refreshRoom.mock.calls[0]?.[0].signal;
+
+            await runtime.execute({
+                kind: 'recipe.cancel',
+                commandId: 'cancel-pending-room-refresh',
+                reason: 'distributed run cancelled',
+            });
+            const result = await pendingConnect;
+
+            expect(result.status).toBe('cancelled');
+            expect(signal?.aborted).toBe(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('keeps waiting after a transient room refresh failure', async () => {
+        vi.useFakeTimers();
+        try {
+            const refreshError = new Error('transient point-read failure');
+            let roomStateRefreshed = false;
+            const refreshRoom = vi.fn()
+                .mockRejectedValueOnce(refreshError)
+                .mockImplementationOnce(async () => {
+                    roomStateRefreshed = true;
+                });
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: {
+                    connect: vi.fn(async () => ({ connected: true })),
+                    send: vi.fn(),
+                    close: vi.fn(),
+                    health: vi.fn(async () => ({
+                        rtcStatus: {
+                            readyPeerIds: roomStateRefreshed ? ['peer-a'] : [],
+                        },
+                    })),
+                    refreshRoom,
+                },
+            });
+
+            const pending = runtime.execute({
+                kind: 'rtc.connect',
+                commandId: 'connect-after-transient-refresh-failure',
+                connection: 'rtc',
+                readiness: {
+                    minReadyPeers: 1,
+                    timeoutMs: 1_500,
+                    intervalMs: 100,
+                },
+            });
+            await vi.advanceTimersByTimeAsync(0);
+            expect(refreshRoom).toHaveBeenCalledTimes(1);
+
+            await vi.advanceTimersByTimeAsync(1_000);
+            const result = await pending;
+
+            expect(result.ok).toBe(true);
+            expect(refreshRoom).toHaveBeenCalledTimes(2);
+            expect(result.value).toMatchObject({
+                readiness: {
+                    readyPeerIds: ['peer-a'],
+                    lastRefreshError: {
+                        name: 'Error',
+                        message: refreshError.message,
+                    },
+                },
+            });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each([
+        [
+            'HTTP authorization',
+            Object.assign(new Error('room refresh forbidden'), {
+                name: 'ApiHttpError',
+                status: 403,
+            }),
+        ],
+        [
+            'configuration validation',
+            new RallarValidationError('$.roomRef: Exact room reference is required.', [
+                {
+                    path: '$.roomRef',
+                    code: 'room-ref-required',
+                    message: 'Exact room reference is required.',
+                },
+            ]),
+        ],
+    ])('fails rtc.connect immediately after a permanent %s refresh failure', async (_label, refreshError) => {
+        vi.useFakeTimers();
+        try {
+            const refreshRoom = vi.fn().mockRejectedValue(refreshError);
+            const runtime = createRallarBlackBoxBrowserTestRuntime({
+                rallarRuntime: {
+                    connect: vi.fn(async () => ({ connected: true })),
+                    send: vi.fn(),
+                    close: vi.fn(),
+                    health: vi.fn(async () => ({
+                        rtcStatus: {
+                            readyPeerIds: [],
+                        },
+                    })),
+                    refreshRoom,
+                },
+            });
+
+            const pending = runtime.execute({
+                kind: 'rtc.connect',
+                commandId: `connect-after-${refreshError.name}`,
+                connection: 'rtc',
+                readiness: {
+                    minReadyPeers: 1,
+                    timeoutMs: 25,
+                    intervalMs: 1,
+                },
+            });
+            await vi.advanceTimersByTimeAsync(25);
+            const result = await pending;
+
+            expect(result.ok).toBe(false);
+            expect(result.error).toMatchObject({
+                code: 'RALLAR_BLACK_BOX_COMMAND_FAILED',
+                message: refreshError.message,
+                details: {
+                    name: refreshError.name,
+                },
+            });
+            expect(refreshRoom).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('uses the readiness timeout window after rtc.connect completes', async () => {
         const health = vi.fn()
             .mockResolvedValueOnce({
@@ -341,6 +645,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     },
                 })),
                 send: vi.fn(),
+                refreshRoom: vi.fn(),
                 close: vi.fn(),
                 health,
             },
@@ -379,6 +684,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     },
                 })),
                 send: vi.fn(),
+                refreshRoom: vi.fn(),
                 close: vi.fn(),
                 health: vi.fn(async () => ({
                     rtcStatus: {
@@ -423,6 +729,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     results: [],
                     health: [],
                 })),
+                refreshRoom: vi.fn(),
                 close: vi.fn(),
                 health: vi.fn(),
             },
@@ -467,6 +774,7 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
                     },
                     health: [],
                 })),
+                refreshRoom: vi.fn(),
                 close: vi.fn(),
                 health: vi.fn(),
             },

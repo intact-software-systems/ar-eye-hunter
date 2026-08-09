@@ -11,6 +11,9 @@ import type {
 import type {
   GroupRestSnapshotReadSelector,
 } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
+import type {
+  RallarGroupFormationMetricsRecorder,
+} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
 
 export type Middleware =
   & Omit<
@@ -31,6 +34,7 @@ export type Middleware =
     appAuthInboxService: AppAuthInboxService;
     clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
+    groupFormationMetrics: RallarGroupFormationMetricsRecorder;
   }>;
 
 export function requireApiMiddleware(
@@ -39,6 +43,7 @@ export function requireApiMiddleware(
     clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
     groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
   }>,
+  groupFormationMetrics: RallarGroupFormationMetricsRecorder,
 ): Middleware {
   if (!isCachedClientStateService(runtime.clientStateService)) {
     throw new Error('API middleware requires the cached client state service');
@@ -67,6 +72,7 @@ export function requireApiMiddleware(
     rtcTopologyPublicationFanout: runtime.rtcTopologyPublicationFanout,
     appAuthInboxService: runtime.appAuthInboxService,
     ...selectors,
+    groupFormationMetrics,
   };
 }
 

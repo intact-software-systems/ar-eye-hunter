@@ -119,7 +119,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
 
@@ -687,7 +687,7 @@ jobs:
 
       - name: Upload distributed artifacts
         if: always() && inputs.operator_phase != 'prepare' && steps.manifest_materialization.outcome == 'success'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hetzner-distributed-${{ steps.ids.outputs.distributed_run_id }}
           path: .artifacts/hetzner-distributed/${{ steps.ids.outputs.distributed_run_id }}
@@ -710,7 +710,7 @@ jobs:
 
       - name: Setup Node for analysis
         if: always() && inputs.operator_phase != 'prepare' && steps.artifact_status.outputs.available == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -761,7 +761,7 @@ jobs:
 
       - name: Upload distributed analysis
         if: always() && inputs.operator_phase != 'prepare'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hetzner-distributed-analysis-${{ steps.ids.outputs.distributed_run_id }}
           path: .artifacts/hetzner-distributed/${{ steps.ids.outputs.distributed_run_id }}/analysis
@@ -821,7 +821,7 @@ jobs:
 
       - name: Upload Hetzner operation diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hetzner-operation-${{ steps.ids.outputs.distributed_run_id }}
           path: .artifacts/hetzner-operation/${{ steps.ids.outputs.distributed_run_id }}

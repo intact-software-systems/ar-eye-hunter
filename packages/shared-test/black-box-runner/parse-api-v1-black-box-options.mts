@@ -20,6 +20,7 @@ const MANAGED_API_V1_CLUSTER_PROFILES = new Set([
   API_V1_CLUSTER_MATRIX_PROFILE,
   'api-v1-black-box-crdt',
   'api-v1-black-box-medium-scale',
+  'api-v1-black-box-formation-large',
 ]);
 
 interface ApiV1ClusterOptionValues {

@@ -246,6 +246,17 @@ export function extractFunctionSignatures(raw) {
   return functions;
 }
 
+export function resolveFunctionNameAtLine(raw, line) {
+  const offsets = lineOffsets(raw);
+  return extractFunctionSignatures(raw)
+    .filter((signature) => {
+      const endLine =
+        signature.bodyEnd < 0 ? signature.line : lineFromOffset(offsets, signature.bodyEnd);
+      return signature.line <= line && line <= endLine;
+    })
+    .toSorted((left, right) => right.line - left.line)[0]?.name;
+}
+
 export function extractCreateFactories(raw) {
   const factories = [];
   const factoryPattern = /export function\s+(create[A-Z][A-Za-z0-9_]*)\s*\(/g;

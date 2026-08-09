@@ -112,7 +112,7 @@ describe('API-v1 black-box workflow', () => {
             'secondary-api-port': '18081',
             'tertiary-api-port': '18082',
         });
-        expect(exactShaArtifactUploadStep?.uses).toBe('actions/upload-artifact@v4');
+        expect(exactShaArtifactUploadStep?.uses).toBe('actions/upload-artifact@v7');
         expect(exactShaArtifactUploadStep?.with?.name).toBe(
             'api-v1-medium-scale-${{ github.sha }}',
         );

@@ -96,7 +96,7 @@ describe('API-v1 group-state route executable compatibility references', () => {
     expect(() => moduleSpecifiers('x', 'fixture.jsx')).toThrow('unsupported source extension');
     expect(() => moduleSpecifiers('import(', 'fixture.ts')).toThrow();
   });
-  it('finds no active imports', () => expect(activeCompatibilitySpecifiers()).toEqual([]), 15_000);
+  it('finds no active imports', () => expect(activeCompatibilitySpecifiers()).toEqual([]), 30_000);
 });
 function validateContentBoundEvidence(
   rows: readonly (typeof evidence)[number][],

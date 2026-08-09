@@ -25,6 +25,17 @@ import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 
 export const APP_OUTBOX_RTC_TOPOLOGY_TOPIC = 'app-outbox.rtc-topology';
 
+export type RtcTopologyOutboxWriteSink = () => void;
+
+// One process-wide sink keeps this free-function write path additive and opt-in.
+let outboxWriteSink: RtcTopologyOutboxWriteSink | undefined;
+
+export function setRtcTopologyOutboxWriteSink(
+    sink: RtcTopologyOutboxWriteSink | undefined,
+): void {
+    outboxWriteSink = sink;
+}
+
 export interface ComputedRtcTopologyOutbox {
     readonly commandId: string;
     readonly aggregateRef: GroupRef;
@@ -188,6 +199,11 @@ export async function writeRtcTopologyOutbox(
         ? computeRtcTopologyEntry(computed)
         : computeRtcTopologyEntry(computed, senderId ?? '');
     await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);
+    try {
+        outboxWriteSink?.();
+    } catch {
+        // Recording must never affect topology outbox writes.
+    }
     return entry;
 }
 

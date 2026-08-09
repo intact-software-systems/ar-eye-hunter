@@ -200,7 +200,7 @@ function createInput(): any {
 }
 
 function createSource(candidate: boolean, artifactId: string, time: string): any {
-  const artifact = createStateWritePerformanceArtifact(true, {
+  const artifact = createStateWritePerformanceArtifact({
     artifactId,
     generatedAt: `2026-08-01T${time}.000Z`,
     gitCommit: candidate ? CANDIDATE_COMMIT : GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,

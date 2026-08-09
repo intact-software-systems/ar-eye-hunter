@@ -24,6 +24,8 @@
     "test": "deno test --allow-env --allow-read"
   },
   "deploy": {
+    "org": "intact-software-systems",
+    "app": "relic-hunters",
     "runtime": {
       "type": "dynamic",
       "entrypoint": "./src/main.ts",

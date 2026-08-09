@@ -11,6 +11,10 @@ import {
 } from '../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { GroupMutationAuthorizationError } from '../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../group-state/group-state-service-contracts.ts';
+// prettier-ignore
+import type {
+  GroupFormationGroupMutationSink,
+} from '../formation-metrics/formation-metrics.ts';
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
 // prettier-ignore
 import { toGroupMutationDescriptor } from
@@ -126,6 +130,7 @@ class AppGroupInboxService extends AppInboxService {
     timing?: RallarTimingSink,
     options?: AppInboxServiceOptions,
     private readonly wakeQueue?: () => void,
+    formationMetrics?: GroupFormationGroupMutationSink,
   ) {
     super(
       inbox,
@@ -144,6 +149,7 @@ class AppGroupInboxService extends AppInboxService {
       snapshotObserver: this.groupStateService,
       transactionWriter: this.transactionWriter,
       wakeQueue: this.wakeQueue,
+      formationMetrics,
     });
     this.topologyAppInboxHandler = new TopologyAppInboxHandler({
       groupStateService: this.groupStateService,

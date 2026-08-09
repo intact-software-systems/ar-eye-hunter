@@ -32,6 +32,7 @@ import {
     ObservableValueEventType,
     type ReadableKeyedValues,
 } from '@shared/cache/RepositoryInterfaces.ts';
+import { emitOverlayAdoption } from './overlay-adoption-diagnostics.ts';
 
 export type OverlayRepositoryOptions =
     & Omit<
@@ -60,6 +61,16 @@ export class OverlayRevisionConflictError extends Error {
         this.name = 'OverlayRevisionConflictError';
     }
 }
+
+export {
+    type OverlayAdoptionDiagnosticsEvent,
+    type OverlayAdoptionDiagnosticsSink,
+    type OverlayAdoptionOutcome,
+    type RallarOverlayAdoptionDiagnostics,
+    readOverlayAdoptionDiagnostics,
+    resetOverlayAdoptionDiagnostics,
+    setOverlayAdoptionDiagnosticsSink,
+} from './overlay-adoption-diagnostics.ts';
 
 export const overlayRepositoryToken = newObservableLatestRepositoryToken<string, OverlayInfo>(
     'shared.repository.overlays',
@@ -208,12 +219,29 @@ export function setOverlayById(
     const repository = requireOverlayRepository(manager);
     const current = repository.read(id);
     if (!current) {
+        emitOverlayAdoption(id, 'initial-set');
         repository.set(id, overlay);
+        return;
+    }
+
+    // Server overlays are authoritative over bootstrap overlays regardless of
+    // the causal tuple: a bootstrap star restamped from a newer group revision
+    // must never displace a server topology (scenario S5), and a server
+    // overlay planned against an older revision must still be adopted.
+    if (overlay.provenance === 'server' && current.provenance === 'bootstrap') {
+        emitOverlayAdoption(id, 'server-superseded-bootstrap');
+        repository.set(id, overlay);
+        return;
+    }
+
+    if (overlay.provenance === 'bootstrap' && current.provenance === 'server') {
+        emitOverlayAdoption(id, 'bootstrap-dropped-over-server');
         return;
     }
 
     const comparison = compareOverlayInfoTuple(overlay, current);
     if (comparison === 'dominates') {
+        emitOverlayAdoption(id, 'adopted');
         console.log(`Received updated overlay details: ${JSON.stringify(overlay)}`);
         repository.set(id, overlay);
         return;
@@ -221,15 +249,19 @@ export function setOverlayById(
 
     if (comparison === 'equal') {
         if (JSON.stringify(overlay) === JSON.stringify(current)) {
+            emitOverlayAdoption(id, 'equal');
             return;
         }
+        emitOverlayAdoption(id, 'incomparable-conflict');
         throw new OverlayRevisionConflictError(id);
     }
 
     if (comparison === 'incomparable') {
+        emitOverlayAdoption(id, 'incomparable-conflict');
         throw new OverlayRevisionConflictError(id);
     }
 
+    emitOverlayAdoption(id, 'dominated-dropped');
     console.log(
         'Received stale overlay data: ' +
         JSON.stringify(overlay) +
@@ -280,6 +312,7 @@ function toOverlayRepositoryChange(
 function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
     return {
         sourceGroupStateCausalRevision: readGroupCausalRevision(group),
+        provenance: 'bootstrap',
         state: 'active',
         name: readGroupDisplayName(group),
         overlayId: toScopedOverlayId(group.group),

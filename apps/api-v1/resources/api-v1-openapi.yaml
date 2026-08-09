@@ -3150,6 +3150,9 @@ components:
             rtcTopology:
               type: object
               additionalProperties: true
+            groupFormation:
+              type: object
+              additionalProperties: true
 
     AdminOperationsStateResponse:
       allOf:
@@ -3205,7 +3208,7 @@ components:
           type: array
           items:
             type: string
-            enum: [rtc-topology]
+            enum: [rtc-topology, group-formation]
         reason:
           type: string
 

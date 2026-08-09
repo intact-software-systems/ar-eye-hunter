@@ -1,5 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
+import { toBoundedWsWaitMessages } from './artifacts/with-bounded-artifact-report-results.ts';
 import {
     createMissingRtcProvider,
     rememberRtcCloseEvent,
@@ -24,6 +25,12 @@ import {
 } from './rallar-remote-browser-provider.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
 import { normalizeBlackBoxResponseHeaders } from './http/normalize-black-box-response-headers.ts';
+import {
+    directSafeOutputTransformSpec,
+    evaluateSafeOutputTransform,
+    isSafeOutputTransformOnlySpec,
+    SafeOutputTransformError,
+} from './scenario-transform/safe-output-transform.ts';
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
 declare const process: { env: Record<string, string | undefined> } | undefined;
@@ -429,20 +436,21 @@ type OutputExtraction = {
     redactAs?: string
 }
 
-type TransformEvaluationInput = {
-    context: any
-    result?: any
-    operatorPath?: string
+interface EvaluateScenarioTransformInput {
+    readonly transform: unknown
+    readonly context: any
+    readonly result?: any
+    readonly operatorPath?: string
 }
 
-class TransformEvaluationError extends Error {
-    details: any
-
-    constructor(message: string, details: any = {}) {
-        super(message)
-        this.name = 'TransformEvaluationError'
-        this.details = details
-    }
+function evaluateScenarioTransform(input: EvaluateScenarioTransformInput): any {
+    return evaluateSafeOutputTransform(input.transform, {
+        resolverRoot: toResolverRoot(input.context),
+        result: input.result,
+        operatorPath: input.operatorPath,
+        createUuid: randomUuid,
+        readTimestamp: Date.now,
+    });
 }
 
 function outputExtractions(result: any): OutputExtraction[] {
@@ -472,7 +480,7 @@ function outputExtractions(result: any): OutputExtraction[] {
                 extractions.push({
                     name,
                     path: spec.path ?? spec.from ?? spec.outputPath,
-                    transform: spec.transform ?? directTransformSpec(spec),
+                    transform: spec.transform ?? directSafeOutputTransformSpec(spec),
                     secret: spec.secret === true || spec.redact === true,
                     redactAs: typeof spec.redactAs === 'string' ? spec.redactAs : undefined,
                 });
@@ -487,345 +495,6 @@ function outputExtractions(result: any): OutputExtraction[] {
     }
 
     return extractions;
-}
-
-function directTransformSpec(spec: Record<string, unknown>): unknown {
-    return [
-        'path',
-        'from',
-        'template',
-        'concat',
-        'coalesce',
-        'jsonStringify',
-        'jsonParse',
-        'urlEncode',
-        'number',
-        'string',
-        'boolean',
-        'uuid',
-        'timestamp',
-        'op',
-        'operator',
-    ].some(key => spec[key] !== undefined)
-        ? spec
-        : undefined;
-}
-
-function isTransformOnlySpec(spec: Record<string, unknown>): boolean {
-    const allowedKeys = new Set([
-        'path',
-        'from',
-        'outputPath',
-        'template',
-        'concat',
-        'coalesce',
-        'jsonStringify',
-        'jsonParse',
-        'urlEncode',
-        'number',
-        'string',
-        'boolean',
-        'uuid',
-        'timestamp',
-        'op',
-        'operator',
-        'type',
-        'value',
-        'input',
-        'values',
-        'format',
-        'secret',
-        'redact',
-        'redactAs',
-        'transform',
-    ]);
-    const keys = Object.keys(spec);
-    return keys.length > 0 &&
-        directTransformSpec(spec) !== undefined &&
-        keys.every(key => allowedKeys.has(key));
-}
-
-function transformError(message: string, details: any = {}): never {
-    throw new TransformEvaluationError(message, details);
-}
-
-function transformResolverRoot(context: any, result?: any): any {
-    return {
-        ...toResolverRoot(context),
-        result,
-        actual: result?.actual,
-        body: result?.actual?.body,
-    };
-}
-
-function resolveTemplateWithRoot(value: string, root: any): any {
-    const exactPlaceholderMatch = value.match(/^\{([A-Za-z_$][\w$-]*(?:\.[\w$-]+)*)\}$/u);
-
-    if (exactPlaceholderMatch) {
-        return resolvePath(exactPlaceholderMatch[1], root);
-    }
-
-    return value.replaceAll(/\{([A-Za-z_$][\w$-]*(?:\.[\w$-]+)*)\}/gu, (_match, path) => {
-        return stringifyResolvedValue(resolvePath(path, root));
-    });
-}
-
-function resolveTransformPath(path: unknown, input: TransformEvaluationInput): any {
-    if (typeof path !== 'string' || path.trim().length <= 0) {
-        return transformError('Transform path must be a non-empty string.', {
-            operator: 'path',
-            path,
-        });
-    }
-
-    const roots = [
-        input.result,
-        input.result?.actual,
-        input.result?.actual?.body,
-        transformResolverRoot(input.context, input.result),
-    ];
-
-    for (const root of roots) {
-        const resolved = tryResolvePath(path, root);
-        if (resolved.found) {
-            return resolved.value;
-        }
-    }
-
-    return transformError('Cannot resolve transform path {' + path + '}', {
-        operator: 'path',
-        path,
-    });
-}
-
-function transformOperand(spec: Record<string, unknown>, input: TransformEvaluationInput): unknown {
-    if (spec.value !== undefined) {
-        return evaluateTransformValue(spec.value, input);
-    }
-    if (spec.input !== undefined) {
-        return evaluateTransformValue(spec.input, input);
-    }
-    if (spec.from !== undefined) {
-        return resolveTransformPath(spec.from, input);
-    }
-    if (spec.path !== undefined) {
-        return resolveTransformPath(spec.path, input);
-    }
-
-    return undefined;
-}
-
-function isNonEmptyTransformValue(value: unknown): boolean {
-    if (value === undefined || value === null) {
-        return false;
-    }
-    if (typeof value === 'string') {
-        return value.length > 0;
-    }
-    if (Array.isArray(value)) {
-        return value.length > 0;
-    }
-    if (isRecord(value)) {
-        return Object.keys(value).length > 0;
-    }
-    return true;
-}
-
-function toTransformNumber(value: unknown, details: any): number {
-    const numberValue = typeof value === 'number' ? value : Number(value);
-    if (!Number.isFinite(numberValue)) {
-        return transformError('Transform value cannot be converted to number.', {
-            ...details,
-            input: value,
-        });
-    }
-    return numberValue;
-}
-
-function toTransformBoolean(value: unknown, details: any): boolean {
-    if (typeof value === 'boolean') {
-        return value;
-    }
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        return value !== 0;
-    }
-    if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        if (['true', '1', 'yes', 'y', 'on'].includes(normalized)) {
-            return true;
-        }
-        if (['false', '0', 'no', 'n', 'off', ''].includes(normalized)) {
-            return false;
-        }
-    }
-
-    return transformError('Transform value cannot be converted to boolean.', {
-        ...details,
-        input: value,
-    });
-}
-
-function evaluateTransformValue(value: unknown, input: TransformEvaluationInput): any {
-    if (isRecord(value) && directTransformSpec(value) !== undefined) {
-        return evaluateTransformSpec(value, input);
-    }
-    if (typeof value === 'string') {
-        return resolveTemplateWithRoot(value, transformResolverRoot(input.context, input.result));
-    }
-    if (Array.isArray(value)) {
-        return value.map(item => evaluateTransformValue(item, input));
-    }
-    if (isRecord(value)) {
-        return Object.fromEntries(
-            Object.entries(value)
-                .map(([key, nested]) => [key, evaluateTransformValue(nested, input)]),
-        );
-    }
-    return value;
-}
-
-function evaluateTransformSpec(specInput: unknown, input: TransformEvaluationInput): any {
-    const spec = isRecord(specInput)
-        ? asTransformSpec(specInput)
-        : {
-            value: specInput,
-        };
-    const operator = String(spec.op ?? spec.operator ?? spec.type ?? firstTransformOperator(spec) ?? 'value');
-    const details = {
-        operator,
-        path: input.operatorPath,
-    };
-
-    if (operator === 'path' || operator === 'from' || operator === 'outputPath') {
-        return resolveTransformPath(spec.path ?? spec.from ?? spec.outputPath, input);
-    }
-
-    if (operator === 'template') {
-        if (typeof spec.template !== 'string') {
-            return transformError('Template transform requires a string template.', details);
-        }
-        return resolveTemplateWithRoot(spec.template, transformResolverRoot(input.context, input.result));
-    }
-
-    if (operator === 'concat') {
-        const parts = Array.isArray(spec.concat)
-            ? spec.concat
-            : Array.isArray(spec.values)
-                ? spec.values
-                : [];
-        if (parts.length <= 0) {
-            return transformError('Concat transform requires a non-empty values array.', details);
-        }
-        return parts
-            .map(part => stringifyResolvedValue(evaluateTransformValue(part, input)))
-            .join('');
-    }
-
-    if (operator === 'coalesce') {
-        const values = Array.isArray(spec.coalesce)
-            ? spec.coalesce
-            : Array.isArray(spec.values)
-                ? spec.values
-                : [];
-        if (values.length <= 0) {
-            return transformError('Coalesce transform requires a non-empty values array.', details);
-        }
-        for (const value of values) {
-            try {
-                const resolved = evaluateTransformValue(value, input);
-                if (isNonEmptyTransformValue(resolved)) {
-                    return resolved;
-                }
-            } catch (_error) {
-                // Missing optional values are ignored by coalesce.
-            }
-        }
-        return transformError('Coalesce transform did not find a non-empty value.', details);
-    }
-
-    if (operator === 'jsonStringify') {
-        return JSON.stringify(evaluateTransformValue(spec.jsonStringify ?? transformOperand(spec, input), input));
-    }
-
-    if (operator === 'jsonParse') {
-        const value = evaluateTransformValue(spec.jsonParse ?? transformOperand(spec, input), input);
-        if (typeof value !== 'string') {
-            return transformError('jsonParse transform requires a string input.', {
-                ...details,
-                input: value,
-            });
-        }
-        try {
-            return JSON.parse(value);
-        } catch (error) {
-            return transformError('jsonParse transform received invalid JSON.', {
-                ...details,
-                input: value,
-                error: error instanceof Error ? error.message : String(error),
-            });
-        }
-    }
-
-    if (operator === 'urlEncode') {
-        const value = evaluateTransformValue(spec.urlEncode ?? transformOperand(spec, input), input);
-        return encodeURIComponent(stringifyResolvedValue(value));
-    }
-
-    if (operator === 'number') {
-        return toTransformNumber(
-            evaluateTransformValue(spec.number ?? transformOperand(spec, input), input),
-            details,
-        );
-    }
-
-    if (operator === 'string') {
-        return stringifyResolvedValue(evaluateTransformValue(spec.string ?? transformOperand(spec, input), input));
-    }
-
-    if (operator === 'boolean') {
-        return toTransformBoolean(
-            evaluateTransformValue(spec.boolean ?? transformOperand(spec, input), input),
-            details,
-        );
-    }
-
-    if (operator === 'uuid') {
-        return randomUuid();
-    }
-
-    if (operator === 'timestamp') {
-        return spec.format === 'iso' ? new Date().toISOString() : Date.now();
-    }
-
-    if (spec.value !== undefined || spec.input !== undefined) {
-        return transformOperand(spec, input);
-    }
-
-    return transformError('Unsupported transform operator ' + operator + '.', details);
-}
-
-function asTransformSpec(spec: Record<string, unknown>): Record<string, unknown> {
-    return isRecord(spec.transform)
-        ? spec.transform
-        : spec;
-}
-
-function firstTransformOperator(spec: Record<string, unknown>): string | undefined {
-    return [
-        'path',
-        'from',
-        'template',
-        'concat',
-        'coalesce',
-        'jsonStringify',
-        'jsonParse',
-        'urlEncode',
-        'number',
-        'string',
-        'boolean',
-        'uuid',
-        'timestamp',
-    ].find(key => spec[key] !== undefined);
 }
 
 function withExtractedOutputs(result: any, context: any): any {
@@ -844,7 +513,8 @@ function withExtractedOutputs(result: any, context: any): any {
     extractions.forEach(extraction => {
         try {
             const value = extraction.transform !== undefined
-                ? evaluateTransformSpec(extraction.transform, {
+                ? evaluateScenarioTransform({
+                    transform: extraction.transform,
                     context,
                     result,
                     operatorPath: `outputs.${extraction.name}`,
@@ -860,7 +530,7 @@ function withExtractedOutputs(result: any, context: any): any {
                 path: extraction.path,
                 transform: extraction.transform,
                 error: error instanceof Error ? error.message : String(error),
-                details: error instanceof TransformEvaluationError ? error.details : undefined,
+                details: error instanceof SafeOutputTransformError ? error.details : undefined,
             });
         }
     });
@@ -919,7 +589,7 @@ function resolvePlaceholders(value: any, context: any): any {
     }
 
     if (value && typeof value === 'object') {
-        if (isTransformOnlySpec(value as Record<string, unknown>)) {
+        if (isSafeOutputTransformOnlySpec(value as Record<string, unknown>)) {
             return value;
         }
 
@@ -949,7 +619,7 @@ function resolveAssertActual(value: any, context: any, missingActualValue: any):
     }
 
     if (value && typeof value === 'object') {
-        if (isTransformOnlySpec(value as Record<string, unknown>)) {
+        if (isSafeOutputTransformOnlySpec(value as Record<string, unknown>)) {
             return value;
         }
 
@@ -1492,7 +1162,8 @@ async function executeSetInteraction(interaction: any, config: any, context: any
 
     if (transform !== undefined) {
         try {
-            value = evaluateTransformSpec(transform, {
+            value = evaluateScenarioTransform({
+                transform,
                 context,
                 operatorPath: `set.${String(output)}`,
             });
@@ -1505,7 +1176,7 @@ async function executeSetInteraction(interaction: any, config: any, context: any
                     transform,
                     transformError: {
                         message: error instanceof Error ? error.message : String(error),
-                        details: error instanceof TransformEvaluationError ? error.details : undefined,
+                        details: error instanceof SafeOutputTransformError ? error.details : undefined,
                     },
                 },
             );
@@ -1615,7 +1286,8 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
 
     const actual = interaction.response.actual !== undefined
         ? isRecord(interaction.response.actual) && interaction.response.actual.transform !== undefined
-            ? evaluateTransformSpec(interaction.response.actual.transform, {
+            ? evaluateScenarioTransform({
+                transform: interaction.response.actual.transform,
                 context,
                 operatorPath: 'assert.actual',
             })
@@ -2460,8 +2132,7 @@ function waitForWsMessage(interaction: any, config: any, context: any, details: 
                 resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket message was not received', {
                     ...details,
                     connection: connectionName,
-                    expectedMessage,
-                    messages,
+                    expectedMessage, ...toBoundedWsWaitMessages(messages),
                     waitedMs: Date.now() - startedAt,
                 }));
             }
@@ -2546,8 +2217,7 @@ function waitForWsMessages(interaction: any, config: any, context: any, details:
                     missingMessages: expectedMessages.filter((expectedMessage: any) => {
                         return matchedMessages.every(match => match.expectedMessage !== expectedMessage);
                     }),
-                    ordered,
-                    messages,
+                    ordered, ...toBoundedWsWaitMessages(messages),
                     waitedMs: Date.now() - startedAt,
                 }));
             }

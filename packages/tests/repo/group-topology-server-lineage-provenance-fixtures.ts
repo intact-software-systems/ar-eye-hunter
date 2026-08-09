@@ -11,11 +11,11 @@ import {
 } from './group-topology-server-lineage-boundary-bijection.ts';
 
 const repoRoot = process.cwd();
-export const base = '8b1ebf542d12c05a5ac226d3d07e543a171a2626';
+export const base = '108933a97c7a40ee0831ecd185725aea243122bd';
 const manifestPath = 'plans/repo-style-lineages/rallar-group-topology-server-pr-a.json';
 const evidencePath = 'plans/repo-style-lineages/rallar-group-topology-server-pr-a-provenance.jsonc';
 export const expectedEvidenceHash =
-  '394d4405637b356acfd8ed9973ca7210737b5b40feb30e84d8186d576be2baa6';
+  'f836c2c776b7cf33b3e0e45209fd70b71d80b6872e57eee89e93c3174d9b2cd1';
 export const mutationSource =
   'packages/shared-server/rallar-system/services/group-topology-config-mutations.ts';
 export const mutationBoundaryOwner =

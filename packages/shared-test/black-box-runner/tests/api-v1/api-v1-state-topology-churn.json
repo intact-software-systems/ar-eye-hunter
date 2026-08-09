@@ -488,6 +488,11 @@
                       "requestId": "reconnect-primary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{primaryClientId}"
+                    },
+                    "outputs": {
+                      "primaryChurnGroupRevision": "body.causalRevision.groupRevision",
+                      "primaryChurnPresenceRevision": "body.causalRevision.presenceRevision",
+                      "primaryChurnOnlineMemberCount": "body.onlineMemberCount"
                     }
                   },
                   "expect": {
@@ -705,6 +710,11 @@
                       "requestId": "reconnect-secondary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{secondaryClientId}"
+                    },
+                    "outputs": {
+                      "secondaryChurnGroupRevision": "body.causalRevision.groupRevision",
+                      "secondaryChurnPresenceRevision": "body.causalRevision.presenceRevision",
+                      "secondaryChurnOnlineMemberCount": "body.onlineMemberCount"
                     }
                   },
                   "expect": {
@@ -922,6 +932,11 @@
                       "requestId": "reconnect-tertiary-{loop.iteration}-{churnGroupId}-{runId}",
                       "generationId": "reconnect-generation-{loop.iteration}-{runId}",
                       "principalId": "{tertiaryClientId}"
+                    },
+                    "outputs": {
+                      "tertiaryChurnGroupRevision": "body.causalRevision.groupRevision",
+                      "tertiaryChurnPresenceRevision": "body.causalRevision.presenceRevision",
+                      "tertiaryChurnOnlineMemberCount": "body.onlineMemberCount"
                     }
                   },
                   "expect": {
@@ -936,6 +951,91 @@
           ]
         }
       ]
+    },
+    {
+      "name": "deriveLatestChurnObservation",
+      "type": "set",
+      "output": "latestChurnObservation",
+      "transform": {
+        "value": {
+          "groupRevision": {
+            "max": [
+              { "path": "outputs.primaryChurnGroupRevision" },
+              { "path": "outputs.secondaryChurnGroupRevision" },
+              { "path": "outputs.tertiaryChurnGroupRevision" }
+            ]
+          },
+          "presenceRevision": {
+            "max": [
+              { "path": "outputs.primaryChurnPresenceRevision" },
+              { "path": "outputs.secondaryChurnPresenceRevision" },
+              { "path": "outputs.tertiaryChurnPresenceRevision" }
+            ]
+          },
+          "onlineMemberCount": {
+            "if": {
+              "condition": {
+                "equals": [
+                  { "path": "outputs.primaryChurnPresenceRevision" },
+                  {
+                    "max": [
+                      { "path": "outputs.primaryChurnPresenceRevision" },
+                      { "path": "outputs.secondaryChurnPresenceRevision" },
+                      { "path": "outputs.tertiaryChurnPresenceRevision" }
+                    ]
+                  }
+                ]
+              },
+              "then": { "path": "outputs.primaryChurnOnlineMemberCount" },
+              "else": {
+                "if": {
+                  "condition": {
+                    "equals": [
+                      { "path": "outputs.secondaryChurnPresenceRevision" },
+                      {
+                        "max": [
+                          { "path": "outputs.primaryChurnPresenceRevision" },
+                          { "path": "outputs.secondaryChurnPresenceRevision" },
+                          { "path": "outputs.tertiaryChurnPresenceRevision" }
+                        ]
+                      }
+                    ]
+                  },
+                  "then": { "path": "outputs.secondaryChurnOnlineMemberCount" },
+                  "else": { "path": "outputs.tertiaryChurnOnlineMemberCount" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "deriveChurnReadFloor",
+      "type": "set",
+      "output": "churnReadFloor",
+      "transform": {
+        "value": {
+          "groupRevision": { "path": "outputs.latestChurnObservation.groupRevision" },
+          "presenceRevision": {
+            "if": {
+              "condition": {
+                "equals": [
+                  { "path": "outputs.latestChurnObservation.onlineMemberCount" },
+                  13
+                ]
+              },
+              "then": { "path": "outputs.latestChurnObservation.presenceRevision" },
+              "else": {
+                "add": [
+                  { "path": "outputs.latestChurnObservation.presenceRevision" },
+                  1
+                ]
+              }
+            }
+          }
+        }
+      }
     },
     {
       "name": "readSharedGroupThroughTertiary",
@@ -970,10 +1070,17 @@
       "connection": "apiPrimary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{churnGroupId}?minGroupRevision={churnReadFloor.groupRevision}&minPresenceRevision={churnReadFloor.presenceRevision}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
+        },
+        "retry": {
+          "maxAttempts": 6,
+          "backoffMs": 250,
+          "backoffMultiplier": 2,
+          "onStatus": [409],
+          "onException": false
         },
         "outputs": {
           "churnFinalRevision": "body.stateRevision"

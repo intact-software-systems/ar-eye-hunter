@@ -63,15 +63,46 @@ do not broaden the workflow or expose the token in diagnostic output.
 
 ## Deno Deploy cutover
 
-The Deno GitHub integration creates branch timelines and corresponding GitHub
-status contexts. The repository-controlled workflow avoids that behavior by
-deploying only from the main-only GitHub Actions workflow.
+Every push to a linked GitHub repository starts a Deno build, and each branch
+receives its own timeline. The documented application settings do not provide a
+global switch that ignores every non-default branch. `[skip deploy]` is useful
+for an exceptional commit, but it is not a durable branch policy. Disconnect the
+Deno GitHub integration from all three applications to make the main-only
+GitHub Actions workflow the only deployment owner. See Deno's documentation for
+[applications](https://docs.deno.com/deploy/reference/apps/),
+[timelines](https://docs.deno.com/deploy/reference/timelines/), and
+[`[skip deploy]`](https://docs.deno.com/deploy/changelog/).
 
 Before any database migration, the workflow verifies the token and access to
-all three applications. Each deployment uploads the repository root so
-monorepo imports under `packages/**` are present, then selects the app-specific
-`deno.json`. The checked-in `deploy.runtime` configuration fixes the entrypoint
-and working directory for each service.
+all three applications. Each deployment uploads the repository root with this
+command shape:
+
+```sh
+deno deploy . --config deno.json \
+  --org intact-software-systems \
+  --app <app-name> \
+  --prod --json --non-interactive
+```
+
+An explicit `--config` controls upload-manifest collection, so source discovery
+at the repository-root `deno.json` is required to include workspace members and
+imports under `packages/**`. The `--app` argument selects the existing target;
+the shared root config deliberately has no `deploy` target. This relies on the
+[Deno workspace upload fix](https://github.com/denoland/deno/pull/33562), which
+is present in the configured Deno v2 toolchain.
+
+App-level `deno.json` files remain authoritative for local checks and retain
+their app names and runtime metadata. Because Actions uploads use the shared
+root config, the Deno dashboard provides the runtime configuration for those
+uploads. Configure every application as a **Dynamic App** with **No Preset**,
+blank install, build, and pre-deploy commands, a five-minute build timeout, and
+3 GiB of build memory. Use these path settings:
+
+| App | App directory | Entrypoint | Runtime working directory |
+| --- | --- | --- | --- |
+| `rallar-server` | `(root)` | `apps/api-v1/src/main.ts` | Blank |
+| `rallar-bb-server` | `(root)` | `apps/rallar-black-box-control-server/src/main.ts` | Blank |
+| `relic-hunters` | `(root)` | `apps/relic-hunter-server-v1/src/main.ts` | Blank |
 
 Complete the cutover in this order:
 
@@ -79,21 +110,17 @@ Complete the cutover in this order:
    existing applications.
 2. Store it as the repository Actions secret `DENO_DEPLOY_TOKEN`. Never put the
    value in a command argument, workflow file, issue, pull request, or log.
-3. Disconnect the Deno GitHub integration for:
-   - `rallar-server`, sourced from `apps/api-v1`;
-   - `rallar-bb-server`, sourced from
-     `apps/rallar-black-box-control-server`;
-   - `relic-hunters`, sourced from `apps/relic-hunter-server-v1`.
-4. Set the repository Actions variable `DENO_DEPLOY_ACTIONS_ENABLED=true`.
-5. Manually run **Deploy Web + API** with release-gate skipping disabled.
-6. Confirm the preflight recognizes all three applications before any migration
+3. Apply the dashboard settings above to all three applications.
+4. Record each application's currently active production revision and verify
+   its production endpoint.
+5. Disconnect the Deno GitHub integration from all three applications. Confirm
+   that disconnecting does not remove or replace the recorded active revisions.
+6. Set the repository Actions variable `DENO_DEPLOY_ACTIONS_ENABLED=true`.
+7. Manually run **Deploy Web + API** with release-gate skipping disabled.
+8. Confirm the preflight recognizes all three applications before any migration
    begins.
-7. Verify all three Deno jobs deploy the exact default-branch commit and the
+9. Verify all three Deno jobs deploy the exact default-branch commit and the
    production health endpoints remain healthy.
-
-If the token is not ready, do not disconnect the integration and do not enable
-the variable. If the cutover fails, set `DENO_DEPLOY_ACTIONS_ENABLED=false`
-before deciding whether to reconnect the provider integration.
 
 The GitHub-side commands are intentionally interactive for the secret value:
 
@@ -103,8 +130,16 @@ gh variable set DENO_DEPLOY_ACTIONS_ENABLED --body true
 gh workflow run deploy.yml --ref main -f skip_release_gate=false
 ```
 
-For rollback, keep the token but disable execution with
-`gh variable set DENO_DEPLOY_ACTIONS_ENABLED --body false`.
+If a corrected CLI deployment fails, immediately set
+`DENO_DEPLOY_ACTIONS_ENABLED=false`; the previously active production revisions
+remain available. Keep the token, and disable execution with:
+
+```sh
+gh variable set DENO_DEPLOY_ACTIONS_ENABLED --body false
+```
+
+Reconnect the affected application's GitHub repository and use **Deploy Default
+Branch** only when a provider-managed replacement deployment is required.
 
 ## Human verification
 

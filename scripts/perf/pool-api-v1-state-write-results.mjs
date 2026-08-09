@@ -2,7 +2,6 @@
 
 import { createHash } from 'node:crypto';
 import {
-  LEGACY_STATE_WRITE_MUTATION_CONTRACT,
   PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
   validateStateWriteArtifact,
 } from './compare-api-v1-state-write-results.mjs';
@@ -204,7 +203,6 @@ function toRoleMetadata(artifact) {
   return {
     schemaVersion: artifact.schemaVersion,
     backend: artifact.backend,
-    features: artifact.features,
     regressionReasons: artifact.regressionReasons,
     workloads: artifact.workloads.map((workload) => ({
       name: workload.name,
@@ -248,7 +246,7 @@ function poolRoleArtifacts({ sources, expectedCommit, role, environmentSha256 })
       ...structuredClone(workload),
       measuredRuns: 18,
       samples,
-      summary: summarizeSamples(samples, mutationContractForArtifact(first)),
+      summary: summarizeSamples(samples),
     };
   });
   const pooled = {
@@ -271,7 +269,7 @@ function poolRoleArtifacts({ sources, expectedCommit, role, environmentSha256 })
   return pooled;
 }
 
-function summarizeSamples(samples, mutationContract) {
+function summarizeSamples(samples) {
   const commands = samples.flatMap((sample) => sample.commands);
   const accepted = commands.filter((command) => command.status === 'accepted').length;
   const attempts = sum(samples.map((sample) => sample.attemptObservations.length));
@@ -289,44 +287,28 @@ function summarizeSamples(samples, mutationContract) {
     sql: medianObject(samples.map((sample) => sample.sql)),
     postgres: medianObject(samples.map((sample) => sample.postgres)),
     timingsMs: medianObject(samples.map((sample) => sample.timingsMs)),
-    correctness: summarizeCorrectness(samples, commands, mutationContract),
+    correctness: summarizeCorrectness(samples, commands),
   };
 }
 
-function summarizeCorrectness(samples, commands, mutationContract) {
+function summarizeCorrectness(samples, commands) {
   const acceptedCommands = commands.filter((command) => command.status === 'accepted');
   const sumSampleMetric = (name) => sum(samples.map((sample) => sample.correctness[name]));
   return {
     acceptedCommandCount: acceptedCommands.length,
-    receiptCount: sum(
-      samples.map(
-        (sample) =>
-          sample.durableEvidence?.receipts?.length ?? sample.durable.receiptCommandIds.length,
-      ),
-    ),
+    receiptCount: sum(samples.map((sample) => sample.durableEvidence.receipts.length)),
     effectfulCommandCount: acceptedCommands.filter(
-      (command) => mutationContract[command.kind].length > 0,
+      (command) => PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length > 0,
     ).length,
     requiredOutboxIntentCount: sum(
-      acceptedCommands.map((command) => mutationContract[command.kind].length),
-    ),
-    outboxIntentCount: sum(
-      samples.map(
-        (sample) =>
-          sample.durableEvidence?.resourceOutbox?.length ?? sample.durable.outboxIntents.length,
+      acceptedCommands.map(
+        (command) => PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length,
       ),
     ),
-    ...(samples.some((sample) => sample.durableEvidence)
-      ? { atomicCompletionFailures: sumSampleMetric('atomicCompletionFailures') }
-      : {}),
+    outboxIntentCount: sum(samples.map((sample) => sample.durableEvidence.resourceOutbox.length)),
+    atomicCompletionFailures: sumSampleMetric('atomicCompletionFailures'),
     dbwFindings: [...new Set(samples.flatMap((sample) => sample.correctness.dbwFindings))],
   };
-}
-
-function mutationContractForArtifact(artifact) {
-  return artifact.features.governance === 'pre-remediation-baseline'
-    ? LEGACY_STATE_WRITE_MUTATION_CONTRACT
-    : PRODUCTION_STATE_WRITE_MUTATION_CONTRACT;
 }
 
 function countAttempts(samples, outcome) {

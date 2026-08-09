@@ -2,7 +2,7 @@
   "version": 1,
   "lineages": [
     {
-      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "mergeBase": "108933a97c7a40ee0831ecd185725aea243122bd",
       "source": {
         "path": "packages/shared-server/rallar-system/services/group-topology-config-mutations.ts",
         "blob": "c3ff5865c14de0df94f53468f20faacfa2021eda"
@@ -12,7 +12,7 @@
       ]
     },
     {
-      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "mergeBase": "108933a97c7a40ee0831ecd185725aea243122bd",
       "source": {
         "path": "packages/shared-server/rallar-system/services/group-topology-config-service.ts",
         "blob": "a78dc11667c80be903b486049ce58a4734334017"
@@ -20,7 +20,7 @@
       "targets": ["packages/shared-server/rallar-system/topology/config/group-topology-config.ts"]
     },
     {
-      "mergeBase": "8b1ebf542d12c05a5ac226d3d07e543a171a2626",
+      "mergeBase": "108933a97c7a40ee0831ecd185725aea243122bd",
       "source": {
         "path": "packages/shared-server/rallar-system/services/topology-mutation-authority-proof.ts",
         "blob": "2be25a4d4b071c85fd6867842590adf38738e5e6"

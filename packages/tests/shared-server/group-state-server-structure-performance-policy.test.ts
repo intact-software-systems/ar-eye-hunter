@@ -183,10 +183,7 @@ describe('group-state server structure performance policy', { timeout: 120_000 }
     const errors = applyGroupStateServerStructurePerformancePolicy({
       baseline,
       candidate,
-      globalErrors: [
-        'shared throughput must improve after presence is split from the group aggregate',
-        'future comparator finding',
-      ],
+      globalErrors: ['future comparator finding'],
     });
 
     expect(errors).toEqual(['future comparator finding']);
@@ -235,11 +232,11 @@ describe('group-state server structure performance policy', { timeout: 120_000 }
 });
 
 function createArtifactPair() {
-  const baseline = createStateWritePerformanceArtifact(false, {
+  const baseline = createStateWritePerformanceArtifact({
     artifactId: 'baseline',
     measuredRuns: 18,
   });
-  const candidate = createStateWritePerformanceArtifact(true, {
+  const candidate = createStateWritePerformanceArtifact({
     artifactId: 'candidate',
     measuredRuns: 18,
   });
@@ -268,7 +265,7 @@ function createAboveBandConflictPolicy() {
   return {
     baseline,
     candidate,
-    globalErrors: [sharedImprovementError()],
+    globalErrors: [],
   };
 }
 
@@ -348,29 +345,19 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function sharedImprovementError(): string {
-  return 'shared throughput must improve after presence is split from the group aggregate';
-}
-
 function evaluatePolicy(pair: ReturnType<typeof createArtifactPair>, errors: string[]): string[] {
   return applyGroupStateServerStructurePerformancePolicy({ ...pair, globalErrors: errors });
 }
 
 function hotThroughputError(candidate: number): string {
-  return `hot throughput regressed: baseline=1, candidate=${candidate}`;
+  return `hot throughput regressed by more than 5%: baseline=1, candidate=${candidate}`;
 }
 
 function evaluateSharedThroughput(candidateThroughput: number): string[] {
   const pair = createArtifactPair();
   pair.baseline.workloads[1].summary.throughputPerSecond = 1;
   pair.candidate.workloads[1].summary.throughputPerSecond = candidateThroughput;
-  return applyGroupStateServerStructurePerformancePolicy({
-    ...pair,
-    globalErrors: [
-      `shared throughput regressed: baseline=1, candidate=${candidateThroughput}`,
-      sharedImprovementError(),
-    ],
-  });
+  return applyGroupStateServerStructurePerformancePolicy({ ...pair, globalErrors: [] });
 }
 
 function evaluateSharedRows(candidateRows: number): string[] {

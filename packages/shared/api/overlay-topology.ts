@@ -45,6 +45,7 @@ export function toOverlayInfoForSession(
     return {
         sourceGroupStateCausalRevision:
             snapshot.sourceGroupStateCausalRevision,
+        provenance: 'server',
         state: snapshot.state,
         overlayId: snapshot.overlayId,
         groupRef: snapshot.groupRef,

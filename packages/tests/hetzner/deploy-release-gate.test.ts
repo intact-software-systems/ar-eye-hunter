@@ -49,7 +49,8 @@ describe('Deploy workflow release gate', () => {
       'cd apps/rallar-black-box-control-server && deno task check',
     );
     expect(releaseGateWorkflow).toContain('npm run db:migrate');
-    expect(releaseGateWorkflow).toContain('npm run test:postgres:presence-expiry');
+    expect(releaseGateWorkflow.match(/npm run test:postgres:presence-expiry/gu))
+      .toHaveLength(2);
     expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:rest');
     expect(releaseGateWorkflow).toContain('npm run test:rallar:full-stack:postgres:control');
 
@@ -92,23 +93,29 @@ describe('Deploy workflow release gate', () => {
     expect(workflow).not.toContain('pull_request:');
   });
 
-  it('stages three explicit main-only Deno Deploy applications without placeholder jobs', async () => {
+  it('uploads the root Deno workspace to three explicit main-only applications', async () => {
     const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
+    const rootConfig = JSON.parse(
+      await readFile(path.join(repoRoot, 'deno.json'), 'utf8'),
+    ) as Record<string, unknown>;
 
     const expectedDeployments = [
       {
         jobName: 'deploy-api',
         configPath: 'apps/api-v1/deno.json',
+        organizationName: 'intact-software-systems',
         appName: 'rallar-server',
       },
       {
         jobName: 'deploy-control-server',
         configPath: 'apps/rallar-black-box-control-server/deno.json',
+        organizationName: 'intact-software-systems',
         appName: 'rallar-bb-server',
       },
       {
         jobName: 'deploy-relic-api',
         configPath: 'apps/relic-hunter-server-v1/deno.json',
+        organizationName: 'intact-software-systems',
         appName: 'relic-hunters',
       },
     ];
@@ -119,13 +126,16 @@ describe('Deploy workflow release gate', () => {
       expect(jobBlock).toContain(deployDenoAfterPreflightCondition);
       expect(jobBlock).toContain('DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}');
       expect(jobBlock).toContain(
-        `deno deploy . --config ${deployment.configPath} --org intact-software-systems --app ${deployment.appName} --prod --json --non-interactive`,
+        `deno deploy . --config deno.json --org intact-software-systems --app ${deployment.appName} --prod --json --non-interactive`,
       );
+      expect(jobBlock).not.toMatch(/deno deploy \. --config apps\//u);
 
       const config = JSON.parse(
         await readFile(path.join(repoRoot, deployment.configPath), 'utf8'),
       ) as {
         deploy?: {
+          org?: string;
+          app?: string;
           runtime?: {
             type?: string;
             entrypoint?: string;
@@ -134,6 +144,8 @@ describe('Deploy workflow release gate', () => {
         };
       };
 
+      expect(config.deploy?.org).toBe(deployment.organizationName);
+      expect(config.deploy?.app).toBe(deployment.appName);
       expect(config.deploy?.runtime).toEqual({
         type: 'dynamic',
         entrypoint: './src/main.ts',
@@ -141,6 +153,7 @@ describe('Deploy workflow release gate', () => {
       });
     }
 
+    expect(rootConfig).not.toHaveProperty('deploy');
     expect(workflow).not.toContain('deploy-in-memory-api:');
     expect(workflow).not.toContain('Deno Deploy auto-deploys from GitHub main branch');
   });
@@ -185,6 +198,11 @@ describe('Deploy workflow release gate', () => {
       'Production branch: `main`',
       'Builds for non-production branches: disabled',
       'Disconnect the Deno GitHub integration',
+      'Every push to a linked GitHub repository starts a Deno build',
+      'source discovery at the repository-root `deno.json`',
+      'App-level `deno.json` files remain authoritative for local checks',
+      '`DENO_DEPLOY_ACTIONS_ENABLED=false`',
+      'Deploy Default Branch',
       '`DENO_DEPLOY_TOKEN`',
       '`DENO_DEPLOY_ACTIONS_ENABLED=true`',
       'Branch Release Gate',
@@ -198,7 +216,7 @@ describe('Deploy workflow release gate', () => {
     const workflow = await readFile(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
     const job = getJobBlock(workflow, 'cloudflare-branch-controls');
 
-    expect(job).toContain("if: ${{ github.ref == 'refs/heads/main' }}");
+    expect(job).toContain("if: ${{ false }}");
     expect(job).toContain('CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}');
     expect(job).toContain('CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}');
     expect(job).toContain('node scripts/deploy/configure-cloudflare-main-only.mjs --apply');

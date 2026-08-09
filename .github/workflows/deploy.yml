@@ -23,15 +23,16 @@ concurrency:
 jobs:
   cloudflare-branch-controls:
     name: Enforce Cloudflare main-only branch controls
-    if: ${{ github.ref == 'refs/heads/main' }}
+    # Temporarily disabled while Cloudflare remains manually configured for main only.
+    if: ${{ false }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -82,10 +83,10 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -112,10 +113,10 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -136,10 +137,10 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -162,7 +163,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -170,7 +171,7 @@ jobs:
           deno-version: v2.x
 
       - name: Cache Deno + npm
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/deno
@@ -209,7 +210,7 @@ jobs:
       - name: Deploy rallar-server to Deno Deploy
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
-        run: deno deploy . --config apps/api-v1/deno.json --org intact-software-systems --app rallar-server --prod --json --non-interactive
+        run: deno deploy . --config deno.json --org intact-software-systems --app rallar-server --prod --json --non-interactive
 
   deploy-control-server:
     name: Deploy Black Box Control Server (Deno Deploy)
@@ -221,7 +222,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -229,7 +230,7 @@ jobs:
           deno-version: v2.x
 
       - name: Cache Deno + npm
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/deno
@@ -250,7 +251,7 @@ jobs:
       - name: Deploy rallar-bb-server to Deno Deploy
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
-        run: deno deploy . --config apps/rallar-black-box-control-server/deno.json --org intact-software-systems --app rallar-bb-server --prod --json --non-interactive
+        run: deno deploy . --config deno.json --org intact-software-systems --app rallar-bb-server --prod --json --non-interactive
 
   deploy-relic-api:
     name: Deploy Relic API (Deno Deploy)
@@ -261,7 +262,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -269,7 +270,7 @@ jobs:
           deno-version: v2.x
 
       - name: Cache Deno + npm
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/deno
@@ -308,4 +309,4 @@ jobs:
       - name: Deploy relic-hunters to Deno Deploy
         env:
           DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
-        run: deno deploy . --config apps/relic-hunter-server-v1/deno.json --org intact-software-systems --app relic-hunters --prod --json --non-interactive
+        run: deno deploy . --config deno.json --org intact-software-systems --app relic-hunters --prod --json --non-interactive

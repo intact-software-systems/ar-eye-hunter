@@ -27,6 +27,9 @@ import {
   createRallarMiddleware,
   createWsServerTargetResolver,
 } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
+import type {
+  QueueBoxPubSubBridge,
+} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import type { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import type { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import type { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
@@ -91,6 +94,55 @@ describe('createRallarMiddleware', () => {
     expect(runtime.clientsRepository).toBe(clientsRepository);
     expect(runtime.groupsRepository).toBe(groupsRepository);
     expect(runtime.qboxEngine).toBeDefined();
+  });
+
+  it('waits for runtime and queue pubsub subscription readiness', async () => {
+    const runtimeStartup = createDeferred();
+    const queueSubscription = createDeferred();
+    const bridge: QueueBoxPubSubBridge = {
+      publish: async () => undefined,
+      subscribe: vi.fn(async () => await queueSubscription.promise),
+    };
+    const runtime = createRallarMiddleware(
+      createReadinessMiddlewareOptions(runtimeStartup.promise, bridge),
+    );
+    let ready = false;
+    void runtime.readiness.then(() => {
+      ready = true;
+    });
+
+    runtimeStartup.resolve();
+    await Promise.resolve();
+
+    expect(bridge.subscribe).toHaveBeenCalledWith(
+      'queuebox-events',
+      expect.any(Function),
+    );
+    expect(ready).toBe(false);
+
+    queueSubscription.resolve();
+    await runtime.readiness;
+
+    expect(ready).toBe(true);
+  });
+
+  it('fails runtime readiness when queue pubsub subscription fails', async () => {
+    const failure = new Error('queue subscription failed');
+    const bridge: QueueBoxPubSubBridge = {
+      publish: async () => undefined,
+      subscribe: async () => {
+        throw failure;
+      },
+    };
+    const reportFailure = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const runtime = createRallarMiddleware(
+      createReadinessMiddlewareOptions(Promise.resolve(), bridge),
+    );
+
+    await expect(runtime.readiness).rejects.toBe(failure);
+    reportFailure.mockRestore();
   });
 
   it('registers an app inbox engine task that drains inbox messages', async () => {
@@ -891,6 +943,44 @@ function createResilience(
     ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
     retryPolicy,
   );
+}
+
+function createReadinessMiddlewareOptions(
+  readiness: Promise<void>,
+  bridge: QueueBoxPubSubBridge,
+) {
+  return {
+    inbox: new InMemoryQueueBox(),
+    resilience: {
+      inbox: createResilience(),
+      appOutbox: createResilience(),
+    },
+    createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+    createAppClientInboxService: () => ({}) as AppClientInboxService,
+    clientsRepository: {} as ClientStateRepository,
+    groupsRepository: {} as GroupStateRepository,
+    readiness,
+    queuePubSubBridge: {
+      bridge,
+      channel: 'queuebox-events',
+      publisherId: 'publisher-1',
+    },
+  };
+}
+
+function createDeferred(): Readonly<{
+  promise: Promise<void>;
+  resolve(): void;
+}> {
+  let resolvePromise: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  return {
+    promise,
+    resolve: () => resolvePromise(),
+  };
 }
 
 function readOnlyEngineTask(

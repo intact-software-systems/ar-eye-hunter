@@ -464,9 +464,21 @@ provider checks for local or scheduled runs.
 | `POSTGRES_USER`               | Container config                              | `app` in `docker-compose.yml`                                   | Postgres container user.                                                                                                    |
 | `POSTGRES_PASSWORD`           | Container config                              | `app` in `docker-compose.yml`                                   | Postgres container password.                                                                                                |
 | `POSTGRES_DB`                 | Container config                              | `appdb` in `docker-compose.yml`                                 | Postgres container database.                                                                                                |
-| `RALLAR_POSTGRES_INTEGRATION` | No                                            | Disabled                                                        | `1` enables `packages/tests/shared-server/postgres-presence-expiry-concurrency.test.ts`; otherwise those tests are skipped. |
+| `RALLAR_POSTGRES_INTEGRATION` | No                                            | Disabled                                                        | `1` enables the dedicated real-PostgreSQL shared-server integration suites. These suites are excluded from the default unit-test discovery.                                  |
 | `DATABASE_URL`                | Required when `RALLAR_POSTGRES_INTEGRATION=1` | Root script fallback: `postgres://app:app@localhost:5432/appdb` | Used by Postgres integration tests and worker fixtures. Also used by API-v1 as described above.                             |
 | `RALLAR_EXPIRY_WORKER_INPUT`  | Worker-internal                               | None                                                            | JSON payload passed from the Postgres concurrency test to `fixtures/postgres-expiry-worker.ts`.                             |
+
+Start and migrate the local test database, then run the reusable repository and
+concurrency suite followed by the isolated presence-expiry suite:
+
+```bash
+npm run db:test:up
+npm run test:postgres:integration
+npm run test:postgres:presence-expiry
+```
+
+Presence-expiry runs last because it deliberately retains fixed-ID outbox
+evidence that can interfere with later global outbox workers.
 
 ### Shared Black-Box Runner
 
