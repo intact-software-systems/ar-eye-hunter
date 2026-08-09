@@ -1,11 +1,26 @@
 # Rallar Group Formation Phase 1: Overlay Precedence And Bounded Bootstrap
 
-Status: implementation and local validation complete on
-`codex/group-formation-phase1-overlay-precedence` (PR #138), based on `main`
-at `76e5a1b3`; awaiting **Branch Release Gate** confirmation on the final
-build-affecting commit, human review/merge, and the post-merge **Run Hetzner
-Supported Distributed Manifests** gate before the plan can be marked
-complete.
+Status: complete. Merged to `main` as `695ffb0b` (PR #138); all local and
+remote completion gates passed (see the completion record below).
+
+## Completion record (2026-08-09, post-merge)
+
+- Merged to `main` as `695ffb0b` by the repository owner. Final
+  feature-branch build-affecting commit `5466ccca` (Branch Release Gate run
+  31326545612 succeeded there; `a7e85aa7`/`2c65d060` were plans-only
+  notes commits excluded by the gate's path rules).
+- **Run Hetzner Supported Distributed Manifests** run 31330265028 succeeded
+  on the resulting default-branch commit `695ffb0b`. Disclosure: the first
+  attempt failed only `04-provider-parity-2-agent` with
+  `RALLAR_BB_RTC_READY_TIMEOUT`; artifact comparison against run
+  31322962645 (docs-only commit `76e5a1b3`, pre-Phase-1 code) showed the
+  identical signature there — including an agent with zero dials at
+  timeout — while `05a-rtc-realtime-stability` passes **with** Phase 1
+  after failing without it. The flake is tracked as issue #139; the
+  failed-job rerun on the same commit went green with no code change.
+- Follow-ups per the follow-up governance: issue #139 (Hetzner manifest
+  RTC ready-timeout flake, pre-existing signature) created and linked from
+  PR #138.
 
 ## Progress notes (2026-08-09)
 
