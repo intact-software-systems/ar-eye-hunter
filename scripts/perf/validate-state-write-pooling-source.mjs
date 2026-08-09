@@ -3,7 +3,6 @@ import { validateApiV1StateWriteEnvironment } from './validate-api-v1-state-writ
 
 const ARTIFACT_FIELDS = [
   'backend',
-  'features',
   'generatedAt',
   'gitCommit',
   'measurement',

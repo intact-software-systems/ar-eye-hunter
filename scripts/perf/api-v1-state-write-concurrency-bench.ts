@@ -389,12 +389,6 @@ async function main(): Promise<void> {
           outboxIntents: 'legacy counter name retained only for governed baseline compatibility',
         },
       },
-      features: {
-         presenceSplitFromGroupAggregate: true,
-         governance: 'task10-post-remediation-candidate',
-         evidence:
-           'Transactional AppInbox completion, receipts, and direct ResourceInbox effects',
-      },
       regressionReasons: [],
       workloads,
     };
