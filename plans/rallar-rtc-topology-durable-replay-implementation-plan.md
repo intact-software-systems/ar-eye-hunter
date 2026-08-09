@@ -6,12 +6,45 @@
 > `rallar-repo:rallar-testing`. Keep the draft PR and this progress record
 > current after every meaningful checkpoint.
 
-Status: proposed and decision-complete; implementation has not started.
+Status: active; implementation is in progress as the three-PR stack below.
 
 Plan evidence base: `origin/main` at
 `726edc7c33386f9282f6594ec4b5c3c02033fbf1` on 2026-08-09. Revalidate the
 checkout, issue, paths, contracts, and commands before implementation and after
 every rebase. Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
+
+## Implementation Progress
+
+Current exact-tree checkpoint on 2026-08-09:
+
+- `origin/main` remains `726edc7c33386f9282f6594ec4b5c3c02033fbf1`, so the
+  plan evidence base has not moved and has no compatibility delta.
+- Plan PR [#141](https://github.com/intact-software-systems/ar-eye-hunter/pull/141)
+  remains open at `8e277691f3bcd618c556d57ab5ee61cac248f1db`. PR 1 is
+  therefore based on that exact head. If #141 merges, PR 1 must be rebased onto
+  the resulting `main`, and every affected exact-tree result below becomes stale.
+- Issue [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121)
+  remains open with the live-listener replay/current-state reconnect distinction
+  intact. The implementation request selects the plan's Option A contract.
+- Code-derived revalidation confirmed the current atomic topology publication and
+  `WS_OUTBOX` owner, QueueBox fast path, unused production fanout publish seam,
+  transient listener boundary, separate random runtime IDs, WebSocket open
+  callback timing, current-state repositories, three-process runner, and existing
+  validation commands. The new replay profile and command remain intentionally
+  absent until PR 3.
+- The untouched PR #141 tree passed `npm run test:unit`: 717 files and 6,562
+  tests. Node emitted only its existing experimental `localStorage` warnings.
+
+Stack record:
+
+| Layer | Branch | Base | State |
+| --- | --- | --- | --- |
+| Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 open |
+| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | PR #141 head | in progress |
+| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | pending |
+| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | pending |
+
+No implementation milestone or completion gate is yet claimed complete.
 
 ## Goal
 
