@@ -29,11 +29,12 @@ harness.
 Date: 2026-08-08
 
 Status: Approved child in execution, with PR A blocked by its preserved failed
-performance result. The human approved exact planning Git blob
-`c9b5e92686ebbc5d4ff136dbea678c93fea1579f`. This separate prospective
-performance-protocol amendment is drafted and unapproved; it authorizes no
-tooling change, candidate change, measurement, publication, or result
-reinterpretation until the human approves this amendment's exact Git blob.
+performance result. The human approved original planning Git blob
+`c9b5e92686ebbc5d4ff136dbea678c93fea1579f` and performance-amendment blob
+`f83cc311369fff2bf255116253ec0f4fe911a43f`. This follow-up pooler-order
+correction is drafted and unapproved; it authorizes no tooling change,
+candidate change, measurement, publication, or result reinterpretation until
+the human approves this correction's exact Git blob.
 
 ## 0. Prerequisite And Planning Publication Evidence
 
@@ -80,9 +81,10 @@ The original planning pull request changed only:
 - the execution plan; and
 - the auth child plan for exact ledger closure and successor linkage.
 
-This prospective amendment changes only this plan. It does not reconcile the
-master program, execution plan, implementation branch, or any future
-publication fact before its exact blob is approved.
+The performance amendment and this follow-up correction each change only this
+plan. Neither reconciles the master program, execution plan, implementation
+branch, or any future implementation/publication fact before its exact blob is
+approved.
 
 Under the repository plan-only publication policy, its gates are Prettier,
 `git diff --check`, and the focused repository-governance tests. Build, unit,
@@ -90,7 +92,7 @@ CI, Branch Release Gate, and resulting-main deployment workflows are not
 required for this plan-only revision. Implementation PRs remain subject to
 their full code and publication gates.
 
-### 0.4 Prospective performance-protocol amendment evidence
+### 0.4 Approved performance-protocol amendment evidence
 
 This amendment starts from freshly fetched `origin/main`
 `9ff4b7422c8124acf4bce0c46d1d1bf7cddbab6a`, tree
@@ -99,6 +101,14 @@ This amendment starts from freshly fetched `origin/main`
 forward the already authorized factual Task 1 and Task 2 reconciliation from
 PR A's plan file at Git blob `749ac5fb3796523f4bd6906220ba4664d7fb34a2`
 without changing PR A.
+
+The human approved exact amendment blob
+`f83cc311369fff2bf255116253ec0f4fe911a43f`. Plan-only PR #125 published it at
+feature head `cf67bc313584b7183780990e8a51c787ab5c3bd2`, frozen tree
+`e1077b7d303315438998da349bb12959cc1b1f2a`, then merged as resulting main
+`fccda1c6d3dd3114b50775a78b83c4e788bb7043`, tree
+`19c0cd37d6f5e1b9dda9eeb73367f01b965d7558`. No local build or Branch Release
+Gate was required under the repository plan-only policy.
 
 The immutable PR A candidate remains exact commit
 `74a62eb22583216e8c6651de069209d7e1a8ca67`, tree
@@ -156,6 +166,28 @@ presence is split from the group aggregate is retained as historical
 group-state wording, not a topology invariant. The existing child evaluator
 was the correct evaluator selected by the approved plan for the failed v1
 sequence; correcting future protocol ownership does not invalidate that result.
+
+### 0.5 Draft pooler-order correction evidence
+
+This follow-up correction starts from exact `origin/main`
+`fccda1c6d3dd3114b50775a78b83c4e788bb7043`, tree
+`19c0cd37d6f5e1b9dda9eeb73367f01b965d7558`, on isolated branch
+`codex/rallar-group-topology-performance-pooler-order-plan`. Its baseline plan
+blob is the approved amendment `f83cc311369fff2bf255116253ec0f4fe911a43f`.
+
+Pre-implementation review found one mechanical contradiction. The v1 pooler
+reads its inputs in descriptor order and requires `generatedAt` to increase in
+that order, with the existing public entry fixed to `A-B-B-A`. The approved
+second-block mapping `A3, B3, B4, A4` refers to chronological positions
+`6, 5, 8, 7`, so it must fail before pooling. Reordering timestamps, rewriting
+artifacts, relabeling roles, or duplicating the numerical pooler is forbidden.
+
+The human authorized drafting one narrow correction that preserves the fixed
+`A-B-B-A-B-A-A-B` chronology and permits a pure explicit-position entry point
+inside the v1 pooler. Its existing public API, behavior, outputs, errors,
+thresholds, comparator, evaluator, and ordinary `A-B-B-A` protocol remain
+unchanged. This planning tree predicts no correction blob, commit, PR, merge,
+workflow, tooling implementation, candidate, or measurement fact.
 
 ## 1. Outcome, Scope, And Review Sizing
 
@@ -1293,7 +1325,11 @@ final Task 2 checkbox remains open.
       diagnosis as immutable historical evidence.
 - [x] Keep PR #103 and candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`
       unchanged while drafting this amendment.
-- [ ] Obtain human approval of this amendment's exact Git blob.
+- [x] Obtain human approval of amendment blob
+      `f83cc311369fff2bf255116253ec0f4fe911a43f` and merge plan-only PR #125.
+- [x] Stop before implementation when the mirrored block proved incompatible
+      with the existing v1 pooler's fixed descriptor order.
+- [ ] Obtain human approval of this follow-up correction's exact Git blob.
 - [ ] Implement only the Section 13.3 performance-tooling scope test-first on
       the existing PR A branch; production/runtime blobs remain exact.
 - [ ] Rerun every tooling-invalidated focused and repository completion gate,
@@ -1480,7 +1516,7 @@ runtime regression was established.
 
 ### 13.3 Prospective PR A tooling boundary
 
-Only after the human approves this amendment's exact Git blob may PR A add the
+Only after the human approves this correction's exact Git blob may PR A add the
 following performance-tooling changes test-first:
 
 - modify `scripts/perf/api-v1-state-write-concurrency-bench.ts` only to accept
@@ -1490,6 +1526,13 @@ following performance-tooling changes test-first:
   prove exact reason-file parsing, commit/tree binding, canonical ordering,
   exact emission when supplied, empty emission when omitted, and fail-closed
   behavior;
+- modify `scripts/perf/pool-api-v1-state-write-results.mjs` only to export the
+  pure `poolApiV1StateWriteResultsForPositions(input, sourcePositions)` entry
+  described below while preserving the existing
+  `poolApiV1StateWriteResults(input)` entry exactly;
+- modify `packages/tests/shared-server/state-write-performance-pooling.test.ts`
+  to prove the existing entry's valid outputs and malformed-input errors are
+  unchanged, and to prove explicit `B-A-A-B` descriptor behavior/failures;
 - create
   `scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs`
   as the pure eight-position protocol and outer-manifest owner;
@@ -1502,12 +1545,53 @@ following performance-tooling changes test-first:
   no-masking evidence owner.
 
 The existing global comparator,
-`scripts/perf/compare-api-v1-state-write-results.mjs`; existing v1 pooler,
-`scripts/perf/pool-api-v1-state-write-results.mjs`; and existing 1.5% child
+`scripts/perf/compare-api-v1-state-write-results.mjs`, and existing 1.5% child
 evaluator,
 `scripts/perf/compare-group-state-server-structure-performance.mjs`, remain
-byte-identical. The new outer pooler calls the v1 pooler twice and does not
-duplicate or reinterpret its artifact validation or numerical policy.
+byte-identical. The v1 pooler's existing public entry, constant, output schema,
+artifact validation, numerical aggregation, error ordering/messages, and
+ordinary `A-B-B-A` behavior remain unchanged. The new outer pooler calls the
+existing entry for block 1 and the explicit-position entry for block 2; it does
+not duplicate or reinterpret validation or numerical policy.
+
+`poolApiV1StateWriteResultsForPositions` accepts the same pooling input plus one
+dense four-entry descriptor array. Each descriptor contains exactly:
+
+```ts
+interface StateWritePoolingSourcePosition {
+  readonly key: string;
+  readonly position: 1 | 2 | 3 | 4;
+  readonly role: 'approved-base' | 'candidate';
+}
+```
+
+The function requires four unique non-empty keys, positions `1, 2, 3, 4` in
+that order, exactly two descriptors per role, and one complete source for each
+key. It performs the existing unique-artifact, environment, increasing
+`generatedAt`, commit, compatible-metadata, raw-command-ID, correctness, and
+pooled-artifact checks against descriptor order. It calls the same existing
+role-pooling and summary implementation and emits the same v1 artifact and
+manifest schema.
+
+`poolApiV1StateWriteResults(input)` remains a wrapper over the frozen existing
+descriptor list:
+
+```ts
+[
+  { key: 'approvedBaseFirst', position: 1, role: 'approved-base' },
+  { key: 'candidateFirst', position: 2, role: 'candidate' },
+  { key: 'candidateSecond', position: 3, role: 'candidate' },
+  { key: 'approvedBaseSecond', position: 4, role: 'approved-base' },
+];
+```
+
+Tests run every existing positive and negative fixture through that public
+entry and retain all exact expected outputs/errors. Direct equivalence tests
+also call the explicit-position entry with the frozen descriptors. New negative
+fixtures reject missing/extra fields, sparse arrays, duplicate/empty keys,
+duplicate/out-of-order positions, wrong role counts, unsupported roles,
+missing keyed sources, and non-increasing chronological timestamps. A new entry
+must never weaken or bypass an existing source/artifact check.
 
 No production/runtime module may change from commit
 `74a62eb22583216e8c6651de069209d7e1a8ca67`. No benchmark workload, operation
@@ -1577,11 +1661,13 @@ Before any new position, record and independently review:
 - the exact new candidate commit/tree and proof that its production/runtime
   blobs equal `74a62eb22583216e8c6651de069209d7e1a8ca67`;
 - all correctness and security commands and their final-tree results;
-- the exact five approved tooling/test files and their blobs;
+- the exact seven approved tooling/test files and their blobs;
 - the pinned PostgreSQL 16 image and resource/configuration limits;
 - autovacuum/analyze, preflight-row, automatic-maintenance, overlap, Deno-LSP,
   warmup, run, concurrency, transfer, and controlled-host rules;
-- unchanged global-comparator, v1-pooler, and child-evaluator hashes;
+- unchanged global-comparator and child-evaluator hashes;
+- the exact extended v1-pooler hash plus regression evidence that its existing
+  public entry is behavior-identical;
 - the new outer-pooler/CLI hashes;
 - the exact conflict-reason input bytes and SHA-256;
 - all latency, throughput, resource, and correctness thresholds;
@@ -1624,16 +1710,32 @@ once. All eight normalized environment records must be byte-identical.
 ### 13.7 Two-block pooling and evaluation
 
 The outer pooler validates the eight chronological positions, then creates two
-ordinary v1 evidence blocks by invoking the unchanged v1 pooler:
+ordinary v1 evidence blocks through the two v1 pooler entry points:
 
-- block 1: A1, B1, B2, A2 in chronological order; and
-- block 2: logical base inputs A3/A4 and candidate inputs B3/B4, while the outer
-  manifest preserves the actual B3, A3, A4, B4 chronology.
+- block 1 calls the existing `poolApiV1StateWriteResults` entry with A1, B1,
+  B2, A2 in its unchanged A-B-B-A descriptor order; and
+- block 2 calls `poolApiV1StateWriteResultsForPositions` with the sources keyed
+  `candidateThird=B3`, `approvedBaseThird=A3`, `approvedBaseFourth=A4`, and
+  `candidateFourth=B4`, plus these descriptors in actual chronological order:
 
-The second v1 pooler call maps `approvedBaseFirst=A3`, `candidateFirst=B3`,
-`candidateSecond=B4`, and `approvedBaseSecond=A4`. This is logical role order
-only; the outer manifest remains the source of truth for chronological
-positions 5-8. Neither pooler may reorder samples within a raw artifact.
+```ts
+[
+  { key: 'candidateThird', position: 1, role: 'candidate' },
+  { key: 'approvedBaseThird', position: 2, role: 'approved-base' },
+  { key: 'approvedBaseFourth', position: 3, role: 'approved-base' },
+  { key: 'candidateFourth', position: 4, role: 'candidate' },
+];
+```
+
+The explicit-position entry validates timestamps in the actual B-A-A-B order
+and then pools the two sources for each declared role with the unchanged v1
+numerical aggregation. Its inner manifest therefore records local positions
+1-4 as B-A-A-B while its pooled artifacts retain the exact
+`approved-base`/`candidate` aggregation roles required by the unchanged child
+evaluator. The outer manifest maps those local positions to global
+chronological positions 5-8. Neither pooler entry may rewrite artifact
+timestamps, reorder samples within a raw artifact, or infer a role from call
+order.
 
 The outer manifest uses schema
 `rallar.group-topology.state-write-position-balanced-abba-baab.v1` and records:
@@ -1641,7 +1743,8 @@ The outer manifest uses schema
 - all eight chronological positions, roles, source commit/tree identities,
   artifact SHA-256 values, environment-record SHA-256 values, and relative
   paths;
-- the exact logical-to-chronological mapping used for both v1 pooler calls;
+- the exact entry point, descriptor, and local-to-global chronological mapping
+  used for both v1 pooler calls;
 - eight unique raw-artifact hashes and one common environment-record hash;
 - the two inner v1 manifest hashes;
 - each block's pooled base and candidate hashes; and
@@ -1681,7 +1784,8 @@ Each block independently applies the existing thresholds:
   environment, and artifact correctness.
 
 No threshold, tolerance, comparator rule, or evaluator rule changes. The
-amendment changes only prospective position control and the timing of the
+approved amendment and this correction change only prospective position
+control, explicit chronological descriptor ownership, and the timing of the
 already-required conflict-reason link.
 
 ### 13.9 Failure and no-reroll rules
@@ -1755,7 +1859,7 @@ deno check --config apps/api-v1/deno.json \
 
 ### 14.2.1 Prospective PR A performance-tooling gates
 
-After exact amendment approval and before a new candidate freezes, run:
+After exact correction approval and before a new candidate freezes, run:
 
 ```bash
 npx vitest run \
@@ -1779,9 +1883,11 @@ npm run check:repo-style:output-contracts
 npm run check:repo-style:object-interfaces
 npx prettier --check \
   scripts/perf/api-v1-state-write-concurrency-bench.ts \
+  scripts/perf/pool-api-v1-state-write-results.mjs \
   scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs \
   scripts/perf/write-group-topology-state-write-position-balanced-results.mjs \
   packages/tests/shared-server/state-write-performance-harness.test.ts \
+  packages/tests/shared-server/state-write-performance-pooling.test.ts \
   packages/tests/shared-server/group-topology-state-write-position-balanced-pooling.test.ts \
   plans/rallar-group-topology-server-structure-plan.md
 git diff --check
@@ -1977,15 +2083,17 @@ Human decisions are required at these exact points:
    `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`;
 2. the completed approval of Task 1's sample waiver and every warning
    disposition;
-3. approve or revise this prospective amendment's exact plan blob;
-4. after tooling implementation, authorize the exact new candidate, tools,
+3. the completed approval of performance-protocol amendment blob
+   `f83cc311369fff2bf255116253ec0f4fe911a43f`;
+4. approve or revise this pooler-order correction's exact plan blob;
+5. after tooling implementation, authorize the exact new candidate, tools,
    conflict-reason input, environment, and measurement envelope;
-5. approve merging exact PR A only after both position blocks pass;
-6. approve merging exact PR B after governed persistence performance evidence;
-7. approve merging exact PR C after governed authoritative-shell evidence;
-8. approve PR D's compatibility/ratchet decisions and exact merge;
-9. separately authorize the later evidence-ledger publication; and
-10. approve and close that ledger before RTC/RTT or another Wave 2 child begins.
+6. approve merging exact PR A only after both position blocks pass;
+7. approve merging exact PR B after governed persistence performance evidence;
+8. approve merging exact PR C after governed authoritative-shell evidence;
+9. approve PR D's compatibility/ratchet decisions and exact merge;
+10. separately authorize the later evidence-ledger publication; and
+11. approve and close that ledger before RTC/RTT or another Wave 2 child begins.
 
 Implementation PRs remain draft until scoped review, Critical 0/Important 0,
 all required local gates, exact tree freeze, current PR evidence, and Branch
@@ -1995,13 +2103,16 @@ SHA and required default workflow before creating the next branch.
 
 ## 16. Non-Circular Completion Evidence
 
-This amendment tree records only existing prerequisite, original-plan,
-implementation-candidate, failed-performance, diagnosis, and current-main
-facts. It cannot contain its own future blob, tree, commit, PR, merge, workflow,
-tooling implementation, replacement candidate, or measurement result.
+This correction tree records only existing prerequisite, original-plan,
+approved-amendment, implementation-candidate, failed-performance, diagnosis,
+and current-main facts. It cannot contain its own future blob, tree, commit,
+PR, merge, workflow, tooling implementation, replacement candidate, or
+measurement result.
 
-The exact amendment blob, planning commit/PR, and any future merge evidence stay
-in its external handoff. After human approval, PR A may record that approval and
+Planning PR #125 and approved amendment blob
+`f83cc311369fff2bf255116253ec0f4fe911a43f` are existing evidence. The exact
+correction blob, its planning commit/PR, and any future merge evidence stay in
+its external handoff. After human approval, PR A may record that approval and
 only facts already produced by the authorized tooling phase. It may never
 predict a future passing measurement or Branch Release Gate.
 
@@ -2030,9 +2141,15 @@ measurements remain historical and are never relabeled for a changed tree.
       disposition.
 - [x] The first governed A-B-B-A result remains preserved and classified as
       failed evidence.
-- [ ] Human approved this prospective performance amendment's exact Git blob.
+- [x] Human approved performance-protocol amendment Git blob
+      `f83cc311369fff2bf255116253ec0f4fe911a43f`.
+- [ ] Human approved this pooler-order correction's exact Git blob.
 - [ ] The Section 13.3 tooling implementation preserves every production and
       runtime blob from `74a62eb22583216e8c6651de069209d7e1a8ca67`.
+- [ ] The existing v1 pooler entry retains exact API, behavior, output, error,
+      and A-B-B-A compatibility evidence.
+- [ ] The explicit-position entry proves chronological B-A-A-B validation and
+      true-role pooling without changing numerical aggregation.
 - [ ] Both precommitted position-balanced blocks independently pass without a
       rerun, outlier removal, threshold change, or artifact rewrite.
 - [ ] Four implementation PRs remain independently reviewable.
@@ -2056,33 +2173,35 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 18. Risks And Stop Conditions
 
-| Risk                                                                            | Required response                                                                                       |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Split creates generic services or forwarding-only helpers                       | Repartition around protocol, decision, persistence, transaction, query, or planning authority.          |
-| Required handler dependency remains temporally optional                         | Resolve before registration while preserving public setter behavior, or stop for architecture approval. |
-| Config absorbs RTC algorithms, RTT, publication, or WS delivery                 | Restore the downstream boundary; stop if the owner cannot stay separate.                                |
-| Public/deep path needs a second compatibility hop                               | Keep one direct old-to-canonical export and return the exact consumer for review.                       |
-| Persisted field/key/expiry/migration changes                                    | Stop for explicit persisted-contract approval.                                                          |
-| Authority, AppInbox, transaction, retry, receipt, or outbox changes             | Stop for explicit security/behavior approval.                                                           |
-| API-v1/OpenAPI organization or behavior changes                                 | Revert to import-only compatibility or stop for a separate child.                                       |
-| Warning is ignored because checker exits zero                                   | Stop until human disposition exists.                                                                    |
-| Ratchet replaces semantic behavior evidence                                     | Restore semantic coverage and keep the ratchet supplementary.                                           |
-| Historical v1 failure is treated as accepted, replaced, or discarded            | Restore it as immutable failed evidence; this amendment is prospective only.                            |
-| Existing comparator, v1 pooler, or child evaluator behavior changes             | Revert the change; only the additive outer pooler and reason-file ingress are authorized.               |
-| Conflict reasons are created or changed after the first preflight               | Fail the sequence; never edit raw or pooled artifacts to add a reason.                                  |
-| One mirrored block is discarded, averaged away, or used as a replacement rerun  | Fail the complete sequence and preserve both blocks.                                                    |
-| A 36-sample combined result is used to mask block disagreement                  | Reject it; both independent 18-sample-per-side v1 blocks must pass.                                     |
-| Production/runtime content differs from candidate `74a62eb`                     | Stop for a separate code-remediation decision and a new protocol envelope.                              |
-| Performance protocol, environment, threshold, or candidate changes after freeze | Stop; no reroll, threshold change, or evidence relabeling.                                              |
-| Required external gate persistently fails                                       | Stop with exact run/job/step; do not diagnose unrelated providers.                                      |
-| Unrelated plan, dependency, lockfile, workflow, checker, or TypeScript changes  | Restore exact scope before publication.                                                                 |
+| Risk                                                                            | Required response                                                                                        |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Split creates generic services or forwarding-only helpers                       | Repartition around protocol, decision, persistence, transaction, query, or planning authority.           |
+| Required handler dependency remains temporally optional                         | Resolve before registration while preserving public setter behavior, or stop for architecture approval.  |
+| Config absorbs RTC algorithms, RTT, publication, or WS delivery                 | Restore the downstream boundary; stop if the owner cannot stay separate.                                 |
+| Public/deep path needs a second compatibility hop                               | Keep one direct old-to-canonical export and return the exact consumer for review.                        |
+| Persisted field/key/expiry/migration changes                                    | Stop for explicit persisted-contract approval.                                                           |
+| Authority, AppInbox, transaction, retry, receipt, or outbox changes             | Stop for explicit security/behavior approval.                                                            |
+| API-v1/OpenAPI organization or behavior changes                                 | Revert to import-only compatibility or stop for a separate child.                                        |
+| Warning is ignored because checker exits zero                                   | Stop until human disposition exists.                                                                     |
+| Ratchet replaces semantic behavior evidence                                     | Restore semantic coverage and keep the ratchet supplementary.                                            |
+| Historical v1 failure is treated as accepted, replaced, or discarded            | Restore it as immutable failed evidence; this amendment is prospective only.                             |
+| Existing comparator, child evaluator, or v1 public-entry behavior changes       | Revert; only the additive outer pooler, explicit-position entry, and reason-file ingress are authorized. |
+| Explicit-position entry bypasses v1 checks or changes numerical aggregation     | Revert; it must reuse the same validation and role-pooling owners after descriptor validation.           |
+| Mirrored artifacts use the legacy wrapper or have timestamps/roles rewritten    | Fail closed; use the explicit B-A-A-B descriptors and preserve raw evidence exactly.                     |
+| Conflict reasons are created or changed after the first preflight               | Fail the sequence; never edit raw or pooled artifacts to add a reason.                                   |
+| One mirrored block is discarded, averaged away, or used as a replacement rerun  | Fail the complete sequence and preserve both blocks.                                                     |
+| A 36-sample combined result is used to mask block disagreement                  | Reject it; both independent 18-sample-per-side v1 blocks must pass.                                      |
+| Production/runtime content differs from candidate `74a62eb`                     | Stop for a separate code-remediation decision and a new protocol envelope.                               |
+| Performance protocol, environment, threshold, or candidate changes after freeze | Stop; no reroll, threshold change, or evidence relabeling.                                               |
+| Required external gate persistently fails                                       | Stop with exact run/job/step; do not diagnose unrelated providers.                                       |
+| Unrelated plan, dependency, lockfile, workflow, checker, or TypeScript changes  | Restore exact scope before publication.                                                                  |
 
 ## 19. Progress Record
 
 | Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Auth prerequisite          | ledger-published    | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                           |
-| Group-topology child plan  | amendment drafted   | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. This separate prospective amendment starts from main `9ff4b7422c8124acf4bce0c46d1d1bf7cddbab6a`; its future blob, commit, PR, and approval remain external and unpredicted.                                                                                                                                                                                                                                                 |
+| Group-topology child plan  | correction drafted  | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f` as feature `cf67bc313584b7183780990e8a51c787ab5c3bd2`, tree `e1077b7d303315438998da349bb12959cc1b1f2a`, resulting main `fccda1c6d3dd3114b50775a78b83c4e788bb7043`, tree `19c0cd37d6f5e1b9dda9eeb73367f01b965d7558`. This follow-up correction's future blob, commit, PR, approval, and merge remain external and unpredicted.    |
 | PR A protocol/core         | performance-blocked | Draft PR #103 remains on older remote head `8b1ebf542d12c05a5ac226d3d07e543a171a2626`. Exact local candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`, tree `7f971bcf84aa494265992d17e3c9b99227bd8122`, completed correctness and Critical 0/Important 0 review but is non-exempt. Its exact v1 A-B-B-A evidence remains failed for shared throughput `-5.068999%` and shared transaction duration `+3.088188%` without the required prospective conflict-reason link. No candidate push, PR update, or Branch Release Gate occurred. |
 | PR B persistence           | blocked             | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | PR C authoritative shell   | blocked             | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
@@ -2107,6 +2226,10 @@ measurements remain historical and are never relabeled for a changed tree.
 - [x] The failed v1 result remains immutable and is never a v2 input.
 - [x] The prospective A-B-B-A-B-A-A-B order balances both role and mean
       chronological position without choosing an order after measurement.
+- [x] The existing v1 pooler entry remains the exact ordinary A-B-B-A owner;
+      only a pure explicit-position entry is authorized for the mirrored block.
+- [x] The mirrored entry receives B3/A3/A4/B4 in chronological B-A-A-B order,
+      preserves raw timestamps, and pools by declared role.
 - [x] Both independent v1 blocks must pass; no combined pool can mask a block.
 - [x] Conflict reasons are exact, candidate-only, hash-frozen, and present
       before measurement rather than inserted into retained artifacts.
