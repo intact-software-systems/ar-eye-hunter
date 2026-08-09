@@ -4,64 +4,35 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { validateStateWriteArtifact } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import { poolApiV1StateWriteResults } from '../../../scripts/perf/pool-api-v1-state-write-results.mjs';
+import {
+  poolApiV1StateWriteResults,
+  poolApiV1StateWriteResultsForPositions,
+} from '../../../scripts/perf/pool-api-v1-state-write-results.mjs';
 import { writeApiV1StateWritePooledResults } from '../../../scripts/perf/write-api-v1-state-write-pooled-results.mjs';
 import { createStateWritePerformanceArtifact } from './state-write-performance-artifact-fixture.ts';
 
 const APPROVED_BASE_COMMIT = '52d973bb71dda2100455e8585a0a8f98d177bd13';
 const CANDIDATE_COMMIT = 'c8b842cb5156ef231f68dd711700ae66ffda844c';
-const ENVIRONMENT = `${[
-  'image_ref=postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171',
-  'image_id=sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171',
-  'repo_digest=postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171',
-  'platform=linux',
-  'image_architecture=arm64',
-  'image_os=linux',
-  'entrypoint=docker-entrypoint.sh',
-  'command=postgres -c autovacuum=off',
-  'shm_size=268435456',
-  'memory=4294967296',
-  'memory_swap=4294967296',
-  'nano_cpus=4000000000',
-  'cpu_period=0',
-  'cpu_quota=0',
-  'cpu_set=',
-  'server_version=16.14 (Debian 16.14-1.pgdg13+1)',
-  'autovacuum=off',
-  'track_counts=on',
-  'shared_buffers=16384',
-  'work_mem=4096',
-  'maintenance_work_mem=65536',
-  'effective_cache_size=524288',
-  'random_page_cost=4',
-  'effective_io_concurrency=1',
-  'synchronous_commit=on',
-  'fsync=on',
-  'full_page_writes=on',
-  'max_wal_size=1024',
-  'checkpoint_timeout=300',
-  'jit=on',
-  'max_parallel_workers_per_gather=2',
-  'host_architecture=arm64',
-  'node=v26.5.1',
-  'npm=11.17.0',
-  'deno=2.9.4 aarch64-apple-darwin',
-  'deno_v8=15.0.245.2-rusty',
-  'deno_typescript=6.0.3',
-  'docker=29.6.2 dfc4efb',
-  'docker_compose=5.3.1',
-  'fresh_container=true',
-  'container_overlap_count=0',
-  'benchmark_process_overlap_count=0',
-  'preflight_app_data_store_rows=0',
-  'preflight_client_state_events_rows=0',
-  'preflight_group_state_events_rows=0',
-  'preflight_resource_inbox_rows=0',
-  'preflight_resource_inbox_results_rows=0',
-  'preflight_runtime_state_store_rows=0',
-  'preflight_automatic_maintenance_count=0',
-  'postflight_automatic_maintenance_count=0',
-].join('\n')}\n`;
+const IMAGE_HASH = '081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171';
+const ENVIRONMENT = (
+  `image_ref=postgres@sha256:${IMAGE_HASH};image_id=sha256:${IMAGE_HASH};` +
+  `repo_digest=postgres@sha256:${IMAGE_HASH};platform=linux;image_architecture=arm64;` +
+  'image_os=linux;entrypoint=docker-entrypoint.sh;command=postgres -c autovacuum=off;' +
+  'shm_size=268435456;memory=4294967296;memory_swap=4294967296;nano_cpus=4000000000;' +
+  'cpu_period=0;cpu_quota=0;cpu_set=;server_version=16.14 (Debian 16.14-1.pgdg13+1);' +
+  'autovacuum=off;track_counts=on;shared_buffers=16384;work_mem=4096;' +
+  'maintenance_work_mem=65536;effective_cache_size=524288;random_page_cost=4;' +
+  'effective_io_concurrency=1;synchronous_commit=on;fsync=on;full_page_writes=on;' +
+  'max_wal_size=1024;checkpoint_timeout=300;jit=on;max_parallel_workers_per_gather=2;' +
+  'host_architecture=arm64;node=v26.5.1;npm=11.17.0;deno=2.9.4 aarch64-apple-darwin;' +
+  'deno_v8=15.0.245.2-rusty;deno_typescript=6.0.3;docker=29.6.2 dfc4efb;' +
+  'docker_compose=5.3.1;fresh_container=true;container_overlap_count=0;' +
+  'benchmark_process_overlap_count=0;preflight_app_data_store_rows=0;' +
+  'preflight_client_state_events_rows=0;preflight_group_state_events_rows=0;' +
+  'preflight_resource_inbox_rows=0;preflight_resource_inbox_results_rows=0;' +
+  'preflight_runtime_state_store_rows=0;preflight_automatic_maintenance_count=0;' +
+  'postflight_automatic_maintenance_count=0;'
+).replaceAll(';', '\n');
 
 describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () => {
   it('pools A-B-B-A sources into validated 18-run artifacts without losing raw samples', () => {
@@ -90,6 +61,22 @@ describe('API-v1 state-write order-balanced pooling', { timeout: 120_000 }, () =
       sources.approvedBaseSecond,
     );
     expectSamplesPreserved(pooled.candidate, sources.candidateFirst, sources.candidateSecond);
+  });
+
+  it('keeps the legacy API result exact through the explicit-position entry point', () => {
+    const input = createPoolingInput();
+    expect(poolApiV1StateWriteResultsForPositions(input, LEGACY_SOURCE_POSITIONS)).toEqual(
+      poolApiV1StateWriteResults(input),
+    );
+  });
+
+  it('fails closed for every malformed explicit-position descriptor family', () => {
+    for (const [expected, mutate] of explicitPositionFailures()) {
+      const input = createPoolingInput();
+      const descriptors: any[] = structuredClone(LEGACY_SOURCE_POSITIONS);
+      mutate({ descriptors, input });
+      expect(() => poolApiV1StateWriteResultsForPositions(input, descriptors)).toThrow(expected);
+    }
   });
 
   it('rejects a source that the unchanged artifact validator rejects', () => {
@@ -256,18 +243,40 @@ interface PoolingSourceText {
   environmentText: string;
   sourceName: string;
 }
-
 interface PoolingInput {
   expectedApprovedBaseCommit: string;
   expectedCandidateCommit: string;
-  sources: {
-    approvedBaseFirst: PoolingSourceText;
-    candidateFirst: PoolingSourceText;
-    candidateSecond: PoolingSourceText;
-    approvedBaseSecond: PoolingSourceText;
-  };
+  sources: Record<string, PoolingSourceText>;
 }
-
+const LEGACY_SOURCE_POSITIONS = [
+  { key: 'approvedBaseFirst', position: 1, role: 'approved-base' },
+  { key: 'candidateFirst', position: 2, role: 'candidate' },
+  { key: 'candidateSecond', position: 3, role: 'candidate' },
+  { key: 'approvedBaseSecond', position: 4, role: 'approved-base' },
+] as const;
+function explicitPositionFailures(): readonly [RegExp, (context: any) => void][] {
+  return [
+    [/dense four-entry array/, ({ descriptors }) => delete descriptors[1]],
+    [/fields must be exactly/, ({ descriptors }) => (descriptors[0].extra = true)],
+    [/fields must be exactly/, ({ descriptors }) => delete descriptors[0].key],
+    [/key must be non-empty/, ({ descriptors }) => (descriptors[0].key = '')],
+    [/keys must be unique/, ({ descriptors }) => (descriptors[1].key = descriptors[0].key)],
+    [/positions must be 1, 2, 3, 4/, ({ descriptors }) => descriptors.reverse()],
+    [/positions must be 1, 2, 3, 4/, ({ descriptors }) => (descriptors[0].position = 2)],
+    [
+      /two approved-base and two candidate/,
+      ({ descriptors }) => (descriptors[1].role = 'approved-base'),
+    ],
+    [/role is unsupported/, ({ descriptors }) => (descriptors[0].role = 'unsupported')],
+    [/position 4 source is incomplete/, ({ input }) => delete input.sources.approvedBaseSecond],
+    [/generatedAt values must increase in explicit position order/, makeThirdSourceTooEarly],
+  ];
+}
+function makeThirdSourceTooEarly({ input }: any): void {
+  const source = JSON.parse(input.sources.candidateSecond.artifactText);
+  source.generatedAt = '2026-08-01T00:01:30.000Z';
+  input.sources.candidateSecond.artifactText = JSON.stringify(source);
+}
 function createPoolingInput(): PoolingInput {
   return {
     expectedApprovedBaseCommit: APPROVED_BASE_COMMIT,
@@ -300,14 +309,12 @@ function createPoolingInput(): PoolingInput {
     },
   };
 }
-
 interface CreateSourceInput {
   readonly candidate: boolean;
   readonly artifactId: string;
   readonly gitCommit: string;
   readonly time: string;
 }
-
 function createSource(input: CreateSourceInput): PoolingSourceText {
   const { candidate, artifactId, gitCommit, time } = input;
   return {
@@ -323,13 +330,11 @@ function createSource(input: CreateSourceInput): PoolingSourceText {
     sourceName: `${artifactId}.json`,
   };
 }
-
 function parseSources(input: PoolingInput): Record<string, any> {
   return Object.fromEntries(
     Object.entries(input.sources).map(([name, source]) => [name, JSON.parse(source.artifactText)]),
   );
 }
-
 function expectSamplesPreserved(pooled: any, first: any, second: any): void {
   for (const pooledWorkload of pooled.workloads) {
     const sourceSamples = [first, second].flatMap(
@@ -342,7 +347,6 @@ function expectSamplesPreserved(pooled: any, first: any, second: any): void {
     );
   }
 }
-
 function withoutRunIndex(sample: any): any {
   const { runIndex: _runIndex, ...preserved } = sample;
   return preserved;
@@ -371,7 +375,6 @@ interface WriterOutputPaths {
   readonly candidateOut: string;
   readonly manifestOut: string;
 }
-
 function toWriterArguments(
   paths: Record<string, { artifact: string; environment: string }>,
   output: WriterOutputPaths,
@@ -392,7 +395,6 @@ function toWriterArguments(
     `--manifest-out=${output.manifestOut}`,
   ];
 }
-
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }

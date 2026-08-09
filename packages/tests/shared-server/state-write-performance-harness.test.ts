@@ -4,11 +4,18 @@ import {
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 import {
+  GROUP_TOPOLOGY_CONFLICT_REASON,
+  GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
+  GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
+} from '../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
+import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
 } from './state-write-performance-artifact-fixture.ts';
 import { swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
+const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
+const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
   it('accepts a complete AppInbox/ResourceInbox candidate and legacy baseline', () => {
     const candidate = createStateWritePerformanceArtifact(true);
@@ -29,11 +36,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     const sample = candidate.workloads[0].samples[0];
     sample.durableEvidence.intermediateMutationIntents.push({ intentId: 'forbidden' });
     sample.attemptObservations[0].source = 'group-state-service.mutation.conflict';
-    expect(validateStateWriteArtifact(candidate)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('intermediateMutationIntents must be exactly empty'),
-        expect.stringContaining('production ResourceInbox release telemetry'),
-      ]),
+    expectStateWriteArtifactIssues(
+      candidate,
+      'intermediateMutationIntents must be exactly empty',
+      'production ResourceInbox release telemetry',
     );
   });
 
@@ -54,9 +60,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     for (const field of ['retryDelayMs', 'dueAgeMs', 'transactionDurationMs'] as const) {
       const candidate = createStateWritePerformanceArtifact(true);
       candidate.workloads[0].samples[0].durableEvidence.appInbox[0][field] = -1;
-      expect(validateStateWriteArtifact(candidate)).toEqual(
-        expect.arrayContaining([expect.stringContaining('appInbox[0] is malformed')]),
-      );
+      expectStateWriteArtifactIssues(candidate, 'appInbox[0] is malformed');
     }
     const lane = createStateWritePerformanceArtifact(true);
     lane.workloads[0].samples[0].durableEvidence.appInbox[0].selectedLane = 'unknown';
@@ -70,12 +74,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       ...inventedSample.attemptObservations[0],
       attempt: 2,
     });
-    expect(validateStateWriteArtifact(invented)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('must reconcile exactly to durable AppInbox attempts'),
-      ]),
-    );
-
+    expectStateWriteArtifactIssues(invented, 'must reconcile exactly to durable AppInbox attempts');
     const zeroDelay = createStateWritePerformanceArtifact(true);
     const sample = zeroDelay.workloads[0].samples[0];
     const first = sample.attemptObservations[0];
@@ -89,11 +88,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       terminal: true,
     });
     sample.durableEvidence.appInbox[0].attempts = 2;
-    expect(validateStateWriteArtifact(zeroDelay)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('nonterminal retryDelayMs must be positive'),
-      ]),
-    );
+    expectStateWriteArtifactIssues(zeroDelay, 'nonterminal retryDelayMs must be positive');
   });
 
   it('distinguishes typed transient retries from optimistic conflicts', () => {
@@ -114,26 +109,20 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     sample.durableEvidence.appInbox[0].attempts = 2;
     refreshStateWritePerformanceWorkload(candidate.workloads[0]);
     expect(validateStateWriteArtifact(candidate)).toEqual([]);
-
     first.outcome = 'conflicted';
-    expect(validateStateWriteArtifact(candidate)).toEqual(
-      expect.arrayContaining([expect.stringContaining('only recognized optimistic conflicts')]),
-    );
+    expectStateWriteArtifactIssues(candidate, 'only recognized optimistic conflicts');
   });
 
   it('rejects malformed durable results and receipt/effect identity mismatches', () => {
     const malformed = createStateWritePerformanceArtifact(true);
     delete malformed.workloads[0].samples[0].durableEvidence.appInbox[0].durableResult;
-    expect(validateStateWriteArtifact(malformed)).toEqual(
-      expect.arrayContaining([expect.stringContaining('persisted durable result is malformed')]),
-    );
+    expectStateWriteArtifactIssues(malformed, 'persisted durable result is malformed');
 
     const mismatched = createStateWritePerformanceArtifact(true);
     mismatched.workloads[0].samples[0].durableEvidence.receipts[0].outboxIds = ['invented-effect'];
-    expect(validateStateWriteArtifact(mismatched)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('receipt outbox IDs must match exact ResourceInbox effects'),
-      ]),
+    expectStateWriteArtifactIssues(
+      mismatched,
+      'receipt outbox IDs must match exact ResourceInbox effects',
     );
 
     const embeddedTamper = createStateWritePerformanceArtifact(true);
@@ -141,12 +130,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       (entry: any) => entry.commandType.startsWith('GROUP_PRESENCE_'),
     );
     embedded.durableResult.outboxIds = ['invented-embedded-effect'];
-    expect(validateStateWriteArtifact(embeddedTamper)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining(
-          'embedded result receipt must match authoritative receipt and effects',
-        ),
-      ]),
+    expectStateWriteArtifactIssues(
+      embeddedTamper,
+      'embedded result receipt must match authoritative receipt and effects',
     );
 
     const arbitraryKey = createStateWritePerformanceArtifact(true);
@@ -154,9 +140,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       (entry: any) => entry.commandType.startsWith('CLIENT_'),
     );
     client.durableResult.unreceipted = true;
-    expect(validateStateWriteArtifact(arbitraryKey)).toEqual(
-      expect.arrayContaining([expect.stringContaining('persisted durable result is malformed')]),
-    );
+    expectStateWriteArtifactIssues(arbitraryKey, 'persisted durable result is malformed');
     for (const prefix of ['CLIENT_', 'GROUP_']) {
       const swapped = createStateWritePerformanceArtifact(true);
       swapCompleteDurableResults(swapped, prefix);
@@ -328,4 +312,89 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
       out: 'tmp/perf/candidate.json',
     });
   });
+
+  it('binds precommitted topology conflict reasons before measurement', async () => {
+    const bench = await import('../../../scripts/perf/api-v1-state-write-concurrency-bench.ts');
+    const artifactOwner =
+      await import('../../../scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts');
+    const input = createConflictReasonInput();
+    const parseReasons = (text: string | undefined) =>
+      bench.parseGroupTopologyRegressionReasons(text, CANDIDATE_IDENTITY);
+    expect(parseReasons(undefined)).toEqual([]);
+    expect(parseReasons(JSON.stringify(input))).toEqual(input.reasons);
+    expect(
+      bench.parseBenchmarkOptions(['--regression-reasons-file=tmp/perf/topology-reasons.json']),
+    ).toMatchObject({ regressionReasonsFile: 'tmp/perf/topology-reasons.json' });
+    const createArtifact = (regressionReasons: readonly unknown[]) =>
+      artifactOwner.createStateWriteBenchmarkArtifact({
+        generatedAt: '2026-08-09T00:00:00.000Z',
+        gitIdentity: CANDIDATE_IDENTITY,
+        options: bench.parseBenchmarkOptions([]),
+        regressionReasons,
+        workloads: [{ name: 'sentinel-workload' }],
+      });
+    expect(createArtifact(parseReasons(JSON.stringify(input))).regressionReasons).toEqual(
+      input.reasons,
+    );
+    expect(createArtifact([]).regressionReasons).toEqual([]);
+    const artifactBytes = new TextEncoder().encode(
+      `${JSON.stringify(
+        createArtifact([
+          { workload: 'shared', metric: 'sql.statements', reason: 'precommitted reason' },
+        ]),
+        null,
+        2,
+      )}\n`,
+    );
+    const artifactDigest = await crypto.subtle.digest('SHA-256', artifactBytes);
+    expect(
+      Array.from(new Uint8Array(artifactDigest), (byte) => byte.toString(16).padStart(2, '0')).join(
+        '',
+      ),
+    ).toBe('70a977c657cd1d0ae850b291d19872a73932c6e46050855acfed3131741f70dd');
+    expect(() =>
+      bench.parseBenchmarkOptions(['--regression-reasons-file=tmp/perf/../topology-reasons.json']),
+    ).toThrow(/must remain under tmp\/perf/);
+    for (const mutate of conflictReasonFailures()) {
+      const malformed = structuredClone(input);
+      mutate(malformed);
+      expect(() => parseReasons(JSON.stringify(malformed))).toThrow(/conflict reason/);
+    }
+  });
 });
+const CANDIDATE_IDENTITY = { commit: CANDIDATE_COMMIT, tree: CANDIDATE_TREE } as const;
+function createConflictReasonInput(): any {
+  const metrics = [
+    'sql.statements',
+    'sql.rowsRead',
+    'sql.serializedResultBytes',
+    'postgres.transactionDurationMs',
+  ];
+  return {
+    schemaVersion: GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
+    baseCommit: GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
+    candidateCommit: CANDIDATE_COMMIT,
+    candidateTree: CANDIDATE_TREE,
+    reasons: ['uncontended', 'shared', 'hot'].flatMap((workload) =>
+      metrics.map((metric) => ({ workload, metric, reason: GROUP_TOPOLOGY_CONFLICT_REASON })),
+    ),
+  };
+}
+function conflictReasonFailures(): readonly ((input: any) => void)[] {
+  return [
+    (input) => (input.extra = true),
+    (input) => (input.baseCommit = CANDIDATE_COMMIT),
+    (input) => (input.candidateCommit = GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT),
+    (input) => (input.candidateTree = GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT),
+    (input) => input.reasons.pop(),
+    (input) => (input.reasons[0].metric = 'sql.unsupported'),
+    (input) => (input.reasons[0].reason = 'written after measurement'),
+    (input) => ([input.reasons[0], input.reasons[1]] = [input.reasons[1], input.reasons[0]]),
+  ];
+}
+
+function expectStateWriteArtifactIssues(candidate: unknown, ...messages: readonly string[]): void {
+  expect(validateStateWriteArtifact(candidate)).toEqual(
+    expect.arrayContaining(messages.map((message) => expect.stringContaining(message))),
+  );
+}
