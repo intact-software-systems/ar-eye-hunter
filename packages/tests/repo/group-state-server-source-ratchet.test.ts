@@ -118,7 +118,7 @@ const taskSixTestOwners = [
   'packages/tests/shared-server/mutation-routing-reachability.ts',
   'packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts',
   'packages/tests/shared-server/authoritative-mutation-source-analysis.ts',
-  'packages/tests/shared-server/topology-app-inbox-ownership.test.ts',
+  'packages/tests/shared-server/topology/inbox/topology-app-inbox-ownership.test.ts',
 ] as const;
 
 const mechanicalRuleIds = new Set([
