@@ -1,7 +1,7 @@
 # Rallar Group Formation Phase 0: Storm Metrics And Formation-Burst Baseline
 
-Status: implemented on `codex/group-formation-phase0-storm-metrics`
-(PR #113); awaiting merge and the default-branch Hetzner manifests run.
+Status: complete. Merged to `main` as `be6acbfe` (PR #113); all local and
+remote completion gates passed (see the completion record below).
 
 ## Progress notes (2026-08-09)
 
@@ -29,7 +29,38 @@ Status: implemented on `codex/group-formation-phase0-storm-metrics`
   under the bench); the live-rtc-3 browser validation fails identically on
   the merge base in this environment (peer establishment timeouts), so the
   live capture of the new diagnostics fields remains open on a healthy RTC
-  host.
+  host. Both items were resolved later the same day; see the completion
+  record.
+
+## Completion record (2026-08-09, post-merge)
+
+- Both open items above were resolved before merge. The perf comparative
+  gate **passed** under the unmodified comparator once each side was
+  benchmarked against a freshly migrated database (earlier failures were
+  order-confounded by database residue; full numbers and the four
+  reason-recorded sub-1% SQL median deltas are in the PR #113 comments).
+  live-rtc-3 went **green** after fixing the local environment (missing
+  `RALLAR_AUTH_CREDENTIAL_SECRET` for postgres-mode env files and a
+  Docker-recreated Postgres volume), and the captured
+  `live-rtc-diagnostics-*.json` artifacts verify the new
+  `groupManager`/`overlayAdoption` fields with plausible counters.
+- The branch was rebased onto `main` at `72166816` (middleware auto-merge
+  semantically verified against PR #110's queue pub-sub bridge option;
+  reviewed-source blob pin recomputed; style-lineage manifests re-anchored
+  to the new merge base). Final feature-branch commit: `4cd9d752`.
+- Local completion gates from the final tree: `npm run test:unit`
+  (6,536 passed), `npm run test:ci` (exit 0), `npm run build` (exit 0);
+  `npm run check:repo-style:changed -- origin/main HEAD` passed with zero
+  findings; api-v1 `deno task test` 407 passed.
+- Remote gates: **Branch Release Gate** run 31320994588 succeeded on
+  `4cd9d752`; **API v1 Medium-Scale Gate** run 31320996882 succeeded;
+  **Run Hetzner Supported Distributed Manifests** run 31321817717
+  succeeded on the resulting default-branch commit `be6acbfe`.
+- Follow-ups per the follow-up governance: issue #136 (live-rtc-3 peer
+  readiness flakes on databases dirtied by earlier heavy runs) created;
+  issue #119 (`db:test:up` self-containment) reused with new evidence.
+  The perf comparator's retired campaign rules were addressed separately
+  in PR #134 (`8a42574d`), merged the same day.
 
 ## Context
 
