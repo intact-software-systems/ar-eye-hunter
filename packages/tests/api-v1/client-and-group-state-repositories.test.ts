@@ -15,7 +15,10 @@ import type {
     GroupPresenceSummary,
     GroupPresenceSession,
 } from '@shared/api/group-types.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import {
+    ClientStateRepository,
+    ClientStateRepositoryInvariantCorruptionError,
+} from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
     groupStateGroupStorageKey,
@@ -50,7 +53,7 @@ describe('ClientStateRepository', () => {
             .toBe(false);
     });
 
-    it('normalizes explicit pre-contract client rows at the persisted boundary', async () => {
+    it('fails closed when a persisted client row omits its workspace identity', async () => {
         const repository = new FakeRuntimeStateRepository();
         const clientRepository = new ClientStateRepository(repository, {
             events: new InMemoryClientStateEventStore(),
@@ -76,12 +79,9 @@ describe('ClientStateRepository', () => {
             NEVER_EXPIRE_AT_TIMESTAMP,
         );
 
-        await expect(clientRepository.findPrincipal(canonical)).resolves.toEqual({
-            ...canonical,
-            displayName: null,
-            created: createClientAuditStamp(1),
-            updated: createClientAuditStamp(2),
-        });
+        await expect(clientRepository.findPrincipal(canonical)).rejects.toBeInstanceOf(
+            ClientStateRepositoryInvariantCorruptionError,
+        );
     });
 
     it('fails closed when a client row identity differs from its canonical slot', async () => {

@@ -32,6 +32,7 @@ import {
   validateClientMutation,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { defaultClientStateEventStoreFor } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
 import type {
   RuntimeStateConditionalWriteResult,
   RuntimeStateEntry,
@@ -70,6 +71,52 @@ import {
 } from './client-mutation-concurrency-test-runtime.ts';
 
 describe('client mutation persisted-state validation', () => {
+  it('fails closed when a direct persisted principal read omits its workspace identity', async () => {
+    const runtime = new AggregateBarrierRepository();
+    await connect(runtime, 'principal-session', 'principal-generation', BASE_EPOCH_MS);
+    await removePersistedWorkspaceId(runtime, 'client-state:principals');
+
+    await expect(
+      new ClientStateRepository(runtime).findPrincipal(principalRef('alice')),
+    ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+  });
+
+  it('fails closed when a persisted instance list entry omits its workspace identity', async () => {
+    const runtime = new AggregateBarrierRepository();
+    await connect(runtime, 'instance-session', 'instance-generation', BASE_EPOCH_MS);
+    await removePersistedWorkspaceId(runtime, 'client-state:instances');
+
+    await expect(
+      new ClientStateRepository(runtime).listInstances(principalRef('alice')),
+    ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+  });
+
+  it('fails closed when a persisted session snapshot entry omits its workspace identity', async () => {
+    const runtime = new AggregateBarrierRepository();
+    await connect(runtime, 'snapshot-session', 'snapshot-generation', BASE_EPOCH_MS);
+    await removePersistedWorkspaceId(runtime, 'client-state:sessions');
+
+    await expect(
+      new ClientStateRepository(runtime).readSnapshot(principalRef('alice')),
+    ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+  });
+
+  it('fails closed when a persisted event read omits its workspace identity', async () => {
+    const runtime = new AggregateBarrierRepository();
+    await connect(runtime, 'event-session', 'event-generation', BASE_EPOCH_MS);
+    const eventStore = defaultClientStateEventStoreFor(runtime);
+    const event = eventStore.events[0];
+    if (!event) throw new Error('Expected a stored client event');
+    const { workspaceId: ignoredWorkspaceId, ...eventWithoutWorkspaceId } = event;
+    void ignoredWorkspaceId;
+    eventStore.events[0] = eventWithoutWorkspaceId as typeof event;
+    vi.spyOn(eventStore, 'listClientEvents').mockResolvedValue(eventStore.events);
+
+    await expect(
+      new ClientStateRepository(runtime).listEvents(principalRef('alice')),
+    ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
+  });
+
   it('fails closed when an active persisted session has no matching instance', async () => {
     const runtime = new AggregateBarrierRepository();
     await connect(runtime, 'orphan-session', 'orphan-generation', BASE_EPOCH_MS);
@@ -310,3 +357,20 @@ const malformedNoOpVariants = [
   'divergent-revision',
   'unexpected-outbox',
 ] as const;
+
+async function removePersistedWorkspaceId(
+  runtime: AggregateBarrierRepository,
+  namespace: 'client-state:principals' | 'client-state:instances' | 'client-state:sessions',
+): Promise<void> {
+  const [entry] = await runtime.findAllEntries(namespace);
+  if (!entry) throw new Error(`Expected a stored client-state ${namespace} entry`);
+  const persisted = JSON.parse(entry.value) as Record<string, unknown>;
+  const { workspaceId: ignoredWorkspaceId, ...persistedWithoutWorkspaceId } = persisted;
+  void ignoredWorkspaceId;
+  await runtime.upsert(
+    namespace,
+    entry.key,
+    JSON.stringify(persistedWithoutWorkspaceId),
+    Number.MAX_SAFE_INTEGER,
+  );
+}

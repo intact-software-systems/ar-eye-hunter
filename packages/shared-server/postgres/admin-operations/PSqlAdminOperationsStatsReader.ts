@@ -5,16 +5,13 @@ import type {
   AdminOperationsQueuesResponse,
   AdminOperationsStateResponse,
   AdminOperationsSystemResponse,
-  AdminPruneExpiredCategory,
 } from '@shared/api/admin-operations-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
-  AdminOperationsPruner,
   AdminOperationsReadInput,
   AdminOperationsStatsReader,
 } from '../../rallar-system/admin-operations/AdminOperationsService.ts';
-import type { AdminPruneExpiredOptions } from '../../rallar-system/admin-operations/admin-prune-options.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import {
   decodeGroupStateGroupStorageKey,
@@ -28,6 +25,9 @@ import {
   validatePersistedGroupMember,
   validatePersistedGroupPresenceSession,
 } from '../../rallar-system/services/group-state-mutations.ts';
+import { PSqlClientStateAdminStatsReader } from './p-sql-client-state-admin-stats-reader.ts';
+
+export { PSqlAdminOperationsPruner } from './p-sql-admin-operations-pruner.ts';
 const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
 export type PSqlAdminOperationsStatsReaderOptions = Readonly<{
   now: () => number;
@@ -50,6 +50,10 @@ type RuntimeStateRow = Readonly<{
   store_key: string;
   store_value: string;
 }>;
+type GroupRuntimeStateNamespace =
+  | 'group-state:groups'
+  | 'group-state:members'
+  | 'group-state:sessions';
 type QueueTypeStatusRow = Readonly<{
   type_id: string;
   status: string;
@@ -70,10 +74,14 @@ type CrdtStorageRow = Readonly<{
   stored_update_bytes: number | string | bigint | null;
 }>;
 export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReader {
+  private readonly clientStateStatsReader: PSqlClientStateAdminStatsReader;
+
   constructor(
     private readonly sql: PSqlSql,
     private readonly options: PSqlAdminOperationsStatsReaderOptions,
-  ) {}
+  ) {
+    this.clientStateStatsReader = new PSqlClientStateAdminStatsReader(sql, options);
+  }
   async readQueues(_input: AdminOperationsReadInput): Promise<AdminOperationsQueuesResponse> {
     const [queueTotal, queueExpired, queueGroups, resultTotal, resultExpired, resultGroups] =
       await Promise.all([
@@ -106,50 +114,33 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     }
     const scope = input.scope;
     const [
-      principalRows,
-      clientSessionRows,
-      groupRows,
-      memberRows,
-      groupSessionRows,
-      recentClientEvents,
-      recentGroupEvents,
+      clientFacts, groupRows, memberRows, groupSessionRows,
+      recentClientEvents, recentGroupEvents,
     ] = await Promise.all([
-      this.readLiveRuntimeRows('client-state:principals', scope),
-      this.readLiveRuntimeRows('client-state:sessions', scope),
+      this.clientStateStatsReader.readScopedFacts(scope),
       this.readLiveRuntimeRows('group-state:groups', scope),
       this.readLiveRuntimeRows('group-state:members', scope),
       this.readLiveRuntimeRows('group-state:sessions', scope),
-      this.countRecentClientEvents(scope),
+      this.clientStateStatsReader.countRecentEvents(scope),
       this.countRecentGroupEvents(scope),
     ]);
     validateScopedGroupRuntimeRows('group-state:groups', groupRows, scope);
     validateScopedGroupRuntimeRows('group-state:members', memberRows, scope);
     validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows, scope);
-    const nowEpochMs = this.options.now();
-    const activeClientSessions = clientSessionRows.filter((row) =>
-      isActiveClientSessionRow(row, nowEpochMs)
-    );
-    const onlinePrincipalIds = new Set(
-      activeClientSessions
-        .map(readClientPrincipalIdentity)
-        .filter((identity): identity is string => identity !== undefined),
-    );
+    const cutoffEpochMs = this.options.now();
+    const clientStats = this.clientStateStatsReader.summarizeScoped(clientFacts, cutoffEpochMs);
     const activeMembers = memberRows.filter(isActiveGroupMemberRow);
     const onlineGroupMemberIds = new Set(
       groupSessionRows
-        .filter((row) => isActiveGroupSessionRow(row, nowEpochMs))
+        .filter((row) => isActiveGroupSessionRow(row, cutoffEpochMs))
         .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
         .filter((identity): identity is string => identity !== undefined),
     );
     return {
       ...this.base(scope),
-      clients: {
-        totalPrincipals: principalRows.length,
-        onlinePrincipals: onlinePrincipalIds.size,
-        activeSessions: activeClientSessions.length,
-      },
+      clients: clientStats,
       groups: {
-        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, nowEpochMs)).length,
+        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, cutoffEpochMs)).length,
         totalActiveMembers: activeMembers.length,
         onlineMembers: activeMembers.filter((member) => {
           const identity = readCanonicalGroupMemberIdentity(member, 'member');
@@ -164,44 +155,36 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
   }
   private async readGlobalState(): Promise<AdminOperationsStateResponse> {
     const [
-      totalPrincipals,
-      onlinePrincipals,
-      activeSessions,
+      clientStats,
       groupRows,
       memberRows,
       groupSessionRows,
       recentClientEvents,
       recentGroupEvents,
     ] = await Promise.all([
-      this.countLiveRuntimeRows('client-state:principals'),
-      this.countGlobalActiveClientPrincipals(),
-      this.countGlobalActiveClientSessions(),
+      this.clientStateStatsReader.readGlobal(),
       this.readLiveRuntimeRows('group-state:groups', undefined),
       this.readLiveRuntimeRows('group-state:members', undefined),
       this.readLiveRuntimeRows('group-state:sessions', undefined),
-      this.countRecentClientEvents(),
+      this.clientStateStatsReader.countRecentEvents(),
       this.countRecentGroupEvents(),
     ]);
     validateScopedGroupRuntimeRows('group-state:groups', groupRows);
     validateScopedGroupRuntimeRows('group-state:members', memberRows);
     validateScopedGroupRuntimeRows('group-state:sessions', groupSessionRows);
-    const nowEpochMs = this.options.now();
+    const cutoffEpochMs = this.options.now();
     const activeMembers = memberRows.filter(isActiveGroupMemberRow);
     const onlineGroupMemberIds = new Set(
       groupSessionRows
-        .filter((row) => isActiveGroupSessionRow(row, nowEpochMs))
+        .filter((row) => isActiveGroupSessionRow(row, cutoffEpochMs))
         .map((row) => readCanonicalGroupMemberIdentity(row, 'session'))
         .filter((identity): identity is string => identity !== undefined),
     );
     return {
       ...this.base(),
-      clients: {
-        totalPrincipals,
-        onlinePrincipals,
-        activeSessions,
-      },
+      clients: clientStats,
       groups: {
-        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, nowEpochMs)).length,
+        activeGroups: groupRows.filter((row) => isActiveGroupRow(row, cutoffEpochMs)).length,
         totalActiveMembers: activeMembers.length,
         onlineMembers: activeMembers.filter((member) => {
           const identity = readCanonicalGroupMemberIdentity(member, 'member');
@@ -249,7 +232,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
       this.countRows('app_data_store'),
       this.countExpired('app_data_store', 'expire_at_ts'),
       this.countAppDataByNamespaceStore(),
-      this.countClientEvents(),
+      this.clientStateStatsReader.countEvents(),
       this.countGroupEvents(),
     ]);
     return {
@@ -363,10 +346,10 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
   }
 
   private async readLiveRuntimeRows(
-    namespace: string,
+    namespace: GroupRuntimeStateNamespace,
     scope: StateScope | undefined,
   ): Promise<readonly RuntimeStateRow[]> {
-    const prefix = scope ? runtimeStateScopePrefix(namespace, scope) : undefined;
+    const prefix = scope ? `${groupStateScopeStorageKey(scope)}:` : undefined;
     let rows: readonly RuntimeStateRow[];
     if (prefix) {
       const prefixEnd = toExclusivePrefixEnd(prefix);
@@ -391,71 +374,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     return rows;
   }
 
-  private async countLiveRuntimeRows(namespace: string): Promise<number> {
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count
-            from runtime_state_store
-            where store_namespace = ${namespace}
-              and expire_at_ts > now()
-        `)[0]?.count,
-    );
-  }
-
-  private async countGlobalActiveClientSessions(): Promise<number> {
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count
-            from runtime_state_store
-            where store_namespace = 'client-state:sessions'
-              and expire_at_ts > now()
-              and store_value::jsonb ->> 'status' = 'active'
-              and store_value::jsonb ->> 'disconnectedAtEpochMs' is null
-              and (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
-        `)[0]?.count,
-    );
-  }
-
-  private async countGlobalActiveClientPrincipals(): Promise<number> {
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count
-            from (
-                select distinct
-                    store_value::jsonb ->> 'applicationId' as application_id,
-                    coalesce(store_value::jsonb ->> 'workspaceId', '_') as workspace_id,
-                    store_value::jsonb ->> 'principalId' as principal_id
-                from runtime_state_store
-                where store_namespace = 'client-state:sessions'
-                  and expire_at_ts > now()
-                  and store_value::jsonb ->> 'status' = 'active'
-                  and store_value::jsonb ->> 'disconnectedAtEpochMs' is null
-                  and store_value::jsonb ->> 'applicationId' is not null
-                  and store_value::jsonb ->> 'principalId' is not null
-                  and (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
-            ) principals
-        `)[0]?.count,
-    );
-  }
-
-  private async countClientEvents(scope?: StateScope): Promise<number> {
-    if (scope) {
-      return toNumber(
-        (await this.sql<CountRow[]>`
-                select count(*) as count
-                from client_state_events
-                where application_id = ${scope.applicationId}
-                  and workspace_key = ${scope.workspaceId}
-            `)[0]?.count,
-      );
-    }
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count from client_state_events
-        `)[0]?.count,
-    );
-  }
-
   private async countGroupEvents(scope?: StateScope): Promise<number> {
     if (scope) {
       return toNumber(
@@ -470,29 +388,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
     return toNumber(
       (await this.sql<CountRow[]>`
             select count(*) as count from group_state_events
-        `)[0]?.count,
-    );
-  }
-
-  private async countRecentClientEvents(scope?: StateScope): Promise<number> {
-    const recentSinceEpochMs = this.options.now() -
-      (this.options.recentEventWindowMs ?? DEFAULT_RECENT_EVENT_WINDOW_MS);
-    if (scope) {
-      return toNumber(
-        (await this.sql<CountRow[]>`
-                select count(*) as count
-                from client_state_events
-                where application_id = ${scope.applicationId}
-                  and workspace_key = ${scope.workspaceId}
-                  and occurred_at_epoch_ms >= ${recentSinceEpochMs}
-            `)[0]?.count,
-      );
-    }
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count
-            from client_state_events
-            where occurred_at_epoch_ms >= ${recentSinceEpochMs}
         `)[0]?.count,
     );
   }
@@ -628,149 +523,6 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
   }
 }
 
-export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
-  constructor(private readonly sql: PSqlSql) {}
-
-  async countExpired(
-    category: AdminPruneExpiredCategory,
-    options: AdminPruneExpiredOptions,
-  ): Promise<number> {
-    switch (category) {
-      case 'runtime-state':
-        return toNumber(
-          (await this.sql<CountRow[]>`
-                    select count(*) as count from runtime_state_store where expire_at_ts <= ${new Date(options.cutoffEpochMs)}
-                `)[0]?.count,
-        );
-      case 'resource-inbox':
-        return toNumber(
-          (await this.sql<CountRow[]>`
-                    select count(*) as count from resource_inbox where expire_ts <= ${new Date(options.cutoffEpochMs)}
-                `)[0]?.count,
-        );
-      case 'resource-inbox-results':
-        return toNumber(
-          (await this.sql<CountRow[]>`
-                    select count(*) as count from resource_inbox_results where expire_ts <= ${new Date(options.cutoffEpochMs)}
-                `)[0]?.count,
-        );
-      case 'app-data':
-        return await this.countExpiredAppData(options);
-    }
-  }
-
-  async pruneExpired(
-    category: AdminPruneExpiredCategory,
-    options: AdminPruneExpiredOptions,
-  ): Promise<number> {
-    switch (category) {
-      case 'runtime-state':
-        return (await this.sql<{ store_key: string }[]>`
-                    with expired as (
-                      select store_namespace, store_key from runtime_state_store
-                      where expire_at_ts <= ${new Date(options.cutoffEpochMs)}
-                      order by store_namespace, store_key limit 100
-                    )
-                    delete from runtime_state_store
-                    where (store_namespace, store_key) in (
-                      select store_namespace, store_key from expired
-                    )
-                    returning store_key
-                `).length;
-      case 'resource-inbox':
-        return (await this.sql<{ ri_row_id: string | number }[]>`
-                    with expired as (
-                      select ri_row_id from resource_inbox
-                      where expire_ts <= ${new Date(options.cutoffEpochMs)} order by ri_row_id limit 100
-                    )
-                    delete from resource_inbox
-                    where ri_row_id in (select ri_row_id from expired)
-                    returning ri_row_id
-                `).length;
-      case 'resource-inbox-results':
-        return (await this.sql<{ ris_row_id: string | number }[]>`
-                    with expired as (
-                      select ris_row_id from resource_inbox_results
-                      where expire_ts <= ${new Date(options.cutoffEpochMs)} order by ris_row_id limit 100
-                    )
-                    delete from resource_inbox_results
-                    where ris_row_id in (select ris_row_id from expired)
-                    returning ris_row_id
-                `).length;
-      case 'app-data':
-        return await this.pruneExpiredAppData(options);
-    }
-  }
-
-  private async countExpiredAppData(options: AdminPruneExpiredOptions): Promise<number> {
-    const namespace = requireAppDataNamespace(options);
-    if (options.appData?.storeName) {
-      return toNumber(
-        (await this.sql<CountRow[]>`
-                select count(*) as count
-                from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${options.appData.storeName}
-                  and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
-            `)[0]?.count,
-      );
-    }
-    return toNumber(
-      (await this.sql<CountRow[]>`
-            select count(*) as count
-            from app_data_store
-            where app_namespace = ${namespace}
-              and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
-        `)[0]?.count,
-    );
-  }
-
-  private async pruneExpiredAppData(options: AdminPruneExpiredOptions): Promise<number> {
-    const namespace = requireAppDataNamespace(options);
-    if (options.appData?.storeName) {
-      return (await this.sql<{ data_key: string }[]>`
-                with expired as (
-                  select data_key from app_data_store
-                  where app_namespace = ${namespace}
-                    and store_name = ${options.appData.storeName}
-                    and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
-                  order by data_key limit 100
-                )
-                delete from app_data_store
-                where app_namespace = ${namespace}
-                  and store_name = ${options.appData.storeName}
-                  and data_key in (select data_key from expired)
-                returning data_key
-            `).length;
-    }
-    return (await this.sql<{ data_key: string }[]>`
-            with expired as (
-              select store_name, data_key from app_data_store
-              where app_namespace = ${namespace} and expire_at_ts <= ${new Date(options.cutoffEpochMs)}
-              order by store_name, data_key limit 100
-            )
-            delete from app_data_store
-            where app_namespace = ${namespace}
-              and (store_name, data_key) in (select store_name, data_key from expired)
-            returning data_key
-        `).length;
-  }
-}
-
-function scopePrefix(scope: StateScope): string {
-  return [
-    toRuntimeStateKeyPart('app', scope.applicationId),
-    toRuntimeStateKeyPart('ws', scope.workspaceId),
-    '',
-  ].join(':');
-}
-
-function runtimeStateScopePrefix(namespace: string, scope: StateScope): string {
-  return namespace.startsWith('group-state:')
-    ? `${groupStateScopeStorageKey(scope)}:`
-    : scopePrefix(scope);
-}
-
 function validateScopedGroupRuntimeRows(
   namespace: string,
   rows: readonly RuntimeStateRow[],
@@ -836,10 +588,6 @@ function toExclusivePrefixEnd(prefix: string): string {
   return `${prefix.slice(0, lastIndex)}${String.fromCharCode(lastCode + 1)}`;
 }
 
-function toRuntimeStateKeyPart(name: string, value?: string): string {
-  return `${name}=${encodeURIComponent(value ?? '_')}`;
-}
-
 function toNumber(value: unknown): number {
   if (value === undefined || value === null) {
     return 0;
@@ -875,21 +623,6 @@ function toTopPressure(
     .slice(0, 10);
 }
 
-function requireAppDataNamespace(options: AdminPruneExpiredOptions): string {
-  const namespace = options.appData?.namespace;
-  if (!namespace) {
-    throw new Error('appData.namespace is required for app-data pruning.');
-  }
-  return namespace;
-}
-
-function isActiveClientSessionRow(row: RuntimeStateRow, nowEpochMs: number): boolean {
-  const value = readRuntimeStateValue(row);
-  return value.status === 'active' &&
-    value.disconnectedAtEpochMs === undefined &&
-    isFutureEpochMs(value.expiresAtEpochMs, nowEpochMs);
-}
-
 function isActiveGroupRow(row: RuntimeStateRow, nowEpochMs: number): boolean {
   const value = readRuntimeStateValue(row);
   return value.status === 'active' && isAbsentOrFutureEpochMs(value.expiresAtEpochMs, nowEpochMs);
@@ -903,14 +636,6 @@ function isActiveGroupSessionRow(row: RuntimeStateRow, nowEpochMs: number): bool
   const value = readRuntimeStateValue(row);
   return value.disconnectedAtEpochMs === null &&
     isFutureEpochMs(value.expiresAtEpochMs, nowEpochMs);
-}
-
-function readClientPrincipalIdentity(row: RuntimeStateRow): string | undefined {
-  return toIdentityKey([
-    readApplicationId(row),
-    readWorkspaceId(row),
-    readPrincipalId(row),
-  ]);
 }
 
 function readCanonicalGroupMemberIdentity(
@@ -930,26 +655,6 @@ function readCanonicalGroupMemberIdentity(
     decoded.groupId,
     principalId,
   ]);
-}
-
-function readApplicationId(row: RuntimeStateRow): string | undefined {
-  return readString(readRuntimeStateValue(row).applicationId) ??
-    readKeyPart(row.store_key, 'app');
-}
-
-function readWorkspaceId(row: RuntimeStateRow): string {
-  return readString(readRuntimeStateValue(row).workspaceId) ??
-    readKeyPart(row.store_key, 'ws') ??
-    '_';
-}
-
-function readPrincipalId(row: RuntimeStateRow): string | undefined {
-  return readString(readRuntimeStateValue(row).principalId) ??
-    readKeyPart(row.store_key, 'principal');
-}
-
-function toIdentityKey(parts: readonly (string | undefined)[]): string | undefined {
-  return parts.every((part) => part !== undefined) ? parts.join('\u001f') : undefined;
 }
 
 function isFutureEpochMs(value: unknown, nowEpochMs: number): boolean {
@@ -973,18 +678,4 @@ function readRuntimeStateValue(row: RuntimeStateRow): Record<string, unknown> {
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function readKeyPart(key: string, name: string): string | undefined {
-  const prefix = `${name}=`;
-  const segment = key.split(':').find((part) => part.startsWith(prefix));
-  if (!segment) {
-    return undefined;
-  }
-  try {
-    const value = decodeURIComponent(segment.slice(prefix.length));
-    return value.length > 0 ? value : undefined;
-  } catch {
-    return undefined;
-  }
 }

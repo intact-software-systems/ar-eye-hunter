@@ -117,13 +117,13 @@ export function normalizePersistedClientPrincipal(
   const legacy = requirePlainRecord(value, 'Stored client principal');
   requireAllowedKeys({
     value: legacy,
-    required: [],
+    required: ['workspaceId'],
     allowed: CLIENT_PRINCIPAL_PERSISTED_KEYS,
     label: 'Stored client principal',
   });
   const canonical = {
     applicationId: legacy.applicationId,
-    workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
+    workspaceId: legacy.workspaceId,
     principalId: legacy.principalId,
     username: legacy.username,
     displayName: legacy.displayName ?? null,
@@ -159,13 +159,13 @@ export function normalizePersistedClientInstance(
   const legacy = requirePlainRecord(value, 'Stored client instance');
   requireAllowedKeys({
     value: legacy,
-    required: [],
+    required: ['workspaceId'],
     allowed: CLIENT_INSTANCE_PERSISTED_KEYS,
     label: 'Stored client instance',
   });
   const canonical = {
     applicationId: legacy.applicationId,
-    workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
+    workspaceId: legacy.workspaceId,
     principalId: legacy.principalId,
     clientInstanceId: legacy.clientInstanceId,
     status: legacy.status,
@@ -195,13 +195,13 @@ export function normalizePersistedClientSession(
   const legacy = requirePlainRecord(value, 'Stored client session');
   requireAllowedKeys({
     value: legacy,
-    required: [],
+    required: ['workspaceId'],
     allowed: CLIENT_SESSION_PERSISTED_KEYS,
     label: 'Stored client session',
   });
   const canonical = {
     applicationId: legacy.applicationId,
-    workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
+    workspaceId: legacy.workspaceId,
     principalId: legacy.principalId,
     clientInstanceId: legacy.clientInstanceId,
     sessionId: legacy.sessionId,
@@ -229,13 +229,13 @@ export function normalizePersistedClientEvent(
   const legacy = requirePlainRecord(value, 'Stored client event');
   requireAllowedKeys({
     value: legacy,
-    required: [],
+    required: ['workspaceId'],
     allowed: CLIENT_EVENT_PERSISTED_KEYS,
     label: 'Stored client event',
   });
   const canonical = {
     applicationId: legacy.applicationId,
-    workspaceId: persistedClientOrDefault(legacy, 'workspaceId', expected.workspaceId),
+    workspaceId: legacy.workspaceId,
     principalId: legacy.principalId,
     eventId: legacy.eventId,
     eventType: legacy.eventType,
