@@ -24,6 +24,10 @@ import type { RallarSnapshotPresenceClock } from '../snapshot-presence.ts';
 import type { RtcTopologyPublicationRepository } from '../repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyPublicationFanout } from '../pubsub/RtcTopologyClusterTransport.ts';
 import type { RtcTopologyExecutionRepository } from '../repositories/RtcTopologyExecutionRepository.ts';
+import {
+  installQueueBoxPubSubBridge,
+  type InstallQueueBoxPubSubBridgeOptions,
+} from '../pubsub/QueueBoxPubSubBridge.ts';
 import type {
   RallarAdminInboxServiceFactory,
   RallarAuthInboxServiceFactory,
@@ -100,6 +104,10 @@ export type CreateRallarMiddlewareOptions = Readonly<{
   rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
   rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
   rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
+  queuePubSubBridge?: Omit<
+    InstallQueueBoxPubSubBridgeOptions,
+    'wsQBoxServerService'
+  >;
   readiness?: Promise<void>;
 }>;
 export function createRallarMiddleware(
@@ -127,6 +135,12 @@ export function createRallarMiddleware(
       outboundStores: options.outboundStores,
     },
   );
+  const queuePubSubBridgeReadiness = options.queuePubSubBridge
+    ? installQueueBoxPubSubBridge({
+      ...options.queuePubSubBridge,
+      wsQBoxServerService,
+    })
+    : Promise.resolve();
   const inboxQueueReader = new InboxQueueReader(
     options.inbox,
     options.appInboxDequeueOptions,
@@ -203,7 +217,10 @@ export function createRallarMiddleware(
     rtcTopologyPublicationRepository: options.rtcTopologyPublicationRepository,
     rtcTopologyExecutionRepository: options.rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout: options.rtcTopologyPublicationFanout,
-    readiness: options.readiness ?? Promise.resolve(),
+    readiness: Promise.all([
+      options.readiness ?? Promise.resolve(),
+      queuePubSubBridgeReadiness,
+    ]).then(() => undefined),
   };
 }
 export function includeWsQueueBoxEngineTasks(

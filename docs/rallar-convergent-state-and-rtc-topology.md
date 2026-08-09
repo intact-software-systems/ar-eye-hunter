@@ -413,9 +413,21 @@ group-state cache a few milliseconds behind the publication revision.
 Duplicate and reordered notifications are harmless because the publication is
 immutable and browser caches apply the causal tuple comparison.
 
-PostgreSQL subscription readiness is awaited before the queue engine and HTTP
-server start. A PostgreSQL deployment fails closed if it cannot establish the
-subscription. The local queue-key transport supports single-process execution.
+`createRallarMiddleware(...)` owns queue-key bridge installation because it
+constructs the `WsQueueBoxServerService` that the bridge observes. Runtime
+readiness combines the queue bridge's actual listener-subscription promise with
+the RTC topology transport readiness supplied by api-v1. `main.ts` awaits that
+combined barrier before starting the queue engine or HTTP server. A PostgreSQL
+deployment therefore fails closed if either listener cannot subscribe. The
+local queue-key transport supports single-process execution.
+
+This startup barrier prevents the first api-v1 request or local queue drain
+from racing an unready listener. It does not add notification replay or
+anti-entropy. PostgreSQL `NOTIFY` remains transient: a notification published
+before subscription or during a later listener outage is not recovered by a
+catch-up scan. The durable `WS_OUTBOX` row is the source loaded and validated
+after a key notification, but durable invalidation replay remains separate
+work.
 
 ### Example: authorization after a remote ban
 
@@ -594,6 +606,11 @@ intentional coordinated-deployment boundary described by this architecture.
   atomic topology/publication/work-index acceptance.
 - `packages/shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts`:
   cluster notification contract and local-session fanout.
+- `packages/shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts`:
+  durable queue-key publication, actual listener readiness, and bounded
+  cluster-receive diagnostics.
+- `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`:
+  queue bridge installation and combined runtime readiness ownership.
 - `apps/api-v1/src/db/api-v1-rtc-topology-cluster-transport.ts`: local,
   disabled, and PostgreSQL transport composition.
 - `apps/api-v1/src/middleware.ts` and `create-rallar-server.ts`: single-owner
@@ -609,6 +626,9 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`
 - `packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts`
 - `packages/tests/shared-server/group-topology-management-service.test.ts`
+- `packages/tests/shared-server/queuebox-pubsub-bridge.test.ts`
+- `packages/tests/shared-server/rallar-middleware.test.ts`
+- `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts`
 - `packages/tests/api-v1/rtc-topology-cluster-transport.test.ts`
 - `packages/tests/shared-web/data-caches.test.ts`
 - `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`

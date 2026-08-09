@@ -22,7 +22,6 @@ import {
 import {
   createRallarMiddleware,
 } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
-import { installQueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
@@ -363,6 +362,15 @@ function initialise(
     rtcTopologyPublicationRepository,
     rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout,
+    queuePubSubBridge: shouldInstallQueuePubSubBridge(pubSubConfig)
+      ? {
+        bridge: createApiV1QueuePubSubBridge(pubSubConfig, myPublisherId),
+        channel: dbWsChannelId,
+        publisherId: myPublisherId,
+        delivery: queuePubSubDeliveryForConfig(pubSubConfig),
+        timing,
+      }
+      : undefined,
     readiness: rtcTopologyPublicationFanout.readiness,
   });
   const scalarRecomputeWorker = initRtcTopologyScalarRecomputeWorker({
@@ -399,16 +407,6 @@ function initialise(
   });
   registerMiddlewareBackgroundTask(scalarRecomputeWorker.stop);
   void scalarRecomputeWorker.firstRun.catch(() => undefined);
-  if (shouldInstallQueuePubSubBridge(pubSubConfig)) {
-    installQueueBoxPubSubBridge({
-      wsQBoxServerService: runtime.wsQBoxServerService,
-      bridge: createApiV1QueuePubSubBridge(pubSubConfig, myPublisherId),
-      channel: dbWsChannelId,
-      publisherId: myPublisherId,
-      delivery: queuePubSubDeliveryForConfig(pubSubConfig),
-      timing,
-    });
-  }
   initPresenceExpiryReconciliation({
     appClientInboxService: runtime.appClientInboxService,
     appGroupInboxService: runtime.appGroupInboxService,
