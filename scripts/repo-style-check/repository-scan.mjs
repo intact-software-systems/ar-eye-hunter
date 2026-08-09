@@ -3,12 +3,12 @@ import path from 'node:path';
 
 import {
   extractCommandTypesWithOptionalFields,
-  findUnknownUsages,
   scanDiscouragedServiceNames,
   scanFunctionInputContracts,
   scanOutputContractNaming,
   scanPlainObjectTypeAliases,
 } from './contract-rules.mjs';
+import { scanBoundaryUnknownFindings } from './boundary-unknown-findings.mjs';
 import { scanConstructionRules } from './construction-rules.mjs';
 import {
   estimateCyclomaticComplexity,
@@ -17,11 +17,7 @@ import {
   scanFactorySpacing,
 } from './factory-route-rules.mjs';
 import { extractCreateFactories, extractFunctionSignatures } from './function-analysis.mjs';
-import {
-  isLayoutTypeScriptFile,
-  layoutRuleIds,
-  scanRepositoryLayout,
-} from './layout-rules.mjs';
+import { isLayoutTypeScriptFile, layoutRuleIds, scanRepositoryLayout } from './layout-rules.mjs';
 import { lineFromOffset, lineOffsets } from './source-text.mjs';
 
 const checkedExtensions = new Set(['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.mjs']);
@@ -181,7 +177,7 @@ function scanFile(source, options) {
   addFileMeasurementFindings(findings, sourceText.lines);
   addRouteFindings(findings, raw);
   addContractAndFactoryFindings(findings, sourceText, options);
-  addUnknownFindings(findings, sourceText.lines);
+  findings.push(...scanBoundaryUnknownFindings(raw));
   findings.push(...scanConstructionRules({ file, raw }, { details: options.constructionDetails }));
   return findings;
 }
@@ -294,28 +290,6 @@ function addContractAndFactoryFindings(findings, sourceText, options) {
   }
 }
 
-function addUnknownFindings(findings, lines) {
-  const unknownUsages = findUnknownUsages(lines);
-  for (const usage of unknownUsages.slice(0, 5)) {
-    findings.push(
-      finding(
-        'boundary.unknown',
-        `Review unknown at line ${usage.line}: ${usage.text} ` +
-          'Keep it at an untrusted boundary and normalize it before domain logic.',
-      ),
-    );
-  }
-  if (unknownUsages.length > 5) {
-    findings.push(
-      finding(
-        'boundary.unknown',
-        `... and ${unknownUsages.length - 5} additional unknown occurrences. ` +
-          'Reduce unknown propagation at domain boundaries.',
-      ),
-    );
-  }
-}
-
 async function collectSourceFiles(current) {
   const files = [];
   const entries = await fs.readdir(current, { withFileTypes: true });
@@ -393,7 +367,6 @@ function isTestRunnerQualifierCharacter(character) {
 function addMessages(findings, ruleId, messages) {
   findings.push(...messages.map((message) => finding(ruleId, message)));
 }
-
-function finding(ruleId, message) {
-  return { ruleId, message };
+function finding(ruleId, message, symbol) {
+  return { ruleId, message, symbol };
 }

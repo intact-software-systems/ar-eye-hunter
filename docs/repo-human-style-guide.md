@@ -389,6 +389,19 @@ The comparison enables the optional contract and detailed layout checks for
 changed production code. Existing findings may remain unchanged, improve, or
 disappear without blocking the branch.
 
+#### Reviewed changed-file dispositions
+
+Narrow false positives that have completed human review are recorded in
+`scripts/repo-style-check/reviewed-dispositions.mjs`. A disposition matches only
+the exact normalized path, rule identifier, and checker-owned symbol. The
+checker produces that symbol from source structure and never parses or
+substring-matches human-readable finding messages.
+
+Dormant entries are allowed when their reviewed feature has not reached the
+branch yet. They do not suppress a similarly named finding elsewhere. Every
+unmatched finding remains blocking, including a finding with a different path,
+rule, or symbol beside an otherwise reviewed finding.
+
 ## Review outcome
 
 Review pressure exists at more than 100 changed files, more than 10,000 changed

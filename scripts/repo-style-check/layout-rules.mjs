@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { parse } from '@babel/parser';
 
+import { compareCodeUnits, compareFindings, toFinding } from './layout-findings.mjs';
+
 const typeScriptSuffixPattern = /(?:\.d)?\.(?:ts|tsx|mts|cts)$/u;
 const kebabCasePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const toWordSet = (value) => new Set(value.split(' '));
@@ -131,7 +133,7 @@ function scanDirectoryDensity(directory, directSources, findings) {
     'direct production TypeScript files ' +
     `(review threshold > ${layoutLimits.directTypeScriptFileCount}). This is ` +
     'not an instruction to create folders or pass-through modules mechanically.';
-  findings.push(warningFinding(directory, layoutRuleIds.directoryDensity, densityMessage));
+  findings.push(toFinding(directory, layoutRuleIds.directoryDensity, densityMessage));
   const directoryTokens = new Set(toKebabCase(path.basename(directory)).split('-'));
   const filesByPrefix = groupBy(
     directSources.filter((source) => getFeaturePrefix(source.file, directoryTokens) !== undefined),
@@ -149,7 +151,7 @@ function scanDirectoryDensity(directory, directSources, findings) {
       `Review feature ownership: prefix '${prefix}' appears in ${fileNames.length} ` +
       `direct files. Samples: ${sampleFileNames(fileNames)}. This is not an instruction ` +
       'to create folders or pass-through modules mechanically.';
-    findings.push(warningFinding(directory, layoutRuleIds.featurePrefixCluster, prefixMessage));
+    findings.push(toFinding(directory, layoutRuleIds.featurePrefixCluster, prefixMessage));
   }
 }
 function addFileGroupFinding(input) {
@@ -158,7 +160,7 @@ function addFileGroupFinding(input) {
   }
   const detail =
     `${input.fileNames.length} ${input.message} Samples: ` + `${sampleFileNames(input.fileNames)}.`;
-  const finding = warningFinding(input.directory, input.ruleId, detail);
+  const finding = toFinding(input.directory, input.ruleId, detail);
   input.findings.push({ ...finding, affectedCount: input.fileNames.length });
 }
 function scanSourceDeclarations(input, sources, findings) {
@@ -171,7 +173,7 @@ function scanSourceDeclarations(input, sources, findings) {
     const program = parseProgram(source);
     if (isRoute && hasExportedInitFunction(program)) {
       const message = 'Exported route registration function init needs a descriptive feature name.';
-      findings.push(warningFinding(source.file, layoutRuleIds.genericRouteInit, message));
+      findings.push(toFinding(source.file, layoutRuleIds.genericRouteInit, message));
     }
     if (input.includeDetails === true) {
       scanPrimaryExport(source, program, findings);
@@ -190,7 +192,10 @@ function scanPrimaryExport(source, program, findings) {
   const [name] = names;
   if (names.size === 1 && toKebabCase(name) !== stem) {
     const message = `Primary export ${name} does not match filename stem ${stem}.`;
-    findings.push(warningFinding(source.file, layoutRuleIds.primaryExportName, message));
+    findings.push({
+      ...toFinding(source.file, layoutRuleIds.primaryExportName, message),
+      symbol: name,
+    });
   }
 }
 function scanBrowserBoundary(repoRoot, source, program) {
@@ -236,7 +241,7 @@ function scanBrowserBoundary(repoRoot, source, program) {
   const message =
     `Room-owned browser code imports authoritative group state directly. ` +
     `Evidence: ${samples}.`;
-  return [warningFinding(source.file, layoutRuleIds.browserRoomBoundary, message)];
+  return [toFinding(source.file, layoutRuleIds.browserRoomBoundary, message)];
 }
 function scanServerVocabulary(repoRoot, source, program) {
   const relativeFile = toRelativeFile(repoRoot, source.file);
@@ -261,7 +266,7 @@ function scanServerVocabulary(repoRoot, source, program) {
     return [];
   }
   const message = `Server group-state declarations use room vocabulary: ${samples.join(', ')}.`;
-  return [warningFinding(source.file, layoutRuleIds.serverGroupStateVocabulary, message)];
+  return [toFinding(source.file, layoutRuleIds.serverGroupStateVocabulary, message)];
 }
 function scanModBoundaries(repoRoot, sources, findings) {
   for (const source of sources) {
@@ -270,7 +275,7 @@ function scanModBoundaries(repoRoot, sources, findings) {
       !approvedModCompatibilityBoundaries.has(toRelativeFile(repoRoot, source.file))
     ) {
       const message = 'mod.ts is not an approved package compatibility boundary.';
-      findings.push(warningFinding(source.file, layoutRuleIds.unapprovedMod, message));
+      findings.push(toFinding(source.file, layoutRuleIds.unapprovedMod, message));
     }
   }
 }
@@ -389,11 +394,3 @@ function groupBy(values, toKey) {
   }
   return valuesByKey;
 }
-function warningFinding(file, ruleId, message) {
-  return { file, ruleId, affectedCount: 1, message, kind: 'warn' };
-}
-const compareFindings = (left, right) =>
-  compareCodeUnits(left.file, right.file) ||
-  compareCodeUnits(left.ruleId, right.ruleId) ||
-  compareCodeUnits(left.message, right.message);
-const compareCodeUnits = (left, right) => (left === right ? 0 : left < right ? -1 : 1);
