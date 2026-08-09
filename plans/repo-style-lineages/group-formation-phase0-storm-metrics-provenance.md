@@ -2,7 +2,7 @@
 
 Phase 0 of `plans/rallar-group-formation-phase0-storm-metrics-plan.md` adds
 never-throw storm counters inside owners that were already at or above the
-400-line file budget at merge base `05cec262`. Growing those files would raise
+400-line file budget at merge base `72166816` (re-anchored after rebasing onto main; originally `05cec262`). Growing those files would raise
 worsened `file.length` findings, so each instrumented owner released budget by
 extracting one cohesive sub-responsibility into a sibling module. Every split
 is behavior-preserving; public import paths are kept through re-exports from
