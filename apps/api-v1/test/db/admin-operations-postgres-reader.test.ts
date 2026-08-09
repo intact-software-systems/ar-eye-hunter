@@ -5,6 +5,10 @@ import {
 } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
+  decodeClientPrincipalStorageKey,
+  decodeClientSessionStorageKey,
+} from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+import {
   decodeGroupStateGroupStorageKey,
   decodeGroupStateMemberStorageKey,
   decodeGroupStatePresenceSessionStorageKey,
@@ -1153,7 +1157,7 @@ async function seedAdminOperationsRows(sql: PGliteSql): Promise<void> {
       ],
       [
         'client-state:sessions',
-        'app=app-1:ws=workspace-1:principal=alice:session=s1',
+        'app=app-1:ws=workspace-1:principal=alice:instance=browser:session=s1',
         {
           applicationId: 'app-1',
           workspaceId: 'workspace-1',
@@ -1166,7 +1170,7 @@ async function seedAdminOperationsRows(sql: PGliteSql): Promise<void> {
       ],
       [
         'client-state:sessions',
-        'app=app-1:ws=workspace-1:principal=bob:session=s2',
+        'app=app-1:ws=workspace-1:principal=bob:instance=browser:session=s2',
         { status: 'expired', principalId: 'bob', presenceState: 'offline' },
         '2000-01-01T00:00:00Z',
       ],
@@ -1314,7 +1318,7 @@ async function insertRuntimeState(
     expireAt?: string;
   }>,
 ): Promise<void> {
-  const value = withCanonicalGroupRuntimeIdentity(
+  const value = withCanonicalRuntimeIdentity(
     input.namespace,
     input.key,
     input.value,
@@ -1468,7 +1472,7 @@ function canonicalSessionRuntimeValue(
   return value;
 }
 
-function withCanonicalGroupRuntimeIdentity(
+function withCanonicalRuntimeIdentity(
   namespace: string,
   key: string,
   value: unknown,
@@ -1477,6 +1481,16 @@ function withCanonicalGroupRuntimeIdentity(
     return value;
   }
   const overrides = value as Readonly<Record<string, unknown>>;
+  try {
+    if (namespace === 'client-state:principals') {
+      return { ...decodeClientPrincipalStorageKey(key), ...overrides };
+    }
+    if (namespace === 'client-state:sessions') {
+      return { ...decodeClientSessionStorageKey(key), ...overrides };
+    }
+  } catch {
+    return value;
+  }
   return namespace === 'group-state:groups'
     ? canonicalGroupRuntimeValue(key, overrides)
     : namespace === 'group-state:members'
@@ -1498,7 +1512,10 @@ function createRuntimeJsonScanGuard(
       const queryText = Array.from(stringsOrValues).join('?').toLowerCase();
       if (
         queryText.includes('select store_key, store_value') &&
-        queryText.includes('from runtime_state_store')
+        queryText.includes('from runtime_state_store') &&
+        values.some(
+          (value) => typeof value === 'string' && value.startsWith('group-state:'),
+        )
       ) {
         runtimeJsonScanCount += 1;
       }

@@ -23,6 +23,70 @@ const workspaceStorageKeys = [
   { workspaceId: 'workspace-1', storageKey: 'workspace-1' },
 ] as const;
 
+const clientStateStorageKeyDecoders = [
+  { name: 'principal', decode: decodeClientPrincipalStorageKey },
+  { name: 'instance', decode: decodeClientInstanceStorageKey },
+  { name: 'session', decode: decodeClientSessionStorageKey },
+  { name: 'idempotency', decode: decodeClientIdempotencyStorageKey },
+] as const;
+
+const noncanonicalClientStateStorageKeys = [
+  {
+    form: 'legacy workspace alias',
+    keys: [
+      'app=app:ws=_:principal=principal',
+      'app=app:ws=_:principal=principal:instance=instance',
+      'app=app:ws=_:principal=principal:instance=instance:session=session',
+      'app=app:ws=_:principal=principal:request=request',
+    ],
+  },
+  {
+    form: 'lowercase escape',
+    keys: [
+      'app=app:ws=%5f:principal=principal',
+      'app=app:ws=%5f:principal=principal:instance=instance',
+      'app=app:ws=%5f:principal=principal:instance=instance:session=session',
+      'app=app:ws=%5f:principal=principal:request=request',
+    ],
+  },
+  {
+    form: 'empty component',
+    keys: [
+      'app=app:ws=%5F:principal=',
+      'app=app:ws=%5F:principal=principal:instance=',
+      'app=app:ws=%5F:principal=principal:instance=instance:session=',
+      'app=app:ws=%5F:principal=principal:request=',
+    ],
+  },
+  {
+    form: 'malformed escape',
+    keys: [
+      'app=%:ws=%5F:principal=principal',
+      'app=%:ws=%5F:principal=principal:instance=instance',
+      'app=%:ws=%5F:principal=principal:instance=instance:session=session',
+      'app=%:ws=%5F:principal=principal:request=request',
+    ],
+  },
+  {
+    form: 'raw delimiter',
+    keys: [
+      'app=app:ws=%5F:principal=principal:raw',
+      'app=app:ws=%5F:principal=principal:raw:instance=instance',
+      'app=app:ws=%5F:principal=principal:raw:instance=instance:session=session',
+      'app=app:ws=%5F:principal=principal:raw:request=request',
+    ],
+  },
+  {
+    form: 'unnecessary escape',
+    keys: [
+      'app=%61pp:ws=%5F:principal=principal',
+      'app=%61pp:ws=%5F:principal=principal:instance=instance',
+      'app=%61pp:ws=%5F:principal=principal:instance=instance:session=session',
+      'app=%61pp:ws=%5F:principal=principal:request=request',
+    ],
+  },
+] as const;
+
 describe('client-state storage-key workspace injectivity', () => {
   it('encodes canonical workspace storage components', () => {
     for (const { workspaceId, storageKey } of workspaceStorageKeys) {
@@ -89,5 +153,17 @@ describe('client-state storage-key workspace injectivity', () => {
 
     expect(() => unsafeClientStateWorkspaceStorageKey()).toThrow(TypeError);
     expect(() => unsafeClientStateWorkspaceStorageKey('')).toThrow(TypeError);
+  });
+
+  it('rejects literal noncanonical keys through every decoder', () => {
+    for (const { form, keys } of noncanonicalClientStateStorageKeys) {
+      for (const [index, key] of keys.entries()) {
+        const decoder = clientStateStorageKeyDecoders[index];
+        if (!decoder) {
+          throw new Error('Expected one literal key for every client-state decoder');
+        }
+        expect(() => decoder.decode(key), `${decoder.name}: ${form}`).toThrow();
+      }
+    }
   });
 });

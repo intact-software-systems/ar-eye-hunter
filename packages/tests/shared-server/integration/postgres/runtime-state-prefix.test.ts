@@ -176,6 +176,8 @@ describe('Postgres runtime-state prefix selection', () => {
           applicationId,
           workspaceId,
           principalId: 'alice',
+          clientInstanceId: 'browser',
+          sessionId: 'alice-session',
           status: 'active',
           expiresAtEpochMs: liveSessionExpiry,
         }),

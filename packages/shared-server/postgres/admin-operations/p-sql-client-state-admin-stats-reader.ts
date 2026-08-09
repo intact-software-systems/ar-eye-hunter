@@ -1,7 +1,12 @@
+import type { ClientPrincipalRef, ClientSessionRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import {
   isClientJsonObject,
 } from '../../rallar-system/client-state/client-state-semantic-equality.ts';
+import {
+  decodeClientPrincipalStorageKey,
+  decodeClientSessionStorageKey,
+} from '../../rallar-system/client-state/persistence/client-state-storage-keys.ts';
 import type {
   ClientValidationRecord,
 } from '../../rallar-system/client-state/client-state-validation-primitives.ts';
@@ -18,6 +23,11 @@ type RuntimeStateRow = Readonly<{
   store_key: string;
   store_value: string;
 }>;
+
+interface CanonicalClientSessionRow {
+  readonly ref: ClientSessionRef;
+  readonly value: ClientValidationRecord;
+}
 
 export type ClientStateAdminActivityStats = Readonly<{
   totalPrincipals: number;
@@ -57,7 +67,7 @@ export class PSqlClientStateAdminStatsReader {
       this.readLiveRuntimeRows('client-state:sessions', scope),
     ]);
     return {
-      totalPrincipals: principalRows.length,
+      totalPrincipals: principalRows.filter(isCanonicalClientPrincipalRow).length,
       sessionRows,
     };
   }
@@ -66,14 +76,11 @@ export class PSqlClientStateAdminStatsReader {
     facts: ClientStateAdminScopedFacts,
     activityCutoffEpochMs: number,
   ): ClientStateAdminActivityStats {
-    const activeSessions = facts.sessionRows.filter((row) =>
-      isActiveClientSessionRow(row, activityCutoffEpochMs),
+    const activeSessions = computeScopedActiveClientSessionRefs(
+      facts.sessionRows,
+      activityCutoffEpochMs,
     );
-    const onlinePrincipalIds = new Set(
-      activeSessions
-        .map(readClientPrincipalIdentity)
-        .filter((identity): identity is string => identity !== undefined),
-    );
+    const onlinePrincipalIds = new Set(activeSessions.map(toClientPrincipalIdentity));
     return {
       totalPrincipals: facts.totalPrincipals,
       onlinePrincipals: onlinePrincipalIds.size,
@@ -139,61 +146,33 @@ export class PSqlClientStateAdminStatsReader {
   }
 
   private async countLivePrincipals(): Promise<number> {
-    return toNumber(
-      (
-        await this.sql<CountRow[]>`
-        select count(*) as count
-        from runtime_state_store
-        where store_namespace = 'client-state:principals'
-          and expire_at_ts > now()
-      `
-      )[0]?.count,
-    );
+    const rows = await this.readGlobalRuntimeRows('client-state:principals');
+    return rows.filter(isCanonicalClientPrincipalRow).length;
   }
 
   private async countActiveSessions(activityCutoffEpochMs: number): Promise<number> {
-    return toNumber(
-      (
-        await this.sql<CountRow[]>`
-        select count(*) as count
-        from runtime_state_store
-        where store_namespace = 'client-state:sessions'
-          and expire_at_ts > now()
-          and store_value::jsonb ->> 'status' = 'active'
-          and store_value::jsonb ->> 'disconnectedAtEpochMs' is null
-          and (store_value::jsonb ->> 'expiresAtEpochMs')::double precision >
-            ${activityCutoffEpochMs}
-      `
-      )[0]?.count,
-    );
+    const rows = await this.readGlobalRuntimeRows('client-state:sessions');
+    return computeGlobalActiveClientSessionRefs(rows, activityCutoffEpochMs).length;
   }
 
   private async countActivePrincipals(activityCutoffEpochMs: number): Promise<number> {
-    return toNumber(
-      (
-        await this.sql<CountRow[]>`
-        select count(*) as count
-        from (
-          select distinct store_value::jsonb ->> 'applicationId' as application_id,
-            store_value::jsonb ->> 'workspaceId' as workspace_id,
-            store_value::jsonb ->> 'principalId' as principal_id
-          from runtime_state_store
-          where store_namespace = 'client-state:sessions'
-            and expire_at_ts > now()
-            and store_value::jsonb ->> 'status' = 'active'
-            and store_value::jsonb ->> 'disconnectedAtEpochMs' is null
-            and jsonb_typeof(store_value::jsonb -> 'applicationId') = 'string'
-            and store_value::jsonb ->> 'applicationId' <> ''
-            and jsonb_typeof(store_value::jsonb -> 'workspaceId') = 'string'
-            and store_value::jsonb ->> 'workspaceId' <> ''
-            and jsonb_typeof(store_value::jsonb -> 'principalId') = 'string'
-            and store_value::jsonb ->> 'principalId' <> ''
-            and (store_value::jsonb ->> 'expiresAtEpochMs')::double precision >
-              ${activityCutoffEpochMs}
-        ) principals
-      `
-      )[0]?.count,
-    );
+    const rows = await this.readGlobalRuntimeRows('client-state:sessions');
+    return new Set(
+      computeGlobalActiveClientSessionRefs(rows, activityCutoffEpochMs).map(
+        toClientPrincipalIdentity,
+      ),
+    ).size;
+  }
+
+  private async readGlobalRuntimeRows(
+    namespace: 'client-state:principals' | 'client-state:sessions',
+  ): Promise<readonly RuntimeStateRow[]> {
+    return await this.sql<RuntimeStateRow[]>`
+      select store_key, store_value
+      from runtime_state_store
+      where store_namespace = ${namespace}
+        and expire_at_ts > now()
+    `;
   }
 }
 
@@ -217,23 +196,94 @@ function toExclusivePrefixEnd(prefix: string): string {
   return `${prefix.slice(0, lastIndex)}${String.fromCharCode(lastCode + 1)}`;
 }
 
-function isActiveClientSessionRow(row: RuntimeStateRow, nowEpochMs: number): boolean {
+function computeScopedActiveClientSessionRefs(
+  rows: readonly RuntimeStateRow[],
+  nowEpochMs: number,
+): readonly ClientSessionRef[] {
+  return computeCanonicalClientSessionRows(rows)
+    .filter(
+      (row) =>
+        row.value.disconnectedAtEpochMs === undefined &&
+        isActiveClientSessionValue(row.value, nowEpochMs),
+    )
+    .map((row) => row.ref);
+}
+
+function computeGlobalActiveClientSessionRefs(
+  rows: readonly RuntimeStateRow[],
+  nowEpochMs: number,
+): readonly ClientSessionRef[] {
+  return computeCanonicalClientSessionRows(rows)
+    .filter(
+      (row) =>
+        (row.value.disconnectedAtEpochMs === undefined ||
+          row.value.disconnectedAtEpochMs === null) &&
+        isActiveClientSessionValue(row.value, nowEpochMs),
+    )
+    .map((row) => row.ref);
+}
+
+function computeCanonicalClientSessionRows(
+  rows: readonly RuntimeStateRow[],
+): readonly CanonicalClientSessionRow[] {
+  return rows
+    .map(toCanonicalClientSessionRow)
+    .filter((row): row is CanonicalClientSessionRow => row !== undefined);
+}
+
+function toCanonicalClientSessionRow(row: RuntimeStateRow): CanonicalClientSessionRow | undefined {
   const value = readRuntimeStateValue(row);
+  let ref: ClientSessionRef;
+  try {
+    ref = decodeClientSessionStorageKey(row.store_key);
+  } catch {
+    return undefined;
+  }
+  if (!hasMatchingClientSessionIdentity(value, ref)) {
+    return undefined;
+  }
+  return { ref, value };
+}
+
+function isActiveClientSessionValue(value: ClientValidationRecord, nowEpochMs: number): boolean {
+  return value.status === 'active' && isFutureEpochMs(value.expiresAtEpochMs, nowEpochMs);
+}
+
+function isCanonicalClientPrincipalRow(row: RuntimeStateRow): boolean {
+  const value = readRuntimeStateValue(row);
+  let ref: ClientPrincipalRef;
+  try {
+    ref = decodeClientPrincipalStorageKey(row.store_key);
+  } catch {
+    return false;
+  }
+  return hasMatchingClientPrincipalIdentity(value, ref);
+}
+
+function hasMatchingClientPrincipalIdentity(
+  value: ClientValidationRecord,
+  ref: ClientPrincipalRef,
+): boolean {
   return (
-    value.status === 'active' &&
-    value.disconnectedAtEpochMs === undefined &&
-    isFutureEpochMs(value.expiresAtEpochMs, nowEpochMs)
+    value.applicationId === ref.applicationId &&
+    value.workspaceId === ref.workspaceId &&
+    value.principalId === ref.principalId
   );
 }
 
-function readClientPrincipalIdentity(row: RuntimeStateRow): string | undefined {
-  const value = readRuntimeStateValue(row);
-  const applicationId = readString(value.applicationId);
-  const workspaceId = readString(value.workspaceId);
-  const principalId = readString(value.principalId);
-  return applicationId !== undefined && workspaceId !== undefined && principalId !== undefined
-    ? [applicationId, workspaceId, principalId].join('\u001f')
-    : undefined;
+function hasMatchingClientSessionIdentity(
+  value: ClientValidationRecord,
+  ref: ClientSessionRef,
+): boolean {
+  return (
+    hasMatchingClientPrincipalIdentity(value, ref) &&
+    value.clientInstanceId === ref.clientInstanceId &&
+    value.sessionId === ref.sessionId
+  );
+}
+
+function toClientPrincipalIdentity(ref: ClientPrincipalRef): string {
+  return [ref.applicationId, ref.workspaceId, ref.principalId].join('\u001f');
 }
 
 function isFutureEpochMs(value: ClientValidationRecord[string], nowEpochMs: number): boolean {
@@ -248,10 +298,6 @@ function readRuntimeStateValue(row: RuntimeStateRow): ClientValidationRecord {
   } catch {
     return {};
   }
-}
-
-function readString(value: ClientValidationRecord[string]): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function toNumber(value: CountRow['count'] | null | undefined): number {

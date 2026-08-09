@@ -165,7 +165,7 @@ Deno.test('PGlite admin online principals exclude omitted persisted workspace id
     const state = await readGlobalAdminState(sql);
 
     assert.equal(state.clients.onlinePrincipals, 1);
-    assert.equal(state.clients.activeSessions, 2);
+    assert.equal(state.clients.activeSessions, 1);
   });
 });
 
@@ -185,7 +185,7 @@ Deno.test('PGlite admin online principals exclude empty persisted workspace iden
     const state = await readGlobalAdminState(sql);
 
     assert.equal(state.clients.onlinePrincipals, 1);
-    assert.equal(state.clients.activeSessions, 2);
+    assert.equal(state.clients.activeSessions, 1);
   });
 });
 
@@ -205,7 +205,7 @@ Deno.test('PGlite admin online principals exclude non-string persisted workspace
     const state = await readGlobalAdminState(sql);
 
     assert.equal(state.clients.onlinePrincipals, 1);
-    assert.equal(state.clients.activeSessions, 2);
+    assert.equal(state.clients.activeSessions, 1);
   });
 });
 
@@ -359,8 +359,10 @@ async function insertClientSession(
   const value = JSON.stringify({
     applicationId,
     workspaceId: input.workspaceId,
-    status: 'active',
     principalId: input.principalId,
+    clientInstanceId: 'browser',
+    sessionId: input.principalId,
+    status: 'active',
     expiresAtEpochMs: input.expiresAtEpochMs ?? 1_700_000_060_000,
   });
   await sql`
