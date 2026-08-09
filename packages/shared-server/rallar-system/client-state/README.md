@@ -52,7 +52,7 @@ those compatibility paths.
 - [`CLIENT_STATE_PRINCIPALS_NAMESPACE` and the exact runtime namespaces](./persistence/client-state-runtime-namespaces.ts)
 - [`clientStatePrincipalStorageKey`, decoding, and canonical ordering](./persistence/client-state-storage-keys.ts)
 - [`validatePersistedClientPrincipal` and corruption-failing persisted validation](./persistence/validate-persisted-client-state.ts)
-- [`normalizePersistedClientPrincipal` and persisted defaults](./persistence/client-state-persistence-codec.ts)
+- [`normalizePersistedClientPrincipal` and fail-closed persisted workspace identity](./persistence/client-state-persistence-codec.ts)
 - [`ClientStateRepositoryReads` and aggregate/child/event/idempotency reads](./persistence/client-state-repository-reads.ts)
 - [`assembleClientStateSnapshot` and canonical snapshot ordering](./persistence/assemble-client-state-snapshot.ts)
 - [`ClientStateSnapshotRepository` and stable before/after aggregate guards](./persistence/client-state-snapshot-repository.ts)
