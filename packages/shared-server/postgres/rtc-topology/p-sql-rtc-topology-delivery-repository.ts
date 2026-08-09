@@ -1,7 +1,5 @@
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
-import type {
-  RtcTopologyDeliveryAppendPort,
-} from '../../rallar-system/topology/replay/rtc-topology-delivery-append-port.ts';
+import type { RtcTopologyDeliveryAppendPort } from '../../rallar-system/topology/replay/rtc-topology-delivery-append-port.ts';
 import type {
   RtcTopologyDeliveryAppendInput,
   RtcTopologyDeliveryAppendResult,
@@ -48,6 +46,10 @@ interface DeliveryLogRow {
   readonly inserted_at_epoch_ms: RtcTopologyDeliveryBoundaryNumber;
 }
 
+interface AppendQueryRow extends DeliveryLogRow {
+  readonly result_kind: 'appended' | 'existing';
+}
+
 export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryAppendPort {
   constructor(private readonly sql: PSqlSql) {}
 
@@ -89,10 +91,11 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
     input: RtcTopologyDeliveryAppendInput,
   ): Promise<RtcTopologyDeliveryAppendResult> {
     validateRtcTopologyDeliveryAppendInput(input);
-    const existing = await readExistingEntry(transaction, input);
-    if (existing) {
-      validateExistingEntry(existing, input);
-      return { status: 'existing', entry: existing };
+    const result = await appendOrReadExistingEntry(transaction, input);
+    if (result) {
+      const entry = toLogEntry(result);
+      validateExistingEntry(entry, input);
+      return { status: result.result_kind, entry };
     }
 
     const stream = await readAppendStream(transaction, input.publisherStreamId);
@@ -109,15 +112,7 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
       );
     }
 
-    const nextSequence = headSequence + 1;
-    const updated = await updateHead(transaction, input.publisherStreamId, headSequence);
-    if (!updated) {
-      const current = await readAppendStream(transaction, input.publisherStreamId);
-      return current?.lease_valid ? { status: 'conflict' } : { status: 'lease-lost' };
-    }
-
-    const entry = await insertEntry(transaction, input, nextSequence);
-    return { status: 'appended', entry };
+    return { status: 'conflict' };
   }
 
   async renewStreamLease(
@@ -153,12 +148,94 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
   }
 }
 
-async function readExistingEntry(
+async function appendOrReadExistingEntry(
   sql: PSqlSql,
   input: RtcTopologyDeliveryAppendInput,
-): Promise<RtcTopologyDeliveryLogEntry | undefined> {
-  const rows = await sql<DeliveryLogRow[]>`
+): Promise<AppendQueryRow | undefined> {
+  const rows = await sql<AppendQueryRow[]>`
+    with existing_publication as materialized (
+      select
+        publisher_stream_id,
+        sequence,
+        application_id,
+        workspace_id,
+        group_id,
+        publication_id,
+        outbox_topic_id,
+        outbox_resource_id,
+        outbox_context_id,
+        retain_until,
+        inserted_at
+      from rtc_topology_delivery_log
+      where application_id = ${input.groupRef.applicationId}
+        and workspace_id = ${input.groupRef.workspaceId}
+        and group_id = ${input.groupRef.groupId}
+        and publication_id = ${input.publicationId}
+    ),
+    database_clock as materialized (
+      select clock_timestamp() as now
+    ),
+    append_stream as materialized (
+      select stream.head_sequence
+      from rtc_topology_delivery_stream as stream
+      cross join database_clock
+      where stream.stream_id = ${input.publisherStreamId}
+        and stream.lease_expires_at > database_clock.now
+        and stream.head_sequence < ${Number.MAX_SAFE_INTEGER}
+        and not exists (select 1 from existing_publication)
+    ),
+    advanced_stream as (
+      update rtc_topology_delivery_stream as stream
+      set head_sequence = stream.head_sequence + 1,
+          updated_at = database_clock.now
+      from append_stream
+      cross join database_clock
+      where stream.stream_id = ${input.publisherStreamId}
+        and stream.head_sequence = append_stream.head_sequence
+        and stream.lease_expires_at > database_clock.now
+        and stream.head_sequence < ${Number.MAX_SAFE_INTEGER}
+      returning stream.head_sequence
+    ),
+    inserted_entry as (
+      insert into rtc_topology_delivery_log (
+        publisher_stream_id,
+        sequence,
+        application_id,
+        workspace_id,
+        group_id,
+        publication_id,
+        outbox_topic_id,
+        outbox_resource_id,
+        outbox_context_id,
+        retain_until
+      )
+      select
+        ${input.publisherStreamId},
+        advanced_stream.head_sequence,
+        ${input.groupRef.applicationId},
+        ${input.groupRef.workspaceId},
+        ${input.groupRef.groupId},
+        ${input.publicationId},
+        ${input.outboxKey.topicId},
+        ${input.outboxKey.resourceId},
+        ${input.outboxKey.contextId},
+        ${new Date(input.retainUntilEpochMs)}
+      from advanced_stream
+      returning
+        publisher_stream_id,
+        sequence,
+        application_id,
+        workspace_id,
+        group_id,
+        publication_id,
+        outbox_topic_id,
+        outbox_resource_id,
+        outbox_context_id,
+        retain_until,
+        inserted_at
+    )
     select
+      'existing'::text as result_kind,
       publisher_stream_id::text,
       sequence::double precision as sequence,
       application_id,
@@ -172,13 +249,26 @@ async function readExistingEntry(
         as retain_until_epoch_ms,
       (extract(epoch from inserted_at) * 1000)::double precision
         as inserted_at_epoch_ms
-    from rtc_topology_delivery_log
-    where application_id = ${input.groupRef.applicationId}
-      and workspace_id = ${input.groupRef.workspaceId}
-      and group_id = ${input.groupRef.groupId}
-      and publication_id = ${input.publicationId}
+    from existing_publication
+    union all
+    select
+      'appended'::text as result_kind,
+      publisher_stream_id::text,
+      sequence::double precision as sequence,
+      application_id,
+      workspace_id,
+      group_id,
+      publication_id,
+      outbox_topic_id,
+      outbox_resource_id,
+      outbox_context_id,
+      (extract(epoch from retain_until) * 1000)::double precision
+        as retain_until_epoch_ms,
+      (extract(epoch from inserted_at) * 1000)::double precision
+        as inserted_at_epoch_ms
+    from inserted_entry
   `;
-  return rows[0] ? toLogEntry(rows[0]) : undefined;
+  return rows[0];
 }
 
 async function readAppendStream(
@@ -197,78 +287,6 @@ async function readAppendStream(
     where stream_id = ${streamId}
   `;
   return rows[0];
-}
-
-async function updateHead(
-  sql: PSqlSql,
-  streamId: string,
-  expectedHeadSequence: number,
-): Promise<boolean> {
-  const rows = await sql<Readonly<{ stream_id: string }>[]>`
-    update rtc_topology_delivery_stream
-    set head_sequence = head_sequence + 1,
-        updated_at = clock_timestamp()
-    where stream_id = ${streamId}
-      and head_sequence = ${expectedHeadSequence}
-      and lease_expires_at > clock_timestamp()
-    returning stream_id::text
-  `;
-  return rows.length === 1;
-}
-
-async function insertEntry(
-  sql: PSqlSql,
-  input: RtcTopologyDeliveryAppendInput,
-  sequence: number,
-): Promise<RtcTopologyDeliveryLogEntry> {
-  const rows = await sql<DeliveryLogRow[]>`
-    insert into rtc_topology_delivery_log (
-      publisher_stream_id,
-      sequence,
-      application_id,
-      workspace_id,
-      group_id,
-      publication_id,
-      outbox_topic_id,
-      outbox_resource_id,
-      outbox_context_id,
-      retain_until
-    ) values (
-      ${input.publisherStreamId},
-      ${sequence},
-      ${input.groupRef.applicationId},
-      ${input.groupRef.workspaceId},
-      ${input.groupRef.groupId},
-      ${input.publicationId},
-      ${input.outboxKey.topicId},
-      ${input.outboxKey.resourceId},
-      ${input.outboxKey.contextId},
-      ${new Date(input.retainUntilEpochMs)}
-    )
-    returning
-      publisher_stream_id::text,
-      sequence::double precision as sequence,
-      application_id,
-      workspace_id,
-      group_id,
-      publication_id,
-      outbox_topic_id,
-      outbox_resource_id,
-      outbox_context_id,
-      (extract(epoch from retain_until) * 1000)::double precision
-        as retain_until_epoch_ms,
-      (extract(epoch from inserted_at) * 1000)::double precision
-        as inserted_at_epoch_ms
-  `;
-  const row = rows[0];
-  if (!row) {
-    throw new RtcTopologyDeliveryCorruptionError(
-      'RTC topology delivery insert returned no durable row',
-    );
-  }
-  const entry = toLogEntry(row);
-  validateExistingEntry(entry, input);
-  return entry;
 }
 
 function toStream(row: StreamRow): RtcTopologyDeliveryStream {
