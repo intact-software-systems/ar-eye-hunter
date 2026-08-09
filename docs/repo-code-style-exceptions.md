@@ -45,6 +45,18 @@ cohesive algorithm.
   - Review or removal condition: split the catalog when it exceeds 1,200
     physical lines or when a new independently generated manifest suite is
     added.
+- Repository-relative path:
+  `packages/shared-test/rallar-bb-test/browser-adapter.ts`
+  - Exception category: parser or state-transition table
+  - Why cohesion is clearer: this adapter is the single browser-rallar command
+    dispatch and result-projection boundary. Keeping readiness result
+    projection with the command execution table makes the provider call and its
+    artifact-visible outcome traceable in one place; extracting only this small
+    projection would add a pass-through module without separating ownership.
+  - Approval date and reviewer: 2026-08-09, task requester
+  - Review or removal condition: remove the exception when browser-rallar
+    command families are decomposed into independently owned adapters, or
+    review it again if the file exceeds 3,100 physical lines.
 
 | Repository-relative path                               | Symbol      | Exception category | Why cohesion is clearer                                                                                                                                    | Approval date and reviewer                                                         | Owner                | Review or removal condition                                                                                                                                                                        |
 | ------------------------------------------------------ | ----------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

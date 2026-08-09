@@ -30,12 +30,12 @@ serializes the complete readiness evidence into command results.
 - [x] Add failing artifact assertions for room-refresh counters.
 - [x] Add counters to `RtcConnectReadinessResult` and keep readiness functions
   below the repository function-size threshold.
-- [ ] Serialize the counters at the browser artifact boundary after the
+- [x] Serialize the counters at the browser artifact boundary after the
   required size-exception decision in
   [issue #142](https://github.com/intact-software-systems/ar-eye-hunter/issues/142).
-- [ ] Pass focused tests, typecheck, manifest generation check, and changed-file
+- [x] Pass focused tests, typecheck, manifest generation check, and changed-file
   repository-style review.
-- [ ] Pass `npm run test:unit`, `npm run test:ci`, and `npm run build` on the
+- [x] Pass `npm run test:unit`, `npm run test:ci`, and `npm run build` on the
   final uncommitted tree.
 - [ ] Publish the final feature commit to one draft PR and verify Branch
   Release Gate for its exact SHA.
@@ -56,5 +56,6 @@ Outcome: **Compatible — no plan delta**.
   `apps/rallar-black-box/src/hetzner-distributed-manifests.ts` cohesive as the
   ordered static manifest catalog; review at 1,200 lines or a second generated
   suite.
-- Pending in issue #142: the legacy browser command adapter must project the
-  new readiness fields but remains above 800 physical lines.
+- Approved by the task requester on 2026-08-09 in issue #142: keep the legacy
+  browser-rallar command dispatch and result-projection table cohesive; revisit
+  when its command families are decomposed or the file exceeds 3,100 lines.

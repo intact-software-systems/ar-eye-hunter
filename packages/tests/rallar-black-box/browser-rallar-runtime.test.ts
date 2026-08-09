@@ -351,6 +351,13 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
 
         expect(result.ok).toBe(true);
         expect(refreshRoom).not.toHaveBeenCalled();
+        expect(result.value).toMatchObject({
+            readiness: {
+                roomRefreshAttempts: 0,
+                roomRefreshSuccesses: 0,
+                roomRefreshRetryableFailures: 0,
+            },
+        });
     });
 
     it('refreshes room state while waiting for an initially undiscovered RTC peer', async () => {
@@ -402,6 +409,9 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
         expect(result.value).toMatchObject({
             readiness: {
                 readyPeerIds: ['peer-a'],
+                roomRefreshAttempts: 1,
+                roomRefreshSuccesses: 1,
+                roomRefreshRetryableFailures: 0,
             },
         });
     });
@@ -449,6 +459,13 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             expect(result.ok).toBe(false);
             expect(result.error).toMatchObject({
                 code: 'RALLAR_BB_RTC_READY_TIMEOUT',
+            });
+            expect(result.value).toMatchObject({
+                readiness: {
+                    roomRefreshAttempts: 1,
+                    roomRefreshSuccesses: 0,
+                    roomRefreshRetryableFailures: 0,
+                },
             });
             expect(signal?.aborted).toBe(true);
         } finally {
@@ -550,6 +567,9 @@ describe('rallar-black-box SPA browser-rallar runtime', () => {
             expect(result.value).toMatchObject({
                 readiness: {
                     readyPeerIds: ['peer-a'],
+                    roomRefreshAttempts: 2,
+                    roomRefreshSuccesses: 1,
+                    roomRefreshRetryableFailures: 1,
                     lastRefreshError: {
                         name: 'Error',
                         message: refreshError.message,
