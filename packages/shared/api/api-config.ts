@@ -117,8 +117,16 @@ export type GroupId = string;
 
 export type OverlayId = string;
 
+/**
+ * Where an overlay record came from. Server overlays are authoritative and
+ * always supersede bootstrap overlays; a bootstrap overlay never replaces a
+ * server overlay (group-formation Phase 1 admission rule).
+ */
+export type OverlayProvenance = 'server' | 'bootstrap';
+
 export type OverlayInfo = {
     readonly sourceGroupStateCausalRevision: GroupStateCausalRevision;
+    readonly provenance: OverlayProvenance;
     readonly state: 'active' | 'removed';
     readonly overlayId: OverlayId;
     readonly groupRef: GroupRef;

@@ -7,6 +7,7 @@ import type {
     WorkspaceId,
 } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
+import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import {
     type ApiMiddleware,
@@ -38,6 +39,8 @@ export type RallarBrowserRuntimeDefaults = Readonly<{
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
         maxPeerConnections?: number;
         rttReportingDegreeLimit?: number;
+        groupFormationMode?: RtcGroupFormationMode;
+        bootstrapDegree?: number;
     }>;
     messages?: Readonly<{
         maxPayloadBytes?: number;
@@ -208,6 +211,7 @@ export function createRallarBrowserFacadeRuntimeContext(
                 : state.defaults?.operations?.maxAttempts;
             const shouldRetry = options.shouldRetry ??
                 state.defaults?.operations?.shouldRetry;
+
             const dataChannelLanes = options.dataChannelLanes !== undefined
                 ? options.dataChannelLanes
                 : state.defaults?.rtc?.dataChannelLanes;
@@ -217,6 +221,12 @@ export function createRallarBrowserFacadeRuntimeContext(
             const rttReportingDegreeLimit = options.rttReportingDegreeLimit !== undefined
                 ? options.rttReportingDegreeLimit
                 : state.defaults?.rtc?.rttReportingDegreeLimit;
+            const groupFormationMode = options.groupFormationMode !== undefined
+                ? options.groupFormationMode
+                : state.defaults?.rtc?.groupFormationMode;
+            const bootstrapDegree = options.bootstrapDegree !== undefined
+                ? options.bootstrapDegree
+                : state.defaults?.rtc?.bootstrapDegree;
 
             if (
                 timeoutMs === undefined &&
@@ -224,7 +234,9 @@ export function createRallarBrowserFacadeRuntimeContext(
                 shouldRetry === undefined &&
                 dataChannelLanes === undefined &&
                 maxPeerConnections === undefined &&
-                rttReportingDegreeLimit === undefined
+                rttReportingDegreeLimit === undefined &&
+                groupFormationMode === undefined &&
+                bootstrapDegree === undefined
             ) {
                 return options;
             }
@@ -239,6 +251,8 @@ export function createRallarBrowserFacadeRuntimeContext(
                 ...(rttReportingDegreeLimit !== undefined
                     ? { rttReportingDegreeLimit }
                     : {}),
+                ...(groupFormationMode !== undefined ? { groupFormationMode } : {}),
+                ...(bootstrapDegree !== undefined ? { bootstrapDegree } : {}),
             };
         },
         readAuthExpiryTimer: () => state.authExpiryTimer,

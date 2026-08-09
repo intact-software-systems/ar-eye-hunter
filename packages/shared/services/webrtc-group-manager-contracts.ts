@@ -1,4 +1,5 @@
 import { GroupId, PeerId } from '../api/api-config.ts';
+import type { RtcGroupFormationMode } from '../rtc/group-formation-mode.ts';
 
 export type WebRtcGroupManagerState = {
     readonly groupIds: readonly GroupId[];
@@ -12,6 +13,7 @@ export type WebRtcGroupManagerState = {
 
 export type WebRtcGroupManagerOptions = Readonly<{
     maxPeerConnections?: number;
+    groupFormationMode?: RtcGroupFormationMode;
     onDesiredPeerIdsChanged?: () => void;
 }>;
 
@@ -46,6 +48,7 @@ export interface MutableWebRtcGroupManagerDiagnostics {
     lastDesiredPeerCount: number;
     connectAttemptCount: number;
     connectFailureCount: number;
+    connectDeferredBudgetCount: number;
     disconnectCount: number;
     retainedEvictionCount: number;
 }
@@ -59,6 +62,7 @@ export function emptyGroupManagerDiagnostics(): MutableWebRtcGroupManagerDiagnos
         lastDesiredPeerCount: 0,
         connectAttemptCount: 0,
         connectFailureCount: 0,
+        connectDeferredBudgetCount: 0,
         disconnectCount: 0,
         retainedEvictionCount: 0,
     };
