@@ -387,6 +387,22 @@
             }
           },
           {
+            "kind": "loop",
+            "commandId": "parity-peer-overlap-hold",
+            "durationMs": 12000,
+            "intervalMs": 1000,
+            "maxCommands": 12,
+            "metadata": {
+              "purpose": "keep-all-parity-peers-online-through-connect-readiness"
+            },
+            "commands": [
+              {
+                "kind": "health",
+                "commandId": "parity-peer-overlap-health"
+              }
+            ]
+          },
+          {
             "kind": "close",
             "commandId": "parity-close",
             "label": "Close provider parity runtime",
@@ -441,6 +457,10 @@
     "expectedParticipantCount": 2
   },
   "ackTimeoutMs": 30000,
+  "barrier": {
+    "enabled": true,
+    "timeoutMs": 15000
+  },
   "startMode": "manual",
   "artifactPolicy": {
     "retainArtifacts": true,

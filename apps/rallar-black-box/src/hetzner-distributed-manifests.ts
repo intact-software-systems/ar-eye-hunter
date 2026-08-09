@@ -134,11 +134,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             title: 'Provider parity 2-agent',
             description: 'Broader browser-rallar provider parity check for connect, direct, multicast, broadcast, health, close, and reset.',
             distributedRunId: 'hetzner-provider-parity-2-agent',
-            recipe: withoutDemoCredentials(createRallarBlackBoxProviderParityLiveRecipe({
-                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-                readyPeerCount: 1,
-                readyTimeoutMs: 10_000,
-            })),
+            recipe: createHetznerProviderParityRecipe(),
             agentCount: 2,
             profiles: ['rtc', 'parity'],
             live: true,
@@ -548,7 +544,7 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
         targetPolicyMode: input.targetPolicyMode ?? 'all-online-group-members',
         rolePattern: input.rolePattern ?? 'all-agents',
         ackTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
-        barrier: input.barrier
+        barrier: input.barrier || (input.live && input.agentCount >= 2)
             ? {
                   enabled: true,
                   timeoutMs: 15_000,
@@ -973,6 +969,42 @@ function fixtureRecipe(fixtureId: string): RallarBlackBoxTestRecipe {
     return {
         schemaVersion: 1,
         ...fixture.recipe,
+    };
+}
+
+function createHetznerProviderParityRecipe(): RallarBlackBoxTestRecipe {
+    const recipe = withoutDemoCredentials(createRallarBlackBoxProviderParityLiveRecipe({
+        group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
+        readyPeerCount: 1,
+        readyTimeoutMs: 10_000,
+    }));
+    const closeIndex = recipe.commands.findIndex(command => command.kind === 'close');
+    if (closeIndex < 0) {
+        throw new Error('Provider parity recipe must close its browser runtime.');
+    }
+
+    return {
+        ...recipe,
+        commands: [
+            ...recipe.commands.slice(0, closeIndex),
+            {
+                kind: 'loop',
+                commandId: 'parity-peer-overlap-hold',
+                durationMs: 12_000,
+                intervalMs: 1_000,
+                maxCommands: 12,
+                metadata: {
+                    purpose: 'keep-all-parity-peers-online-through-connect-readiness',
+                },
+                commands: [
+                    {
+                        kind: 'health',
+                        commandId: 'parity-peer-overlap-health',
+                    },
+                ],
+            },
+            ...recipe.commands.slice(closeIndex),
+        ],
     };
 }
 

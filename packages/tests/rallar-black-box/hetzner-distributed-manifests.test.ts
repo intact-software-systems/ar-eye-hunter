@@ -75,8 +75,10 @@ type ManifestCommand = Readonly<{
         intervalMs?: number;
     }>;
     count?: number;
+    durationMs?: number;
     intervalMs?: number;
     maxInFlight?: number;
+    maxCommands?: number;
     continueOnSendFailure?: boolean;
     metadata?: Record<string, unknown>;
     thresholds?: Record<string, unknown>;
@@ -291,6 +293,20 @@ describe('Hetzner distributed manifest catalog', () => {
                 minReadyPeers: expected?.peers,
                 timeoutMs: expected?.timeoutMs,
                 intervalMs: 100,
+            });
+        }
+    });
+
+    it('synchronizes every live multi-agent Hetzner recipe before execution', () => {
+        for (const entry of buildHetznerDistributedManifestCatalog()) {
+            const hasLiveRecipe = entry.manifest.recipes.some(selection => selection.live);
+            if (!hasLiveRecipe || entry.agentCount < 2) {
+                continue;
+            }
+
+            expect(entry.manifest.barrier, entry.filePath).toEqual({
+                enabled: true,
+                timeoutMs: 15_000,
             });
         }
     });
@@ -540,6 +556,45 @@ describe('Hetzner distributed manifest catalog', () => {
             timeoutMs: 15_000,
             readiness: { timeoutMs: 10_000 },
         });
+    });
+
+    it('keeps provider parity peers alive through the readiness window before teardown', () => {
+        const parity = buildHetznerDistributedManifestCatalog().find(entry =>
+            entry.filePath === 'apps/rallar-black-box/manifests/hetzner/04-provider-parity-2-agent.json'
+        );
+        const commands = parity?.manifest.recipes[0]?.recipe.commands as readonly ManifestCommand[] | undefined;
+        const connectIndex = commands?.findIndex(command => command.kind === 'rtc.connect') ?? -1;
+        const holdIndex = commands?.findIndex(command => command.commandId === 'parity-peer-overlap-hold') ?? -1;
+        const closeIndex = commands?.findIndex(command => command.kind === 'close') ?? -1;
+        const resetIndex = commands?.findIndex(command => command.kind === 'reset') ?? -1;
+        const connect = commands?.at(connectIndex);
+        const hold = commands?.at(holdIndex);
+
+        expect(parity?.manifest.targetPolicy.mode).toBe('all-online-group-members');
+        expect(parity?.manifest.recipes).toHaveLength(1);
+        expect(parity?.manifest.recipes[0]?.role).toBeUndefined();
+        expect(connectIndex).toBeGreaterThanOrEqual(0);
+        expect(holdIndex).toBeGreaterThanOrEqual(0);
+        expect(closeIndex).toBeGreaterThanOrEqual(0);
+        expect(resetIndex).toBeGreaterThanOrEqual(0);
+        expect(connectIndex).toBeLessThan(holdIndex);
+        expect(holdIndex).toBeLessThan(closeIndex);
+        expect(closeIndex).toBeLessThan(resetIndex);
+        expect(hold).toMatchObject({
+            kind: 'loop',
+            durationMs: 12_000,
+            intervalMs: 1_000,
+            maxCommands: 12,
+            commands: [
+                {
+                    kind: 'health',
+                    commandId: 'parity-peer-overlap-health',
+                },
+            ],
+        });
+        expect(hold?.durationMs).toBeGreaterThanOrEqual(
+            (connect?.readiness?.timeoutMs ?? 0) + 2_000,
+        );
     });
 
     it('feeds Hetzner CI artifacts into SPA monitor and RTC performance views', () => {
