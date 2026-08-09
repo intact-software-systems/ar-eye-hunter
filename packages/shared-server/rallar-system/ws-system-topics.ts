@@ -22,6 +22,7 @@ import { sendStateSyncMessage } from './state-sync-routing.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
+    type RtcTopologyDeliveryOptions,
     type RtcTopologyWorkPublisher,
 } from './services/RtcTopologyOutboxWork.ts';
 import {
@@ -36,9 +37,7 @@ import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceResult,
 } from './services/rtc-rtt-measurement-policy.ts';
-import {
-    type RuntimeStateRepositoryLike,
-} from '../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateRepositoryLike } from '../runtime-state/RuntimeStateRepository.ts';
 import type { RtcTopologyPublicationFanout } from './pubsub/RtcTopologyClusterTransport.ts';
 import type { RtcTopologyExecutionRepository } from './repositories/RtcTopologyExecutionRepository.ts';
 import type { PSqlSql } from '../postgres/PostgresSqlClient.ts';
@@ -68,6 +67,7 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
         findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
         executionRepository: RtcTopologyExecutionRepository;
         publicationFanout: RtcTopologyPublicationFanout;
+        topologyDelivery?: RtcTopologyDeliveryOptions;
     }>;
     enqueueRtcRttMutation?: (input: Readonly<{
         rtt: RttMeasurementInfo;
@@ -147,6 +147,7 @@ export function initRallarSystemWsTopics(
                 executionRepository:
                     rtcTopologyAppOutboxOptions.executionRepository,
                 publicationFanout: rtcTopologyAppOutboxOptions.publicationFanout,
+                topologyDelivery: rtcTopologyAppOutboxOptions.topologyDelivery,
                 wakeQueue: rtcTopologyAppOutboxOptions.wake,
                 onInactiveOverlay: (overlayId) =>
                     clearRtcTopologyFlushTimer(

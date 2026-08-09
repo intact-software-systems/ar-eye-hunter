@@ -294,6 +294,7 @@ export function createRallarServer(
               wake: () => runtime.qboxEngine.wake(),
               executionRepository: runtime.rtcTopologyExecutionRepository,
               publicationFanout: runtime.rtcTopologyPublicationFanout,
+              topologyDelivery: runtime.rtcTopologyDelivery,
               findGroupSnapshotByRef: (ref, cacheOptions) =>
                 runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
             },
@@ -343,6 +344,7 @@ export function createRallarServer(
         registerMiddlewareBackgroundTask(lifecycle.stop);
       },
     },
+
     routes: {
       ws: wsRoutes.init,
       rest: [
