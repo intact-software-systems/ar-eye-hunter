@@ -28,16 +28,19 @@ harness.
 
 Date: 2026-08-08
 
-Status: Approved child in execution, with PR A blocked after its corrected
-prospective performance tooling reached independent review at Critical 0 and
-Important 0 but did not satisfy the repository's size and formatting gates.
-The human approved original planning Git blob
+Status: Approved child in execution, with PR A blocked after the approved
+artifact-owner extraction exposed two exact-base directory-layout findings.
+The implementation itself reached independent review at Critical 0 and
+Important 0; overall governance remains Critical 0 and Important 1 until this
+target-path correction is approved and implemented. The human approved
+original planning Git blob
 `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, performance-amendment blob
 `f83cc311369fff2bf255116253ec0f4fe911a43f`, and pooler-order correction blob
-`ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc`. This gate-disposition amendment is
-drafted and unapproved; it authorizes no tooling change, exception-registry
-change, candidate change, measurement, publication, or result reinterpretation
-until the human approves this amendment's exact Git blob.
+`ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc`, and gate-disposition blob
+`b6fd5aebfa77ee489e65fa30fbee165e033c14f9`. This target-path correction is
+drafted and unapproved. It authorizes no implementation change, candidate
+freeze, measurement, publication, or result reinterpretation until the human
+approves this correction's exact Git blob.
 
 ## 0. Prerequisite And Planning Publication Evidence
 
@@ -84,10 +87,10 @@ The original planning pull request changed only:
 - the execution plan; and
 - the auth child plan for exact ledger closure and successor linkage.
 
-The performance amendment, pooler-order correction, and this gate-disposition
-amendment each change only this plan. None reconciles the master program,
-execution plan, implementation branch, or any future implementation/publication
-fact before its exact blob is approved.
+The performance amendment, pooler-order correction, gate-disposition
+amendment, and this target-path correction each change only this plan. None
+reconciles the master program, execution plan, implementation branch, or any
+future implementation/publication fact before its exact blob is approved.
 
 Under the repository plan-only publication policy, its gates are Prettier,
 `git diff --check`, and the focused repository-governance tests. Build, unit,
@@ -198,7 +201,7 @@ pure explicit-position entry point inside the v1 pooler. Its existing public
 API, behavior, outputs, errors, thresholds, comparator, evaluator, and ordinary
 `A-B-B-A` protocol remain unchanged.
 
-### 0.6 Draft prospective tooling gate-disposition evidence
+### 0.6 Approved prospective tooling gate-disposition evidence
 
 This gate-disposition amendment starts from freshly fetched `origin/main`
 `6f6f9767eab300229d549f06a98a3ce7bd3e37f2`, tree
@@ -231,10 +234,69 @@ is repository gate disposition:
 - every other approved tooling, test, and plan path passes Prettier, while
   every newly introduced general function is at most 60 lines.
 
-The behavior-neutral disposition in Sections 13.3 and 14.2.1 is drafted and
-unapproved. This tree predicts no future amendment blob, commit, PR, merge,
-workflow, tooling implementation, exception entry, replacement candidate, or
-measurement fact.
+The human approved exact gate-disposition blob
+`b6fd5aebfa77ee489e65fa30fbee165e033c14f9`. Plan-only PR #129 published it at
+feature head `05c75cf2ad52589901e6983a687d28aa5b910582`, frozen tree
+`e3b309e9b913395e28645f1355400d380697c658`, then merged as resulting main
+`c7d6d4ec017edb23de239bba18c6d79f2ebb5dac`, tree
+`e3b309e9b913395e28645f1355400d380697c658`. No local build or Branch Release
+Gate was required under the repository plan-only policy.
+
+The approved disposition authorizes only the behavior-neutral artifact-owner
+extraction and the two exact benchmark file/`main` exception-registry entries.
+It authorizes no benchmark, production behavior, threshold, comparator,
+evaluator, dependency, workflow, TypeScript, checker, or PR #103 publication
+change.
+
+### 0.7 Draft artifact-owner target-path correction evidence
+
+This correction starts from freshly fetched `origin/main`
+`661e497597587e3803c0760a90b0a124df8af075`, tree
+`dfc45f287ecfd39b10acb399c42d7a6214f5353f`, on isolated branch
+`codex/rallar-group-topology-performance-artifact-path-plan`. PR #129 resulting
+main remains an ancestor, and the plan at this base is still exact approved
+blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9`. Intervening default-branch
+changes do not touch this plan.
+
+The current entirely unstaged tooling implementation, all passed validation
+and review evidence, failed historical benchmark, comparator, evaluator,
+thresholds, immutable production candidate, and PR #103 remain unchanged. No
+benchmark, implementation staging, implementation commit, candidate push, or
+PR #103 update is part of this correction.
+
+Independent review reports Critical 0 and Important 0 for the implementation
+itself and one Important governance blocker. Creating the exact direct path
+`scripts/perf/api-v1-state-write-benchmark-artifact.ts` necessarily:
+
+- increases `scripts/perf` direct production TypeScript files from 29 to 30;
+- increases the direct `state` filename-prefix cluster from 6 to 7;
+- makes exact-base changed style fail with exactly
+  `layout.directory-density` and `layout.feature-prefix-cluster`; and
+- cannot be covered by the approved benchmark whole-file/`main` exceptions,
+  which neither cover nor suppress directory-layout findings.
+
+The behavior-neutral correction moves that sole owner to
+`scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts`. The
+cohesive subdirectory preserves visible state-write benchmark ownership without
+worsening either direct-directory ratchet. Only the benchmark import, focused
+test import, validation-command path, exact-tree evidence, ownership evidence,
+and factual plan references may follow that path. The old direct path is
+removed without a compatibility re-export because retaining it would preserve
+the layout failure and add an unnecessary hop.
+
+The corrected target preserves the artifact API, schema, property order,
+values, errors, timing, optional reason-file behavior, JSON formatting,
+trailing newline, and exact 2,571-byte regression artifact SHA-256
+`70a977c657cd1d0ae850b291d19872a73932c6e46050855acfed3131741f70dd`.
+The benchmark remains capped at 1,763 physical lines. Both exact code-style
+exceptions, ordinary `A-B-B-A`, position-balanced `A-B-B-A-B-A-A-B`, immutable
+production candidate, comparator, evaluator, thresholds, dependencies,
+workflows, TypeScript setting, checker behavior, and failed historical evidence
+remain unchanged.
+
+This correction is drafted and unapproved. This tree predicts no future
+correction blob, commit, PR, approval, merge, implementation candidate,
+measurement envelope, benchmark, or publication result.
 
 ## 1. Outcome, Scope, And Review Sizing
 
@@ -1382,10 +1444,15 @@ final Task 2 checkbox remains open.
 - [x] Obtain independent corrected-tooling review with Critical 0 and Important
       0; retain the remaining size/formatting disposition as a separate human
       decision.
-- [ ] Obtain human approval of this gate-disposition amendment's exact Git
-      blob.
-- [ ] Extract benchmark Git-identity and artifact-construction ownership and
+- [x] Obtain human approval of gate-disposition amendment Git blob
+      `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` and merge plan-only PR #129.
+- [x] Extract benchmark Git-identity and artifact-construction ownership and
       add only the exact Section 13.3 exception-registry entries test-first.
+- [x] Stop when the approved direct artifact-owner path produced two new
+      exact-base directory-layout findings outside the approved exceptions.
+- [ ] Obtain human approval of this target-path correction's exact Git blob.
+- [ ] Move only the artifact owner to the approved cohesive subdirectory and
+      update its direct benchmark/test imports and evidence paths.
 - [ ] Rerun every tooling-invalidated focused and repository completion gate,
       then obtain final independent tooling and whole-PR review with Critical 0
       and Important 0.
@@ -1570,15 +1637,16 @@ runtime regression was established.
 
 ### 13.3 Prospective PR A tooling boundary
 
-Only after the human approves this gate-disposition amendment's exact Git blob
-may PR A finish the following performance-tooling changes test-first:
+Only after the human approves this target-path correction's exact Git blob may
+PR A finish the following performance-tooling changes test-first:
 
 - modify `scripts/perf/api-v1-state-write-concurrency-bench.ts` only to accept
   and validate an optional `--regression-reasons-file=<relative-path>` input,
   then delegate Git-identity resolution and artifact construction to the named
   owner below;
-- create `scripts/perf/api-v1-state-write-benchmark-artifact.ts` as the sole
-  owner of `BenchmarkGitIdentity`, `StateWriteBenchmarkArtifactInput`,
+- create
+  `scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts` as the
+  sole owner of `BenchmarkGitIdentity`, `StateWriteBenchmarkArtifactInput`,
   `StateWriteBenchmarkArtifact`, `readBenchmarkGitIdentity`, and
   `createStateWriteBenchmarkArtifact`;
 - modify
@@ -1956,7 +2024,8 @@ deno check --config apps/api-v1/deno.json \
 
 ### 14.2.1 Prospective PR A performance-tooling gates
 
-After exact gate-disposition approval and before a new candidate freezes, run:
+After exact target-path-correction approval and before a new candidate freezes,
+run:
 
 ```bash
 npx vitest run \
@@ -1972,7 +2041,7 @@ node --check \
   scripts/perf/compare-group-state-server-structure-performance.mjs
 deno check --config apps/api-v1/deno.json \
   scripts/perf/api-v1-state-write-concurrency-bench.ts \
-  scripts/perf/api-v1-state-write-benchmark-artifact.ts
+  scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts
 npx vitest run \
   packages/tests/repo/repo-code-style-authority-integrity.test.ts
 npm run check:repo-style
@@ -1985,7 +2054,7 @@ node scripts/check-changed-repo-style.mjs \
   74a62eb22583216e8c6651de069209d7e1a8ca67
 test "$(wc -l < scripts/perf/api-v1-state-write-concurrency-bench.ts | tr -d ' ')" -le 1763
 npx prettier --check \
-  scripts/perf/api-v1-state-write-benchmark-artifact.ts \
+  scripts/perf/state-write/api-v1-state-write-benchmark-artifact.ts \
   scripts/perf/pool-api-v1-state-write-results.mjs \
   scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs \
   scripts/perf/write-group-topology-state-write-position-balanced-results.mjs \
@@ -2198,15 +2267,17 @@ Human decisions are required at these exact points:
    `f83cc311369fff2bf255116253ec0f4fe911a43f`;
 4. the completed approval of pooler-order correction blob
    `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc`;
-5. approve or revise this gate-disposition amendment's exact plan blob;
-6. after tooling implementation, authorize the exact new candidate, tools,
+5. the completed approval of gate-disposition amendment blob
+   `b6fd5aebfa77ee489e65fa30fbee165e033c14f9`;
+6. approve or revise this target-path correction's exact plan blob;
+7. after tooling implementation, authorize the exact new candidate, tools,
    conflict-reason input, environment, and measurement envelope;
-7. approve merging exact PR A only after both position blocks pass;
-8. approve merging exact PR B after governed persistence performance evidence;
-9. approve merging exact PR C after governed authoritative-shell evidence;
-10. approve PR D's compatibility/ratchet decisions and exact merge;
-11. separately authorize the later evidence-ledger publication; and
-12. approve and close that ledger before RTC/RTT or another Wave 2 child begins.
+8. approve merging exact PR A only after both position blocks pass;
+9. approve merging exact PR B after governed persistence performance evidence;
+10. approve merging exact PR C after governed authoritative-shell evidence;
+11. approve PR D's compatibility/ratchet decisions and exact merge;
+12. separately authorize the later evidence-ledger publication; and
+13. approve and close that ledger before RTC/RTT or another Wave 2 child begins.
 
 Implementation PRs remain draft until scoped review, Critical 0/Important 0,
 all required local gates, exact tree freeze, current PR evidence, and Branch
@@ -2216,21 +2287,25 @@ SHA and required default workflow before creating the next branch.
 
 ## 16. Non-Circular Completion Evidence
 
-This amendment tree records only existing prerequisite, original-plan,
-approved performance amendment, approved pooler correction,
-implementation-candidate, failed-performance, diagnosis, corrected-tooling
-review, and current-main facts. It cannot contain its own future blob, tree,
-commit, PR, merge, workflow, tooling implementation, exception entry,
-replacement candidate, or measurement result.
+This correction tree records only existing prerequisite, original-plan,
+approved performance amendment, approved pooler correction, approved
+gate-disposition amendment, implementation-candidate, failed-performance,
+diagnosis, corrected-tooling review, layout-failure, and current-main facts. It
+cannot contain its own future blob, tree, commit, PR, approval, merge, workflow,
+corrected implementation, replacement candidate, or measurement result.
 
 Planning PR #125 with approved amendment blob
 `f83cc311369fff2bf255116253ec0f4fe911a43f` and planning PR #127 with approved
 correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` are existing evidence. The
-exact gate-disposition amendment blob, its planning commit/PR, and any future
-merge evidence stay in its external handoff. After human approval, PR A may
-record that approval and only facts already produced by the authorized tooling
-phase. It may never predict a future passing measurement or Branch Release
-Gate.
+gate-disposition amendment blob
+`b6fd5aebfa77ee489e65fa30fbee165e033c14f9`, planning PR #129 feature
+`05c75cf2ad52589901e6983a687d28aa5b910582`, frozen/resulting tree
+`e3b309e9b913395e28645f1355400d380697c658`, and resulting main
+`c7d6d4ec017edb23de239bba18c6d79f2ebb5dac` are also existing evidence. This
+target-path correction's exact blob, planning commit/PR, approval, and merge
+stay in its future external handoff. After approval, PR A may record only facts
+already produced by the authorized implementation phase. It may never predict
+a future passing measurement or Branch Release Gate.
 
 Each implementation PR records only completed local tasks and existing
 predecessor envelopes. Its future merge, resulting-main SHA, and default
@@ -2262,7 +2337,12 @@ measurements remain historical and are never relabeled for a changed tree.
 - [x] Human approved pooler-order correction Git blob
       `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc`.
 - [x] Corrected prospective tooling review reported Critical 0 and Important 0.
-- [ ] Human approved this gate-disposition amendment's exact Git blob.
+- [x] Human approved gate-disposition amendment Git blob
+      `b6fd5aebfa77ee489e65fa30fbee165e033c14f9`.
+- [x] The original direct artifact-owner target was rejected after exact-base
+      changed style reported only directory density 29→30 and `state` prefix
+      cluster 6→7.
+- [ ] Human approved this target-path correction's exact Git blob.
 - [ ] Benchmark artifact and Git-identity ownership is extracted while the
       benchmark returns to at most 1,763 lines and preserves exact output bytes.
 - [ ] The exception registry contains only the authorized benchmark-file and
@@ -2326,16 +2406,16 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 19. Progress Record
 
-| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth prerequisite          | ledger-published    | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                          |
-| Group-topology child plan  | disposition drafted | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f`. Planning PR #127 merged approved correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` as feature `8e36fe1c303f695f0a6ec3d99be30eda12c96b11`, frozen/resulting tree `3d6cdf6abb46866e74895fe49150a4a9a4bde77c`, resulting main `df8346aaf39e8d8730e73a530da3e6f182aa071b`. This amendment's future blob, commit, PR, approval, and merge remain external and unpredicted. |
-| PR A protocol/core         | governance-blocked  | Draft PR #103 remains on older remote head `8b1ebf542d12c05a5ac226d3d07e543a171a2626`. Exact local candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`, tree `7f971bcf84aa494265992d17e3c9b99227bd8122`, completed correctness and Critical 0/Important 0 production review but is non-exempt. Corrected prospective tooling also reached Critical 0/Important 0; only its explicit size/formatting disposition remains unapproved. The exact v1 A-B-B-A evidence remains failed. No candidate push, PR update, Branch Release Gate, or new benchmark occurred.                       |
-| PR B persistence           | blocked             | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| PR C authoritative shell   | blocked             | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| PR D alignment/final trace | blocked             | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| Later topology ledger      | blocked             | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| RTC/RTT and later domains  | blocked             | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Milestone                  | State                   | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth prerequisite          | ledger-published        | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Group-topology child plan  | path correction drafted | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f`. Planning PR #127 merged approved correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` as feature `8e36fe1c303f695f0a6ec3d99be30eda12c96b11`, frozen/resulting tree `3d6cdf6abb46866e74895fe49150a4a9a4bde77c`, resulting main `df8346aaf39e8d8730e73a530da3e6f182aa071b`. Planning PR #129 merged approved gate-disposition blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` as feature `05c75cf2ad52589901e6983a687d28aa5b910582`, frozen/resulting tree `e3b309e9b913395e28645f1355400d380697c658`, resulting main `c7d6d4ec017edb23de239bba18c6d79f2ebb5dac`. This correction's future blob, commit, PR, approval, and merge remain external and unpredicted. |
+| PR A protocol/core         | governance-blocked      | Draft PR #103 remains on older remote head `8b1ebf542d12c05a5ac226d3d07e543a171a2626`. Immutable production candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`, tree `7f971bcf84aa494265992d17e3c9b99227bd8122`, completed correctness and Critical 0/Important 0 production review but is non-exempt. The approved artifact extraction is unstaged and implementation review is Critical 0/Important 0; overall review is Critical 0/Important 1 because its original direct path alone worsens two layout ratchets. The exact v1 A-B-B-A evidence remains failed. No candidate push, PR update, Branch Release Gate, or new benchmark occurred.                                                                                                                                                                                                                           |
+| PR B persistence           | blocked                 | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| PR C authoritative shell   | blocked                 | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| PR D alignment/final trace | blocked                 | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Later topology ledger      | blocked                 | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| RTC/RTT and later domains  | blocked                 | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ## 20. Self-Review Checklist
 
@@ -2356,8 +2436,13 @@ measurements remain historical and are never relabeled for a changed tree.
       chronological position without choosing an order after measurement.
 - [x] The existing v1 pooler entry remains the exact ordinary A-B-B-A owner;
       only a pure explicit-position entry is authorized for the mirrored block.
-- [x] Corrected prospective tooling has Critical 0/Important 0 code review;
-      only the explicit inherited benchmark gate disposition remains open.
+- [x] Corrected prospective tooling has Critical 0/Important 0 implementation
+      review and the inherited benchmark gate disposition is approved.
+- [x] The exact direct artifact-owner path's two unavoidable layout findings
+      are recorded without suppressing checker output or broadening exceptions.
+- [x] The cohesive `scripts/perf/state-write/` owner removes the mechanical
+      directory-density and direct-prefix growth without adding a compatibility
+      hop.
 - [x] The proposed artifact extraction names one direct owner without changing
       measurement timing, artifact bytes, or the benchmark's public behavior.
 - [x] The two proposed exceptions are file/symbol specific, preserve checker
