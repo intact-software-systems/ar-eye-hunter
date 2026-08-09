@@ -15,6 +15,7 @@ import type {
   AdminOperationsStatsReader,
 } from '../../rallar-system/admin-operations/AdminOperationsService.ts';
 import type { AdminPruneExpiredOptions } from '../../rallar-system/admin-operations/admin-prune-options.ts';
+import { clientStateWorkspaceStorageKey } from '../../rallar-system/client-state-storage-keys.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import {
   decodeGroupStateGroupStorageKey,
@@ -415,15 +416,13 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
         `)[0]?.count,
     );
   }
-
   private async countGlobalActiveClientPrincipals(): Promise<number> {
     return toNumber(
       (await this.sql<CountRow[]>`
             select count(*) as count
             from (
-                select distinct
-                    store_value::jsonb ->> 'applicationId' as application_id,
-                    coalesce(store_value::jsonb ->> 'workspaceId', '_') as workspace_id,
+                select distinct store_value::jsonb ->> 'applicationId' as application_id,
+                    store_value::jsonb ->> 'workspaceId' as workspace_id,
                     store_value::jsonb ->> 'principalId' as principal_id
                 from runtime_state_store
                 where store_namespace = 'client-state:sessions'
@@ -431,6 +430,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                   and store_value::jsonb ->> 'status' = 'active'
                   and store_value::jsonb ->> 'disconnectedAtEpochMs' is null
                   and store_value::jsonb ->> 'applicationId' is not null
+                  and store_value::jsonb ->> 'workspaceId' is not null
                   and store_value::jsonb ->> 'principalId' is not null
                   and (store_value::jsonb ->> 'expiresAtEpochMs')::double precision > ${this.options.now()}
             ) principals
@@ -445,7 +445,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 select count(*) as count
                 from client_state_events
                 where application_id = ${scope.applicationId}
-                  and workspace_key = ${scope.workspaceId}
+                  and workspace_key = ${clientStateWorkspaceStorageKey(scope.workspaceId)}
             `)[0]?.count,
       );
     }
@@ -483,7 +483,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 select count(*) as count
                 from client_state_events
                 where application_id = ${scope.applicationId}
-                  and workspace_key = ${scope.workspaceId}
+                  and workspace_key = ${clientStateWorkspaceStorageKey(scope.workspaceId)}
                   and occurred_at_epoch_ms >= ${recentSinceEpochMs}
             `)[0]?.count,
       );

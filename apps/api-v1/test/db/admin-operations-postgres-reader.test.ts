@@ -280,6 +280,41 @@ Deno.test('PSqlAdminOperationsStatsReader applies a custom recent-event window w
   });
 });
 
+Deno.test('PSqlAdminOperationsStatsReader isolates canonical client-event workspace keys', async () => {
+  await withPGliteSql(async (sql) => {
+    const nowEpochMs = 1_700_000_000_000;
+    const applicationId = 'admin-client-event-workspace-isolation';
+    const workspaceCases = [
+      { workspaceId: '_', workspaceKey: '%5F' },
+      { workspaceId: '%5F', workspaceKey: '%255F' },
+      { workspaceId: 'a:b', workspaceKey: 'a%3Ab' },
+      { workspaceId: 'a%3Ab', workspaceKey: 'a%253Ab' },
+    ] as const;
+
+    for (const { workspaceKey } of workspaceCases) {
+      await sql`
+        insert into client_state_events (
+          application_id, workspace_key, principal_id, event_id, event_type,
+          snapshot_version, occurred_at_epoch_ms, event_json
+        )
+        values (
+          ${applicationId}, ${workspaceKey}, ${'shared-principal'}, ${'shared-event'},
+          ${'session-connected'}, ${1}, ${nowEpochMs}, ${'{}'}
+        )
+      `;
+    }
+
+    const reader = new PSqlAdminOperationsStatsReader(sql, { now: () => nowEpochMs });
+    for (const { workspaceId } of workspaceCases) {
+      const state = await reader.readState({
+        adminSession: createAdminSession(),
+        scope: { applicationId, workspaceId },
+      });
+      assert.equal(state.events.recentClientEvents, 1, workspaceId);
+    }
+  });
+});
+
 Deno.test('PSqlAdminOperationsStatsReader orders queue topPressure by count descending', async () => {
   await withPGliteSql(async (sql) => {
     for (
@@ -897,6 +932,40 @@ Deno.test('PSqlAdminOperationsStatsReader keeps online identity scoped globally'
   });
 });
 
+Deno.test('PSqlAdminOperationsStatsReader excludes sessions without persisted workspace identity', async () => {
+  await withPGliteSql(async (sql) => {
+    await insertRuntimeState(sql, {
+      namespace: 'client-state:sessions',
+      key: 'app=workspace-required:ws=%5F:principal=kept:instance=browser:session=kept',
+      value: {
+        applicationId: 'workspace-required',
+        workspaceId: '_',
+        status: 'active',
+        principalId: 'kept',
+        expiresAtEpochMs: 1_700_000_060_000,
+      },
+    });
+    await insertRuntimeState(sql, {
+      namespace: 'client-state:sessions',
+      key: 'app=workspace-required:ws=missing:principal=omitted:instance=browser:session=omitted',
+      value: {
+        applicationId: 'workspace-required',
+        status: 'active',
+        principalId: 'omitted',
+        expiresAtEpochMs: 1_700_000_060_000,
+      },
+    });
+    const reader = new PSqlAdminOperationsStatsReader(sql, {
+      now: () => 1_700_000_000_000,
+    });
+
+    const state = await reader.readState({ adminSession: createAdminSession() });
+
+    assert.equal(state.clients.onlinePrincipals, 1);
+    assert.equal(state.clients.activeSessions, 2);
+  });
+});
+
 Deno.test('PSqlAdminOperationsStatsReader keeps colon-bearing identities distinct globally', async () => {
   await withPGliteSql(async (sql) => {
     for (
@@ -1084,7 +1153,8 @@ Deno.test('PSqlAdminOperationsPruner counts and deletes only expired supported r
     assert.equal(await pruner.countExpired('resource-inbox-results', cutoff), 1);
     assert.equal(
       await pruner.countExpired('app-data', {
-        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
+        ...cutoff,
+        appData: { namespace: 'app-ns', storeName: 'settings' },
       }),
       1,
     );
@@ -1094,7 +1164,8 @@ Deno.test('PSqlAdminOperationsPruner counts and deletes only expired supported r
     assert.equal(await pruner.pruneExpired('resource-inbox-results', cutoff), 1);
     assert.equal(
       await pruner.pruneExpired('app-data', {
-        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
+        ...cutoff,
+        appData: { namespace: 'app-ns', storeName: 'settings' },
       }),
       1,
     );
@@ -1104,7 +1175,8 @@ Deno.test('PSqlAdminOperationsPruner counts and deletes only expired supported r
     assert.equal(await pruner.countExpired('resource-inbox-results', cutoff), 0);
     assert.equal(
       await pruner.countExpired('app-data', {
-        ...cutoff, appData: { namespace: 'app-ns', storeName: 'settings' },
+        ...cutoff,
+        appData: { namespace: 'app-ns', storeName: 'settings' },
       }),
       0,
     );
