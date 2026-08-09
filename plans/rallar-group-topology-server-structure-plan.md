@@ -28,9 +28,12 @@ harness.
 
 Date: 2026-08-08
 
-Status: Drafted and unapproved. This planning revision authorizes no production
-or test implementation. The exact Git blob requires human approval before any
-implementation goal, branch, or pull request is created.
+Status: Approved child in execution, with PR A blocked by its preserved failed
+performance result. The human approved exact planning Git blob
+`c9b5e92686ebbc5d4ff136dbea678c93fea1579f`. This separate prospective
+performance-protocol amendment is drafted and unapproved; it authorizes no
+tooling change, candidate change, measurement, publication, or result
+reinterpretation until the human approves this amendment's exact Git blob.
 
 ## 0. Prerequisite And Planning Publication Evidence
 
@@ -70,18 +73,89 @@ and is not reopened.
 
 ### 0.3 Plan-only publication policy
 
-The planning pull request changes only:
+The original planning pull request changed only:
 
 - this plan;
 - the master program;
 - the execution plan; and
 - the auth child plan for exact ledger closure and successor linkage.
 
+This prospective amendment changes only this plan. It does not reconcile the
+master program, execution plan, implementation branch, or any future
+publication fact before its exact blob is approved.
+
 Under the repository plan-only publication policy, its gates are Prettier,
 `git diff --check`, and the focused repository-governance tests. Build, unit,
 CI, Branch Release Gate, and resulting-main deployment workflows are not
 required for this plan-only revision. Implementation PRs remain subject to
 their full code and publication gates.
+
+### 0.4 Prospective performance-protocol amendment evidence
+
+This amendment starts from freshly fetched `origin/main`
+`9ff4b7422c8124acf4bce0c46d1d1bf7cddbab6a`, tree
+`833a3e22103ea51f5838ae05e4e4640acfa15c65`, on isolated branch
+`codex/rallar-group-topology-performance-protocol-amendment`. It carries
+forward the already authorized factual Task 1 and Task 2 reconciliation from
+PR A's plan file at Git blob `749ac5fb3796523f4bd6906220ba4664d7fb34a2`
+without changing PR A.
+
+The immutable PR A candidate remains exact commit
+`74a62eb22583216e8c6651de069209d7e1a8ca67`, tree
+`7f971bcf84aa494265992d17e3c9b99227bd8122`. Draft PR #103 and its remote
+branch remain unchanged at older head
+`8b1ebf542d12c05a5ac226d3d07e543a171a2626`; the immutable candidate has not
+been pushed, published, or sent through Branch Release Gate.
+
+The completed governed A-B-B-A sequence is retained permanently as failed
+historical evidence:
+
+- A1 artifact SHA-256
+  `a0e162f3d9cdbb2b9bf831852c09946c3368f2ab2fc51e9980929ca968226d5d`;
+- B1 artifact SHA-256
+  `f87f2e9aa2e8021241f532057f05ba9e3d06634ae8bf0d2b358468ac1d8c3b8c`;
+- B2 artifact SHA-256
+  `e03beb6eab9e97ce8b46f5172987227ae4bd92e666a97efb590fe1e163751f11`;
+- A2 artifact SHA-256
+  `bc104a374a1109232ff5f61830653179dcdebd1c7598a9477eca9dfdbf8daf40`;
+- normalized environment-record SHA-256
+  `e28a21d1a8dd8f5a98c5b3a75d1c1c8a52ebf4896ec9a3a64b42b1385de481c9`;
+- pooled-base SHA-256
+  `d2d8a28e5760f933d5d522030cda1d1025ffa264f56dc7e1f6049b1b125b6e85`;
+- pooled-candidate SHA-256
+  `e6ff1d9dadcdcbc255a985794bb2bda0f194b451a634af6605fc0164674673f4`;
+- manifest SHA-256
+  `8f0db39534e5f8292a4f6c4c7d3d944be0d8c6e7de83b06a358072431978d391`;
+- unchanged global-comparator log SHA-256
+  `ffa4d800ddcb4240441431450065940e4a55618ce0aa070e5b3494359e2b36a6`;
+- unchanged child-evaluator log SHA-256
+  `f45e6a30a396f83f24e33d998ffb9175ecf2c19a338f1d4f1012e5d215af649f`;
+  and
+- the first default-heap pooling OOM log SHA-256
+  `5374f35d818135b0df2eca0460ad91f1f6e260eba6e306a3731eaca1841b0fef`.
+
+The four positions, environments, raw correctness evidence, and later
+human-authorized high-heap pooling invocation were valid. The governed result
+failed because shared throughput moved adversely by `5.068999%`, beyond the
+unconditional `1.5%` child limit, and shared PostgreSQL transaction duration
+moved adversely by `3.088188%` without the pre-recorded conflict-reason link
+required by the existing evaluator. It is not accepted evidence and no part of
+this amendment relabels, replaces, discards, or reruns it.
+
+Read-only artifact and static-path diagnosis found a position-correlated
+performance regime and an early-B2 `RuntimeStateWriteConflictError` burst, not
+an evidenced stable candidate-caused regression. A1/B1 and late B2/A2 were
+within the child band; candidate per-attempt transaction, SQL, row, and byte
+costs improved; and most additional conflicts occurred in unchanged mutation
+families. Transaction, retry, SQL, CAS, AppInbox, and outbox owners were
+byte-identical. This evidence supports a prospective order-control amendment
+but authorizes no speculative production remediation.
+
+The global comparator's sentence that shared throughput should improve after
+presence is split from the group aggregate is retained as historical
+group-state wording, not a topology invariant. The existing child evaluator
+was the correct evaluator selected by the approved plan for the failed v1
+sequence; correcting future protocol ownership does not invalidate that result.
 
 ## 1. Outcome, Scope, And Review Sizing
 
@@ -151,8 +225,10 @@ The direct current scope is 13 production modules with 5,633 physical lines and
 13 mirrored test/support modules with 4,580 physical lines: 26 files and 10,213
 lines before new semantic tests, README/navigation evidence, wrappers, or
 consumer import edits. Mechanical relocation alone predicts more than 20,000
-added/deleted lines. The inspected compatibility footprint is 57 files and
-42,181 lines across more than six control-flow families.
+added/deleted lines. The retained 31-file behavior footprint is 32,713 physical
+lines. Together with the 26 direct production/test paths, the complete
+inspected footprint is 42,926 physical lines across more than six control-flow
+families.
 
 That exceeds the pilot threshold of approximately 10,000 changed lines even
 though the direct move is currently below 100 files. One implementation PR is
@@ -226,6 +302,11 @@ explicit human approval of all dispositions before PR A production movement.
 Warning-only checker behavior remains unchanged. Checker exit zero never
 substitutes for human disposition.
 
+The exact Task 1 report at SHA-256
+`06a14055415c46e81957cc776c9435c2c4abd57d571080ca36d649127a0e0093`
+contains 63 union rows. The human approved every proposed disposition and owner
+mapping with no exception before Task 2 production movement.
+
 ### 2.3 Controlled human navigation sample
 
 Before implementation, a human uses the exact implementation base and records,
@@ -242,6 +323,12 @@ The same prompts are repeated on PR D's final candidate. The report may compare
 only the recorded observations. Missing data is reported as missing; no timing,
 productivity, causal, or statistical claim may be fabricated. Waiving the
 comparison requires a separate explicit Task 1 evidence-protocol amendment.
+
+The human supplied that explicit amendment for this child: no valid controlled
+sample was collected, the comparison is waived, and the independently reviewed
+code-derived family traces remain qualitative baseline evidence only. No human
+timing, wrong-file count, compatibility-hop count, unresolved-question count,
+or productivity claim is inferred.
 
 ## 3. Exact Current Trees
 
@@ -591,6 +678,11 @@ packages/shared-server/rallar-system/topology/
       topology-config-mutation-idempotency.ts
       compute-topology-config-mutation.ts
       validate-topology-config-mutation.ts
+      validate-topology-config-mutation-input.ts
+      topology-config-mutation-boundary.ts
+      topology-config-mutation-validation-values.ts
+      validate-topology-config-records.ts
+      validate-topology-config-receipt.ts
       topology-config-mutation-receipt.ts
       to-topology-config-mutation-result.ts
       read-topology-config-mutation.ts
@@ -629,6 +721,17 @@ remain the only topology compatibility surfaces changed or verified here. No
 second hop, nested barrel, executable shim, hidden default, or new public export
 is permitted.
 
+Task 2 applied the Section 1.5 private target-tree refinement shown above. The
+canonical mutation-boundary owner contains the six mechanically source-derived
+raw operation ingress readers and returns exact named domain contracts only
+after complete validation. Eight additional inherited source `unknown`
+occurrences are resolved, without transferred capacity, in the typed
+`topology-config-mutation-validation-values.ts` continuation. Input,
+stored-record, and receipt owners accept named domain contracts and add zero
+`unknown` capacity. This direction avoids a runtime cycle and the over-400-line
+validator that a single file would create. It adds no public compatibility
+surface.
+
 ## 6. Exact Target Mirrored-Test Tree
 
 ```text
@@ -644,10 +747,12 @@ packages/tests/shared-server/topology/
     group-topology-config-query-service.test.ts
 
     mutation/
+      group-topology-config-mutation-boundary.test.ts
       group-topology-config-mutation-compute.test.ts
       group-topology-config-mutation-idempotency.test.ts
       group-topology-config-mutation-validation.test.ts
       group-topology-config-mutation-result.test.ts
+      group-topology-config-mutation-test-fixtures.ts
       group-topology-config-mutation-transaction.test.ts
 
     persistence/
@@ -677,12 +782,73 @@ packages/tests/shared-server/topology/
       postgres-topology-app-inbox-worker.ts
 
 packages/tests/repo/
+  group-topology-server-lineage-boundary-bijection.ts
+  group-topology-server-lineage-provenance-fixtures.ts
+  group-topology-server-lineage-provenance-mutants.ts
   group-topology-server-lineage-provenance.test.ts
   group-topology-server-navigation-map-integrity.test.ts
   group-topology-server-ownership.test.ts
-  group-topology-server-source-ratchet.test.ts
+  group-topology-server-pr-a-test-ownership.ts
+  group-topology-server-test-ast.ts
+  group-topology-server-test-atom-endpoint-declaration.ts
+  group-topology-server-test-atom-endpoint-declarations.ts
+  group-topology-server-test-atom-endpoints-compute-case.ts
+  group-topology-server-test-atom-endpoints-compute-input.ts
+  group-topology-server-test-atom-endpoints-compute-support.ts
+  group-topology-server-test-atom-endpoints-elapsed-input.ts
+  group-topology-server-test-atom-endpoints-elapsed-read.ts
+  group-topology-server-test-atom-endpoints-elapsed-validation.ts
+  group-topology-server-test-atom-endpoints-exact-authority.ts
+  group-topology-server-test-atom-endpoints-exact-command.ts
+  group-topology-server-test-atom-endpoints-exact-config-mutation.ts
+  group-topology-server-test-atom-endpoints-exact-config-resolution.ts
+  group-topology-server-test-atom-endpoints-exact-ownership.ts
+  group-topology-server-test-atom-endpoints-fallback.ts
+  group-topology-server-test-atom-endpoints-input-command.ts
+  group-topology-server-test-atom-endpoints-input-read-values.ts
+  group-topology-server-test-atom-endpoints-input-runtime-values.ts
+  group-topology-server-test-atom-endpoints-ownership.ts
+  group-topology-server-test-atom-endpoints-resolution.ts
+  group-topology-server-test-atom-endpoints-snapshot-audit.ts
+  group-topology-server-test-atom-endpoints-snapshot-group.ts
+  group-topology-server-test-atom-endpoints-snapshot-members.ts
+  group-topology-server-test-atom-endpoints-snapshot-revisions.ts
+  group-topology-server-test-atom-endpoints-support.ts
+  group-topology-server-test-atom-endpoints-validation.ts
+  group-topology-server-test-atom-inventory.ts
+  group-topology-server-test-atom-ownership-contracts.ts
+  group-topology-server-test-atom-ownership-validation.ts
+  group-topology-server-test-atom-ownership.test.ts
+  group-topology-server-test-atom-ownership.ts
+  group-topology-server-test-atom-translations.ts
   group-topology-server-test-ownership.test.ts
+  group-topology-server-test-semantic-atoms.ts
 ```
+
+The retained cross-domain persistent ratchet at
+`packages/tests/repo/group-state-server-source-ratchet.test.ts` follows the
+same ownership-test move to
+`packages/tests/shared-server/topology/inbox/topology-app-inbox-ownership.test.ts`.
+It remains a group-state evidence owner rather than becoming a second topology
+ratchet, and all five of its existence/style/size/cycle consumers read the one
+canonical moved path.
+
+PR A lineage evidence stays in one namespace under
+`plans/repo-style-lineages/`: the checker-owned
+`rallar-group-topology-server-pr-a.json`, the human summary
+`rallar-group-topology-server-pr-a-provenance.md`, and the test-pinned exact
+blob/symbol/span/region evidence
+`rallar-group-topology-server-pr-a-provenance.jsonc`. The `.jsonc` suffix keeps
+the richer evidence outside the checker manifest schema while its permanent
+test parses and verifies it directly. The descriptive
+`group-topology-server-lineage-provenance-fixtures.ts` owner holds that frozen
+inventory and its fail-closed blob/span/hash/magnitude/derivation verification;
+`group-topology-server-lineage-boundary-bijection.ts` independently proves all
+fourteen inherited source regions: six bijective raw ingress transfers and
+eight exact resolutions into named typed continuation symbols with no target
+`unknown`. The behavior-named test and cohesive mutant owner hold the positive
+and per-field/row negative cases. All four owners remain below the hard
+400-line limit.
 
 Retained downstream RTC consumer evidence stays at:
 
@@ -695,54 +861,85 @@ packages/tests/shared-server/
   ws-system-topics-rtc-topology.test.ts
 ```
 
-Every current case, fixture, raw literal, barrier, assertion, and assertion site
-maps to one behavior owner before its old file is removed. No count-based
-ratchet may replace semantic coverage.
+Every frozen source case, fixture, runtime raw literal, barrier, assertion,
+expanded variant, and eligible top-level support declaration maps through a
+pinned source/target atom endpoint before its old file is removed. The endpoint
+evidence records both AST IDs/fingerprints and validates the exact
+710-source-atom and 160-atom additive target partitions. It excludes
+TypeScript-only annotation literals and restricts each of the 23 predecessor
+support declarations to its exact allowed target-symbol set. The 210 semantic/
+shared-fixture endpoints are explicit reviewed source-to-target declarations
+with family-specific reasons; the coherent value-only `utf8` mapping is one
+separately declared translation, for 211 contextual mappings total. Ambiguous
+exact fingerprints are explicit too. Automatic exact matching requires exactly
+one eligible target before assignment and never uses score or first-match
+selection. Unique targets carry no consolidation metadata; every intentional
+duplicate pins its exact case/target-derived identifier and family-specific
+reason. Endpoint deletion, replacement, reorder, equal-fingerprint ambiguity,
+generic same-value substitution, invented unique/duplicate consolidation,
+duplicate claims, unclassified cases/support, and undeclared translations all
+fail closed. The cohesive AST, inventory, contracts, endpoint-data, assignment,
+translation, and validation owners listed above keep this permanent ratchet
+human-navigable and below 400 lines. Aggregate counts remain supplementary
+diagnostics only.
+
+Task 2 also added
+`packages/tests/shared-server/authoritative-mutation-runtime-source-inventory.ts`
+as the descriptive inventory owner used by the retained cross-domain source
+boundary test. This keeps that materially changed test below 400 lines without
+moving or weakening any assertion.
+
+The shared-test authoritative receipt harness keeps its exact property-order
+projection in
+`packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-projection.ts`;
+the retained receipt-evidence owner performs repository I/O and calls that pure
+projection directly. Both paths are included in the performance blob manifest.
 
 ## 7. Complete Current-To-Target Move And Symbol Map
 
 ### 7.1 Production owners
 
-| Current owner                                                                                                           | Target owner and primary symbols                                                                                                          | PR                |
-| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `services/group-topology-config-service.ts`                                                                             | `topology/config/group-topology-config.ts`: existing default, validation, expiry, and resolution functions                                | A                 |
-| `topology/inbox/topology-app-inbox-contracts.ts`                                                                        | Same path: `TopologyAppInboxOperation`, payload and handler contracts                                                                     | A                 |
-| `topology/inbox/topology-app-inbox-command.ts`                                                                          | Same path: authenticated/durable command translators and hashes                                                                           | A                 |
-| `topology/inbox/topology-app-inbox-authority.ts`                                                                        | Same path: authenticated enqueue, read/verify authority                                                                                   | A                 |
-| `services/topology-mutation-authority-proof.ts`                                                                         | `topology/inbox/topology-mutation-authority-proof.ts`: proof creation/read/equality                                                       | A                 |
-| `services/group-topology-config-mutations.ts` types                                                                     | `config/mutation/group-topology-config-mutation-contracts.ts`                                                                             | A                 |
-| same, idempotency functions                                                                                             | `config/mutation/topology-config-mutation-idempotency.ts`: probe/validate idempotency                                                     | A                 |
-| same, put/delete/patch decisions                                                                                        | `config/mutation/compute-topology-config-mutation.ts`: `computeTopologyConfigMutation`                                                    | A                 |
-| same, exact recomputation and receipt/state validation                                                                  | `config/mutation/validate-topology-config-mutation.ts`: `validateTopologyConfigMutation` and validators                                   | A                 |
-| same, receipt creation/validation and `resultFromTopologyConfigReceipt`                                                 | `config/mutation/topology-config-mutation-receipt.ts`: receipt/result reconstruction                                                      | A                 |
-| `repositories/GroupTopologyConfigRepository.ts` public types                                                            | `config/persistence/group-topology-config-repository-contracts.ts`                                                                        | B                 |
-| same, namespaces                                                                                                        | `config/persistence/group-topology-config-runtime-namespaces.ts`                                                                          | B                 |
-| same, key builders/decoders                                                                                             | `config/persistence/group-topology-config-storage-keys.ts`                                                                                | B                 |
-| same, stored value/entry decoding and corruption errors                                                                 | `config/persistence/group-topology-config-persistence-codec.ts`                                                                           | B                 |
-| same, repository CRUD/CAS/page operations                                                                               | `config/persistence/group-topology-config-repository.ts`                                                                                  | B                 |
-| `repositories/group-topology-mutation-exact-read.ts`                                                                    | `config/persistence/read-exact-group-topology-config-mutation.ts`                                                                         | B                 |
-| `repositories/group-topology-stored-source-values.ts`                                                                   | `config/persistence/decode-stored-group-topology-config.ts`                                                                               | B                 |
-| `services/group-topology-config-generation-backfill.ts` canonical backfill                                              | `config/maintenance/backfill-group-topology-config-generations.ts`                                                                        | B                 |
-| same, legacy key migration                                                                                              | `config/maintenance/migrate-legacy-group-topology-config-keys.ts`                                                                         | B                 |
-| `services/group-topology-config-mutation-read.ts`                                                                       | `config/mutation/read-topology-config-mutation.ts`: `readTopologyConfigMutation`                                                          | B                 |
-| config query/readiness methods in management service                                                                    | `config/group-topology-config-query-service.ts`                                                                                           | C                 |
-| the single management-service readiness map and `ensureTopologyConfigGenerationReady`                                   | `config/maintenance/group-topology-config-generation-readiness.ts`: `GroupTopologyConfigGenerationReadiness` shared by query and mutation | C                 |
-| config mutation phase methods in management service                                                                     | `config/group-topology-config-mutation-service.ts`                                                                                        | C                 |
-| standalone `writeTopologyConfigMutation` in management service                                                          | `config/mutation/write-topology-config-mutation.ts`: same primary symbol                                                                  | C                 |
-| method `toTopologyConfigMutationResult` and helper `topologyConfigExecution`                                            | `config/mutation/to-topology-config-mutation-result.ts`: `toTopologyConfigMutationResult`                                                 | C                 |
-| explicit reconfigure types                                                                                              | `reconfigure/group-topology-reconfigure-contracts.ts`                                                                                     | C                 |
-| explicit reconfigure read/compute/validate/write                                                                        | `reconfigure/group-topology-reconfigure-mutation.ts`                                                                                      | C                 |
-| planning authority, topology computation, observation, local compatibility planning                                     | `planning/group-topology-planning-contracts.ts` and `planning/group-topology-planning-service.ts`                                         | C                 |
-| broadcast fact type plus `createRtcOverlayTopologyBroadcastMessage` and `materializeRtcOverlayTopologyBroadcastMessage` | `planning/materialize-rtc-overlay-topology-broadcast-message.ts`                                                                          | C                 |
-| `GroupTopologyValidationError`, `GroupTopologyCommitConflictError`, `GroupTopologyConfigIdempotencyConflictError`       | `group-topology-errors.ts`: same three public classes                                                                                     | C                 |
-| `topology/inbox/topology-app-inbox-handler.ts`                                                                          | Same path: thin operation dispatch to config and reconfigure owners                                                                       | C                 |
-| public management contracts                                                                                             | `group-topology-management-contracts.ts`                                                                                                  | C                 |
-| `services/group-topology-management-service.ts` public class                                                            | `topology/group-topology-management-service.ts`: existing public compatibility facade                                                     | C                 |
-| `packages/shared-server/mod.ts` export sources                                                                          | retained in place; point directly to canonical owners while preserving public names/identity                                              | matching owner PR |
-| import-only API, RTC, shared-test, and performance consumers in Section 3.4                                             | retained in place; canonical import redirects only                                                                                        | matching owner PR |
-| old private service/repository paths                                                                                    | removed only after the exact per-path active-consumer decision in Section 8                                                               | A-C               |
-| current flat tests                                                                                                      | behavior-named modules in Section 6, preserving every case/assertion                                                                      | matching owner PR |
-| navigation and supplementary ratchets                                                                                   | the five exact `packages/tests/repo/group-topology-server-*` owners in Section 6                                                          | A-D               |
+| Current owner                                                                                                           | Target owner and primary symbols                                                                                                                                                                                                        | PR                |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `services/group-topology-config-service.ts`                                                                             | `topology/config/group-topology-config.ts`: existing default, validation, expiry, and resolution functions                                                                                                                              | A                 |
+| `topology/inbox/topology-app-inbox-contracts.ts`                                                                        | Same path: `TopologyAppInboxOperation`, payload and handler contracts                                                                                                                                                                   | A                 |
+| `topology/inbox/topology-app-inbox-command.ts`                                                                          | Same path: authenticated/durable command translators and hashes                                                                                                                                                                         | A                 |
+| `topology/inbox/topology-app-inbox-authority.ts`                                                                        | Same path: authenticated enqueue, read/verify authority                                                                                                                                                                                 | A                 |
+| `services/topology-mutation-authority-proof.ts`                                                                         | `topology/inbox/topology-mutation-authority-proof.ts`: proof creation/read/equality                                                                                                                                                     | A                 |
+| `services/group-topology-config-mutations.ts` types                                                                     | `config/mutation/group-topology-config-mutation-contracts.ts`                                                                                                                                                                           | A                 |
+| same, idempotency functions                                                                                             | `config/mutation/topology-config-mutation-idempotency.ts`: probe/validate idempotency                                                                                                                                                   | A                 |
+| same, put/delete/patch decisions                                                                                        | `config/mutation/compute-topology-config-mutation.ts`: `computeTopologyConfigMutation`                                                                                                                                                  | A                 |
+| same, exact recomputation                                                                                               | `config/mutation/validate-topology-config-mutation.ts`: `validateTopologyConfigMutation`                                                                                                                                                | A                 |
+| same, input/attempt, raw ingress, typed values, stored-record, and receipt validation                                   | `config/mutation/validate-topology-config-mutation-input.ts`, `topology-config-mutation-boundary.ts`, `topology-config-mutation-validation-values.ts`, `validate-topology-config-records.ts`, and `validate-topology-config-receipt.ts` | A                 |
+| same, receipt creation and `resultFromTopologyConfigReceipt`                                                            | `config/mutation/topology-config-mutation-receipt.ts`: receipt/result reconstruction                                                                                                                                                    | A                 |
+| `repositories/GroupTopologyConfigRepository.ts` public types                                                            | `config/persistence/group-topology-config-repository-contracts.ts`                                                                                                                                                                      | B                 |
+| same, namespaces                                                                                                        | `config/persistence/group-topology-config-runtime-namespaces.ts`                                                                                                                                                                        | B                 |
+| same, key builders/decoders                                                                                             | `config/persistence/group-topology-config-storage-keys.ts`                                                                                                                                                                              | B                 |
+| same, stored value/entry decoding and corruption errors                                                                 | `config/persistence/group-topology-config-persistence-codec.ts`                                                                                                                                                                         | B                 |
+| same, repository CRUD/CAS/page operations                                                                               | `config/persistence/group-topology-config-repository.ts`                                                                                                                                                                                | B                 |
+| `repositories/group-topology-mutation-exact-read.ts`                                                                    | `config/persistence/read-exact-group-topology-config-mutation.ts`                                                                                                                                                                       | B                 |
+| `repositories/group-topology-stored-source-values.ts`                                                                   | `config/persistence/decode-stored-group-topology-config.ts`                                                                                                                                                                             | B                 |
+| `services/group-topology-config-generation-backfill.ts` canonical backfill                                              | `config/maintenance/backfill-group-topology-config-generations.ts`                                                                                                                                                                      | B                 |
+| same, legacy key migration                                                                                              | `config/maintenance/migrate-legacy-group-topology-config-keys.ts`                                                                                                                                                                       | B                 |
+| `services/group-topology-config-mutation-read.ts`                                                                       | `config/mutation/read-topology-config-mutation.ts`: `readTopologyConfigMutation`                                                                                                                                                        | B                 |
+| config query/readiness methods in management service                                                                    | `config/group-topology-config-query-service.ts`                                                                                                                                                                                         | C                 |
+| the single management-service readiness map and `ensureTopologyConfigGenerationReady`                                   | `config/maintenance/group-topology-config-generation-readiness.ts`: `GroupTopologyConfigGenerationReadiness` shared by query and mutation                                                                                               | C                 |
+| config mutation phase methods in management service                                                                     | `config/group-topology-config-mutation-service.ts`                                                                                                                                                                                      | C                 |
+| standalone `writeTopologyConfigMutation` in management service                                                          | `config/mutation/write-topology-config-mutation.ts`: same primary symbol                                                                                                                                                                | C                 |
+| method `toTopologyConfigMutationResult` and helper `topologyConfigExecution`                                            | `config/mutation/to-topology-config-mutation-result.ts`: `toTopologyConfigMutationResult`                                                                                                                                               | C                 |
+| explicit reconfigure types                                                                                              | `reconfigure/group-topology-reconfigure-contracts.ts`                                                                                                                                                                                   | C                 |
+| explicit reconfigure read/compute/validate/write                                                                        | `reconfigure/group-topology-reconfigure-mutation.ts`                                                                                                                                                                                    | C                 |
+| planning authority, topology computation, observation, local compatibility planning                                     | `planning/group-topology-planning-contracts.ts` and `planning/group-topology-planning-service.ts`                                                                                                                                       | C                 |
+| broadcast fact type plus `createRtcOverlayTopologyBroadcastMessage` and `materializeRtcOverlayTopologyBroadcastMessage` | `planning/materialize-rtc-overlay-topology-broadcast-message.ts`                                                                                                                                                                        | C                 |
+| `GroupTopologyValidationError`, `GroupTopologyCommitConflictError`, `GroupTopologyConfigIdempotencyConflictError`       | `group-topology-errors.ts`: same three public classes                                                                                                                                                                                   | C                 |
+| `topology/inbox/topology-app-inbox-handler.ts`                                                                          | Same path: thin operation dispatch to config and reconfigure owners                                                                                                                                                                     | C                 |
+| public management contracts                                                                                             | `group-topology-management-contracts.ts`                                                                                                                                                                                                | C                 |
+| `services/group-topology-management-service.ts` public class                                                            | `topology/group-topology-management-service.ts`: existing public compatibility facade                                                                                                                                                   | C                 |
+| `packages/shared-server/mod.ts` export sources                                                                          | retained in place; point directly to canonical owners while preserving public names/identity                                                                                                                                            | matching owner PR |
+| import-only API, RTC, shared-test, and performance consumers in Section 3.4                                             | retained in place; canonical import redirects only                                                                                                                                                                                      | matching owner PR |
+| old private service/repository paths                                                                                    | removed only after the exact per-path active-consumer decision in Section 8                                                                                                                                                             | A-C               |
+| current flat tests                                                                                                      | behavior-named modules in Section 6, preserving every case/assertion                                                                                                                                                                    | matching owner PR |
+| navigation and supplementary ratchets                                                                                   | the 41 exact `packages/tests/repo/group-topology-server-*` owners in Section 6 plus the retained cross-domain `group-state-server-source-ratchet.test.ts` consumer                                                                      | A-D               |
 
 The exact management-service partition must not copy mutable state into multiple
 owners. `GroupTopologyConfigGenerationReadiness` is the sole owner of the
@@ -1027,46 +1224,48 @@ retry re-entry, terminal failure, and cleanup.
 
 ### Task 0: Approve and publish the exact child plan
 
-- [ ] Human approves or revises the exact plan Git blob.
-- [ ] Human merges the planning PR under the plan-only publication policy.
-- [ ] Resolve and record the exact resulting-main SHA before implementation.
-- [ ] Create one child-specific goal and PR A branch only.
-- [ ] Do not create PR B-D, a ledger branch, or another child yet.
+- [x] Human approved exact plan Git blob
+      `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`.
+- [x] Human merged planning PR #95 under the plan-only publication policy.
+- [x] Resulting main resolved to
+      `3fa0c94b748281dc326b814e700c06f6c4dd9d07` before implementation.
+- [x] One child-specific goal and PR A branch were created.
+- [x] PR B-D, a ledger branch, and other children remain uncreated.
 
 ### Task 1: Freeze the implementation baseline and review evidence
 
-- [ ] Recreate exact current production, test, consumer, import/export,
+- [x] Recreate exact current production, test, consumer, import/export,
       case/assertion, size, and call-edge inventories.
-- [ ] Record the five code-derived current traces and target traces.
-- [ ] Collect the controlled human navigation sample from Section 2.3.
-- [ ] Run every warning-only mode on the exact production set.
-- [ ] Produce one row-by-row disposition report with exact owner and target PR.
-- [ ] Obtain human approval of the navigation sample and every warning row.
-- [ ] Add semantic tests for uncovered command/authority, handler, exact-read,
+- [x] Record the five code-derived current traces and target traces.
+- [x] Record the explicit controlled-navigation-sample waiver from Section 2.3.
+- [x] Run every warning-only mode on the exact production set.
+- [x] Produce one row-by-row disposition report with exact owner and target PR.
+- [x] Obtain human approval of the sample waiver and every warning row.
+- [x] Add semantic tests for uncovered command/authority, handler, exact-read,
       transaction collision/exhaustion, concurrent idempotency, and convergence
       boundaries before relying on source ratchets.
-- [ ] Decide exact per-PR lineage manifests only for mechanical movement; no
+- [x] Decide exact per-PR lineage manifests only for mechanical movement; no
       semantically new code receives historical debt capacity.
 
 ### Task 2: PR A — protocol and pure config mutation core
 
-- [ ] Create the initial durable
+- [x] Create the initial durable
       `packages/shared-server/rallar-system/topology/README.md` and
       `packages/tests/repo/group-topology-server-navigation-map-integrity.test.ts`;
       PRs B-D update them as owners and paths move.
-- [ ] Characterize all five command variants, canonical patch states, command
+- [x] Characterize all five command variants, canonical patch states, command
       hashes, authority proofs, unsupported inputs, and error timing.
-- [ ] Move proof ownership into `topology/inbox`.
-- [ ] Move config defaults/resolution into `topology/config`.
-- [ ] Split mutation contracts, idempotency, compute, validation, and result
+- [x] Move proof ownership into `topology/inbox`.
+- [x] Move config defaults/resolution into `topology/config`.
+- [x] Split mutation contracts, idempotency, compute, validation, and result
       reconstruction along Section 7.
-- [ ] Use exact type-to-payload relationships and exhaustive discriminants.
-- [ ] Keep state, clocks, repositories, transactions, and I/O outside the pure
+- [x] Use exact type-to-payload relationships and exhaustive discriminants.
+- [x] Keep state, clocks, repositories, transactions, and I/O outside the pure
       owners.
-- [ ] Add direct command and authority semantic tests, including expired,
+- [x] Add direct command and authority semantic tests, including expired,
       revoked, wrong-scope, manager/admin, proof mismatch, and attempt-time
       revalidation cases.
-- [ ] Redirect every exact Section 8 consumer, prove the moved private paths
+- [x] Redirect every exact Section 8 consumer, prove the moved private paths
       have no active supported consumer, and remove those old paths without
       adding shims.
 - [ ] Require scoped independent review, full PR A gates, exact commit/tree,
@@ -1075,6 +1274,37 @@ retry re-entry, terminal failure, and cleanup.
 PR A may claim a performance exemption only if every runtime I/O and benchmark
 harness blob is byte-identical to its exact base. Otherwise it uses the fixed
 protocol in Section 13.
+
+Final pre-measurement Task 2 candidate
+`74a62eb22583216e8c6651de069209d7e1a8ca67`, tree
+`7f971bcf84aa494265992d17e3c9b99227bd8122`, is not exempt. Its 24-path
+fail-closed comparison contains eight byte-identical and sixteen changed/added
+paths. Independent final review reported Critical 0 and Important 0, and every
+required correctness/completion gate passed on that frozen tree.
+
+Its first governed v1 A-B-B-A comparison then failed exactly as recorded in
+Sections 0.4 and 13.2. The candidate remains local, draft PR #103 remains on an
+older remote head, and no Branch Release Gate exists for the candidate. The
+final Task 2 checkbox remains open.
+
+#### Task 2 prospective performance-protocol amendment
+
+- [x] Preserve the complete v1 sequence, comparator/evaluator failures, and
+      diagnosis as immutable historical evidence.
+- [x] Keep PR #103 and candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`
+      unchanged while drafting this amendment.
+- [ ] Obtain human approval of this amendment's exact Git blob.
+- [ ] Implement only the Section 13.3 performance-tooling scope test-first on
+      the existing PR A branch; production/runtime blobs remain exact.
+- [ ] Rerun every tooling-invalidated focused and repository completion gate,
+      then obtain independent tooling and whole-PR review with Critical 0 and
+      Important 0.
+- [ ] Freeze one new exact candidate, its complete tool/hash/environment
+      envelope, and the prospective conflict-reason input before measurement.
+- [ ] Obtain explicit human authorization for that exact frozen envelope.
+- [ ] Run the single Section 13.6 eight-position sequence with no rerolls.
+- [ ] Require both v1 block evaluations to pass before non-forced publication,
+      Branch Release Gate, and ready-for-review state.
 
 ### Task 3: PR B — persistence, exact reads, generations, and migration
 
@@ -1230,68 +1460,249 @@ mutation, transaction, retry, and concurrency boundaries. PR D is alignment
 only when runtime blobs remain exact.
 
 The existing medium-scale recipe fixes 100 independently authenticated clients,
-five groups, two API processes, ten client lanes, and five control lanes. The
-state-write harness includes topology-source operations and exact durable
-receipt/result evidence.
+five groups, three PostgreSQL-backed API processes on ports 18080, 18081, and
+18082, ten client lanes, and five control lanes. The state-write harness
+includes topology-source operations and exact durable receipt/result evidence.
 
-### 13.2 Freeze before candidate
+### 13.2 Immutable failed v1 comparison
 
-Before PR B and PR C candidate freeze, record:
+The first PR A comparison used the approved v1 A-B-B-A protocol and remains a
+governed failure. Its exact evidence is recorded in Section 0.4. The raw
+positions, environment records, pooled artifacts, global-comparator exit 1,
+and child-evaluator exit 1 remain immutable. They are never inputs to, samples
+for, or acceptance evidence in a later protocol.
 
-- all correctness and security commands;
-- exact base/candidate SHA requirements;
-- pinned PostgreSQL 16 image and resource/configuration limits;
+Offline diagnosis is explanatory only. It may justify drafting this amendment,
+but it may not delete an outlier, change a threshold, repair an artifact,
+populate a missing regression reason after measurement, or turn the v1 result
+into a pass. No code correction is authorized because no candidate-caused
+runtime regression was established.
+
+### 13.3 Prospective PR A tooling boundary
+
+Only after the human approves this amendment's exact Git blob may PR A add the
+following performance-tooling changes test-first:
+
+- modify `scripts/perf/api-v1-state-write-concurrency-bench.ts` only to accept
+  and validate an optional `--regression-reasons-file=<relative-path>` input;
+- modify
+  `packages/tests/shared-server/state-write-performance-harness.test.ts` to
+  prove exact reason-file parsing, commit/tree binding, canonical ordering,
+  exact emission when supplied, empty emission when omitted, and fail-closed
+  behavior;
+- create
+  `scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs`
+  as the pure eight-position protocol and outer-manifest owner;
+- create
+  `scripts/perf/write-group-topology-state-write-position-balanced-results.mjs`
+  as its CLI/file-I/O owner; and
+- create
+  `packages/tests/shared-server/group-topology-state-write-position-balanced-pooling.test.ts`
+  as the positive, corruption, ordering, environment, source-identity, and
+  no-masking evidence owner.
+
+The existing global comparator,
+`scripts/perf/compare-api-v1-state-write-results.mjs`; existing v1 pooler,
+`scripts/perf/pool-api-v1-state-write-results.mjs`; and existing 1.5% child
+evaluator,
+`scripts/perf/compare-group-state-server-structure-performance.mjs`, remain
+byte-identical. The new outer pooler calls the v1 pooler twice and does not
+duplicate or reinterpret its artifact validation or numerical policy.
+
+No production/runtime module may change from commit
+`74a62eb22583216e8c6651de069209d7e1a8ca67`. No benchmark workload, operation
+mix, receipt/correctness query, comparator, evaluator, threshold, dependency,
+lockfile, workflow, TypeScript setting, checker, or unrelated test may change.
+After tooling implementation, a blob manifest must prove every production and
+runtime path is byte-identical to that commit and must identify only the
+approved plan, performance-tooling, and performance-test changes.
+
+### 13.4 Prospective conflict-reason evidence
+
+The harness currently emits `regressionReasons: []`, which means valid measured
+conflict counters alone cannot satisfy the existing evaluator. The amended
+protocol fixes that evidence link before measurement rather than adding prose
+after a result is known.
+
+After the new exact candidate freezes and before the first position preflight,
+create one ignored JSON input at a fresh relative path under `tmp/perf/` with
+this exact schema:
+
+```ts
+interface GroupTopologyConflictReasonInput {
+  readonly schemaVersion: 'rallar.group-topology.state-write-conflict-reasons.v1';
+  readonly baseCommit: string;
+  readonly candidateCommit: string;
+  readonly candidateTree: string;
+  readonly reasons: readonly {
+    readonly workload: 'uncontended' | 'shared' | 'hot';
+    readonly metric:
+      | 'sql.statements'
+      | 'sql.rowsRead'
+      | 'sql.serializedResultBytes'
+      | 'postgres.transactionDurationMs';
+    readonly reason: string;
+  }[];
+}
+```
+
+The array contains exactly the twelve workload/metric combinations in workload
+order `uncontended`, `shared`, `hot` and metric order shown above. Every entry
+uses exactly this reason:
+
+> Precommitted conflict hypothesis: accept this resource movement only when
+> measured candidate attempts and RuntimeStateWriteConflictError depth increase
+> and the unchanged evaluator proves normalized cost is no worse.
+
+The input must bind the exact base commit, candidate commit, and candidate tree;
+contain no extra field, duplicate, or unsupported metric; and pass the global
+artifact validator's substantive-reason rules. The CLI path must be relative
+and contain no traversal. Its exact bytes and SHA-256 are frozen in the
+external PR evidence before the first preflight.
+All four candidate positions consume that same file and must emit exactly those
+twelve reasons. All four base positions omit the flag and must emit an empty
+reason array. The outer pooler verifies these rules against every raw artifact.
+
+This file does not grant a resource exception by itself. The unchanged child
+evaluator still requires higher measured conflict and attempt depth plus no
+worse normalized per-attempt cost for the exact workload and metric. Shared
+throughput never has a conflict-depth exception.
+
+### 13.5 Freeze before a prospective measurement
+
+Before any new position, record and independently review:
+
+- the exact unchanged comparison base
+  `20020977507c3104949da07d27b95e89d3b91c96` and its tree;
+- the exact new candidate commit/tree and proof that its production/runtime
+  blobs equal `74a62eb22583216e8c6651de069209d7e1a8ca67`;
+- all correctness and security commands and their final-tree results;
+- the exact five approved tooling/test files and their blobs;
+- the pinned PostgreSQL 16 image and resource/configuration limits;
 - autovacuum/analyze, preflight-row, automatic-maintenance, overlap, Deno-LSP,
-  warmup, run, and concurrency rules;
-- comparator and child evaluator hashes;
-- latency, throughput, resource, and correctness thresholds;
-- artifact names, environment records, raw-sample preservation, pooling, and
-  hash rules;
+  warmup, run, concurrency, transfer, and controlled-host rules;
+- unchanged global-comparator, v1-pooler, and child-evaluator hashes;
+- the new outer-pooler/CLI hashes;
+- the exact conflict-reason input bytes and SHA-256;
+- all latency, throughput, resource, and correctness thresholds;
+- fresh position, artifact, environment, output, manifest, and log names;
 - zero-baseline, unknown-finding, malformed/incompatible-evidence behavior;
 - no-reroll and pre-measurement failure classification; and
-- stop behavior.
+- stop behavior for every position, pooling step, comparator, and evaluator.
 
-No threshold, environment rule, comparator, evaluator, harness, or failure rule
-may change after candidate freeze without separate human approval.
+Human authorization must bind that exact envelope before A1. No candidate,
+tool, reason input, threshold, environment rule, comparison rule, or failure
+rule may change afterward.
 
-### 13.3 Governed comparison
+### 13.6 Position-balanced governed sequence
 
-Use exactly one non-rerolled A-B-B-A sequence:
+Run exactly one non-rerolled eight-position sequence:
 
-1. exact predecessor resulting-main SHA;
-2. exact immutable candidate;
-3. the same candidate;
-4. the same predecessor SHA.
+1. A1 — exact base;
+2. B1 — exact candidate;
+3. B2 — the same candidate;
+4. A2 — the same base;
+5. B3 — the same candidate;
+6. A3 — the same base;
+7. A4 — the same base; and
+8. B4 — the same candidate.
 
-Each position uses a fresh non-overlapping isolated PostgreSQL 16 environment,
-identical configuration/resource limits, autovacuum/analyze disabled, zero
-preflight rows, zero automatic maintenance, no overlapping benchmark/container
-or Deno-LSP process, `warmup=1`, `runs=9`, and `concurrency=10`.
+The fixed order is `A-B-B-A-B-A-A-B`: one ordinary A-B-B-A block followed by
+its mirrored B-A-A-B block. Each side occupies four positions with the same
+mean chronological position, `4.5`. The four adjacent comparison pairs are
+A1/B1, A2/B2, A3/B3, and A4/B4; two run base-first and two candidate-first.
+The order is fixed here and is neither randomized nor selected after observing
+a sample.
 
-Pool exactly 18 raw samples per workload per side. Preserve source artifacts,
-environment records, logs, manifest, hashes, and raw samples. Run the unchanged
-global comparator and retain its exact exit/output, then the unchanged 1.5%
-child evaluator.
+Each position uses a fresh, non-overlapping PostgreSQL 16 environment with the
+same pinned image, configuration, resource limits, autovacuum/analyze disabled,
+zero preflight rows, zero automatic maintenance, and no overlapping benchmark,
+container, editor language server, or Deno process. Every position uses
+`warmup=1`, `runs=9`, and `concurrency=10`. Each position is consumed at most
+once. All eight normalized environment records must be byte-identical.
 
-The locked acceptance rules are:
+### 13.7 Two-block pooling and evaluation
+
+The outer pooler validates the eight chronological positions, then creates two
+ordinary v1 evidence blocks by invoking the unchanged v1 pooler:
+
+- block 1: A1, B1, B2, A2 in chronological order; and
+- block 2: logical base inputs A3/A4 and candidate inputs B3/B4, while the outer
+  manifest preserves the actual B3, A3, A4, B4 chronology.
+
+The second v1 pooler call maps `approvedBaseFirst=A3`, `candidateFirst=B3`,
+`candidateSecond=B4`, and `approvedBaseSecond=A4`. This is logical role order
+only; the outer manifest remains the source of truth for chronological
+positions 5-8. Neither pooler may reorder samples within a raw artifact.
+
+The outer manifest uses schema
+`rallar.group-topology.state-write-position-balanced-abba-baab.v1` and records:
+
+- all eight chronological positions, roles, source commit/tree identities,
+  artifact SHA-256 values, environment-record SHA-256 values, and relative
+  paths;
+- the exact logical-to-chronological mapping used for both v1 pooler calls;
+- eight unique raw-artifact hashes and one common environment-record hash;
+- the two inner v1 manifest hashes;
+- each block's pooled base and candidate hashes; and
+- the outer pooler, v1 pooler, global comparator, child evaluator, and
+  conflict-reason input hashes.
+
+Each inner block contains exactly 18 samples per workload per side. No 36-sample
+combined comparison is permitted because it could hide disagreement between
+the ordinary and mirrored orders. Preserve every raw artifact, environment
+record, inner and outer manifest, pooled output, transfer log, comparator log,
+evaluator log, and SHA-256.
+
+For block 1 and then block 2, run the unchanged global comparator and retain its
+exact exit/output, followed by the unchanged 1.5% child evaluator against the
+matching inner manifest and expected manifest hash. Both child evaluations
+must pass. One passing block can never supersede or average away the other.
+
+The historical global-comparator sentence about presence being split from the
+group aggregate is recognized only as the existing finding that the unchanged
+child evaluator already governs. It is not a topology requirement. Any new or
+unknown global finding fails closed.
+
+### 13.8 Unchanged acceptance thresholds
+
+Each block independently applies the existing thresholds:
 
 - uncontended p95/p99 adverse latency at most 5%;
 - shared throughput adverse movement at most 1.5%;
 - hot throughput adverse movement at most 10%;
 - SQL statements, rows read, serialized bytes, and transaction duration
-  adverse movement at most 1.5%, unless existing artifact-backed measured
-  conflict-depth evidence accepts it;
+  adverse movement at most 1.5%, unless the unchanged evaluator accepts the
+  exact precommitted artifact-backed measured conflict-depth evidence;
 - improvements unrestricted;
 - fail-closed zero baselines; and
 - zero tolerance for commands, receipts, effects, retries, exhaustion,
   atomicity, idempotency, ordering, audience, required/final outbox, schema,
   environment, and artifact correctness.
 
+No threshold, tolerance, comparator rule, or evaluator rule changes. The
+amendment changes only prospective position control and the timing of the
+already-required conflict-reason link.
+
+### 13.9 Failure and no-reroll rules
+
 Unknown findings, changed hashes, missing samples, incompatible environments,
-unsupported metrics, malformed artifacts, or missing conflict evidence fail
-closed. A consumed position is never rerolled. A guard failure before warmup,
-sample, artifact, or environment record is rejected evidence and still needs
-explicit human authorization before replacement.
+unsupported metrics, malformed artifacts, missing conflict evidence, a block
+disagreement, or any correctness failure fails the complete sequence. No raw
+sample or position may be deleted, winsorized, reordered, replaced, or rerun.
+
+A guard failure before any warmup, measured sample, artifact, or environment
+record is non-consuming rejected evidence but still requires separate explicit
+human replacement authority. Any failure after a position is consumed stops
+the sequence permanently. A post-measurement pooling or evaluation tooling
+failure preserves all immutable raw evidence and may be corrected or reinvoked
+only with separate narrow human authorization; measurements are never rerun.
+
+If either child evaluation fails, PR A remains blocked with the exact evidence.
+Do not optimize speculatively, change a threshold, run a third block, or start
+PR B. If both pass, push only the exact measured candidate, update PR #103,
+require Branch Release Gate for that SHA, mark it ready, and stop for the human
+merge decision.
 
 ## 14. Validation Matrix
 
@@ -1299,10 +1710,7 @@ explicit human authorization before replacement.
 
 ```bash
 npx prettier --check \
-  plans/rallar-group-topology-server-structure-plan.md \
-  plans/repo-human-traceability-refactoring-program-plan.md \
-  plans/repo-human-traceability-program-execution-plan.md \
-  plans/rallar-auth-server-structure-plan.md
+  plans/rallar-group-topology-server-structure-plan.md
 git diff --check
 npx vitest run \
   packages/tests/repo/repo-code-style-authority-integrity.test.ts \
@@ -1322,6 +1730,7 @@ npx vitest run \
   packages/tests/shared-server/topology/inbox/topology-app-inbox-authority.test.ts \
   packages/tests/shared-server/topology/inbox/topology-app-inbox-ownership.test.ts \
   packages/tests/shared-server/topology/config/group-topology-config-resolution.test.ts \
+  packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-boundary.test.ts \
   packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-compute.test.ts \
   packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-idempotency.test.ts \
   packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-validation.test.ts \
@@ -1330,11 +1739,61 @@ npx vitest run \
   packages/tests/repo/group-topology-server-lineage-provenance.test.ts \
   packages/tests/repo/group-topology-server-navigation-map-integrity.test.ts \
   packages/tests/repo/group-topology-server-ownership.test.ts \
+  packages/tests/repo/group-topology-server-test-atom-ownership.test.ts \
   packages/tests/repo/group-topology-server-test-ownership.test.ts \
   packages/tests/shared/authoritative-state-contracts.test.ts
+npx vitest run \
+  packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 (cd apps/api-v1 && deno task check)
+deno check --config apps/api-v1/deno.json \
+  scripts/perf/api-v1-state-write-concurrency-bench.ts \
+  scripts/perf/api-v1-state-write-receipt-evidence.ts \
+  packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-evidence.ts \
+  packages/shared-test/black-box-runner/state-write-evidence/api-v1-state-write-receipt-projection.ts
 ```
+
+### 14.2.1 Prospective PR A performance-tooling gates
+
+After exact amendment approval and before a new candidate freezes, run:
+
+```bash
+npx vitest run \
+  packages/tests/shared-server/state-write-performance-harness.test.ts \
+  packages/tests/shared-server/state-write-performance-pooling.test.ts \
+  packages/tests/shared-server/group-state-server-structure-performance-policy.test.ts \
+  packages/tests/shared-server/group-topology-state-write-position-balanced-pooling.test.ts
+node --check \
+  scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs \
+  scripts/perf/write-group-topology-state-write-position-balanced-results.mjs \
+  scripts/perf/pool-api-v1-state-write-results.mjs \
+  scripts/perf/compare-api-v1-state-write-results.mjs \
+  scripts/perf/compare-group-state-server-structure-performance.mjs
+deno check --config apps/api-v1/deno.json \
+  scripts/perf/api-v1-state-write-concurrency-bench.ts
+npm run check:repo-style
+npm run check:repo-style:construction-details
+npm run check:repo-style:layout
+npm run check:repo-style:layout-details
+npm run check:repo-style:output-contracts
+npm run check:repo-style:object-interfaces
+npx prettier --check \
+  scripts/perf/api-v1-state-write-concurrency-bench.ts \
+  scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs \
+  scripts/perf/write-group-topology-state-write-position-balanced-results.mjs \
+  packages/tests/shared-server/state-write-performance-harness.test.ts \
+  packages/tests/shared-server/group-topology-state-write-position-balanced-pooling.test.ts \
+  plans/rallar-group-topology-server-structure-plan.md
+git diff --check
+npm run test:unit
+npm run test:ci
+npm run build
+```
+
+Rerun every Section 14.2 semantic, type, compatibility, black-box, and
+repository gate invalidated by the final tooling diff. The exact-base changed-
+style comparison uses the PR A implementation base. Any content change after a
+successful gate invalidates that evidence.
 
 ### 14.3 PR B persistence and concurrency gates
 
@@ -1514,14 +1973,19 @@ unchanged tree.
 
 Human decisions are required at these exact points:
 
-1. approve or revise this exact plan blob;
-2. approve Task 1's controlled sample and every warning disposition;
-3. approve merging exact PR A;
-4. approve merging exact PR B after governed persistence performance evidence;
-5. approve merging exact PR C after governed authoritative-shell evidence;
-6. approve PR D's compatibility/ratchet decisions and exact merge;
-7. separately authorize the later evidence-ledger publication; and
-8. approve and close that ledger before RTC/RTT or another Wave 2 child begins.
+1. the completed approval of original plan blob
+   `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`;
+2. the completed approval of Task 1's sample waiver and every warning
+   disposition;
+3. approve or revise this prospective amendment's exact plan blob;
+4. after tooling implementation, authorize the exact new candidate, tools,
+   conflict-reason input, environment, and measurement envelope;
+5. approve merging exact PR A only after both position blocks pass;
+6. approve merging exact PR B after governed persistence performance evidence;
+7. approve merging exact PR C after governed authoritative-shell evidence;
+8. approve PR D's compatibility/ratchet decisions and exact merge;
+9. separately authorize the later evidence-ledger publication; and
+10. approve and close that ledger before RTC/RTT or another Wave 2 child begins.
 
 Implementation PRs remain draft until scoped review, Critical 0/Important 0,
 all required local gates, exact tree freeze, current PR evidence, and Branch
@@ -1531,9 +1995,15 @@ SHA and required default workflow before creating the next branch.
 
 ## 16. Non-Circular Completion Evidence
 
-This planning tree records only existing prerequisite and planning-base facts.
-It cannot contain its own future blob, tree, commit, PR, merge, workflow, or
-implementation result.
+This amendment tree records only existing prerequisite, original-plan,
+implementation-candidate, failed-performance, diagnosis, and current-main
+facts. It cannot contain its own future blob, tree, commit, PR, merge, workflow,
+tooling implementation, replacement candidate, or measurement result.
+
+The exact amendment blob, planning commit/PR, and any future merge evidence stay
+in its external handoff. After human approval, PR A may record that approval and
+only facts already produced by the authorized tooling phase. It may never
+predict a future passing measurement or Branch Release Gate.
 
 Each implementation PR records only completed local tasks and existing
 predecessor envelopes. Its future merge, resulting-main SHA, and default
@@ -1551,12 +2021,20 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 17. Acceptance Checklist
 
-- [ ] Human approved this exact plan Git blob.
-- [ ] Planning PR merged under the plan-only policy.
-- [ ] Task 1 exact baseline and controlled human sample are approved or
+- [x] Human approved exact plan Git blob
+      `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`.
+- [x] Planning PR #95 merged under the plan-only policy.
+- [x] Task 1 exact baseline and controlled human sample are approved or
       separately waived.
-- [ ] Every focused warning row has an explicit human owner/rationale
+- [x] Every focused warning row has an explicit human owner/rationale
       disposition.
+- [x] The first governed A-B-B-A result remains preserved and classified as
+      failed evidence.
+- [ ] Human approved this prospective performance amendment's exact Git blob.
+- [ ] The Section 13.3 tooling implementation preserves every production and
+      runtime blob from `74a62eb22583216e8c6651de069209d7e1a8ca67`.
+- [ ] Both precommitted position-balanced blocks independently pass without a
+      rerun, outlier removal, threshold change, or artifact rewrite.
 - [ ] Four implementation PRs remain independently reviewable.
 - [ ] Exact current-to-target production and test ownership is reconciled.
 - [ ] Canonical topology callers bypass compatibility-only wrappers.
@@ -1589,22 +2067,28 @@ measurements remain historical and are never relabeled for a changed tree.
 | API-v1/OpenAPI organization or behavior changes                                 | Revert to import-only compatibility or stop for a separate child.                                       |
 | Warning is ignored because checker exits zero                                   | Stop until human disposition exists.                                                                    |
 | Ratchet replaces semantic behavior evidence                                     | Restore semantic coverage and keep the ratchet supplementary.                                           |
+| Historical v1 failure is treated as accepted, replaced, or discarded            | Restore it as immutable failed evidence; this amendment is prospective only.                            |
+| Existing comparator, v1 pooler, or child evaluator behavior changes             | Revert the change; only the additive outer pooler and reason-file ingress are authorized.               |
+| Conflict reasons are created or changed after the first preflight               | Fail the sequence; never edit raw or pooled artifacts to add a reason.                                  |
+| One mirrored block is discarded, averaged away, or used as a replacement rerun  | Fail the complete sequence and preserve both blocks.                                                    |
+| A 36-sample combined result is used to mask block disagreement                  | Reject it; both independent 18-sample-per-side v1 blocks must pass.                                     |
+| Production/runtime content differs from candidate `74a62eb`                     | Stop for a separate code-remediation decision and a new protocol envelope.                              |
 | Performance protocol, environment, threshold, or candidate changes after freeze | Stop; no reroll, threshold change, or evidence relabeling.                                              |
 | Required external gate persistently fails                                       | Stop with exact run/job/step; do not diagnose unrelated providers.                                      |
 | Unrelated plan, dependency, lockfile, workflow, checker, or TypeScript changes  | Restore exact scope before publication.                                                                 |
 
 ## 19. Progress Record
 
-| Milestone                  | State                  | Evidence                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth prerequisite          | ledger-published       | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence. |
-| Group-topology child plan  | drafted and unapproved | This exact plan revision predicts no plan/implementation blob, tree, PR, merge, release, workflow, performance, or ledger fact.                                                                                                                                                                                                               |
-| PR A protocol/core         | blocked                | Requires exact plan approval and planning PR merge.                                                                                                                                                                                                                                                                                           |
-| PR B persistence           | blocked                | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
-| PR C authoritative shell   | blocked                | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
-| PR D alignment/final trace | blocked                | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                |
-| Later topology ledger      | blocked                | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                            |
-| RTC/RTT and later domains  | blocked                | Remain outside this child.                                                                                                                                                                                                                                                                                                                    |
+| Milestone                  | State               | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth prerequisite          | ledger-published    | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                           |
+| Group-topology child plan  | amendment drafted   | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. This separate prospective amendment starts from main `9ff4b7422c8124acf4bce0c46d1d1bf7cddbab6a`; its future blob, commit, PR, and approval remain external and unpredicted.                                                                                                                                                                                                                                                 |
+| PR A protocol/core         | performance-blocked | Draft PR #103 remains on older remote head `8b1ebf542d12c05a5ac226d3d07e543a171a2626`. Exact local candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`, tree `7f971bcf84aa494265992d17e3c9b99227bd8122`, completed correctness and Critical 0/Important 0 review but is non-exempt. Its exact v1 A-B-B-A evidence remains failed for shared throughput `-5.068999%` and shared transaction duration `+3.088188%` without the required prospective conflict-reason link. No candidate push, PR update, or Branch Release Gate occurred. |
+| PR B persistence           | blocked             | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| PR C authoritative shell   | blocked             | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| PR D alignment/final trace | blocked             | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Later topology ledger      | blocked             | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| RTC/RTT and later domains  | blocked             | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## 20. Self-Review Checklist
 
@@ -1620,6 +2104,14 @@ measurements remain historical and are never relabeled for a changed tree.
 - [x] Public/persisted/security/AppInbox/transaction/outbox invariants are exact.
 - [x] Human warning disposition and controlled sample are explicit.
 - [x] Performance/failure/no-reroll rules are frozen before candidate.
+- [x] The failed v1 result remains immutable and is never a v2 input.
+- [x] The prospective A-B-B-A-B-A-A-B order balances both role and mean
+      chronological position without choosing an order after measurement.
+- [x] Both independent v1 blocks must pass; no combined pool can mask a block.
+- [x] Conflict reasons are exact, candidate-only, hash-frozen, and present
+      before measurement rather than inserted into retained artifacts.
+- [x] Numerical thresholds and existing comparator/evaluator behavior remain
+      unchanged.
 - [x] Semantic tests remain primary and ratchets supplementary.
 - [x] Non-circular planning, implementation, and ledger evidence is preserved.
 - [x] No production behavior is authorized without explicit human approval.
