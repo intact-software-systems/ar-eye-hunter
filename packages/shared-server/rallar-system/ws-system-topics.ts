@@ -22,8 +22,7 @@ import { sendStateSyncMessage } from './state-sync-routing.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
-    type RtcTopologyDeliveryOptions,
-    type RtcTopologyWorkPublisher,
+    type RtcTopologyDeliveryOptions, type RtcTopologyWorkPublisher,
 } from './services/RtcTopologyOutboxWork.ts';
 import {
     RallarRtcTopologyService,
