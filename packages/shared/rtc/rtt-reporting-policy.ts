@@ -1,3 +1,5 @@
+import { rendezvousScore } from './rendezvous-score.ts';
+
 export const DEFAULT_RTT_REPORTING_DEGREE_LIMIT = 5;
 
 export type RttReportingPeerSelectionInput = Readonly<{
@@ -60,21 +62,4 @@ export function selectRttReportingPeers(
 
 function stableUnique(values: readonly string[]): string[] {
     return [...new Set(values)];
-}
-
-function rendezvousScore(
-    localSessionId: string,
-    peerSessionId: string,
-    groupKey = '',
-): string {
-    return `${hashString(`${groupKey}:${localSessionId}:${peerSessionId}`)}`.padStart(10, '0');
-}
-
-function hashString(value: string): number {
-    let hash = 2166136261;
-    for (let i = 0; i < value.length; i++) {
-        hash ^= value.charCodeAt(i);
-        hash = Math.imul(hash, 16777619);
-    }
-    return hash >>> 0;
 }

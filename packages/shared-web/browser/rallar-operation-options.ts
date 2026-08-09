@@ -1,5 +1,6 @@
 import type { CommandOptions } from '@shared/cache/Command.ts';
 import type { CommandsOrchestratorPolicies } from '@shared/cache/CommandsOrchestrator.ts';
+import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 export type RallarOperationRetryPredicate = (
@@ -15,6 +16,8 @@ export type RallarOperationOptions = Readonly<{
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     maxPeerConnections?: number;
     rttReportingDegreeLimit?: number;
+    groupFormationMode?: RtcGroupFormationMode;
+    bootstrapDegree?: number;
 }>;
 
 export function toRallarWorkflowPolicies<V>(
@@ -44,7 +47,9 @@ export function toRallarOperationOptions(
         options.shouldRetry === undefined &&
         options.dataChannelLanes === undefined &&
         options.maxPeerConnections === undefined &&
-        options.rttReportingDegreeLimit === undefined
+        options.rttReportingDegreeLimit === undefined &&
+        options.groupFormationMode === undefined &&
+        options.bootstrapDegree === undefined
     ) {
         return {};
     }
@@ -57,6 +62,8 @@ export function toRallarOperationOptions(
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
         maxPeerConnections?: number;
         rttReportingDegreeLimit?: number;
+        groupFormationMode?: RtcGroupFormationMode;
+        bootstrapDegree?: number;
     } = {};
     if (options.signal) {
         normalized.signal = options.signal;
@@ -78,6 +85,12 @@ export function toRallarOperationOptions(
     }
     if (options.rttReportingDegreeLimit !== undefined) {
         normalized.rttReportingDegreeLimit = options.rttReportingDegreeLimit;
+    }
+    if (options.groupFormationMode !== undefined) {
+        normalized.groupFormationMode = options.groupFormationMode;
+    }
+    if (options.bootstrapDegree !== undefined) {
+        normalized.bootstrapDegree = options.bootstrapDegree;
     }
 
     return normalized;

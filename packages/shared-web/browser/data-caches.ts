@@ -1,11 +1,7 @@
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
-    compareGroupCausalRevision,
-    isGroupActive,
-    isSessionInGroup,
-} from '@shared/api/group-client-views.ts';
+import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { type RallarOverlayTopologySnapshot, toOverlayInfoForSession, } from '@shared/api/overlay-topology.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
@@ -19,7 +15,15 @@ import { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
 import * as graphsRepository from '@shared-graph/repository/graphs-repository.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import type { BootstrapOverlayPolicy } from '@shared/repository/overlay-bootstrap.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
+import {
+    acceptGroupSnapshotRemoval,
+    acceptGroupSnapshotUpdate,
+    type GroupFormationPolicyInput,
+    isSameBootstrapOverlayPolicy,
+    resolveBootstrapOverlayPolicy,
+} from '@shared/services/group-snapshot-rtc-sync.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
@@ -34,11 +38,14 @@ export type StateCacheChangeListener = (
     change: StateCacheChange,
 ) => void | Promise<void>;
 
+export type StateCacheGroupFormationOptions = GroupFormationPolicyInput;
+
 export type StateCacheScopeOptions = Readonly<{
     scope?: StateScope;
     rereadGroupSnapshots?: (
         scope: StateScope,
     ) => Promise<readonly GroupStateSnapshot[]>;
+    groupFormation?: StateCacheGroupFormationOptions;
 }>;
 
 export type StateCacheInboxSource = Readonly<{
@@ -56,6 +63,7 @@ let stateRepositoryObserverContext:
     webRtcGroupManager: WebRtcGroupManager;
     sessionId: string;
     scope: StateScope;
+    bootstrapOverlayPolicy: BootstrapOverlayPolicy;
     rereadGroupSnapshots?: (
         scope: StateScope,
     ) => Promise<readonly GroupStateSnapshot[]>;
@@ -303,10 +311,18 @@ function installStateRepositoryObservers(
     scope: StateScope,
     options: StateCacheScopeOptions,
 ): void {
+    const bootstrapOverlayPolicy = resolveBootstrapOverlayPolicy(
+        options.groupFormation,
+        myOwnClientData.sessionId,
+    );
     if (
         stateRepositoryObserverContext?.webRtcGroupManager === webRtcGroupManager &&
         stateRepositoryObserverContext.sessionId === myOwnClientData.sessionId &&
         isSameStateScope(stateRepositoryObserverContext.scope, scope) &&
+        isSameBootstrapOverlayPolicy(
+            stateRepositoryObserverContext.bootstrapOverlayPolicy,
+            bootstrapOverlayPolicy,
+        ) &&
         stateRepositoryObserverContext.rereadGroupSnapshots ===
             options.rereadGroupSnapshots
     ) {
@@ -318,6 +334,7 @@ function installStateRepositoryObservers(
         webRtcGroupManager,
         sessionId: myOwnClientData.sessionId,
         scope,
+        bootstrapOverlayPolicy,
         rereadGroupSnapshots: options.rereadGroupSnapshots,
     };
 
@@ -354,12 +371,12 @@ function installStateRepositoryObservers(
 
             return trackStateRepositoryObserverTask((async () => {
                 if (change.kind === ObservableValueEventType.Deleted) {
-                    await handleGroupSnapshotRemoval(snapshot, webRtcGroupManager);
+                    await acceptGroupSnapshotRemoval(snapshot, webRtcGroupManager);
                 } else {
-                    await handleGroupSnapshotUpdate(
+                    await acceptGroupSnapshotUpdate(
                         snapshot,
                         webRtcGroupManager,
-                        myOwnClientData.sessionId,
+                        bootstrapOverlayPolicy,
                     );
                 }
                 await notifyStateCacheChange({
@@ -380,44 +397,6 @@ function installStateRepositoryObservers(
             stateRepositoryObserverContext = undefined;
         }
     };
-}
-
-async function handleGroupSnapshotUpdate(
-    snapshot: GroupStateSnapshot,
-    webRtcGroupManager: WebRtcGroupManager,
-    mySessionId: string,
-): Promise<void> {
-    if (!isGroupActive(snapshot)) {
-        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
-        overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
-
-        await webRtcGroupManager.delete(snapshot.group);
-        return;
-    }
-
-    if (!isSessionInGroup(snapshot, mySessionId)) {
-        overlaysRepository.removeOverlayByGroupRef(snapshot.group);
-        overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
-        if (webRtcGroupManager.has(snapshot.group)) {
-            await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
-        } else {
-            await webRtcGroupManager.ensureAllGroupsConnected();
-        }
-        return;
-    }
-
-    overlaysRepository.createAndSetStarOverlays([snapshot]);
-    await webRtcGroupManager.acceptGroupUpdate(snapshot);
-}
-
-async function handleGroupSnapshotRemoval(
-    snapshot: GroupStateSnapshot,
-    webRtcGroupManager: WebRtcGroupManager,
-): Promise<void> {
-    overlaysRepository.removeOverlayByGroupRef(snapshot.group);
-    overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
-
-    await webRtcGroupManager.delete(snapshot.group);
 }
 
 function trackStateRepositoryObserverTask(task: Promise<void>): Promise<void> {

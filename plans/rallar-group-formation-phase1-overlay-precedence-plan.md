@@ -134,7 +134,8 @@ In scope:
    the FNV-1a rendezvous scoring already in `rtt-reporting-policy.ts`;
    `degreeLimit` = effective bootstrap degree (so RTT reporting inherits ≤5).
 4. **Outbound dial budget** in the `WebRtcGroupManager` reconcile connect
-   loop: new dials capped at `maxPeerConnections − knownPeerIds.size`;
+   loop: new dials capped at `maxPeerConnections − |known ∩ desired|`
+   (see the Design amendment on retained connections);
    priority order server-overlay next hops, then bootstrap peers; deferred
    dials counted in diagnostics.
 5. The `groupFormationMode` rollback flag and `bootstrapDegree` config,
@@ -229,10 +230,17 @@ its WS publication); incremental replans, hysteresis, retention grace windows
   not a new dial) and new dials; new dials are ordered server-overlay-desired
   first (provenance read from the group's overlay via
   `readOverlayForGroup`), then bootstrap-desired, deterministic within each
-  class, and capped at `max(0, maxPeerConnections − knownPeerIds.size)` —
+  class, and capped at `max(0, maxPeerConnections − |known ∩ desired|)` —
   the same budget inbound admission uses
   (`WebRtcConnectionService.canAcceptAdditionalPeer`,
-  `packages/shared/services/WebRtcConnectionService.ts:570-590`). Deferred
+  `packages/shared/services/WebRtcConnectionService.ts:570-590`).
+  **Amendment (implementation finding):** only *desired* known connections
+  count against the dial budget. Retained (grace) connections are governed
+  by the existing retained-eviction pass, which trims the overflow within
+  the same reconcile; counting them in the dial budget would let a full
+  retained set permanently starve required dials, because retained
+  eviction only fires when the retained count exceeds the leftover budget,
+  which a deferred dial never raises. Deferred
   dials increment a new `connectDeferredBudgetCount` diagnostics field.
   `legacy-star` mode keeps today's unbounded loop.
 - The dial-plan computation is a pure function in a new sibling module

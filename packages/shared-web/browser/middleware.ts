@@ -26,6 +26,13 @@ import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMu
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
+import {
+    resolveBootstrapDegree,
+} from '@shared/rtc/bootstrap-peer-selection.ts';
+import {
+    resolveRtcGroupFormationMode,
+    type RtcGroupFormationMode,
+} from '@shared/rtc/group-formation-mode.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
@@ -63,6 +70,8 @@ export type MiddlewareInitOptions = Readonly<{
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     maxPeerConnections?: number;
     rttReportingDegreeLimit?: number;
+    groupFormationMode?: RtcGroupFormationMode;
+    bootstrapDegree?: number;
     scope?: StateScope;
     onAuthInvalid?: (error: unknown) => void | Promise<void>;
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
@@ -258,6 +267,14 @@ export async function initialiseMiddleware(
             },
         );
 
+    const groupFormationMode = resolveRtcGroupFormationMode(
+        options.groupFormationMode,
+    );
+    const bootstrapDegree = resolveBootstrapDegree({
+        bootstrapDegree: options.bootstrapDegree,
+        maxPeerConnections: options.maxPeerConnections,
+    });
+
     const webRtcGroupManager = new WebRtcGroupManager(
         webRtcConnectionService,
         groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
@@ -265,6 +282,7 @@ export async function initialiseMiddleware(
         overlaysRepository.readableOverlayCache(),
         {
             maxPeerConnections: options.maxPeerConnections,
+            groupFormationMode,
             onDesiredPeerIdsChanged: refreshRttReportingPeers,
         },
     );
@@ -292,6 +310,10 @@ export async function initialiseMiddleware(
     const stateCacheOptions = {
         scope: options.scope,
         rereadGroupSnapshots,
+        groupFormation: {
+            mode: groupFormationMode,
+            bootstrapDegree,
+        },
     };
     cache.initialise(
         webSocketQueueBox,
