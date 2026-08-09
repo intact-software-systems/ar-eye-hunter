@@ -8,9 +8,16 @@ import type {
 export function clientStatePrincipalStorageKey(ref: ClientPrincipalRef): string {
   return [
     `app=${encodeURIComponent(ref.applicationId)}`,
-    `ws=${encodeURIComponent(ref.workspaceId ?? '_')}`,
+    `ws=${clientStateWorkspaceStorageKey(ref.workspaceId)}`,
     `principal=${encodeURIComponent(ref.principalId)}`,
   ].join(':');
+}
+
+export function clientStateWorkspaceStorageKey(workspaceId: string): string {
+  if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+    throw new TypeError('Client-state workspaceId must be a nonempty string');
+  }
+  return workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
 }
 
 export function clientStateIdempotencyStorageKey(
@@ -132,7 +139,9 @@ function decodeClientKey(key: string, names: readonly string[]): readonly string
     }
     const encoded = segment.slice(prefix.length);
     const decoded = decodeURIComponent(encoded);
-    if (decoded.length === 0 || encodeURIComponent(decoded) !== encoded) {
+    const canonical =
+      name === 'ws' ? clientStateWorkspaceStorageKey(decoded) : encodeURIComponent(decoded);
+    if (decoded.length === 0 || canonical !== encoded) {
       throw new TypeError('Stored client-state key is not canonical');
     }
     return decoded;

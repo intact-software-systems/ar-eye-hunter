@@ -10,7 +10,10 @@ import {
   clientStateSessionStorageKey,
   decodeClientPrincipalStorageKey,
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
-import { clientStatePrincipalStorageKey as compatibilityClientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state-storage-keys.ts';
+import {
+  clientStatePrincipalStorageKey as compatibilityClientStatePrincipalStorageKey,
+  clientStateWorkspaceStorageKey as compatibilityClientStateWorkspaceStorageKey,
+} from '@shared-server/rallar-system/client-state-storage-keys.ts';
 import { ClientStateRepository as compatibilityClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import {
   toClientMutationCommand,
@@ -164,9 +167,10 @@ describe('client mutation command and compatibility contracts', () => {
     };
     const principalKey = clientStatePrincipalStorageKey(principal);
 
-    expect(principalKey).toBe('app=app%3A%2F%25:ws=_:principal=alice%20smith');
+    expect(principalKey).toBe('app=app%3A%2F%25:ws=%5F:principal=alice%20smith');
     expect(decodeClientPrincipalStorageKey(principalKey)).toEqual(principal);
     expect(compatibilityClientStatePrincipalStorageKey(principal)).toBe(principalKey);
+    expect(compatibilityClientStateWorkspaceStorageKey(principal.workspaceId)).toBe('%5F');
     expect(clientStateInstanceStorageKey({ ...principal, clientInstanceId: 'web/1' })).toBe(
       `${principalKey}:instance=web%2F1`,
     );
