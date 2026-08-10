@@ -52,7 +52,7 @@ Stack record:
 | Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 open |
 | PR 1 | `codex/rtc-topology-durable-replay-1-streams` | PR #141 head | frozen at PR #143 head `871a7c7e` |
 | PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | frozen at PR #146 head `43753655` |
-| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | implementation complete; publication pending |
+| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | draft PR #148; final evidence pending |
 
 PR 1 is frozen at `871a7c7e9cfdffc3143b3f31d5d6d56d42a58ed4` with
 current exact-tree local, black-box, Branch Release Gate, medium-scale, and
@@ -64,6 +64,14 @@ PR 2 is frozen at `43753655015ef3a16c1b7f8039158230f89ebb62`, tree
 black-box, Branch Release Gate, and medium-scale evidence. Draft PR
 [#146](https://github.com/intact-software-systems/ar-eye-hunter/pull/146)
 targets PR 1 explicitly.
+
+PR 3 draft [#148](https://github.com/intact-software-systems/ar-eye-hunter/pull/148)
+targets PR 2 explicitly. Its reviewed implementation checkpoint is
+`2727de2002e26aa8345a702ff36cd3f95e658ad8`, tree
+`66a457fdb0fcbcc415c2afc607869809b04804b8`. This progress-record update will
+be the final content change before the exact-tree local, performance, black-box,
+and remote gates; every result attached only to the implementation checkpoint
+remains pre-freeze evidence.
 
 PR 3 implementation is complete on the working tree. Generation-fenced sends,
 strict durable reconnect hydration, enabled replay plus QueueBox, the managed
@@ -78,10 +86,11 @@ PostgreSQL 13/13 plus cluster 5/5, CRDT 22/22, medium-scale 2,748/2,748,
 formation-large 1,327/1,327, and the standalone A/B/C-to-C' topology replay
 proof. The fixed delivery and replay-drain workloads preserve every plan
 constant and bound. Pre-freeze repository-wide typecheck, governance, style,
-unit, CI, build, and browser-bundle gates passed; this progress-record edit
-invalidates those broad results until they are rerun from the unchanged final
-tree. Commit, draft publication, exact-SHA A-B-B-A, and remote exact-SHA gates
-remain pending, so PR 3 and this plan remain active.
+unit, CI, build, and browser-bundle gates passed; subsequent review fixes and
+this progress-record edit invalidate those broad results until they are rerun
+from the unchanged final tree. Draft publication is complete at PR #148;
+the final progress commit, exact-SHA A-B-B-A, and remote exact-SHA gates remain
+pending, so PR 3 and this plan remain active.
 
 An independent pre-publication review of the original staged PR 3 tree found
 that the profile-only topology command still depended on `clusterOnly` for
