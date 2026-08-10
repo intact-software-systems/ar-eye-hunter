@@ -16,6 +16,7 @@ Detailed workflows live in `.agents/skills/**` (a repo-local skill tree, also pa
 | --- | --- |
 | `rallar-code-writing` | **Any** TypeScript change. Its `references/repo-code-style.md` is the authoritative code standard. |
 | `rallar-code-writing/references/convergent-service-writing.md` | Any authoritative DB or realtime mutation. |
+| `rallar-code-writing/references/typescript-type-organization.md` | Naming, aliasing, or organizing TypeScript types: APIs, DTOs, type aliases, namespaces, class-owned vocabulary, public type surfaces. |
 | `rallar-testing/references/test-commands.md` | Choosing which tests to run for a change. |
 | `rallar-platform` | Package boundaries and public surfaces under `packages/**`. |
 | `rallar-realtime` | Rooms, `GroupRef`/scoped identity, WS/RTC, presence, state sync, topology. |
@@ -221,6 +222,10 @@ Highest-frequency rules:
   one required input contract plus a separate `createDefaultXxx` composition root.
 - **At most three positional parameters**; at four, use one named input interface. Use `interface`
   for object contracts and `type` for unions/mapped/tuple/function types. No `I` prefix.
+- **One canonical name per type.** Never add a `type` alias, import rename, or re-export that merely
+  renames an existing named type; keep qualification like `CreateAccounts.Input`. Class-owned
+  vocabulary may use a type-only same-name namespace immediately before the class (erasable type
+  declarations only — no runtime members, no new enums).
 - **Filenames are kebab-case** and match the primary export (including React components). No
   `utils.ts`/`types.ts`/`middleware.ts` without a feature noun.
 - **Decisions stay high in the call stack** — a policy or default decision four helper calls below

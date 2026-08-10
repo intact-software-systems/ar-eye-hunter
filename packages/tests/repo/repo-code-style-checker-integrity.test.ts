@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { constructionRuleIds } from '../../../scripts/repo-style-check/construction-rules.mjs';
+import { typeOrganizationRuleIds } from '../../../scripts/repo-style-check/type-organization-rules.mjs';
 
 const repoRoot = process.cwd();
 const canonicalStylePath = '.agents/skills/rallar-code-writing/references/repo-code-style.md';
@@ -46,6 +47,28 @@ describe('repo code style checker integrity', () => {
       nestedCallbackDepth: 'control.nested-callback-depth',
       passThrough: 'abstraction.pass-through',
     });
+  });
+
+  it('keeps type-organization rule identifiers stable and documented', () => {
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const typeOrganizationReference = readRepo(
+      '.agents/skills/rallar-code-writing/references/typescript-type-organization.md',
+    );
+
+    expect(Object.isFrozen(typeOrganizationRuleIds)).toBe(true);
+    expect(typeOrganizationRuleIds).toEqual({
+      renameAlias: 'types.rename-alias',
+      runtimeNamespace: 'types.runtime-namespace',
+      enumDeclaration: 'types.enum-declaration',
+    });
+    for (const source of [humanGuide, canonicalStyle, typeOrganizationReference]) {
+      expectAll(source, [
+        'types.rename-alias',
+        'types.runtime-namespace',
+        'types.enum-declaration',
+      ]);
+    }
   });
 
   it('keeps TypeScript formatter settings aligned with the canonical baseline', () => {

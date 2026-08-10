@@ -22,6 +22,7 @@ restating a different version of these rules.
 - [Construction, dependencies, and callbacks](#construction-dependencies-and-callbacks)
 - [Function inputs and outputs](#function-inputs-and-outputs)
 - [`interface` and `type`](#interface-and-type)
+- [Type names, aliases, and type-only namespaces](#type-names-aliases-and-type-only-namespaces)
 - [Narrowing, `unknown`, and assertions](#narrowing-unknown-and-assertions)
 - [Validation, expected failure, and `Either`](#validation-expected-failure-and-either)
 - [Runtime exceptions and retry classification](#runtime-exceptions-and-retry-classification)
@@ -598,6 +599,33 @@ the behavior.
 
 The plain-object `type` preference is a manual review rule. Its automated check is opt-in while existing code makes the
 signal noisy.
+
+## Type names, aliases, and type-only namespaces
+
+TypeScript type design optimizes for human comprehension: a reader should understand a type
+reference without following renaming aliases or reconstructing where a type came from.
+
+Every named interface, class, enum, or named type has one canonical name. Use it directly at every
+reference. Do not introduce a local or exported `type` alias, import rename, or re-export whose only
+effect is to rename or shorten an existing named type. Qualification such as `CreateAccounts.Input`
+is ownership information; do not remove it merely to shorten code. A `type` alias is justified only
+when it defines a genuinely new type expression or semantic type — a union, intersection, tuple,
+mapped, conditional, function, branded, `keyof`, or indexed-access type, or a semantic primitive
+alias such as `type VertexId = string`.
+
+When several contracts belong specifically to one class, prefer a type-only namespace with the same
+canonical name declared immediately before the class, so a reader meets the vocabulary before the
+implementation and every reference reads as `CreateAccounts.Input`. Associated namespaces contain
+only erasable type declarations — never runtime values, functions, classes, or enums — and stay
+compatible with `erasableSyntaxOnly`. Do not introduce new TypeScript enums; prefer string-literal
+unions. Contracts owned by a function-based use case keep flat feature-prefixed names such as
+`InvoiceInputDto`.
+
+The detailed rules, examples, Deno lint boundary, and alias-refactoring guidance live in
+[typescript-type-organization.md](./typescript-type-organization.md). The checker warns by default
+for rename-only aliases (`types.rename-alias`), runtime namespace members
+(`types.runtime-namespace`), and `enum` declarations (`types.enum-declaration`); canonical-name
+choice, import renames, and namespace-before-class ordering remain manual review.
 
 ## Narrowing, `unknown`, and assertions
 

@@ -19,6 +19,7 @@ import {
 import { extractCreateFactories, extractFunctionSignatures } from './function-analysis.mjs';
 import { isLayoutTypeScriptFile, layoutRuleIds, scanRepositoryLayout } from './layout-rules.mjs';
 import { lineFromOffset, lineOffsets } from './source-text.mjs';
+import { scanTypeOrganizationFindings } from './type-organization-rules.mjs';
 
 const checkedExtensions = new Set(['.ts', '.tsx', '.d.ts', '.mts', '.cts', '.mjs']);
 const outputContractExtensions = new Set(['.ts', '.tsx', '.mts', '.cts']);
@@ -178,8 +179,15 @@ function scanFile(source, options) {
   addRouteFindings(findings, raw);
   addContractAndFactoryFindings(findings, sourceText, options);
   findings.push(...scanBoundaryUnknownFindings(raw));
+  if (!isAmbientDeclarationFile(file)) {
+    findings.push(...scanTypeOrganizationFindings(raw));
+  }
   findings.push(...scanConstructionRules({ file, raw }, { details: options.constructionDetails }));
   return findings;
+}
+
+function isAmbientDeclarationFile(file) {
+  return /\.d\.[cm]?ts$/u.test(file.toLowerCase());
 }
 
 function addFileMeasurementFindings(findings, lines) {

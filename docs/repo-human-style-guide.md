@@ -254,6 +254,12 @@ Current default warnings cover:
 - callbacks passed to `createXxx` factories that capture a local binding first
   assigned after construction (`construction.forward-capture`);
 - potential `unknown` propagation;
+- type aliases that only rename an existing named or qualified type
+  (`types.rename-alias`);
+- namespaces that contain runtime members instead of only erasable type
+  declarations (`types.runtime-namespace`);
+- TypeScript `enum` declarations, which are not erasable syntax
+  (`types.enum-declaration`);
 - directories with more than 20 direct production TypeScript files
   (`layout.directory-density`);
 - meaningful filename-prefix clusters in those dense directories
@@ -282,7 +288,8 @@ account for several affected files without hiding the debt measure.
 Some rules remain manual because a text heuristic cannot reliably determine
 semantics: decision depth, purity, side effects, responsibility boundaries,
 meaningful absence, useful inlining, and whether blank-line groups belong
-together.
+together. Type-organization judgment also stays manual: canonical-name choice,
+justified import renames, and namespace-before-class ordering.
 
 ### Optional noisy checks
 

@@ -1,6 +1,6 @@
 ---
 name: rallar-code-writing
-description: Use when writing, generating, refactoring, or reviewing any human-authored code in the Rallar repository; TypeScript-specific rules also apply to TypeScript surfaces. It governs all human-authored code.
+description: Use when writing, generating, refactoring, or reviewing any human-authored code in the Rallar repository, including TypeScript APIs, interfaces, DTOs, type aliases, namespaces, classes with associated types, public type surfaces, and TypeScript type organization; TypeScript-specific rules also apply to TypeScript surfaces. It governs all human-authored code.
 ---
 
 # Rallar Code Writing
@@ -25,6 +25,12 @@ coding standard; local guidance may tighten it but may not relax it.
 
 TypeScript changes must also follow every TypeScript-specific rule in
 `references/repo-code-style.md`.
+
+When TypeScript work creates, changes, reviews, or refactors named types — APIs,
+interfaces, DTOs, type aliases, namespaces, classes with associated types, or
+public type surfaces — also read `references/typescript-type-organization.md`
+completely. It is authoritative for canonical type naming, alias discipline,
+qualification, and type-only class namespaces.
 
 For authoritative database or realtime service mutations, also read
 `references/convergent-service-writing.md` completely. Its repository path is
