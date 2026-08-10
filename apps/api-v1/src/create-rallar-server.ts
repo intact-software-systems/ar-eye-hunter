@@ -307,6 +307,7 @@ export function createRallarServer(
             enqueueRtcRttMutation: (input) => middleware.appGroupInboxService.enqueueRtcRtt(input),
           },
         );
+
         const unregister = registerMiddlewareBackgroundTask(systemTopics.stop);
         stopSystemTopics = () => {
           unregister();
