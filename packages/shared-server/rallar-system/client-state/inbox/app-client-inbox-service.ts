@@ -81,6 +81,7 @@ export class AppClientInboxService extends AppInboxService {
       snapshotObserver: clientStateService,
       transactionWriter: this.transactionWriter,
       serviceId,
+      formationDamping: clientStateService.formationDamping,
     });
     this.registerClientStateMessages();
   }

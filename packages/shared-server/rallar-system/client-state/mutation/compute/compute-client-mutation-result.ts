@@ -50,7 +50,11 @@ export function computeClientMutationResult(
   });
   const stateSync = toClientStateSync(command, snapshot, event);
   const outboxEntries = stateSync.flatMap((computed) =>
-    computeClientStateSyncEntries(computed, facts.serviceId),
+    computeClientStateSyncEntries(
+      computed,
+      facts.serviceId,
+      facts.formationDamping === 'damped' ? 'principal' : 'world',
+    ),
   );
   const receipt = toAppliedClientMutationReceipt({
     command,

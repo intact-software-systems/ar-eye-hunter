@@ -84,6 +84,7 @@ export async function createAppInboxWsCloseHarness(options: Readonly<{
   });
   const clientState = createClientStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createClientStateEventStore: () => database.clientEventStore,
     serviceId: 'server-12345678',
   });

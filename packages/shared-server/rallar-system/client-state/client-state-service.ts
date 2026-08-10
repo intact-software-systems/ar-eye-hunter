@@ -30,6 +30,7 @@ export function createClientStateService(
     });
   const service: ClientStateService = {
     sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtimeRepository),
+    formationDamping: dependencies.formationDamping,
     listSnapshots: async (scope) => await repositoryFor(runtimeRepository).listSnapshots(scope),
     readSnapshot: async (ref) => await repositoryFor(runtimeRepository).readSnapshot(ref),
     readPresenceSnapshot: async (ref) =>

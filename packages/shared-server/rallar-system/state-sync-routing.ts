@@ -1,6 +1,13 @@
-import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import {
+    type ALMessage,
+    readALPrincipalBroadcastTarget,
+} from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import type {
+    ClientEvent,
+    ClientPrincipalRef,
+    ClientSnapshot,
+} from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -23,6 +30,7 @@ export type StateSyncRoutingOptions = Readonly<{
     findGroupSnapshotByRef?: (ref: GroupRef) => GroupSnapshot | undefined;
     findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
     readClientSnapshots?: () => readonly ClientSnapshot[];
+    readGroupSnapshots?: () => readonly GroupSnapshot[];
     now?: RallarSnapshotPresenceClock;
 }>;
 
@@ -31,6 +39,10 @@ export function resolveStateSyncRecipients(
     message: ALMessage,
     options: StateSyncRoutingOptions = {},
 ): readonly WsServerResolvedRecipient[] | undefined {
+    const principalTarget = readALPrincipalBroadcastTarget(message);
+    if (principalTarget) {
+        return resolvePrincipalRecipients(webSocketServer, principalTarget, options);
+    }
     const payload = parseStateSyncPayload(message);
     if (!payload) {
         return undefined;
@@ -107,6 +119,41 @@ export function sendStateSyncMessage(
     }
 
     return sent;
+}
+
+/**
+ * Scope 'principal' resolves at delivery time to the principal's own live
+ * sessions plus live sessions of groups the principal is an active member of.
+ * It never falls through to every open connection, unlike the legacy
+ * world-broadcast rows whose payload sniffing this branch bypasses.
+ */
+function resolvePrincipalRecipients(
+    webSocketServer: JsonWebSocketServer,
+    principalRef: ClientPrincipalRef,
+    options: StateSyncRoutingOptions,
+): readonly WsServerResolvedRecipient[] {
+    const clientSnapshots = options.readClientSnapshots?.() ??
+        clientStateSnapshotsRepository.getAllClientStateSnapshots();
+    const ownRecipients = clientSnapshots
+        .filter((snapshot) =>
+            sameScope(snapshot.principal, principalRef) &&
+            snapshot.principal.principalId === principalRef.principalId
+        )
+        .flatMap((snapshot) =>
+            toOpenClientSessionRecipients(webSocketServer, snapshot, options)
+        );
+    const groupSnapshots = options.readGroupSnapshots?.() ??
+        groupStateSnapshotsRepository.getAllGroupStateSnapshots();
+    const coGroupRecipients = groupSnapshots
+        .filter((snapshot) =>
+            sameScope(snapshot.group, principalRef) &&
+            snapshot.members.some((member) =>
+                member.principalId === principalRef.principalId &&
+                member.status === 'active'
+            )
+        )
+        .flatMap((snapshot) => resolveGroupRecipients(webSocketServer, snapshot, options));
+    return dedupRecipients([...ownRecipients, ...coGroupRecipients]);
 }
 
 function resolveScopeRecipients(

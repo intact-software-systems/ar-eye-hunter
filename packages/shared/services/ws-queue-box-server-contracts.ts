@@ -37,7 +37,7 @@ export type WsServerTargetResolver = Readonly<{
         message: ALMessage,
     ) => readonly WsServerResolvedRecipient[];
     resolveBroadcastRecipients?: (
-        scope: 'room' | 'world' | 'all',
+        scope: 'room' | 'world' | 'all' | 'principal',
         message: ALMessage,
     ) => readonly WsServerResolvedRecipient[];
     resolvePeerIdForConnection?: (

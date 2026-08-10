@@ -325,6 +325,7 @@ function initialise(
       const clientStateService = createCachedClientStateService({
         durable: createClientStateService({
           runtimeRepository: runtimeStateRepository,
+          formationDamping: groupFormationDamping,
           createClientStateEventStore: createClientStateEventRepository,
           serviceId: myServerId,
           timing,

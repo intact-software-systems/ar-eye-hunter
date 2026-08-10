@@ -127,7 +127,11 @@ function validateClientMutationOutbox(
   computed: Extract<ClientMutationComputed, { outcome: 'write' }>,
 ): void {
   const expectedOutboxEntries = computed.stateSync.flatMap((stateSync) =>
-    computeClientStateSyncEntries(stateSync, command.facts.serviceId),
+    computeClientStateSyncEntries(
+      stateSync,
+      command.facts.serviceId,
+      command.facts.formationDamping === 'damped' ? 'principal' : 'world',
+    ),
   );
   if (
     JSON.stringify(expectedOutboxEntries) !== JSON.stringify(computed.outboxEntries) ||

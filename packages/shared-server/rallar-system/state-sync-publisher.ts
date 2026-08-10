@@ -90,6 +90,7 @@ export type ComputedGroupStateSync = Readonly<{
 export function computeClientStateSyncEntries(
     computed: ComputedClientStateSync,
     senderId: string,
+    principalAudienceScope: 'principal' | 'world',
 ): readonly ResourceEntry[] {
     validateComputedStateSyncFacts(computed, senderId);
     if (
@@ -102,16 +103,17 @@ export function computeClientStateSyncEntries(
         validateClientStateSyncEffect(computed, effect);
     }
     return computed.effects.map((effect) =>
-        toStateSyncEntry(
+        toStateSyncEntry({
             computed,
             effect,
             senderId,
-            AppTopics[effect.payloadKind === 'snapshot'
+            topicId: AppTopics[effect.payloadKind === 'snapshot'
                 ? 'clientStateSnapshot'
                 : 'clientStateEvent'],
-            computed.acceptedCausalRevision,
-            0,
-        )
+            sequence: computed.acceptedCausalRevision,
+            epoch: 0,
+            principalAudienceScope,
+        })
     );
 }
 
@@ -132,23 +134,31 @@ export function computeGroupStateSyncEntries(
             : effect.effectKind === 'scope-directory'
             ? AppTopics.groupDirectorySnapshot
             : AppTopics.groupStateSnapshot;
-        return toStateSyncEntry(
+        return toStateSyncEntry({
             computed,
             effect,
             senderId,
             topicId,
-            computed.acceptedCausalRevision.presenceRevision,
-            computed.acceptedCausalRevision.groupRevision,
-        );
+            sequence: computed.acceptedCausalRevision.presenceRevision,
+            epoch: computed.acceptedCausalRevision.groupRevision,
+            principalAudienceScope: 'world',
+        });
     });
 }
 
 export async function writeClientStateSync(
     transaction: PSqlTransactionSql,
     computed: ComputedClientStateSync,
-    senderId: string,
+    write: Readonly<{
+        senderId: string;
+        principalAudienceScope: 'principal' | 'world';
+    }>,
 ): Promise<readonly ResourceEntry[]> {
-    const entries = computeClientStateSyncEntries(computed, senderId);
+    const entries = computeClientStateSyncEntries(
+        computed,
+        write.senderId,
+        write.principalAudienceScope,
+    );
     await writeStateSyncEntries(transaction, entries);
     return entries;
 }
@@ -181,14 +191,18 @@ type ComputedStateSyncEffect =
     | ComputedClientStateSyncEffect
     | ComputedGroupStateSyncEffect;
 
-function toStateSyncEntry(
-    computed: ComputedStateSync,
-    effect: ComputedStateSyncEffect,
-    senderId: string,
-    topicId: string,
-    sequence: number,
-    epoch: number,
-): ResourceEntry {
+interface ToStateSyncEntryInput {
+    readonly computed: ComputedStateSync;
+    readonly effect: ComputedStateSyncEffect;
+    readonly senderId: string;
+    readonly topicId: string;
+    readonly sequence: number;
+    readonly epoch: number;
+    readonly principalAudienceScope: 'principal' | 'world';
+}
+
+function toStateSyncEntry(input: ToStateSyncEntryInput): ResourceEntry {
+    const { computed, effect, senderId, topicId, sequence, epoch } = input;
     const causalIdentity = typeof computed.acceptedCausalRevision === 'number'
         ? `revision=${computed.acceptedCausalRevision}`
         : `group=${computed.acceptedCausalRevision.groupRevision};presence=${computed.acceptedCausalRevision.presenceRevision}`;
@@ -225,6 +239,16 @@ function toStateSyncEntry(
                     applicationId: computed.audience.applicationId,
                     workspaceId: computed.audience.workspaceId,
                     groupId: computed.audience.resourceId,
+                },
+            }
+            : input.principalAudienceScope === 'principal'
+            ? {
+                mode: 'broadcast',
+                scope: 'principal',
+                principalRef: {
+                    applicationId: computed.audience.applicationId,
+                    workspaceId: computed.audience.workspaceId,
+                    principalId: computed.audience.resourceId,
                 },
             }
             : {

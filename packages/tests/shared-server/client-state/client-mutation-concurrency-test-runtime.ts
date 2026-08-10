@@ -178,6 +178,7 @@ export function createService(
 ) {
   return createClientStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     syncPublisher,
     now: () => nowEpochMs,
     randomId: (() => {

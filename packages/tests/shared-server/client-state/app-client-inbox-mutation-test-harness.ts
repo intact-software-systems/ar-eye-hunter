@@ -232,6 +232,7 @@ export function createClientStateServiceStub(
   overrides: Partial<ClientStateService>,
 ): ClientStateService {
   return {
+    formationDamping: 'damped',
     listSnapshots: vi.fn(),
     readSnapshot: vi.fn(),
     readPresenceSnapshot: vi.fn(),
@@ -257,6 +258,7 @@ export function createAutoAuthorizingClientStateService(
   const authSessions = new AuthSessionRepository(runtimeRepository);
   const durable = createClientStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createClientStateEventStore: () => eventStore,
     serviceId: 'server-12345678',
   });

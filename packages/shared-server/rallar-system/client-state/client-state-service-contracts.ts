@@ -59,6 +59,7 @@ export type ClientStateWritten = Readonly<{
 
 export type ClientStateService = Readonly<{
   sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+  formationDamping: 'damped' | 'legacy';
   listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]>;
   readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
   readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined>;
@@ -95,6 +96,7 @@ export type ClientStateMutationService = Pick<
 
 export type ClientStateServiceDependencies = Readonly<{
   runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+  formationDamping: 'damped' | 'legacy';
   createClientStateEventStore?: (
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
   ) => ClientStateEventStore;

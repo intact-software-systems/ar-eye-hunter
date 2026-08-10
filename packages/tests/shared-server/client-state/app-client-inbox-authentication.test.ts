@@ -35,6 +35,7 @@ describe('AppClientInbox authentication', () => {
     await authSessions.putSession(mallory);
     const service = createClientStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       serviceId: 'server-12345678',
     });
     const command = await toClientMutationCommand(
@@ -56,6 +57,7 @@ describe('AppClientInbox authentication', () => {
         eventId: 'direct-mallory-targets-alice-event',
         attemptCount: 1,
         expireAtEpochMs: Date.now() + 60_000,
+        formationDamping: 'damped',
       },
       toClientMutationIssuedSessionAuthority(mallory, SCOPE, 'upsertPrincipal'),
     );
@@ -85,6 +87,7 @@ describe('AppClientInbox authentication', () => {
       database,
       createClientStateService({
         runtimeRepository,
+        formationDamping: 'damped',
         createClientStateEventStore: () => new InMemoryClientStateEventStore(),
         serviceId: 'server-12345678',
       }),
@@ -188,6 +191,7 @@ async function createRevokedAuthorityRetryHarness() {
     database,
     createClientStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       createClientStateEventStore: () => new InMemoryClientStateEventStore(),
       serviceId: 'server-12345678',
     }),

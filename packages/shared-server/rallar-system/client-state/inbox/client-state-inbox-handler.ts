@@ -46,6 +46,7 @@ export interface ClientStateInboxHandlerDependencies {
   readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
   readonly transactionWriter: AppInboxMutationTransactionWriter;
   readonly serviceId: string;
+  readonly formationDamping: 'damped' | 'legacy';
 }
 
 export interface ClientStateInboxAfterCommitResult {
@@ -213,7 +214,7 @@ export class ClientStateInboxHandler {
   ): Promise<ClientMutationCommand> {
     return await toClientMutationCommand(
       input,
-      toClientMutationPersistedFacts(context, input.commandId, this.dependencies.serviceId),
+      toClientMutationPersistedFacts(context, input.commandId, this.dependencies),
       readClientMutationAuthority(context.enqueue.authority, input.operation),
     );
   }
@@ -347,11 +348,11 @@ export class ClientStateInboxHandler {
 function toClientMutationPersistedFacts(
   context: AppInboxMessageContext,
   commandId: string,
-  serviceId: string,
+  dependencies: Pick<ClientStateInboxHandlerDependencies, 'serviceId' | 'formationDamping'>,
 ): Omit<ClientMutationPersistedFacts, 'commandHash'> {
   return {
     nowEpochMs: context.message.id.ts,
-    serviceId,
+    serviceId: dependencies.serviceId,
     eventId: `client-event:${JSON.stringify([
       context.entry.key.contextId,
       context.entry.key.topicId,
@@ -359,6 +360,7 @@ function toClientMutationPersistedFacts(
     ])}`,
     attemptCount: context.entry.dequeueAudit.attempts,
     expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds),
+    formationDamping: dependencies.formationDamping,
   };
 }
 

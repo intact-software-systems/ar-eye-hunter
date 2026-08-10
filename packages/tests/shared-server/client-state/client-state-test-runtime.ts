@@ -75,6 +75,7 @@ export function createClientStatePhaseTestDriver(
   const serviceId = options.serviceId ?? 'client-service';
   const service = createClientStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createClientStateEventStore: () => eventStore,
     serviceId,
     timing: options.timing,
@@ -148,6 +149,7 @@ async function computeClientStateTestMutation(
       eventId: `test-client-event:${input.commandId}:${context.nextSequence()}`,
       attemptCount: attempt,
       expireAtEpochMs: TEST_AUTH_EXPIRES_AT_EPOCH_MS,
+      formationDamping: 'damped',
     },
     authority,
   );

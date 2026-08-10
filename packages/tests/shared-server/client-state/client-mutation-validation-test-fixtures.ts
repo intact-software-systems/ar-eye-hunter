@@ -105,6 +105,7 @@ export function validFacts(): ClientMutationFacts {
     commandHash: `sha256:${'a'.repeat(64)}`,
     attemptCount: 1,
     expireAtEpochMs: 10_000,
+    formationDamping: 'damped',
   };
 }
 

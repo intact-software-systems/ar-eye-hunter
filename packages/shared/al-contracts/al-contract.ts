@@ -1,4 +1,5 @@
 import type { ALQosPolicyRequest } from './al-policy.ts';
+import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
 
 // -------------------------------------------------------
@@ -41,8 +42,14 @@ export type ALTargets =
 }>
     | Readonly<{
     mode: 'broadcast';
-    scope: 'room' | 'world' | 'all';
+    scope: 'room' | 'world' | 'all' | 'principal';
     groupRef?: GroupRef;
+    /**
+     * Server-resolved audience identity for scope 'principal': the principal's
+     * own live sessions plus live sessions of groups the principal is an
+     * active member of. Never resolves to every open connection.
+     */
+    principalRef?: ClientPrincipalRef;
     exceptPeerIds?: readonly string[];
     minSnapshotVersion?: number;
     /** Immutable logical audience captured by authoritative server work. */
@@ -340,6 +347,28 @@ export function readALMulticastTargetGroupRef(
     }
 
     return toALGroupRef(targets.groupRef);
+}
+
+export function readALPrincipalBroadcastTarget(
+    message: ALMessage,
+): ClientPrincipalRef | undefined {
+    const targets = message.targets;
+    if (
+        targets?.mode !== 'broadcast' ||
+        targets.scope !== 'principal' ||
+        targets.principalRef === undefined ||
+        typeof targets.principalRef.applicationId !== 'string' ||
+        typeof targets.principalRef.workspaceId !== 'string' ||
+        typeof targets.principalRef.principalId !== 'string'
+    ) {
+        return undefined;
+    }
+
+    return {
+        applicationId: targets.principalRef.applicationId,
+        workspaceId: targets.principalRef.workspaceId,
+        principalId: targets.principalRef.principalId,
+    };
 }
 
 export function readALTargetGroupRef(

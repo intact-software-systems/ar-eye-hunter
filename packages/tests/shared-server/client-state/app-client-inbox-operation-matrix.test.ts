@@ -60,6 +60,7 @@ describe('AppClientInbox operation matrix', () => {
 function createClientInboxServiceForRegistration(): AppClientInboxService {
   const registrationService = {
     sessionGenerationLifecycle: {} as ClientStateService['sessionGenerationLifecycle'],
+    formationDamping: 'damped' as const,
   };
   return new AppClientInboxService(
     {} as InboxQueueReader,

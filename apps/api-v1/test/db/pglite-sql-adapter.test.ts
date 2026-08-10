@@ -726,6 +726,7 @@ Deno.test('PGlite client write commits state, event, and ResourceInbox rows in o
     const repository = new ClientStateRepository(runtime, { events });
     const service = createClientStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createClientStateEventStore: () => events,
       serviceId: 'pglite-client-service',
     });
@@ -761,6 +762,7 @@ Deno.test('PGlite client write commits state, event, and ResourceInbox rows in o
           eventId: `${commandId}-event`,
           attemptCount: 1,
           expireAtEpochMs: FUTURE_MS,
+          formationDamping: 'damped',
         },
         toClientMutationIssuedSessionAuthority(authority, scope, 'upsertPrincipal'),
       );
@@ -820,6 +822,7 @@ async function createPGliteClientEventCollisionFixture(
   const repository = new ClientStateRepository(runtime, { events });
   const service = createClientStateService({
     runtimeRepository: runtime,
+    formationDamping: 'damped',
     createClientStateEventStore: () => events,
     serviceId: 'pglite-client-service',
   });
@@ -852,6 +855,7 @@ async function createPGliteClientEventCollisionFixture(
         eventId,
         attemptCount: 1,
         expireAtEpochMs: FUTURE_MS,
+        formationDamping: 'damped',
       },
       toClientMutationIssuedSessionAuthority(authority, scope, operation),
     );

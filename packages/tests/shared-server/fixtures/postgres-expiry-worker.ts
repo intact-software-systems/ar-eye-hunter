@@ -282,6 +282,7 @@ async function runClientMutation(
       eventId: `postgres-client-event:${requestId}`,
       attemptCount: entry.dequeueAudit.attempts,
       expireAtEpochMs: Number(entry.audit.expiryTs.epochMilliseconds),
+      formationDamping: 'damped',
     },
     toClientMutationIssuedSessionAuthority(
       authoritySession,

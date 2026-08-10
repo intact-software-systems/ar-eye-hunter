@@ -55,6 +55,7 @@ it(
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     const clientStateService = createClientStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       createClientStateEventStore: () => database.clientEventStore,
       serviceId: 'server-12345678',
     });
@@ -343,6 +344,7 @@ async function waitForQueueEntryCount(
 function createClientStateServiceStub(overrides: Partial<ClientStateService>): ClientStateService {
   return {
     sessionGenerationLifecycle: {} as never,
+    formationDamping: 'damped',
     listSnapshots: vi.fn(),
     readSnapshot: vi.fn(),
     readPresenceSnapshot: vi.fn(),
