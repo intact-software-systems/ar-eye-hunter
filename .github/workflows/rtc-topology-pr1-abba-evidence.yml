@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 120
     env:
       APPROVED_BASE_SHA: 28c49ceb4e0000d9527b4d80dfc4b922662385a7
-      CANDIDATE_SHA: e093cf2998664a649fae82646e9347a6d3015ca9
+      CANDIDATE_SHA: 4c4961a4dbd19f3ed92ad46d9c0b4eded6990d8d
       DATABASE_URL: postgresql://app:app@127.0.0.1:55432/appdb
       PINNED_POSTGRES_IMAGE: postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171
       PINNED_POSTGRES_IMAGE_ID: sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171
