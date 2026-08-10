@@ -62,8 +62,9 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Status:** Phase 1 thirty-nine-path plan-only amendment authorized for publication;
-exact revised plan-blob approval and instrumentation activation still required
+**Status:** Phase 1 RTC controller-protocol plan-only correction authorized for
+publication; exact revised plan-blob approval and instrumentation activation
+still required
 
 **Roadmap:**
 [Rallar Architecture Quality And RTC Program Roadmap](../../../plans/rallar-architecture-quality-and-rtc-program-roadmap.md)
@@ -288,10 +289,10 @@ variable is named. The flag is exactly
 `--rtc-<camelCase-to-kebab-case-field>`. A case-specific resolved field records
 the case key, field, normalized value, and exactly one source from `default`,
 `cli`, or `environment`. Controller inputs such as baseline ID, phase, ordinal,
-staged path, producer status, and output path are separate typed records; they
-are never configuration fields. The generated canonical worker projection is
-a fourth, separate record. No DTO collapses descriptors, resolved values,
-controller inputs, or the generated projection into one map.
+raw-result path, producer exit status, and output path are separate typed
+records; they are never configuration fields. The generated canonical worker
+projection is a fourth, separate record. No DTO collapses descriptors, resolved
+values, controller inputs, or the generated projection into one map.
 
 The manifest expands the following literal rows. Braces denote the complete
 listed cross-product, not a runtime wildcard. Every named field has the shown
@@ -386,6 +387,30 @@ part of the worker projection. Contract tests own the literal case descriptors
 and argv/projection records; validation tests own precedence and reconciliation;
 Deno-runtime tests own exact allowlisted environment capture; CLI-grammar tests
 own the one-token encoding and rejection rules.
+
+The controller protocol uses the later executable recipe as its sole canonical
+grammar. `initialize` accepts exactly one
+`--workloads=WORKLOAD[,WORKLOAD...]` token. It rejects `--workload`, an empty
+list, an empty member, a duplicate member, and any workload outside
+`RTC-B01` through `RTC-B06`. The normalized initialization request and manifest
+persist the accepted order as the nonempty `workloadIds` array; attempt, sample,
+cohort, and failure identities retain one singular `workloadId`. `capture`,
+`list-external-attempts`, `record-browser`,
+`record-external`, `record-external-cohort`, and `compare-paired` each accept
+one singular `--workload` that must name a member of the initialized
+`workloadIds`. Repeat initialization accepts the nonempty ordered subset
+printed by `repeat-required --format=workload-csv` and preserves that order in
+the repeat request and manifest. It never infers an omitted workload list.
+
+`record-browser`, `record-external`, and `record-external-cohort` accept the
+producer result only as `--producer-exit-status=STATUS` plus
+`--raw-result=PATH`; the aliases `--producer-status` and `--staged-path` are
+unsupported and rejected. `list-external-attempts --format=tsv` emits exactly
+four tab-separated fields in this order: case ID, intended phase, outer
+ordinal, and environment. The external attempt's `inputKey` remains in the
+manifest and typed locator but is never a fifth TSV field. These controller
+option names and output columns do not change the staged DTO, locator,
+workload, or evidence contracts.
 
 ## 6. Environments And Reproducibility
 
@@ -1385,6 +1410,8 @@ remains the blocking authority.
 
   In `rtc-performance-baseline-contract.test.ts`, add behavior-named pure cases
   for DTO shape, JSON-safe round trips, dense arrays, the baseline-ID grammar,
+  the nonempty ordered `workloadIds` initialization/request/manifest shape and
+  singular per-attempt `workloadId`,
   the exact case-scoped configuration-descriptor fields/defaults/flags/explicit
   environment names, separate resolved-value/controller-input records, literal
   exact redacted argv with manifest-owned runtime prefixes and canonical worker
@@ -1397,14 +1424,16 @@ remains the blocking authority.
   test.
 
   In `rtc-performance-baseline-decoding.test.ts`, prove JSON round-trip
-  normalization, reusable structural primitives, capture-request,
+  normalization, reusable structural primitives, the ordered nonempty and
+  duplicate-free capture-request `workloadIds`,
   conditional-decision, and repeat-link decoding. Use malformed JSON-safe
   literals and hand-authored complete issue lists for every mandatory nested
   field, dense array, and closed discriminant in those core DTOs.
 
   In `rtc-performance-baseline-validation.test.ts`, add behavior-named cases
-  for baseline-ID, capture-request, conditional-decision, and exact repeat-link
-  semantics; exact argv-to-worker-projection derivation; case-scoped
+  for baseline-ID, capture-request workload membership/order, repeat-subset
+  order, conditional-decision, and exact repeat-link semantics; exact
+  argv-to-worker-projection derivation; case-scoped
   CLI/environment/default precedence; and preservation of controller
   provenance after worker-flag generation. Every malformed input and expected
   complete issue list is a hand-authored literal.
@@ -1506,15 +1535,19 @@ remains the blocking authority.
   for generic one-token option primitives, duplicates, positional/unsupported
   options, bounded integer conversions, canonical boolean/integer/string and
   comma-joined sample-ID encoding, rejection of two-token flags, all ten exact
-  command and conditional option matrices, and complete browser/external
-  locators. Every command and issue is a hand-authored literal.
+  command and conditional option matrices, ordered `--workloads` only for
+  initialization, singular `--workload` only for workload-scoped commands,
+  exact `--producer-exit-status` plus `--raw-result` ingestion options,
+  rejection of `--producer-status` and `--staged-path`, and complete
+  browser/external locators. Every command and issue is a hand-authored literal.
 
   In `rtc-performance-baseline-cli.test.ts`, add behavior-named application
   cases proving ten-subcommand dispatch to typed envelope operations without
   direct artifact reads,
   success/no-repeat/evidence-failure/usage exit mapping, exact stdout versus
-  stderr ownership, and import without execution when `import.meta.main` is
-  false. Do not export or derive reservation arrays from production-owned
+  stderr ownership, the exact four-column external-attempt TSV without
+  `inputKey`, and import without execution when `import.meta.main` is false. Do
+  not export or derive reservation arrays from production-owned
   contracts, either decoding owner, workload catalog/manifest, either
   validation owner, statistics, evidence layout/store, failure accounting,
   evidence acceptance, finalized evidence/reader, envelope, runtime
@@ -1653,7 +1686,10 @@ remains the blocking authority.
   contracts, conditional option matrices, and complete browser/external
   locators in `rtc-baseline-cli-grammar.ts`; keep only typed dispatch,
   stdout/stderr, exit mapping, and `import.meta.main` in `rtc-baseline-cli.ts`.
-  `initialize` creates the new baseline directory under a short-lived
+  `initialize` requires exactly one ordered, nonempty, duplicate-free
+  `--workloads=WORKLOAD[,WORKLOAD...]` token, persists that order as
+  `workloadIds` in the normalized request and manifest, and
+  creates the new baseline directory under a short-lived
   create-new lock and writes the initial environment and expected-sample
   manifest plus any declarative, policy-free external-cohort assertion identity
   and exact member set. Its generic
@@ -1684,8 +1720,10 @@ remains the blocking authority.
   strict greater-than-10% local boundary from those recomputed values rather
   than trusting a producer summary.
   `recordBrowser`, `recordExternalAttempt`, and
-  `recordExternalCohortAssertion` accept staged-raw paths plus producer exit
-  status and a complete predeclared locator, resolve that locator before any
+  `recordExternalCohortAssertion` accept `--raw-result` plus
+  `--producer-exit-status` and a complete predeclared locator; their CLI
+  grammar rejects `--staged-path` and `--producer-status`. They resolve that
+  locator before any
   reconciliation/read/decode failure can occur, confine and read those paths
   through the evidence store, and decode the normalized shared DTOs before
   applying common identity, Git/config/path, JSON, and persistence contracts
@@ -1727,8 +1765,9 @@ remains the blocking authority.
   median comparison without pooling, and exits nonzero for invalid, incomplete,
   unlinked, or unresolved evidence.
   `list-external-attempts --format=tsv` is read-only and emits the precomputed
-  case, intended phase, outer ordinal, and environment in execution order for an
-  initialized external workload; the finalized reader reads and safely decodes
+  case, intended phase, outer ordinal, and environment as exactly four columns
+  in execution order for an initialized external workload; it never emits the
+  locator's `inputKey`. The finalized reader reads and safely decodes
   the initialized manifest and asks the manifest owner to derive those attempts,
   never reads already-recorded external-attempt artifacts, and never accepts
   counts. `repeat-required` and repeat
@@ -1758,7 +1797,8 @@ remains the blocking authority.
 
   The CLI output contract is exact: successful mutation, validation, and
   finalization commands are silent and exit 0; `list-external-attempts` writes
-  only its requested TSV to stdout; `repeat-required --format=workload-csv`
+  only its requested four-column TSV to stdout; `repeat-required
+--format=workload-csv`
   writes only the stable CSV to stdout and exits 0 when triggered, writes
   nothing and exits 3 when no repeat is required, and writes typed issues to
   stderr and exits 1 for invalid or incomplete evidence; `compare-paired`
@@ -4387,3 +4427,4 @@ incomplete evidence milestone and do not mark this written plan complete.
 | 2026-08-08 | Sixteen-path Task 1 feasibility amendment based on current `main` `fdb53f836f7e1fae7b416161a0dbff8d98f91760`     | `plan-amendment`   | Independent review of the thirteen-path Task 1 WIP found that real Deno runtime composition and the accepted-evidence lifecycle still overloaded the CLI and envelope test boundaries. This amendment adds only `rtc-baseline-deno-runtime.ts`, its direct runtime test, and the direct evidence-acceptance test; moves CLI grammar out of pure validation; preserves the six ordered B01-B05 commits, every workload, environment, artifact, comparison, anchor, five-path B06 reservation, and later hold; and treats the thirteen-path WIP as read-only design input with no current evidence.                                                                                                                                                          | Publish this exact plan blob, obtain qualifying human exact-blob approval and separate roadmap activation, then restart Task 0 from fresh then-current `main` and establish new RED boundaries for all 16 Task 1 files. Selectively port only audited fragments; never wholesale-copy WIP or inherit its tests, gates, or completion claims. |
 | 2026-08-09 | Twenty-five-path Task 1 feasibility amendment based on current `main` `9ff4b7422c8124acf4bce0c46d1d1bf7cddbab6a` | `plan-amendment`   | Independent review of the sixteen-path WIP confirmed that complete safe decoding, artifact layout/checksum parsing, causal failure accounting, verified finalization/repeat reads, adapter-neutral observation, and exact CLI grammar remained overloaded or under-specified. This amendment adds only those six source owners and their validation, evidence-failure, and finalization tests; freezes the configuration descriptor/worker grammar, complete B05 locator, and exact primary-summary repeat link; preserves all six ordered commits, workloads, samples, environments, anchors, B06 five-path reservation, and later holds; and treats the sixteen-path WIP as read-only design input with no inherited test, gate, or completion evidence. | Publish this exact plan blob, obtain qualifying exact-blob human approval and separate roadmap activation, then restart Task 0 from fresh then-current `main`, create all ten tests while all 15 sources are absent, record the exact ten-test RED, and implement only the 25-path Task 1 foundation.                                        |
 | 2026-08-09 | Thirty-nine-path Task 1 feasibility amendment based on current `main` `5f20dca92b3c4bc95e71a88abdc01fb420eb1549` | `plan-amendment`   | Independent review of the twenty-five-path WIP proved that complete literal workload policy, safe persisted-artifact decoding and validation, recoverable disk-backed finalized reads, real Deno adapters, exact CLI option primitives, and their independent semantic tests cannot fit honestly within the existing owners and 400-line cap. This amendment adds only six source owners and eight direct tests, keeps all six ordered commits, workloads, samples, environments, artifact rules, both anchors, the exact five-path B06 reservation, and every later hold unchanged, and treats the rejected twenty-five-path WIP as read-only design input with no inherited implementation, test, gate, or completion evidence.                          | Publish this exact plan blob, obtain qualifying exact-blob human approval and separate roadmap activation, then restart Task 0 from fresh then-current `main`, create all 18 tests while all 21 sources are absent, record the exact 18-test RED, and implement only the 39-path Task 1 foundation.                                          |
+| 2026-08-10 | Controller-protocol correction based on current `main` `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`                | `plan-amendment`   | Review of the held thirty-nine-path Task 1 implementation found that Task 1 had not frozen the same controller protocol already used by the later executable recipes. This correction makes those recipes canonical: one baseline persists an ordered nonempty `workloadIds` list; initialization uses `--workloads`; producer ingestion uses `--producer-exit-status` and `--raw-result`; and external-attempt listing emits the existing exact four-column TSV. It changes no workload, environment, sample, evidence, comparison, anchor, write reservation, ordered commit, or hold.                                                                                                                                                                   | Publish this exact plan blob in one draft plan-only PR and stop for qualifying exact-blob human approval. RTC implementation and capture remain inactive; any later implementation resumption still requires the matching coordinator activation.                                                                                            |
