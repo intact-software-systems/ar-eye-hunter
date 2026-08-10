@@ -4,14 +4,15 @@ import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/
 import { join, resolve } from 'node:path';
 import {
   GROUP_TOPOLOGY_CONFLICT_REASON,
-  GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
   poolGroupTopologyStateWritePositionBalancedResults,
 } from '../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
 import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../scripts/perf/write-group-topology-state-write-position-balanced-results.mjs';
 import { createStateWritePerformanceArtifact } from './state-write-performance-artifact-fixture.ts';
 
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
-const BASE_TREE = '1d2a577f2a5f8fea71e3e1f60a8ed5fc25d36703';
+const APPROVED_PR_B_BASE_COMMIT = '0b1fa13e07f7a8e4540d389cd5e25dfa95270da4';
+const HISTORICAL_PR_A_BASE_COMMIT = '20020977507c3104949da07d27b95e89d3b91c96';
+const BASE_TREE = '31671a750ec84577a9b94898c61cc49ec0c91c00';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const HASHES = {
   outerPooler: '1'.repeat(64),
@@ -170,14 +171,14 @@ function expectPooledSources(pooled: any, input: any, sourceKeys: readonly strin
 
 function createInput(): any {
   return {
-    expectedApprovedBaseCommit: GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
+    expectedApprovedBaseCommit: APPROVED_PR_B_BASE_COMMIT,
     expectedApprovedBaseTree: BASE_TREE,
     expectedCandidateCommit: CANDIDATE_COMMIT,
     expectedCandidateTree: CANDIDATE_TREE,
     conflictReasonPath: 'tmp/perf/topology-conflict-reasons.json',
     conflictReasonText: JSON.stringify({
       schemaVersion: 'rallar.group-topology.state-write-conflict-reasons.v1',
-      baseCommit: GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
+      baseCommit: APPROVED_PR_B_BASE_COMMIT,
       candidateCommit: CANDIDATE_COMMIT,
       candidateTree: CANDIDATE_TREE,
       reasons: createReasons(),
@@ -203,7 +204,7 @@ function createSource(candidate: boolean, artifactId: string, time: string): any
   const artifact = createStateWritePerformanceArtifact({
     artifactId,
     generatedAt: `2026-08-01T${time}.000Z`,
-    gitCommit: candidate ? CANDIDATE_COMMIT : GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
+    gitCommit: candidate ? CANDIDATE_COMMIT : APPROVED_PR_B_BASE_COMMIT,
     measuredRuns: 9,
   });
   artifact.regressionReasons = candidate ? createReasons() : [];
@@ -286,7 +287,7 @@ function protocolFailures(): readonly [RegExp, (input: any) => void][] {
     [
       /approved base must equal the precommitted group-topology base/,
       (input) => {
-        input.expectedApprovedBaseCommit = CANDIDATE_COMMIT;
+        input.expectedApprovedBaseCommit = HISTORICAL_PR_A_BASE_COMMIT;
       },
     ],
     [
@@ -308,7 +309,7 @@ function protocolFailures(): readonly [RegExp, (input: any) => void][] {
       /candidate commit must equal/,
       (input) => {
         const artifact = JSON.parse(input.sources.candidateThird.artifactText);
-        artifact.gitCommit = GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT;
+        artifact.gitCommit = APPROVED_PR_B_BASE_COMMIT;
         input.sources.candidateThird.artifactText = JSON.stringify(artifact);
       },
     ],

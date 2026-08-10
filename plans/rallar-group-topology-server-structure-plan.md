@@ -1017,10 +1017,14 @@ diagnostics only.
 PR B adds the checker-owned structural lineage manifest
 `plans/repo-style-lineages/rallar-group-topology-server-pr-b.json`. It pins
 the exact PR B base, predecessor blobs, and genuine canonical primary targets
-for the five deleted private persistence/read/maintenance owners. The
-behavior-named PR B test-ownership inventory independently maps every frozen
-repository and exact-read case to one target case; four new semantic cases are
-tracked outside that moved inventory.
+for the two deleted private persistence and maintenance owners whose movement
+is not represented by Git-native rename detection. Git-native rename lineage
+owns the other three one-to-one moves: exact read, stored-source decoding, and
+mutation read. Together, the two structural-manifest rows and three detected
+renames cover all five deleted private persistence/read/maintenance owners.
+The behavior-named PR B test-ownership inventory independently maps every
+frozen repository and exact-read case to one target case; four new semantic
+cases are tracked outside that moved inventory.
 
 Task 2 also added
 `packages/tests/shared-server/authoritative-mutation-runtime-source-inventory.ts`
