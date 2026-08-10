@@ -10,7 +10,7 @@ interface RtcTopologyDeliveryHealthShutdownOptions {
   readonly onHealthFailure: (error: Error) => void;
   readonly stopQueueWorkers: () => void;
   readonly closeWebSockets: () => void;
-  readonly stopBackgroundTasks: () => void;
+  readonly stopBackgroundTasks: () => void | Promise<void>;
   readonly shutdownHttp: () => Promise<void>;
   readonly onShutdownStepFailure: (
     step: RtcTopologyDeliveryShutdownStep,

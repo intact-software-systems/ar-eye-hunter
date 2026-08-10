@@ -13,7 +13,9 @@ Deno.test('RTC topology delivery health failure stops claimers, sockets, tasks, 
     onHealthFailure: (error) => events.push(`health:${error.message}`),
     stopQueueWorkers: () => events.push('queue-workers'),
     closeWebSockets: () => events.push('websockets'),
-    stopBackgroundTasks: () => events.push('background-tasks'),
+    stopBackgroundTasks: () => {
+      events.push('background-tasks');
+    },
     shutdownHttp: async () => {
       events.push('http');
     },
@@ -43,7 +45,9 @@ Deno.test('RTC topology delivery shutdown still closes HTTP after an earlier ste
       throw new Error('queue stop failed');
     },
     closeWebSockets: () => events.push('websockets'),
-    stopBackgroundTasks: () => events.push('background-tasks'),
+    stopBackgroundTasks: () => {
+      events.push('background-tasks');
+    },
     shutdownHttp: async () => {
       events.push('http');
     },

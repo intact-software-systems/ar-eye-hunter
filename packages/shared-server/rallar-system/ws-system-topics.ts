@@ -63,6 +63,7 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
         topicId?: string;
         senderId?: string;
         wake?: () => void;
+        wakeReplay?: () => void;
         findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
         executionRepository: RtcTopologyExecutionRepository;
         publicationFanout: RtcTopologyPublicationFanout;
@@ -148,6 +149,7 @@ export function initRallarSystemWsTopics(
                 publicationFanout: rtcTopologyAppOutboxOptions.publicationFanout,
                 topologyDelivery: rtcTopologyAppOutboxOptions.topologyDelivery,
                 wakeQueue: rtcTopologyAppOutboxOptions.wake,
+                wakeReplay: rtcTopologyAppOutboxOptions.wakeReplay,
                 onInactiveOverlay: (overlayId) =>
                     clearRtcTopologyFlushTimer(
                         overlayId,

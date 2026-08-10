@@ -28,6 +28,7 @@ import { validateTopologySnapshot } from '../rtc-topology-snapshot-contract.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import { validatePersistedALMessage } from '../services/al-message-persistence-validation.ts';
 import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
+import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../topology/replay/rtc-topology-replay-policy.ts';
 import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
 import { RtcTopologySnapshotRepository } from './RtcTopologySnapshotRepository.ts';
 
@@ -37,7 +38,8 @@ export { toRtcTopologyPublicationId } from '../rtc-topology-identifiers.ts';
 export const RTC_TOPOLOGY_PUBLICATIONS_NAMESPACE = 'rtc-topology:publications';
 export const RTC_TOPOLOGY_PUBLICATION_WORK_INDEX_NAMESPACE =
     'rtc-topology:publication-work-index';
-export const DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
+export const DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS =
+    RTC_TOPOLOGY_REPLAY_RETENTION_MS;
 
 export type RtcTopologyPublicationWorkClaim = Readonly<{
     kind: 'rtc-topology-execution-receipt';

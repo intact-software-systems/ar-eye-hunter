@@ -64,6 +64,7 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 | `rtc-topology-rtt-traffic-metrics.ts` | WS/topic-level RTT burst probe for topology queue coalescing, flushes, graph builds, and publishes. |
 | `rtc-topology-inactive-churn-bench.ts` | Topology snapshot lifetime workload comparing retained inactive overlays with inactive-overlay cleanup. |
 | `rtc-topology/delivery-log-bench.ts` | PostgreSQL publisher-stream append, contention, duplicate-race, and rollback workload. |
+| `rtc-topology/replay-drain-operation-counts.ts` | Deterministic caught-up, bounded-page, delivery-outcome, and gap-hydration operation counts for the production replay service. |
 | `rtc-rtt-group-scan-bench.ts` | RTT/group lookup scan workload. |
 | `rtc-multicast-serialization-bench.ts` | Multicast transport serialization fanout workload. |
 | `rtc-ice-candidate-queue-bench.ts` | ICE candidate queue flush workload. |

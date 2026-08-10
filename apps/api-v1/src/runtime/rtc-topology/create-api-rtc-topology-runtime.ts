@@ -1,8 +1,12 @@
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   PSqlRtcTopologyDeliveryRepository,
 } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
+import {
+  PSqlRtcTopologyReplayRepository,
+} from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-replay-repository.ts';
 import {
   createRtcTopologyPublicationFanout,
   type RtcTopologyPublicationFanout,
@@ -14,6 +18,17 @@ import {
 import {
   RtcTopologyExecutionRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import {
+  RtcTopologySnapshotRepository,
+} from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import {
+  createRtcTopologyReplayDiagnostics,
+  type RtcTopologyReplayMetrics,
+  type RtcTopologyReplayWakeSource,
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-diagnostics.ts';
+import {
+  RtcTopologyReplayEntryHandlerService,
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-entry-handler.ts';
 import type {
   RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
@@ -25,6 +40,8 @@ import type { ApiV1DatabasePubSubConfig } from '../../db/database-pubsub-config.
 import {
   startApiRtcTopologyDelivery,
 } from './rtc-topology-delivery-startup.ts';
+import type { RtcTopologyReplayMode } from './rtc-topology-replay-config.ts';
+import { startApiRtcTopologyReplay } from './rtc-topology-replay-startup.ts';
 
 interface CreateApiRtcTopologyRuntimeInput {
   readonly database: PSqlSql;
@@ -35,6 +52,7 @@ interface CreateApiRtcTopologyRuntimeInput {
   readonly publisherStreamId: string;
   readonly nowEpochMs: () => number;
   readonly onCompactionFailure: (error: Error) => void;
+  readonly replayMode: RtcTopologyReplayMode;
 }
 
 export interface ApiRtcTopologyRuntime {
@@ -47,7 +65,16 @@ export interface ApiRtcTopologyRuntime {
   }>;
   readonly readiness: Promise<void>;
   readonly healthFailure: Promise<never>;
-  stop(): void;
+  readonly topologyReplay: Readonly<{
+    attach(input: Readonly<{
+      wsQueueBoxServerService: WsQueueBoxServerService;
+      hydrateGap: (signal: AbortSignal) => Promise<void>;
+    }>): void;
+    wake(source: RtcTopologyReplayWakeSource): void;
+    readMetrics(): RtcTopologyReplayMetrics;
+    resetMetrics(): void;
+  }>;
+  stop(): Promise<void>;
 }
 
 export function createApiRtcTopologyRuntime(
@@ -73,10 +100,27 @@ export function createApiRtcTopologyRuntime(
     server: input.webSocketServer,
   });
   const deliveryRepository = new PSqlRtcTopologyDeliveryRepository(input.database);
+  const replayRepository = new PSqlRtcTopologyReplayRepository(input.database);
+  const replayDiagnostics = createRtcTopologyReplayDiagnostics();
   const delivery = startApiRtcTopologyDelivery({
     streamId: input.publisherStreamId,
-    repository: deliveryRepository,
+    repository: {
+      registerStream: (registration) => deliveryRepository.registerStream(registration),
+      renewStreamLease: (renewal) => deliveryRepository.renewStreamLease(renewal),
+      compactExpiredEntries: (compaction) =>
+        deliveryRepository.compactExpiredEntries(compaction),
+      retireExpiredConsumerCursors: (retirement) =>
+        replayRepository.retireExpiredConsumerCursors(retirement),
+      retireEmptyStreams: (retirement) => replayRepository.retireEmptyStreams(retirement),
+    },
     onCompactionFailure: input.onCompactionFailure,
+  });
+  const replay = startApiRtcTopologyReplay({
+    mode: input.replayMode,
+    consumerStreamId: input.publisherStreamId,
+    repository: replayRepository,
+    diagnostics: replayDiagnostics.record,
+    startupBarrier: delivery.readiness,
   });
   return {
     publicationRepository,
@@ -89,8 +133,31 @@ export function createApiRtcTopologyRuntime(
     readiness: Promise.all([
       publicationFanout.readiness,
       delivery.readiness,
+      replay.readiness,
     ]).then(() => undefined),
-    healthFailure: delivery.healthFailure,
-    stop: delivery.stop,
+    healthFailure: Promise.race([
+      delivery.healthFailure,
+      replay.healthFailure,
+    ]),
+    topologyReplay: {
+      attach: ({ wsQueueBoxServerService, hydrateGap }) => {
+        replay.attach({
+          entryHandler: new RtcTopologyReplayEntryHandlerService({
+            publications: publicationRepository,
+            outbox: wsQueueBoxServerService.outbox,
+            snapshots: new RtcTopologySnapshotRepository(input.runtimeStateRepository),
+            sender: wsQueueBoxServerService,
+          }),
+          hydrateGap,
+        });
+      },
+      wake: replay.wake,
+      readMetrics: replayDiagnostics.readMetrics,
+      resetMetrics: replayDiagnostics.resetMetrics,
+    },
+    stop: async () => {
+      delivery.stop();
+      await replay.stop();
+    },
   };
 }

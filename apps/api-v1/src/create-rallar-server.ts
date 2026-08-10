@@ -68,6 +68,9 @@ import { createRuntimeStateRepository } from './repository/createStateRepositori
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+  createApiRtcTopologyAdminMetrics,
+} from './runtime/rtc-topology/rtc-topology-admin-metrics.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -118,6 +121,10 @@ export function createRallarServer(
     now: rtcTopologyOptions.now,
   });
   const adminClientIds = readAdminClientIds();
+  const rtcTopologyAdminMetrics = createApiRtcTopologyAdminMetrics({
+    planning: rtcTopologyService,
+    replay: middleware.rtcTopologyReplay,
+  });
 
   const topologyManagement = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref, cacheOptions) =>
@@ -219,8 +226,8 @@ export function createRallarServer(
       dbPubSub: databasePubSubConfig.mode,
     }),
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
-    readRtcTopologyMetrics: () => rtcTopologyService.readMetrics(),
-    resetRtcTopologyMetrics: () => rtcTopologyService.resetMetrics(),
+    readRtcTopologyMetrics: rtcTopologyAdminMetrics.read,
+    resetRtcTopologyMetrics: rtcTopologyAdminMetrics.reset,
     readGroupFormationMetrics: () => middleware.groupFormationMetrics.readMetrics(),
     resetGroupFormationMetrics: () => middleware.groupFormationMetrics.resetMetrics(),
     crdtAdminRepository: crdtLogRepository,
@@ -292,6 +299,7 @@ export function createRallarServer(
               outboxQueueReader: runtime.outboxQueueReader,
               senderId: myServerId,
               wake: () => runtime.qboxEngine.wake(),
+              wakeReplay: () => runtime.rtcTopologyReplay.wake('local-commit'),
               executionRepository: runtime.rtcTopologyExecutionRepository,
               publicationFanout: runtime.rtcTopologyPublicationFanout,
               topologyDelivery: runtime.rtcTopologyDelivery,

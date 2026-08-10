@@ -68,6 +68,7 @@ interface RtcTopologyWorkHandlerOptions {
   readonly topologyDelivery?: RtcTopologyDeliveryOptions;
   readonly onInactiveOverlay?: (overlayId: string) => void;
   readonly wakeQueue?: () => void;
+  readonly wakeReplay?: () => void;
   readonly sleep?: (delayMs: number) => Promise<void>;
   readonly timing?: RallarTimingSink;
   readonly serviceId?: string;
@@ -159,6 +160,7 @@ async function processLoadedRtcTopologyWork(
   });
   options.topologyManagement.recordTopologyPublication(true);
   options.wakeQueue?.();
+  options.wakeReplay?.();
 }
 
 async function computeAcceptedRtcTopologyWork(
@@ -252,6 +254,7 @@ async function writeAcceptedRtcTopologyWork(
   if (accepted.publication) {
     options.topologyManagement.recordTopologyPublication(true);
     options.wakeQueue?.();
+    options.wakeReplay?.();
   }
 }
 

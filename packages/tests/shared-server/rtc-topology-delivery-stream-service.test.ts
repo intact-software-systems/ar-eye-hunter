@@ -15,6 +15,7 @@ import {
   RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
   RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS,
   RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS,
+  RTC_TOPOLOGY_REPLAY_RETENTION_MS,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
 
 const STREAM_ID = '00000000-0000-4000-8000-000000000001';
@@ -56,6 +57,13 @@ describe('RTC topology delivery stream service', () => {
       leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS,
     });
     expect(repository.compactExpiredEntries).toHaveBeenCalledWith({
+      pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
+    });
+    expect(repository.retireExpiredConsumerCursors).toHaveBeenCalledWith({
+      retentionMs: RTC_TOPOLOGY_REPLAY_RETENTION_MS,
+      pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
+    });
+    expect(repository.retireEmptyStreams).toHaveBeenCalledWith({
       pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
     });
   });
@@ -132,6 +140,8 @@ function createRepository(
   registerStream: ReturnType<typeof vi.fn>;
   renewStreamLease: ReturnType<typeof vi.fn>;
   compactExpiredEntries: ReturnType<typeof vi.fn>;
+  retireExpiredConsumerCursors: ReturnType<typeof vi.fn>;
+  retireEmptyStreams: ReturnType<typeof vi.fn>;
 } {
   return {
     registerStream: vi.fn(
@@ -154,6 +164,14 @@ function createRepository(
           scannedStreamCount: 1,
           deletedEntryCount: 0,
         })),
+    ),
+    retireExpiredConsumerCursors: vi.fn(
+      overrides.retireExpiredConsumerCursors ??
+        (async () => ({ deletedCursorCount: 0 })),
+    ),
+    retireEmptyStreams: vi.fn(
+      overrides.retireEmptyStreams ??
+        (async () => ({ deletedStreamCount: 0 })),
     ),
   };
 }

@@ -40,6 +40,7 @@ export type InstallQueueBoxPubSubBridgeOptions = Readonly<{
     timing?: RallarTimingSink;
     retryPolicy?: ResourceInboxRetryPolicy;
     jitterUnit?: () => number;
+    onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
 }>;
 
 export function installQueueBoxPubSubBridge(
@@ -86,6 +87,8 @@ export function installQueueBoxPubSubBridge(
                     timing,
                     retryPolicy,
                     jitterUnit,
+                    onValidatedOutboxKeyReceived:
+                        options.onValidatedOutboxKeyReceived,
                 });
             });
         },
@@ -165,6 +168,7 @@ async function receiveQueueBoxPubSubMessage(
         timing?: RallarTimingSink;
         retryPolicy: ResourceInboxRetryPolicy;
         jitterUnit: () => number;
+        onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
     }>,
 ): Promise<void> {
     if (
@@ -200,6 +204,12 @@ async function receiveQueueBoxPubSubMessage(
         return;
     }
     if (entry.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE) {
+        if (message.delivery === 'key') {
+            notifyValidatedOutboxKey(
+                entry,
+                options.onValidatedOutboxKeyReceived,
+            );
+        }
         await sendRemoteQueueBoxOutboxEntry(message, entry, {
             wsQBoxServerService: options.wsQBoxServerService,
             publisherId: options.publisherId,
@@ -211,6 +221,17 @@ async function receiveQueueBoxPubSubMessage(
     }
 
     await options.wsQBoxServerService.inbox.enqueueIfAbsent(entry);
+}
+
+function notifyValidatedOutboxKey(
+    entry: ResourceEntry,
+    callback: ((entry: ResourceEntry) => void) | undefined,
+): void {
+    try {
+        callback?.(entry);
+    } catch (error) {
+        console.error('QueueBox validated outbox-key callback failed:', error);
+    }
 }
 
 async function sendRemoteQueueBoxOutboxEntry(
