@@ -22,11 +22,11 @@ import {
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
+persistence/group-topology-config-repository.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import {
-  AuthSessionRepository,
-  type IssuedAuthSession,
+  AuthSessionRepository, type IssuedAuthSession,
 } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { type ClientMutationIdempotencyRecord, validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';

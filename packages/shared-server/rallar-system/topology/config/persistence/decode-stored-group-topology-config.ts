@@ -7,7 +7,7 @@ import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
   readStoredTopologyConfigBoundary,
   readStoredTopologyOverrideBoundary,
-} from '../topology/config/mutation/topology-config-mutation-boundary.ts';
+} from '../mutation/topology-config-mutation-boundary.ts';
 
 const LEGACY_CONFIG_KEYS = [
   'groupRef',

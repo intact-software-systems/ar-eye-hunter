@@ -8,6 +8,11 @@ import {
   topologyTestSourceCommit,
 } from './group-topology-server-pr-a-test-ownership.ts';
 import {
+  movedTopologyPrBTestCases,
+  topologyPrBOnlyCoverage,
+  topologyPrBTestSourceCommit,
+} from './group-topology-server-pr-b-test-ownership.ts';
+import {
   oversizedGeneralFunctions,
   requireCase,
   requireCases,
@@ -115,6 +120,17 @@ const ownedAtoms = movedTopologyTestCases.flatMap((mapping) => {
     ownerPath: mapping.ownerPath,
   }));
 });
+const prBSourcePaths = [...new Set(movedTopologyPrBTestCases.map(({ sourcePath }) => sourcePath))];
+const prBOwnerPaths = [...new Set(movedTopologyPrBTestCases.map(({ ownerPath }) => ownerPath))];
+const prBSourceCases = new Map(
+  prBSourcePaths.map((sourcePath) => [
+    sourcePath,
+    testCases(readAtCommit(topologyPrBTestSourceCommit, sourcePath)),
+  ]),
+);
+const prBTargetCases = new Map(
+  prBOwnerPaths.map((ownerPath) => [ownerPath, testCases(read(ownerPath))]),
+);
 
 describe('group topology server PR-A test ownership', () => {
   it('maps every frozen-base source case to exactly one behavior owner', () => {
@@ -214,6 +230,72 @@ describe('group topology server PR-A retained and additive test coverage', () =>
 
   it('keeps every moved test and support owner general function within 60 lines', () => {
     for (const ownerPath of [...movedOwnerPaths, ...taskTwoOwnerPaths, ...repoEvidenceOwnerPaths]) {
+      expect(oversizedGeneralFunctions(read(ownerPath)), ownerPath).toEqual([]);
+    }
+  });
+});
+
+describe('group topology server PR-B persistence test ownership', () => {
+  it('maps every frozen persistence source case to one behavior-named owner', () => {
+    const discovered = prBSourcePaths.flatMap((sourcePath) =>
+      [...requireCases(prBSourceCases, sourcePath).keys()].map((caseId) =>
+        sourceKey(sourcePath, caseId),
+      ),
+    );
+    const mapped = movedTopologyPrBTestCases.map(({ sourcePath, sourceCaseId }) =>
+      sourceKey(sourcePath, sourceCaseId),
+    );
+
+    expect(mapped.toSorted()).toEqual(discovered.toSorted());
+    expect(new Set(mapped).size).toBe(mapped.length);
+    for (const mapping of movedTopologyPrBTestCases) {
+      expect(existsSync(absolute(mapping.sourcePath)), mapping.sourcePath).toBe(false);
+      expect(existsSync(absolute(mapping.ownerPath)), mapping.ownerPath).toBe(true);
+      requireCase(prBTargetCases, mapping.ownerPath, mapping.ownerCaseId);
+    }
+  });
+
+  it('preserves each moved case assertion and variant inventory', () => {
+    for (const mapping of movedTopologyPrBTestCases) {
+      const source = semanticAtoms(
+        requireCase(prBSourceCases, mapping.sourcePath, mapping.sourceCaseId),
+      );
+      const target = semanticAtoms(
+        requireCase(prBTargetCases, mapping.ownerPath, mapping.ownerCaseId),
+      );
+      for (const kind of ['assertion', 'variant'] as const) {
+        expect(
+          countKind(target, kind),
+          `${mapping.ownerPath}:${mapping.ownerCaseId}`,
+        ).toBeGreaterThanOrEqual(countKind(source, kind));
+      }
+    }
+  });
+
+  it('tracks PR-B-only persistence coverage outside the moved inventory', () => {
+    const movedTargets = new Set(
+      movedTopologyPrBTestCases.map(({ ownerPath, ownerCaseId }) =>
+        sourceKey(ownerPath, ownerCaseId),
+      ),
+    );
+    for (const [ownerPath, ownerCaseId] of topologyPrBOnlyCoverage) {
+      expect(movedTargets.has(sourceKey(ownerPath, ownerCaseId))).toBe(false);
+      requireCase(prBTargetCases, ownerPath, ownerCaseId);
+    }
+  });
+
+  it('keeps every PR-B persistence test owner within 400 physical lines', () => {
+    for (const ownerPath of [
+      ...prBOwnerPaths,
+      'packages/tests/shared-server/topology/config/persistence/group-topology-config-persistence-test-fixtures.ts',
+      'packages/tests/repo/group-topology-server-pr-b-test-ownership.ts',
+    ]) {
+      expect(read(ownerPath).split('\n').length, ownerPath).toBeLessThanOrEqual(401);
+    }
+  });
+
+  it('keeps every PR-B persistence test owner general function within 60 lines', () => {
+    for (const ownerPath of prBOwnerPaths) {
       expect(oversizedGeneralFunctions(read(ownerPath)), ownerPath).toEqual([]);
     }
   });

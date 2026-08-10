@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
   GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
   GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
   GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
   GROUP_TOPOLOGY_CONFIG_NAMESPACE,
   GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
-  GroupTopologyConfigRepository,
-} from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import { ReadBatchFakeRuntimeStateRepository } from './read-batch-fake-runtime-state-repository.ts';
+} from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
+import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { ReadBatchFakeRuntimeStateRepository } from '../../../read-batch-fake-runtime-state-repository.ts';
 
 const GROUP_REF: GroupRef = {
   applicationId: 'app-1',
@@ -94,4 +96,34 @@ describe('group topology mutation exact read', () => {
       fallbackRepository.readMutationExactEntries(GROUP_REF, 'request-1'),
     ).resolves.toEqual({ status: 'fallback' });
   });
+
+  it('treats equal-revision invariant content changes as a race and falls back', async () => {
+    const runtime = new ReadBatchFakeRuntimeStateRepository();
+    const writer = new GroupTopologyConfigRepository(runtime);
+    await writer.commitInvariantGeneration({ groupRef: GROUP_REF, version: 1 }, null);
+    const reader = new EqualRevisionInvariantChangeRepository(runtime);
+
+    await expect(reader.readMutationExactEntries(GROUP_REF, null)).resolves.toEqual({
+      status: 'fallback',
+    });
+  });
 });
+
+class EqualRevisionInvariantChangeRepository extends GroupTopologyConfigRepository {
+  protected override async toLiveEntryValue<T>(
+    namespace: string,
+    entry: RuntimeStateEntry,
+  ): Promise<RuntimeStateEntryValue<T> | undefined> {
+    const live = await super.toLiveEntryValue<T>(namespace, entry);
+    if (live === undefined || namespace !== GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE) {
+      return live;
+    }
+    return {
+      entry: {
+        ...live.entry,
+        value: live.entry.value.replace('"version":1', '"version":2'),
+      },
+      value: live.value,
+    };
+  }
+}

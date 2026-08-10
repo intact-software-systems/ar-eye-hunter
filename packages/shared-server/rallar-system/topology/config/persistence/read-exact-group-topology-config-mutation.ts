@@ -3,26 +3,26 @@ import type {
   StoredGroupTopologyOverride,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
 import type {
   RuntimeStateEntry,
   RuntimeStateRepositoryLike,
-} from '../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../../runtime-state/RuntimeStateRepository.ts';
 import {
   isRuntimeStateReadBatchRepositoryLike,
   type RuntimeStateReadBatchSelection,
   type RuntimeStateReadBatchSelector,
   validateRuntimeStateReadBatchResult,
-} from '../../runtime-state/RuntimeStateReadBatch.ts';
-import {
-  resolveRuntimeStateReadBatchLiveValues,
-} from '../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
+} from '../../../../runtime-state/RuntimeStateReadBatch.ts';
+// prettier-ignore
+import { resolveRuntimeStateReadBatchLiveValues }
+  from '../../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
 import type {
   GroupTopologyConfigGeneration,
   GroupTopologyConfigGenerationTarget,
   GroupTopologyConfigInvariantGeneration,
   GroupTopologyConfigMutationRecord,
-} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
+} from '../mutation/group-topology-config-mutation-contracts.ts';
 
 type ExactReadLocation = Readonly<{
   namespace: string;
@@ -40,9 +40,7 @@ export type GroupTopologyMutationExactReadLocations = Readonly<{
 
 type ExactReadDecoder<T> = Readonly<{
   validateRaw(entry: RuntimeStateEntry): void;
-  decodeLive(
-    entry: RuntimeStateEntryValue<unknown>,
-  ): RuntimeStateEntryValue<T>;
+  decodeLive(entry: RuntimeStateEntryValue<unknown>): RuntimeStateEntryValue<T>;
 }>;
 
 export type GroupTopologyMutationExactReadDecoders = Readonly<{
@@ -58,10 +56,7 @@ export type GroupTopologyMutationExactReadKeyProvider = Readonly<{
   invariantGenerationKey(ref: GroupRef): string;
   configKey(ref: GroupRef): string;
   overrideKey(ref: GroupRef): string;
-  generationKey(
-    ref: GroupRef,
-    target: GroupTopologyConfigGenerationTarget,
-  ): string;
+  generationKey(ref: GroupRef, target: GroupTopologyConfigGenerationTarget): string;
   mutationKey(ref: GroupRef, requestId: string): string;
 }>;
 
@@ -88,11 +83,7 @@ export type GroupTopologyMutationExactReadCodecs = Readonly<{
     ref: GroupRef,
   ): RuntimeStateEntryValue<StoredGroupTopologyOverride>;
   validateInvariantRaw(entry: RuntimeStateEntry, ref: GroupRef): void;
-  validateInvariantLive(
-    entry: RuntimeStateEntry,
-    value: unknown,
-    ref: GroupRef,
-  ): void;
+  validateInvariantLive(entry: RuntimeStateEntry, value: unknown, ref: GroupRef): void;
   validateGenerationRaw(
     entry: RuntimeStateEntry,
     ref: GroupRef,
@@ -104,11 +95,7 @@ export type GroupTopologyMutationExactReadCodecs = Readonly<{
     ref: GroupRef,
     target: GroupTopologyConfigGenerationTarget,
   ): void;
-  validateMutationRaw(
-    entry: RuntimeStateEntry,
-    ref: GroupRef,
-    requestId: string,
-  ): void;
+  validateMutationRaw(entry: RuntimeStateEntry, ref: GroupRef, requestId: string): void;
   validateMutationLive(
     entry: RuntimeStateEntry,
     value: unknown,
@@ -121,30 +108,14 @@ export type GroupTopologyMutationExactReadCodecs = Readonly<{
 export type GroupTopologyMutationExactReadResult =
   | Readonly<{ status: 'fallback' }>
   | Readonly<{
-    status: 'stable';
-    invariant:
-      | RuntimeStateEntryValue<
-        GroupTopologyConfigInvariantGeneration
-      >
-      | null;
-    config: RuntimeStateEntryValue<StoredGroupTopologyConfig> | null;
-    override: RuntimeStateEntryValue<StoredGroupTopologyOverride> | null;
-    configGeneration:
-      | RuntimeStateEntryValue<
-        GroupTopologyConfigGeneration
-      >
-      | null;
-    overrideGeneration:
-      | RuntimeStateEntryValue<
-        GroupTopologyConfigGeneration
-      >
-      | null;
-    idempotency:
-      | RuntimeStateEntryValue<
-        GroupTopologyConfigMutationRecord
-      >
-      | null;
-  }>;
+      status: 'stable';
+      invariant: RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration> | null;
+      config: RuntimeStateEntryValue<StoredGroupTopologyConfig> | null;
+      override: RuntimeStateEntryValue<StoredGroupTopologyOverride> | null;
+      configGeneration: RuntimeStateEntryValue<GroupTopologyConfigGeneration> | null;
+      overrideGeneration: RuntimeStateEntryValue<GroupTopologyConfigGeneration> | null;
+      idempotency: RuntimeStateEntryValue<GroupTopologyConfigMutationRecord> | null;
+    }>;
 
 export function createGroupTopologyMutationExactReadLocations(
   keyProvider: GroupTopologyMutationExactReadKeyProvider,
@@ -173,10 +144,13 @@ export function createGroupTopologyMutationExactReadLocations(
       namespace: namespaces.generation,
       key: keyProvider.generationKey(ref, 'override'),
     },
-    idempotency: requestId === null ? null : {
-      namespace: namespaces.idempotency,
-      key: keyProvider.mutationKey(ref, requestId),
-    },
+    idempotency:
+      requestId === null
+        ? null
+        : {
+            namespace: namespaces.idempotency,
+            key: keyProvider.mutationKey(ref, requestId),
+          },
   };
 }
 
@@ -193,12 +167,7 @@ export function createGroupTopologyMutationExactReadDecoders(
       codecs.assertRetained(entry, 'target generation');
     },
     decodeLive: (stored) => {
-      codecs.validateGenerationLive(
-        stored.entry,
-        stored.value,
-        ref,
-        target,
-      );
+      codecs.validateGenerationLive(stored.entry, stored.value, ref, target);
       return stored as RuntimeStateEntryValue<GroupTopologyConfigGeneration>;
     },
   });
@@ -210,9 +179,7 @@ export function createGroupTopologyMutationExactReadDecoders(
       },
       decodeLive: (stored) => {
         codecs.validateInvariantLive(stored.entry, stored.value, ref);
-        return stored as RuntimeStateEntryValue<
-          GroupTopologyConfigInvariantGeneration
-        >;
+        return stored as RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration>;
       },
     },
     config: {
@@ -232,15 +199,8 @@ export function createGroupTopologyMutationExactReadDecoders(
         codecs.assertRetained(entry, 'mutation record');
       },
       decodeLive: (stored) => {
-        codecs.validateMutationLive(
-          stored.entry,
-          stored.value,
-          ref,
-          requireRequestId(requestId),
-        );
-        return stored as RuntimeStateEntryValue<
-          GroupTopologyConfigMutationRecord
-        >;
+        codecs.validateMutationLive(stored.entry, stored.value, ref, requireRequestId(requestId));
+        return stored as RuntimeStateEntryValue<GroupTopologyConfigMutationRecord>;
       },
     },
   };
@@ -285,17 +245,12 @@ export async function readGroupTopologyMutationExactEntries(
     invariant: decodeSelection(resolved.selections[0], decoders.invariant),
     config: decodeSelection(resolved.selections[1], decoders.config),
     override: decodeSelection(resolved.selections[2], decoders.override),
-    configGeneration: decodeSelection(
-      resolved.selections[3],
-      decoders.configGeneration,
-    ),
-    overrideGeneration: decodeSelection(
-      resolved.selections[4],
-      decoders.overrideGeneration,
-    ),
-    idempotency: locations.idempotency === null
-      ? null
-      : decodeSelection(resolved.selections[5], decoders.idempotency),
+    configGeneration: decodeSelection(resolved.selections[3], decoders.configGeneration),
+    overrideGeneration: decodeSelection(resolved.selections[4], decoders.overrideGeneration),
+    idempotency:
+      locations.idempotency === null
+        ? null
+        : decodeSelection(resolved.selections[5], decoders.idempotency),
   };
 }
 

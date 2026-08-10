@@ -14,7 +14,27 @@ export { hashAuthSecret } from './rallar-system/auth/credentials/hash-auth-secre
 export * from './rallar-system/auth/persistence/auth-user-repository.ts';
 export * from './rallar-system/client-state/persistence/client-state-repository.ts';
 export * from './rallar-system/repositories/GroupStateRepository.ts';
-export * from './rallar-system/repositories/GroupTopologyConfigRepository.ts';
+// prettier-ignore
+export { GroupTopologyConfigRepository }
+  from './rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+// prettier-ignore
+export { GroupTopologyConfigRepositoryInvariantCorruptionError }
+  from './rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
+export type {
+  GroupTopologyConfigCommitResult,
+  GroupTopologyConfigDeleteResult,
+  GroupTopologyConfigGenerationSource,
+  GroupTopologyConfigGenerationSourceEntry,
+  GroupTopologyConfigLegacyKeyMigrationPage,
+  GroupTopologyConfigLegacyKeyMigrationSource,
+} from './rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
+export {
+  GROUP_TOPOLOGY_CONFIG_GENERATION_NAMESPACE,
+  GROUP_TOPOLOGY_CONFIG_INVARIANT_GENERATION_NAMESPACE,
+  GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
+  GROUP_TOPOLOGY_CONFIG_NAMESPACE,
+  GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
+} from './rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 export * from './rallar-system/repositories/RtcRttRepository.ts';
 export * from './rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 export * from './rallar-system/repositories/RtcTopologyPublicationRepository.ts';

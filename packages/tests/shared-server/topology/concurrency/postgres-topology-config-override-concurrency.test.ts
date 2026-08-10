@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import {
   expectPendingDirectResourceOutboxEvidence,
@@ -25,7 +25,7 @@ import {
   type TopologyAppInboxWorkerOutput,
   type TopologyWorkerTrace,
   waitForTopologyWorkerParticipants,
-} from '../../postgres-topology-concurrency-fixtures.ts';
+} from './postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 const DURABLE_CONFIG: EffectiveGroupTopologyConfig = {

@@ -21,7 +21,8 @@ import {
   type RallarRtcTopologyServiceOptions,
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/AdminOperationsService.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
+persistence/group-topology-config-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';

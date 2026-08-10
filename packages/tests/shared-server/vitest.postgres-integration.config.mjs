@@ -1,9 +1,18 @@
 import denoVitestConfig from './vitest.deno.config.mjs';
 
+const topologyConcurrencyDirectory = 'packages/tests/shared-server/topology/concurrency';
+const topologyConcurrencyTests = [
+  'postgres-topology-config-override-concurrency.test.ts',
+  'postgres-topology-mutation-worker-concurrency.test.ts',
+].map((filename) => `${topologyConcurrencyDirectory}/${filename}`);
+
 export default {
   ...denoVitestConfig,
   test: {
     ...denoVitestConfig.test,
-    include: ['packages/tests/shared-server/integration/postgres/*.test.ts'],
+    include: [
+      'packages/tests/shared-server/integration/postgres/*.test.ts',
+      ...topologyConcurrencyTests,
+    ],
   },
 };

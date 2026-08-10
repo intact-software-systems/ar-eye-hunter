@@ -8,7 +8,7 @@ import type { Group } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
   expectPendingDirectResourceOutboxEvidence,
   findDirectResourceOutboxEvidence,
@@ -24,7 +24,7 @@ import {
   topologyGroupSnapshot,
   type TopologyAppInboxWorkerInput,
   waitForTopologyWorkerParticipants,
-} from '../../postgres-topology-concurrency-fixtures.ts';
+} from '../../topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 

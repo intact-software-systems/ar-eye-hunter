@@ -250,7 +250,7 @@ export const retainedTopologyCharacterizationOwners = [
   fixtureOwner,
   'packages/tests/shared-server/app-inbox-transaction.test.ts',
   'packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts',
-  'packages/tests/shared-server/group-topology-mutation-exact-read.test.ts',
+  'packages/tests/shared-server/topology/config/persistence/group-topology-config-exact-read.test.ts',
   'packages/tests/shared-server/topology-app-inbox-transaction.test.ts',
 ] as const;
 

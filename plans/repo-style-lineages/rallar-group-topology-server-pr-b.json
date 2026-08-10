@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "0b1fa13e07f7a8e4540d389cd5e25dfa95270da4",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts",
+        "blob": "c37b0d4b729d5133dc8fa6a02ed267734aaf0b51"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/topology/config/persistence/group-topology-config-persistence-codec.ts"
+      ]
+    },
+    {
+      "mergeBase": "0b1fa13e07f7a8e4540d389cd5e25dfa95270da4",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/group-topology-mutation-exact-read.ts",
+        "blob": "cd0b8761ed14f60829820acbe003a18362d3e16f"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/topology/config/persistence/read-exact-group-topology-config-mutation.ts"
+      ]
+    },
+    {
+      "mergeBase": "0b1fa13e07f7a8e4540d389cd5e25dfa95270da4",
+      "source": {
+        "path": "packages/shared-server/rallar-system/repositories/group-topology-stored-source-values.ts",
+        "blob": "8e662ea3cb5b6b88fe98f2c8efc46fe1d5aefba9"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/topology/config/persistence/decode-stored-group-topology-config.ts"
+      ]
+    },
+    {
+      "mergeBase": "0b1fa13e07f7a8e4540d389cd5e25dfa95270da4",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-generation-backfill.ts",
+        "blob": "19e97b0f1c20853c5fbaa4b2e2c6db5233cfca5c"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/topology/config/maintenance/migrate-legacy-group-topology-config-keys.ts"
+      ]
+    },
+    {
+      "mergeBase": "0b1fa13e07f7a8e4540d389cd5e25dfa95270da4",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/group-topology-config-mutation-read.ts",
+        "blob": "449f00018835e0f9897ba8988de9dd1d276007e7"
+      },
+      "targets": [
+        "packages/shared-server/rallar-system/topology/config/mutation/read-topology-config-mutation.ts"
+      ]
+    }
+  ]
+}

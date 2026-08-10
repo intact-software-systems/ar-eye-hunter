@@ -20,10 +20,9 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { GroupTopologyConfigRepository } from '../repositories/GroupTopologyConfigRepository.ts';
-import {
-    GroupStateRepository,
-} from '../group-state/persistence/group-state-repository.ts';
+import { GroupTopologyConfigRepository } from '../topology/config/persistence/\
+group-topology-config-repository.ts';
+import { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
 import type * as persistence from '../group-state/persistence/group-state-persistence-contracts.ts';
 import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
@@ -52,13 +51,14 @@ import * as mutationIdempotency from
     '../topology/config/mutation/topology-config-mutation-idempotency.ts';
 import * as mutationValidation from
     '../topology/config/mutation/validate-topology-config-mutation.ts';
-import { readTopologyConfigMutation } from './group-topology-config-mutation-read.ts';
-import { backfillGroupTopologyConfigGenerationsForRef } from './group-topology-config-generation-backfill.ts';
+import { readTopologyConfigMutation } from '../topology/config/mutation/\
+read-topology-config-mutation.ts';
+import { backfillGroupTopologyConfigGenerationsForRef } from '../topology/config/maintenance/\
+backfill-group-topology-config-generations.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingSink } from './timing.ts';
 import {
-    RallarRtcTopologyService,
-    type RallarRtcTopologyUpdateResult,
+    RallarRtcTopologyService, type RallarRtcTopologyUpdateResult,
 } from './rallar-rtc-topology-service.ts';
 import { filterRtcRttMeasurementsForGroup } from './rtc-rtt-measurement-policy.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
