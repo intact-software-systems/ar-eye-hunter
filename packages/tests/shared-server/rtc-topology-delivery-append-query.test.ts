@@ -50,6 +50,28 @@ describe('RTC topology delivery append query', () => {
     });
     expect(observedQueries).toHaveLength(1);
   });
+
+  it('leaves the single-use stream lookup available for PostgreSQL to inline', async () => {
+    const observedQueries: string[] = [];
+    const transaction = createSuccessfulAppendTransaction(observedQueries);
+    const repository = new PSqlRtcTopologyDeliveryRepository(transaction);
+
+    await repository.appendOrValidate(transaction, APPEND_INPUT);
+
+    expect(observedQueries[0]).toContain('append_stream as ( select');
+    expect(observedQueries[0]).not.toContain('append_stream as materialized');
+  });
+
+  it('uses stable statement time without a materialized clock relation', async () => {
+    const observedQueries: string[] = [];
+    const transaction = createSuccessfulAppendTransaction(observedQueries);
+    const repository = new PSqlRtcTopologyDeliveryRepository(transaction);
+
+    await repository.appendOrValidate(transaction, APPEND_INPUT);
+
+    expect(observedQueries[0]).toContain('statement_timestamp()');
+    expect(observedQueries[0]).not.toContain('database_clock as materialized');
+  });
 });
 
 function createSuccessfulAppendTransaction(observedQueries: string[]): PSqlTransactionSql {

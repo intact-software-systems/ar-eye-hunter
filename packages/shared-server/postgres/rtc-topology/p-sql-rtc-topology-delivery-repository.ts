@@ -174,27 +174,22 @@ async function appendOrReadExistingEntry(
         and group_id = ${input.groupRef.groupId}
         and publication_id = ${input.publicationId}
     ),
-    database_clock as materialized (
-      select clock_timestamp() as now
-    ),
-    append_stream as materialized (
+    append_stream as (
       select stream.head_sequence
       from rtc_topology_delivery_stream as stream
-      cross join database_clock
       where stream.stream_id = ${input.publisherStreamId}
-        and stream.lease_expires_at > database_clock.now
+        and stream.lease_expires_at > statement_timestamp()
         and stream.head_sequence < ${Number.MAX_SAFE_INTEGER}
         and not exists (select 1 from existing_publication)
     ),
     advanced_stream as (
       update rtc_topology_delivery_stream as stream
       set head_sequence = stream.head_sequence + 1,
-          updated_at = database_clock.now
+          updated_at = statement_timestamp()
       from append_stream
-      cross join database_clock
       where stream.stream_id = ${input.publisherStreamId}
         and stream.head_sequence = append_stream.head_sequence
-        and stream.lease_expires_at > database_clock.now
+        and stream.lease_expires_at > statement_timestamp()
         and stream.head_sequence < ${Number.MAX_SAFE_INTEGER}
       returning stream.head_sequence
     ),
