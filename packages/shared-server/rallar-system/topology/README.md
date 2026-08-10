@@ -72,8 +72,11 @@ public management facade, and authenticated `AppGroupInboxService`. The facade
 constructs one generation-readiness owner shared by config query and mutation,
 plus the planning and reconfigure owners. `AppGroupInboxService` passes only the
 exact config mutation, transaction writer/result adapter, and reconfigure
-mutation capabilities into `TopologyAppInboxHandler`, then registers all five
-queue types after those owners exist.
+mutation capabilities into `TopologyAppInboxHandler`. The captured capability
+adapter invokes the preserved public facade methods on every attempt so
+subclassed compatibility seams and retry re-entry retain their existing
+timing. `AppGroupInboxService` then registers all five queue types after those
+owners exist.
 
 The command and proof modules have no lifecycle. They receive complete command,
 session, group-state, and explicit clock values at invocation. The pure config

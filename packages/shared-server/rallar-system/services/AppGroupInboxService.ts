@@ -43,14 +43,6 @@ import {
   type TopologyAppInboxMutationOwners,
 } from '../topology/inbox/topology-app-inbox-handler.ts';
 // prettier-ignore
-import {
-  toTopologyConfigMutationResult,
-} from '../topology/config/mutation/to-topology-config-mutation-result.ts';
-// prettier-ignore
-import {
-  writeTopologyConfigMutation,
-} from '../topology/config/mutation/write-topology-config-mutation.ts';
-// prettier-ignore
 import type {
   GroupTopologyManagementService,
 } from '../topology/group-topology-management-service.ts';
@@ -340,8 +332,9 @@ class AppGroupInboxService extends AppInboxService {
   private registerTopologyStateMessageHandlers(service: GroupTopologyManagementService): void {
     const owners: TopologyAppInboxMutationOwners = {
       configMutationService: service.configMutationService,
-      writeConfigMutation: writeTopologyConfigMutation,
-      toConfigMutationResult: toTopologyConfigMutationResult,
+      writeConfigMutation: async (transaction, computed) =>
+        await service.writeTopologyConfigMutation(transaction, computed),
+      toConfigMutationResult: (computed) => service.toTopologyConfigMutationResult(computed),
       reconfigureMutation: service.reconfigureMutation,
     };
     for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
