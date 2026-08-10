@@ -32,6 +32,9 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
         'group_state_events',
         'resource_inbox',
         'resource_inbox_results',
+        'rtc_topology_delivery_log',
+        'rtc_topology_delivery_stream',
+        'rtc_topology_replay_cursor',
         'runtime_state_store',
       ],
     );
@@ -75,6 +78,11 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
         'resource_inbox_unique_k',
         'ri_pk',
         'ris_pk',
+        'rtc_topology_delivery_log_pk',
+        'rtc_topology_delivery_log_publication_uq',
+        'rtc_topology_delivery_log_retain_until_ix',
+        'rtc_topology_delivery_stream_pk',
+        'rtc_topology_replay_cursor_pk',
         'runtime_state_store_expire_at_ix',
         'runtime_state_store_namespace_key_c_ix',
         'runtime_state_store_namespace_expire_at_ix',
@@ -89,6 +97,90 @@ Deno.test('in-memory schema applies idempotently and creates expected tables/ind
       indexes.rows.find((row) => row.indexname === 'runtime_state_store_namespace_key_c_ix')
         ?.indexdef ?? '',
       /\(store_namespace, store_key COLLATE "C"\)/,
+    );
+  } finally {
+    await db.close();
+  }
+});
+
+Deno.test('in-memory schema enforces RTC topology delivery identities and retention bounds', async () => {
+  const db = new PGlite();
+  try {
+    await applyApiV1InMemorySchema(db, await readApiV1InMemorySchemaSql());
+
+    await db.query(
+      `insert into rtc_topology_delivery_stream
+         (stream_id, head_sequence, retained_from_sequence, lease_expires_at)
+       values ($1, 1, 1, $2)`,
+      ['00000000-0000-4000-8000-000000000001', '2026-08-10T00:00:00.000Z'],
+    );
+    await db.query(
+      `insert into rtc_topology_delivery_log
+         (publisher_stream_id, sequence, application_id, workspace_id, group_id,
+          publication_id, outbox_topic_id, outbox_resource_id, outbox_context_id,
+          retain_until)
+       values ($1, 1, 'app', 'workspace', 'group', 'publication-1',
+               'topic', 'resource', 'context', $2)`,
+      ['00000000-0000-4000-8000-000000000001', '2026-08-10T00:00:00.000Z'],
+    );
+    await db.query(
+      `insert into rtc_topology_replay_cursor
+         (consumer_stream_id, publisher_stream_id, last_processed_sequence)
+       values ($1, $1, 1)`,
+      ['00000000-0000-4000-8000-000000000001'],
+    );
+
+    await assert.rejects(
+      db.query(
+        `insert into rtc_topology_delivery_stream
+           (stream_id, head_sequence, retained_from_sequence, lease_expires_at)
+         values ($1, -1, 1, $2)`,
+        ['00000000-0000-4000-8000-000000000002', '2026-08-10T00:00:00.000Z'],
+      ),
+    );
+    await assert.rejects(
+      db.query(
+        `update rtc_topology_delivery_stream
+         set retained_from_sequence = head_sequence + 2
+         where stream_id = $1`,
+        ['00000000-0000-4000-8000-000000000001'],
+      ),
+    );
+    await assert.rejects(
+      db.query(
+        `insert into rtc_topology_delivery_log
+           (publisher_stream_id, sequence, application_id, workspace_id, group_id,
+            publication_id, outbox_topic_id, outbox_resource_id, outbox_context_id,
+            retain_until)
+         values ($1, 0, 'app', 'workspace', 'group', 'publication-zero',
+                 'topic', 'resource', 'context', $2)`,
+        ['00000000-0000-4000-8000-000000000001', '2026-08-10T00:00:00.000Z'],
+      ),
+    );
+    await assert.rejects(
+      db.query(
+        `insert into rtc_topology_delivery_log
+           (publisher_stream_id, sequence, application_id, workspace_id, group_id,
+            publication_id, outbox_topic_id, outbox_resource_id, outbox_context_id,
+            retain_until)
+         values ($1, 2, '', 'workspace', 'group', 'publication-empty-app',
+                 'topic', 'resource', 'context', $2)`,
+        ['00000000-0000-4000-8000-000000000001', '2026-08-10T00:00:00.000Z'],
+      ),
+    );
+    await assert.rejects(
+      db.query(
+        `update rtc_topology_replay_cursor
+         set last_processed_sequence = -1
+         where consumer_stream_id = $1 and publisher_stream_id = $1`,
+        ['00000000-0000-4000-8000-000000000001'],
+      ),
+    );
+    await assert.rejects(
+      db.query(
+        `delete from rtc_topology_delivery_stream where stream_id = $1`,
+        ['00000000-0000-4000-8000-000000000001'],
+      ),
     );
   } finally {
     await db.close();

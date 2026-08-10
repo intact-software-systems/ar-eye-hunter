@@ -50,7 +50,7 @@ import {
 import {
   createCachedGroupStateService,
 } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import { myPublisherId, myServerId } from './runtime/runtime-identity.ts';
+import { myPublisherId, myRtcTopologyStreamId, myServerId } from './runtime/runtime-identity.ts';
 import { toResilienceDto } from './middleware-resilience.ts';
 import {
   createAuthSessionRepository,
@@ -83,16 +83,10 @@ import {
   shouldInstallQueuePubSubBridge,
 } from './db/api-v1-queue-pubsub-bridge.ts';
 import {
-  DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-  RtcTopologyPublicationRepository,
-} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
-import {
   initRtcRttReceiptFamilyCleanup,
   RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
   RtcRttRepository,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
-import { RtcTopologyExecutionRepository }
-  from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
   setRtcTopologyOutboxWriteSink,
 } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
@@ -102,12 +96,10 @@ import {
 import {
   initApiRtcTopologyScalarRecomputeWorker,
 } from './services/init-api-rtc-topology-scalar-recompute-worker.ts';
-import {
-  createRtcTopologyPublicationFanout,
-} from '@shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts';
-import { createApiV1RtcTopologyClusterTransport }
-  from './db/api-v1-rtc-topology-cluster-transport.ts';
 import { type Middleware, requireApiMiddleware } from './middleware-contract.ts';
+import {
+  createApiRtcTopologyRuntime,
+} from './runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 export type { Middleware };
 let middleware: Middleware | undefined = undefined;
 const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
@@ -162,29 +154,23 @@ function initialise(
   });
   const runtimeStateRepository = createRuntimeStateRepository(sql);
   const authSessionRepository = createAuthSessionRepository(runtimeStateRepository);
-  const credentialIssuer = createHmacAuthCredentialIssuer(
-    readRequiredAuthCredentialSecret(),
-  );
+  const authCredentialSecret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();
+  if (!authCredentialSecret) throw new Error('RALLAR_AUTH_CREDENTIAL_SECRET is required');
+  const credentialIssuer = createHmacAuthCredentialIssuer(authCredentialSecret);
   const rtcRttRepository = new RtcRttRepository(runtimeStateRepository, { now });
-  const rtcTopologyPublicationRepository = new RtcTopologyPublicationRepository(
+  const rtcTopology = createApiRtcTopologyRuntime({
+    database: postgresSql,
     runtimeStateRepository,
-    DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-    now,
-  );
-  const rtcTopologyExecutionRepository = new RtcTopologyExecutionRepository(
-    runtimeStateRepository,
-    DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-    now,
-  );
-  const rtcTopologyPublicationFanout = createRtcTopologyPublicationFanout({
+    pubSubConfig,
+    webSocketServer,
     publisherId: myPublisherId,
-    repository: rtcTopologyPublicationRepository,
-    transport: createApiV1RtcTopologyClusterTransport(
-      pubSubConfig,
-      myPublisherId,
-    ),
-    server: webSocketServer,
+    publisherStreamId: myRtcTopologyStreamId,
+    nowEpochMs: now,
+    onCompactionFailure: (error) => {
+      console.error('RTC topology delivery compaction failed:', error);
+    },
   });
+  registerMiddlewareBackgroundTask(rtcTopology.stop);
   configureServerWsQBoxALRuntimeStores(wsRuntimeName, { sql: postgresSql });
   initResourceInboxExpiryEviction(queueBox.repo).catch((e) =>
     console.error('Failed to initialise resource inbox expiry eviction:', e)
@@ -367,9 +353,10 @@ function initialise(
     },
     clientsRepository,
     groupsRepository,
-    rtcTopologyPublicationRepository,
-    rtcTopologyExecutionRepository,
-    rtcTopologyPublicationFanout,
+    rtcTopologyPublicationRepository: rtcTopology.publicationRepository,
+    rtcTopologyExecutionRepository: rtcTopology.executionRepository,
+    rtcTopologyPublicationFanout: rtcTopology.publicationFanout,
+    rtcTopologyDelivery: rtcTopology.topologyDelivery,
     queuePubSubBridge: shouldInstallQueuePubSubBridge(pubSubConfig)
       ? {
         bridge: createApiV1QueuePubSubBridge(pubSubConfig, myPublisherId),
@@ -379,7 +366,8 @@ function initialise(
         timing,
       }
       : undefined,
-    readiness: rtcTopologyPublicationFanout.readiness,
+    readiness: rtcTopology.readiness,
+    healthFailure: rtcTopology.healthFailure,
   });
   const scalarRecomputeWorker = initApiRtcTopologyScalarRecomputeWorker({
     runtimeStateRepository,
@@ -401,9 +389,4 @@ function initialise(
     groupDurable: groupsRepository, groupCache: groupSnapshotReadThroughCache,
   }, timing);
   return requireApiMiddleware(runtime, selectors, groupFormationMetrics);
-}
-function readRequiredAuthCredentialSecret(): string {
-  const secret = Deno.env.get('RALLAR_AUTH_CREDENTIAL_SECRET')?.trim();
-  if (!secret) throw new Error('RALLAR_AUTH_CREDENTIAL_SECRET is required');
-  return secret;
 }

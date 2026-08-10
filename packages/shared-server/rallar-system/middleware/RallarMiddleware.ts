@@ -25,6 +25,9 @@ import type { RallarSnapshotPresenceClock } from '../snapshot-presence.ts';
 import type { RtcTopologyPublicationRepository } from '../repositories/RtcTopologyPublicationRepository.ts';
 import type { RtcTopologyPublicationFanout } from '../pubsub/RtcTopologyClusterTransport.ts';
 import type { RtcTopologyExecutionRepository } from '../repositories/RtcTopologyExecutionRepository.ts';
+import type {
+  RtcTopologyDeliveryAppendPort,
+} from '../topology/replay/rtc-topology-delivery-append-port.ts';
 import {
   installQueueBoxPubSubBridge,
   type InstallQueueBoxPubSubBridgeOptions,
@@ -57,7 +60,12 @@ export type RallarMiddlewareRuntime = Readonly<{
   rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
   rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
   rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
+  rtcTopologyDelivery?: Readonly<{
+    publisherStreamId: string;
+    append: RtcTopologyDeliveryAppendPort;
+  }>;
   readiness: Promise<void>;
+  healthFailure?: Promise<never>;
 }>;
 export type CreateRallarMiddlewareOptions = Readonly<{
   inbox: QueueBoxResourceEntryRepository;
@@ -106,11 +114,16 @@ export type CreateRallarMiddlewareOptions = Readonly<{
   rtcTopologyPublicationRepository?: RtcTopologyPublicationRepository;
   rtcTopologyExecutionRepository?: RtcTopologyExecutionRepository;
   rtcTopologyPublicationFanout?: RtcTopologyPublicationFanout;
+  rtcTopologyDelivery?: Readonly<{
+    publisherStreamId: string;
+    append: RtcTopologyDeliveryAppendPort;
+  }>;
   queuePubSubBridge?: Omit<
     InstallQueueBoxPubSubBridgeOptions,
     'wsQBoxServerService'
   >;
   readiness?: Promise<void>;
+  healthFailure?: Promise<never>;
 }>;
 export function createRallarMiddleware(
   options: CreateRallarMiddlewareOptions,
@@ -220,10 +233,12 @@ export function createRallarMiddleware(
     rtcTopologyPublicationRepository: options.rtcTopologyPublicationRepository,
     rtcTopologyExecutionRepository: options.rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout: options.rtcTopologyPublicationFanout,
+    rtcTopologyDelivery: options.rtcTopologyDelivery,
     readiness: Promise.all([
       options.readiness ?? Promise.resolve(),
       queuePubSubBridgeReadiness,
     ]).then(() => undefined),
+    healthFailure: options.healthFailure,
   };
 }
 export function includeWsQueueBoxEngineTasks(

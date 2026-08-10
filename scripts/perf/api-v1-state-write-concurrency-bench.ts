@@ -53,6 +53,10 @@ import {
   createStateWriteBenchmarkArtifact,
   readBenchmarkGitIdentity,
 } from './state-write/api-v1-state-write-benchmark-artifact.ts';
+import {
+  parseBenchmarkOptions,
+  STATE_WRITE_REQUIRED_CONCURRENCY as REQUIRED_CONCURRENCY,
+} from './state-write/api-v1-state-write-benchmark-options.ts';
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from './compare-api-v1-state-write-results.mjs';
 import {
   type AppInboxAttemptObservation,
@@ -70,16 +74,17 @@ import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-opti
 import {
   parseGroupTopologyRegressionReasons,
 } from './pool-group-topology-state-write-position-balanced-results.mjs';
+import {
+  selectStateWriteRegressionReasons,
+} from './rtc-topology/state-write-reasons.ts';
 export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
 export { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 export { parseGroupTopologyRegressionReasons };
+export { parseBenchmarkOptions };
+export { selectStateWriteRegressionReasons };
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const CLIENT_COUNT = 100;
-const REQUIRED_CONCURRENCY = 10;
-const MAX_WARMUP_RUNS = 10;
-const MAX_MEASURED_RUNS = 100;
-const MAX_CONCURRENCY = 256;
 const BENCHMARK_SESSION_ISSUED_AT_EPOCH_MS = 1_700_000_000_000;
 const BENCHMARK_SESSION_EXPIRES_AT_EPOCH_MS = 4_102_444_800_000;
 const MUTATION_MIX = [
@@ -298,7 +303,11 @@ async function main(): Promise<void> {
   const gitIdentity = await readBenchmarkGitIdentity();
   const reasonsText = options.regressionReasonsFile === undefined
     ? undefined : await Deno.readTextFile(options.regressionReasonsFile);
-  const regressionReasons = parseGroupTopologyRegressionReasons(reasonsText, gitIdentity);
+  const precommittedReasons = parseGroupTopologyRegressionReasons(reasonsText, gitIdentity);
+  const regressionReasons = selectStateWriteRegressionReasons(
+    options.regressionReasonProfile,
+    precommittedReasons,
+  );
 
   const databaseUrl = Deno.env.get('DATABASE_URL')?.trim() || DEFAULT_DATABASE_URL;
   const runId = `state-write-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
@@ -1670,64 +1679,9 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export function parseBenchmarkOptions(args: readonly string[]): {
-  backend: string;
-  warmup: number;
-  runs: number;
-  concurrency: number;
-  out: string;
-  regressionReasonsFile?: string;
-} {
-  const values = new Map(
-    args.map((argument) => {
-      const [key, ...rest] = argument.replace(/^--/, '').split('=');
-      return [key, rest.join('=')];
-    }),
-  );
-  const regressionReasonsFile = values.get('regression-reasons-file');
-  if (regressionReasonsFile !== undefined) assertPerfInputPath(regressionReasonsFile);
-  return {
-    backend: values.get('backend') || 'postgres',
-    warmup: parseIntegerOption('warmup', values.get('warmup'), 1, 1, MAX_WARMUP_RUNS),
-    runs: parseIntegerOption('runs', values.get('runs'), 3, 1, MAX_MEASURED_RUNS),
-    concurrency: parseIntegerOption(
-      'concurrency',
-      values.get('concurrency'),
-      REQUIRED_CONCURRENCY,
-      1,
-      MAX_CONCURRENCY,
-    ),
-    out: values.get('out') || 'tmp/perf/api-v1-state-write-results.json',
-    ...(regressionReasonsFile === undefined ? {} : { regressionReasonsFile }),
-  };
-}
-
-function parseIntegerOption(
-  name: string,
-  raw: string | undefined,
-  fallback: number,
-  minimum: number,
-  maximum: number,
-): number {
-  const value = raw === undefined || raw === '' ? fallback : Number(raw);
-  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
-    throw new Error(
-      `--${name} must be a safe integer between ${minimum} and ${maximum}; received ${raw}`,
-    );
-  }
-  return value;
-}
-
 function assertPerfOutputPath(path: string): void {
   const normalized = normalize(path).replaceAll('\\', '/');
   if (!normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
     throw new Error(`Benchmark output must remain under tmp/perf/: ${path}`);
-  }
-}
-
-function assertPerfInputPath(path: string): void {
-  const normalized = normalize(path).replaceAll('\\', '/');
-  if (normalized !== path || !normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
-    throw new Error(`Regression-reason input must remain under tmp/perf/: ${path}`);
   }
 }
