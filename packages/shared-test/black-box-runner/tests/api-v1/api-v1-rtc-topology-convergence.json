@@ -550,8 +550,7 @@
                   "role": "admin"
                 },
                 "outputs": {
-                  "roleMutationRevision": "body.causalRevision.groupRevision",
-                  "roleMutationPresenceRevision": "body.causalRevision.presenceRevision"
+                  "roleMutationRevision": "body.causalRevision.groupRevision"
                 }
               },
               "expect": {
@@ -562,17 +561,6 @@
                     "groupId": "{groupId}"
                   }
                 }
-              }
-            },
-            {
-              "name": "deriveRoleTopologyPresenceRevision",
-              "type": "set",
-              "output": "roleTopologyPresenceRevision",
-              "transform": {
-                "add": [
-                  { "path": "outputs.roleMutationPresenceRevision" },
-                  1
-                ]
               }
             }
           ]
@@ -613,8 +601,7 @@
                   "description": "Concurrent update from the secondary API server"
                 },
                 "outputs": {
-                  "groupMutationRevision": "body.causalRevision.groupRevision",
-                  "groupMutationPresenceRevision": "body.causalRevision.presenceRevision"
+                  "groupMutationRevision": "body.causalRevision.groupRevision"
                 }
               },
               "expect": {
@@ -625,17 +612,6 @@
                     "groupId": "{groupId}"
                   }
                 }
-              }
-            },
-            {
-              "name": "deriveGroupTopologyPresenceRevision",
-              "type": "set",
-              "output": "groupTopologyPresenceRevision",
-              "transform": {
-                "add": [
-                  { "path": "outputs.groupMutationPresenceRevision" },
-                  1
-                ]
               }
             }
           ]
@@ -659,9 +635,7 @@
         "ordered": false,
         "messages": [
           {
-            "id": {
-              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:promote-bob-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={roleMutationRevision};presence={roleTopologyPresenceRevision}:0\"]"
-            },
+            "targets": { "minSnapshotVersion": "{roleMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -671,9 +645,7 @@
             }
           },
           {
-            "id": {
-              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:update-group-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={groupMutationRevision};presence={groupTopologyPresenceRevision}:0\"]"
-            },
+            "targets": { "minSnapshotVersion": "{groupMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -702,9 +674,7 @@
         "ordered": false,
         "messages": [
           {
-            "id": {
-              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:promote-bob-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={roleMutationRevision};presence={roleTopologyPresenceRevision}:0\"]"
-            },
+            "targets": { "minSnapshotVersion": "{roleMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -714,9 +684,7 @@
             }
           },
           {
-            "id": {
-              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:update-group-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={groupMutationRevision};presence={groupTopologyPresenceRevision}:0\"]"
-            },
+            "targets": { "minSnapshotVersion": "{groupMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"

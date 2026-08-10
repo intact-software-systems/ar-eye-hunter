@@ -11,7 +11,7 @@ Status: active; implementation is in progress as the three-PR stack below.
 Plan evidence base: `origin/main` was
 `726edc7c33386f9282f6594ec4b5c3c02033fbf1` when execution started on
 2026-08-09. The latest publication review revalidated `origin/main` at
-`0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`; revalidate the checkout, issue,
+`cd843d154c5698912eb99a92039ecd31464aef0f`; revalidate the checkout, issue,
 paths, contracts, and commands before implementation and after every rebase.
 Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
 
@@ -19,16 +19,18 @@ Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/
 
 Current working-tree checkpoint on 2026-08-10:
 
-- `origin/main` advanced to `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`.
+- `origin/main` advanced to `cd843d154c5698912eb99a92039ecd31464aef0f`.
   The compatibility review covers the earlier PR #145 changes plus merged PR
   #103's contract-preserving group-topology owner move and additive
   position-balanced benchmark tooling, and PR #144's Hetzner RTC lifecycle
-  hardening. The stack overlaps four test/performance paths but no changed
-  durable-replay runtime owner; public, transaction, authorization, workload,
-  and acceptance contracts remain intact. Because PR #141 is still open at its
-  unchanged head, PR 1 remains stacked on that head as required. Its eventual
-  rebase must adopt the canonical topology paths and current benchmark tooling
-  and invalidate all affected evidence.
+  hardening. The latest `0b1fa13e..cd843d15` delta changes only the historical
+  RTC performance-baseline plan and does not overlap this stack. The stack
+  otherwise overlaps four test/performance paths but no changed durable-replay
+  runtime owner; public, transaction, authorization, workload, and acceptance
+  contracts remain intact. Because PR #141 is still open at its unchanged head,
+  PR 1 remains stacked on that head as required. Its eventual rebase must adopt
+  the canonical topology paths and current benchmark tooling and invalidate all
+  affected evidence.
 - Plan PR [#141](https://github.com/intact-software-systems/ar-eye-hunter/pull/141)
   remains open at `8e277691f3bcd618c556d57ab5ee61cac248f1db`. PR 1 is
   therefore based on that exact head. If #141 merges, PR 1 must be rebased onto
@@ -68,10 +70,11 @@ targets PR 1 explicitly.
 PR 3 draft [#148](https://github.com/intact-software-systems/ar-eye-hunter/pull/148)
 targets PR 2 explicitly. Its reviewed implementation checkpoint is
 `2727de2002e26aa8345a702ff36cd3f95e658ad8`, tree
-`66a457fdb0fcbcc415c2afc607869809b04804b8`. This progress-record update will
-be the final content change before the exact-tree local, performance, black-box,
-and remote gates; every result attached only to the implementation checkpoint
-remains pre-freeze evidence.
+`66a457fdb0fcbcc415c2afc607869809b04804b8`. The first published final-tree
+candidate was `6d93f98c474a8e074f499412055e8560dbb779f3`, tree
+`cb84f5446c9800195f1a67b2d36268093ebfd0d2`; the cluster regression described
+below invalidated that candidate before remote acceptance. Every result attached
+only to either obsolete checkpoint remains pre-freeze evidence.
 
 PR 3 implementation is complete on the working tree. Generation-fenced sends,
 strict durable reconnect hydration, enabled replay plus QueueBox, the managed
@@ -87,10 +90,10 @@ formation-large 1,327/1,327, and the standalone A/B/C-to-C' topology replay
 proof. The fixed delivery and replay-drain workloads preserve every plan
 constant and bound. Pre-freeze repository-wide typecheck, governance, style,
 unit, CI, build, and browser-bundle gates passed; subsequent review fixes and
-this progress-record edit invalidate those broad results until they are rerun
-from the unchanged final tree. Draft publication is complete at PR #148;
-the final progress commit, exact-SHA A-B-B-A, and remote exact-SHA gates remain
-pending, so PR 3 and this plan remain active.
+later fixes invalidate those broad results until they are rerun from the
+unchanged final tree. Draft publication is complete at PR #148; the replacement
+final commit, exact-SHA A-B-B-A, and remote exact-SHA gates remain pending, so
+PR 3 and this plan remain active.
 
 An independent pre-publication review of the original staged PR 3 tree found
 that the profile-only topology command still depended on `clusterOnly` for
@@ -109,10 +112,11 @@ requires exactly two post-baseline poll-replayed entries, and accepts C' only on
 exact current-state hydration identities. Its wire observer now models the
 production browser rule by dropping dominated snapshots, retaining monotonic
 adoptions, and rejecting equal conflicts or incomparable tuples. The topology
-recipe derives the publication presence component from the mutation presence
-revision, and one shared behaviorally tested assertion deadline restores the
-plan's 10-second bound. Structured failure evidence now wraps every coordinator
-phase rather than only live A.
+convergence recipe identifies each concurrent publication by the mutation's
+committed group revision instead of trying to predict its independently
+serialized presence-summary revision, and one shared behaviorally tested
+assertion deadline restores the plan's 10-second bound. Structured failure
+evidence now wraps every coordinator phase rather than only live A.
 
 The expanded review-regression set passes 5 files and 36 tests; full workspace
 typecheck and strict changed-style review pass. The real profile-only command
@@ -126,6 +130,23 @@ or local-commit wakes, and two replayed entries, restart HEADs 9/3, two C'
 post-start mutation. These review fixes invalidate every earlier broad gate;
 the full local, PostgreSQL, black-box, performance, exact-SHA, and publication
 sequence must rerun from the final unchanged tree.
+
+The first exact-tree completion rerun passed repository governance, strict
+changed-style review, the warning-only full style scan, 734 files and 6,661 unit
+tests, `test:ci`, build, browser bundle budgets, API check plus 420 tests,
+PostgreSQL integration (13 files and 27 tests), memory black-box 13/13, and the
+ordinary PostgreSQL black-box 13/13. Its cluster phase then reproduced a real
+recipe defect: two overlapping mutations both returned presence revision 3,
+while their serialized summary workers correctly assigned publication presence
+revisions 4 and 5. The recipe had expected both as response presence plus one.
+A TDD regression now requires the existing publication-only
+`targets.minSnapshotVersion` discriminator to equal each mutation's exact group
+revision; current-state hydration lacks that field. The focused test passed 5/5
+and the unchanged three-process cluster workload then passed 5/5, including
+topology convergence 36/36. Because this is a tracked content change, every
+earlier exact-tree result and workflow is obsolete; the replacement SHA must
+rerun the complete local, database, black-box, performance, and publication
+sequence.
 
 PR 1 progress:
 

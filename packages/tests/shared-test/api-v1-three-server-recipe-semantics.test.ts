@@ -90,55 +90,16 @@ describe('API-v1 three-server recipe semantics', () => {
       request: {
         outputs: {
           roleMutationRevision: 'body.causalRevision.groupRevision',
-          roleMutationPresenceRevision: 'body.causalRevision.presenceRevision',
         },
       },
-    });
-    expect(
-      allSteps.find((step) => step.name === 'deriveRoleTopologyPresenceRevision'),
-    ).toMatchObject({
-      type: 'set',
-      output: 'roleTopologyPresenceRevision',
-      transform: { add: [{ path: 'outputs.roleMutationPresenceRevision' }, 1] },
-    });
-    expect(
-      allSteps.find((step) => step.name === 'deriveGroupTopologyPresenceRevision'),
-    ).toMatchObject({
-      type: 'set',
-      output: 'groupTopologyPresenceRevision',
-      transform: { add: [{ path: 'outputs.groupMutationPresenceRevision' }, 1] },
     });
     expect(allSteps.find((step) => step.name === 'updateGroupThroughSecondary')).toMatchObject({
       request: {
         outputs: {
           groupMutationRevision: 'body.causalRevision.groupRevision',
-          groupMutationPresenceRevision: 'body.causalRevision.presenceRevision',
         },
       },
     });
-    for (const stepName of ['waitForBothRevisionsOnPrimary', 'waitForBothRevisionsOnTertiary']) {
-      expect(allSteps.find((step) => step.name === stepName)).toMatchObject({
-        expect: {
-          ordered: false,
-          messages: [
-            {
-              id: {
-                msgId: expect.stringContaining(
-                  ':group={roleMutationRevision};presence={roleTopologyPresenceRevision}:0',
-                ),
-              },
-            },
-            {
-              id: {
-                msgId: expect.stringContaining(
-                  ':group={groupMutationRevision};presence={groupTopologyPresenceRevision}:0',
-                ),
-              },
-            },
-          ],
-        },
-      });
-    }
     for (const [stepName, connection, mutationName] of [
       ['consumeBaselineCurrentTopologyOnPrimary', 'wsPrimary', 'promoteBobThroughPrimary'],
       ['consumeBaselineCurrentTopologyOnTertiary', 'wsTertiary', 'updateGroupThroughSecondary'],
@@ -154,6 +115,50 @@ describe('API-v1 three-server recipe semantics', () => {
           consume: true,
           messages: [
             {
+              route: { topicId: 'overlay.topology', contextId: '{groupId}' },
+              payload: { typeId: 'overlay.topology' },
+            },
+          ],
+        },
+      });
+    }
+  });
+
+  it('identifies concurrent topology publications by their committed group revisions', () => {
+    const { entries } = readMatrix();
+    const entry = entries.find((candidate) => candidate.id === 'api-v1-rtc-topology-convergence');
+    const recipe = readRecipe(entry!.recipe);
+    const allSteps = flattenRecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+
+    expect(allSteps.find((step) => step.name === 'promoteBobThroughPrimary')).toMatchObject({
+      request: {
+        outputs: {
+          roleMutationRevision: 'body.causalRevision.groupRevision',
+        },
+      },
+    });
+    expect(allSteps.find((step) => step.name === 'deriveRoleTopologyPresenceRevision')).toBeUndefined();
+    expect(allSteps.find((step) => step.name === 'deriveGroupTopologyPresenceRevision')).toBeUndefined();
+    expect(allSteps.find((step) => step.name === 'updateGroupThroughSecondary')).toMatchObject({
+      request: {
+        outputs: {
+          groupMutationRevision: 'body.causalRevision.groupRevision',
+        },
+      },
+    });
+
+    for (const stepName of ['waitForBothRevisionsOnPrimary', 'waitForBothRevisionsOnTertiary']) {
+      expect(allSteps.find((step) => step.name === stepName)).toMatchObject({
+        expect: {
+          ordered: false,
+          messages: [
+            {
+              targets: { minSnapshotVersion: '{roleMutationRevision}' },
+              route: { topicId: 'overlay.topology', contextId: '{groupId}' },
+              payload: { typeId: 'overlay.topology' },
+            },
+            {
+              targets: { minSnapshotVersion: '{groupMutationRevision}' },
               route: { topicId: 'overlay.topology', contextId: '{groupId}' },
               payload: { typeId: 'overlay.topology' },
             },
