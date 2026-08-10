@@ -133,6 +133,31 @@ export function assertCheckpointMatchesMutation(
 }
 
 export async function waitForStablePassiveState(databaseUrl: string): Promise<ProofDurableState> {
+  return await waitForStableDurableState(databaseUrl, assertLivePassiveConsumerState);
+}
+
+export async function waitForStableRegisteredState(
+  databaseUrl: string,
+): Promise<ProofDurableState> {
+  return await waitForStableDurableState(databaseUrl, (state) => {
+    if (state.streams.length !== 3) {
+      throw new Error(
+        `Expected exactly three registered proof streams; found ${state.streams.length}.`,
+      );
+    }
+    if (state.unresolvedAppOutboxCount !== 0) {
+      throw new Error(
+        'RTC topology proof still has ' +
+          `${state.unresolvedAppOutboxCount} unresolved APP_OUTBOX rows.`,
+      );
+    }
+  });
+}
+
+async function waitForStableDurableState(
+  databaseUrl: string,
+  assertState: (state: ProofDurableState) => void,
+): Promise<ProofDurableState> {
   const deadline = Date.now() + RTC_TOPOLOGY_PROOF_ASSERTION_TIMEOUT_MS;
   let previousStateJson: string | undefined;
   let consecutiveStableReads = 0;
@@ -140,7 +165,7 @@ export async function waitForStablePassiveState(databaseUrl: string): Promise<Pr
   while (Date.now() < deadline) {
     const state = await readRtcTopologyProofDurableState(databaseUrl);
     try {
-      assertLivePassiveConsumerState(state);
+      assertState(state);
       const stateJson = JSON.stringify(state);
       consecutiveStableReads = stateJson === previousStateJson ? consecutiveStableReads + 1 : 0;
       previousStateJson = stateJson;

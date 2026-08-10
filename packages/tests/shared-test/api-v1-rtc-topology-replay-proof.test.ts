@@ -19,6 +19,7 @@ import {
   assertPollDrivenReplayMetricDelta,
   toProofTopologyPublicationMessageId,
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-evidence.mts';
+import { withManagedApiServerSuspended } from '@shared-test/black-box-runner/topology-replay/with-managed-api-server-suspended.mts';
 
 describe('API-v1 RTC topology replay proof semantics', () => {
   afterEach(async () => {
@@ -57,6 +58,9 @@ describe('API-v1 RTC topology replay proof semantics', () => {
       passiveConsumerStreamId: 'consumer-c',
       publisherHeads: { 'publisher-a': 10, 'publisher-b': 20 },
     });
+    expect(() =>
+      assertLivePassiveConsumerState({ ...live, unresolvedAppOutboxCount: 1 }),
+    ).toThrow('unresolved APP_OUTBOX');
 
     const afterLiveA = durableState(
       [
@@ -253,6 +257,43 @@ describe('API-v1 RTC topology replay proof semantics', () => {
 
     expect(failure?.message).toContain('10000ms');
   });
+
+  it('always resumes the non-target proof process after scheduled claim work', async () => {
+    const events: string[] = [];
+    const controls = {
+      stop: async () => undefined,
+      restart: async () => undefined,
+      suspend: async (port: number) => {
+        events.push(`suspend:${port}`);
+      },
+      resume: async (port: number) => {
+        events.push(`resume:${port}`);
+      },
+    };
+
+    await expect(
+      withManagedApiServerSuspended(controls, 18081, async () => {
+        events.push('run:success');
+        return 'completed';
+      }),
+    ).resolves.toBe('completed');
+    const failure = new Error('scheduled claim failed');
+    await expect(
+      withManagedApiServerSuspended(controls, 18080, async () => {
+        events.push('run:failure');
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+
+    expect(events).toEqual([
+      'suspend:18081',
+      'run:success',
+      'resume:18081',
+      'suspend:18080',
+      'run:failure',
+      'resume:18080',
+    ]);
+  });
 });
 
 class NeverOpeningWebSocket extends EventTarget {
@@ -314,7 +355,7 @@ function durableState(
   streams: ProofDurableState['streams'],
   cursors: ProofDurableState['cursors'],
 ): ProofDurableState {
-  return { streams, cursors };
+  return { streams, cursors, unresolvedAppOutboxCount: 0 };
 }
 
 function cursor(

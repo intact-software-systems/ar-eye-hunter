@@ -1,7 +1,6 @@
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ClientInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { type RallarOverlayTopologySnapshot, toOverlayInfoForSession, } from '@shared/api/overlay-topology.ts';
 import type { ClientSnapshot as ClientStateSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-types.ts';
@@ -28,6 +27,15 @@ import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts'
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
+
+import {
+    isRtcTopologyCurrentStateMessage,
+} from './state-cache/is-rtc-topology-current-state-message.ts';
+import {
+    acceptClientStateSnapshots,
+    acceptGroupStateSnapshotsOrRecompute,
+    isSameStateScope,
+} from './state-cache/state-cache-snapshot-adoption.ts';
 
 export type StateCacheChange = Readonly<{
     clients: readonly ClientStateSnapshot[];
@@ -133,7 +141,6 @@ export function initialise(
                             await acceptGroupStateSnapshotsOrRecompute(
                                 [groupSnapshot],
                                 scope,
-                                webRtcGroupManager,
                                 stateRepositoryObserverContext
                                     ?.rereadGroupSnapshots,
                             );
@@ -151,7 +158,6 @@ export function initialise(
                             await acceptGroupStateSnapshotsOrRecompute(
                                 [groupSnapshot],
                                 scope,
-                                webRtcGroupManager,
                                 stateRepositoryObserverContext
                                     ?.rereadGroupSnapshots,
                             );
@@ -196,14 +202,27 @@ export function initialise(
                                 data.payload.resource,
                                 readActiveStateCacheScope(initialScope),
                             );
-
-                            overlaysRepository.setOverlayById(
-                                topology.overlayId,
-                                toOverlayInfoForSession(
+                            const overlay = toOverlayInfoForSession(
+                                topology,
+                                myOwnClientData.sessionId,
+                            );
+                            if (
+                                isRtcTopologyCurrentStateMessage(
+                                    data,
                                     topology,
                                     myOwnClientData.sessionId,
-                                ),
-                            );
+                                )
+                            ) {
+                                overlaysRepository.setCurrentServerOverlayById(
+                                    topology.overlayId,
+                                    overlay,
+                                );
+                            } else {
+                                overlaysRepository.setOverlayById(
+                                    topology.overlayId,
+                                    overlay,
+                                );
+                            }
                             await overlaysRepository.waitForOverlayChangesIdle();
                             await webRtcGroupManager.notifyOverlayTopologyChanged();
                             break;
@@ -235,7 +254,6 @@ export async function hydrateStateCaches(
     await acceptGroupStateSnapshotsOrRecompute(
         groupSnapshots,
         scope,
-        webRtcGroupManager,
         options.rereadGroupSnapshots,
     );
     await Promise.all([
@@ -243,66 +261,6 @@ export async function hydrateStateCaches(
         groupStateSnapshotsRepository.waitForGroupStateSnapshotChangesIdle(),
     ]);
     await waitForStateRepositoryObserverTasks();
-}
-
-function acceptClientStateSnapshots(
-    snapshots: readonly ClientStateSnapshot[],
-    scope: StateScope,
-): boolean {
-    return clientStateSnapshotsRepository.setClientStateSnapshots(
-        snapshots.filter((snapshot) => isClientSnapshotInScope(snapshot, scope)),
-    );
-}
-
-function acceptGroupStateSnapshots(
-    snapshots: readonly GroupStateSnapshot[],
-    scope: StateScope,
-): boolean {
-    return groupStateSnapshotsRepository.setGroupStateSnapshots(
-        snapshots.filter((snapshot) => isGroupSnapshotInScope(snapshot, scope)),
-    );
-}
-
-async function acceptGroupStateSnapshotsOrRecompute(
-    snapshots: readonly GroupStateSnapshot[],
-    scope: StateScope,
-    webRtcGroupManager: WebRtcGroupManager,
-    rereadGroupSnapshots?: (
-        scope: StateScope,
-    ) => Promise<readonly GroupStateSnapshot[]>,
-): Promise<boolean> {
-    try {
-        return acceptGroupStateSnapshots(snapshots, scope);
-    } catch (error) {
-        if (
-            error instanceof
-                groupStateSnapshotsRepository.GroupStateSnapshotIncomparableError
-        ) {
-            if (!rereadGroupSnapshots) {
-                throw error;
-            }
-            const reread = await rereadGroupSnapshots(scope);
-            acceptGroupStateSnapshots(reread, scope);
-            const accepted = snapshots.filter((snapshot) =>
-                isGroupSnapshotInScope(snapshot, scope)
-            );
-            for (const incoming of accepted) {
-                const recovered = groupStateSnapshotsRepository
-                    .findGroupStateSnapshotByRef(incoming.group);
-                if (
-                    !recovered ||
-                    !['equal', 'dominates'].includes(compareGroupCausalRevision(
-                        recovered.causalRevision,
-                        incoming.causalRevision,
-                    ))
-                ) {
-                    throw error;
-                }
-            }
-            return true;
-        }
-        throw error;
-    }
 }
 
 function installStateRepositoryObservers(
@@ -432,26 +390,4 @@ function resolveStateCacheScope(options: StateCacheScopeOptions): StateScope {
 
 function readActiveStateCacheScope(fallback: StateScope): StateScope {
     return stateRepositoryObserverContext?.scope ?? fallback;
-}
-
-function isClientSnapshotInScope(
-    snapshot: ClientStateSnapshot,
-    scope: StateScope,
-): boolean {
-    return isSameStateScope(snapshot.principal, scope);
-}
-
-function isGroupSnapshotInScope(
-    snapshot: GroupStateSnapshot,
-    scope: StateScope,
-): boolean {
-    return isSameStateScope(snapshot.group, scope);
-}
-
-function isSameStateScope(
-    left: Readonly<{ applicationId: string; workspaceId?: string }>,
-    right: Readonly<{ applicationId: string; workspaceId?: string }>,
-): boolean {
-    return left.applicationId === right.applicationId &&
-        (left.workspaceId ?? '') === (right.workspaceId ?? '');
 }

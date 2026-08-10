@@ -14,6 +14,7 @@ export type ProofCursorRow = Readonly<{
 export type ProofDurableState = Readonly<{
   streams: readonly ProofStreamRow[];
   cursors: readonly ProofCursorRow[];
+  unresolvedAppOutboxCount: number;
 }>;
 
 type ProofDatabaseScalar = string | number | bigint | null | undefined;
@@ -29,6 +30,10 @@ interface ProofCursorDatabaseRow {
   readonly last_processed_sequence: ProofDatabaseScalar;
 }
 
+interface ProofCountDatabaseRow {
+  readonly unresolved_count: ProofDatabaseScalar;
+}
+
 export async function readRtcTopologyProofDurableState(
   databaseUrl: string,
 ): Promise<ProofDurableState> {
@@ -37,6 +42,13 @@ export async function readRtcTopologyProofDurableState(
     connection: { application_name: 'rtc_topology_replay_proof' },
   });
   try {
+    const unresolvedRows = await sql<ProofCountDatabaseRow[]>`
+      select count(*)::bigint as unresolved_count
+      from resource_inbox
+      where ri_type_id = 'APP_OUTBOX'
+        and ri_status in ('NEW', 'RETRY', 'RESERVED', 'FAILED', 'ABORTED', 'NON_RETRYABLE')
+        and expire_ts > now()
+    `;
     const streams = await sql<ProofStreamDatabaseRow[]>`
       select stream_id::text as stream_id, head_sequence
       from rtc_topology_delivery_stream
@@ -60,6 +72,10 @@ export async function readRtcTopologyProofDurableState(
         publisherStreamId: requireString(row.publisher_stream_id, 'publisher stream ID'),
         lastProcessedSequence: toSafeSequence(row.last_processed_sequence, 'cursor sequence'),
       })),
+      unresolvedAppOutboxCount: toSafeSequence(
+        unresolvedRows[0]?.unresolved_count,
+        'unresolved APP_OUTBOX count',
+      ),
     };
   } finally {
     await sql.end({ timeout: 5 });
@@ -70,6 +86,7 @@ export function assertLivePassiveConsumerState(state: ProofDurableState): Readon
   passiveConsumerStreamId: string;
   publisherHeads: Readonly<Record<string, number>>;
 }> {
+  assertAppOutboxDrained(state);
   if (state.streams.length !== 3) {
     throw new Error(`Expected exactly three live proof streams; found ${state.streams.length}.`);
   }
@@ -112,6 +129,7 @@ export function assertSinglePublisherHeadAdvanced(
   advancedPublisherStreamId: string;
   publisherHeads: Readonly<Record<string, number>>;
 }> {
+  assertAppOutboxDrained(input.state);
   const publisherHeads: Record<string, number> = {};
   const advancedPublisherStreamIds: string[] = [];
   for (const [streamId, priorHead] of Object.entries(input.priorHeads)) {
@@ -147,6 +165,7 @@ export function assertReplacementConsumerSeeded(
     publisherHeads: Readonly<Record<string, number>>;
   }>,
 ): string {
+  assertAppOutboxDrained(input.state);
   if (input.state.streams.length !== input.priorStreamIds.size + 1) {
     throw new Error('Replacement C did not register exactly one new durable stream.');
   }
@@ -162,6 +181,14 @@ export function assertReplacementConsumerSeeded(
   }));
   assertConsumerCaughtUp(input.state, replacement[0]!.streamId, publishers);
   return replacement[0]!.streamId;
+}
+
+function assertAppOutboxDrained(state: ProofDurableState): void {
+  if (state.unresolvedAppOutboxCount !== 0) {
+    throw new Error(
+      `RTC topology proof still has ${state.unresolvedAppOutboxCount} unresolved APP_OUTBOX rows.`,
+    );
+  }
 }
 
 function assertConsumerCaughtUp(

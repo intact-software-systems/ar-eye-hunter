@@ -12,6 +12,7 @@ interface TestServerPlan {
 interface TestChild {
   readonly port: number;
   readonly status: Promise<Readonly<{ success: boolean; code: number; signal: string | null }>>;
+  readonly kill: (signal?: number | string) => void;
 }
 
 interface TestManagedServer {
@@ -46,6 +47,8 @@ interface TestLifecycleDependencies {
 interface TestLifecycleControls {
   readonly stop: (port: number) => Promise<void>;
   readonly restart: (port: number, replacementPlan: TestServerPlan) => Promise<void>;
+  readonly suspend: (port: number) => Promise<void>;
+  readonly resume: (port: number) => Promise<void>;
 }
 
 type WithManagedApiServerPlans = (
@@ -283,6 +286,41 @@ describe('managed API-v1 server-plan lifecycle', () => {
       'stop:18080:1',
     ]);
   });
+
+  it('resumes a suspended server before failure cleanup stops it', async () => {
+    const withPlans = getWithManagedApiServerPlans();
+    expect(withPlans).toBeTypeOf('function');
+    if (!withPlans) return;
+    const events: string[] = [];
+    const recipeFailure = new Error('proof scheduling failed');
+
+    await expect(
+      withPlans(toLifecycleInput(), {
+        writeEmptyLogFile: async () => undefined,
+        startServer: (_command, plan) => toServer(plan.port, (signal) => {
+          events.push(`signal:${plan.port}:${signal}`);
+        }),
+        waitForReady: async () => undefined,
+        toDiagnosticSecrets: () => [],
+        runRecipes: async (controls) => {
+          await controls.suspend(18082);
+          throw recipeFailure;
+        },
+        verifyFairness: async () => undefined,
+        stopServer: async (child) => {
+          events.push(`stop:${child.port}`);
+        },
+      }),
+    ).rejects.toBe(recipeFailure);
+
+    expect(events).toEqual([
+      'signal:18082:SIGSTOP',
+      'signal:18082:SIGCONT',
+      'stop:18082',
+      'stop:18081',
+      'stop:18080',
+    ]);
+  });
 });
 
 function getWithManagedApiServerPlans(): WithManagedApiServerPlans | undefined {
@@ -308,11 +346,15 @@ function toPlan(port: number, logName: string): TestServerPlan {
   };
 }
 
-function toServer(port: number): TestManagedServer {
+function toServer(
+  port: number,
+  kill: (signal?: number | string) => void = () => undefined,
+): TestManagedServer {
   return {
     child: {
       port,
       status: Promise.resolve({ success: true, code: 0, signal: null }),
+      kill,
     },
     startup: Promise.resolve(),
     streamsDrained: Promise.resolve(),

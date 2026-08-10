@@ -5,7 +5,6 @@ import type {
 import {
   ApiV1RtcTopologyProofApi,
   type ProofGroupInput,
-  type ProofSession,
 } from './api-v1-rtc-topology-proof-api.mts';
 import {
   assertCheckpointMatchesMutation,
@@ -16,6 +15,7 @@ import {
   waitForDurableState,
   waitForPassivePair,
   waitForStablePassiveState,
+  waitForStableRegisteredState,
 } from './api-v1-rtc-topology-proof-evidence.mts';
 import {
   assertLivePassiveConsumerState,
@@ -29,6 +29,15 @@ import {
   writeFailureArtifact,
   writeProofArtifact,
 } from './api-v1-rtc-topology-proof-artifacts.mts';
+import {
+  assertPrincipalSessionContract,
+  attachAllSessions,
+  loginProofSessions,
+  prepareGroup,
+  requireExecutionToken,
+  toReplacementPlan,
+} from './api-v1-rtc-topology-proof-fixture.mts';
+import { withManagedApiServerSuspended } from './with-managed-api-server-suspended.mts';
 
 export type ApiV1RtcTopologyReplayProofInput = Readonly<{
   env: Record<string, string>;
@@ -74,6 +83,51 @@ export async function runApiV1RtcTopologyReplayProof(
     assertPrincipalSessionContract(sessions);
     phase = 'prepare-proof-group';
     await prepareGroup(api, group, sessions);
+    const preparedDurable = await waitForStableRegisteredState(input.databaseUrl);
+    const preparedHeads = Object.fromEntries(
+      preparedDurable.streams.map((stream) => [stream.streamId, stream.headSequence]),
+    );
+    phase = 'seed-baseline-publisher-a';
+    const baselineA = await withManagedApiServerSuspended(
+      input.controls,
+      input.secondaryPlan.port,
+      async () => {
+        await api.updateDescription({
+          ...group,
+          actor: sessions[0]!,
+          phase: 'baseline-a',
+        });
+        const durable = await waitForDurableState(input.databaseUrl, (state) =>
+          assertSinglePublisherHeadAdvanced({ state, priorHeads: preparedHeads }),
+        );
+        return assertSinglePublisherHeadAdvanced({ state: durable, priorHeads: preparedHeads });
+      },
+    );
+    phase = 'seed-baseline-publisher-b';
+    const baselineB = await withManagedApiServerSuspended(
+      input.controls,
+      input.primaryPlan.port,
+      async () => {
+        await api.updateDescription({
+          ...group,
+          actor: sessions[2]!,
+          phase: 'baseline-b',
+        });
+        const durable = await waitForDurableState(input.databaseUrl, (state) =>
+          assertSinglePublisherHeadAdvanced({
+            state,
+            priorHeads: baselineA.publisherHeads,
+          }),
+        );
+        return assertSinglePublisherHeadAdvanced({
+          state: durable,
+          priorHeads: baselineA.publisherHeads,
+        });
+      },
+    );
+    if (baselineA.advancedPublisherStreamId === baselineB.advancedPublisherStreamId) {
+      throw new Error('Baseline A and B did not seed distinct publisher streams.');
+    }
     phase = 'establish-baseline-topology';
     await api.establishBaseline({ ...group, actor: sessions[0]! });
     const baselineTopology = await api.readCurrentTopology({ ...group, actor: sessions[0]! });
@@ -91,64 +145,83 @@ export async function runApiV1RtcTopologyReplayProof(
     const baselineMetrics = await api.readReplayMetrics(input.tertiaryPlan.baseUrl);
 
     phase = 'live-a-passive-replay';
-    const liveARevision = await api.updateMemberRole({
-      ...group,
-      actor: sessions[0]!,
-      memberClientId: sessions[1]!.clientId,
-      role: 'admin',
-      phase: 'live-a',
-    });
-    const liveAObservations = await waitForPassivePair(
-      attached,
-      exactPublicationExpectation(
-        group,
-        `${proofId}-live-a-role`,
-        liveARevision,
-      ),
+    const liveA = await withManagedApiServerSuspended(
+      input.controls,
+      input.secondaryPlan.port,
+      async () => {
+        const revision = await api.updateMemberRole({
+          ...group,
+          actor: sessions[0]!,
+          memberClientId: sessions[1]!.clientId,
+          role: 'admin',
+          phase: 'live-a',
+        });
+        const observations = await waitForPassivePair(
+          attached,
+          exactPublicationExpectation(group, `${proofId}-live-a-role`, revision),
+        );
+        assertCompleteSessionTopology(observations, sessions);
+        const durable = await waitForDurableState(input.databaseUrl, (state) =>
+          assertSinglePublisherHeadAdvanced({
+            state,
+            consumerStreamId: baselineEvidence.passiveConsumerStreamId,
+            priorHeads: baselineEvidence.publisherHeads,
+          }),
+        );
+        const evidence = assertSinglePublisherHeadAdvanced({
+          state: durable,
+          consumerStreamId: baselineEvidence.passiveConsumerStreamId,
+          priorHeads: baselineEvidence.publisherHeads,
+        });
+        return { revision, observations, evidence };
+      },
     );
-    assertCompleteSessionTopology(liveAObservations, sessions);
-    const durableAfterLiveA = await waitForDurableState(input.databaseUrl, (state) =>
-      assertSinglePublisherHeadAdvanced({
-        state,
-        consumerStreamId: baselineEvidence.passiveConsumerStreamId,
-        priorHeads: baselineEvidence.publisherHeads,
-      }),
-    );
-    const liveAEvidence = assertSinglePublisherHeadAdvanced({
-      state: durableAfterLiveA,
-      consumerStreamId: baselineEvidence.passiveConsumerStreamId,
-      priorHeads: baselineEvidence.publisherHeads,
-    });
+    const liveARevision = liveA.revision;
+    const liveAObservations = liveA.observations;
+    const liveAEvidence = liveA.evidence;
+    if (liveAEvidence.advancedPublisherStreamId !== baselineA.advancedPublisherStreamId) {
+      throw new Error('Live A mutation did not append through the seeded A publisher stream.');
+    }
 
     phase = 'live-b-passive-replay';
-    const liveBRevision = await api.updateDescription({
-      ...group,
-      actor: sessions[2]!,
-      phase: 'live-b',
-    });
-    const liveBObservations = await waitForPassivePair(
-      attached,
-      exactPublicationExpectation(
-        group,
-        `${proofId}-live-b-description`,
-        liveBRevision,
-      ),
+    const liveB = await withManagedApiServerSuspended(
+      input.controls,
+      input.primaryPlan.port,
+      async () => {
+        const revision = await api.updateDescription({
+          ...group,
+          actor: sessions[2]!,
+          phase: 'live-b',
+        });
+        const observations = await waitForPassivePair(
+          attached,
+          exactPublicationExpectation(group, `${proofId}-live-b-description`, revision),
+        );
+        assertCompleteSessionTopology(observations, sessions);
+        attached[4]!.assertNoRegressionOrDuplicateLane();
+        attached[5]!.assertNoRegressionOrDuplicateLane();
+        const durable = await waitForDurableState(input.databaseUrl, (state) =>
+          assertSinglePublisherHeadAdvanced({
+            state,
+            consumerStreamId: baselineEvidence.passiveConsumerStreamId,
+            priorHeads: liveAEvidence.publisherHeads,
+          }),
+        );
+        const evidence = assertSinglePublisherHeadAdvanced({
+          state: durable,
+          consumerStreamId: baselineEvidence.passiveConsumerStreamId,
+          priorHeads: liveAEvidence.publisherHeads,
+        });
+        return { revision, observations, evidence, durable };
+      },
     );
-    assertCompleteSessionTopology(liveBObservations, sessions);
-    attached[4]!.assertNoRegressionOrDuplicateLane();
-    attached[5]!.assertNoRegressionOrDuplicateLane();
-    const durableAfterLiveB = await waitForDurableState(input.databaseUrl, (state) =>
-      assertSinglePublisherHeadAdvanced({
-        state,
-        consumerStreamId: baselineEvidence.passiveConsumerStreamId,
-        priorHeads: liveAEvidence.publisherHeads,
-      }),
-    );
-    const liveBEvidence = assertSinglePublisherHeadAdvanced({
-      state: durableAfterLiveB,
-      consumerStreamId: baselineEvidence.passiveConsumerStreamId,
-      priorHeads: liveAEvidence.publisherHeads,
-    });
+    const liveBRevision = liveB.revision;
+    const liveBObservations = liveB.observations;
+    const liveBEvidence = liveB.evidence;
+    const durableAfterLiveB = liveB.durable;
+    if (liveBEvidence.advancedPublisherStreamId !== baselineB.advancedPublisherStreamId) {
+      throw new Error('Live B mutation did not append through the seeded B publisher stream.');
+    }
     if (liveBEvidence.advancedPublisherStreamId === liveAEvidence.advancedPublisherStreamId) {
       throw new Error('Live A and B mutations did not append through distinct publisher streams.');
     }
@@ -161,42 +234,61 @@ export async function runApiV1RtcTopologyReplayProof(
     phase = 'stop-passive-c';
     await input.controls.stop(input.tertiaryPlan.port);
     phase = 'restart-a-while-c-stopped';
-    const laterARevision = await api.updateMemberRole({
-      ...group,
-      actor: sessions[0]!,
-      memberClientId: sessions[1]!.clientId,
-      role: 'member',
-      phase: 'restart-a',
-    });
-    const durableAfterLaterA = await waitForDurableState(input.databaseUrl, (state) =>
-      assertSinglePublisherHeadAdvanced({
-        state,
-        priorHeads: liveBEvidence.publisherHeads,
-      }),
+    const laterA = await withManagedApiServerSuspended(
+      input.controls,
+      input.secondaryPlan.port,
+      async () => {
+        const revision = await api.updateMemberRole({
+          ...group,
+          actor: sessions[0]!,
+          memberClientId: sessions[1]!.clientId,
+          role: 'member',
+          phase: 'restart-a',
+        });
+        const durable = await waitForDurableState(input.databaseUrl, (state) =>
+          assertSinglePublisherHeadAdvanced({
+            state,
+            priorHeads: liveBEvidence.publisherHeads,
+          }),
+        );
+        const evidence = assertSinglePublisherHeadAdvanced({
+          state: durable,
+          priorHeads: liveBEvidence.publisherHeads,
+        });
+        return { revision, evidence };
+      },
     );
-    const laterAEvidence = assertSinglePublisherHeadAdvanced({
-      state: durableAfterLaterA,
-      priorHeads: liveBEvidence.publisherHeads,
-    });
+    const laterARevision = laterA.revision;
+    const laterAEvidence = laterA.evidence;
     if (laterAEvidence.advancedPublisherStreamId !== liveAEvidence.advancedPublisherStreamId) {
       throw new Error('Restart A mutation appended through the wrong publisher stream.');
     }
     phase = 'restart-b-while-c-stopped';
-    const laterBRevision = await api.updateDescription({
-      ...group,
-      actor: sessions[2]!,
-      phase: 'restart-b',
-    });
-    const durableBeforeRestart = await waitForDurableState(input.databaseUrl, (state) =>
-      assertSinglePublisherHeadAdvanced({
-        state,
-        priorHeads: laterAEvidence.publisherHeads,
-      }),
+    const laterB = await withManagedApiServerSuspended(
+      input.controls,
+      input.primaryPlan.port,
+      async () => {
+        const revision = await api.updateDescription({
+          ...group,
+          actor: sessions[2]!,
+          phase: 'restart-b',
+        });
+        const durable = await waitForDurableState(input.databaseUrl, (state) =>
+          assertSinglePublisherHeadAdvanced({
+            state,
+            priorHeads: laterAEvidence.publisherHeads,
+          }),
+        );
+        const evidence = assertSinglePublisherHeadAdvanced({
+          state: durable,
+          priorHeads: laterAEvidence.publisherHeads,
+        });
+        return { revision, evidence, durable };
+      },
     );
-    const laterBEvidence = assertSinglePublisherHeadAdvanced({
-      state: durableBeforeRestart,
-      priorHeads: laterAEvidence.publisherHeads,
-    });
+    const laterBRevision = laterB.revision;
+    const laterBEvidence = laterB.evidence;
+    const durableBeforeRestart = laterB.durable;
     if (laterBEvidence.advancedPublisherStreamId !== liveBEvidence.advancedPublisherStreamId) {
       throw new Error('Restart B mutation appended through the wrong publisher stream.');
     }
@@ -271,6 +363,7 @@ export async function runApiV1RtcTopologyReplayProof(
           B: liveBObservations[0]!.messageId,
         },
         metrics: metricEvidence,
+        publisherClaimScheduling: 'non-target-process-suspended',
         notificationsDisabled: true,
         queueWorkersDisabled: true,
       },
@@ -300,98 +393,4 @@ export async function runApiV1RtcTopologyReplayProof(
   } finally {
     for (const socket of sockets) socket.close();
   }
-}
-
-async function loginProofSessions(
-  api: ApiV1RtcTopologyProofApi,
-  input: ApiV1RtcTopologyReplayProofInput,
-): Promise<readonly ProofSession[]> {
-  const nodes = [
-    { label: 'N1', principal: 'alice' as const, plan: input.primaryPlan },
-    { label: 'N2', principal: 'bob' as const, plan: input.primaryPlan },
-    { label: 'N3', principal: 'alice' as const, plan: input.secondaryPlan },
-    { label: 'N4', principal: 'bob' as const, plan: input.secondaryPlan },
-    { label: 'N5', principal: 'alice' as const, plan: input.tertiaryPlan },
-    { label: 'N6', principal: 'bob' as const, plan: input.tertiaryPlan },
-  ];
-  const sessions: ProofSession[] = [];
-  for (const node of nodes) {
-    sessions.push(
-      await api.login({
-        label: node.label,
-        principal: node.principal,
-        apiBaseUrl: node.plan.baseUrl,
-        wsBaseUrl: node.plan.baseUrl.replace(/^http/, 'ws'),
-      }),
-    );
-  }
-  return sessions;
-}
-
-function assertPrincipalSessionContract(sessions: readonly ProofSession[]): void {
-  const alice = sessions.filter((session) => session.principal === 'alice');
-  const bob = sessions.filter((session) => session.principal === 'bob');
-  for (const principalSessions of [alice, bob]) {
-    if (principalSessions.length !== 3)
-      throw new Error('Proof principal session count is invalid.');
-    if (new Set(principalSessions.map((session) => session.clientId)).size !== 1) {
-      throw new Error('Proof sessions for one principal did not share one client identity.');
-    }
-    if (new Set(principalSessions.map((session) => session.sessionId)).size !== 3) {
-      throw new Error('Proof sessions for one principal were not distinct.');
-    }
-  }
-}
-
-async function prepareGroup(
-  api: ApiV1RtcTopologyProofApi,
-  group: ProofGroupInput,
-  sessions: readonly ProofSession[],
-): Promise<void> {
-  await api.createGroup({ ...group, owner: sessions[0]! });
-  await api.activateMember({
-    ...group,
-    actor: sessions[0]!,
-    memberClientId: sessions[0]!.clientId,
-  });
-  await api.activateMember({
-    ...group,
-    actor: sessions[1]!,
-    memberClientId: sessions[1]!.clientId,
-  });
-  for (const session of sessions) await api.connectPresence({ ...group, actor: session });
-}
-
-async function attachAllSessions(
-  api: ApiV1RtcTopologyProofApi,
-  sessions: readonly ProofSession[],
-): Promise<readonly ApiV1RtcTopologyProofSocket[]> {
-  const sockets: ApiV1RtcTopologyProofSocket[] = [];
-  try {
-    for (const session of sessions) {
-      const ticket = await api.issueWebSocketTicket(session);
-      sockets.push(await ApiV1RtcTopologyProofSocket.open(session, ticket));
-    }
-    return sockets;
-  } catch (error) {
-    sockets.forEach((socket) => socket.close());
-    throw error;
-  }
-}
-
-function toReplacementPlan(
-  tertiaryPlan: ManagedApiServerPlan,
-  artifactDir: string,
-): ManagedApiServerPlan {
-  return {
-    ...tertiaryPlan,
-    logPath: `${artifactDir.replace(/\/+$/, '')}/api-v1-server-tertiary-restart.log`,
-  };
-}
-
-function requireExecutionToken(value: string): string {
-  if (!/^[a-f0-9]{24}$/.test(value)) {
-    throw new TypeError('RTC topology replay proof execution token is invalid.');
-  }
-  return value;
 }

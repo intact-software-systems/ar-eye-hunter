@@ -12,7 +12,11 @@ import {
     DEFAULT_STATE_APPLICATION_ID,
     DEFAULT_STATE_WORKSPACE_ID,
 } from '@shared/api/state-types.ts';
-import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
+import {
+    newALBroadcastMessage,
+    newALEventRoute,
+    newALUnicastMessage,
+} from '@shared/al-contracts/al-contract.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
@@ -641,6 +645,152 @@ describe('browser data caches state scope filtering', () => {
         expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(3);
     });
 
+    it.each([
+        'rtc-topology-current-repair',
+        'rtc-topology-hydration',
+    ] as const)(
+        'adopts incomparable durable current state from %s',
+        async (deliveryKind) => {
+            const manager = createWebRtcGroupManager();
+            const clientData: ClientInfo = {
+                clientId: 'alice',
+                sessionId: 'session-a',
+                isOnline: true,
+            };
+            let onInboxMessage:
+                | ((message: unknown) => Promise<void>)
+                | undefined;
+            const webSocketQueueBox = {
+                onAllInboxMessagesDo: vi.fn((callback: {
+                    onMessage: (message: unknown) => Promise<void>;
+                }) => {
+                    onInboxMessage = callback.onMessage;
+                    return webSocketQueueBox;
+                }),
+            };
+            const groupSnapshot = createGroupSnapshot(
+                'room-current-repair',
+                DEFAULT_STATE_APPLICATION_ID,
+                DEFAULT_STATE_WORKSPACE_ID,
+                ['session-a', 'session-b'],
+                2,
+            );
+            const historical = createTopologySnapshot(
+                groupSnapshot,
+                { groupRevision: 4, presenceRevision: 6 },
+                7,
+            );
+            const current = createTopologySnapshot(
+                groupSnapshot,
+                { groupRevision: 5, presenceRevision: 5 },
+                8,
+            );
+            dataCaches.initialise(webSocketQueueBox, manager, clientData);
+            const receive = onInboxMessage;
+            if (!receive) throw new Error('WebSocket topology callback was not installed.');
+
+            await receive(withTopologyMessageId(
+                newALBroadcastMessage(
+                    'server-a',
+                    newALEventRoute(
+                        AppTopics.overlayTopology,
+                        groupSnapshot.group.groupId,
+                        'historical-topology',
+                    ),
+                    'room',
+                    AppTopics.overlayTopology,
+                    historical,
+                    { groupRef: groupSnapshot.group },
+                ),
+                JSON.stringify(['rtc-topology-publication', 'historical-work']),
+            ));
+            await expect(receive(withTopologyMessageId(
+                newCurrentStateTopologyMessage(
+                    deliveryKind,
+                    'rallar-server',
+                    groupSnapshot,
+                    current,
+                    'mismatched-current-topology',
+                ),
+                toCurrentTopologyMessageId(deliveryKind, {
+                    ...current,
+                    version: current.version + 1,
+                }),
+            ))).rejects.toThrow('Overlay revision conflict');
+            expect(findOverlayById(current.overlayId)).toMatchObject({
+                sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
+                overlayVersion: historical.version,
+            });
+            await expect(receive(withTopologyMessageId(
+                newCurrentStateTopologyMessage(
+                    deliveryKind,
+                    'session-a',
+                    groupSnapshot,
+                    current,
+                    'spoofed-current-topology',
+                ),
+                toCurrentTopologyMessageId(deliveryKind, current),
+            ))).rejects.toThrow('Overlay revision conflict');
+            expect(findOverlayById(current.overlayId)).toMatchObject({
+                sourceGroupStateCausalRevision: historical.sourceGroupStateCausalRevision,
+                overlayVersion: historical.version,
+            });
+            await receive(withTopologyMessageId(
+                newCurrentStateTopologyMessage(
+                    deliveryKind,
+                    'rallar-server',
+                    groupSnapshot,
+                    current,
+                    'current-topology',
+                ),
+                toCurrentTopologyMessageId(deliveryKind, current),
+            ));
+
+            expect(findOverlayById(current.overlayId)).toMatchObject({
+                sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
+                overlayVersion: current.version,
+            });
+            expect(manager.notifyOverlayTopologyChanged).toHaveBeenCalledTimes(2);
+
+            const delayed = createTopologySnapshot(
+                groupSnapshot,
+                { groupRevision: 4, presenceRevision: 4 },
+                9,
+            );
+            await receive(withTopologyMessageId(
+                newCurrentStateTopologyMessage(
+                    deliveryKind,
+                    'rallar-server',
+                    groupSnapshot,
+                    delayed,
+                    'delayed-current-topology',
+                ),
+                toCurrentTopologyMessageId(deliveryKind, delayed),
+            ));
+            expect(findOverlayById(current.overlayId)).toMatchObject({
+                sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
+                overlayVersion: current.version,
+            });
+
+            const equalConflict = { ...current, name: 'Conflicting current topology' };
+            await expect(receive(withTopologyMessageId(
+                newCurrentStateTopologyMessage(
+                    deliveryKind,
+                    'rallar-server',
+                    groupSnapshot,
+                    equalConflict,
+                    'conflicting-current-topology',
+                ),
+                toCurrentTopologyMessageId(deliveryKind, equalConflict),
+            ))).rejects.toThrow('Overlay revision conflict');
+            expect(findOverlayById(current.overlayId)).toMatchObject({
+                name: current.name,
+                sourceGroupStateCausalRevision: current.sourceGroupStateCausalRevision,
+                overlayVersion: current.version,
+            });
+        },
+    );
+
     it('uses snapshot hydration as convergence after state event details are missed', async () => {
         const manager = createWebRtcGroupManager();
         const clientData: ClientInfo = {
@@ -992,6 +1142,110 @@ function createGroupSnapshot(
         memberCount: sessionIds.length,
         onlineMemberCount: sessionIds.length,
     };
+}
+
+function createTopologySnapshot(
+    group: GroupSnapshot,
+    causalRevision: GroupSnapshot['causalRevision'],
+    version: number,
+): RallarOverlayTopologySnapshot {
+    return {
+        sourceGroupStateCausalRevision: causalRevision,
+        state: 'active',
+        overlayId: toScopedOverlayId(group.group),
+        groupRef: {
+            applicationId: group.group.applicationId,
+            workspaceId: group.group.workspaceId,
+            groupId: group.group.groupId,
+        },
+        name: group.group.displayName,
+        topology: 'tree',
+        activeSessionIds: ['session-a', 'session-b'],
+        nextHopsBySessionId: {
+            'session-a': ['session-b'],
+            'session-b': ['session-a'],
+        },
+        degreeLimit: 5,
+        version,
+        createdByClientId: 'server',
+        createdAtEpochMs: 1,
+        updatedAtEpochMs: version,
+    };
+}
+
+function withTopologyMessageId<T extends { readonly id: Readonly<{ readonly msgId: string }> }>(
+    message: T,
+    messageId: string,
+): T {
+    return {
+        ...message,
+        id: { ...message.id, msgId: messageId },
+    };
+}
+
+function newCurrentStateTopologyMessage(
+    deliveryKind: 'rtc-topology-current-repair' | 'rtc-topology-hydration',
+    senderId: string,
+    group: GroupSnapshot,
+    topology: RallarOverlayTopologySnapshot,
+    resourceId: string,
+) {
+    const route = newALEventRoute(
+        AppTopics.overlayTopology,
+        group.group.groupId,
+        resourceId,
+    );
+    return deliveryKind === 'rtc-topology-current-repair'
+        ? newALBroadcastMessage(
+            senderId,
+            route,
+            'room',
+            AppTopics.overlayTopology,
+            topology,
+            { groupRef: group.group },
+        )
+        : (() => {
+            const message = newALUnicastMessage(
+                senderId,
+                route,
+                'session-a',
+                AppTopics.overlayTopology,
+                topology,
+            );
+            return {
+                ...message,
+                id: { ...message.id, sessionId: 'session-a' },
+            };
+        })();
+}
+
+function toCurrentTopologyMessageId(
+    deliveryKind: 'rtc-topology-current-repair' | 'rtc-topology-hydration',
+    topology: RallarOverlayTopologySnapshot,
+): string {
+    const revision = topology.sourceGroupStateCausalRevision;
+    return deliveryKind === 'rtc-topology-current-repair'
+        ? JSON.stringify([
+            deliveryKind,
+            JSON.stringify([
+                topology.groupRef.applicationId,
+                topology.groupRef.workspaceId === undefined
+                    ? ['absent']
+                    : ['present', topology.groupRef.workspaceId],
+                topology.groupRef.groupId,
+            ]),
+            revision.groupRevision,
+            revision.presenceRevision,
+            topology.version,
+        ])
+        : JSON.stringify([
+            deliveryKind,
+            'session-a',
+            'generation-a',
+            revision.groupRevision,
+            revision.presenceRevision,
+            topology.version,
+        ]);
 }
 
 function withGroupCausalRevision(

@@ -18,6 +18,8 @@ export interface ManagedApiServerPlanLifecycleInput {
 export interface ManagedApiServerLifecycleControls {
   readonly stop: (port: number) => Promise<void>;
   readonly restart: (port: number, replacementPlan: ManagedApiServerPlan) => Promise<void>;
+  readonly suspend: (port: number) => Promise<void>;
+  readonly resume: (port: number) => Promise<void>;
 }
 
 export interface ManagedApiServerPlanLifecycleDependencies {
@@ -48,6 +50,7 @@ export async function withManagedApiServerPlans(
     }>
   > = [];
   const activeServers = new Map<number, ManagedApiServer>();
+  const suspendedServers = new Set<ManagedApiServer>();
   const managedPorts = new Set(input.plans.map((plan) => plan.port));
   const logPaths = new Set<string>();
 
@@ -78,6 +81,10 @@ export async function withManagedApiServerPlans(
     if (!server) {
       throw new Error(`Managed API-v1 port ${port} is not running.`);
     }
+    if (suspendedServers.has(server)) {
+      server.child.kill('SIGCONT');
+      suspendedServers.delete(server);
+    }
     await dependencies.stopServer(server.child);
     await server.streamsDrained;
     activeServers.delete(port);
@@ -85,6 +92,22 @@ export async function withManagedApiServerPlans(
 
   const controls: ManagedApiServerLifecycleControls = {
     stop,
+    suspend: async (port) => {
+      const server = requireActiveServer(activeServers, port);
+      if (suspendedServers.has(server)) {
+        throw new Error(`Managed API-v1 port ${port} is already suspended.`);
+      }
+      server.child.kill('SIGSTOP');
+      suspendedServers.add(server);
+    },
+    resume: async (port) => {
+      const server = requireActiveServer(activeServers, port);
+      if (!suspendedServers.has(server)) {
+        throw new Error(`Managed API-v1 port ${port} is not suspended.`);
+      }
+      server.child.kill('SIGCONT');
+      suspendedServers.delete(server);
+    },
     restart: async (port, replacementPlan) => {
       if (!managedPorts.has(port)) {
         throw new Error(`Managed API-v1 port ${port} does not belong to this run.`);
@@ -128,10 +151,28 @@ export async function withManagedApiServerPlans(
         .reverse()
         .filter(({ plan, server }) => activeServers.get(plan.port) === server)
         .map(async ({ plan, server }) => {
+          if (suspendedServers.has(server)) {
+            try {
+              server.child.kill('SIGCONT');
+            } finally {
+              suspendedServers.delete(server);
+            }
+          }
           await dependencies.stopServer(server.child);
           await server.streamsDrained;
           activeServers.delete(plan.port);
         }),
     );
   }
+}
+
+function requireActiveServer(
+  activeServers: ReadonlyMap<number, ManagedApiServer>,
+  port: number,
+): ManagedApiServer {
+  const server = activeServers.get(port);
+  if (!server) {
+    throw new Error(`Managed API-v1 port ${port} is not running.`);
+  }
+  return server;
 }

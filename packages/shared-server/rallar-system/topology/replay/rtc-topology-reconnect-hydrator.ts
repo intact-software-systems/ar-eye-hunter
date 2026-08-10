@@ -193,6 +193,7 @@ export class RtcTopologyReconnectHydrator {
           limit: RTC_TOPOLOGY_HYDRATION_PAGE_SIZE,
         });
       } catch {
+        throwIfEitherAborted(signal, this.#abort.signal);
         for (const connection of connections) {
           if (this.#isCurrent(connection)) {
             retry.add(connection);

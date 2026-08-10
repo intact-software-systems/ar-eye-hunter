@@ -146,6 +146,28 @@ describe('RtcTopologyReconnectHydrator', () => {
     expect(harness.outcomes).toEqual(['retry']);
   });
 
+  it('propagates an external abort that coincides with a topology page failure', async () => {
+    let releaseTopologyPage: (() => void) | undefined;
+    const topologyPageBlocked = new Promise<void>((resolve) => {
+      releaseTopologyPage = resolve;
+    });
+    const harness = createHarness({
+      topologyPageFailures: 1,
+      beforeTopologyPageReturns: async () => await topologyPageBlocked,
+    });
+    harness.addConnection('session-1', 'generation-1');
+    const controller = new AbortController();
+    const hydration = harness.hydrator.hydrateOpenConnections(controller.signal);
+    await vi.waitFor(() => expect(harness.pageLimits).toEqual([100]));
+
+    const abortReason = new Error('gap page scan cancelled');
+    controller.abort(abortReason);
+    releaseTopologyPage?.();
+
+    await expect(hydration).rejects.toBe(abortReason);
+    expect(harness.outcomes).toEqual([]);
+  });
+
   it('scans topology in fixed pages of 100 and yields between pages', async () => {
     const topologies = Array.from({ length: 101 }, (_, index) =>
       createTopology({
@@ -263,6 +285,7 @@ interface HarnessOverrides {
   readonly scheduler?: ManualScheduler;
   readonly currentTopologyFailures?: number;
   readonly topologyPageFailures?: number;
+  readonly beforeTopologyPageReturns?: () => Promise<void>;
   readonly groupRevisionsByRead?: readonly number[];
 }
 
@@ -284,6 +307,7 @@ function createHarness(overrides: HarnessOverrides = {}) {
     topologies: {
       listSnapshotEntriesPage: async ({ afterKey, limit }) => {
         pageLimits.push(limit);
+        await overrides.beforeTopologyPageReturns?.();
         if (topologyPageFailures > 0) {
           topologyPageFailures -= 1;
           throw new Error('transient topology page failure');

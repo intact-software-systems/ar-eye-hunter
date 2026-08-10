@@ -11,7 +11,7 @@ Status: active; implementation is in progress as the three-PR stack below.
 Plan evidence base: `origin/main` was
 `726edc7c33386f9282f6594ec4b5c3c02033fbf1` when execution started on
 2026-08-09. The latest publication review revalidated `origin/main` at
-`cd843d154c5698912eb99a92039ecd31464aef0f`; revalidate the checkout, issue,
+`72b6cc34e3bef01cd19f10a839c98050c3b8f26d`; revalidate the checkout, issue,
 paths, contracts, and commands before implementation and after every rebase.
 Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
 
@@ -19,12 +19,15 @@ Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/
 
 Current working-tree checkpoint on 2026-08-10:
 
-- `origin/main` advanced to `cd843d154c5698912eb99a92039ecd31464aef0f`.
+- `origin/main` advanced to `72b6cc34e3bef01cd19f10a839c98050c3b8f26d`.
   The compatibility review covers the earlier PR #145 changes plus merged PR
   #103's contract-preserving group-topology owner move and additive
   position-balanced benchmark tooling, and PR #144's Hetzner RTC lifecycle
   hardening. The latest `0b1fa13e..cd843d15` delta changes only the historical
-  RTC performance-baseline plan and does not overlap this stack. The stack
+  RTC performance-baseline plan and does not overlap this stack. The later
+  `cd843d15..72b6cc34` delta also changes only the RTC program roadmap and
+  activates its corrected baseline protocol; it does not change a durable-replay
+  runtime, test, workflow, or acceptance path. The stack
   otherwise overlaps four test/performance paths but no changed durable-replay
   runtime owner; public, transaction, authorization, workload, and acceptance
   contracts remain intact. Because PR #141 is still open at its unchanged head,
@@ -147,6 +150,71 @@ topology convergence 36/36. Because this is a tracked content change, every
 earlier exact-tree result and workflow is obsolete; the replacement SHA must
 rerun the complete local, database, black-box, performance, and publication
 sequence.
+
+The second published PR 3 candidate was
+`7263d93b70392b78bf6c002fb1a4dcd54c0ba2ba`, tree
+`d386ed8359cd0878e867a7d4b373743b71ab9508`. It passed the replacement focused
+set (10 files and 138 tests), full workspace typecheck, governance (33 files and
+371 tests), strict changed-style review, warning-only full style scan, unit (734
+files and 6,662 tests), `test:ci`, build, browser bundle budgets, API check plus
+420 tests, PostgreSQL integration (13 files and 27 tests), memory black-box
+13/13, and the fixed replay-drain operation-count workload. Manual exact-SHA API
+v1 Medium-Scale Gate run `31367660135` passed the unchanged 2,748-step workload
+plus all five cluster recipes, and Topology Replay Gate run `31367659994` passed
+with downloaded artifacts binding the same SHA and tree. Its deterministic
+artifact records exact A/B publication message identities, one HEAD/cursor
+advance on each distinct publisher, exactly two poll-only replay entries, and
+exact current-state hydration identities for C'. Branch Release Gate run
+`31367642080` remained in progress.
+
+A fresh review of that exact commit found one remaining external-cancellation
+race. If the topology page read rejected after the gap-repair signal aborted,
+the page-scan catch converted the abort to a generic retry instead of preserving
+the caller's abort reason. A focused TDD case failed with `requires retry`, then
+passed after the catch rechecked both the external and hydrator-stop signals
+before classifying a transient read failure. The focused hydrator suite now
+passes 17/17. This two-file tracked correction invalidates every result and
+workflow attached to `7263d93b`; a replacement exact SHA must rerun the full
+local, database, black-box, performance, and publication sequence.
+
+The subsequent whole-tree review found two deeper convergence/proof boundaries.
+First, a browser that had adopted a historical topology with an incomparable
+causal tuple rejected the durable current repair that the server selected to
+restore current state. The browser now recognizes only exact, server-origin
+current-repair or reconnect-hydration identities whose group/session audience,
+causal tuple, and version match the validated payload. That path overrides only
+an incomparable prior server snapshot; normal publication semantics still drop
+dominated state and reject equal-revision conflicting content. TDD covers both
+current-state identities, a forged session sender, mismatched identity fields,
+a delayed dominated repair, and an equal-tuple content conflict.
+
+Second, A/B HTTP ingress did not determine which process claimed the global
+`APP_OUTBOX` row, so the original proof's A/B labels were scheduler-dependent.
+The managed proof lifecycle now suspends the non-target API process while each
+baseline, live, and C-stopped mutation is claimed and durably appended, always
+resuming it in `finally` and before shutdown cleanup. It seeds and verifies two
+distinct publisher streams before opening the live phase. Before every HEAD
+snapshot or exact one-entry assertion, the proof also requires zero unresolved
+`APP_OUTBOX` rows. The database reader checks that queue condition before
+reading streams/cursors, closing the stale-HEAD/zero-work race because append
+and outbox completion commit atomically. Extracted fixture, scheduling, and
+browser state-cache boundaries keep the changed production/coordinator files
+within the repository reviewability limit.
+
+The current uncommitted review candidate passes all 13 affected Vitest files
+(165 tests), full workspace typecheck, and strict changed-style review with no
+new findings. An independent current-tree review found no remaining code
+correctness blocker. The real profile-only PostgreSQL command created and
+migrated an isolated 20-migration database and passed the unchanged 10-second
+three-process proof. Its credential-free artifact records distinct seeded A/B
+publisher HEADs 4/6, exact live HEADs 5/7 with the matching publication
+identities, three poll wakes, zero notification/local-commit wakes, exactly two
+replayed entries, later A/B HEADs 6/8, and exact C' hydration identities with a
+new replacement consumer stream and no post-start mutation. These are
+working-tree review results only. The replacement commit must include all four
+new proof/browser modules and rerun every complete local, database, black-box,
+performance, exact-SHA, and publication gate; all `7263d93b` results remain
+obsolete.
 
 PR 1 progress:
 
