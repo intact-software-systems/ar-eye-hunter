@@ -12,6 +12,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {

@@ -108,7 +108,9 @@ export class TopologyAppInboxHandler {
       }
       return topologyManagementService.toTopologyConfigMutationResult(computed);
     });
-    if (computed.outcome === 'write') this.dependencies.wakeQueue?.();
+    if (computed.outcome === 'write') {
+      this.dependencies.wakeQueue?.();
+    }
     return result;
   }
 
@@ -153,6 +155,8 @@ export class TopologyAppInboxHandler {
 export function requireTopologyManagementService(
   service: GroupTopologyManagementService | undefined,
 ): GroupTopologyManagementService {
-  if (!service) throw new TypeError('Topology management service is not configured');
+  if (!service) {
+    throw new TypeError('Topology management service is not configured');
+  }
   return service;
 }

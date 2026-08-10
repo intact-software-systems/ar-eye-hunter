@@ -11,8 +11,8 @@ import { validateClientMutationIdempotencyRecord } from
     '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { validateGroupMutationCommand } from
     '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { validateGroupTopologyConfigMutationRecord } from
-    '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+import { readTopologyConfigMutationRecordBoundary } from
+    '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import { validatePersistedAppInboxCommandIdentity } from
     '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
 import { AppInboxType } from
@@ -36,6 +36,7 @@ import {
     readString,
     readTopologyReconfigureCommand,
 } from './api-v1-state-write-command-codecs.ts';
+import { toAuthoritativeReceiptEvidence } from './api-v1-state-write-receipt-projection.ts';
 
 export interface AuthoritativeReceiptEvidence extends PublicResultReceiptIdentity {
     readonly appInboxResourceId: string;
@@ -238,7 +239,11 @@ async function readClientReceiptByIdentity(
         valid: true,
         commandType,
         commandIds: [requestId],
-        receipt: toReceipt(row.ri_resource_id, stored.receipt, 'physical-resource-id'),
+        receipt: toAuthoritativeReceiptEvidence(
+            row.ri_resource_id,
+            stored.receipt,
+            'physical-resource-id',
+        ),
     };
 }
 
@@ -284,7 +289,11 @@ async function readGroupReceipt(
         valid: true,
         commandType,
         commandIds: [command.commandId],
-        receipt: toReceipt(row.ri_resource_id, stored.receipt, 'physical-resource-id'),
+        receipt: toAuthoritativeReceiptEvidence(
+            row.ri_resource_id,
+            stored.receipt,
+            'physical-resource-id',
+        ),
     };
 }
 
@@ -326,8 +335,11 @@ async function readTopologyReceipt(
     }
     const stored = await new GroupTopologyConfigRepository(runtime)
         .findMutationRecord(groupRef, requestId);
-    validateGroupTopologyConfigMutationRecord(stored, { groupRef, requestId });
-    if (stored.commandHash !== commandHash || stored.receipt.commandHash !== commandHash) {
+    const record = readTopologyConfigMutationRecordBoundary(
+        stored,
+        { groupRef, requestId },
+    );
+    if (record.commandHash !== commandHash || record.receipt.commandHash !== commandHash) {
         throw new TypeError('topology authoritative receipt differs from command hash');
     }
     return {
@@ -335,57 +347,11 @@ async function readTopologyReceipt(
         valid: true,
         commandType,
         commandIds: [requestId],
-        receipt: toReceipt(row.ri_resource_id, stored.receipt, 'logical-msg-id'),
-    };
-}
-
-function toReceipt(
-    appInboxResourceId: string,
-    receipt: Readonly<{
-        commandId: string; commandHash: string; outcome: string; outboxIds: readonly string[];
-        requestId?: string | null; aggregateRef?: Readonly<{
-            applicationId: string; workspaceId: string; principalId?: string; groupId?: string
-        }>;
-        stateRevision?: number; snapshotVersion?: number; eventId?: string | null
-        causalRevision?: PublicResultReceiptIdentity['causalRevision']
-        operation?: string; target?: 'config' | 'override'; groupRef?: Readonly<{
-            applicationId: string; workspaceId: string; groupId: string
-        }>;
-        acceptedVersion?: number; acceptedStorageRevision?: number | null;
-        acceptedCreatedAtEpochMs?: number | null; acceptedUpdatedAtEpochMs?: number | null;
-        acceptedExpiresAtEpochMs?: number | null; acceptedConfig?: unknown;
-    }>,
-    identityKind: ReceiptEffectIdentityKind,
-): AuthoritativeReceiptEvidence {
-    return {
-        appInboxResourceId,
-        commandId: receipt.commandId,
-        commandHash: receipt.commandHash,
-        outcome: receipt.outcome,
-        outboxIds: [...receipt.outboxIds],
-        identityKind,
-        ...(receipt.requestId !== undefined ? { requestId: receipt.requestId } : {}),
-        ...(receipt.aggregateRef ? { aggregateRef: { ...receipt.aggregateRef } } : {}),
-        ...(receipt.stateRevision !== undefined ? { stateRevision: receipt.stateRevision } : {}),
-        ...(receipt.causalRevision ? { causalRevision: { ...receipt.causalRevision } } : {}),
-        ...(receipt.snapshotVersion !== undefined
-            ? { snapshotVersion: receipt.snapshotVersion }
-            : {}),
-        ...(receipt.eventId !== undefined ? { eventId: receipt.eventId } : {}),
-        ...(receipt.operation && receipt.target && receipt.groupRef &&
-                receipt.acceptedVersion !== undefined
-            ? { topology: {
-                operation: receipt.operation,
-                target: receipt.target,
-                groupRef: { ...receipt.groupRef },
-                acceptedVersion: receipt.acceptedVersion,
-                acceptedStorageRevision: receipt.acceptedStorageRevision ?? null,
-                acceptedCreatedAtEpochMs: receipt.acceptedCreatedAtEpochMs ?? null,
-                acceptedUpdatedAtEpochMs: receipt.acceptedUpdatedAtEpochMs ?? null,
-                acceptedExpiresAtEpochMs: receipt.acceptedExpiresAtEpochMs ?? null,
-                acceptedConfig: receipt.acceptedConfig ?? null,
-            } }
-            : {}),
+        receipt: toAuthoritativeReceiptEvidence(
+            row.ri_resource_id,
+            record.receipt,
+            'logical-msg-id',
+        ),
     };
 }
 

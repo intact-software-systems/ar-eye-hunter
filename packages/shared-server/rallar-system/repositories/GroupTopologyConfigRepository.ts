@@ -22,14 +22,15 @@ import type {
     GroupTopologyConfigGenerationTarget,
     GroupTopologyConfigInvariantGeneration,
     GroupTopologyConfigMutationRecord,
-} from '../services/group-topology-config-mutations.ts';
+} from '../topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import * as configBoundary from '../topology/config/mutation/topology-config-mutation-boundary.ts';
 import {
     validateGroupTopologyConfigGeneration,
     validateGroupTopologyConfigInvariantGeneration,
     validateGroupTopologyConfigMutationRecord,
     validateStoredGroupTopologyConfig,
     validateStoredGroupTopologyOverride,
-} from '../services/group-topology-config-mutations.ts';
+} from '../topology/config/mutation/validate-topology-config-records.ts';
 import {
     createGroupTopologyMutationExactReadDecoders,
     createGroupTopologyMutationExactReadLocations,
@@ -700,13 +701,10 @@ function decodeTopologyMutationValue(
         trustedRef,
         trustedRequestId,
     );
-    validateTopologyBoundary(entry.key, () => {
-        validateGroupTopologyConfigMutationRecord(value, {
-            groupRef: decoded,
-            requestId: decoded.requestId,
-        });
-    });
-    const record = value as GroupTopologyConfigMutationRecord;
+    const expected = { groupRef: decoded, requestId: decoded.requestId };
+    const record = validateTopologyBoundary(entry.key, () =>
+        configBoundary.readTopologyConfigMutationRecordBoundary(value, expected)
+    );
     assertTopologyGroupRef(
         record.groupRef,
         decoded,
@@ -740,10 +738,13 @@ function decodeTopologyGenerationValue(
         trustedRef,
         trustedTarget,
     );
-    validateTopologyBoundary(entry.key, () => {
-        validateGroupTopologyConfigGeneration(value, decoded, decoded.target);
-    });
-    const generation = value as GroupTopologyConfigGeneration;
+    const generation = validateTopologyBoundary(entry.key, () =>
+        configBoundary.readTopologyConfigGenerationBoundary(
+            value,
+            decoded,
+            decoded.target,
+        )
+    );
     assertTopologyGroupRef(
         generation.groupRef,
         decoded,
@@ -770,10 +771,9 @@ function decodeTopologyInvariantValue(
     trustedRef: GroupRef,
 ): GroupTopologyConfigInvariantGeneration {
     const decoded = assertTopologyInvariantSlot(entry.key, trustedRef);
-    validateTopologyBoundary(entry.key, () => {
-        validateGroupTopologyConfigInvariantGeneration(value, decoded);
-    });
-    const generation = value as GroupTopologyConfigInvariantGeneration;
+    const generation = validateTopologyBoundary(entry.key, () =>
+        configBoundary.readTopologyConfigInvariantGenerationBoundary(value, decoded)
+    );
     assertTopologyGroupRef(
         generation.groupRef,
         decoded,

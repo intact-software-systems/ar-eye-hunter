@@ -11,6 +11,8 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
@@ -29,7 +31,8 @@ import {
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { type ClientMutationIdempotencyRecord, validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { type GroupMutationIdempotencyRecord, validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { type GroupTopologyConfigMutationRecord, validateGroupTopologyConfigMutationRecord } from '@shared-server/rallar-system/services/group-topology-config-mutations.ts';
+import { readTopologyConfigMutationRecordBoundary } from
+  '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
@@ -47,9 +50,10 @@ import {
   recordRallarTiming,
 } from '@shared-server/rallar-system/services/timing.ts';
 import {
-  STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
-  PRODUCTION_STATE_WRITE_MUTATION_CONTRACT,
-} from './compare-api-v1-state-write-results.mjs';
+  createStateWriteBenchmarkArtifact,
+  readBenchmarkGitIdentity,
+} from './state-write/api-v1-state-write-benchmark-artifact.ts';
+import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from './compare-api-v1-state-write-results.mjs';
 import {
   type AppInboxAttemptObservation,
   deriveAppInboxAttemptObservations,
@@ -63,8 +67,12 @@ import {
   projectTopologyReceiptEvidence,
 } from './api-v1-state-write-receipt-evidence.ts';
 import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
+import {
+  parseGroupTopologyRegressionReasons,
+} from './pool-group-topology-state-write-position-balanced-results.mjs';
 export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
 export { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
+export { parseGroupTopologyRegressionReasons };
 
 const DEFAULT_DATABASE_URL = 'postgres://app:app@localhost:5432/appdb';
 const CLIENT_COUNT = 100;
@@ -287,6 +295,10 @@ async function main(): Promise<void> {
     );
   }
   assertPerfOutputPath(options.out);
+  const gitIdentity = await readBenchmarkGitIdentity();
+  const reasonsText = options.regressionReasonsFile === undefined
+    ? undefined : await Deno.readTextFile(options.regressionReasonsFile);
+  const regressionReasons = parseGroupTopologyRegressionReasons(reasonsText, gitIdentity);
 
   const databaseUrl = Deno.env.get('DATABASE_URL')?.trim() || DEFAULT_DATABASE_URL;
   const runId = `state-write-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
@@ -350,48 +362,13 @@ async function main(): Promise<void> {
       console.log(JSON.stringify({ workload: workload.name, ...summary }));
     }
 
-    const artifact = {
-      schemaVersion: STATE_WRITE_ARTIFACT_SCHEMA_VERSION,
-      gitCommit: await readGitCommit(),
-      backend: options.backend,
+    const artifact = createStateWriteBenchmarkArtifact({
       generatedAt: new Date().toISOString(),
-      measurement: {
-        warmupRuns: options.warmup,
-        measuredRuns: options.runs,
-        concurrency: options.concurrency,
-        mutationTimingExcludes: ['setup', 'auth-session insertion', 'http', 'evidence queries'],
-        tailSamplesDiscarded: false,
-        counterSources: {
-          sql:
-            'thin postgres.js wrapper around both independent service clients, including production auth-session lookup and revalidation',
-          sharedBuffers: 'pg_stat_database immediately before and after each measured phase',
-          wal: 'pg_current_wal_lsn immediately before and after each measured phase',
-          lockWait: '5ms pg_stat_activity sampling of benchmark service backends waiting on Lock',
-          cpu: 'benchmark process user plus system CPU time',
-          rowsRead: 'row counts returned by the thin postgres.js wrapper',
-          serializedResultBytes:
-            'JSON byte length of values returned by the thin postgres.js wrapper',
-          transactionDuration: 'wall-clock duration of production repository sql.begin calls',
-          readTiming: 'read-classified production SQL duration from the postgres.js wrapper',
-          computeTiming:
-            'production timing-sink events explicitly labeled phase=compute; zero when unavailable',
-          validateTiming:
-            'production timing-sink events explicitly labeled phase=validate; zero when unavailable',
-          writeTiming:
-            'production client/group/topology mutation.write timing-sink events',
-          outboxTiming:
-            'direct APP_OUTBOX/WS_OUTBOX resource_inbox SQL through the postgres.js wrapper',
-          outbox: 'resource_inbox',
-          attempts:
-            'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation',
-          receipts:
-            'complete production client/group/topology idempotency receipts queried after the phase through uninstrumented repositories and projected only when every raw-command subreceipt is valid',
-          outboxIntents: 'legacy counter name retained only for governed baseline compatibility',
-        },
-      },
-      regressionReasons: [],
+      gitIdentity,
+      options,
+      regressionReasons,
       workloads,
-    };
+    });
 
     await Deno.mkdir(dirname(options.out), { recursive: true });
     await Deno.writeTextFile(options.out, `${JSON.stringify(artifact, null, 2)}\n`);
@@ -1104,15 +1081,13 @@ async function queryDurableEvidence(
         return projectClientReceiptEvidence(command.commandId, receipts);
       }
       if (command.kind === 'topology-source') {
-        const receipt = await topology.findMutationRecord(
-          { ...scope, groupId: `group-${clientIndex % groupCount}` },
+        const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
+        const receipt = readValidatedTopologyMutationReceipt(
+          await topology.findMutationRecord(groupRef, command.commandId),
+          groupRef,
           command.commandId,
         );
-        if (!isValidatedTopologyReceipt(
-          receipt,
-          { ...scope, groupId: `group-${clientIndex % groupCount}` },
-          command.commandId,
-        )) {
+        if (!receipt) {
           return undefined;
         }
         return projectTopologyReceiptEvidence(command.commandId, receipt);
@@ -1377,9 +1352,7 @@ export function isValidProductionReceipt(
 }
 
 function isValidatedReceiptIdentity(
-  value: unknown,
-  ref: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>,
-  requestId: string,
+  value: unknown, ref: GroupRef, requestId: string,
 ): value is GroupMutationIdempotencyRecord {
   try {
     validateGroupMutationIdempotencyRecord(value, ref);
@@ -1388,18 +1361,17 @@ function isValidatedReceiptIdentity(
   }
   return value.requestId === requestId && value.receipt.commandId === requestId;
 }
-
-function isValidatedTopologyReceipt(
-  value: unknown,
-  groupRef: Readonly<{ applicationId: string; workspaceId: string; groupId: string }>,
-  requestId: string,
-): value is GroupTopologyConfigMutationRecord {
+function readValidatedTopologyMutationReceipt(
+  value: unknown, groupRef: GroupRef, requestId: string,
+): GroupTopologyConfigMutationReceipt | undefined {
   try {
-    validateGroupTopologyConfigMutationRecord(value, { groupRef, requestId });
+    const record = readTopologyConfigMutationRecordBoundary(value, { groupRef, requestId });
+    return record.requestId === requestId && record.receipt.commandId === requestId
+      ? record.receipt
+      : undefined;
   } catch {
-    return false;
+    return undefined;
   }
-  return value.requestId === requestId && value.receipt.commandId === requestId;
 }
 
 function deriveCorrectness(
@@ -1574,15 +1546,6 @@ async function assertSchemaReady(sql: Sql): Promise<void> {
   }
 }
 
-async function readGitCommit(): Promise<string> {
-  const command = new Deno.Command('git', { args: ['rev-parse', 'HEAD'], stdout: 'piped' });
-  const output = await command.output();
-  if (!output.success) {
-    throw new Error('Unable to resolve git commit for benchmark artifact');
-  }
-  return new TextDecoder().decode(output.stdout).trim();
-}
-
 function summarizeSamples(samples: readonly RunSample[]): WorkloadSummary {
   const latencySamples = samples.flatMap((sample) => sample.latencySamplesMs);
   const accepted = sum(samples.map((sample) => sample.outcomes.accepted));
@@ -1713,6 +1676,7 @@ export function parseBenchmarkOptions(args: readonly string[]): {
   runs: number;
   concurrency: number;
   out: string;
+  regressionReasonsFile?: string;
 } {
   const values = new Map(
     args.map((argument) => {
@@ -1720,6 +1684,8 @@ export function parseBenchmarkOptions(args: readonly string[]): {
       return [key, rest.join('=')];
     }),
   );
+  const regressionReasonsFile = values.get('regression-reasons-file');
+  if (regressionReasonsFile !== undefined) assertPerfInputPath(regressionReasonsFile);
   return {
     backend: values.get('backend') || 'postgres',
     warmup: parseIntegerOption('warmup', values.get('warmup'), 1, 1, MAX_WARMUP_RUNS),
@@ -1732,6 +1698,7 @@ export function parseBenchmarkOptions(args: readonly string[]): {
       MAX_CONCURRENCY,
     ),
     out: values.get('out') || 'tmp/perf/api-v1-state-write-results.json',
+    ...(regressionReasonsFile === undefined ? {} : { regressionReasonsFile }),
   };
 }
 
@@ -1755,5 +1722,12 @@ function assertPerfOutputPath(path: string): void {
   const normalized = normalize(path).replaceAll('\\', '/');
   if (!normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
     throw new Error(`Benchmark output must remain under tmp/perf/: ${path}`);
+  }
+}
+
+function assertPerfInputPath(path: string): void {
+  const normalized = normalize(path).replaceAll('\\', '/');
+  if (normalized !== path || !normalized.startsWith('tmp/perf/') || normalized.includes('/../')) {
+    throw new Error(`Regression-reason input must remain under tmp/perf/: ${path}`);
   }
 }

@@ -8,7 +8,7 @@ import type { EffectiveGroupTopologyConfig } from '@shared/api/graph-topology-ma
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/services/group-topology-config-service.ts';
+import { resolveGroupTopologyConfig } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import {
   expectPendingDirectResourceOutboxEvidence,
   findDirectResourceOutboxEvidence,

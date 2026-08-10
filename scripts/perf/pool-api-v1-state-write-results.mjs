@@ -9,8 +9,7 @@ import { validateStateWritePoolingSource } from './validate-state-write-pooling-
 
 export const ORDER_BALANCED_STATE_WRITE_PROTOCOL =
   'rallar.api-v1.state-write.order-balanced-abba.v1';
-
-const SOURCE_POSITIONS = [
+const LEGACY_SOURCE_POSITIONS = [
   { key: 'approvedBaseFirst', position: 1, role: 'approved-base' },
   { key: 'candidateFirst', position: 2, role: 'candidate' },
   { key: 'candidateSecond', position: 3, role: 'candidate' },
@@ -18,9 +17,18 @@ const SOURCE_POSITIONS = [
 ];
 
 export function poolApiV1StateWriteResults(input) {
+  return poolStateWriteResults(input, LEGACY_SOURCE_POSITIONS, 'A-B-B-A');
+}
+
+export function poolApiV1StateWriteResultsForPositions(input, sourcePositions) {
+  const positions = validateSourcePositions(sourcePositions);
+  return poolStateWriteResults(input, positions, 'explicit position');
+}
+
+function poolStateWriteResults(input, sourcePositions, orderLabel) {
   validateExpectedCommits(input);
-  const sources = readAndValidateSources(input.sources);
-  validateSourceSet(sources, input);
+  const sources = readAndValidateSources(input.sources, sourcePositions);
+  validateSourceSet(sources, input, orderLabel);
   const environmentSha256 = sources[0].environmentSha256;
   const approvedBaseSources = sources.filter((source) => source.role === 'approved-base');
   const candidateSources = sources.filter((source) => source.role === 'candidate');
@@ -43,6 +51,42 @@ export function poolApiV1StateWriteResults(input) {
   };
 }
 
+function validateSourcePositions(value) {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 4 ||
+    ![0, 1, 2, 3].every((index) => Object.hasOwn(value, index))
+  ) {
+    throw new TypeError('source positions must be a dense four-entry array');
+  }
+  const positions = value.map((descriptor, index) => {
+    if (
+      !isObject(descriptor) ||
+      canonicalJson(Object.keys(descriptor).toSorted()) !== '["key","position","role"]'
+    ) {
+      throw new TypeError(
+        `source position ${index + 1} fields must be exactly key, position, role`,
+      );
+    }
+    if (typeof descriptor.key !== 'string' || descriptor.key.length === 0) {
+      throw new TypeError(`source position ${index + 1} key must be non-empty`);
+    }
+    if (descriptor.position !== index + 1) {
+      throw new TypeError('source positions must be 1, 2, 3, 4 in order');
+    }
+    if (descriptor.role !== 'approved-base' && descriptor.role !== 'candidate') {
+      throw new TypeError(`source position ${index + 1} role is unsupported`);
+    }
+    return descriptor;
+  });
+  if (new Set(positions.map(({ key }) => key)).size !== 4) {
+    throw new TypeError('source position keys must be unique');
+  }
+  if (positions.filter(({ role }) => role === 'approved-base').length !== 2) {
+    throw new TypeError('source roles must contain two approved-base and two candidate positions');
+  }
+  return positions;
+}
 function validateExpectedCommits(input) {
   if (!isObject(input)) {
     throw new TypeError('pooling input must be an object');
@@ -59,12 +103,11 @@ function validateExpectedCommits(input) {
     throw new TypeError('approved-base and candidate commits must differ');
   }
 }
-
-function readAndValidateSources(sourceInput) {
+function readAndValidateSources(sourceInput, sourcePositions) {
   if (!isObject(sourceInput)) {
     throw new TypeError('pooling sources must be an object');
   }
-  return SOURCE_POSITIONS.map((descriptor) => {
+  return sourcePositions.map((descriptor) => {
     const source = sourceInput[descriptor.key];
     if (
       !isObject(source) ||
@@ -92,7 +135,6 @@ function readAndValidateSources(sourceInput) {
     };
   });
 }
-
 function parseArtifact(artifactText, position) {
   try {
     return JSON.parse(artifactText);
@@ -100,11 +142,10 @@ function parseArtifact(artifactText, position) {
     throw new TypeError(`position ${position} artifact is not valid JSON: ${errorMessage(error)}`);
   }
 }
-
-function validateSourceSet(sources, input) {
+function validateSourceSet(sources, input, orderLabel) {
   validateUniqueHashes(sources);
   validateEnvironments(sources);
-  validateGeneratedOrder(sources);
+  validateGeneratedOrder(sources, orderLabel);
   validateCommits(sources, input);
   validateCompatibleMetadata(sources);
   validateUniqueRawCommandIds(sources);
@@ -123,10 +164,10 @@ function validateEnvironments(sources) {
   }
 }
 
-function validateGeneratedOrder(sources) {
+function validateGeneratedOrder(sources, orderLabel) {
   const timestamps = sources.map((source) => Date.parse(source.artifact.generatedAt));
   if (timestamps.some((timestamp, index) => index > 0 && timestamp <= timestamps[index - 1])) {
-    throw new TypeError('artifact generatedAt values must increase in A-B-B-A order');
+    throw new TypeError(`artifact generatedAt values must increase in ${orderLabel} order`);
   }
 }
 
@@ -264,9 +305,7 @@ function summarizeCorrectness(samples, commands) {
         (command) => PRODUCTION_STATE_WRITE_MUTATION_CONTRACT[command.kind].length,
       ),
     ),
-    outboxIntentCount: sum(
-      samples.map((sample) => sample.durableEvidence.resourceOutbox.length),
-    ),
+    outboxIntentCount: sum(samples.map((sample) => sample.durableEvidence.resourceOutbox.length)),
     atomicCompletionFailures: sumSampleMetric('atomicCompletionFailures'),
     dbwFindings: [...new Set(samples.flatMap((sample) => sample.correctness.dbwFindings))],
   };
@@ -336,18 +375,7 @@ function canonicalJson(value) {
   return JSON.stringify(value);
 }
 
-function sha256(value) {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-function sum(values) {
-  return values.reduce((total, value) => total + value, 0);
-}
-
-function isObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
-}
+const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+const sum = (values) => values.reduce((total, value) => total + value, 0);
+const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const errorMessage = (error) => (error instanceof Error ? error.message : String(error));

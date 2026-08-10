@@ -2,9 +2,13 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import { toTopologyAppInboxCommand as compatibilityTopologyCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { toTopologyAppInboxCommand as canonicalTopologyCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 
-const serverRoot = fileURLToPath(new URL('../../shared-server/rallar-system/', import.meta.url));
-const testsRoot = fileURLToPath(new URL('./', import.meta.url));
+const serverRoot = fileURLToPath(
+  new URL('../../../../shared-server/rallar-system/', import.meta.url),
+);
+const testsRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 const targetOwners = [
   'topology/inbox/topology-app-inbox-contracts.ts',
@@ -23,7 +27,8 @@ const materiallyChangedTestSupport = [
   'mutation-routing-owner-inventory.ts',
   'mutation-routing-reachability.ts',
   'authoritative-mutation-read-compute-validate-write.test.ts',
-  'topology-app-inbox-ownership.test.ts',
+  'authoritative-mutation-runtime-source-inventory.ts',
+  'topology/inbox/topology-app-inbox-ownership.test.ts',
 ] as const;
 
 describe('topology and RTC RTT AppInbox ownership', () => {
@@ -38,6 +43,7 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     expect(facade).toContain('export { toTopologyAppInboxCommand }');
     expect(facade).not.toContain('function toCanonicalTopologyAppInboxPayload(');
     expect(facade).not.toContain('function toTopologyConfigMutationCommand(');
+    expect(compatibilityTopologyCommand).toBe(canonicalTopologyCommand);
   });
 
   it('keeps the public facade free of topology and RTC RTT mutation algorithms', () => {
@@ -83,7 +89,7 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     }
   });
 
-  it('keeps materially changed Task 6 test support within the hard file limit', () => {
+  it('keeps directly owned mutation-routing and authoritative test support within the limit', () => {
     for (const relativePath of materiallyChangedTestSupport) {
       const source = readFileSync(`${testsRoot}${relativePath}`, 'utf8');
       expect(source.split('\n').length, relativePath).toBeLessThanOrEqual(400);

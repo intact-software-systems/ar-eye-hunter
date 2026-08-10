@@ -30,7 +30,7 @@ import {
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/services/group-topology-config-service.ts';
+import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
@@ -829,6 +829,15 @@ describe('AppInbox retry exhaustion', () => {
             }),
             operationSource: 'command',
             operation: AppInboxType.GROUP_CREATE,
+        },
+        {
+            name: 'valid topology config outer nested and topic agreement',
+            resource: toPersistedAppInboxResource({
+                outerType: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                nestedType: AppInboxType.TOPOLOGY_CONFIG_PUT,
+            }),
+            operationSource: 'command',
+            operation: AppInboxType.TOPOLOGY_CONFIG_PUT,
         },
         {
             name: 'unknown removed outer dispatch type',

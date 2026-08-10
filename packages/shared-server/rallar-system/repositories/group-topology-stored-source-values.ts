@@ -5,9 +5,9 @@ import type {
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
-  validateStoredGroupTopologyConfig,
-  validateStoredGroupTopologyOverride,
-} from '../services/group-topology-config-mutations.ts';
+  readStoredTopologyConfigBoundary,
+  readStoredTopologyOverrideBoundary,
+} from '../topology/config/mutation/topology-config-mutation-boundary.ts';
 
 const LEGACY_CONFIG_KEYS = [
   'groupRef',
@@ -18,10 +18,7 @@ const LEGACY_CONFIG_KEYS = [
   'updatedByPrincipalId',
 ] as const;
 
-const LEGACY_OVERRIDE_KEYS = [
-  ...LEGACY_CONFIG_KEYS,
-  'expiresAtEpochMs',
-] as const;
+const LEGACY_OVERRIDE_KEYS = [...LEGACY_CONFIG_KEYS, 'expiresAtEpochMs'] as const;
 
 export function decodeStoredGroupTopologyConfig(
   value: unknown,
@@ -31,8 +28,7 @@ export function decodeStoredGroupTopologyConfig(
     ? { ...value, requestId: null }
     : value;
   const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
-  validateStoredGroupTopologyConfig(normalized, validationRef);
-  return normalized;
+  return readStoredTopologyConfigBoundary(normalized, validationRef);
 }
 
 export function decodeStoredGroupTopologyOverride(
@@ -43,8 +39,7 @@ export function decodeStoredGroupTopologyOverride(
     ? { ...value, requestId: null }
     : value;
   const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
-  validateStoredGroupTopologyOverride(normalized, validationRef);
-  return normalized;
+  return readStoredTopologyOverrideBoundary(normalized, validationRef);
 }
 
 export function storedTopologyGroupRef(value: unknown): GroupRef {
@@ -53,29 +48,25 @@ export function storedTopologyGroupRef(value: unknown): GroupRef {
   }
   const groupRef = (value as Readonly<{ groupRef?: unknown }>).groupRef;
   if (!groupRef || typeof groupRef !== 'object' || Array.isArray(groupRef)) {
-    throw new TypeError(
-      'Stored topology config generation source groupRef is invalid',
-    );
+    throw new TypeError('Stored topology config generation source groupRef is invalid');
   }
   const candidate = groupRef as Readonly<Record<string, unknown>>;
   if (
     typeof candidate.applicationId !== 'string' ||
     candidate.applicationId.trim().length === 0 ||
     (candidate.workspaceId !== undefined &&
-      (typeof candidate.workspaceId !== 'string' ||
-        candidate.workspaceId.trim().length === 0)) ||
+      (typeof candidate.workspaceId !== 'string' || candidate.workspaceId.trim().length === 0)) ||
     typeof candidate.groupId !== 'string' ||
     candidate.groupId.trim().length === 0
   ) {
-    throw new TypeError(
-      'Stored topology config generation source groupRef is invalid',
-    );
+    throw new TypeError('Stored topology config generation source groupRef is invalid');
   }
   return {
     applicationId: candidate.applicationId,
-    workspaceId: typeof candidate.workspaceId === 'string'
-      ? candidate.workspaceId
-      : DEFAULT_STATE_WORKSPACE_ID,
+    workspaceId:
+      typeof candidate.workspaceId === 'string'
+        ? candidate.workspaceId
+        : DEFAULT_STATE_WORKSPACE_ID,
     groupId: candidate.groupId,
   };
 }
@@ -84,8 +75,9 @@ function hasExactKeys(
   value: unknown,
   expectedKeys: readonly string[],
 ): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
   const actualKeys = Object.keys(value).sort();
-  return JSON.stringify(actualKeys) ===
-    JSON.stringify([...expectedKeys].sort());
+  return JSON.stringify(actualKeys) === JSON.stringify([...expectedKeys].sort());
 }
