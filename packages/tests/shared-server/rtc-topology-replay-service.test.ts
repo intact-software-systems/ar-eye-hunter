@@ -2,9 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
-import {
-  RtcTopologyDeliveryCorruptionError,
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
+import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
 import type {
   RtcTopologyReplayCursorCasInput,
   RtcTopologyReplayCursorSnapshot,
@@ -196,6 +194,23 @@ describe('RtcTopologyReplayService', () => {
     await service.stop();
   });
 
+  it('leaves a retention-gap cursor unchanged when current-state hydration fails', async () => {
+    const repository = new FakeReplayRepository({ [PUBLISHER_A]: [] });
+    const hydrateGap = vi.fn(async () => {
+      throw new Error('captured connection hydration failed');
+    });
+    const service = replayService(repository, { hydrateGap });
+    await service.start();
+    repository.setGap(PUBLISHER_A, { cursorSequence: 0, retainedFromSequence: 4, headSequence: 5 });
+
+    service.wake('poll');
+    await service.whenIdle();
+
+    expect(hydrateGap).toHaveBeenCalledTimes(1);
+    expect(repository.cursor(PUBLISHER_A)).toBe(0);
+    await service.stop();
+  });
+
   it('stops polling and reports typed lease loss', async () => {
     const repository = new FakeReplayRepository({ [PUBLISHER_A]: [] });
     const scheduler = fakeScheduler();
@@ -222,10 +237,14 @@ describe('RtcTopologyReplayService', () => {
         handle: async (_entry, _databaseNowEpochMs, signal) => {
           handlingStarted.resolve();
           await new Promise<void>((resolve) => {
-            signal.addEventListener('abort', () => {
-              handlingObservedAbort = true;
-              resolve();
-            }, { once: true });
+            signal.addEventListener(
+              'abort',
+              () => {
+                handlingObservedAbort = true;
+                resolve();
+              },
+              { once: true },
+            );
           });
           return { status: 'send-failed' };
         },
@@ -262,12 +281,14 @@ describe('RtcTopologyReplayService', () => {
     expect(events).toContainEqual({ kind: 'wake', source: 'local-commit' });
     expect(events).toContainEqual({ kind: 'entry', outcome: 'delivered' });
     expect(events).toContainEqual({ kind: 'cursor', outcome: 'advanced' });
-    expect(events).toContainEqual(expect.objectContaining({
-      kind: 'drain',
-      outcome: 'caught-up',
-      entryCount: 1,
-      maxLagEntries: 1,
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        kind: 'drain',
+        outcome: 'caught-up',
+        entryCount: 1,
+        maxLagEntries: 1,
+      }),
+    );
     expect(JSON.stringify(events)).not.toContain(CONSUMER);
     expect(JSON.stringify(events)).not.toContain(PUBLISHER_A);
     await service.stop();
@@ -306,7 +327,9 @@ class FakeReplayRepository implements RtcTopologyReplayPort {
     Readonly<{ cursorSequence: number; retainedFromSequence: number; headSequence: number }>
   >();
 
-  constructor(entriesByPublisher: Readonly<Record<string, readonly RtcTopologyDeliveryLogEntry[]>>) {
+  constructor(
+    entriesByPublisher: Readonly<Record<string, readonly RtcTopologyDeliveryLogEntry[]>>,
+  ) {
     this.#entries.set(CONSUMER, []);
     this.#cursors.set(CONSUMER, 0);
     for (const [publisherStreamId, publisherEntries] of Object.entries(entriesByPublisher)) {
@@ -449,8 +472,9 @@ function fakeScheduler(): RtcTopologyReplayServiceScheduler & {
 }
 
 function deferredEntryHandling() {
-  let complete: (result: Awaited<ReturnType<RtcTopologyReplayEntryHandler['handle']>>) => void =
-    () => undefined;
+  let complete: (
+    result: Awaited<ReturnType<RtcTopologyReplayEntryHandler['handle']>>,
+  ) => void = () => undefined;
   let start: () => void = () => undefined;
   const started = new Promise<void>((resolve) => {
     start = resolve;

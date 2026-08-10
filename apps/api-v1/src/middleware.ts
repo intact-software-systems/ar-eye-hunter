@@ -104,6 +104,9 @@ import {
 import {
   createApiRtcTopologyQueuePubSubBridge,
 } from './runtime/rtc-topology/create-api-rtc-topology-queue-pub-sub-bridge.ts';
+import {
+  readAuthorisedWsConnectionIdentity,
+} from './runtime/rtc-topology/authorised-ws-connection-registry.ts';
 
 export type { Middleware };
 export { registerMiddlewareBackgroundTask, shutdownMiddlewareBackgroundTasks };
@@ -160,15 +163,15 @@ function initialise(
   const rtcTopology = createApiRtcTopologyRuntime({
     database: postgresSql,
     runtimeStateRepository,
-    pubSubConfig,
+    groupsRepository,
     webSocketServer,
-    publisherId: myPublisherId,
     publisherStreamId: myRtcTopologyStreamId,
     nowEpochMs: now,
     onCompactionFailure: (error) => {
       console.error('RTC topology delivery compaction failed:', error);
     },
     replayMode: rtcTopologyReplayConfig.replay,
+    readHydrationIdentity: readAuthorisedWsConnectionIdentity,
   });
   registerMiddlewareBackgroundTask(async () => await rtcTopology.stop());
   configureServerWsQBoxALRuntimeStores(wsRuntimeName, { sql: postgresSql });
@@ -355,7 +358,6 @@ function initialise(
     groupsRepository,
     rtcTopologyPublicationRepository: rtcTopology.publicationRepository,
     rtcTopologyExecutionRepository: rtcTopology.executionRepository,
-    rtcTopologyPublicationFanout: rtcTopology.publicationFanout,
     rtcTopologyDelivery: rtcTopology.topologyDelivery,
     rtcTopologyReplay: rtcTopology.topologyReplay,
     queuePubSubBridge: createApiRtcTopologyQueuePubSubBridge({
@@ -370,11 +372,6 @@ function initialise(
   });
   rtcTopology.topologyReplay.attach({
     wsQueueBoxServerService: runtime.wsQBoxServerService,
-    hydrateGap: async () => {
-      throw new Error(
-        'RTC topology replay gap hydration is unavailable before the reconnect-hydration cutover',
-      );
-    },
   });
   const scalarRecomputeWorker = initApiRtcTopologyScalarRecomputeWorker({
     runtimeStateRepository,

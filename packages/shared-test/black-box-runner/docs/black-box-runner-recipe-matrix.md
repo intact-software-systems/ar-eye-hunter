@@ -26,26 +26,26 @@ packages/shared-test/black-box-runner/recipe-matrix.mts
 
 ## Profiles
 
-| Profile | Purpose |
-| --- | --- |
-| `quick` | Fast local confidence. Runs deterministic memory delivery plus selected dry-run browser recipes. |
-| `dry` | Dry-run recipe expansion for browser/remote/signaling recipes that should not touch real services. |
-| `deterministic` | Deterministic local recipes, including intentional diagnostic failures with expected exit codes. |
-| `soak` | Deterministic same-connection soak recipes that keep one connection set open across repeated loop traffic. |
-| `traffic` | Deterministic seeded traffic-plan recipes with replayable expanded plans. |
-| `parallel` | Deterministic bounded parallel group recipes for concurrent actor behavior. |
-| `failure-diagnostics` | Recipes that are expected to fail and produce useful failure artifacts. |
-| `live-soak` | Gated live browser and remote-browser same-connection soak recipes. |
-| `live-traffic` | Gated live browser and remote-browser seeded traffic recipes. |
-| `live-parallel` | Gated live browser and remote-browser bounded parallel recipes. |
-| `live-crdt` | Gated CRDT live validation for WS convergence, RTC fallback, durable catch-up, local persistence, and admin integrity. |
-| `rallar-server-live` | Live Rallar Server REST/WS recipes. Skips when the configured API is unavailable. |
-| `api-v1-black-box` | Full no-browser `apps/api-v1` REST/WS black-box test recipes. Managed helper runs start the API with deterministic local ICE and operator-token settings. |
+| Profile                    | Purpose                                                                                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `quick`                    | Fast local confidence. Runs deterministic memory delivery plus selected dry-run browser recipes.                                                          |
+| `dry`                      | Dry-run recipe expansion for browser/remote/signaling recipes that should not touch real services.                                                        |
+| `deterministic`            | Deterministic local recipes, including intentional diagnostic failures with expected exit codes.                                                          |
+| `soak`                     | Deterministic same-connection soak recipes that keep one connection set open across repeated loop traffic.                                                |
+| `traffic`                  | Deterministic seeded traffic-plan recipes with replayable expanded plans.                                                                                 |
+| `parallel`                 | Deterministic bounded parallel group recipes for concurrent actor behavior.                                                                               |
+| `failure-diagnostics`      | Recipes that are expected to fail and produce useful failure artifacts.                                                                                   |
+| `live-soak`                | Gated live browser and remote-browser same-connection soak recipes.                                                                                       |
+| `live-traffic`             | Gated live browser and remote-browser seeded traffic recipes.                                                                                             |
+| `live-parallel`            | Gated live browser and remote-browser bounded parallel recipes.                                                                                           |
+| `live-crdt`                | Gated CRDT live validation for WS convergence, RTC fallback, durable catch-up, local persistence, and admin integrity.                                    |
+| `rallar-server-live`       | Live Rallar Server REST/WS recipes. Skips when the configured API is unavailable.                                                                         |
+| `api-v1-black-box`         | Full no-browser `apps/api-v1` REST/WS black-box test recipes. Managed helper runs start the API with deterministic local ICE and operator-token settings. |
 | `api-v1-black-box-recipes` | Portable recipes-only subset for an already-running `apps/api-v1`. Excludes scenarios that require server startup env the helper cannot apply externally. |
-| `browser-live` | Live browser-backed Rallar recipes. Requires credentials, Rallar API, and Playwright. |
-| `remote-live` | Live control-server-backed browser provider recipes. Requires Rallar API, control server, and an agent. |
-| `signaling-live` | Live signaling-only provider recipes. Requires `RALLAR_SIGNALING_URL`. |
-| `live` | All live profiles together. Skips unavailable gates unless strict mode is used. |
+| `browser-live`             | Live browser-backed Rallar recipes. Requires credentials, Rallar API, and Playwright.                                                                     |
+| `remote-live`              | Live control-server-backed browser provider recipes. Requires Rallar API, control server, and an agent.                                                   |
+| `signaling-live`           | Live signaling-only provider recipes. Requires `RALLAR_SIGNALING_URL`.                                                                                    |
+| `live`                     | All live profiles together. Skips unavailable gates unless strict mode is used.                                                                           |
 
 ## Commands
 
@@ -96,6 +96,7 @@ Run the no-browser API-v1 black-box profile through the orchestration helper:
 npm run test:api-v1:black-box:postgres
 npm run test:api-v1:black-box:memory
 npm run test:api-v1:black-box:recipes
+npm run test:api-v1:black-box:postgres:topology-replay
 ```
 
 Postgres and memory runs use the full `api-v1-black-box` profile. Recipes-only
@@ -104,6 +105,15 @@ API without assuming that server was started with local ICE or a black-box
 operator-token secret. To run the full profile against an already-running API,
 start that API with equivalent managed-run settings and pass
 `--profile=api-v1-black-box` to `bb:api-v1:recipes`.
+
+The topology-replay command is a managed coordinator profile rather than a
+recipe-matrix entry. It requires PostgreSQL and exactly three ports. A/B retain
+QueueBox workers; C disables QueueBox workers and database notifications. After
+poll-only live convergence, the coordinator stops C and starts C' on the same
+port with a distinct log. Success requires two independent positive publisher
+HEADs, C cursor pairs at those HEADs, later advancement of both publishers, a
+new C' stream seeded at the advanced HEADs, and current-state hydration for the
+same N5/N6 authenticated sessions without a mutation after C' starts.
 
 These commands write artifacts under `.artifacts/api-v1-black-box/*` instead of
 the generic `.artifacts/shared-test/recipe-matrix/*` path because the helper
@@ -115,6 +125,9 @@ Memory mode manages one API process. Built-in Postgres cluster profiles manage
 three Postgres-backed API processes: three Deno API processes sharing one
 Postgres database on ports 18080, 18081, and 18082. They write isolated logs named `api-v1-server.log`,
 `api-v1-server-secondary.log`, and `api-v1-server-tertiary.log`.
+The topology-replay profile also retains
+`api-v1-server-tertiary-restart.log` and
+`rtc-topology-replay-proof.json` (or its current-run bounded failure artifact).
 
 Recipes-only mode is externally managed: it consumes published API and WS URLs
 and does not start or stop any server. The standard/default, CRDT, and

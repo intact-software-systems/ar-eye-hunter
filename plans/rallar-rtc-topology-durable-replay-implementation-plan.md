@@ -11,7 +11,7 @@ Status: active; implementation is in progress as the three-PR stack below.
 Plan evidence base: `origin/main` was
 `726edc7c33386f9282f6594ec4b5c3c02033fbf1` when execution started on
 2026-08-09. The latest publication review revalidated `origin/main` at
-`108933a97c7a40ee0831ecd185725aea243122bd`; revalidate the checkout, issue,
+`0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`; revalidate the checkout, issue,
 paths, contracts, and commands before implementation and after every rebase.
 Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
 
@@ -19,11 +19,16 @@ Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/
 
 Current working-tree checkpoint on 2026-08-10:
 
-- `origin/main` advanced to `108933a97c7a40ee0831ecd185725aea243122bd` through
-  PR #145. The compatibility review found style-checker governance changes and
-  one additive `package.json` test-list edit only: no runtime, schema, realtime,
-  benchmark, public-contract, or acceptance-criterion delta. PR 1 remains
-  stacked on the still-open PR #141 as required.
+- `origin/main` advanced to `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`.
+  The compatibility review covers the earlier PR #145 changes plus merged PR
+  #103's contract-preserving group-topology owner move and additive
+  position-balanced benchmark tooling, and PR #144's Hetzner RTC lifecycle
+  hardening. The stack overlaps four test/performance paths but no changed
+  durable-replay runtime owner; public, transaction, authorization, workload,
+  and acceptance contracts remain intact. Because PR #141 is still open at its
+  unchanged head, PR 1 remains stacked on that head as required. Its eventual
+  rebase must adopt the canonical topology paths and current benchmark tooling
+  and invalidate all affected evidence.
 - Plan PR [#141](https://github.com/intact-software-systems/ar-eye-hunter/pull/141)
   remains open at `8e277691f3bcd618c556d57ab5ee61cac248f1db`. PR 1 is
   therefore based on that exact head. If #141 merges, PR 1 must be rebased onto
@@ -46,22 +51,72 @@ Stack record:
 | --- | --- | --- | --- |
 | Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 open |
 | PR 1 | `codex/rtc-topology-durable-replay-1-streams` | PR #141 head | frozen at PR #143 head `871a7c7e` |
-| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | implementation complete; exact gates pending |
-| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | pending |
+| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | frozen at PR #146 head `43753655` |
+| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | implementation complete; publication pending |
 
 PR 1 is frozen at `871a7c7e9cfdffc3143b3f31d5d6d56d42a58ed4` with
 current exact-tree local, black-box, Branch Release Gate, medium-scale, and
 governed A-B-B-A evidence. Its schema-first production migration prerequisite
 remains an owner deployment action; replay stays disabled through PR 2.
 
-PR 2 implementation is complete on the working tree. Focused unit, PGlite,
-Deno, and true-PostgreSQL tests pass, including the live passive-C poll proof;
-the deterministic replay-drain operation-count artifact records the caught-up,
-100-entry, 1,000-entry, no-recipient, current-repair, and gap-hydration cases.
-Review-driven lifecycle proofs also require production shutdown to await the
-in-flight drain and prevent cursor seeding when shutdown wins startup.
-Commit, exact-tree broad/local/black-box gates, draft publication, and the exact
-Branch Release Gate remain pending and therefore this layer is not complete.
+PR 2 is frozen at `43753655015ef3a16c1b7f8039158230f89ebb62`, tree
+`1d5aee714dc2d6783c2620fa18318a76994b3d03`, with current exact-tree local,
+black-box, Branch Release Gate, and medium-scale evidence. Draft PR
+[#146](https://github.com/intact-software-systems/ar-eye-hunter/pull/146)
+targets PR 1 explicitly.
+
+PR 3 implementation is complete on the working tree. Generation-fenced sends,
+strict durable reconnect hydration, enabled replay plus QueueBox, the managed
+C-to-C' lifecycle, exact-ID convergence recipe, deterministic N1-N6 passive-C
+proof, workflows, docs, and skills are implemented. The fixed reconnect batch
+no longer mutates the `Map` it is iterating, preventing a reconnect arriving
+during hydration from causing a synchronous loop. Focused proof passes 6 files
+and 91 tests plus 7 files and 72 tests; the full RTC topology surface passes 26
+files and 393 tests; API Deno passes 420 tests; and true PostgreSQL integration
+passes 13 files and 27 tests. Fresh black-box evidence passes memory 13/13,
+PostgreSQL 13/13 plus cluster 5/5, CRDT 22/22, medium-scale 2,748/2,748,
+formation-large 1,327/1,327, and the standalone A/B/C-to-C' topology replay
+proof. The fixed delivery and replay-drain workloads preserve every plan
+constant and bound. Pre-freeze repository-wide typecheck, governance, style,
+unit, CI, build, and browser-bundle gates passed; this progress-record edit
+invalidates those broad results until they are rerun from the unchanged final
+tree. Commit, draft publication, exact-SHA A-B-B-A, and remote exact-SHA gates
+remain pending, so PR 3 and this plan remain active.
+
+An independent pre-publication review of the original staged PR 3 tree found
+that the profile-only topology command still depended on `clusterOnly` for
+database isolation, explicit C shutdown released cleanup ownership before stop
+and drain succeeded, in-flight hydration could send after abort, and the proof
+did not bind its observations and cumulative metrics to the intended live A/B
+entries or C' hydration. TDD now covers and fixes each boundary. Topology replay
+profiles always receive a disposable per-run PostgreSQL database while
+medium-scale retains its `clusterOnly` requirement; failed explicit stops remain
+owned for final cleanup; hydration checks cancellation after every durable read
+and immediately before send, resolves its own shutdown abort, and preserves an
+external gap abort. The proof first consumes exact baseline hydration, waits
+for a stable caught-up baseline, retains AL message identity, requires one exact
+publication and one exact HEAD/cursor increment on each distinct A/B publisher,
+requires exactly two post-baseline poll-replayed entries, and accepts C' only on
+exact current-state hydration identities. Its wire observer now models the
+production browser rule by dropping dominated snapshots, retaining monotonic
+adoptions, and rejecting equal conflicts or incomparable tuples. The topology
+recipe derives the publication presence component from the mutation presence
+revision, and one shared behaviorally tested assertion deadline restores the
+plan's 10-second bound. Structured failure evidence now wraps every coordinator
+phase rather than only live A.
+
+The expanded review-regression set passes 5 files and 36 tests; full workspace
+typecheck and strict changed-style review pass. The real profile-only command
+also passes against the intentionally reused task PostgreSQL root: it created a
+fresh `rallar_bb_*` database, applied all 20 migrations, ran the unchanged
+three-process proof, and dropped the isolated database. The credential-free
+artifact records baseline publisher HEADs 7/1, exact live A/B publication IDs
+and distinct HEADs 8/2, exact replay deltas of two poll wakes, zero notification
+or local-commit wakes, and two replayed entries, restart HEADs 9/3, two C'
+`rtc-topology-hydration` identities, a new replacement consumer stream, and no
+post-start mutation. These review fixes invalidate every earlier broad gate;
+the full local, PostgreSQL, black-box, performance, exact-SHA, and publication
+sequence must rerun from the final unchanged tree.
 
 PR 1 progress:
 
@@ -646,37 +701,37 @@ state, not historical event delivery.
 
 Purpose: close restart semantics, enable the feature, and publish proof.
 
-- [ ] Add identity-fenced encoded send to `JsonWebSocketServer` with replacement
+- [x] Add identity-fenced encoded send to `JsonWebSocketServer` with replacement
       generation race tests.
-- [ ] Implement batched/paged reconnect and gap hydration with strict durable
+- [x] Implement batched/paged reconnect and gap hydration with strict durable
       group authorization and current-topology revalidation.
-- [ ] Register hydration at socket `onConnection`; add shutdown/cancellation and
+- [x] Register hydration at socket `onConnection`; add shutdown/cancellation and
       bounded retry behavior.
-- [ ] Add queue-worker-disabled API mode, default enabled, and validate it is
+- [x] Add queue-worker-disabled API mode, default enabled, and validate it is
       PostgreSQL-only.
-- [ ] Add a managed A/B/C proof coordinator and N1-N6 scenario under
+- [x] Add a managed A/B/C proof coordinator and N1-N6 scenario under
       `packages/shared-test/black-box-runner/topology-replay/**`.
-- [ ] Extend managed process lifecycle with explicit stop/restart controls and
+- [x] Extend managed process lifecycle with explicit stop/restart controls and
       non-overwriting restart logs.
-- [ ] Add `api-v1-black-box-topology-replay` runner profile and
+- [x] Add `api-v1-black-box-topology-replay` runner profile and
       `npm run test:api-v1:black-box:postgres:topology-replay`.
-- [ ] Run node C with PostgreSQL notifications and QueueBox workers disabled;
+- [x] Run node C with PostgreSQL notifications and QueueBox workers disabled;
       assert post-open A/B mutations reach N5/N6 only through replay.
-- [ ] Stop C, mutate through A/B, restart C' with a new process identity,
+- [x] Stop C, mutate through A/B, restart C' with a new process identity,
       reconnect N5/N6 using the same authenticated sessions and fresh one-use
       tickets, and assert current topology arrives without a post-restart
       mutation.
-- [ ] Preserve standard memory, Postgres, CRDT, medium-scale, and
+- [x] Preserve standard memory, Postgres, CRDT, medium-scale, and
       formation-large workload constants and profiles.
-- [ ] Wire the proof command and all four server logs (A, B, C, C' restart) into
+- [x] Wire the proof command and all four server logs (A, B, C, C' restart) into
       API-v1 Black-Box, Release Gate/Branch Release Gate, and failure artifacts.
-- [ ] Change replay default to enabled only after PR 1 and PR 2 are fully
+- [x] Change replay default to enabled only after PR 1 and PR 2 are fully
       deployed.
-- [ ] Remove `RtcTopologyPublicationFanout` from production composition,
+- [x] Remove `RtcTopologyPublicationFanout` from production composition,
       readiness, handler options, and api-v1 transport ownership. Preserve its
       existing `@shared-server` public export as deprecated compatibility data
       unless a separately approved breaking release removes it.
-- [ ] Update active docs and skills; do not rewrite historical
+- [x] Update active docs and skills; do not rewrite historical
       `docs/superpowers/**` records.
 
 ## Planned File Ownership

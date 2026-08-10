@@ -23,8 +23,14 @@ import {
 } from './parse-api-v1-black-box-options.mts';
 import {
   type ManagedApiServerPlan,
+  type ManagedApiServerLifecycleControls,
   withManagedApiServerPlans,
 } from './managed-api/with-managed-api-server-plans.mts';
+// Prettier would collapse this import beyond the repository's 100-column review limit.
+// prettier-ignore
+import {
+  runApiV1RtcTopologyReplayProof,
+} from './topology-replay/api-v1-rtc-topology-replay-proof.mts';
 
 export {
   managedApiDiagnosticSecrets,
@@ -143,10 +149,29 @@ export function toManagedApiServerPlans(
             port: options.tertiaryPort,
             baseUrl: `http://127.0.0.1:${options.tertiaryPort}`,
             logPath: `${root}/api-v1-server-tertiary.log`,
-            env: toManagedApiServerEnvironment(env, options.tertiaryPort),
+            env: toTertiaryManagedApiServerEnvironment(options, env, options.tertiaryPort),
           },
         ]),
   ];
+}
+
+function toTertiaryManagedApiServerEnvironment(
+  options: ApiV1BlackBoxOptions,
+  env: Record<string, string>,
+  port: number,
+): Record<string, string> {
+  const tertiary = toManagedApiServerEnvironment(env, port);
+  if (
+    options.profile !== 'api-v1-black-box-topology-replay' &&
+    options.clusterProfile !== 'api-v1-black-box-topology-replay'
+  )
+    return tertiary;
+  return {
+    ...tertiary,
+    RALLAR_API_QUEUE_WORKERS: 'disabled',
+    RALLAR_DB_PUBSUB: 'disabled',
+    RALLAR_RTC_TOPOLOGY_REPLAY: 'enabled',
+  };
 }
 
 function toManagedApiServerEnvironment(
@@ -263,6 +288,40 @@ async function runRecipeMatrix(
   }
 }
 
+async function runManagedProofOrRecipeMatrix(
+  input: Readonly<{
+    options: ApiV1BlackBoxOptions;
+    env: Record<string, string>;
+    artifactDir: string;
+    serverPlans: readonly ManagedApiServerPlan[];
+    controls: ManagedApiServerLifecycleControls;
+  }>,
+): Promise<void> {
+  if (
+    input.options.profile !== 'api-v1-black-box-topology-replay' &&
+    input.options.clusterProfile !== 'api-v1-black-box-topology-replay'
+  ) {
+    await runRecipeMatrix(input.options, input.env, input.artifactDir);
+    return;
+  }
+  const [primaryPlan, secondaryPlan, tertiaryPlan] = input.serverPlans;
+  if (!primaryPlan || !secondaryPlan || !tertiaryPlan || input.serverPlans.length !== 3) {
+    throw new Error('RTC topology replay proof requires exactly three managed API plans.');
+  }
+  const databaseUrl = input.env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('RTC topology replay proof requires DATABASE_URL.');
+  await runApiV1RtcTopologyReplayProof({
+    env: input.env,
+    databaseUrl,
+    executionToken: input.env.RALLAR_BB_EXECUTION_TOKEN,
+    artifactDir: input.artifactDir,
+    primaryPlan,
+    secondaryPlan,
+    tertiaryPlan,
+    controls: input.controls,
+  });
+}
+
 async function main(): Promise<void> {
   const options = parseApiV1BlackBoxArgs(Deno.args);
   const env = toApiV1BlackBoxEnvironment(options, Deno.env.toObject());
@@ -280,22 +339,32 @@ async function main(): Promise<void> {
     if (options.runMigrations) {
       await runCommand(['npm', 'run', 'db:migrate'], env);
     }
-    await withManagedApiServerPlans({
-      plans: options.recipesOnly ? [] : serverPlans,
-      serverCommand: toApiV1ServerCommand(options),
-      repoRootPath: repoRootPath(),
-      artifactDir,
-    }, {
-      writeEmptyLogFile: async (path) => await Deno.writeTextFile(path, ''),
-      startServer: startManagedApiServer,
-      waitForReady: waitForManagedApiReady,
-      toDiagnosticSecrets: managedApiDiagnosticSecrets,
-      runRecipes: async () => await runRecipeMatrix(options, env, artifactDir),
-      verifyFairness: async (fairnessArtifactDir, serverLogPaths) => {
-        await verifyApiV1FairnessProof(fairnessArtifactDir, serverLogPaths);
+    await withManagedApiServerPlans(
+      {
+        plans: options.recipesOnly ? [] : serverPlans,
+        serverCommand: toApiV1ServerCommand(options),
+        repoRootPath: repoRootPath(),
+        artifactDir,
       },
-      stopServer: stopManagedApiServer,
-    });
+      {
+        writeEmptyLogFile: async (path) => await Deno.writeTextFile(path, ''),
+        startServer: startManagedApiServer,
+        waitForReady: waitForManagedApiReady,
+        toDiagnosticSecrets: managedApiDiagnosticSecrets,
+        runRecipes: async (controls) =>
+          await runManagedProofOrRecipeMatrix({
+            options,
+            env,
+            artifactDir,
+            serverPlans,
+            controls,
+          }),
+        verifyFairness: async (fairnessArtifactDir, serverLogPaths) => {
+          await verifyApiV1FairnessProof(fairnessArtifactDir, serverLogPaths);
+        },
+        stopServer: stopManagedApiServer,
+      },
+    );
   };
   await runManagedBlackBoxBackend(options, env, runWithStorage);
 }

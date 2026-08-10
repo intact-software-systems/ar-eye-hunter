@@ -98,6 +98,7 @@ change. For `apps/api-v1`, use the no-browser black-box scripts:
 npm run test:api-v1:black-box:memory
 npm run test:api-v1:black-box:postgres
 npm run test:api-v1:black-box:recipes
+npm run test:api-v1:black-box:postgres:topology-replay
 ```
 
 Use `memory` for fast local feedback, `postgres` when Postgres is available,
@@ -110,6 +111,16 @@ three Deno API processes sharing one Postgres database on ports 18080, 18081,
 and 18082. Their logs stay isolated as `api-v1-server.log`,
 `api-v1-server-secondary.log`, and `api-v1-server-tertiary.log` under the
 API-v1 artifact directory.
+
+The topology replay command creates an isolated PostgreSQL database and runs
+the deterministic A/B/C, N1-N6 proof. C has database notifications and
+QueueBox workers disabled, so its live convergence must be poll-driven. The
+coordinator stops C, advances both publisher streams, starts C' with a new
+identity, and reconnects the same N5/N6 sessions without a post-start mutation.
+Inspect `rtc-topology-replay-proof.json` and the A/B/C/C' logs. On failure,
+classify startup, readiness, append, replay, transport, assertion, cleanup, or
+infrastructure from the bounded current-run failure artifact before changing
+code. Do not increase readiness limits or reduce page/workload constants.
 
 Recipes-only mode is externally managed: it neither starts nor stops API
 processes. Standard/default, CRDT, and medium-scale Postgres recipes must make

@@ -6,10 +6,10 @@ import {
   shouldStartApiQueueWorkers,
 } from '../src/runtime/rtc-topology/rtc-topology-replay-config.ts';
 
-Deno.test('RTC topology replay defaults disabled while queue workers default enabled', () => {
+Deno.test('RTC topology replay and queue workers default enabled after cutover', () => {
   assert.deepEqual(
     readApiRtcTopologyReplayConfig(fakeEnv({}), { sqlBackend: 'postgres' }),
-    { replay: 'disabled', queueWorkers: 'enabled' },
+    { replay: 'enabled', queueWorkers: 'enabled' },
   );
 });
 

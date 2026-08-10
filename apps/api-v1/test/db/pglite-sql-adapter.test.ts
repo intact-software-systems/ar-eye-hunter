@@ -2919,11 +2919,6 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
         database: sql,
         topologyManagement,
         executionRepository,
-        publicationFanout: {
-          readiness: Promise.resolve(),
-          publish: () => Promise.resolve(0),
-          deliverLocal: () => 0,
-        },
       }),
     );
     await workRuntime.publisher.enqueueForGroupSnapshot(durableTerminal);
@@ -5166,11 +5161,6 @@ async function createPGliteTopologyWorkFixture(
     database: sql,
     topologyManagement,
     executionRepository,
-    publicationFanout: {
-      readiness: Promise.resolve(),
-      publish: () => Promise.resolve(0),
-      deliverLocal: () => 0,
-    },
     topologyDelivery: {
       publisherStreamId,
       append: {

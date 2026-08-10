@@ -1,0 +1,84 @@
+name: API v1 Topology Replay Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/actions/api-v1-black-box-test/**'
+      - '.github/workflows/api-v1-topology-replay-gate.yml'
+      - 'apps/api-v1/**'
+      - 'packages/shared/**'
+      - 'packages/shared-server/**'
+      - 'packages/shared-test/black-box-runner/**'
+      - 'packages/tests/shared-test/**'
+
+permissions:
+  contents: read
+
+jobs:
+  topology-replay:
+    name: API v1 durable topology replay Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_ICE_MODE: local
+      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      RALLAR_STATE_STRICT_READ_AUTH: '1'
+      AUTH_STATIC_CLIENTS_MODE: demo
+      AUTH_REGISTRATION_MODE: public
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - name: Record exact checkout SHA
+        run: |
+          mkdir -p .artifacts/api-v1-black-box/topology-replay
+          git rev-parse HEAD > .artifacts/api-v1-black-box/topology-replay/validated-sha.txt
+          git write-tree > .artifacts/api-v1-black-box/topology-replay/validated-tree.txt
+      - name: Run deterministic topology replay proof
+        uses: ./.github/actions/api-v1-black-box-test
+        with:
+          backend: postgres
+          api-port: '18080'
+          secondary-api-port: '18081'
+          tertiary-api-port: '18082'
+          artifact-dir: .artifacts/api-v1-black-box/topology-replay
+          profile: api-v1-black-box-topology-replay
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-topology-replay'
+      - name: Upload exact-SHA artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-topology-replay-${{ github.sha }}
+          path: |
+            .artifacts/api-v1-black-box/topology-replay/validated-sha.txt
+            .artifacts/api-v1-black-box/topology-replay/validated-tree.txt
+            .artifacts/api-v1-black-box/topology-replay/rtc-topology-replay-proof.json
+            .artifacts/api-v1-black-box/topology-replay/rtc-topology-replay-proof-failure.json
+            .artifacts/api-v1-black-box/topology-replay/api-v1-server.log
+            .artifacts/api-v1-black-box/topology-replay/api-v1-server-secondary.log
+            .artifacts/api-v1-black-box/topology-replay/api-v1-server-tertiary.log
+            .artifacts/api-v1-black-box/topology-replay/api-v1-server-tertiary-restart.log
+          if-no-files-found: warn

@@ -518,6 +518,23 @@
           "name": "primary-role-mutation",
           "steps": [
             {
+              "name": "consumeBaselineCurrentTopologyOnPrimary",
+              "type": "ws.wait",
+              "connection": "wsPrimary",
+              "expect": {
+                "connection": "wsPrimary",
+                "withinMs": 15000,
+                "consume": true,
+                "messages": [{
+                  "route": {
+                    "topicId": "overlay.topology",
+                    "contextId": "{groupId}"
+                  },
+                  "payload": { "typeId": "overlay.topology" }
+                }]
+              }
+            },
+            {
               "name": "promoteBobThroughPrimary",
               "type": "http",
               "connection": "apiPrimary",
@@ -533,7 +550,8 @@
                   "role": "admin"
                 },
                 "outputs": {
-                  "roleMutationRevision": "body.causalRevision.groupRevision"
+                  "roleMutationRevision": "body.causalRevision.groupRevision",
+                  "roleMutationPresenceRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -545,12 +563,40 @@
                   }
                 }
               }
+            },
+            {
+              "name": "deriveRoleTopologyPresenceRevision",
+              "type": "set",
+              "output": "roleTopologyPresenceRevision",
+              "transform": {
+                "add": [
+                  { "path": "outputs.roleMutationPresenceRevision" },
+                  1
+                ]
+              }
             }
           ]
         },
         {
           "name": "secondary-group-mutation",
           "steps": [
+            {
+              "name": "consumeBaselineCurrentTopologyOnTertiary",
+              "type": "ws.wait",
+              "connection": "wsTertiary",
+              "expect": {
+                "connection": "wsTertiary",
+                "withinMs": 15000,
+                "consume": true,
+                "messages": [{
+                  "route": {
+                    "topicId": "overlay.topology",
+                    "contextId": "{groupId}"
+                  },
+                  "payload": { "typeId": "overlay.topology" }
+                }]
+              }
+            },
             {
               "name": "updateGroupThroughSecondary",
               "type": "http",
@@ -567,7 +613,8 @@
                   "description": "Concurrent update from the secondary API server"
                 },
                 "outputs": {
-                  "groupMutationRevision": "body.causalRevision.groupRevision"
+                  "groupMutationRevision": "body.causalRevision.groupRevision",
+                  "groupMutationPresenceRevision": "body.causalRevision.presenceRevision"
                 }
               },
               "expect": {
@@ -578,6 +625,17 @@
                     "groupId": "{groupId}"
                   }
                 }
+              }
+            },
+            {
+              "name": "deriveGroupTopologyPresenceRevision",
+              "type": "set",
+              "output": "groupTopologyPresenceRevision",
+              "transform": {
+                "add": [
+                  { "path": "outputs.groupMutationPresenceRevision" },
+                  1
+                ]
               }
             }
           ]
@@ -601,6 +659,9 @@
         "ordered": false,
         "messages": [
           {
+            "id": {
+              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:promote-bob-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={roleMutationRevision};presence={roleTopologyPresenceRevision}:0\"]"
+            },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -610,6 +671,9 @@
             }
           },
           {
+            "id": {
+              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:update-group-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={groupMutationRevision};presence={groupTopologyPresenceRevision}:0\"]"
+            },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -638,6 +702,9 @@
         "ordered": false,
         "messages": [
           {
+            "id": {
+              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:promote-bob-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={roleMutationRevision};presence={roleTopologyPresenceRevision}:0\"]"
+            },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -647,6 +714,9 @@
             }
           },
           {
+            "id": {
+              "msgId": "[\"rtc-topology-publication\",\"app-outbox.rtc-topology:app={applicationId}:ws={workspaceId}:group={groupId}:update-group-{groupId}-{runId}:rtc-topology-recompute:group-revision:group={groupMutationRevision};presence={groupTopologyPresenceRevision}:0\"]"
+            },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
