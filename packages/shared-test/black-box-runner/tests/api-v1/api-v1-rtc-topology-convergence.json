@@ -518,6 +518,23 @@
           "name": "primary-role-mutation",
           "steps": [
             {
+              "name": "consumeBaselineCurrentTopologyOnPrimary",
+              "type": "ws.wait",
+              "connection": "wsPrimary",
+              "expect": {
+                "connection": "wsPrimary",
+                "withinMs": 15000,
+                "consume": true,
+                "messages": [{
+                  "route": {
+                    "topicId": "overlay.topology",
+                    "contextId": "{groupId}"
+                  },
+                  "payload": { "typeId": "overlay.topology" }
+                }]
+              }
+            },
+            {
               "name": "promoteBobThroughPrimary",
               "type": "http",
               "connection": "apiPrimary",
@@ -551,6 +568,23 @@
         {
           "name": "secondary-group-mutation",
           "steps": [
+            {
+              "name": "consumeBaselineCurrentTopologyOnTertiary",
+              "type": "ws.wait",
+              "connection": "wsTertiary",
+              "expect": {
+                "connection": "wsTertiary",
+                "withinMs": 15000,
+                "consume": true,
+                "messages": [{
+                  "route": {
+                    "topicId": "overlay.topology",
+                    "contextId": "{groupId}"
+                  },
+                  "payload": { "typeId": "overlay.topology" }
+                }]
+              }
+            },
             {
               "name": "updateGroupThroughSecondary",
               "type": "http",
@@ -601,6 +635,7 @@
         "ordered": false,
         "messages": [
           {
+            "targets": { "minSnapshotVersion": "{roleMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -610,6 +645,7 @@
             }
           },
           {
+            "targets": { "minSnapshotVersion": "{groupMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -638,6 +674,7 @@
         "ordered": false,
         "messages": [
           {
+            "targets": { "minSnapshotVersion": "{roleMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"
@@ -647,6 +684,7 @@
             }
           },
           {
+            "targets": { "minSnapshotVersion": "{groupMutationRevision}" },
             "route": {
               "topicId": "overlay.topology",
               "contextId": "{groupId}"

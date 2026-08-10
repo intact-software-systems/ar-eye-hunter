@@ -174,13 +174,13 @@ tuple rather than forcing both domains through one scalar write guard.
 
 Group and client caches use the following policy:
 
-| Current cache              | Incoming snapshot                   | Result                                  |
-| -------------------------- | ----------------------------------- | --------------------------------------- |
-| Missing    | Any                                 | Insert              |
-| Revision N | Revision greater than N             | Advance             |
-| Revision N | Revision less than N                | Ignore as stale     |
-| Revision N | Same revision and same content      | Duplicate/no-op     |
-| Revision N | Same revision and different content | Invariant violation |
+| Current cache | Incoming snapshot                   | Result              |
+| ------------- | ----------------------------------- | ------------------- |
+| Missing       | Any                                 | Insert              |
+| Revision N    | Revision greater than N             | Advance             |
+| Revision N    | Revision less than N                | Ignore as stale     |
+| Revision N    | Same revision and same content      | Duplicate/no-op     |
+| Revision N    | Same revision and different content | Invariant violation |
 
 An equal causal revision with different content throws
 `StateSnapshotRevisionConflictError`. Silently choosing one would make a data
@@ -266,7 +266,7 @@ RTT refresh is a latest-value workload and may coalesce while pending:
 
 ```ts
 type RtcTopologyRttRefreshWork = {
-  kind: "rtt-refresh";
+  kind: 'rtt-refresh';
   groupSnapshot: GroupSnapshot;
   requestedGroupStateRevision: number;
   requestedRttVersion: number;
@@ -414,20 +414,51 @@ Duplicate and reordered notifications are harmless because the publication is
 immutable and browser caches apply the causal tuple comparison.
 
 `createRallarMiddleware(...)` owns queue-key bridge installation because it
-constructs the `WsQueueBoxServerService` that the bridge observes. Runtime
-readiness combines the queue bridge's actual listener-subscription promise with
-the RTC topology transport readiness supplied by api-v1. `main.ts` awaits that
-combined barrier before starting the queue engine or HTTP server. A PostgreSQL
-deployment therefore fails closed if either listener cannot subscribe. The
-local queue-key transport supports single-process execution.
+constructs the `WsQueueBoxServerService` that the bridge observes. QueueBox is
+still the low-latency path: a committed topology key can deliver locally and
+wake remote listeners immediately. PostgreSQL `NOTIFY` is intentionally only a
+wake-up and remains safe to lose.
 
-This startup barrier prevents the first api-v1 request or local queue drain
-from racing an unready listener. It does not add notification replay or
-anti-entropy. PostgreSQL `NOTIFY` remains transient: a notification published
-before subscription or during a later listener outage is not recovered by a
-catch-up scan. The durable `WS_OUTBOX` row is the source loaded and validated
-after a key notification, but durable invalidation replay remains separate
-work.
+### Durable topology replay and reconnect hydration
+
+Each API process owns one ephemeral UUID used as its publisher stream and
+consumer identity. There is no singleton allocator. A topology transaction
+updates only that process's `rtc_topology_delivery_stream` HEAD and appends one
+immutable `rtc_topology_delivery_log` row. The canonical publication identity
+is unique across streams, so an A/B race produces one winner and rolls the
+losing HEAD update back without a sequence hole.
+
+Every consumer keeps one durable cursor per publisher. Notification,
+local-commit, startup, and the one-second anti-entropy poll request the same
+single-flight drain. A turn rotates publishers, reads at most 100 entries per
+page and 10 pages/1,000 entries total, and advances a cursor only through the
+contiguous successfully handled prefix. Bare sequence numbers from different
+publishers are never comparable; identify entries as A/11 or B/21 and use the
+topology causal tuple to decide current state.
+
+Replay validates the exact publication and `WS_OUTBOX` key, then compares the
+historical publication with the current durable topology. It sends current
+state when history is stale and stalls on corruption or an incomparable value.
+Delivery and log rows share the fixed 24-hour retention window. A cursor behind
+the retained prefix triggers current-state hydration of every open local
+session before it advances to a captured HEAD; dead consumers do not pin
+retention.
+
+Before HTTP starts, a process registers its stream with a database-time lease,
+captures existing HEADs, and seeds its new consumer cursors to those HEADs. A
+publisher discovered after readiness starts at its retained floor minus one.
+The process renews its 30-second lease every 10 seconds. Lease loss stops replay,
+closes local sockets, and initiates controlled shutdown instead of silently
+reusing the identity.
+
+Reconnect hydration batches connections for 25 milliseconds and scans durable
+topology in pages of 100. For every candidate session/group pair it reloads the
+durable group twice around the current topology read, requires active
+membership, the exact session generation and principal, live presence, and an
+unexpired group, then performs an identity-fenced send to that socket
+generation. Failed reads retry with bounded delays while the same generation
+remains open. This is current-state convergence, not historical per-session
+acknowledgement.
 
 ### Example: authorization after a remote ban
 
@@ -477,6 +508,11 @@ peer lanes.
 - Durable publication insertion is idempotent by work and publication id.
 - Publication is persisted before the cluster signal is sent.
 - Cluster delivery may repeat; browsers reject duplicates and stale tuples.
+- A lost notification is repaired by the periodic durable cursor drain.
+- A reconnect receives current topology only after a fresh durable
+  authorization check; a replacement socket generation cannot receive the
+  prior generation's send.
+- Cursor advancement never crosses a failed send or corrupt reference.
 - `APP_OUTBOX` completes only after persistence and cluster publish succeed.
 - The topology handler does not enqueue `APP_INBOX`, `APP_OUTBOX`, or
   `WS_OUTBOX` work.
@@ -494,12 +530,12 @@ publication, strict read authorization does not trust cached snapshots, and an
 eligible floor-bearing point read never returns below its requested scalar or
 causal floor.
 
-It does not yet guarantee lossless cluster publication replay. PostgreSQL
-notifications are ephemeral, so a server disconnected after publication commit
-can miss the wake-up. The durable record remains correct, but no ordered cursor
-drain currently discovers it. The follow-up architecture should maintain a
-durable ordered publication log with per-process replay cursors and treat
-notifications only as wake-ups.
+Topology publication discovery survives a live PostgreSQL listener outage
+through durable per-process streams and per consumer/publisher cursors. A
+process offline past the 24-hour retention window receives current-state gap or
+reconnect hydration, not exact historical delivery. Exact history across a
+browser disconnect and durable per-session acknowledgements remain outside
+this contract.
 
 Browser client/group absence repair also does not guarantee resurrection
 safety. Conditional physical deletion protects a newer observation already in
@@ -524,6 +560,11 @@ snapshot deletion authority.
   conflicts re-enter the complete read/compute/validate path.
 - Topology fanout performs one encoding and one indexed send per unique
   recipient, with zero connection-wide broadcast scans.
+- A new accepted topology publication adds one process-local HEAD CAS and one
+  immutable delivery-log insert in the existing transaction. Independent A/B
+  streams share no mutable HEAD row.
+- Replay is bounded to 100 entries per page and 1,000 entries/10 pages per turn;
+  reconnect and gap hydration scan durable topology in 100-row pages.
 
 The first three bullets are code/test-proven call-shape bounds, not retained
 runtime call counters. The retained Task 5 performance artifact directly
@@ -536,7 +577,7 @@ The unweakened Postgres medium-scale gate is
 authenticated clients, five groups, three Postgres-backed API processes, 10
 client lanes plus 5 control lanes. Never reduce those constants or the
 operation matrix to make a change pass. The Task 8 retained run completed all
-2,721 assertions and proved cross-process state/topology convergence.
+fixed assertions and proved cross-process state/topology convergence.
 
 The API-v1 black-box runner keeps memory as a one-process mode. Its built-in
 Postgres cluster profiles instead manage three Deno API processes sharing one
@@ -547,8 +588,14 @@ externally managed. Standard/default, CRDT, and medium-scale cluster recipes
 all give node C meaningful work. The runner automatically clears prior
 `fairness-proof.json` before each invocation, so a failed run cannot leave
 stale proof presented as current.
-This topology-only test change requires correctness and load gates, not a new
-production benchmark or numeric latency SLO.
+
+`npm run test:api-v1:black-box:postgres:topology-replay` is the dedicated
+durable proof. A/B retain QueueBox workers; passive C disables both database
+notifications and QueueBox workers. N1/N3/N5 are distinct Alice sessions and
+N2/N4/N6 are distinct Bob sessions. The proof requires C to converge only from
+poll-driven replay, stops C, advances both publisher HEADs, starts C' with a new
+stream, and reconnects N5/N6 to current state without a post-start mutation.
+It writes `rtc-topology-replay-proof.json` plus isolated A, B, C, and C' logs.
 
 A mutation-path or concurrency-domain change must also run
 `npm run perf:api-v1:state-write` and pass
@@ -565,9 +612,17 @@ but snapshot and topology response shapes now require `stateRevision`,
 missing topology causal fields, legacy outbox work, and nondurable topology
 handling are not supported.
 
-The cluster-notification cutover requires a coordinated deployment of API
-nodes. Older nodes do not subscribe to topology publication notifications and
-cannot fan out publications to their locally connected sessions.
+Deploy the schema first, then deploy all writers with replay disabled so every
+accepted publication appends a process-stream entry. Enable replay only after
+all writers are log-capable. Replay now defaults to enabled; QueueBox workers
+remain enabled by default. `RALLAR_API_QUEUE_WORKERS=disabled` is a
+PostgreSQL-only proof/operations mode for a passive process.
+
+Rollback sets `RALLAR_RTC_TOPOLOGY_REPLAY=disabled`. That stops replay and
+reconnect/gap hydration but deliberately leaves stream registration, logging,
+lease renewal, fixed-retention compaction, and schema in place so a later
+cutover does not create a new unlogged interval. Do not drop the delivery tables
+or disable standard QueueBox workers as part of this rollback.
 
 Existing REST paths, database schema, generated manifests, and browser runtime
 import paths remain compatible. Point-read floor queries, authoritative
@@ -604,15 +659,21 @@ intentional coordinated-deployment boundary described by this architecture.
   immutable publications and work index.
 - `packages/shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts`:
   atomic topology/publication/work-index acceptance.
+- `packages/shared-server/rallar-system/topology/replay/**`: stream/log
+  validation, bounded replay, current repair, diagnostics, and reconnect/gap
+  hydration.
+- `packages/shared-server/postgres/rtc-topology/**`: PostgreSQL stream, append,
+  cursor, compaction, and retirement adapters.
 - `packages/shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts`:
-  cluster notification contract and local-session fanout.
+  deprecated compatibility-only public transport data; production composition
+  no longer owns or requires it.
 - `packages/shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts`:
   durable queue-key publication, actual listener readiness, and bounded
   cluster-receive diagnostics.
 - `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`:
   queue bridge installation and combined runtime readiness ownership.
-- `apps/api-v1/src/db/api-v1-rtc-topology-cluster-transport.ts`: local,
-  disabled, and PostgreSQL transport composition.
+- `apps/api-v1/src/runtime/rtc-topology/**`: process stream registration,
+  readiness, replay configuration, health shutdown, and metrics composition.
 - `apps/api-v1/src/middleware.ts` and `create-rallar-server.ts`: single-owner
   API composition and consumer wiring.
 
@@ -623,6 +684,9 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts`
 - `packages/tests/shared-server/cached-state-services.test.ts`
 - `packages/tests/shared-server/rtc-topology-outbox-work.test.ts`
+- `packages/tests/shared-server/rtc-topology-delivery-log.test.ts`
+- `packages/tests/shared-server/rtc-topology-replay-service.test.ts`
+- `packages/tests/shared-server/rtc-topology-reconnect-hydrator.test.ts`
 - `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`
 - `packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts`
 - `packages/tests/shared-server/group-topology-management-service.test.ts`
@@ -634,6 +698,7 @@ Focused concurrency coverage lives in:
 - `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-rtc-topology-convergence.json`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-state-topology-churn.json`
+- `packages/shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-replay-proof.mts`
 
 The full-stack acceptance commands are:
 

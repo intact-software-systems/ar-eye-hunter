@@ -5,7 +5,7 @@ export interface TopologyPrBTestCaseOwnership {
   readonly ownerCaseId: string;
 }
 
-export const topologyPrBTestSourceCommit = '0b1fa13e07f7a8e4540d389cd5e25dfa95270da4';
+export const topologyPrBTestSourceCommit = 'cc98414867f22cc28f0137ef40a1887ab862f87d';
 
 const repositorySource = 'packages/tests/shared-server/group-topology-config-repository.test.ts';
 const exactReadSource = 'packages/tests/shared-server/group-topology-mutation-exact-read.test.ts';

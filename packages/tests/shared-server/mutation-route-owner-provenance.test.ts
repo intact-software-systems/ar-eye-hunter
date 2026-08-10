@@ -60,13 +60,14 @@ it('rejects a rerouted websocket callback even when dead markers remain', () => 
   const item = requireEntry(AppInboxType.RTC_RTT_SUBMIT, 'WS_INBOX');
   const source = readFileSync(item.sourcePath, 'utf8');
   const mutated =
-    source.replace('await enqueueRtcRttMutation({', 'await Promise.resolve({') +
+    source.replace('await options.enqueueRtcRttMutation({', 'await Promise.resolve({') +
     `
 function deadWsHandoff(enqueueRtcRttMutation: (...args: never[]) => unknown): void {
   void enqueueRtcRttMutation;
   void AppInboxType.RTC_RTT_SUBMIT;
 }
 `;
+  expect(mutated).not.toBe(source);
 
   expect(validateWithOverride(item.sourcePath, mutated)).toEqual(
     expect.arrayContaining([expect.stringContaining('registered handler is not connected')]),

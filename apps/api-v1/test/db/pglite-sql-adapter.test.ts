@@ -30,6 +30,8 @@ import {
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
+import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import {
   AuthSessionRepository,
@@ -2917,11 +2919,6 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
         database: sql,
         topologyManagement,
         executionRepository,
-        publicationFanout: {
-          readiness: Promise.resolve(),
-          publish: () => Promise.resolve(0),
-          deliverLocal: () => 0,
-        },
       }),
     );
     await workRuntime.publisher.enqueueForGroupSnapshot(durableTerminal);
@@ -2962,6 +2959,7 @@ Deno.test('PGlite topology worker classifies exact WS outbox replay as idempoten
     await new ResourceInboxRepository(sql).write(fixture.publicationEntry);
 
     await fixture.handler.onMessage(fixture.message, fixture.reserved);
+    assert.equal(fixture.readReplayWakeCount(), 1);
 
     const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
     assert.equal(consumed?.status, EntityStatus.COMPLETED);
@@ -2986,6 +2984,87 @@ Deno.test('PGlite topology worker classifies exact WS outbox replay as idempoten
       ),
       1,
     );
+    assert.deepEqual(
+      await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+      { headSequence: 1, sequences: [1] },
+    );
+  });
+});
+
+Deno.test('PGlite topology worker revalidates durable delivery on a loaded work claim', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteTopologyWorkFixture(
+      sql,
+      'pglite-topology-loaded-delivery',
+    );
+    await fixture.handler.onMessage(fixture.message, fixture.reserved);
+    assert.equal(fixture.readAppendCount(), 1);
+    assert.equal(fixture.readReplayWakeCount(), 1);
+    await sql`
+      update resource_inbox
+      set ri_status = 'RESERVED', ri_attempts = 2,
+          start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+      where ri_topic_id = ${fixture.workEntry.key.topicId}
+        and ri_resource_id = ${fixture.workEntry.key.resourceId}
+        and fk_ext_bank_id = ${fixture.workEntry.key.contextId}
+    `;
+    const replayReservation = await fixture.resourceInbox.findAnyByKey(
+      fixture.workEntry.key,
+    );
+    assert.ok(replayReservation);
+
+    await fixture.handler.onMessage(fixture.message, replayReservation);
+
+    assert.equal(fixture.readAppendCount(), 2);
+    assert.equal(fixture.readReplayWakeCount(), 2);
+    assert.deepEqual(
+      await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+      { headSequence: 1, sequences: [1] },
+    );
+    assert.equal(
+      (await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key))?.status,
+      EntityStatus.COMPLETED,
+    );
+  });
+});
+
+Deno.test('PGlite topology worker fails closed and rolls back after delivery lease loss', async () => {
+  await withPGliteSql(async (sql) => {
+    const fixture = await createPGliteTopologyWorkFixture(
+      sql,
+      'pglite-topology-delivery-lease-loss',
+    );
+    await sql`
+      update rtc_topology_delivery_stream
+      set lease_expires_at = clock_timestamp() - interval '1 second'
+      where stream_id = ${fixture.publisherStreamId}
+    `;
+
+    await assert.rejects(
+      () => fixture.handler.onMessage(fixture.message, fixture.reserved),
+      RtcTopologyDeliveryLeaseLostError,
+    );
+
+    assert.equal(
+      await fixture.executionRepository.findPublicationForWork(
+        fixture.groupRef,
+        fixture.workId,
+      ),
+      undefined,
+    );
+    assert.equal(
+      await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key),
+      null,
+    );
+    assert.deepEqual(
+      await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+      { headSequence: 0, sequences: [] },
+    );
+    assert.equal(
+      (await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key))?.status,
+      EntityStatus.RESERVED,
+    );
+    assert.equal(fixture.readReplayWakeCount(), 0);
   });
 });
 
@@ -3027,6 +3106,11 @@ Deno.test('PGlite topology worker rolls state and receipt back on divergent WS o
         ?.resource,
       divergentResource,
     );
+    assert.deepEqual(
+      await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+      { headSequence: 0, sequences: [] },
+    );
+    assert.equal(fixture.readReplayWakeCount(), 0);
   });
 });
 
@@ -3067,6 +3151,11 @@ Deno.test('PGlite topology worker rolls every effect back when reservation compl
     const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
     assert.equal(consumed?.status, EntityStatus.RESERVED);
     assert.equal(consumed?.dequeueAudit.attempts, 1);
+    assert.deepEqual(
+      await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
+      { headSequence: 0, sequences: [] },
+    );
+    assert.equal(fixture.readReplayWakeCount(), 0);
   });
 });
 
@@ -4850,18 +4939,27 @@ Deno.test('PSqlCrdtLogRepository exposes reads but rejects direct mutations', as
     };
 
     await assert.rejects(repository.append(toCrdtAppendInput(update)), /AppInbox|disabled/i);
-    await assert.rejects(repository.appendBatch({
-      document: CRDT_DOCUMENT_REF,
-      updates: [toCrdtAppendInput(update)],
-    }), /AppInbox|disabled/i);
-    await assert.rejects(repository.writeSnapshot({
-      snapshot,
-      appendSequence: 0,
-    }), /AppInbox|disabled/i);
-    await assert.rejects(repository.updateDocumentLifecycle({
-      document: CRDT_DOCUMENT_REF,
-      lifecycle: 'archived',
-    }), /AppInbox|disabled/i);
+    await assert.rejects(
+      repository.appendBatch({
+        document: CRDT_DOCUMENT_REF,
+        updates: [toCrdtAppendInput(update)],
+      }),
+      /AppInbox|disabled/i,
+    );
+    await assert.rejects(
+      repository.writeSnapshot({
+        snapshot,
+        appendSequence: 0,
+      }),
+      /AppInbox|disabled/i,
+    );
+    await assert.rejects(
+      repository.updateDocumentLifecycle({
+        document: CRDT_DOCUMENT_REF,
+        lifecycle: 'archived',
+      }),
+      /AppInbox|disabled/i,
+    );
     await assert.rejects(repository.restoreBackupBundle({} as never), /AppInbox|disabled/i);
     await assert.rejects(
       repository.rebuildProjection(CRDT_DOCUMENT_REF, 'checklist-summary'),
@@ -4870,9 +4968,12 @@ Deno.test('PSqlCrdtLogRepository exposes reads but rejects direct mutations', as
 
     assert.equal(await repository.readDocumentMetadata(CRDT_DOCUMENT_REF), undefined);
     assert.equal(await repository.readSnapshot(CRDT_DOCUMENT_REF), undefined);
-    assert.deepEqual((await repository.listAfter({
-      document: CRDT_DOCUMENT_REF,
-    })).records, []);
+    assert.deepEqual(
+      (await repository.listAfter({
+        document: CRDT_DOCUMENT_REF,
+      })).records,
+      [],
+    );
     assert.deepEqual((await repository.listDocuments()).documents, []);
   });
 });
@@ -5039,6 +5140,17 @@ async function createPGliteTopologyWorkFixture(
   };
   const publicationEntry = computeRtcTopologyPublicationOutbox(publication);
   const queue = new PSqlQueueBox(resourceInbox);
+  const publisherStreamId = '00000000-0000-4000-8000-000000000001';
+  const topologyDelivery = new PSqlRtcTopologyDeliveryRepository(sql);
+  let appendCount = 0;
+  let replayWakeCount = 0;
+  assert.equal(
+    (await topologyDelivery.registerStream({
+      streamId: publisherStreamId,
+      leaseDurationMs: 30_000,
+    })).status,
+    'registered',
+  );
   const runtime = createRtcTopologyOutboxPublisher({
     outboxQueueReader: new OutboxQueueReader(queue),
     senderId: 'pglite-topology-worker',
@@ -5049,10 +5161,17 @@ async function createPGliteTopologyWorkFixture(
     database: sql,
     topologyManagement,
     executionRepository,
-    publicationFanout: {
-      readiness: Promise.resolve(),
-      publish: () => Promise.resolve(0),
-      deliverLocal: () => 0,
+    topologyDelivery: {
+      publisherStreamId,
+      append: {
+        appendOrValidate: async (transaction, input) => {
+          appendCount += 1;
+          return await topologyDelivery.appendOrValidate(transaction, input);
+        },
+      },
+    },
+    wakeReplay: () => {
+      replayWakeCount += 1;
     },
   });
   return {
@@ -5067,6 +5186,30 @@ async function createPGliteTopologyWorkFixture(
     reserved,
     message,
     handler,
+    publisherStreamId,
+    readAppendCount: () => appendCount,
+    readReplayWakeCount: () => replayWakeCount,
+  };
+}
+
+async function readRtcTopologyDeliveryState(
+  sql: PGliteSql,
+  publisherStreamId: string,
+): Promise<Readonly<{ headSequence: number; sequences: readonly number[] }>> {
+  const streams = await sql<Readonly<{ head_sequence: number }>[]>`
+    select head_sequence::double precision as head_sequence
+    from rtc_topology_delivery_stream
+    where stream_id = ${publisherStreamId}
+  `;
+  const entries = await sql<Readonly<{ sequence: number }>[]>`
+    select sequence::double precision as sequence
+    from rtc_topology_delivery_log
+    where publisher_stream_id = ${publisherStreamId}
+    order by sequence
+  `;
+  return {
+    headSequence: streams[0]!.head_sequence,
+    sequences: entries.map((entry) => entry.sequence),
   };
 }
 

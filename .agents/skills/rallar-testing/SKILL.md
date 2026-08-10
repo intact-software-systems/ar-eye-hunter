@@ -64,6 +64,12 @@ not an acceptance criterion.
   Standard/default, CRDT, and medium-scale cluster recipes must make node C
   meaningful. See `references/test-commands.md` for the commands, artifacts,
   and failure-triage expectations.
+- RTC topology stream, cursor, replay, reconnect, retention, or cutover work:
+  also run the dedicated
+  `npm run test:api-v1:black-box:postgres:topology-replay` gate. It keeps A/B
+  active, makes C passive, requires poll-only N5/N6 convergence, then proves
+  same-session current hydration through a new C' process identity. Never
+  replace this semantic proof with log counts.
 - A mutation-path or concurrency-domain change also requires
   `npm run perf:api-v1:state-write` and the comparative result gate implemented
   by `node scripts/perf/compare-api-v1-state-write-results.mjs`.

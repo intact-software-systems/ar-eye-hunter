@@ -1,9 +1,12 @@
-# Group topology server navigation
+# Topology server navigation
 
 This map names the current canonical owners for topology mutation protocol,
-pure config decisions, and persistence. It is navigation evidence, not runtime
-truth. PR C replaces the remaining deferred rows when authoritative shell
-ownership moves into this feature.
+pure config decisions, persistence, durable RTC delivery replay, and reconnect
+hydration. It is navigation evidence, not runtime truth. The first sections
+retain the group-topology PR-A and PR-B ownership records; later sections map
+the active durable delivery feature without transferring config-policy or
+persistence ownership. PR C replaces the remaining deferred rows when
+authoritative shell ownership moves into this feature.
 
 ## Current PR-A owners
 
@@ -92,3 +95,131 @@ non-canonical recomputation throws at the same owning boundary as before.
 - Downstream RTC APP_OUTBOX work, topology snapshots/publications, WS audience,
   and browser overlay consumption remain retained consumers and are not owned
   by config policy.
+
+## Durable RTC delivery, replay, and hydration
+
+This section identifies the active owners for authoritative topology work,
+durable delivery replay, and reconnect hydration. It is navigation, not a
+second copy of the runtime contracts.
+
+### Durable delivery end-to-end flow
+
+1. Group or RTT authority creates immutable topology work through
+   `inbox/topology-app-inbox-*` or the RTC RTT inbox.
+2. `replay/create-rtc-topology-work-handler.ts` reads, computes, validates, and
+   commits the latest topology, immutable publication, `WS_OUTBOX`, process
+   stream append, and work completion in one transaction.
+3. QueueBox remains the immediate local/notification path.
+4. `replay/rtc-topology-replay-service.ts` independently discovers committed
+   entries from per-process streams and advances one durable cursor for each
+   consumer/publisher pair.
+5. `replay/rtc-topology-replay-entry-handler.ts` validates the exact durable
+   publication/outbox references and chooses historical delivery or current
+   repair.
+6. `replay/rtc-topology-reconnect-hydrator.ts` sends current topology after a
+   fresh durable authorization check on socket open and during retention-gap
+   recovery.
+
+### Durable delivery owners
+
+- `inbox/topology-app-inbox-authority.ts`: authority required to accept
+  topology commands.
+- `inbox/topology-app-inbox-command.ts`: canonical command decoding.
+- `inbox/topology-app-inbox-handler.ts`: AppInbox dispatch boundary.
+- `replay/rtc-topology-work-codec.ts`: immutable topology work persistence
+  boundary.
+- `replay/create-rtc-topology-work-handler.ts`: accepted-publication
+  transaction and after-commit wake ownership.
+- `replay/rtc-topology-delivery-contracts.ts`: stream, log, cursor, and append
+  values.
+- `replay/rtc-topology-delivery-validation.ts`: strict IDs, safe integers,
+  canonical publication equality, and corruption errors.
+- `replay/rtc-topology-delivery-stream-service.ts`: registration, lease,
+  heartbeat, compaction, and retirement lifecycle.
+- `replay/rtc-topology-replay-service.ts`: single-flight bounded drain,
+  publisher rotation, contiguous-prefix handling, cursor CAS, and gap entry.
+- `replay/rtc-topology-replay-decision.ts`: historical/current/corrupt decision
+  against current durable topology.
+- `replay/rtc-topology-replay-entry-handler.ts`: exact reference loading and
+  local fixed-audience send.
+- `replay/rtc-topology-reconnect-hydrator.ts`: 25ms batching, 100-row paging,
+  durable authorization, current reload, retry, cancellation, and socket
+  generation fencing.
+- `replay/rtc-topology-replay-policy.ts`: all fixed readiness, page, turn,
+  lease, poll, compaction, and retention constants.
+- `replay/rtc-topology-replay-diagnostics.ts`: closed bounded-dimension event
+  and metric inventory.
+
+The PostgreSQL owners are under `../../postgres/rtc-topology/`:
+
+- `p-sql-rtc-topology-delivery-repository.ts`: stream registration/lease and
+  atomic HEAD/log append.
+- `p-sql-rtc-topology-replay-repository.ts`: publisher discovery, captured
+  pages, cursor initialization/CAS, and maintenance delegation.
+- `compact-rtc-topology-delivery-entries.ts`: fixed-retention compaction.
+- `p-sql-rtc-topology-replay-maintenance.ts`: expired consumer cursor and empty
+  stream retirement.
+
+API-v1 composition is under
+`../../../../apps/api-v1/src/runtime/rtc-topology/`. The app owns process
+identity, environment policy, startup/readiness, health shutdown, QueueBox
+bridge choice, and admin metric exposure. Shared-server owns the reusable
+behavior after those dependencies are supplied.
+
+### Durable delivery invariants
+
+- One ephemeral process UUID owns one publisher stream and one consumer. Never
+  introduce a singleton global HEAD or a stable deployment-slot identity.
+- A cursor is keyed by `(consumer_stream_id, publisher_stream_id)`. Bare
+  sequences from different publishers have no ordering relationship.
+- QueueBox remains the low-latency path. Durable replay is an independent
+  discovery path and safe duplicates are expected.
+- Cursor CAS advances only through the contiguous successfully handled prefix.
+  Missing/mismatched references, failed sends, and failed gap hydration do not
+  over-acknowledge.
+- Delivery rows retain for the publication's fixed 24-hour window. Dead or slow
+  consumers do not pin retention.
+- Reconnect and gap hydration use current durable group authority. Cached
+  membership/presence and a prior socket generation never authorize a send.
+- `RtcTopologyClusterTransport` remains a deprecated public compatibility
+  export only. Production composition must not reacquire it as a second owner.
+
+### Durable delivery configuration and rollback
+
+- `RALLAR_RTC_TOPOLOGY_REPLAY=enabled|disabled` defaults to `enabled`.
+- `RALLAR_API_QUEUE_WORKERS=enabled|disabled` defaults to `enabled`;
+  `disabled` is valid only with PostgreSQL and exists for passive-node proof or
+  a deliberately passive operations process.
+- `RALLAR_DB_PUBSUB=disabled` disables notification wake-up, not the durable
+  poll.
+
+Rollback disables replay. It intentionally retains schema, stream
+registration, publication logging, lease renewal, compaction, and ordinary
+QueueBox processing so a later re-enable has no newly unlogged interval.
+
+### Durable delivery validation
+
+Run focused feature tests first:
+
+```bash
+npx vitest run \
+  packages/tests/shared-server/rtc-topology-delivery-log.test.ts \
+  packages/tests/shared-server/rtc-topology-replay-service.test.ts \
+  packages/tests/shared-server/rtc-topology-reconnect-hydrator.test.ts \
+  packages/tests/shared-server/rtc-topology-outbox-work.test.ts \
+  packages/tests/shared-server/queuebox-pubsub-bridge.test.ts \
+  packages/tests/shared/websocket-webrtc.test.ts
+```
+
+Then run PostgreSQL integration and the deterministic A/B/C to C' proof:
+
+```bash
+npm run test:postgres:integration
+npm run test:api-v1:black-box:postgres:topology-replay
+npm run test:api-v1:black-box:postgres:medium-scale
+```
+
+The replay proof requires two publisher streams with positive HEADs, passive C
+cursor pairs caught up through poll-only discovery, later A/B HEAD advances, a
+new C' stream seeded at those HEADs, same-session reconnect hydration without a
+post-start mutation, and isolated A/B/C/C' logs.

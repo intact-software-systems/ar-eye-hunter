@@ -63,6 +63,8 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 | `rtc-topology-mesh-no-rtt-bench.ts` | No-RTT mesh topology rebuild workload. |
 | `rtc-topology-rtt-traffic-metrics.ts` | WS/topic-level RTT burst probe for topology queue coalescing, flushes, graph builds, and publishes. |
 | `rtc-topology-inactive-churn-bench.ts` | Topology snapshot lifetime workload comparing retained inactive overlays with inactive-overlay cleanup. |
+| `rtc-topology/delivery-log-bench.ts` | PostgreSQL publisher-stream append, contention, duplicate-race, and rollback workload. |
+| `rtc-topology/replay-drain-operation-counts.ts` | Deterministic caught-up, bounded-page, delivery-outcome, and gap-hydration operation counts for the production replay service. |
 | `rtc-rtt-group-scan-bench.ts` | RTT/group lookup scan workload. |
 | `rtc-multicast-serialization-bench.ts` | Multicast transport serialization fanout workload. |
 | `rtc-ice-candidate-queue-bench.ts` | ICE candidate queue flush workload. |
@@ -218,6 +220,24 @@ predicate, so malformed entries cannot authorize a regression.
 Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
 at least three measured runs, and concurrency 10.
+
+## RTC Topology Delivery Log
+
+Apply the current migrations, then run the fixed PostgreSQL workload:
+
+```sh
+DATABASE_URL=postgres://app:app@localhost:5432/appdb \
+  npm run perf:rtc-topology:delivery-log -- \
+  --label=candidate \
+  --out=tmp/perf/rtc-topology-delivery-log-candidate.json
+```
+
+The workload constants are intentionally code-owned: 300 appends at concurrency
+10 for both one-stream contention and three-stream independent publication, 30
+forced duplicate-publication races, and 100 surrounding-transaction rollbacks.
+Every result records throughput, p50/p95/p99, transaction retries, durable row
+and HEAD counts, per-stream HEADs, and contiguous-sequence verification. Output
+belongs under `tmp/perf/` and is not committed.
 
 ## Focused Runtime Harness
 

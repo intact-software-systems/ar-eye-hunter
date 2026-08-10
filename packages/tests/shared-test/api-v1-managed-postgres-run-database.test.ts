@@ -35,6 +35,18 @@ describe('managed API-v1 PostgreSQL run database', () => {
     ).toBe(false);
   });
 
+  it('isolates the topology replay proof from retained streams and queue work', () => {
+    expect(
+      requiresManagedPostgresRunDatabase({
+        backend: 'postgres',
+        profile: 'api-v1-black-box-topology-replay',
+        clusterOnly: false,
+        clusterProfile: 'api-v1-black-box-cluster',
+        recipesOnly: false,
+      }),
+    ).toBe(true);
+  });
+
   it('changes only the database selected by the managed PostgreSQL URL', () => {
     const databaseName = toManagedPostgresDatabaseName(
       'local-1785497966315',

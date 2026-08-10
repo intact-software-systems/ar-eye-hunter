@@ -227,11 +227,19 @@ Deno.test('api middleware protects RTC receipt families and starts specialized c
     middlewareSource,
     /excludedNamespaces:\s*RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES/,
   );
-  assert.match(middlewareSource, /createRuntimeStateExpiryLifecycle/);
+  assert.match(middlewareSource, /beginMiddlewareStartupGeneration/);
   assert.match(middlewareSource, /startRtcRttReceiptFamilyCleanup/);
   assert.match(middlewareSource, /startRuntimeStateExpiryEviction/);
   assert.match(middlewareSource, /shutdownMiddlewareBackgroundTasks/);
   assert.match(middlewareSource, /registerMiddlewareBackgroundTask/);
+
+  const backgroundTasksSource = await Deno.readTextFile(
+    new URL('../../src/middleware-background-tasks.ts', import.meta.url),
+  );
+  assert.match(backgroundTasksSource, /createRuntimeStateExpiryLifecycle/);
+  assert.match(backgroundTasksSource, /beginMiddlewareStartupGeneration/);
+  assert.match(backgroundTasksSource, /shutdownMiddlewareBackgroundTasks/);
+  assert.match(backgroundTasksSource, /registerMiddlewareBackgroundTask/);
 
   const serverSource = await Deno.readTextFile(
     new URL('../../src/create-rallar-server.ts', import.meta.url),

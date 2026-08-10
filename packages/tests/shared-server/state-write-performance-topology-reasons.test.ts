@@ -58,6 +58,45 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
       expect(() => parseReasons(JSON.stringify(malformed))).toThrow(/conflict reason/);
     }
   });
+
+  it('selects RTC durable-append reasons without contaminating other captures', async () => {
+    const bench = await import('../../../scripts/perf/api-v1-state-write-concurrency-bench.ts');
+    const rtcOptions = bench.parseBenchmarkOptions([
+      '--regression-reason-profile=rtc-topology-durable-append',
+    ]);
+    expect(rtcOptions).toMatchObject({
+      regressionReasonProfile: 'rtc-topology-durable-append',
+    });
+    expect(
+      bench.selectStateWriteRegressionReasons(rtcOptions.regressionReasonProfile, []),
+    ).toHaveLength(12);
+
+    const ordinaryOptions = bench.parseBenchmarkOptions([]);
+    expect(
+      bench.selectStateWriteRegressionReasons(ordinaryOptions.regressionReasonProfile, []),
+    ).toEqual([]);
+
+    const groupTopologyOptions = bench.parseBenchmarkOptions([
+      '--regression-reasons-file=tmp/perf/topology-reasons.json',
+    ]);
+    const groupTopologyReasons = createConflictReasonInput().reasons;
+    expect(
+      bench.selectStateWriteRegressionReasons(
+        groupTopologyOptions.regressionReasonProfile,
+        groupTopologyReasons,
+      ),
+    ).toEqual(groupTopologyReasons);
+
+    expect(() =>
+      bench.parseBenchmarkOptions([
+        '--regression-reason-profile=rtc-topology-durable-append',
+        '--regression-reasons-file=tmp/perf/topology-reasons.json',
+      ])
+    ).toThrow(/cannot be combined/);
+    expect(() =>
+      bench.parseBenchmarkOptions(['--regression-reason-profile=unapproved'])
+    ).toThrow(/Unsupported state-write regression reason profile/);
+  });
 });
 
 function createConflictReasonInput(): any {

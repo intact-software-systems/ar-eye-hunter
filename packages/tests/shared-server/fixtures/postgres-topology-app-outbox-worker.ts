@@ -104,11 +104,6 @@ function registerTopologyAppOutboxHandler(
         undefined,
         () => input.atEpochMs,
       ),
-      publicationFanout: {
-        readiness: Promise.resolve(),
-        publish: () => Promise.resolve(0),
-        deliverLocal: () => 0,
-      },
       serviceId: `postgres-topology-outbox-${Deno.pid}`,
     }),
   );

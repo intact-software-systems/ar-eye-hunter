@@ -236,6 +236,18 @@ describe('group topology server PR-A retained and additive test coverage', () =>
 });
 
 describe('group topology server PR-B persistence test ownership', () => {
+  it('binds the frozen persistence cases to the exact concurrent-main merge parent', () => {
+    expect(topologyPrBTestSourceCommit).toBe('cc98414867f22cc28f0137ef40a1887ab862f87d');
+    const manifest = JSON.parse(
+      read('plans/repo-style-lineages/rallar-group-topology-server-pr-b.json'),
+    ) as { lineages: Array<{ mergeBase: string }> };
+
+    expect(manifest.lineages.map(({ mergeBase }) => mergeBase)).toEqual([
+      topologyPrBTestSourceCommit,
+      topologyPrBTestSourceCommit,
+    ]);
+  });
+
   it('maps every frozen persistence source case to one behavior-named owner', () => {
     const discovered = prBSourcePaths.flatMap((sourcePath) =>
       [...requireCases(prBSourceCases, sourcePath).keys()].map((caseId) =>

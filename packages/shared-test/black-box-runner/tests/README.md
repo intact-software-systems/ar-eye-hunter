@@ -30,3 +30,14 @@ managed run; failure triage uses only the current invocation's isolated logs
 and fairness proof. This is a test-topology change: run correctness and load
 gates, but do not add a new production benchmark or numeric latency SLO unless
 production behavior changes.
+
+The dedicated `api-v1-black-box-topology-replay` profile is coordinator-owned,
+not a portable recipe. A/B run standard workers and notification listeners;
+passive C disables both and must converge N5/N6 through periodic durable replay.
+The coordinator then stops C, advances both publisher streams, restarts C' with
+a new process identity and non-overwriting log, and proves same-session current
+hydration without a post-restart mutation. It writes
+`rtc-topology-replay-proof.json` and four logs, including
+`api-v1-server-tertiary-restart.log`. A failed run writes a bounded failure
+artifact with safe socket topic counts, replay metrics, and stream/cursor state;
+it never writes credentials, access tokens, or WebSocket tickets.
