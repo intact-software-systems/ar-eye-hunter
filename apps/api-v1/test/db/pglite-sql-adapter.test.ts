@@ -319,6 +319,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
     await authSessions.putSession(authority);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-group-service',
@@ -477,6 +478,7 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     await authSessions.putSession(authority);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-summary-fence',
@@ -1556,6 +1558,7 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
     });
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-topology-cross-target',
@@ -1699,6 +1702,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     for (const member of snapshot.members) await groupRepository.putMember(member);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-app-inbox-topology',
@@ -2235,6 +2239,7 @@ Deno.test('PGlite topology route preserves structured AppInbox terminal and unav
     for (const member of snapshot.members) await groupRepository.putMember(member);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-topology-route-errors',
@@ -2448,6 +2453,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
     );
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-topology-retry',
@@ -3433,6 +3439,7 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
       const runtime = new PSqlRuntimeStateRepository(sql);
       const service = createGroupStateService({
         runtimeRepository: runtime,
+        formationDamping: 'damped',
         createGroupStateEventStore: createGroupStateEventRepository,
         authSessionRepository: {
           findBySessionId: (sessionId) =>
@@ -3780,6 +3787,7 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
     const persistedAuthority = await toPersistedAuthSessionFixture(authority);
     const service = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: {
         findBySessionId: (sessionId) =>
@@ -3865,6 +3873,7 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
     const persistedAuthority = await toPersistedAuthSessionFixture(authority);
     const service = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: {
         findBySessionId: (sessionId) =>

@@ -13,6 +13,7 @@ import {
   groupSessionStorageKey,
   groupStorageKey,
   presenceFor,
+  storagePart,
   storedEntry,
 } from './group-mutation-test-runtime.ts';
 
@@ -52,6 +53,7 @@ describe('group presence mutation computation', () => {
     const facts: GroupMutationFacts = {
       ...createMutationFacts(),
       internalAuthority: 'session-cleanup',
+      formationDamping: 'legacy',
       authenticatedAuthority: null,
     };
     const appointment = createMutationCommand({
@@ -81,6 +83,136 @@ describe('group presence mutation computation', () => {
     ).toThrow(/target presence principal.*command|command slot identity/i);
   });
 });
+
+describe('heartbeat lease renewal classification', () => {
+  const heartbeat = () =>
+    createMutationCommand({
+      operation: 'heartbeatPresence',
+      sessionId: 'alice-session',
+      input: {
+        actorPrincipalId: 'alice',
+        actorSessionId: 'alice-session',
+        reason: null,
+        traceId: null,
+        principalId: 'alice',
+        generationId: 'generation-1',
+        lastHeartbeatAtEpochMs: 1_500,
+        expiresAtEpochMs: 12_000,
+      },
+    } as Partial<GroupMutationCommand>);
+
+  it('renews the lease with no presence-summary work under damped formation', () => {
+    const computed = computeGroupMutation({
+      command: heartbeat(),
+      read: createHeartbeatRead(),
+      facts: { ...createMutationFacts(), formationDamping: 'damped' },
+    });
+
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    expect(computed.outboxEntries).toEqual([]);
+    expect(computed.receipt.outboxIds).toEqual([]);
+    expect(computed.guard.value).toMatchObject({
+      lastHeartbeatAtEpochMs: 1_500,
+      expiresAtEpochMs: 12_000,
+    });
+    expect(computed.event.eventType).toBe('session-heartbeat');
+  });
+
+  it('expands a lapsed-lease revival as an online transition under damped formation', () => {
+    const read = createHeartbeatRead();
+    const lapsed: GroupMutationRead = {
+      ...read,
+      targetPresence: storedEntry(groupSessionStorageKey('alice-session'), {
+        ...read.targetPresence!.value,
+        expiresAtEpochMs: 1_800,
+      }),
+    };
+
+    const computed = computeGroupMutation({
+      command: heartbeat(),
+      read: lapsed,
+      facts: { ...createMutationFacts(), formationDamping: 'damped' },
+    });
+
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    expect(computed.outboxEntries).toHaveLength(1);
+    expect(computed.receipt.outboxIds).toHaveLength(1);
+  });
+
+  it('expands when the stored summary does not list the session under damped formation', () => {
+    const read = createHeartbeatRead();
+    const unlisted: GroupMutationRead = {
+      ...read,
+      presenceSummary: storedEntry(groupStorageKey(), {
+        ...read.presenceSummary!.value,
+        activeSessionIds: [],
+        activeSessions: [],
+        activePrincipalIds: [],
+        activePrincipalCount: 0,
+        activeSessionCount: 0,
+      }),
+    };
+
+    const computed = computeGroupMutation({
+      command: heartbeat(),
+      read: unlisted,
+      facts: { ...createMutationFacts(), formationDamping: 'damped' },
+    });
+
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    expect(computed.outboxEntries).toHaveLength(1);
+  });
+
+  it('keeps the legacy expansion for every heartbeat under legacy formation', () => {
+    const computed = computeGroupMutation({
+      command: heartbeat(),
+      read: createHeartbeatRead(),
+      facts: { ...createMutationFacts(), formationDamping: 'legacy' },
+    });
+
+    expect(computed.outcome).toBe('write');
+    if (computed.outcome !== 'write') return;
+    expect(computed.outboxEntries).toHaveLength(1);
+    expect(computed.receipt.outboxIds).toHaveLength(1);
+  });
+});
+
+function createHeartbeatRead(): GroupMutationRead {
+  const base = createMutationRead();
+  const session = presenceFor('alice', 'alice-session', 'generation-1');
+  return {
+    ...base,
+    targetMember: base.actorMember,
+    targetMemberEntry: base.actorMemberEntry,
+    targetPresence: storedEntry(groupSessionStorageKey('alice-session'), session),
+    targetAdmission: storedEntry(`${groupStorageKey()}:${storagePart('principal', 'alice')}`, {
+      ...groupRef('pure-room'),
+      principalId: 'alice',
+      admittedSessions: [
+        {
+          sessionId: 'alice-session',
+          generationId: 'generation-1',
+          generationVersion: 1_000,
+          connectedAtEpochMs: 1_000,
+        },
+      ],
+      updatedAtEpochMs: 1_000,
+    }),
+    presenceSummary: storedEntry(groupStorageKey(), {
+      ...groupRef('pure-room'),
+      causalRevision: { groupRevision: 1, presenceRevision: 1 },
+      activePrincipalIds: ['alice'],
+      activeSessionIds: ['alice-session'],
+      activeSessions: [session],
+      activePrincipalCount: 1,
+      activeSessionCount: 1,
+      computedAtEpochMs: 1_000,
+    }),
+  } as GroupMutationRead;
+}
 
 function createMutationCommand(
   overrides: Partial<GroupMutationCommand> = {},
@@ -196,6 +328,7 @@ function createMutationFacts(): GroupMutationFacts {
     resolvedJoinCode: null,
     joinCodeVerifier: null,
     internalAuthority: 'none',
+    formationDamping: 'legacy',
     authenticatedAuthority: {
       principalId: 'alice',
       sessionId: 'alice-session',

@@ -198,6 +198,7 @@ function createMutationFacts(): GroupMutationFacts {
     resolvedJoinCode: null,
     joinCodeVerifier: null,
     internalAuthority: 'none',
+    formationDamping: 'legacy',
     authenticatedAuthority: {
       principalId: 'alice',
       sessionId: 'alice-session',

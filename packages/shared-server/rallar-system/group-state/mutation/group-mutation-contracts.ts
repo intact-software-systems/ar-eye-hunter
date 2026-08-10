@@ -235,6 +235,7 @@ export type GroupMutationFacts = Readonly<{
   resolvedJoinCode: string | null;
   joinCodeVerifier: string | null;
   internalAuthority: 'none' | 'expiry' | 'session-cleanup';
+  formationDamping: 'damped' | 'legacy';
   authenticatedAuthority: Readonly<{
     principalId: string;
     sessionId: string;
@@ -300,7 +301,7 @@ export type GroupMutationComputed =
       event: GroupEvent;
       receipt: GroupMutationReceipt;
       idempotency: GroupMutationIdempotencyRecord | null;
-      outboxEntries: readonly [ResourceEntry];
+      outboxEntries: readonly ResourceEntry[];
     }>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write' }>;

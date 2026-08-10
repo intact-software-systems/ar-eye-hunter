@@ -338,6 +338,7 @@ function inactiveConnectContext() {
           resolvedJoinCode: null,
           joinCodeVerifier: null,
           internalAuthority: 'none',
+          formationDamping: 'legacy',
           authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' },
         },
         causalToken: 'causal-token',

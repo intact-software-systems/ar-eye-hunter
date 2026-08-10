@@ -87,6 +87,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
           authoritativeSessions: read.sessionsByGroupId.get(stored.value.groupId) ?? [],
           groupRevision: stored.value.snapshotVersion,
           observedAtEpochMs,
+          sessionLeaseFields: 'authoritative',
         });
       }),
     );
@@ -173,6 +174,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
           authoritativeSessions: candidate.sessions,
           groupRevision: after.value.snapshotVersion,
           observedAtEpochMs,
+          sessionLeaseFields: 'authoritative',
         });
       }),
     );
@@ -255,6 +257,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
           ),
           groupRevision: stored.value.snapshotVersion,
           observedAtEpochMs,
+          sessionLeaseFields: 'authoritative',
         }),
         authorityGuard: toGroupStateAuthorityGuard(ref, stored),
       };
@@ -278,6 +281,7 @@ export abstract class GroupStateSnapshotRepository extends RuntimeStateJsonStore
           authoritativeSessions: presence.sessions,
           groupRevision: stored.value.snapshotVersion,
           observedAtEpochMs,
+          sessionLeaseFields: 'authoritative',
         }),
         authorityGuard: toGroupStateAuthorityGuard(ref, stored),
       }),

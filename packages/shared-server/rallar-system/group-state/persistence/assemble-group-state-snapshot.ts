@@ -19,6 +19,14 @@ export type GroupStateSnapshotAssemblyInput = Readonly<{
   authoritativeSessions: readonly GroupPresenceSession[];
   groupRevision: number;
   observedAtEpochMs: number;
+  /**
+   * 'authoritative' carries the liveness plane without revision movement:
+   * emitted sessions take lastHeartbeatAtEpochMs/expiresAtEpochMs from the
+   * authoritative rows, so a summary frozen at the last transition stays
+   * truthful between transitions. 'summary-frozen' reproduces the stored
+   * summary copies bit-for-bit.
+   */
+  sessionLeaseFields: 'summary-frozen' | 'authoritative';
 }>;
 
 export interface GroupStateScopeSnapshotRead {
@@ -107,18 +115,33 @@ function readActiveSessions(
   const authoritativeSessionsById = new Map(
     input.authoritativeSessions.map((session) => [session.sessionId, session]),
   );
-  return toActiveSessions(input.summary?.activeSessions ?? [], input.observedAtEpochMs)
+  const summarySessions =
+    input.sessionLeaseFields === 'authoritative'
+      ? (input.summary?.activeSessions ?? [])
+      : toActiveSessions(input.summary?.activeSessions ?? [], input.observedAtEpochMs);
+  return summarySessions
     .filter((session) => activeMemberIds.has(session.principalId))
-    .filter((session) => {
+    .flatMap((session) => {
       const authoritative = authoritativeSessionsById.get(session.sessionId);
-      return (
-        authoritative !== undefined &&
-        authoritative.principalId === session.principalId &&
-        authoritative.generationId === session.generationId &&
-        authoritative.generationVersion === session.generationVersion &&
-        authoritative.disconnectedAtEpochMs === null &&
-        isLogicallyActiveSession(authoritative.expiresAtEpochMs, input.observedAtEpochMs)
-      );
+      if (
+        authoritative === undefined ||
+        authoritative.principalId !== session.principalId ||
+        authoritative.generationId !== session.generationId ||
+        authoritative.generationVersion !== session.generationVersion ||
+        authoritative.disconnectedAtEpochMs !== null ||
+        session.disconnectedAtEpochMs !== null ||
+        !isLogicallyActiveSession(authoritative.expiresAtEpochMs, input.observedAtEpochMs)
+      ) {
+        return [];
+      }
+      if (input.sessionLeaseFields === 'summary-frozen') return [session];
+      return [
+        {
+          ...session,
+          lastHeartbeatAtEpochMs: authoritative.lastHeartbeatAtEpochMs,
+          expiresAtEpochMs: authoritative.expiresAtEpochMs,
+        },
+      ];
     });
 }
 

@@ -91,6 +91,7 @@ export function computeCreate(
     initialPresenceSummary: toInitialGroupPresenceSummaryCandidate(summary, read.presenceSummary),
     presenceAdmission: null,
     eventType: 'group-created',
+    presenceSummaryWork: 'enqueue',
   });
 }
 
@@ -235,6 +236,7 @@ function groupWrite(input: GroupWriteInput): GroupMutationComputed {
     members: [],
     initialPresenceSummary: null,
     eventType,
+    presenceSummaryWork: 'enqueue',
   });
 }
 

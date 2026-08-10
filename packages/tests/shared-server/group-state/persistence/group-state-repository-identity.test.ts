@@ -190,13 +190,14 @@ describe('GroupStateRepository persistence', () => {
         },
       ],
       [
-        'applied receipt without its authoritative outbox effect',
+        'applied receipt with more than one outbox effect',
         {
           ...valid,
           receipt: {
             ...valid.receipt,
             outcome: 'applied',
             eventId: 'event-1',
+            outboxIds: ['outbox-1', 'outbox-2'],
           },
         },
       ],

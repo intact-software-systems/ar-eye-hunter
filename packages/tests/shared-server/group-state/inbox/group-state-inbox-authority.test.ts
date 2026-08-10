@@ -43,7 +43,6 @@ describe('AppGroupInboxService authenticated authority', () => {
   it('fails closed before a direct user mutation can read or write without authority', async () => {
     const harness = await createAuthorityHarness(['owner']);
     await createRoom(harness, 'direct-missing-authority', 'Before');
-
     expect(Reflect.get(harness.groupStateService, 'updateGroup')).toBeUndefined();
     expect(
       (
@@ -181,6 +180,7 @@ describe('AppGroupInboxService authenticated authority', () => {
     const results = new TestResourceInboxResults();
     const groupStateService = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       serviceId: 'server-12345678',
       now: () => nowEpochMs,
       authSessionRepository: authSessions,

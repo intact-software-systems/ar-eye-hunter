@@ -83,6 +83,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
           resolvedJoinCode: null,
           joinCodeVerifier: null,
           internalAuthority: 'none',
+          formationDamping: 'legacy',
           authenticatedAuthority: {
             principalId: 'owner',
             sessionId: 'owner-session',

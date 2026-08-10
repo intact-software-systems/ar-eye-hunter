@@ -22,6 +22,7 @@ describe('GroupStateService command idempotency', () => {
     const timingEvents: RallarTimingEvent[] = [];
     const service = createGroupStateService({
       runtimeRepository: new FakeRuntimeStateRepository(),
+      formationDamping: 'damped',
       syncPublisher: createPublisher(),
       now: () => 1_000,
       serviceId: 'group-service',
@@ -59,6 +60,7 @@ describe('GroupStateService command idempotency', () => {
     const publisher = createPublisher();
     const service = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       syncPublisher: publisher,
       now: () => 1_000,
       serviceId: 'group-service',
@@ -155,6 +157,7 @@ describe('GroupStateService command idempotency', () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       syncPublisher: createPublisher(),
       now: () => 1_000,
       serviceId: 'group-service',
@@ -195,6 +198,7 @@ describe('GroupStateService command idempotency', () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       syncPublisher: createPublisher(),
       now: () => 1_000,
       serviceId: 'group-service',
@@ -237,6 +241,7 @@ describe('GroupStateService command idempotency', () => {
     const publisher = createPublisher();
     const service = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       syncPublisher: publisher,
       now: () => 2_000,
       serviceId: 'group-service',
@@ -284,6 +289,7 @@ describe('GroupStateService command idempotency', () => {
     const publisher = createPublisher();
     const service = createGroupStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       syncPublisher: publisher,
       now: () => 3_000,
       serviceId: 'group-service',

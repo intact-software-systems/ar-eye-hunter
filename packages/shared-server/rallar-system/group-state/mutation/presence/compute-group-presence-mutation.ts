@@ -226,7 +226,29 @@ export function computeHeartbeatPresence(
     session,
     operation: 'update',
     eventType: 'session-heartbeat',
+    presenceSummaryWork: isPureLeaseRenewalHeartbeat(command, read, facts) ? 'none' : 'enqueue',
   });
+}
+
+/**
+ * A pure lease renewal keeps the session row, event, and receipt but must not
+ * expand a presence summary: the session is already listed by the stored
+ * summary and its lease had not lapsed at read time, so no online/offline
+ * transition can be observed. Anything not provably pure — including a
+ * lapsed-lease revival — expands as before. Legacy mode never classifies.
+ */
+export function isPureLeaseRenewalHeartbeat(
+  command: Extract<GroupMutationCommand, { operation: 'heartbeatPresence' }>,
+  read: GroupMutationRead,
+  facts: GroupMutationFacts,
+): boolean {
+  if (facts.formationDamping !== 'damped') return false;
+  const existing = read.targetPresence;
+  return (
+    existing !== null &&
+    existing.value.expiresAtEpochMs > facts.nowEpochMs &&
+    (read.presenceSummary?.value.activeSessionIds ?? []).includes(command.sessionId)
+  );
 }
 
 export function computeDisconnectPresence(
@@ -304,6 +326,7 @@ interface PresenceWriteInput {
   readonly eventType: GroupEventType;
   readonly presenceAdmission?:
     import('../group-mutation-contracts.ts').PresenceAdmissionCandidate | null;
+  readonly presenceSummaryWork?: 'enqueue' | 'none';
 }
 
 function presenceWrite({
@@ -314,6 +337,7 @@ function presenceWrite({
   operation,
   eventType,
   presenceAdmission = null,
+  presenceSummaryWork = 'enqueue',
 }: PresenceWriteInput): GroupMutationComputed {
   const stored = requireGroup(read, command.aggregateRef);
   const guard =
@@ -345,6 +369,7 @@ function presenceWrite({
     eventType,
     eventGroup: stored.value,
     presenceAdmission,
+    presenceSummaryWork,
   });
 }
 

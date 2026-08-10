@@ -233,6 +233,7 @@ function mutationFacts(): GroupMutationFacts {
     resolvedJoinCode: null,
     joinCodeVerifier: null,
     internalAuthority: 'none',
+    formationDamping: 'legacy',
     authenticatedAuthority: {
       principalId: 'member',
       sessionId: 'member-session',

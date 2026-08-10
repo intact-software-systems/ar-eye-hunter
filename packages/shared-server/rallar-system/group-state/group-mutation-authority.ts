@@ -41,6 +41,7 @@ export interface GroupMutationAuthorityDependencies {
   readonly now: () => number;
   readonly randomId: () => string;
   readonly serviceId: string;
+  readonly formationDamping: 'damped' | 'legacy';
   readonly readCausalRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | undefined>;
 }
 
@@ -91,6 +92,7 @@ export async function prepareGroupMutation(
     resolvedJoinCode,
     joinCodeVerifier: await toJoinCodeVerifier(resolvedJoinCode),
     internalAuthority: 'none',
+    formationDamping: dependencies.formationDamping,
     authenticatedAuthority: {
       principalId: verified.session.clientId,
       sessionId: verified.session.sessionId,

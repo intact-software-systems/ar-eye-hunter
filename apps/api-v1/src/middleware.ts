@@ -275,6 +275,7 @@ function initialise(
     }) => {
       const durable = createGroupStateService({
         runtimeRepository: runtimeStateRepository,
+        formationDamping: groupFormationDamping,
         authSessionRepository,
         createGroupStateEventStore: createGroupStateEventRepository,
         serviceId: myServerId,

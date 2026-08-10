@@ -154,6 +154,7 @@ export class GroupPresenceSummaryWork {
       ref: work.aggregateRef,
       read,
       nowEpochMs: this.now(),
+      formationDamping: this.options.topologyIntent.damping,
     });
     const snapshot = assembleGroupStateSnapshot(
       {
@@ -163,6 +164,8 @@ export class GroupPresenceSummaryWork {
         authoritativeSessions: read.presenceSessions.map((session) => session.value),
         groupRevision: summary.summary.causalRevision.groupRevision,
         observedAtEpochMs: summary.summary.computedAtEpochMs,
+        sessionLeaseFields:
+          this.options.topologyIntent.damping === 'damped' ? 'authoritative' : 'summary-frozen',
       },
       (storageKey, message) => new Error(`${message}: ${storageKey}`),
     );
@@ -212,6 +215,7 @@ export class GroupPresenceSummaryWork {
       ref: work.aggregateRef,
       read,
       computed: computed.summary,
+      formationDamping: this.options.topologyIntent.damping,
     });
     if (
       work.event.applicationId !== work.aggregateRef.applicationId ||

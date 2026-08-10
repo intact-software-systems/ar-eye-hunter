@@ -192,6 +192,7 @@ export type GroupStateRuntime = Readonly<{
 
 export type GroupStateServiceDependencies = Readonly<{
   runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+  formationDamping: 'damped' | 'legacy';
   createGroupStateEventStore?: (
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
   ) => GroupStateEventStore;

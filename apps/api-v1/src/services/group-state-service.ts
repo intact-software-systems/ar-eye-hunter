@@ -11,6 +11,9 @@ import {
   createRuntimeStateRepository,
 } from '../repository/createStateRepositories.ts';
 import { getApiTimingSink } from './timing-service.ts';
+import {
+  readApiGroupFormationDampingConfig,
+} from '../runtime/group-formation/group-formation-damping-config.ts';
 
 export { createGroupStateService, type GroupStateService, type GroupStateServiceDependencies };
 
@@ -23,6 +26,7 @@ export function getGroupStateService(): ApiGroupStateService {
   const runtimeRepository = createRuntimeStateRepository();
   const durable = createGroupStateService({
     runtimeRepository,
+    formationDamping: readApiGroupFormationDampingConfig().damping,
     authSessionRepository: createAuthSessionRepository(runtimeRepository),
     createGroupStateEventStore: createGroupStateEventRepository,
     serviceId: myServerId,

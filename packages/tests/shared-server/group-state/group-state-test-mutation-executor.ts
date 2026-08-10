@@ -100,6 +100,7 @@ export class GroupStateTestMutationExecutor {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: authority,
+        formationDamping: 'legacy',
         authenticatedAuthority: null,
       };
       const mutation =
