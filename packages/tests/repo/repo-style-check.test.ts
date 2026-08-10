@@ -47,6 +47,98 @@ describe('repo style checker', () => {
     expect(runChecker(fixtureRoot, '--object-interfaces')).toContain('plain object contract');
   });
 
+  it('warns for type aliases that only rename an existing named type', () => {
+    const fixtureRoot = createFixture({
+      'account-alias.ts': [
+        'interface Account {',
+        '  readonly id: string;',
+        '}',
+        '',
+        'export type AccountDto = Account;',
+        'type RouteInput = CreateAccounts.Input;',
+      ].join('\n'),
+    });
+
+    const result = runChecker(fixtureRoot);
+    expect(result).toContain('[types.rename-alias]');
+    expect(result).toContain('Type alias "AccountDto" at line 5 only renames "Account"');
+    expect(result).toContain('Type alias "RouteInput" at line 6');
+    expect(result).toContain('only renames "CreateAccounts.Input"');
+  });
+
+  it('keeps semantic type expressions and primitive aliases unflagged', () => {
+    const fixtureRoot = createFixture({
+      'account-vocabulary.ts': [
+        'export type VertexId = string;',
+        "export type AccountStatus = 'pending' | 'complete';",
+        'export type AccountRows = ReadonlyArray<string>;',
+        'export type AccountPair = [string, number];',
+        'type AccountKey = keyof CreateAccounts.Input;',
+      ].join('\n'),
+    });
+
+    expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+  });
+
+  it('warns for runtime members inside an associated namespace', () => {
+    const fixtureRoot = createFixture({
+      'create-accounts.ts': [
+        'export namespace CreateAccounts {',
+        '  export interface Input {',
+        '    readonly name: string;',
+        '  }',
+        '',
+        '  export function submitInput(): void {}',
+        '}',
+        '',
+        'export class CreateAccounts {}',
+      ].join('\n'),
+    });
+
+    const result = runChecker(fixtureRoot);
+    expect(result).toContain('[types.runtime-namespace]');
+    expect(result).toContain('Namespace "CreateAccounts" at line 1 contains 1 runtime member');
+    expect(result).toContain('first at line 6');
+  });
+
+  it('keeps type-only namespaces and ambient declarations unflagged', () => {
+    const fixtureRoot = createFixture({
+      'group-invite-contracts.ts': [
+        'export namespace GroupInvite {',
+        '  export interface Input {',
+        '    readonly groupRef: string;',
+        '  }',
+        '',
+        '  export type Result = Input | undefined;',
+        '}',
+        '',
+        'declare namespace AmbientInvite {',
+        '  const runtimeShaped: number;',
+        '}',
+      ].join('\n'),
+      'ambient-vocabulary.d.ts': [
+        'export type AccountDto = Account;',
+        'export enum AccountStatus {',
+        '  Pending,',
+        '}',
+      ].join('\n'),
+    });
+
+    expect(runChecker(fixtureRoot)).toContain('PASS (no issues found in this run)');
+  });
+
+  it('warns for TypeScript enum declarations', () => {
+    const fixtureRoot = createFixture({
+      'account-status.ts': ['export enum AccountStatus {', '  Pending,', '  Complete,', '}'].join(
+        '\n',
+      ),
+    });
+
+    const result = runChecker(fixtureRoot);
+    expect(result).toContain('[types.enum-declaration]');
+    expect(result).toContain('TypeScript enum "AccountStatus" at line 1');
+  });
+
   it('keeps output-contract naming disabled unless explicitly requested', () => {
     const fixtureRoot = createFixture({
       'computed.ts': ['function computeThing() {', '  return { first: 1, second: 2 };', '}'].join(
@@ -281,6 +373,7 @@ describe('repo style checker', () => {
       'scripts/repo-style-check/layout-rules.mjs',
       'scripts/repo-style-check/repository-scan.mjs',
       'scripts/repo-style-check/source-text.mjs',
+      'scripts/repo-style-check/type-organization-rules.mjs',
     ];
 
     for (const relativePath of checkerFiles) {

@@ -29,6 +29,13 @@ standard.
 - For any TypeScript change, use the `rallar-code-writing` skill and read the
   authoritative repo standard at
   `.agents/skills/rallar-code-writing/references/repo-code-style.md`.
+- TypeScript type design optimizes for human comprehension: one canonical name
+  per type, and never introduce local or exported aliases that merely rename or
+  shorten an existing named type. Preserve meaningful qualification such as
+  `CreateAccounts.Input`. For types owned by a class, prefer a type-only
+  same-name namespace immediately before the class, and keep associated
+  namespaces compatible with `erasableSyntaxOnly`. Detailed rules:
+  `.agents/skills/rallar-code-writing/references/typescript-type-organization.md`.
 - For authoritative database or realtime service mutations, also read
   `.agents/skills/rallar-code-writing/references/convergent-service-writing.md`.
   Keep a functional core behind an explicitly owned stateful shell; each
