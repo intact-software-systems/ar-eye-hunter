@@ -1,6 +1,7 @@
 import { type ALMessage, readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
+import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
   WsServerResolvedRecipient,
@@ -8,7 +9,10 @@ import type {
 } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { isClientSnapshotSessionLive, isGroupSnapshotSessionLive } from '../snapshot-presence.ts';
-import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
+import {
+  readGroupSnapshotStateSyncPayload,
+  resolveStateSyncRecipients,
+} from '../state-sync-routing.ts';
 import type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
 
 export function createWsServerTargetResolver(
@@ -24,11 +28,37 @@ export function createWsServerTargetResolver(
     const scopedSnapshot = groupRef
       ? options.findGroupSnapshotByRef?.(groupRef, message)
       : undefined;
-    if (scopedSnapshot) return scopedSnapshot;
+    const knownSnapshot = scopedSnapshot ?? resolveGroupSnapshotById(groupId, groupRef);
+    // A group-snapshot row carries its own authoritative membership; when a
+    // process-local cache lags the row (no storm keeps caches warm under
+    // damped formation), the causally newest snapshot resolves the audience.
+    const payloadSnapshot = readGroupSnapshotPayloadForGroup(groupId, message);
+    if (!payloadSnapshot) return knownSnapshot;
+    if (!knownSnapshot) return payloadSnapshot;
+    return compareGroupCausalRevision(
+        readGroupCausalRevision(payloadSnapshot),
+        readGroupCausalRevision(knownSnapshot),
+      ) === 'dominated'
+      ? knownSnapshot
+      : payloadSnapshot;
+  };
+  const resolveGroupSnapshotById = (
+    groupId: string,
+    groupRef: ReturnType<typeof readALTargetGroupRef>,
+  ): GroupSnapshot | undefined => {
     const byIdSnapshot = options.findGroupSnapshotById?.(groupId);
     if (!byIdSnapshot) return undefined;
     return groupRef === undefined || isSameGroupScope(byIdSnapshot.group, groupRef)
       ? byIdSnapshot
+      : undefined;
+  };
+  const readGroupSnapshotPayloadForGroup = (
+    groupId: string,
+    message: ALMessage,
+  ): GroupSnapshot | undefined => {
+    const payloadSnapshot = readGroupSnapshotStateSyncPayload(message);
+    return payloadSnapshot && payloadSnapshot.group.groupId === groupId
+      ? payloadSnapshot
       : undefined;
   };
   const resolveGroupRecipients = (

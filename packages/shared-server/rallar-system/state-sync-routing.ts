@@ -34,6 +34,20 @@ export type StateSyncRoutingOptions = Readonly<{
     now?: RallarSnapshotPresenceClock;
 }>;
 
+/**
+ * The authoritative group snapshot carried by a state-sync row, when the row
+ * is a group or group-directory snapshot for that exact group. Delivery-time
+ * audience resolution may use it when a process-local cache lags the row.
+ */
+export function readGroupSnapshotStateSyncPayload(
+    message: ALMessage,
+): GroupSnapshot | undefined {
+    const payload = parseStateSyncPayload(message);
+    return payload && (payload.kind === 'group' || payload.kind === 'group-directory')
+        ? payload.snapshot
+        : undefined;
+}
+
 export function resolveStateSyncRecipients(
     webSocketServer: JsonWebSocketServer,
     message: ALMessage,

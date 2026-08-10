@@ -619,13 +619,13 @@
       ]
     },
     {
-      "name": "waitForBothRevisionsOnPrimary",
+      "name": "waitForBothRevisionSnapshotsOnPrimary",
       "type": "ws.wait",
       "connection": "wsPrimary",
       "request": {
         "outputs": {
-          "primaryFirstTopologyPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
-          "primarySecondTopologyPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
+          "primaryFirstSnapshotPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
+          "primarySecondSnapshotPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
         }
       },
       "expect": {
@@ -635,36 +635,32 @@
         "ordered": false,
         "messages": [
           {
-            "targets": { "minSnapshotVersion": "{roleMutationRevision}" },
             "route": {
-              "topicId": "overlay.topology",
-              "contextId": "{groupId}"
+              "topicId": "group-state.snapshot"
             },
             "payload": {
-              "typeId": "overlay.topology"
+              "typeId": "group-state.snapshot"
             }
           },
           {
-            "targets": { "minSnapshotVersion": "{groupMutationRevision}" },
             "route": {
-              "topicId": "overlay.topology",
-              "contextId": "{groupId}"
+              "topicId": "group-state.snapshot"
             },
             "payload": {
-              "typeId": "overlay.topology"
+              "typeId": "group-state.snapshot"
             }
           }
         ]
       }
     },
     {
-      "name": "waitForBothRevisionsOnTertiary",
+      "name": "waitForBothRevisionSnapshotsOnTertiary",
       "type": "ws.wait",
       "connection": "wsTertiary",
       "request": {
         "outputs": {
-          "tertiaryFirstTopologyPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
-          "tertiarySecondTopologyPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
+          "tertiaryFirstSnapshotPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
+          "tertiarySecondSnapshotPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
         }
       },
       "expect": {
@@ -674,65 +670,61 @@
         "ordered": false,
         "messages": [
           {
-            "targets": { "minSnapshotVersion": "{roleMutationRevision}" },
             "route": {
-              "topicId": "overlay.topology",
-              "contextId": "{groupId}"
+              "topicId": "group-state.snapshot"
             },
             "payload": {
-              "typeId": "overlay.topology"
+              "typeId": "group-state.snapshot"
             }
           },
           {
-            "targets": { "minSnapshotVersion": "{groupMutationRevision}" },
             "route": {
-              "topicId": "overlay.topology",
-              "contextId": "{groupId}"
+              "topicId": "group-state.snapshot"
             },
             "payload": {
-              "typeId": "overlay.topology"
+              "typeId": "group-state.snapshot"
             }
           }
         ]
       }
     },
     {
-      "name": "parsePrimaryFirstTopology",
+      "name": "parsePrimaryFirstSnapshot",
       "type": "set",
-      "output": "primaryFirstTopology",
+      "output": "primaryFirstSnapshot",
       "transform": {
         "jsonParse": {
-          "path": "outputs.primaryFirstTopologyPayload"
+          "path": "outputs.primaryFirstSnapshotPayload"
         }
       }
     },
     {
-      "name": "parsePrimarySecondTopology",
+      "name": "parsePrimarySecondSnapshot",
       "type": "set",
-      "output": "primarySecondTopology",
+      "output": "primarySecondSnapshot",
       "transform": {
         "jsonParse": {
-          "path": "outputs.primarySecondTopologyPayload"
+          "path": "outputs.primarySecondSnapshotPayload"
         }
       }
     },
     {
-      "name": "parseTertiaryFirstTopology",
+      "name": "parseTertiaryFirstSnapshot",
       "type": "set",
-      "output": "tertiaryFirstTopology",
+      "output": "tertiaryFirstSnapshot",
       "transform": {
         "jsonParse": {
-          "path": "outputs.tertiaryFirstTopologyPayload"
+          "path": "outputs.tertiaryFirstSnapshotPayload"
         }
       }
     },
     {
-      "name": "parseTertiarySecondTopology",
+      "name": "parseTertiarySecondSnapshot",
       "type": "set",
-      "output": "tertiarySecondTopology",
+      "output": "tertiarySecondSnapshot",
       "transform": {
         "jsonParse": {
-          "path": "outputs.tertiarySecondTopologyPayload"
+          "path": "outputs.tertiarySecondSnapshotPayload"
         }
       }
     },
@@ -740,8 +732,8 @@
       "name": "assertPrimaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{primaryFirstTopology.sourceGroupStateCausalRevision.groupRevision}",
-        "secondRevision": "{primarySecondTopology.sourceGroupStateCausalRevision.groupRevision}"
+        "firstRevision": "{primaryFirstSnapshot.causalRevision.groupRevision}",
+        "secondRevision": "{primarySecondSnapshot.causalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -760,8 +752,8 @@
       "name": "assertTertiaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{tertiaryFirstTopology.sourceGroupStateCausalRevision.groupRevision}",
-        "secondRevision": "{tertiarySecondTopology.sourceGroupStateCausalRevision.groupRevision}"
+        "firstRevision": "{tertiaryFirstSnapshot.causalRevision.groupRevision}",
+        "secondRevision": "{tertiarySecondSnapshot.causalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -777,71 +769,59 @@
       }
     },
     {
-      "name": "assertTopologyPayloadsAcrossPrimaryAndTertiary",
+      "name": "assertSnapshotPayloadsAcrossPrimaryAndTertiary",
       "type": "assert",
       "actual": {
-        "primaryFirst": "{primaryFirstTopology}",
-        "primarySecond": "{primarySecondTopology}",
-        "tertiaryFirst": "{tertiaryFirstTopology}",
-        "tertiarySecond": "{tertiarySecondTopology}"
+        "primaryFirst": "{primaryFirstSnapshot}",
+        "primarySecond": "{primarySecondSnapshot}",
+        "tertiaryFirst": "{tertiaryFirstSnapshot}",
+        "tertiarySecond": "{tertiarySecondSnapshot}"
       },
       "expect": {
         "body": {
           "primaryFirst": {
-            "sourceGroupStateCausalRevision": {
+            "causalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
-            "state": "active",
-            "version": "integer",
-            "groupRef": {
+            "group": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
               "groupId": "{groupId}"
-            },
-            "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
+            }
           },
           "primarySecond": {
-            "sourceGroupStateCausalRevision": {
+            "causalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
-            "state": "active",
-            "version": "integer",
-            "groupRef": {
+            "group": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
               "groupId": "{groupId}"
-            },
-            "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
+            }
           },
           "tertiaryFirst": {
-            "sourceGroupStateCausalRevision": {
+            "causalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
-            "state": "active",
-            "version": "integer",
-            "groupRef": {
+            "group": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
               "groupId": "{groupId}"
-            },
-            "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
+            }
           },
           "tertiarySecond": {
-            "sourceGroupStateCausalRevision": {
+            "causalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
-            "state": "active",
-            "version": "integer",
-            "groupRef": {
+            "group": {
               "applicationId": "{applicationId}",
               "workspaceId": "{workspaceId}",
               "groupId": "{groupId}"
-            },
-            "activeSessionIds": ["{aliceSessionId}", "{bobSessionId}"]
+            }
           }
         }
       }
