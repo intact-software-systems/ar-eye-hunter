@@ -43,6 +43,7 @@ export type RallarRtcTopologyServiceOptions = Readonly<{
     meshMinSize?: number;
     meshParamK?: number;
     rttRebuildDebounceMs?: number;
+    topologyRecomputeDebounceMs?: number;
     now?: () => number;
 }>;
 
@@ -158,6 +159,7 @@ const DEFAULT_TREE_MIN_SIZE = 5;
 const DEFAULT_MESH_MIN_SIZE = 16;
 const DEFAULT_MESH_PARAM_K = 2;
 const DEFAULT_RTT_REBUILD_DEBOUNCE_MS = 250;
+export const DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS = 500;
 
 type MutableRallarRtcTopologyMetrics = {
     -readonly [K in keyof Omit<
@@ -467,6 +469,14 @@ export class RallarRtcTopologyService {
 
     readRttRebuildDebounceMs(): number {
         return this.rttRebuildDebounceMs();
+    }
+
+    readTopologyRecomputeDebounceMs(): number {
+        return Math.max(
+            0,
+            this.options.topologyRecomputeDebounceMs ??
+                DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS,
+        );
     }
 
     readNowEpochMs(): number {
