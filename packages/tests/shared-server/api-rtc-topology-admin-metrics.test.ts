@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   createApiRtcTopologyAdminMetrics,
-} from '../../../apps/api-v1/src/runtime/rtc-topology/rtc-topology-admin-metrics.ts';
+} from '../../../apps/api-v1/src/runtime/rtc-topology/create-api-rtc-topology-admin-metrics.ts';
 
 describe('API RTC topology admin metrics', () => {
   it('nests replay diagnostics under existing topology metrics and resets both owners', () => {

@@ -72,17 +72,9 @@ import {
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { createApiStateSnapshotReadSelectors, getApiAppInboxServiceOptions,
   getApiTimingSink } from './services/timing-service.ts';
-import {
-  createRuntimeStateExpiryLifecycle,
-  runRuntimeStateExpiryStartupBarrier,
-} from './services/runtime-state-expiry-startup.ts';
+import { runRuntimeStateExpiryStartupBarrier } from './services/runtime-state-expiry-startup.ts';
 import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { readApiV1DatabaseBackendConfig } from './db/database-config.ts';
-import {
-  createApiV1QueuePubSubBridge,
-  queuePubSubDeliveryForConfig,
-  shouldInstallQueuePubSubBridge,
-} from './db/api-v1-queue-pubsub-bridge.ts';
 import {
   initRtcRttReceiptFamilyCleanup,
   RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
@@ -102,16 +94,20 @@ import {
   createApiRtcTopologyRuntime,
 } from './runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 import {
-  isRtcTopologyPublicationOutboxEntry,
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-wake-validation.ts';
-import {
   readApiRtcTopologyReplayConfig,
 } from './runtime/rtc-topology/rtc-topology-replay-config.ts';
+import {
+  beginMiddlewareStartupGeneration,
+  registerMiddlewareBackgroundTask,
+  shutdownMiddlewareBackgroundTasks,
+} from './middleware-background-tasks.ts';
+import {
+  createApiRtcTopologyQueuePubSubBridge,
+} from './runtime/rtc-topology/create-api-rtc-topology-queue-pub-sub-bridge.ts';
+
 export type { Middleware };
+export { registerMiddlewareBackgroundTask, shutdownMiddlewareBackgroundTasks };
 let middleware: Middleware | undefined = undefined;
-const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
-type MiddlewareBackgroundTaskStop = () => void | Promise<void>;
-const middlewareBackgroundTaskStops = new Set<MiddlewareBackgroundTaskStop>();
 export function getMiddleware(): Middleware {
   if (middleware === undefined) throw new Error('Middleware not initialised');
   return middleware;
@@ -120,23 +116,11 @@ export function initialiseMiddleware() {
   void shutdownMiddlewareBackgroundTasks().catch((error) => {
     console.error('Failed to stop prior middleware background tasks:', error);
   });
-  middleware = initialise(runtimeStateExpiryLifecycle.beginStartupGeneration());
+  middleware = initialise(beginMiddlewareStartupGeneration());
   return middleware;
 }
-export async function shutdownMiddlewareBackgroundTasks(): Promise<void> {
-  const stops = [...middlewareBackgroundTaskStops];
-  middlewareBackgroundTaskStops.clear();
-  runtimeStateExpiryLifecycle.stop();
-  await Promise.all(stops.map(async (stop) => await stop()));
-}
-export function registerMiddlewareBackgroundTask(stop: MiddlewareBackgroundTaskStop): () => void {
-  middlewareBackgroundTaskStops.add(stop);
-  return () => middlewareBackgroundTaskStops.delete(stop);
-}
 function initialise(
-  expiryStartupGeneration: ReturnType<
-    typeof runtimeStateExpiryLifecycle.beginStartupGeneration
-  >,
+  expiryStartupGeneration: ReturnType<typeof beginMiddlewareStartupGeneration>,
 ): Middleware {
   const dbWsChannelId = 'ws-channel';
   const wsRuntimeName = 'default-qbox-server';
@@ -374,20 +358,13 @@ function initialise(
     rtcTopologyPublicationFanout: rtcTopology.publicationFanout,
     rtcTopologyDelivery: rtcTopology.topologyDelivery,
     rtcTopologyReplay: rtcTopology.topologyReplay,
-    queuePubSubBridge: shouldInstallQueuePubSubBridge(pubSubConfig)
-      ? {
-        bridge: createApiV1QueuePubSubBridge(pubSubConfig, myPublisherId),
-        channel: dbWsChannelId,
-        publisherId: myPublisherId,
-        delivery: queuePubSubDeliveryForConfig(pubSubConfig),
-        timing,
-        onValidatedOutboxKeyReceived: (entry) => {
-          if (isRtcTopologyPublicationOutboxEntry(entry)) {
-            rtcTopology.topologyReplay.wake('notification');
-          }
-        },
-      }
-      : undefined,
+    queuePubSubBridge: createApiRtcTopologyQueuePubSubBridge({
+      config: pubSubConfig,
+      channel: dbWsChannelId,
+      publisherId: myPublisherId,
+      timing,
+      wakeReplay: () => rtcTopology.topologyReplay.wake('notification'),
+    }),
     readiness: rtcTopology.readiness,
     healthFailure: rtcTopology.healthFailure,
   });

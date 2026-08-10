@@ -7,7 +7,7 @@ import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-que
 
 export function isRtcTopologyPublicationOutboxEntry(entry: ResourceEntry): boolean {
   try {
-    const value: unknown = JSON.parse(entry.resource);
+    const value = JSON.parse(entry.resource);
     validatePersistedALMessage(value);
     const message = value as ALMessage;
     const targets = message.targets;

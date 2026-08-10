@@ -73,7 +73,12 @@ export function startApiRtcTopologyReplay(
       });
       void (options.startupBarrier ?? Promise.resolve())
         .then(async () => await service!.start())
-        .then(resolveReadiness, (error) => rejectReadiness(toReplayStartupError(error)));
+        .then(resolveReadiness, (error) =>
+          rejectReadiness(
+            error instanceof Error
+              ? error
+              : new Error('RTC topology replay startup failed with a non-Error value'),
+          ));
       for (const source of pendingWakeSources) service.wake(source);
       pendingWakeSources.clear();
     },
@@ -93,12 +98,6 @@ export function startApiRtcTopologyReplay(
       await service?.stop();
     },
   };
-}
-
-function toReplayStartupError(error: unknown): Error {
-  return error instanceof Error
-    ? error
-    : new Error('RTC topology replay startup failed with a non-Error value');
 }
 
 function disabledLifecycle(): ApiRtcTopologyReplayLifecycle {

@@ -109,9 +109,14 @@ async function runWorkload(input: WorkloadInput): Promise<RtcTopologyReplayDrain
   return result;
 }
 
-type MutableOperationCounts = {
-  -readonly [K in keyof RtcTopologyReplayDrainOperationCounts]: number;
-};
+interface MutableOperationCounts {
+  discoveryReads: number;
+  pageReads: number;
+  handledEntries: number;
+  cursorWrites: number;
+  hydrationRuns: number;
+  yieldedTurns: number;
+}
 
 class OperationCountingReplayRepository implements RtcTopologyReplayPort {
   readonly #operations: MutableOperationCounts;

@@ -114,11 +114,26 @@ export function createRtcTopologyReplayDiagnostics(): RtcTopologyReplayDiagnosti
   };
 }
 
-type MutableMetrics = {
-  -readonly [K in keyof RtcTopologyReplayMetrics]: RtcTopologyReplayMetrics[K] extends
-    Readonly<Record<infer P, number>> ? Record<P & string, number>
-    : number;
-};
+interface MutableMetrics {
+  wakeCountBySource: Record<RtcTopologyReplayWakeSource, number>;
+  drainCountByOutcome: Record<RtcTopologyReplayDrainOutcome, number>;
+  entryCountByOutcome: Record<RtcTopologyReplayEntryOutcome, number>;
+  cursorCountByOutcome: Record<RtcTopologyReplayCursorOutcome, number>;
+  hydrationCountByOutcome: Record<RtcTopologyReplayHydrationOutcome, number>;
+  drainAttemptCount: number;
+  drainCompletionCount: number;
+  drainFailureCount: number;
+  pageCount: number;
+  replayedEntryCount: number;
+  directCurrentRepairCount: number;
+  noLocalRecipientCount: number;
+  sendFailureCount: number;
+  cursorConflictCount: number;
+  gapCount: number;
+  corruptReferenceCount: number;
+  totalDrainDurationMs: number;
+  maxObservedLagEntries: number;
+}
 
 function emptyMetrics(): MutableMetrics {
   return {

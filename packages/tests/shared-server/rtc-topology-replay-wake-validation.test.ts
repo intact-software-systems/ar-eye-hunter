@@ -3,7 +3,7 @@ import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import {
   isRtcTopologyPublicationOutboxEntry,
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-wake-validation.ts';
+} from '@shared-server/rallar-system/topology/replay/is-rtc-topology-publication-outbox-entry.ts';
 import { describe, expect, it } from 'vitest';
 
 import { createRtcTopologyReplayFixture } from './rtc-topology-replay-fixture.ts';

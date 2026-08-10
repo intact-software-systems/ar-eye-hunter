@@ -101,7 +101,7 @@ function readPublicationSnapshot(
   entry: RtcTopologyDeliveryLogEntry,
 ): RallarOverlayTopologySnapshot {
   try {
-    const snapshot: unknown = JSON.parse(publication.message.payload.resource);
+    const snapshot = JSON.parse(publication.message.payload.resource);
     validateTopologySnapshot(snapshot, entry.groupRef);
     return snapshot;
   } catch {
