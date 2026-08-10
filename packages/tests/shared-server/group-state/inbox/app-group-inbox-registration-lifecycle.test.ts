@@ -5,7 +5,7 @@ import {
   AppInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import type { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { RtcRttAppInboxDependencies } from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { GROUP_MUTATION_INBOX_TYPES } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -71,6 +71,17 @@ describe('AppGroupInboxService registration lifecycle', () => {
     } finally {
       registration.mockRestore();
     }
+  });
+
+  it('preserves facade virtual dispatch through the captured narrow capabilities', async () => {
+    const topology = new GroupTopologyManagementService({} as never);
+    const facadeRead = vi
+      .spyOn(topology, 'readTopologyConfigMutation')
+      .mockResolvedValue({} as never);
+
+    await topology.configMutationService.read({} as never);
+
+    expect(facadeRead).toHaveBeenCalledOnce();
   });
 });
 
