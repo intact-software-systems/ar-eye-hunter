@@ -57,7 +57,7 @@ Stack record:
 | Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 open |
 | PR 1 | `codex/rtc-topology-durable-replay-1-streams` | PR #141 head | frozen at PR #143 head `871a7c7e` |
 | PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | frozen at PR #146 head `43753655` |
-| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | draft PR #148; final evidence pending |
+| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | draft PR #148; reviewed code/evidence head `9dc6ad08`; progress freeze pending |
 
 PR 1 is frozen at `871a7c7e9cfdffc3143b3f31d5d6d56d42a58ed4` with
 current exact-tree local, black-box, Branch Release Gate, medium-scale, and
@@ -201,7 +201,7 @@ and outbox completion commit atomically. Extracted fixture, scheduling, and
 browser state-cache boundaries keep the changed production/coordinator files
 within the repository reviewability limit.
 
-The current uncommitted review candidate passes all 13 affected Vitest files
+The then-uncommitted review candidate passed all 13 affected Vitest files
 (165 tests), full workspace typecheck, and strict changed-style review with no
 new findings. An independent current-tree review found no remaining code
 correctness blocker. The real profile-only PostgreSQL command created and
@@ -215,6 +215,62 @@ working-tree review results only. The replacement commit must include all four
 new proof/browser modules and rerun every complete local, database, black-box,
 performance, exact-SHA, and publication gate; all `7263d93b` results remain
 obsolete.
+
+The reviewed replacement was published as
+`9dc6ad08ab80532b78b78119d79cb8b24f4eb801`, tree
+`1e3c502e8a02b95f6a0032ac6b710bf74c243073`. It contains the abort-race,
+authenticated browser current-state adoption, deterministic publisher-claim
+scheduling, unresolved-`APP_OUTBOX` quiescence, and extracted reviewability
+fixes above. An unchanged exact checkout passed `git diff --check`, the focused
+RTC/review set (29 files and 422 tests), full workspace typecheck, governance
+(33 files and 371 tests), strict changed-style review, the warning-only style
+scan, unit (734 files and 6,667 tests), `test:ci`, all-workspace build, browser
+bundle budgets, API check plus 420 Deno tests, and PostgreSQL integration (13
+files and 27 tests). Fresh black-box runs passed memory 13/13, PostgreSQL 13/13
+plus cluster 5/5, CRDT 22/22, medium-scale 2,748/2,748, formation-large
+1,327/1,327, and the standalone topology proof. The exact proof used distinct
+seeded A/B streams at HEAD 5/5, advanced both to 6/6 through two poll-only
+replayed entries, later advanced both to 7/7 while C was stopped, and hydrated
+C' with exact current-state identities and no post-start mutation.
+
+The fixed delivery-log benchmark passed its unchanged 300 one-stream, 300
+three-stream, 30 duplicate-race, and 100 rollback cases. The replay-drain
+benchmark preserved the caught-up zero-read case, 100-entry one-page and
+1,000-entry ten-page drains, the 100-entry no-recipient/current-repair path, and
+one gap cursor plus one hydration. The governed non-rerolled A-B-B-A state-write
+comparison used approved plan head `8e277691f3bcd618c556d57ab5ee61cac248f1db`
+for positions A/D and `9dc6ad08` for positions B/C. Every position used a fresh
+pinned PostgreSQL 16 container with identical 4-CPU/4-GiB controls, zero
+preflight rows, autovacuum disabled, zero pre/post automatic maintenance, one
+warmup, nine measured runs, and concurrency 10. The pooled comparator passed;
+both sides accepted 12,600 mutations per workload with zero exhausted writes,
+atomic-completion failures, or DBW findings. The candidate pooled throughput
+was 290.74/s uncontended, 243.01/s shared, and 49.98/s hot versus 277.64/s,
+235.64/s, and 50.76/s for the approved base.
+
+Remote exact-tree publication evidence also passed. Branch Release Gate run
+`31371264681` validated pushed head `9dc6ad08`. API v1 Medium-Scale Gate run
+`31371265778` and Topology Replay Gate run `31371265796` validated PR merge
+commit `be9e6b71b44c70af852a177b6cc2a7d463d063c0`, whose parents are PR 2
+`43753655` and exact head `9dc6ad08` and whose tree is the identical
+`1e3c502e...` tree. Downloaded artifacts bind that commit and tree; medium-scale
+passed 2,748/2,748 plus all five cluster recipes, and the topology artifact
+records deterministic non-target-process suspension, two distinct publisher
+streams, exact live publication identities, two poll wakes with zero
+notification/local-commit wakes, and exact C' hydration identities. The
+automatic Deno `rallar-server` preview status is red, but is not a required
+branch-protection or plan workflow; its authenticated build log is unavailable
+to the current session, so it remains explicitly unclassified rather than being
+claimed as an implementation result.
+
+This progress-only documentation freeze necessarily creates a later PR head;
+a commit cannot contain its own hash. Therefore all evidence above remains the
+complete reviewed code checkpoint, while the publication record on PR #148 must
+record the progress-freeze head and tree and rerun every exact-tree local and
+remote gate on that unchanged tree. PR 3 is not merge-ready until that rerun is
+green. The schema-first production migration remains an owner deployment action,
+PR #141 remains open, and resulting-main Release/Hetzner gates remain pending,
+so PR 3, issue #121, and this plan remain active.
 
 PR 1 progress:
 
