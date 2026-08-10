@@ -116,6 +116,22 @@ export class CoalescedAppOutboxWorkService {
                 'Coalesced APP_OUTBOX write must advance exactly one generation',
             );
         }
+        if (isTerminalCoalescedStatus(expected.status)) {
+            const revived = await repository.replaceFinishedIfMatch(
+                expected,
+                computed.entry,
+                expectedGeneration,
+            );
+            if (revived !== null) {
+                return {
+                    action: 'updated',
+                    entry: revived,
+                    previous: expected,
+                    blockedByReserved: false,
+                };
+            }
+            return await this.writeSuccessor(repository, computed, expected);
+        }
         if (!isMutableCoalescedStatus(expected.status)) {
             return await this.writeSuccessor(repository, computed, expected);
         }
@@ -323,15 +339,21 @@ export class CoalescedAppOutboxWorkService {
     private tryReadEnvelope<T extends object>(
         entry: ResourceEntry,
     ): CoalescedAppOutboxWorkEnvelope<T> | undefined {
-        try {
-            const message = this.readMessage(entry);
-            const envelope = JSON.parse(
-                message.payload.resource,
-            ) as CoalescedAppOutboxWorkEnvelope<T>;
-            return isCoalescedEnvelope(envelope) ? envelope : undefined;
-        } catch {
-            return undefined;
-        }
+        return tryReadCoalescedAppOutboxWorkEnvelope<T>(entry);
+    }
+}
+
+export function tryReadCoalescedAppOutboxWorkEnvelope<T extends object>(
+    entry: ResourceEntry,
+): CoalescedAppOutboxWorkEnvelope<T> | undefined {
+    try {
+        const message = JSON.parse(entry.resource) as ALMessage;
+        const envelope = JSON.parse(
+            message.payload.resource,
+        ) as CoalescedAppOutboxWorkEnvelope<T>;
+        return isCoalescedEnvelope(envelope) ? envelope : undefined;
+    } catch {
+        return undefined;
     }
 }
 
@@ -341,11 +363,11 @@ function sameKey(left: Key, right: Key): boolean {
         left.contextId === right.contextId;
 }
 
-function isTerminalCoalescedStatus(status: EntityStatus): boolean {
+export function isTerminalCoalescedStatus(status: EntityStatus): boolean {
     return COMPLETED_STATUSES.has(status) || isFailed(status);
 }
 
-function isMutableCoalescedStatus(status: EntityStatus): boolean {
+export function isMutableCoalescedStatus(status: EntityStatus): boolean {
     return status === EntityStatus.NEW || status === EntityStatus.RETRY;
 }
 

@@ -95,6 +95,13 @@ import {
   readApiRtcTopologyReplayConfig,
 } from './runtime/rtc-topology/rtc-topology-replay-config.ts';
 import {
+  readApiGroupFormationDampingConfig,
+} from './runtime/group-formation/group-formation-damping-config.ts';
+import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
+import {
+  DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS,
+} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import {
   beginMiddlewareStartupGeneration,
   registerMiddlewareBackgroundTask,
   shutdownMiddlewareBackgroundTasks,
@@ -146,6 +153,10 @@ function initialise(
     Deno.env,
     databaseConfig,
   );
+  const groupFormationDamping = readApiGroupFormationDampingConfig().damping;
+  const topologyRecomputeDebounceMs =
+    getApiRtcTopologyServiceOptions().topologyRecomputeDebounceMs ??
+      DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS;
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
   });
@@ -275,6 +286,13 @@ function initialise(
       });
       const presenceSummary = new GroupPresenceSummaryWork({
         runtimeRepository: runtimeStateRepository,
+        topologyIntent: groupFormationDamping === 'damped'
+          ? {
+            damping: 'damped',
+            outboxQueueReader,
+            recomputeDebounceMs: topologyRecomputeDebounceMs,
+          }
+          : { damping: 'legacy' },
         database: postgresSql,
         serviceId: myServerId,
         wakeQueue: wakeQueueEngine,

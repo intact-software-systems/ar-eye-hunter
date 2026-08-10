@@ -108,6 +108,7 @@ describe('group presence summary evaluation time', () => {
       admissions: [],
       presenceSessions: [],
       current,
+      coalescedTopologyEntry: null,
     };
     const canonical = computeGroupPresenceSummary({
       ref: groupRef('pure-room'),
@@ -234,6 +235,7 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
       ),
     ],
     current: stored(groupStatePresenceSummaryStorageKey(REF), current),
+    coalescedTopologyEntry: null,
   };
 }
 

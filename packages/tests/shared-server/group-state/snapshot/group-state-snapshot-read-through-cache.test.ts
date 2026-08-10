@@ -229,6 +229,7 @@ async function convergePresenceSummaryForCacheTest(
     acceptedCausalRevision,
   });
   const work = new GroupPresenceSummaryWork({
+    topologyIntent: { damping: 'legacy' },
     runtimeRepository: runtime,
     now: () => 2_001,
     serviceId: 'cache-convergence-test',

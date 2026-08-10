@@ -33,6 +33,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
     const formationEvents: Array<Readonly<{ downstreamTopicIds: readonly string[] }>> = [];
     const wakeQueue = vi.fn();
     const worker = new GroupPresenceSummaryWork({
+      topologyIntent: { damping: 'legacy' },
       runtimeRepository: new FakeRuntimeStateRepository(),
       database: database as never,
       serviceId: 'summary-handler',
@@ -77,6 +78,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
     );
     const formationMetrics = vi.fn();
     const worker = new GroupPresenceSummaryWork({
+      topologyIntent: { damping: 'legacy' },
       runtimeRepository: new FakeRuntimeStateRepository(),
       database: database as never,
       serviceId: 'summary-handler',
@@ -106,6 +108,7 @@ function createComputedWorkWithDownstreamTopics(topicIds: readonly string[]) {
         contextId: 'summary-context',
       },
     })),
+    coalescedTopologyWork: null,
   } as never;
 }
 

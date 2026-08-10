@@ -57,6 +57,7 @@ describe('group presence summary validation', () => {
     });
 
     const summaryWork = new GroupPresenceSummaryWork({
+      topologyIntent: { damping: 'legacy' },
       runtimeRepository: runtime,
       now: () => BASE_EPOCH_MS + 3_000,
       serviceId: 'summary-worker',
@@ -129,6 +130,7 @@ describe('group presence summary validation', () => {
     runtime.resetGuards();
 
     const summaryWork = new GroupPresenceSummaryWork({
+      topologyIntent: { damping: 'legacy' },
       runtimeRepository: runtime,
       now: () => BASE_EPOCH_MS + 3_000,
       serviceId: 'summary-worker',

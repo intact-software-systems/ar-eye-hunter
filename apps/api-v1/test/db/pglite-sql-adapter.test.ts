@@ -338,6 +338,11 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       },
     );
     const summaryWork = new GroupPresenceSummaryWork({
+      topologyIntent: {
+        damping: 'damped',
+        outboxQueueReader: outboxReader,
+        recomputeDebounceMs: 0,
+      },
       runtimeRepository: runtime,
       database: sql,
       serviceId: 'pglite-group-service',
@@ -553,6 +558,7 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     const repository = new GroupStateRepository(runtime);
     const summaryBefore = await repository.findPresenceSummaryEntry(ref);
     const work = new GroupPresenceSummaryWork({
+      topologyIntent: { damping: 'legacy' },
       runtimeRepository: runtime,
       database: sql,
       serviceId: 'pglite-summary-fence',
@@ -4853,6 +4859,73 @@ Deno.test('transaction-bound APP_OUTBOX coalescing fences generation and reserve
         error instanceof ResourceInboxInvariantCorruptionError &&
         error.code === 'resource-inbox-invariant-corruption',
     );
+  });
+});
+
+Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in place', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new ResourceInboxRepository(sql);
+    const queue = new PSqlQueueBox(repository);
+    const service = new CoalescedAppOutboxWorkService(
+      new OutboxQueueReader(queue),
+      'rallar-server',
+      () => 500,
+    );
+    const first = (await service.enqueue({
+      type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-outbox.rtc-topology',
+      resourceId: 'revive-overlay',
+      contextId: 'revive-room',
+      data: { overlayId: 'revive-overlay', revision: 1 },
+    })).entry;
+    const reserved = await queue.reserveEntries(
+      new Set([first.typeId]),
+      new Set([EntityStatus.NEW]),
+      { maxToReserve: 1, maxAttempts: 20 },
+    );
+    const observedReserved = [...reserved.values()][0];
+    assert.ok(observedReserved);
+    assert.ok(
+      await repository.finishReserved(
+        observedReserved.key,
+        observedReserved.dequeueAudit.attempts,
+        EntityStatus.COMPLETED,
+        new Date(600),
+      ),
+    );
+    const finished = await repository.findAnyByKey(first.key);
+    assert.equal(finished?.status, EntityStatus.COMPLETED);
+
+    const revivedEntry = advanceCoalescedGeneration({ ...first, resource: finished!.resource }, 2);
+    const successor = createResourceEntry('revive-successor', {
+      topicId: first.key.topicId,
+      contextId: first.key.contextId,
+      typeId: first.typeId,
+      payload: { generation: 2, kind: 'successor' },
+    });
+    const revived = await sql.begin(async (transaction) =>
+      await service.write(transaction, {
+        expectedEntry: finished!,
+        entry: revivedEntry,
+        successorEntry: successor,
+      })
+    );
+    assert.equal(revived.action, 'updated');
+    const stored = await repository.findByKey(first.key);
+    assert.equal(stored?.status, EntityStatus.NEW);
+    assert.equal(stored?.resource, revivedEntry.resource);
+    assert.equal(stored?.dequeueAudit.attempts, 0);
+
+    const staleExpected = await sql.begin(async (transaction) =>
+      await service.write(transaction, {
+        expectedEntry: finished!,
+        entry: revivedEntry,
+        successorEntry: successor,
+      })
+    );
+    assert.equal(staleExpected.action, 'successor');
+    assert.equal((await repository.findByKey(first.key))?.resource, revivedEntry.resource);
+    assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
   });
 });
 
