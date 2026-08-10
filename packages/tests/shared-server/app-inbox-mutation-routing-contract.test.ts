@@ -166,7 +166,7 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     {
       name: 'topology to group',
       type: AppInboxType.TOPOLOGY_CONFIG_PUT,
-      from: 'this.topologyAppInboxHandler.processMutation(context, service)',
+      from: 'this.topologyAppInboxHandler.processMutation(context, owners)',
       to: 'this.groupStateInboxHandler.processGroupStateMutation(context)',
     },
     {
@@ -215,7 +215,7 @@ function deadCorrectPresenceRegistration(app: Hono): void {
       name: 'topology',
       type: AppInboxType.TOPOLOGY_CONFIG_PUT,
       from: `async (_payload, context) =>
-          await this.topologyAppInboxHandler.processMutation(context, service)`,
+          await this.topologyAppInboxHandler.processMutation(context, owners)`,
       to: `async (_payload, context) => {
                     const alias = { topologyAppInboxHandler: this.groupStateInboxHandler };
                     return await alias.topologyAppInboxHandler.processMutation(context);

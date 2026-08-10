@@ -14,6 +14,7 @@ const authRoot = 'packages/shared-server/rallar-system/auth';
 const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
 const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
 const topologyInboxRoot = 'packages/shared-server/rallar-system/topology/inbox';
+const topologyRoot = 'packages/shared-server/rallar-system/topology';
 const rtcInboxRoot = 'packages/shared-server/rallar-system/rtc-topology/inbox';
 const persistenceRoot = `${groupStateRoot}/persistence`;
 const validationPrimitivesPath = `${groupStateRoot}/group-state-validation-primitives.ts`;
@@ -46,7 +47,8 @@ const sources = {
     'packages/shared-server/rallar-system/client-state/mutation/write/write-client-mutation.ts',
   ),
   group: read(`${groupStateRoot}/mutation/write/write-group-mutation.ts`),
-  topologyConfig: read(`${serviceRoot}/group-topology-management-service.ts`),
+  topologyConfig: read(`${topologyRoot}/config/mutation/write-topology-config-mutation.ts`),
+  topologyReconfigure: read(`${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`),
   topologyWorker: read(`${serviceRoot}/RtcTopologyOutboxWork.ts`),
   topologyRepository: read(`${repositoryRoot}/RtcTopologyExecutionRepository.ts`),
   rtt: read(`${serviceRoot}/rtc-rtt-mutation-service.ts`),
@@ -190,11 +192,11 @@ it.each([
     source: sources.topologyHandler,
     owner: 'processMutation',
     calls: [
-      'topologyManagementService.readTopologyConfigMutation(',
-      'topologyManagementService.computeTopologyConfigMutation(',
-      'topologyManagementService.validateTopologyConfigMutation(',
+      'owners.configMutationService.read(',
+      'owners.configMutationService.compute(',
+      'owners.configMutationService.validate(',
       'this.dependencies.writeMutation(',
-      'topologyManagementService.writeTopologyConfigMutation(',
+      'owners.writeConfigMutation(',
     ],
   },
   {
@@ -202,11 +204,11 @@ it.each([
     source: sources.topologyHandler,
     owner: 'processTopologyReconfigureMutation',
     calls: [
-      'topologyManagementService.readTopologyMutation(command)',
-      'topologyManagementService.computeTopologyMutation(command, read)',
-      'topologyManagementService.validateTopologyMutation(command, read, computed)',
+      'mutation.read(command)',
+      'mutation.compute(command, read)',
+      'mutation.validate(command, read, computed)',
       'this.dependencies.writeMutation(',
-      'topologyManagementService.writeTopologyMutation(transaction, computed)',
+      'mutation.write(transaction, computed)',
     ],
   },
   {
@@ -230,7 +232,7 @@ it('keeps every authoritative service write bound to the caller transaction', ()
     functionBody(sources.client, 'writeClientMutation'),
     functionBody(sources.group, 'writeGroupMutation'),
     functionBody(sources.topologyConfig, 'writeTopologyConfigMutation'),
-    methodBody(sources.topologyConfig, 'writeTopologyMutation'),
+    methodBody(sources.topologyReconfigure, 'write'),
     functionBody(sources.rtt, 'writeRttMutation'),
     methodBody(sources.topologyRepository, 'writeTopologyMutation'),
   ];
@@ -244,6 +246,7 @@ it('keeps every authoritative service write bound to the caller transaction', ()
 it('keeps AppInbox as the only retry and transaction owner for HTTP and WS mutations', () => {
   for (const source of [
     sources.topologyConfig,
+    sources.topologyReconfigure,
     sources.topologyRepository,
     sources.rtt,
     sources.topologyWorker,
@@ -264,18 +267,24 @@ it('keeps transport boundaries free of direct mutators and persistence owners', 
 it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomically', () => {
   const seam = functionBody(sources.topologyConfig, 'writeTopologyConfigMutation');
   expectInOrder(seam, [
-    'advanceAuthorityFence(',
-    'requireAcceptedTopologyConfigWrite(',
+    'writeTopologyConfigAuthorityFence(',
+    'writeTopologyConfigState(',
     'insertMutationRecord(',
     'writeRtcTopologyOutbox(transaction, computed.outbox)',
+  ]);
+  expectInOrder(functionBody(sources.topologyConfig, 'writeTopologyConfigAuthorityFence'), [
+    'advanceAuthorityFence(',
+    'computed.groupAuthorityGuard',
+    'throw new RuntimeStateWriteConflictError()',
   ]);
   expect(seam).not.toContain('StateMutation' + 'Outbox');
 });
 
 it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
-  const seam = methodBody(sources.topologyConfig, 'writeTopologyMutation');
+  const seam = methodBody(sources.topologyReconfigure, 'write');
   expectInOrder(seam, [
-    'advanceAuthorityFence(computed.authorityGuard)',
+    'advanceAuthorityFence(',
+    'computed.authorityGuard',
     'throw new RuntimeStateWriteConflictError()',
     'writeRtcTopologyOutbox(transaction, computed)',
   ]);
@@ -318,6 +327,7 @@ it('does not reintroduce intermediate state-mutation intents on Task 7 paths', (
   for (const source of [
     sources.appGroup,
     sources.topologyConfig,
+    sources.topologyReconfigure,
     sources.rtt,
     sources.topologyWorker,
   ]) {

@@ -7,7 +7,7 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import {
   AppInboxType,
   type AppInboxFailure,

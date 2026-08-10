@@ -25,7 +25,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { GroupTopologyManagementService }
-  from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+  from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { PSqlAdminOperationsStatsReader }
   from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import { AdminSupportService } from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';

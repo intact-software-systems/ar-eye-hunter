@@ -126,7 +126,7 @@ export * from './rallar-system/services/GroupPresenceSummaryWork.ts';
 export * from './rallar-system/services/group-state-service.ts';
 export * from './rallar-system/services/group-state-mutations.ts';
 export * from './rallar-system/topology/config/group-topology-config.ts';
-export * from './rallar-system/services/group-topology-management-service.ts';
+export * from './rallar-system/topology/group-topology-management-service.ts';
 export * from './rallar-system/services/rallar-rtc-topology-service.ts';
 export * from './rallar-system/services/rtc-topology-mutations.ts';
 export * from './rallar-system/services/rtc-rtt-mutation-service.ts';

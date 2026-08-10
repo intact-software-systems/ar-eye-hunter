@@ -38,8 +38,22 @@ import type {
   RtcRttAppInboxDependencies,
 } from '../rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { RtcRttAppInboxHandler } from '../rtc-topology/inbox/rtc-rtt-app-inbox-handler.ts';
-import { TopologyAppInboxHandler } from '../topology/inbox/topology-app-inbox-handler.ts';
-import type { GroupTopologyManagementService } from './group-topology-management-service.ts';
+import {
+  TopologyAppInboxHandler,
+  type TopologyAppInboxMutationOwners,
+} from '../topology/inbox/topology-app-inbox-handler.ts';
+// prettier-ignore
+import {
+  toTopologyConfigMutationResult,
+} from '../topology/config/mutation/to-topology-config-mutation-result.ts';
+// prettier-ignore
+import {
+  writeTopologyConfigMutation,
+} from '../topology/config/mutation/write-topology-config-mutation.ts';
+// prettier-ignore
+import type {
+  GroupTopologyManagementService,
+} from '../topology/group-topology-management-service.ts';
 import {
   type AppInboxEnqueueInput,
   type AppInboxFailure,
@@ -324,11 +338,17 @@ class AppGroupInboxService extends AppInboxService {
   }
 
   private registerTopologyStateMessageHandlers(service: GroupTopologyManagementService): void {
+    const owners: TopologyAppInboxMutationOwners = {
+      configMutationService: service.configMutationService,
+      writeConfigMutation: writeTopologyConfigMutation,
+      toConfigMutationResult: toTopologyConfigMutationResult,
+      reconfigureMutation: service.reconfigureMutation,
+    };
     for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
       this.onStateMessage(
         type,
         async (_payload, context) =>
-          await this.topologyAppInboxHandler.processMutation(context, service),
+          await this.topologyAppInboxHandler.processMutation(context, owners),
       );
     }
   }

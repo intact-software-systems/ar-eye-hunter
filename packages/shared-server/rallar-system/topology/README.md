@@ -3,10 +3,9 @@
 This map names the current canonical owners for topology mutation protocol,
 pure config decisions, persistence, durable RTC delivery replay, and reconnect
 hydration. It is navigation evidence, not runtime truth. The first sections
-retain the group-topology PR-A and PR-B ownership records; later sections map
+retain the group-topology PR-A, PR-B, and PR-C ownership records; later sections map
 the active durable delivery feature without transferring config-policy or
-persistence ownership. PR C replaces the remaining deferred rows when
-authoritative shell ownership moves into this feature.
+persistence ownership.
 
 ## Current PR-A owners
 
@@ -45,6 +44,22 @@ authoritative shell ownership moves into this feature.
 | Bounded legacy-key migration                  | [config/maintenance/migrate-legacy-group-topology-config-keys.ts](config/maintenance/migrate-legacy-group-topology-config-keys.ts)   | `migrateLegacyGroupTopologyConfigKeys`                  |
 | Mutation read assembly                        | [config/mutation/read-topology-config-mutation.ts](config/mutation/read-topology-config-mutation.ts)                                 | `readTopologyConfigMutation`                            |
 
+## Current PR-C owners
+
+| Boundary                                  | Canonical owner                                                                                                                      | Primary symbol                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| Config and topology queries               | [config/group-topology-config-query-service.ts](config/group-topology-config-query-service.ts)                                       | `GroupTopologyConfigQueryService`               |
+| Shared generation readiness               | [config/maintenance/group-topology-config-generation-readiness.ts](config/maintenance/group-topology-config-generation-readiness.ts) | `GroupTopologyConfigGenerationReadiness`        |
+| Config mutation preparation/read/decision | [config/group-topology-config-mutation-service.ts](config/group-topology-config-mutation-service.ts)                                 | `GroupTopologyConfigMutationService`            |
+| Atomic config mutation write              | [config/mutation/write-topology-config-mutation.ts](config/mutation/write-topology-config-mutation.ts)                               | `writeTopologyConfigMutation`                   |
+| Config mutation result adapter            | [config/mutation/to-topology-config-mutation-result.ts](config/mutation/to-topology-config-mutation-result.ts)                       | `toTopologyConfigMutationResult`                |
+| Reconfigure read/compute/validate/write   | [reconfigure/group-topology-reconfigure-mutation.ts](reconfigure/group-topology-reconfigure-mutation.ts)                             | `GroupTopologyReconfigureMutation`              |
+| Immutable planning authority              | [planning/group-topology-planning-authority.ts](planning/group-topology-planning-authority.ts)                                       | `GroupTopologyPlanningAuthority`                |
+| Topology planning and lifecycle           | [planning/group-topology-planning-service.ts](planning/group-topology-planning-service.ts)                                           | `GroupTopologyPlanningService`                  |
+| RTC overlay publication materialization   | [planning/materialize-rtc-overlay-topology-broadcast-message.ts](planning/materialize-rtc-overlay-topology-broadcast-message.ts)     | `materializeRtcOverlayTopologyBroadcastMessage` |
+| Topology validation errors                | [group-topology-errors.ts](group-topology-errors.ts)                                                                                 | `GroupTopologyValidationError`                  |
+| Public compatibility facade               | [group-topology-management-service.ts](group-topology-management-service.ts)                                                         | `GroupTopologyManagementService`                |
+
 Canonical internal imports use these owners directly. The supported public
 compatibility boundaries remain `packages/shared-server/mod.ts`, the public
 management facade, and the direct one-hop topology command/type exports on
@@ -53,10 +68,12 @@ management facade, and the direct one-hop topology command/type exports on
 ## Construction and registration
 
 `create-rallar-server.ts` constructs the repositories, RTC topology service,
-public management facade, and authenticated `AppGroupInboxService`. The
-existing facade then registers all five topology queue types with the already
-constructed `TopologyAppInboxHandler`. PR A does not change this temporal
-registration seam; PR C owns its approved replacement.
+public management facade, and authenticated `AppGroupInboxService`. The facade
+constructs one generation-readiness owner shared by config query and mutation,
+plus the planning and reconfigure owners. `AppGroupInboxService` passes only the
+exact config mutation, transaction writer/result adapter, and reconfigure
+mutation capabilities into `TopologyAppInboxHandler`, then registers all five
+queue types after those owners exist.
 
 The command and proof modules have no lifecycle. They receive complete command,
 session, group-state, and explicit clock values at invocation. The pure config
@@ -73,8 +90,8 @@ explicit maintenance calls; neither runs as a module-import side effect.
 For put/delete config and put/delete override, the request boundary creates a
 canonical command, `createAuthenticatedTopologyEnqueue` rereads the issued
 session and creates the proof, and the registered handler verifies authority
-again on every AppInbox attempt. The handler retains the visible
-read → `computeTopologyConfigMutation` → `validateTopologyConfigMutation` →
+again on every AppInbox attempt. The handler calls the exact config mutation
+owner and retains the visible prepare → read → compute → validate →
 transaction-write sequence. The pure computation returns one exhaustive
 `write`, `claim`, `no-op`, `replay`, or `idempotency-conflict` result. It does
 not own clocks, repositories, transactions, retry, wake, or I/O.
@@ -85,13 +102,12 @@ absent delete request identity without a domain write. `no-op` and `replay`
 return without a domain write. An idempotency conflict is a typed early exit.
 Malformed input, wrong scope, lifecycle/policy denial, proof mismatch, or a
 non-canonical recomputation throws at the same owning boundary as before.
+Reconfigure commands use the separate reconfigure mutation owner with their
+own read → compute → validate → transaction-write path. Planning remains an
+explicit service and retains existing RTC topology algorithm behavior.
 
 ## Deferred owners
 
-- **PR C:** config query/readiness, mutation shell, transaction writer, result
-  adapter, explicit reconfigure, planning, handler dispatch, and the public
-  management facade remain at their existing paths until the authoritative
-  shell PR moves them.
 - Downstream RTC APP_OUTBOX work, topology snapshots/publications, WS audience,
   and browser overlay consumption remain retained consumers and are not owned
   by config policy.

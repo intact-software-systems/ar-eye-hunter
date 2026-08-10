@@ -6,15 +6,28 @@ import {
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import {
-  GroupTopologyConfigIdempotencyConflictError,
-  type GroupTopologyManagementService,
-  type GroupTopologyReconfigureCommand,
-} from '../../services/group-topology-management-service.ts';
 import type {
   AppInboxEnqueueInput,
   AppInboxMessageContext,
 } from '../../services/AppInboxService.ts';
+// prettier-ignore
+import type {
+  GroupTopologyConfigMutationService,
+} from '../config/group-topology-config-mutation-service.ts';
+// prettier-ignore
+import {
+  toTopologyConfigMutationResult,
+} from '../config/mutation/to-topology-config-mutation-result.ts';
+import { writeTopologyConfigMutation } from '../config/mutation/write-topology-config-mutation.ts';
+import { GroupTopologyConfigIdempotencyConflictError } from '../group-topology-errors.ts';
+// prettier-ignore
+import type {
+  GroupTopologyReconfigureCommand,
+} from '../reconfigure/group-topology-reconfigure-contracts.ts';
+// prettier-ignore
+import type {
+  GroupTopologyReconfigureMutation,
+} from '../reconfigure/group-topology-reconfigure-mutation.ts';
 import {
   createAuthenticatedTopologyEnqueue,
   readTopologyAppInboxAuthority,
@@ -33,9 +46,20 @@ export interface TopologyAppInboxHandlerDependencies {
   readonly wakeQueue?: () => void;
 }
 
-type TopologyConfigInboxResult = ReturnType<
-  GroupTopologyManagementService['toTopologyConfigMutationResult']
->;
+export interface TopologyAppInboxMutationOwners {
+  readonly configMutationService: Pick<
+    GroupTopologyConfigMutationService,
+    'prepare' | 'read' | 'compute' | 'validate'
+  >;
+  readonly writeConfigMutation: typeof writeTopologyConfigMutation;
+  readonly toConfigMutationResult: typeof toTopologyConfigMutationResult;
+  readonly reconfigureMutation: Pick<
+    GroupTopologyReconfigureMutation,
+    'isPlatformAdmin' | 'read' | 'compute' | 'validate' | 'write'
+  >;
+}
+
+type TopologyConfigInboxResult = ReturnType<typeof toTopologyConfigMutationResult>;
 
 interface TopologyReconfigureInboxResult {
   readonly status: 'queued';
@@ -67,7 +91,7 @@ export class TopologyAppInboxHandler {
 
   async processMutation(
     context: AppInboxMessageContext,
-    topologyManagementService: GroupTopologyManagementService,
+    owners: TopologyAppInboxMutationOwners,
   ): Promise<TopologyAppInboxResult> {
     const authority = readTopologyAppInboxAuthority(context.enqueue.authority);
     await verifyTopologyAppInboxAuthority({
@@ -79,27 +103,18 @@ export class TopologyAppInboxHandler {
       return await this.processTopologyReconfigureMutation(
         context,
         authority,
-        topologyManagementService,
+        owners.reconfigureMutation,
       );
     }
-    const preparation = await topologyManagementService.prepareTopologyConfigMutation({
+    const preparation = await owners.configMutationService.prepare({
       command: toTopologyConfigMutationCommand(authority.command),
       commandHash: authority.command.commandHash,
       capturedAtEpochMs: authority.command.capturedAtEpochMs,
     });
-    const read = await topologyManagementService.readTopologyConfigMutation(preparation.command);
+    const read = await owners.configMutationService.read(preparation.command);
     const attemptCount = context.entry.dequeueAudit.attempts;
-    const computed = topologyManagementService.computeTopologyConfigMutation(
-      preparation,
-      read,
-      attemptCount,
-    );
-    topologyManagementService.validateTopologyConfigMutation(
-      preparation,
-      read,
-      attemptCount,
-      computed,
-    );
+    const computed = owners.configMutationService.compute(preparation, read, attemptCount);
+    owners.configMutationService.validate(preparation, read, attemptCount, computed);
     if (computed.outcome === 'idempotency-conflict') {
       throw new GroupTopologyConfigIdempotencyConflictError(
         computed.existingCommandHash,
@@ -108,9 +123,9 @@ export class TopologyAppInboxHandler {
     }
     const result = await this.dependencies.writeMutation(context, async (transaction) => {
       if (computed.outcome === 'write' || computed.outcome === 'claim') {
-        await topologyManagementService.writeTopologyConfigMutation(transaction, computed);
+        await owners.writeConfigMutation(transaction, computed);
       }
-      return topologyManagementService.toTopologyConfigMutationResult(computed);
+      return owners.toConfigMutationResult(computed);
     });
     if (computed.outcome === 'write') {
       this.dependencies.wakeQueue?.();
@@ -121,7 +136,7 @@ export class TopologyAppInboxHandler {
   private async processTopologyReconfigureMutation(
     context: AppInboxMessageContext,
     authority: TopologyReconfigureAppInboxAuthority,
-    topologyManagementService: GroupTopologyManagementService,
+    mutation: TopologyAppInboxMutationOwners['reconfigureMutation'],
   ): Promise<TopologyReconfigureInboxResult> {
     if (authority.command.payload.operation !== 'reconfigureTopology') {
       throw new TypeError('Topology reconfigure authority operation is invalid');
@@ -135,15 +150,13 @@ export class TopologyAppInboxHandler {
         authority.command.payload.requestOptions,
       ),
       publish: authority.command.payload.publish,
-      isPlatformAdmin: topologyManagementService.isPlatformAdmin(
-        authority.command.actor.principalId,
-      ),
+      isPlatformAdmin: mutation.isPlatformAdmin(authority.command.actor.principalId),
     };
-    const read = await topologyManagementService.readTopologyMutation(command);
-    const computed = topologyManagementService.computeTopologyMutation(command, read);
-    topologyManagementService.validateTopologyMutation(command, read, computed);
+    const read = await mutation.read(command);
+    const computed = mutation.compute(command, read);
+    mutation.validate(command, read, computed);
     const result = await this.dependencies.writeMutation(context, async (transaction) => {
-      await topologyManagementService.writeTopologyMutation(transaction, computed);
+      await mutation.write(transaction, computed);
       return {
         status: 'queued',
         groupRef: command.groupRef,
@@ -154,13 +167,4 @@ export class TopologyAppInboxHandler {
     this.dependencies.wakeQueue?.();
     return result;
   }
-}
-
-export function requireTopologyManagementService(
-  service: GroupTopologyManagementService | undefined,
-): GroupTopologyManagementService {
-  if (!service) {
-    throw new TypeError('Topology management service is not configured');
-  }
-  return service;
 }

@@ -27,7 +27,7 @@ import {
 import type {
   GroupTopologyManagementService,
   GroupTopologyGroupSnapshotReader,
-} from './services/group-topology-management-service.ts';
+} from './topology/group-topology-management-service.ts';
 import type { RuntimeStateRepositoryLike } from '../runtime-state/RuntimeStateRepository.ts';
 import type { RtcTopologyExecutionRepository } from './repositories/RtcTopologyExecutionRepository.ts';
 import type { PSqlSql } from '../postgres/PostgresSqlClient.ts';

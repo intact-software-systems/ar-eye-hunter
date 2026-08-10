@@ -34,7 +34,7 @@ import { type GroupMutationIdempotencyRecord, validateGroupMutationIdempotencyRe
 import { readTopologyConfigMutationRecordBoundary } from
   '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
   AppClientInboxService,

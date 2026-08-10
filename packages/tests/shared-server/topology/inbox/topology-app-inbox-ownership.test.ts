@@ -79,7 +79,7 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     expect(topologyHandler).not.toContain('setTopologyManagementService(');
     expect(rtcHandler).not.toContain('private rtcRttDependencies?');
     expect(rtcHandler).not.toContain('setDependencies(');
-    expect(topologyHandler).toContain('topologyManagementService: GroupTopologyManagementService');
+    expect(topologyHandler).toContain('owners: TopologyAppInboxMutationOwners');
     expect(rtcHandler).toContain('rtcRttDependencies: RtcRttAppInboxDependencies');
   });
 

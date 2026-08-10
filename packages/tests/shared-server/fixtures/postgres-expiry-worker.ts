@@ -15,7 +15,7 @@ import type {
   DeleteGroupTopologyConfigInput,
   GroupTopologyConfigMutationExecution,
   PutGroupTopologyConfigInput,
-} from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
   createClientStateRepository,

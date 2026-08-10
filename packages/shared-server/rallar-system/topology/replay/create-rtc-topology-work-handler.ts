@@ -33,7 +33,7 @@ import {
   type GroupTopologyManagementService,
   materializeRtcOverlayTopologyBroadcastMessage,
   type RtcOverlayTopologyMessageFacts,
-} from '../../services/group-topology-management-service.ts';
+} from '../group-topology-management-service.ts';
 import type { RallarTimingSink } from '../../services/timing.ts';
 import {
   computeTopologyMutation,
