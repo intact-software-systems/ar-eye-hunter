@@ -10,9 +10,10 @@ import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../sc
 import { createStateWritePerformanceArtifact } from './state-write-performance-artifact-fixture.ts';
 
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
-const APPROVED_PR_B_BASE_COMMIT = '0b1fa13e07f7a8e4540d389cd5e25dfa95270da4';
+const APPROVED_PR_B_BASE_COMMIT = 'cc98414867f22cc28f0137ef40a1887ab862f87d';
+const FORMER_PR_B_BASE_COMMIT = '0b1fa13e07f7a8e4540d389cd5e25dfa95270da4';
 const HISTORICAL_PR_A_BASE_COMMIT = '20020977507c3104949da07d27b95e89d3b91c96';
-const BASE_TREE = '31671a750ec84577a9b94898c61cc49ec0c91c00';
+const BASE_TREE = '6c071954df939b7dea9ba59aa5116fe7922a6cab';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const HASHES = {
   outerPooler: '1'.repeat(64),
@@ -284,6 +285,12 @@ function measurementFailures(): readonly [RegExp, (input: any) => void][] {
 
 function protocolFailures(): readonly [RegExp, (input: any) => void][] {
   return [
+    [
+      /approved base must equal the precommitted group-topology base/,
+      (input) => {
+        input.expectedApprovedBaseCommit = FORMER_PR_B_BASE_COMMIT;
+      },
+    ],
     [
       /approved base must equal the precommitted group-topology base/,
       (input) => {
