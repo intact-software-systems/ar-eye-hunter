@@ -16,7 +16,10 @@ import {
   toTopologyAppInboxCommand,
   toTopologyConfigMutationCommand,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-import { TopologyAppInboxHandler } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import {
+  TopologyAppInboxHandler,
+  type TopologyAppInboxMutationOwners,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import {
   authenticatedProcessor,
   createAuthorityHarness,
@@ -129,7 +132,7 @@ describe('topology AppInbox transaction and idempotency', () => {
           enqueue,
           entry: { dequeueAudit: { attempts: 1 } },
         } as AppInboxMessageContext,
-        management,
+        topologyMutationOwners(management),
       ),
     ).rejects.toMatchObject({ code: 'resource-inbox-invariant-corruption' });
     expect(await repository.findConfig(GROUP_REF)).toBeUndefined();
@@ -162,6 +165,18 @@ function topologyManagement(
     now: () => harness.nowEpochMs,
     serviceId: 'server-12345678',
   });
+}
+
+function topologyMutationOwners(
+  management: GroupTopologyManagementService,
+): TopologyAppInboxMutationOwners {
+  return {
+    configMutationService: management.configMutationService,
+    writeConfigMutation: async (transaction, computed) =>
+      await management.writeTopologyConfigMutation(transaction, computed),
+    toConfigMutationResult: (computed) => management.toTopologyConfigMutationResult(computed),
+    reconfigureMutation: management.reconfigureMutation,
+  };
 }
 
 async function topologyCommand(requestId: string, degreeLimit: number) {
