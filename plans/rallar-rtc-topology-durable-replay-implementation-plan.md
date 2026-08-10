@@ -17,7 +17,7 @@ Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/
 
 ## Implementation Progress
 
-Current exact-tree checkpoint on 2026-08-09:
+Current working-tree checkpoint on 2026-08-10:
 
 - `origin/main` advanced to `108933a97c7a40ee0831ecd185725aea243122bd` through
   PR #145. The compatibility review found style-checker governance changes and
@@ -45,12 +45,23 @@ Stack record:
 | Layer | Branch | Base | State |
 | --- | --- | --- | --- |
 | Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 open |
-| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | PR #141 head | in progress |
-| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | pending |
+| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | PR #141 head | frozen at PR #143 head `871a7c7e` |
+| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | implementation complete; exact gates pending |
 | PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | pending |
 
-PR 1 implementation is functionally complete on the working tree; its final
-exact-tree local, performance, publication, and workflow gates remain pending.
+PR 1 is frozen at `871a7c7e9cfdffc3143b3f31d5d6d56d42a58ed4` with
+current exact-tree local, black-box, Branch Release Gate, medium-scale, and
+governed A-B-B-A evidence. Its schema-first production migration prerequisite
+remains an owner deployment action; replay stays disabled through PR 2.
+
+PR 2 implementation is complete on the working tree. Focused unit, PGlite,
+Deno, and true-PostgreSQL tests pass, including the live passive-C poll proof;
+the deterministic replay-drain operation-count artifact records the caught-up,
+100-entry, 1,000-entry, no-recipient, current-repair, and gap-hydration cases.
+Review-driven lifecycle proofs also require production shutdown to await the
+in-flight drain and prevent cursor seeding when shutdown wins startup.
+Commit, exact-tree broad/local/black-box gates, draft publication, and the exact
+Branch Release Gate remain pending and therefore this layer is not complete.
 
 PR 1 progress:
 
@@ -594,7 +605,7 @@ Purpose: additive schema and write-only expansion. Replay remains disabled.
 - [x] Add unit, PGlite, and true-overlap PostgreSQL tests for gap-free sequence,
       rollback, same-stream conflict, independent A/B appends, duplicate
       publication races, exact outbox identity, expiry, and lease loss.
-- [ ] Capture baseline/candidate state-write performance evidence.
+- [x] Capture baseline/candidate state-write performance evidence.
 
 Mixed-version rule: apply schema first, then deploy PR 1 everywhere. Old
 writers may omit log rows during this expansion, so replay remains disabled.
@@ -605,25 +616,25 @@ The direct QueueBox path is unchanged.
 Purpose: implement the consumer while retaining a disabled default until all
 writers are log-capable.
 
-- [ ] Add durable cursor seed/read/CAS, stream discovery, page reads, consumer
+- [x] Add durable cursor seed/read/CAS, stream discovery, page reads, consumer
       retirement, and final empty-stream retirement methods.
-- [ ] Implement the pure page-continuity/current-state decision core and the
+- [x] Implement the pure page-continuity/current-state decision core and the
       stateful single-flight replay shell.
-- [ ] Wire notification/local-commit wakeups without moving policy into
+- [x] Wire notification/local-commit wakeups without moving policy into
       QueueBox.
-- [ ] Add fixed-retention gap recovery and coordinate it with the PR 1
+- [x] Add fixed-retention gap recovery and coordinate it with the PR 1
       compactor's retained floor.
-- [ ] Add replay diagnostics and compose them into existing admin RTC topology
+- [x] Add replay diagnostics and compose them into existing admin RTC topology
       metrics/reset.
-- [ ] Add strict replay and queue-worker configuration; keep replay default
+- [x] Add strict replay and queue-worker configuration; keep replay default
       disabled in this PR.
-- [ ] Add process lifecycle shutdown for poll, heartbeat, compaction, and
+- [x] Add process lifecycle shutdown for poll, heartbeat, compaction, and
       in-flight drains.
-- [ ] Add repository/service tests for bounded/fair drain, duplicate wake,
+- [x] Add repository/service tests for bounded/fair drain, duplicate wake,
       stale/current/incomparable handling, partial send failure, cursor retry,
       no-recipient success, gap recovery, corruption stall, lease loss, and
       compaction boundaries.
-- [ ] Add PostgreSQL integration tests with A/B publisher streams and a live C
+- [x] Add PostgreSQL integration tests with A/B publisher streams and a live C
       consumer whose notification wake is absent.
 
 Deployment rule: deploy PR 2 everywhere with replay disabled. Confirm all

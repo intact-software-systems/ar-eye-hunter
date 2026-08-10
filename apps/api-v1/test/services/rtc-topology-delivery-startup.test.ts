@@ -76,6 +76,8 @@ function repository(
       scannedStreamCount: 1,
       deletedEntryCount: 0,
     }),
+    retireExpiredConsumerCursors: async () => ({ deletedCursorCount: 0 }),
+    retireEmptyStreams: async () => ({ deletedStreamCount: 0 }),
   };
 }
 

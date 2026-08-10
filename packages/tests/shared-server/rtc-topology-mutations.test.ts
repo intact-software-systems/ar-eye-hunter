@@ -78,7 +78,8 @@ describe('RTC topology mutation phases', () => {
             import.meta.url,
         ), 'utf8');
         const publicationRepositorySource = readFileSync(new URL(
-            '../../shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts',
+            '../../shared-server/rallar-system/repositories/rtc-topology-publication/' +
+                'rtc-topology-publication-repository.ts',
             import.meta.url,
         ), 'utf8');
         expect(mutationSource).toMatch(/rtc-topology-publication-validation/);

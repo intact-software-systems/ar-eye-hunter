@@ -72,16 +72,9 @@ import {
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { createApiStateSnapshotReadSelectors, getApiAppInboxServiceOptions,
   getApiTimingSink } from './services/timing-service.ts';
-import {
-  createRuntimeStateExpiryLifecycle,
-  runRuntimeStateExpiryStartupBarrier,
-} from './services/runtime-state-expiry-startup.ts';
+import { runRuntimeStateExpiryStartupBarrier } from './services/runtime-state-expiry-startup.ts';
 import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
-import {
-  createApiV1QueuePubSubBridge,
-  queuePubSubDeliveryForConfig,
-  shouldInstallQueuePubSubBridge,
-} from './db/api-v1-queue-pubsub-bridge.ts';
+import { readApiV1DatabaseBackendConfig } from './db/database-config.ts';
 import {
   initRtcRttReceiptFamilyCleanup,
   RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
@@ -100,33 +93,34 @@ import { type Middleware, requireApiMiddleware } from './middleware-contract.ts'
 import {
   createApiRtcTopologyRuntime,
 } from './runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
+import {
+  readApiRtcTopologyReplayConfig,
+} from './runtime/rtc-topology/rtc-topology-replay-config.ts';
+import {
+  beginMiddlewareStartupGeneration,
+  registerMiddlewareBackgroundTask,
+  shutdownMiddlewareBackgroundTasks,
+} from './middleware-background-tasks.ts';
+import {
+  createApiRtcTopologyQueuePubSubBridge,
+} from './runtime/rtc-topology/create-api-rtc-topology-queue-pub-sub-bridge.ts';
+
 export type { Middleware };
+export { registerMiddlewareBackgroundTask, shutdownMiddlewareBackgroundTasks };
 let middleware: Middleware | undefined = undefined;
-const runtimeStateExpiryLifecycle = createRuntimeStateExpiryLifecycle();
-const middlewareBackgroundTaskStops = new Set<() => void>();
 export function getMiddleware(): Middleware {
   if (middleware === undefined) throw new Error('Middleware not initialised');
   return middleware;
 }
 export function initialiseMiddleware() {
-  shutdownMiddlewareBackgroundTasks();
-  middleware = initialise(runtimeStateExpiryLifecycle.beginStartupGeneration());
+  void shutdownMiddlewareBackgroundTasks().catch((error) => {
+    console.error('Failed to stop prior middleware background tasks:', error);
+  });
+  middleware = initialise(beginMiddlewareStartupGeneration());
   return middleware;
 }
-export function shutdownMiddlewareBackgroundTasks(): void {
-  const stops = [...middlewareBackgroundTaskStops];
-  middlewareBackgroundTaskStops.clear();
-  for (const stop of stops) stop();
-  runtimeStateExpiryLifecycle.stop();
-}
-export function registerMiddlewareBackgroundTask(stop: () => void): () => void {
-  middlewareBackgroundTaskStops.add(stop);
-  return () => middlewareBackgroundTaskStops.delete(stop);
-}
 function initialise(
-  expiryStartupGeneration: ReturnType<
-    typeof runtimeStateExpiryLifecycle.beginStartupGeneration
-  >,
+  expiryStartupGeneration: ReturnType<typeof beginMiddlewareStartupGeneration>,
 ): Middleware {
   const dbWsChannelId = 'ws-channel';
   const wsRuntimeName = 'default-qbox-server';
@@ -145,7 +139,12 @@ function initialise(
   const appInboxOptions = getApiAppInboxServiceOptions();
   const groupFormationMetrics = createGroupFormationMetricsRecorder();
   setRtcTopologyOutboxWriteSink(groupFormationMetrics.topologyOutboxWritten);
-  const pubSubConfig = readApiV1DatabasePubSubConfig();
+  const databaseConfig = readApiV1DatabaseBackendConfig();
+  const pubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
+  const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig(
+    Deno.env,
+    databaseConfig,
+  );
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
   });
@@ -169,8 +168,9 @@ function initialise(
     onCompactionFailure: (error) => {
       console.error('RTC topology delivery compaction failed:', error);
     },
+    replayMode: rtcTopologyReplayConfig.replay,
   });
-  registerMiddlewareBackgroundTask(rtcTopology.stop);
+  registerMiddlewareBackgroundTask(async () => await rtcTopology.stop());
   configureServerWsQBoxALRuntimeStores(wsRuntimeName, { sql: postgresSql });
   initResourceInboxExpiryEviction(queueBox.repo).catch((e) =>
     console.error('Failed to initialise resource inbox expiry eviction:', e)
@@ -357,17 +357,24 @@ function initialise(
     rtcTopologyExecutionRepository: rtcTopology.executionRepository,
     rtcTopologyPublicationFanout: rtcTopology.publicationFanout,
     rtcTopologyDelivery: rtcTopology.topologyDelivery,
-    queuePubSubBridge: shouldInstallQueuePubSubBridge(pubSubConfig)
-      ? {
-        bridge: createApiV1QueuePubSubBridge(pubSubConfig, myPublisherId),
-        channel: dbWsChannelId,
-        publisherId: myPublisherId,
-        delivery: queuePubSubDeliveryForConfig(pubSubConfig),
-        timing,
-      }
-      : undefined,
+    rtcTopologyReplay: rtcTopology.topologyReplay,
+    queuePubSubBridge: createApiRtcTopologyQueuePubSubBridge({
+      config: pubSubConfig,
+      channel: dbWsChannelId,
+      publisherId: myPublisherId,
+      timing,
+      wakeReplay: () => rtcTopology.topologyReplay.wake('notification'),
+    }),
     readiness: rtcTopology.readiness,
     healthFailure: rtcTopology.healthFailure,
+  });
+  rtcTopology.topologyReplay.attach({
+    wsQueueBoxServerService: runtime.wsQBoxServerService,
+    hydrateGap: async () => {
+      throw new Error(
+        'RTC topology replay gap hydration is unavailable before the reconnect-hydration cutover',
+      );
+    },
   });
   const scalarRecomputeWorker = initApiRtcTopologyScalarRecomputeWorker({
     runtimeStateRepository,

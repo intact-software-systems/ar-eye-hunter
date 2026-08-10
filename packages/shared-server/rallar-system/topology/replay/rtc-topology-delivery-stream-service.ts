@@ -6,12 +6,19 @@ import type {
   RtcTopologyDeliveryStreamRegistrationInput,
   RtcTopologyDeliveryStreamRegistrationResult,
 } from './rtc-topology-delivery-contracts.ts';
+import type {
+  RtcTopologyReplayCursorRetirementInput,
+  RtcTopologyReplayCursorRetirementResult,
+  RtcTopologyReplayStreamRetirementInput,
+  RtcTopologyReplayStreamRetirementResult,
+} from './rtc-topology-replay-contracts.ts';
 import { validateRtcTopologyDeliveryStreamId } from './rtc-topology-delivery-validation.ts';
 import {
   RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS,
   RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
   RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS,
   RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS,
+  RTC_TOPOLOGY_REPLAY_RETENTION_MS,
 } from './rtc-topology-replay-policy.ts';
 
 export interface RtcTopologyDeliveryStreamMaintenancePort {
@@ -24,6 +31,12 @@ export interface RtcTopologyDeliveryStreamMaintenancePort {
   compactExpiredEntries(
     input: RtcTopologyDeliveryCompactionInput,
   ): Promise<RtcTopologyDeliveryCompactionResult>;
+  retireExpiredConsumerCursors(
+    input: RtcTopologyReplayCursorRetirementInput,
+  ): Promise<RtcTopologyReplayCursorRetirementResult>;
+  retireEmptyStreams(
+    input: RtcTopologyReplayStreamRetirementInput,
+  ): Promise<RtcTopologyReplayStreamRetirementResult>;
 }
 
 export interface RtcTopologyDeliveryStreamScheduler {
@@ -136,6 +149,13 @@ export class RtcTopologyDeliveryStreamService {
     this.#compactionRunning = true;
     try {
       await this.#repository.compactExpiredEntries({
+        pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
+      });
+      await this.#repository.retireExpiredConsumerCursors({
+        retentionMs: RTC_TOPOLOGY_REPLAY_RETENTION_MS,
+        pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
+      });
+      await this.#repository.retireEmptyStreams({
         pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
       });
     } catch (error) {

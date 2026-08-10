@@ -11,10 +11,8 @@ import {
   createRallarServerApplication,
   type RallarServerApplication,
 } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import {
-  RallarServerDataFacade,
-  RallarServerSystemFacade,
-} from '@shared-server/rallar-facade/RallarServer.ts';
+import { RallarServerDataFacade, RallarServerSystemFacade }
+  from '@shared-server/rallar-facade/RallarServer.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 import {
   RallarRtcTopologyService,
@@ -25,15 +23,15 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repo
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
-import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
+import { GroupTopologyManagementService }
+  from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { PSqlAdminOperationsStatsReader }
+  from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import { AdminSupportService } from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
 import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
-import {
-  readGroupGraphDiagnostic,
-  readScopedGlobalGraphDiagnostic,
-} from '@shared-graph/graph-diagnostics-service.ts';
+import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic }
+  from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware-contract.ts';
 import { initialiseMiddleware, registerMiddlewareBackgroundTask } from './middleware.ts';
@@ -68,6 +66,9 @@ import { createRuntimeStateRepository } from './repository/createStateRepositori
 import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { createApiRtcTopologyAdminMetrics }
+  from './runtime/rtc-topology/create-api-rtc-topology-admin-metrics.ts';
+import { readAdminClientIds } from './services/read-admin-client-ids.ts';
 
 export { RallarServerDataFacade, RallarServerSystemFacade };
 
@@ -118,6 +119,10 @@ export function createRallarServer(
     now: rtcTopologyOptions.now,
   });
   const adminClientIds = readAdminClientIds();
+  const rtcTopologyAdminMetrics = createApiRtcTopologyAdminMetrics({
+    planning: rtcTopologyService,
+    replay: middleware.rtcTopologyReplay,
+  });
 
   const topologyManagement = new GroupTopologyManagementService({
     findGroupSnapshotByRef: (ref, cacheOptions) =>
@@ -219,8 +224,8 @@ export function createRallarServer(
       dbPubSub: databasePubSubConfig.mode,
     }),
     wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
-    readRtcTopologyMetrics: () => rtcTopologyService.readMetrics(),
-    resetRtcTopologyMetrics: () => rtcTopologyService.resetMetrics(),
+    readRtcTopologyMetrics: rtcTopologyAdminMetrics.read,
+    resetRtcTopologyMetrics: rtcTopologyAdminMetrics.reset,
     readGroupFormationMetrics: () => middleware.groupFormationMetrics.readMetrics(),
     resetGroupFormationMetrics: () => middleware.groupFormationMetrics.resetMetrics(),
     crdtAdminRepository: crdtLogRepository,
@@ -292,6 +297,7 @@ export function createRallarServer(
               outboxQueueReader: runtime.outboxQueueReader,
               senderId: myServerId,
               wake: () => runtime.qboxEngine.wake(),
+              wakeReplay: () => runtime.rtcTopologyReplay.wake('local-commit'),
               executionRepository: runtime.rtcTopologyExecutionRepository,
               publicationFanout: runtime.rtcTopologyPublicationFanout,
               topologyDelivery: runtime.rtcTopologyDelivery,
@@ -301,6 +307,7 @@ export function createRallarServer(
             enqueueRtcRttMutation: (input) => middleware.appGroupInboxService.enqueueRtcRtt(input),
           },
         );
+
         const unregister = registerMiddlewareBackgroundTask(systemTopics.stop);
         stopSystemTopics = () => {
           unregister();
@@ -389,11 +396,4 @@ export function createRallarServer(
     },
   });
   return rallarApplication;
-}
-
-function readAdminClientIds(): readonly string[] {
-  return (Deno.env.get('AUTH_ADMIN_CLIENT_IDS') ?? 'admin')
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
 }

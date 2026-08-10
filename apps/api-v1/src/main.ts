@@ -16,14 +16,17 @@ import {
 import {
   stopApiOnRtcTopologyDeliveryHealthFailure,
 } from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
+import {
+  logRtcTopologyReplayConfig,
+  readApiRtcTopologyReplayConfig,
+  shouldStartApiQueueWorkers,
+} from './runtime/rtc-topology/rtc-topology-replay-config.ts';
 
 const app: Hono = new Hono();
 addEventListener('unload', () => {
-  try {
-    shutdownMiddlewareBackgroundTasks();
-  } catch (error) {
+  void shutdownMiddlewareBackgroundTasks().catch((error) => {
     console.error('Failed to stop middleware background tasks:', error);
-  }
+  });
 });
 assertApiV1ProductionEnv(Deno.env);
 const corsOrigins = readCorsOrigins();
@@ -31,6 +34,8 @@ const corsOrigins = readCorsOrigins();
 logDatabaseBackendConfig();
 logPGliteSchemaInitConfig();
 logDatabasePubSubConfig();
+const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig();
+logRtcTopologyReplayConfig(console.log, rtcTopologyReplayConfig);
 
 const apiCors = cors(
   {
@@ -78,7 +83,9 @@ rallar.system
 rallar.ws.mount(app);
 rallar.rest.mount(app);
 await rallar.runtime.readiness;
-rallar.start();
+if (shouldStartApiQueueWorkers(rtcTopologyReplayConfig)) {
+  rallar.start();
+}
 
 const port = readServerPort();
 const httpServer = Deno.serve({ port }, app.fetch);

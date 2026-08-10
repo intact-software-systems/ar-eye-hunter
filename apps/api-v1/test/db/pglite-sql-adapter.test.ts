@@ -2964,6 +2964,7 @@ Deno.test('PGlite topology worker classifies exact WS outbox replay as idempoten
     await new ResourceInboxRepository(sql).write(fixture.publicationEntry);
 
     await fixture.handler.onMessage(fixture.message, fixture.reserved);
+    assert.equal(fixture.readReplayWakeCount(), 1);
 
     const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
     assert.equal(consumed?.status, EntityStatus.COMPLETED);
@@ -3003,6 +3004,7 @@ Deno.test('PGlite topology worker revalidates durable delivery on a loaded work 
     );
     await fixture.handler.onMessage(fixture.message, fixture.reserved);
     assert.equal(fixture.readAppendCount(), 1);
+    assert.equal(fixture.readReplayWakeCount(), 1);
     await sql`
       update resource_inbox
       set ri_status = 'RESERVED', ri_attempts = 2,
@@ -3019,6 +3021,7 @@ Deno.test('PGlite topology worker revalidates durable delivery on a loaded work 
     await fixture.handler.onMessage(fixture.message, replayReservation);
 
     assert.equal(fixture.readAppendCount(), 2);
+    assert.equal(fixture.readReplayWakeCount(), 2);
     assert.deepEqual(
       await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
       { headSequence: 1, sequences: [1] },
@@ -3066,6 +3069,7 @@ Deno.test('PGlite topology worker fails closed and rolls back after delivery lea
       (await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key))?.status,
       EntityStatus.RESERVED,
     );
+    assert.equal(fixture.readReplayWakeCount(), 0);
   });
 });
 
@@ -3111,6 +3115,7 @@ Deno.test('PGlite topology worker rolls state and receipt back on divergent WS o
       await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
       { headSequence: 0, sequences: [] },
     );
+    assert.equal(fixture.readReplayWakeCount(), 0);
   });
 });
 
@@ -3155,6 +3160,7 @@ Deno.test('PGlite topology worker rolls every effect back when reservation compl
       await readRtcTopologyDeliveryState(sql, fixture.publisherStreamId),
       { headSequence: 0, sequences: [] },
     );
+    assert.equal(fixture.readReplayWakeCount(), 0);
   });
 });
 
@@ -5142,6 +5148,7 @@ async function createPGliteTopologyWorkFixture(
   const publisherStreamId = '00000000-0000-4000-8000-000000000001';
   const topologyDelivery = new PSqlRtcTopologyDeliveryRepository(sql);
   let appendCount = 0;
+  let replayWakeCount = 0;
   assert.equal(
     (await topologyDelivery.registerStream({
       streamId: publisherStreamId,
@@ -5173,6 +5180,9 @@ async function createPGliteTopologyWorkFixture(
         },
       },
     },
+    wakeReplay: () => {
+      replayWakeCount += 1;
+    },
   });
   return {
     groupRef,
@@ -5188,6 +5198,7 @@ async function createPGliteTopologyWorkFixture(
     handler,
     publisherStreamId,
     readAppendCount: () => appendCount,
+    readReplayWakeCount: () => replayWakeCount,
   };
 }
 

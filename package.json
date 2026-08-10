@@ -28,6 +28,7 @@
     "db:test:down": "npm run db:down",
     "perf:api-v1:state-write": "deno run -A --config apps/api-v1/deno.json scripts/perf/api-v1-state-write-concurrency-bench.ts",
     "perf:rtc-topology:delivery-log": "deno run -A --config apps/api-v1/deno.json scripts/perf/rtc-topology/delivery-log-bench.ts",
+    "perf:rtc-topology:replay-drain": "deno run -A --config apps/api-v1/deno.json scripts/perf/rtc-topology/replay-drain-operation-counts.ts",
     "dev:ar-eye-hunter-v1": "npm --workspace ar-eye-hunter-v1 run dev",
     "build:ar-eye-hunter-v1": "npm --workspace ar-eye-hunter-v1 run build",
     "dev:api-v1": "cd apps/api-v1 && deno task dev",

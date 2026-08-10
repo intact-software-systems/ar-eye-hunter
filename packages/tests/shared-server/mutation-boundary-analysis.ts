@@ -151,6 +151,7 @@ function mutationBoundaryFiles(): readonly string[] {
     'apps/api-v1/src/services/request-auth-service.ts',
     'packages/shared-server/crdt/RallarCrdtServer.ts',
     'packages/shared-server/rallar-system/ws-system-topics.ts',
+    'packages/shared-server/rallar-system/topology/rtt/init-rtc-rtt-topic.ts',
     'packages/shared-server/rallar-system/ws-rtc-topology-runtime.ts',
     'packages/shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts',
     'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',

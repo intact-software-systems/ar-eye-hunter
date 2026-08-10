@@ -181,7 +181,7 @@ export const authNavigationStageLabels = [
 ] as const;
 
 export const authNavigationSourceSnapshot: readonly AuthNavigationSourceSnapshot[] = [
-  navigationSource('apps/api-v1/src/middleware.ts', '2221c5ec490d08ff72359dba6cdc77c60d9f0bcb', [
+  navigationSource('apps/api-v1/src/middleware.ts', '753958235b947933f6f72749c8ce574bf089dc8a', [
     'initialise',
   ]),
   navigationSource(

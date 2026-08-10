@@ -1,22 +1,16 @@
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import {
     type ALMessage,
-    readALTargetGroupRef,
 } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
-import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { computeGlobalGraphAndCacheIt } from '@shared-graph/group-graphs-create-service.ts';
-import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { type DynamicWsTopicRouterOptions, initDynamicWsTopicRouter, } from '../rallar-facade/ws-topic-router.ts';
 import { sendStateSyncMessage } from './state-sync-routing.ts';
 import {
@@ -32,10 +26,6 @@ import type {
     GroupTopologyManagementService,
     GroupTopologyGroupSnapshotReader,
 } from './services/group-topology-management-service.ts';
-import {
-    evaluateRtcRttMeasurement,
-    type RtcRttAcceptanceResult,
-} from './services/rtc-rtt-measurement-policy.ts';
 import type { RuntimeStateRepositoryLike } from '../runtime-state/RuntimeStateRepository.ts';
 import type { RtcTopologyPublicationFanout } from './pubsub/RtcTopologyClusterTransport.ts';
 import type { RtcTopologyExecutionRepository } from './repositories/RtcTopologyExecutionRepository.ts';
@@ -43,6 +33,10 @@ import type { PSqlSql } from '../postgres/PostgresSqlClient.ts';
 import {
     type RtcTopologyRuntimeState,
 } from './ws-rtc-topology-runtime.ts';
+import {
+    computeGlobalGraphAndCacheItIfPossible,
+    initRtcRttTopic,
+} from './topology/rtt/init-rtc-rtt-topic.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
     initDynamicTopics?: boolean;
@@ -63,6 +57,7 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
         topicId?: string;
         senderId?: string;
         wake?: () => void;
+        wakeReplay?: () => void;
         findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
         executionRepository: RtcTopologyExecutionRepository;
         publicationFanout: RtcTopologyPublicationFanout;
@@ -148,6 +143,7 @@ export function initRallarSystemWsTopics(
                 publicationFanout: rtcTopologyAppOutboxOptions.publicationFanout,
                 topologyDelivery: rtcTopologyAppOutboxOptions.topologyDelivery,
                 wakeQueue: rtcTopologyAppOutboxOptions.wake,
+                wakeReplay: rtcTopologyAppOutboxOptions.wakeReplay,
                 onInactiveOverlay: (overlayId) =>
                     clearRtcTopologyFlushTimer(
                         overlayId,
@@ -193,16 +189,16 @@ export function initRallarSystemWsTopics(
     initGraphsTopic(wsQBoxServerService);
     initOverlayTopologyTopic(wsQBoxServerService);
     initChatTopic(wsQBoxServerService);
-    initRttTopic(
-        wsQBoxServerService,
+    initRtcRttTopic({
+        wsQueueBoxServerService: wsQBoxServerService,
         rtcTopologyService,
-        rtcTopologyAppOutbox?.publisher,
-        rtcTopologyRuntimeState,
-        rtcTopologyPersistence.declared,
+        rtcTopologyWorkPublisher: rtcTopologyAppOutbox?.publisher,
+        runtimeState: rtcTopologyRuntimeState,
+        persistentRuntimeDeclared: rtcTopologyPersistence.declared,
         scheduleGlobalGraphRttRecompute,
         findGroupSnapshotByRef,
-        options.enqueueRtcRttMutation,
-    );
+        enqueueRtcRttMutation: options.enqueueRtcRttMutation,
+    });
     initRtcSignalingTopic(wsQBoxServerService);
     if (options.initDynamicTopics ?? true) {
         initDynamicWsTopicRouter(wsQBoxServerService, options.dynamicTopicRouterOptions);
@@ -331,23 +327,6 @@ function clearRtcTopologyFlushTimer(
     }
 }
 
-async function findGroupsAffectedByRtt(
-    rtt: RttMeasurementInfo,
-    message: ALMessage,
-    findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
-): Promise<readonly GroupSnapshot[]> {
-    const groupRef = readALTargetGroupRef(message);
-    if (groupRef && findGroupSnapshotByRef) {
-        const snapshot = await findGroupSnapshotByRef(groupRef);
-        return snapshot ? [snapshot] : [];
-    }
-
-    return groupStateSnapshotsRepository.findGroupStateSnapshotsBySessionIds([
-        rtt.sessionIdFrom,
-        rtt.sessionIdTo,
-    ]);
-}
-
 function initChatTopic(wsQBoxServerService: WsQueueBoxServerService): void {
     wsQBoxServerService.onInboxMessageDo(AppTopics.chat, {
         onMessage: (data: ALMessage, _: ResourceEntry, server: JsonWebSocketServer) => {
@@ -357,86 +336,6 @@ function initChatTopic(wsQBoxServerService: WsQueueBoxServerService): void {
 
             server.broadcast(data);
             return Promise.resolve();
-        },
-    });
-}
-
-function initRttTopic(
-    wsQBoxServerService: WsQueueBoxServerService,
-    rtcTopologyService: RallarRtcTopologyService,
-    rtcTopologyWorkPublisher?: RtcTopologyWorkPublisher,
-    runtimeState?: RtcTopologyRuntimeState,
-    persistentRuntimeDeclared = false,
-    scheduleGlobalGraphRttRecompute: () => void = () => {
-    },
-    findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader,
-    enqueueRtcRttMutation?: InitRallarSystemWsTopicsOptions['enqueueRtcRttMutation'],
-): void {
-    wsQBoxServerService.onInboxMessageDo(AppTopics.rtt, {
-        onMessage: async (data: ALMessage, _: ResourceEntry, _server: JsonWebSocketServer) => {
-            if (!isTopic(data, AppTopics.rtt)) {
-                return;
-            }
-
-            const rtt: RttMeasurementInfo = JSON.parse(data.payload.resource) as RttMeasurementInfo;
-
-            console.log(`Received RTT message: ${data.payload.resource}`);
-
-            if (persistentRuntimeDeclared) {
-                if (!enqueueRtcRttMutation) {
-                    throw new TypeError(
-                        'RTC RTT persistence requires durable AppInbox enqueue',
-                    );
-                }
-                await enqueueRtcRttMutation({
-                    rtt,
-                    alSenderId: data.id.senderId,
-                    capturedAtEpochMs: Date.now(),
-                });
-                return;
-            }
-
-            const readPolicyInputs = async () => {
-                const candidateGroups = await findGroupsAffectedByRtt(
-                    rtt,
-                    data,
-                    findGroupSnapshotByRef,
-                );
-                return {
-                    candidateGroups,
-                    overlaySnapshotsByGroupKey: await readOverlaySnapshotsForGroups(
-                        candidateGroups,
-                        rtcTopologyService,
-                        runtimeState,
-                    ),
-                    degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
-                };
-            };
-            const acceptance = await acceptRtcRttMeasurementWithPolicy({
-                rtt,
-                alSenderId: data.id.senderId,
-                readPolicyInputs,
-                runtimeState,
-            });
-            if (!acceptance.accepted) {
-                console.warn(`Rejected RTC RTT measurement: ${acceptance.reason}`);
-                return;
-            }
-            if (!acceptance.updated) {
-                return;
-            }
-
-            vivaldiService.observeRtt(rtt);
-            scheduleGlobalGraphRttRecompute();
-            if (rtcTopologyWorkPublisher) {
-                if (!runtimeState) {
-                    await rtcTopologyWorkPublisher.enqueueForRttGroups(
-                        rtt,
-                        acceptance.affectedGroups,
-                        rtcTopologyService.readRttRebuildDebounceMs(),
-                    );
-                }
-            }
         },
     });
 }
@@ -455,84 +354,6 @@ function resolveRtcTopologyPersistence(
             options.rtcTopologyRepositories !== undefined,
         repositories: options.rtcTopologyRepositories,
     };
-}
-
-type RtcRttUpdateResult = RtcRttAcceptanceResult & Readonly<{
-    updated: boolean;
-}>;
-
-async function acceptRtcRttMeasurementWithPolicy(input: {
-    readonly rtt: RttMeasurementInfo;
-    readonly alSenderId: string;
-    readonly readPolicyInputs: () => Promise<Readonly<{
-        candidateGroups: readonly GroupSnapshot[];
-        overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
-        degreeLimit: number;
-    }>>;
-    readonly runtimeState?: RtcTopologyRuntimeState;
-}): Promise<RtcRttUpdateResult> {
-    const evaluate = (
-        policyInputs: Readonly<{
-            candidateGroups: readonly GroupSnapshot[];
-            overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
-            degreeLimit: number;
-        }>,
-        existingMeasurements: readonly RttMeasurementInfo[],
-        requestedAtEpochMs: number,
-    ): RtcRttAcceptanceResult =>
-        evaluateRtcRttMeasurement({
-            rtt: input.rtt,
-            alSenderId: input.alSenderId,
-            requestedAtEpochMs,
-            ...policyInputs,
-            existingMeasurements,
-        });
-
-    const requestedAtEpochMs = Date.now();
-    const result = evaluate(
-        await input.readPolicyInputs(),
-        rttRepository.getAllRtt(),
-        requestedAtEpochMs,
-    );
-    return {
-        ...result,
-        updated: result.accepted ? rttRepository.setRtt(input.rtt) : false,
-    };
-}
-
-async function readOverlaySnapshotsForGroups(
-    groups: readonly GroupSnapshot[],
-    rtcTopologyService: RallarRtcTopologyService,
-    runtimeState?: RtcTopologyRuntimeState,
-): Promise<ReadonlyMap<string, RallarOverlayTopologySnapshot>> {
-    const snapshots = new Map<string, RallarOverlayTopologySnapshot>();
-    for (const group of groups) {
-        const snapshot = runtimeState
-            ? await runtimeState.topologySnapshots.findSnapshot(group.group)
-            : rtcTopologyService.readSnapshot(group);
-        if (snapshot) {
-            snapshots.set(toWebRtcGroupKey(group.group), snapshot);
-        }
-    }
-    return snapshots;
-}
-
-function computeGlobalGraphAndCacheItIfPossible(
-    predictedDegreeLimit?: number,
-): void {
-    try {
-        computeGlobalGraphAndCacheIt(
-            predictedDegreeLimit !== undefined
-                ? { predictedDegreeLimit }
-                : {},
-        );
-    } catch (error) {
-        console.warn(
-            `Skipping global graph cache recompute after partial RTT update: ${
-                error instanceof Error ? error.message : String(error)
-            }`,
-        );
-    }
 }
 
 function initRtcSignalingTopic(wsQBoxServerService: WsQueueBoxServerService): void {

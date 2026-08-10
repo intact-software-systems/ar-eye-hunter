@@ -28,6 +28,10 @@ import type { RtcTopologyExecutionRepository } from '../repositories/RtcTopology
 import type {
   RtcTopologyDeliveryAppendPort,
 } from '../topology/replay/rtc-topology-delivery-append-port.ts';
+import type {
+  RtcTopologyReplayMetrics,
+  RtcTopologyReplayWakeSource,
+} from '../topology/replay/rtc-topology-replay-diagnostics.ts';
 import {
   installQueueBoxPubSubBridge,
   type InstallQueueBoxPubSubBridgeOptions,
@@ -41,6 +45,11 @@ import type {
 import { createWsServerTargetResolver } from './ws-server-target-resolver.ts';
 export type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
 export { createWsServerTargetResolver } from './ws-server-target-resolver.ts';
+export type RtcTopologyReplayRuntime = Readonly<{
+  wake(source: RtcTopologyReplayWakeSource): void;
+  readMetrics(): RtcTopologyReplayMetrics;
+  resetMetrics(): void;
+}>;
 export type RallarMiddlewareRuntime = Readonly<{
   qboxEngine: InboxOutboxEngine;
   wsQBoxServerService: WsQueueBoxServerService;
@@ -64,6 +73,7 @@ export type RallarMiddlewareRuntime = Readonly<{
     publisherStreamId: string;
     append: RtcTopologyDeliveryAppendPort;
   }>;
+  rtcTopologyReplay?: RtcTopologyReplayRuntime;
   readiness: Promise<void>;
   healthFailure?: Promise<never>;
 }>;
@@ -118,6 +128,7 @@ export type CreateRallarMiddlewareOptions = Readonly<{
     publisherStreamId: string;
     append: RtcTopologyDeliveryAppendPort;
   }>;
+  rtcTopologyReplay?: RtcTopologyReplayRuntime;
   queuePubSubBridge?: Omit<
     InstallQueueBoxPubSubBridgeOptions,
     'wsQBoxServerService'
@@ -234,6 +245,7 @@ export function createRallarMiddleware(
     rtcTopologyExecutionRepository: options.rtcTopologyExecutionRepository,
     rtcTopologyPublicationFanout: options.rtcTopologyPublicationFanout,
     rtcTopologyDelivery: options.rtcTopologyDelivery,
+    rtcTopologyReplay: options.rtcTopologyReplay,
     readiness: Promise.all([
       options.readiness ?? Promise.resolve(),
       queuePubSubBridgeReadiness,

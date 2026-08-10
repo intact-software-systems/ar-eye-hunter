@@ -277,6 +277,42 @@ describe('QueueBoxPubSubBridge', () => {
         ]);
     });
 
+    it('reports only exact durable outbox key receives through the optional wake seam', async () => {
+        const bridge = createBridge();
+        const entry = createWsOutboxEntry();
+        const onValidatedOutboxKeyReceived = vi.fn();
+        const sendToTargetsWithResult = vi.fn(() => ({
+            status: 'no-recipients',
+            recipientCount: 0,
+            sentCount: 0,
+            failedCount: 0,
+        }));
+        const wsQBoxServerService = {
+            onAllInboxMessagesDo: vi.fn().mockReturnThis(),
+            onOutboxClusterPublishDo: vi.fn().mockReturnThis(),
+            outbox: { getItem: vi.fn(async () => entry) },
+            sendToTargetsWithResult,
+        } as unknown as WsQueueBoxServerService;
+        installQueueBoxPubSubBridge({
+            wsQBoxServerService,
+            bridge,
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
+            onValidatedOutboxKeyReceived,
+        });
+
+        await bridge.subscriber?.(
+            toPubSubMessage('queuebox-events', 'publisher-2', entry, { delivery: 'key' }),
+        );
+        await bridge.subscriber?.(
+            toPubSubMessage('queuebox-events', 'publisher-2', entry),
+        );
+
+        expect(onValidatedOutboxKeyReceived).toHaveBeenCalledOnce();
+        expect(onValidatedOutboxKeyReceived).toHaveBeenCalledWith(entry);
+        expect(sendToTargetsWithResult).toHaveBeenCalledTimes(2);
+    });
+
     it('drops missing durable key-only messages with timing details', async () => {
         const bridge = createBridge();
         const entry = createWsEntry();
@@ -465,6 +501,19 @@ function createWsEntry(): ResourceEntry {
             { title: 'Ship bridge' },
         ),
         WsQueueBoxServerService.INBOX_ENQUEUE_TYPE,
+    );
+}
+
+function createWsOutboxEntry(): ResourceEntry {
+    return QueueBoxUtilities.toResourceEntryFromMsg(
+        newALBroadcastMessage(
+            'rallar-server',
+            newALRoute('rallar.overlay-topology.v1', 'room-1', 'topology-1'),
+            'room',
+            'rallar.overlay-topology.v1',
+            { version: 1 },
+        ),
+        WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
     );
 }
 
