@@ -239,6 +239,10 @@ export class GroupTopologyManagementService {
         this.options.topologyService.recordTopologyPublishResult(published);
     }
 
+    recordTopologyRebuildSkippedFingerprint(): void {
+        this.options.topologyService.recordTopologyRebuildSkippedFingerprint();
+    }
+
     isPlatformAdmin(principalId: string): boolean {
         return this.options.adminPrincipalIds?.has(principalId) ?? false;
     }

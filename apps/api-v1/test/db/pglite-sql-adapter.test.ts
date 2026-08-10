@@ -72,6 +72,9 @@ import {
   groupStatePresenceSessionStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
+import {
+  computeCoalescedRtcTopologyGroupRevisionWork,
+} from '@shared-server/rallar-system/services/rtc-topology-coalesced-group-revision-work.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   ClientStateEventCollisionError,
@@ -4926,6 +4929,134 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
     assert.equal(staleExpected.action, 'successor');
     assert.equal((await repository.findByKey(first.key))?.resource, revivedEntry.resource);
     assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+  });
+});
+
+Deno.test('PGlite topology gates skip unchanged coalesced group-revision rebuilds and fail open', async () => {
+  await withPGliteSql(async (sql) => {
+    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+    const groupRef = {
+      applicationId: 'fingerprint-gate',
+      workspaceId: 'atomic-work',
+      groupId: 'room',
+    };
+    let currentSnapshot = topologyGroupSnapshotWithSessionIds(
+      groupRef,
+      ['session-a', 'session-b'],
+      nowEpochMs,
+    );
+    const runtimeRepository = new PSqlRuntimeStateRepository(sql);
+    const topologyService = new RallarRtcTopologyService({ now: () => nowEpochMs });
+    const topologyManagement = new GroupTopologyManagementService({
+      findGroupSnapshotByRef: () => currentSnapshot,
+      topologyService,
+      topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
+      processRttReader: () => [],
+      now: () => nowEpochMs,
+    });
+    const executionRepository = new RtcTopologyExecutionRepository(
+      runtimeRepository,
+      60_000,
+      () => nowEpochMs,
+    );
+    const resourceInbox = new ResourceInboxRepository(sql);
+    const queue = new PSqlQueueBox(resourceInbox);
+    const coalescedService = new CoalescedAppOutboxWorkService(
+      new OutboxQueueReader(queue),
+      'fingerprint-gate-worker',
+      () => nowEpochMs,
+    );
+    const handler = createRtcTopologyWorkHandler({
+      runtime: createRtcTopologyOutboxPublisher({
+        outboxQueueReader: new OutboxQueueReader(queue),
+        senderId: 'fingerprint-gate-worker',
+        now: () => nowEpochMs,
+      }),
+      database: sql,
+      topologyManagement,
+      executionRepository,
+    });
+    const toCoalescedComputed = (snapshot: GroupSnapshot, previousEntry: ResourceEntry | null) =>
+      computeCoalescedRtcTopologyGroupRevisionWork({
+        aggregateRef: groupRef,
+        groupSnapshot: snapshot,
+        requestedAtEpochMs: nowEpochMs,
+        expireAtEpochMs: FUTURE_MS,
+        recomputeDebounceMs: 0,
+        senderId: 'fingerprint-gate-worker',
+        previousEntry,
+      });
+    const coalescedKey = toCoalescedComputed(currentSnapshot, null).entry.key;
+    const runCoalescedIntent = async (snapshot: GroupSnapshot) => {
+      currentSnapshot = snapshot;
+      const previousEntry = (await queue.getItem(coalescedKey)) ?? null;
+      const computed = toCoalescedComputed(snapshot, previousEntry);
+      await sql.begin(async (transaction) => await coalescedService.write(transaction, computed));
+      await sql`
+        update resource_inbox
+        set ri_status = 'RESERVED', ri_attempts = ri_attempts + 1,
+            start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+        where ri_topic_id = ${coalescedKey.topicId}
+          and ri_resource_id = ${coalescedKey.resourceId}
+          and fk_ext_bank_id = ${coalescedKey.contextId}
+      `;
+      const reserved = await resourceInbox.findAnyByKey(coalescedKey);
+      assert.ok(reserved);
+      await handler.onMessage(JSON.parse(reserved.resource) as ALMessage, reserved);
+      return reserved.key;
+    };
+
+    const firstKey = await runCoalescedIntent(currentSnapshot);
+    assert.equal((await resourceInbox.findAnyByKey(firstKey))?.status, EntityStatus.COMPLETED);
+    let metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyPublishedCount, 1);
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 0);
+    assert.ok(await executionRepository.readTopologyInputFingerprint(groupRef));
+
+    await runCoalescedIntent(currentSnapshot);
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 1);
+    assert.equal(metrics.topologyPublishedCount, 1);
+    assert.equal(metrics.topologyUpdateCount, 1);
+
+    const mismatchedFingerprint = `sha256:${'0'.repeat(64)}`;
+    await sql.begin(async (transaction) =>
+      await executionRepository.writeTopologyInputFingerprint(
+        transaction,
+        groupRef,
+        mismatchedFingerprint,
+      )
+    );
+    await runCoalescedIntent(currentSnapshot);
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 1);
+    assert.equal(metrics.topologyPublishSkippedUnchangedCount, 1);
+    assert.equal(metrics.topologyPublishedCount, 1);
+    assert.equal(metrics.topologyUpdateCount, 2);
+    assert.notEqual(
+      await executionRepository.readTopologyInputFingerprint(groupRef),
+      mismatchedFingerprint,
+    );
+
+    await runCoalescedIntent(currentSnapshot);
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 2);
+    assert.equal(metrics.topologyUpdateCount, 2);
+
+    const grownSnapshot = topologyGroupSnapshotWithSessionIds(
+      groupRef,
+      ['session-a', 'session-b', 'session-c'],
+      nowEpochMs,
+    );
+    await runCoalescedIntent({
+      ...grownSnapshot,
+      stateRevision: 5,
+      causalRevision: { groupRevision: 2, presenceRevision: 3 },
+      group: { ...grownSnapshot.group, presenceVersion: 3 },
+    });
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyPublishedCount, 2);
+    assert.equal(metrics.topologyUpdateCount, 3);
   });
 });
 

@@ -15,6 +15,7 @@ import {
   toRtcTopologyCoalescedGroupRevisionResourceId,
 } from '@shared-server/rallar-system/services/rtc-topology-coalesced-group-revision-work.ts';
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/rtc-topology-input-fingerprint.ts';
 import {
   parsePersistedRtcTopologyALMessage,
   readRtcTopologyWorkEnvelope,
@@ -313,5 +314,88 @@ function createAuditStamp(): AuditStamp {
     reason: null,
     traceId: null,
     requestId: null,
+  };
+}
+
+describe('computeRtcTopologyInputFingerprint', () => {
+  const EFFECTIVE_CONFIG = {
+    topologyKind: 'auto',
+    degreeLimit: 5,
+    treeMinSize: 5,
+    meshMinSize: 16,
+    meshParamK: 2,
+  } as const;
+
+  it('is deterministic and insensitive to session order', async () => {
+    const forward = await computeRtcTopologyInputFingerprint({
+      group: withSessions(createGroupSnapshot(4, 3), ['session-a', 'session-b']),
+      effectiveConfig: EFFECTIVE_CONFIG,
+    });
+    const reversed = await computeRtcTopologyInputFingerprint({
+      group: withSessions(createGroupSnapshot(4, 3), ['session-b', 'session-a']),
+      effectiveConfig: EFFECTIVE_CONFIG,
+    });
+
+    expect(forward).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(reversed).toBe(forward);
+  });
+
+  it('changes when sessions, display name, or effective config change', async () => {
+    const base = await computeRtcTopologyInputFingerprint({
+      group: withSessions(createGroupSnapshot(4, 3), ['session-a', 'session-b']),
+      effectiveConfig: EFFECTIVE_CONFIG,
+    });
+    const grownSessions = await computeRtcTopologyInputFingerprint({
+      group: withSessions(createGroupSnapshot(4, 3), ['session-a', 'session-b', 'session-c']),
+      effectiveConfig: EFFECTIVE_CONFIG,
+    });
+    const renamedGroup = createGroupSnapshot(4, 3);
+    const renamed = await computeRtcTopologyInputFingerprint({
+      group: {
+        ...renamedGroup,
+        group: { ...renamedGroup.group, displayName: 'Renamed room' },
+      },
+      effectiveConfig: EFFECTIVE_CONFIG,
+    });
+    const reconfigured = await computeRtcTopologyInputFingerprint({
+      group: createGroupSnapshot(4, 3),
+      effectiveConfig: { ...EFFECTIVE_CONFIG, degreeLimit: 4 },
+    });
+
+    expect(new Set([base, grownSessions, renamed, reconfigured]).size).toBe(4);
+  });
+
+  it('ignores lease-only differences between identical session sets', async () => {
+    const snapshot = createGroupSnapshot(4, 3);
+    const renewed: GroupSnapshot = {
+      ...snapshot,
+      activeSessions: snapshot.activeSessions.map((session) => ({
+        ...session,
+        lastHeartbeatAtEpochMs: session.lastHeartbeatAtEpochMs + 30_000,
+        expiresAtEpochMs: session.expiresAtEpochMs + 30_000,
+      })),
+    };
+
+    expect(
+      await computeRtcTopologyInputFingerprint({
+        group: renewed,
+        effectiveConfig: EFFECTIVE_CONFIG,
+      }),
+    ).toBe(
+      await computeRtcTopologyInputFingerprint({
+        group: snapshot,
+        effectiveConfig: EFFECTIVE_CONFIG,
+      }),
+    );
+  });
+});
+
+function withSessions(snapshot: GroupSnapshot, sessionIds: readonly string[]): GroupSnapshot {
+  return {
+    ...snapshot,
+    activeSessions: sessionIds.map((sessionId) => ({
+      ...snapshot.activeSessions[0]!,
+      sessionId,
+    })),
   };
 }

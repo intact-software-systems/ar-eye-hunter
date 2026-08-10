@@ -1,30 +1,22 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
   fromCanonicalGroupTopologyConfigPatch,
+  isPreserveOnlyCanonicalGroupTopologyConfigPatch,
 } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
-import type {
-  PSqlSql,
-  PSqlTransactionSql,
-} from '../../../postgres/PostgresSqlClient.ts';
-import {
-  ResourceInboxRepository,
-} from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
-import {
-  RuntimeStateWriteConflictError,
-} from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
   hashRtcTopologyExecutionCommand,
   type RtcTopologyPublication,
   toRtcTopologyPublicationId,
 } from '../../repositories/RtcTopologyPublicationRepository.ts';
-import type {
-  RtcTopologyExecutionRepository,
-} from '../../repositories/RtcTopologyExecutionRepository.ts';
+import type { RtcTopologyExecutionRepository } from '../../repositories/RtcTopologyExecutionRepository.ts';
 import type { RtcTopologyDeliveryAppendPort } from './rtc-topology-delivery-append-port.ts';
 import { RtcTopologyDeliveryLeaseLostError } from './rtc-topology-delivery-stream-service.ts';
 import {
@@ -44,6 +36,8 @@ import {
 } from '../../services/rtc-topology-mutations.ts';
 import { writeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyWorkRuntime } from '../../services/RtcTopologyOutboxWork.ts';
+import { COALESCED_APP_OUTBOX_WORK_FIELD } from '../../services/CoalescedAppOutboxWorkService.ts';
+import { computeRtcTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
 import {
   type PersistedRtcTopologyWork,
   readRtcTopologyWorkEnvelope,
@@ -75,12 +69,26 @@ interface RtcTopologyWorkHandlerOptions {
   readonly serviceId?: string;
 }
 
-interface AcceptedRtcTopologyWork {
-  readonly work: PersistedRtcTopologyWork;
-  readonly group: GroupSnapshot;
-  readonly computed: AcceptedRtcTopologyMutation;
-  readonly publication: RtcTopologyPublication | null;
-}
+type AcceptedRtcTopologyWork =
+  | Readonly<{
+      decision: 'accepted';
+      work: PersistedRtcTopologyWork;
+      group: GroupSnapshot;
+      computed: AcceptedRtcTopologyMutation;
+      publication: RtcTopologyPublication | null;
+      inputFingerprint: string;
+    }>
+  | Readonly<{
+      decision: 'skipped-fingerprint';
+      work: PersistedRtcTopologyWork;
+      group: GroupSnapshot;
+    }>
+  | Readonly<{
+      decision: 'skipped-unchanged';
+      work: PersistedRtcTopologyWork;
+      group: GroupSnapshot;
+      inputFingerprint: string;
+    }>;
 
 type RtcTopologyExecutionRead = Awaited<
   ReturnType<RtcTopologyExecutionRepository['readTopologyMutation']>
@@ -175,10 +183,26 @@ async function computeAcceptedRtcTopologyWork(
     work.groupSnapshot,
     work.kind === 'group-revision',
   );
+  const inputFingerprint = await computeRtcTopologyInputFingerprint({
+    group: authority.group,
+    effectiveConfig: authority.config.effective,
+  });
+  const changeGated = isChangeGatedGroupRevisionWork(work);
+  if (changeGated && read.snapshot?.value.state === 'active') {
+    const storedFingerprint = await options.executionRepository.readTopologyInputFingerprint(
+      authority.group.group,
+    );
+    if (storedFingerprint === inputFingerprint) {
+      return { decision: 'skipped-fingerprint', work, group: authority.group };
+    }
+  }
   const computedTopology = options.topologyManagement.computeTopologyFromAuthority(
     authority,
     read.snapshot?.value,
   );
+  if (changeGated && read.snapshot !== null && !computedTopology.changed) {
+    return { decision: 'skipped-unchanged', work, group: authority.group, inputFingerprint };
+  }
   const publicationExpireAtTimestamp = work.publish
     ? options.executionRepository.publicationExpireAtTimestamp()
     : null;
@@ -226,7 +250,22 @@ async function computeAcceptedRtcTopologyWork(
   if (computed.outcome === 'loaded') {
     throw new TypeError('RTC topology publication claim appeared on a claim-miss path');
   }
-  return { work, group: authority.group, computed, publication };
+  return {
+    decision: 'accepted',
+    work,
+    group: authority.group,
+    computed,
+    publication,
+    inputFingerprint,
+  };
+}
+
+function isChangeGatedGroupRevisionWork(work: PersistedRtcTopologyWork): boolean {
+  return (
+    work.kind === 'group-revision' &&
+    work[COALESCED_APP_OUTBOX_WORK_FIELD] !== undefined &&
+    isPreserveOnlyCanonicalGroupTopologyConfigPatch(work.requestOptions)
+  );
 }
 
 async function writeAcceptedRtcTopologyWork(
@@ -234,6 +273,23 @@ async function writeAcceptedRtcTopologyWork(
   entry: ResourceEntry,
   accepted: AcceptedRtcTopologyWork,
 ): Promise<void> {
+  if (accepted.decision === 'skipped-fingerprint') {
+    await finishRtcTopologyWork(options.database, entry);
+    options.topologyManagement.recordTopologyRebuildSkippedFingerprint();
+    return;
+  }
+  if (accepted.decision === 'skipped-unchanged') {
+    await runInTransaction(options.database, async (transaction) => {
+      await options.executionRepository.writeTopologyInputFingerprint(
+        transaction,
+        accepted.group.group,
+        accepted.inputFingerprint,
+      );
+      await finishRtcTopologyReservation(transaction, entry);
+    });
+    options.topologyManagement.recordTopologyPublication(false);
+    return;
+  }
   const computed = accepted.computed;
   if (computed.outcome === 'superseded') {
     await finishRtcTopologyWork(options.database, entry);
@@ -242,6 +298,13 @@ async function writeAcceptedRtcTopologyWork(
   }
   await writeRtcTopologyPublicationTransaction(options, entry, async (transaction) => {
     await options.executionRepository.writeTopologyMutation(transaction, computed);
+    if (computed.outcome === 'write') {
+      await options.executionRepository.writeTopologyInputFingerprint(
+        transaction,
+        accepted.group.group,
+        accepted.inputFingerprint,
+      );
+    }
     if (accepted.publication) {
       await writePublicationDelivery(transaction, accepted.publication, options.topologyDelivery);
     }

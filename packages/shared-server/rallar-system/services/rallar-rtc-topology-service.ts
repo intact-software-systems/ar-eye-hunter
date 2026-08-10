@@ -74,6 +74,7 @@ export type RallarRtcTopologyMetrics = Readonly<{
     topologyPublishAttemptCount: number;
     topologyPublishedCount: number;
     topologyPublishSkippedUnchangedCount: number;
+    topologyRebuildSkippedFingerprintCount: number;
     topologyRemovalRequestCount: number;
     topologyRemovedCount: number;
     topologyRemoveMissCount: number;
@@ -195,6 +196,7 @@ const emptyTopologyMetrics = (): MutableRallarRtcTopologyMetrics => ({
     topologyPublishAttemptCount: 0,
     topologyPublishedCount: 0,
     topologyPublishSkippedUnchangedCount: 0,
+    topologyRebuildSkippedFingerprintCount: 0,
     topologyRemovalRequestCount: 0,
     topologyRemovedCount: 0,
     topologyRemoveMissCount: 0,
@@ -255,6 +257,10 @@ export class RallarRtcTopologyService {
         } else {
             this.metrics.topologyPublishSkippedUnchangedCount += 1;
         }
+    }
+
+    recordTopologyRebuildSkippedFingerprint(): void {
+        this.metrics.topologyRebuildSkippedFingerprintCount += 1;
     }
 
     updateGroupTopology(

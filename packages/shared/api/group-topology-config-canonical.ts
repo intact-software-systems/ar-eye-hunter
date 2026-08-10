@@ -37,6 +37,16 @@ export function toCanonicalGroupTopologyConfigPatch(
     };
 }
 
+export function isPreserveOnlyCanonicalGroupTopologyConfigPatch(
+    patch: CanonicalGroupTopologyConfigPatch,
+): boolean {
+    return patch.topologyKind.action === 'preserve' &&
+        patch.degreeLimit.action === 'preserve' &&
+        patch.treeMinSize.action === 'preserve' &&
+        patch.meshMinSize.action === 'preserve' &&
+        patch.meshParamK.action === 'preserve';
+}
+
 export function readCanonicalGroupTopologyConfigPatch(
     value: unknown,
 ): CanonicalGroupTopologyConfigPatch {
