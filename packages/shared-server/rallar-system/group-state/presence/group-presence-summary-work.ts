@@ -78,6 +78,11 @@ export type GroupPresenceSummaryWorkOptions = Readonly<{
   formationMetrics?: GroupFormationPresenceSummarySink;
 }>;
 
+export type GroupPresenceSummaryWorkRead = Readonly<{
+  presence: GroupPresenceSummaryRead;
+  coalescedTopologyEntry: ResourceEntry | null;
+}>;
+
 export type GroupPresenceSummaryComputedWork = Readonly<{
   work: GroupPresenceSummaryWorkData;
   summary: GroupPresenceSummaryComputed;
@@ -111,7 +116,7 @@ export class GroupPresenceSummaryWork {
         : null;
   }
 
-  async read(work: GroupPresenceSummaryWorkData): Promise<GroupPresenceSummaryRead> {
+  async read(work: GroupPresenceSummaryWorkData): Promise<GroupPresenceSummaryWorkRead> {
     const repository = new GroupStateRepository(this.options.runtimeRepository);
     const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] =
       await Promise.all([
@@ -126,11 +131,13 @@ export class GroupPresenceSummaryWork {
       throw new TypeError(`Group not found for presence summary: ${work.aggregateRef.groupId}`);
     }
     return {
-      group,
-      members,
-      admissions,
-      presenceSessions,
-      current: current ?? null,
+      presence: {
+        group,
+        members,
+        admissions,
+        presenceSessions,
+        current: current ?? null,
+      },
       coalescedTopologyEntry,
     };
   }
@@ -148,20 +155,20 @@ export class GroupPresenceSummaryWork {
 
   compute(
     work: GroupPresenceSummaryWorkData,
-    read: GroupPresenceSummaryRead,
+    read: GroupPresenceSummaryWorkRead,
   ): GroupPresenceSummaryComputedWork {
     const summary = computeGroupPresenceSummary({
       ref: work.aggregateRef,
-      read,
+      read: read.presence,
       nowEpochMs: this.now(),
       formationDamping: this.options.topologyIntent.damping,
     });
     const snapshot = assembleGroupStateSnapshot(
       {
-        group: read.group.value,
-        members: read.members.map((member) => member.value),
+        group: read.presence.group.value,
+        members: read.presence.members.map((member) => member.value),
         summary: summary.summary,
-        authoritativeSessions: read.presenceSessions.map((session) => session.value),
+        authoritativeSessions: read.presence.presenceSessions.map((session) => session.value),
         groupRevision: summary.summary.causalRevision.groupRevision,
         observedAtEpochMs: summary.summary.computedAtEpochMs,
         sessionLeaseFields:
@@ -205,7 +212,7 @@ export class GroupPresenceSummaryWork {
 
   validate(
     work: GroupPresenceSummaryWorkData,
-    read: GroupPresenceSummaryRead,
+    read: GroupPresenceSummaryWorkRead,
     computed: GroupPresenceSummaryComputedWork,
   ): void {
     if (computed.work !== work) {
@@ -213,7 +220,7 @@ export class GroupPresenceSummaryWork {
     }
     validateGroupPresenceSummary({
       ref: work.aggregateRef,
-      read,
+      read: read.presence,
       computed: computed.summary,
       formationDamping: this.options.topologyIntent.damping,
     });

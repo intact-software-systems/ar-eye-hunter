@@ -7,7 +7,6 @@ import type {
   GroupRef,
 } from '@shared/api/group-types.ts';
 import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
-import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 import {
@@ -41,7 +40,6 @@ export type GroupPresenceSummaryRead = Readonly<{
   admissions: readonly RuntimeStateEntryValue<GroupPresenceAdmission>[];
   presenceSessions: readonly RuntimeStateEntryValue<GroupPresenceSession>[];
   current: RuntimeStateEntryValue<GroupPresenceSummary> | null;
-  coalescedTopologyEntry: ResourceEntry | null;
 }>;
 
 export type GroupPresenceSummaryComputed =
@@ -125,12 +123,12 @@ export function validateGroupPresenceSummary(
   requireJsonSafe(computed, 'Group presence summary computed result');
   assertExactKeys(
     read,
-    ['group', 'members', 'admissions', 'presenceSessions', 'current', 'coalescedTopologyEntry'],
+    ['group', 'members', 'admissions', 'presenceSessions', 'current'],
     'Group presence summary read',
   );
   assertRequiredKeys(
     read,
-    ['group', 'members', 'admissions', 'presenceSessions', 'current', 'coalescedTopologyEntry'],
+    ['group', 'members', 'admissions', 'presenceSessions', 'current'],
     'Group presence summary read',
   );
   validateRuntimeEntryValue(read.group, 'Stored summary group', groupStateGroupStorageKey(ref));

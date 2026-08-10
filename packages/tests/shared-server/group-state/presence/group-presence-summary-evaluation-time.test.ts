@@ -47,6 +47,7 @@ describe('group presence summary evaluation time', () => {
       ref: REF,
       read,
       nowEpochMs: 2_000,
+      formationDamping: 'legacy',
     });
 
     expect(computed).toEqual({
@@ -108,12 +109,12 @@ describe('group presence summary evaluation time', () => {
       admissions: [],
       presenceSessions: [],
       current,
-      coalescedTopologyEntry: null,
     };
     const canonical = computeGroupPresenceSummary({
       ref: groupRef('pure-room'),
       read,
       nowEpochMs: 2_000,
+      formationDamping: 'legacy',
     });
     expect(canonical).toEqual({ outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base });
     expect(() =>
@@ -121,6 +122,7 @@ describe('group presence summary evaluation time', () => {
         ref: groupRef('pure-room'),
         read,
         computed: canonical,
+        formationDamping: 'legacy',
       }),
     ).not.toThrow();
     const staleSession = presenceFor('alice', 'stale-session', 'stale-generation');
@@ -144,6 +146,7 @@ describe('group presence summary evaluation time', () => {
       ref: groupRef('pure-room'),
       read: divergent,
       nowEpochMs: 2_000,
+      formationDamping: 'legacy',
     });
     expect(write).toMatchObject({
       outcome: 'write',
@@ -156,6 +159,7 @@ describe('group presence summary evaluation time', () => {
         ref: groupRef('pure-room'),
         read: divergent,
         computed: write,
+        formationDamping: 'legacy',
       }),
     ).not.toThrow();
     const aheadValue = {
@@ -174,6 +178,7 @@ describe('group presence summary evaluation time', () => {
       ref: groupRef('pure-room'),
       read: ahead,
       nowEpochMs: 2_000,
+      formationDamping: 'legacy',
     });
     expect(concurrent).toEqual({
       outcome: 'no-op',
@@ -185,6 +190,7 @@ describe('group presence summary evaluation time', () => {
         ref: groupRef('pure-room'),
         read: ahead,
         computed: concurrent,
+        formationDamping: 'legacy',
       }),
     ).not.toThrow();
     expect(() =>
@@ -235,7 +241,6 @@ function createExpiryCrossingRead(): GroupPresenceSummaryRead {
       ),
     ],
     current: stored(groupStatePresenceSummaryStorageKey(REF), current),
-    coalescedTopologyEntry: null,
   };
 }
 
