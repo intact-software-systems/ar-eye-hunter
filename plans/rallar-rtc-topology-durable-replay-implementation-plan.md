@@ -13,7 +13,8 @@ Plan evidence base: `origin/main` was
 2026-08-09. The latest publication review revalidated `origin/main` at the
 resulting plan-merge commit `28c49ceb4e0000d9527b4d80dfc4b922662385a7`;
 PR 1 then squash-merged as
-`263961b5c927710c93d894b36536b1386798cc14`. Revalidate the checkout, issue,
+`263961b5c927710c93d894b36536b1386798cc14`, and PR 2 then squash-merged as
+`af109fc1b71ac1794a11e7880a086ce876a15d7d`. Revalidate the checkout, issue,
 paths, contracts, and commands before implementation and after every rebase.
 Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
 
@@ -32,22 +33,38 @@ Current working-tree checkpoint on 2026-08-10:
   was squash-merged through the explicitly authorized administrator bypass as
   resulting-main commit `263961b5c927710c93d894b36536b1386798cc14`, parent
   `28c49ceb4e0000d9527b4d80dfc4b922662385a7`, tree
-  `ea35a92b51b8ae2d0df32653968b66a72c022a72`. The resulting-main Release Gate
-  and Hetzner supported-manifest workflow started on that exact SHA; they
-  remain pending at this checkpoint and cannot yet satisfy the PR 1
-  integration gate.
+  `ea35a92b51b8ae2d0df32653968b66a72c022a72`. Resulting-main Release Gate job
+  `31401364428` and Hetzner supported-manifest run `31401364450` passed that
+  exact SHA. The enclosing Deno Deploy job failed twice only after validate,
+  generate, production migration, and upload passed; authenticated provider
+  logs proved its isolated `99222a-preview` database lacked both the existing
+  `runtime_state_store` table and the new
+  `rtc_topology_delivery_stream` table. Runtime startup correctly failed
+  closed rather than weakening the schema/readiness guarantee.
 - PR [#146](https://github.com/intact-software-systems/ar-eye-hunter/pull/146)
-  is rebased onto resulting main `263961b5` as
+  passed fresh exact-head local, focused, black-box, replay-drain, completion,
+  Branch Release `31401915186`, medium-scale `31401911049`, and CodeQL
+  `31401905733` evidence at
   `dd68d090424a3392dc47fbd9c62ddae3fab43045`, tree
-  `279a24686a67f00ef93fab115a2f320bf52dd568`. PR
+  `279a24686a67f00ef93fab115a2f320bf52dd568`. It was then squash-merged
+  through the separately authorized administrator bypass as resulting-main
+  commit `af109fc1b71ac1794a11e7880a086ce876a15d7d`, parent
+  `263961b5c927710c93d894b36536b1386798cc14`, with that exact tree.
+- The owner reports applying the repository migrations to the isolated Deno
+  preview database after the provider log identified the missing-schema
+  boundary. Exact resulting-main Deploy run `31405508056` and Hetzner
+  supported-manifest run `31405508055` are still running on
+  `af109fc1b71ac1794a11e7880a086ce876a15d7d`; the preview migration and PR 2
+  deployment prerequisite are not accepted until those current runs pass.
+- PR
   [#148](https://github.com/intact-software-systems/ar-eye-hunter/pull/148)
-  is rebased onto that PR 2 head as code/progress head
-  `f51435fe648de8fc1e8bba691d97facaa9a4874b`, tree
-  `7e31c30baf0e94e86ccff937efb759f834b32611`. Both trees are byte-identical
-  to their previously reviewed pre-integration trees, but every old commit-
-  and merge-SHA workflow result is obsolete. This ledger update changes the
-  PR 3 tree again; the published ledger-freeze head plus the rebased PR 2 head
-  must rerun all affected local and exact-SHA gates.
+  is rebased onto resulting main `af109fc1b71ac1794a11e7880a086ce876a15d7d`
+  as pre-ledger head `f1dd37f5f600cd73ddde65605418e7e5866abf80`,
+  tree `a73df4ead5ea44e467c83f7e0f143b6bd7524bfd`. That tree is byte-identical
+  to the previously reviewed PR 3 tree, but every old commit-, base-, and
+  merge-SHA workflow result is obsolete. This ledger update changes the PR 3
+  tree again; the published ledger-freeze head must rerun all affected local,
+  black-box, performance, and exact-SHA gates.
 
 - Plan PR [#141](https://github.com/intact-software-systems/ar-eye-hunter/pull/141)
   merged by an explicitly approved squash as
