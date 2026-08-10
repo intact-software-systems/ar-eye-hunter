@@ -18,8 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      APPROVED_BASE_SHA: 8e277691f3bcd618c556d57ab5ee61cac248f1db
-      CANDIDATE_SHA: 871a7c7e9cfdffc3143b3f31d5d6d56d42a58ed4
+      APPROVED_BASE_SHA: 28c49ceb4e0000d9527b4d80dfc4b922662385a7
+      CANDIDATE_SHA: e093cf2998664a649fae82646e9347a6d3015ca9
       DATABASE_URL: postgresql://app:app@127.0.0.1:55432/appdb
       PINNED_POSTGRES_IMAGE: postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171
       PINNED_POSTGRES_IMAGE_ID: sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171
@@ -207,9 +207,11 @@ jobs:
             local position="$1"
             local source_dir="$2"
             local expected_sha="$3"
+            local regression_reason_profile="${4:-}"
             local artifact_path="${evidence_dir}/${position}.json"
             local environment_path="${evidence_dir}/${position}.environment"
             local source_artifact="tmp/perf/${position}.json"
+            local -a regression_reason_args=()
             local other_containers
             local benchmark_overlap
             local preflight_app_data_store_rows
@@ -276,13 +278,20 @@ jobs:
             test "${preflight_runtime_state_store_rows}" = 0
             test "${preflight_automatic_maintenance_count}" = 0
 
+            if [[ -n "${regression_reason_profile}" ]]; then
+              regression_reason_args+=(
+                "--regression-reason-profile=${regression_reason_profile}"
+              )
+            fi
+
             (cd "${source_dir}" && \
               npm run perf:api-v1:state-write -- \
                 --backend=postgres \
                 --warmup=1 \
                 --runs=9 \
                 --concurrency=10 \
-                --out="${source_artifact}")
+                --out="${source_artifact}" \
+                "${regression_reason_args[@]}")
             cp "${source_dir}/${source_artifact}" "${artifact_path}"
             test "$(jq -r '.gitCommit' "${artifact_path}")" = "${expected_sha}"
 
@@ -315,8 +324,16 @@ jobs:
           }
 
           run_position approved-base-first "${RUNNER_TEMP}/approved-base" "${APPROVED_BASE_SHA}"
-          run_position candidate-first "${RUNNER_TEMP}/candidate" "${CANDIDATE_SHA}"
-          run_position candidate-second "${RUNNER_TEMP}/candidate" "${CANDIDATE_SHA}"
+          run_position \
+            candidate-first \
+            "${RUNNER_TEMP}/candidate" \
+            "${CANDIDATE_SHA}" \
+            rtc-topology-durable-append
+          run_position \
+            candidate-second \
+            "${RUNNER_TEMP}/candidate" \
+            "${CANDIDATE_SHA}" \
+            rtc-topology-durable-append
           run_position approved-base-second "${RUNNER_TEMP}/approved-base" "${APPROVED_BASE_SHA}"
 
           cmp "${evidence_dir}/approved-base-first.environment" "${evidence_dir}/candidate-first.environment"
