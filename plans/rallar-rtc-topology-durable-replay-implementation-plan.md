@@ -12,13 +12,42 @@ Plan evidence base: `origin/main` was
 `726edc7c33386f9282f6594ec4b5c3c02033fbf1` when execution started on
 2026-08-09. The latest publication review revalidated `origin/main` at the
 resulting plan-merge commit `28c49ceb4e0000d9527b4d80dfc4b922662385a7`;
-revalidate the checkout, issue, paths, contracts, and commands before
-implementation and after every rebase.
+PR 1 then squash-merged as
+`263961b5c927710c93d894b36536b1386798cc14`. Revalidate the checkout, issue,
+paths, contracts, and commands before implementation and after every rebase.
 Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
 
 ## Implementation Progress
 
 Current working-tree checkpoint on 2026-08-10:
+
+- The schema-first production prerequisite is complete. An owner ran Prisma
+  7.4 `migrate deploy` against production, which found 20 migrations and
+  applied only `20260809220000_rtc_topology_delivery_replay`; the subsequent
+  migration status reported the schema up to date. The read-only schema proof
+  passed with checksum
+  `45750ba5ba965f72bbc2f62d6a89fe630f7f89f0ac8744f5e33b52cbaefa1a70`,
+  three tables, 18 constraints, and five indexes.
+- PR [#143](https://github.com/intact-software-systems/ar-eye-hunter/pull/143)
+  was squash-merged through the explicitly authorized administrator bypass as
+  resulting-main commit `263961b5c927710c93d894b36536b1386798cc14`, parent
+  `28c49ceb4e0000d9527b4d80dfc4b922662385a7`, tree
+  `ea35a92b51b8ae2d0df32653968b66a72c022a72`. The resulting-main Release Gate
+  and Hetzner supported-manifest workflow started on that exact SHA; they
+  remain pending at this checkpoint and cannot yet satisfy the PR 1
+  integration gate.
+- PR [#146](https://github.com/intact-software-systems/ar-eye-hunter/pull/146)
+  is rebased onto resulting main `263961b5` as
+  `dd68d090424a3392dc47fbd9c62ddae3fab43045`, tree
+  `279a24686a67f00ef93fab115a2f320bf52dd568`. PR
+  [#148](https://github.com/intact-software-systems/ar-eye-hunter/pull/148)
+  is rebased onto that PR 2 head as code/progress head
+  `f51435fe648de8fc1e8bba691d97facaa9a4874b`, tree
+  `7e31c30baf0e94e86ccff937efb759f834b32611`. Both trees are byte-identical
+  to their previously reviewed pre-integration trees, but every old commit-
+  and merge-SHA workflow result is obsolete. This ledger update changes the
+  PR 3 tree again; the published ledger-freeze head plus the rebased PR 2 head
+  must rerun all affected local and exact-SHA gates.
 
 - Plan PR [#141](https://github.com/intact-software-systems/ar-eye-hunter/pull/141)
   merged by an explicitly approved squash as
@@ -203,15 +232,15 @@ Stack record:
 | Layer | Branch | Base | State |
 | --- | --- | --- | --- |
 | Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 merged as `28c49ceb` |
-| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | resulting `main` `28c49ceb` | corrected content head `4c4961a4`; exact gates passed, schema-first deployment and merge pending |
-| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | corrected PR 1 | corrected content head `481a30c5`; exact gates passed, ordered PR 1 integration pending |
-| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | corrected PR 2 | local content head `74fbffb2`; progress freeze and exact gates pending |
+| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | resulting `main` `28c49ceb` | merged as `263961b5`, tree `ea35a92b`; exact resulting-main gates pending |
+| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | resulting `main` `263961b5` | rebased head `dd68d090`, tree `279a2468`; affected exact gates pending |
+| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | rebased PR 2 `dd68d090` | rebased code/progress head `f51435fe`, tree `7e31c30b`; ledger freeze and affected exact gates pending |
 
 The detailed PR 1, PR 2, and PR 3 evidence below records the pre-rebase
 implementation history. It remains useful diagnostic and review evidence, but
 no old SHA, tree, performance result, or workflow satisfies the current
-publication gates. The schema-first production migration remains an owner
-deployment action; replay stays disabled through PR 2.
+publication gates. The schema-first production migration is complete; replay
+stays disabled through PR 2.
 
 PR 3 implementation is complete on the working tree. Generation-fenced sends,
 strict durable reconnect hydration, enabled replay plus QueueBox, the managed
@@ -402,10 +431,10 @@ a commit cannot contain its own hash. Therefore all evidence above remains the
 complete reviewed code checkpoint, while the publication record on PR #148 must
 record the progress-freeze head and tree and rerun every exact-tree local and
 remote gate on that unchanged tree. PR 3 is not merge-ready until that rerun is
-green. The schema-first production migration remains an owner deployment
-action, the rebased stack is not yet published, and current exact-tree/local/
-remote plus resulting-main gates remain pending, so PR 3, issue #121, and this
-plan remain active.
+green. The schema-first production migration is complete, PR 1 has merged, and
+the stack is rebased locally; the rebased heads are not yet published and
+current exact-tree/local/remote plus resulting-main gates remain pending, so
+PR 3, issue #121, and this plan remain active.
 
 PR 1 progress:
 
