@@ -1,9 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
-import {
-  readBranchBody,
-  readFunctionBody,
-} from './authoritative-mutation-source-analysis.ts';
+import { readBranchBody, readFunctionBody } from './authoritative-mutation-source-analysis.ts';
 
 const source = readFileSync(
   'packages/shared-server/rallar-system/topology/replay/create-rtc-topology-work-handler.ts',
@@ -56,6 +53,19 @@ it('validates exact replay before reasserting WS_OUTBOX and completing the reser
     'finishRtcTopologyReservation(',
   ]);
   expect(loaded).not.toMatch(/publicationFanout\.publish/);
+});
+
+it('keeps the deprecated fanout contract out of production topology ownership', () => {
+  expect(source).not.toMatch(/RtcTopologyPublicationFanout|publicationFanout/);
+  for (const path of [
+    'apps/api-v1/src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts',
+    'apps/api-v1/src/middleware.ts',
+    'apps/api-v1/src/create-rallar-server.ts',
+  ]) {
+    expect(readFileSync(path, 'utf8')).not.toMatch(
+      /rtcTopologyPublicationFanout|publicationFanout/,
+    );
+  }
 });
 
 function expectInOrder(subject: string, expected: readonly string[]): void {

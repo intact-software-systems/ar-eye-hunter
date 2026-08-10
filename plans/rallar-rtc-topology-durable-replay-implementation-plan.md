@@ -10,8 +10,11 @@ Status: active; implementation is in progress as the three-PR stack below.
 
 Plan evidence base: `origin/main` was
 `726edc7c33386f9282f6594ec4b5c3c02033fbf1` when execution started on
-2026-08-09. The latest publication review revalidated `origin/main` at
-`108933a97c7a40ee0831ecd185725aea243122bd`; revalidate the checkout, issue,
+2026-08-09. The latest publication review revalidated `origin/main` at the
+resulting plan-merge commit `28c49ceb4e0000d9527b4d80dfc4b922662385a7`;
+PR 1 then squash-merged as
+`263961b5c927710c93d894b36536b1386798cc14`, and PR 2 then squash-merged as
+`af109fc1b71ac1794a11e7880a086ce876a15d7d`. Revalidate the checkout, issue,
 paths, contracts, and commands before implementation and after every rebase.
 Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121).
 
@@ -19,49 +22,436 @@ Tracking issue: [#121](https://github.com/intact-software-systems/ar-eye-hunter/
 
 Current working-tree checkpoint on 2026-08-10:
 
-- `origin/main` advanced to `108933a97c7a40ee0831ecd185725aea243122bd` through
-  PR #145. The compatibility review found style-checker governance changes and
-  one additive `package.json` test-list edit only: no runtime, schema, realtime,
-  benchmark, public-contract, or acceptance-criterion delta. PR 1 remains
-  stacked on the still-open PR #141 as required.
+- The schema-first production prerequisite is complete. An owner ran Prisma
+  7.4 `migrate deploy` against production, which found 20 migrations and
+  applied only `20260809220000_rtc_topology_delivery_replay`; the subsequent
+  migration status reported the schema up to date. The read-only schema proof
+  passed with checksum
+  `45750ba5ba965f72bbc2f62d6a89fe630f7f89f0ac8744f5e33b52cbaefa1a70`,
+  three tables, 18 constraints, and five indexes.
+- PR [#143](https://github.com/intact-software-systems/ar-eye-hunter/pull/143)
+  was squash-merged through the explicitly authorized administrator bypass as
+  resulting-main commit `263961b5c927710c93d894b36536b1386798cc14`, parent
+  `28c49ceb4e0000d9527b4d80dfc4b922662385a7`, tree
+  `ea35a92b51b8ae2d0df32653968b66a72c022a72`. Resulting-main Release Gate job
+  `31401364428` and Hetzner supported-manifest run `31401364450` passed that
+  exact SHA. The enclosing Deno Deploy job failed twice only after validate,
+  generate, production migration, and upload passed; authenticated provider
+  logs proved its isolated `99222a-preview` database lacked both the existing
+  `runtime_state_store` table and the new
+  `rtc_topology_delivery_stream` table. Runtime startup correctly failed
+  closed rather than weakening the schema/readiness guarantee.
+- PR [#146](https://github.com/intact-software-systems/ar-eye-hunter/pull/146)
+  passed fresh exact-head local, focused, black-box, replay-drain, completion,
+  Branch Release `31401915186`, medium-scale `31401911049`, and CodeQL
+  `31401905733` evidence at
+  `dd68d090424a3392dc47fbd9c62ddae3fab43045`, tree
+  `279a24686a67f00ef93fab115a2f320bf52dd568`. It was then squash-merged
+  through the separately authorized administrator bypass as resulting-main
+  commit `af109fc1b71ac1794a11e7880a086ce876a15d7d`, parent
+  `263961b5c927710c93d894b36536b1386798cc14`, with that exact tree.
+- The owner reports applying the repository migrations to the isolated Deno
+  preview database after the provider log identified the missing-schema
+  boundary. Exact resulting-main Deploy run `31405508056` and Hetzner
+  supported-manifest run `31405508055` are still running on
+  `af109fc1b71ac1794a11e7880a086ce876a15d7d`; the preview migration and PR 2
+  deployment prerequisite are not accepted until those current runs pass.
+- PR
+  [#148](https://github.com/intact-software-systems/ar-eye-hunter/pull/148)
+  is rebased onto resulting main `af109fc1b71ac1794a11e7880a086ce876a15d7d`
+  as pre-ledger head `f1dd37f5f600cd73ddde65605418e7e5866abf80`,
+  tree `a73df4ead5ea44e467c83f7e0f143b6bd7524bfd`. That tree is byte-identical
+  to the previously reviewed PR 3 tree, but every old commit-, base-, and
+  merge-SHA workflow result is obsolete. This ledger update changes the PR 3
+  tree again; the published ledger-freeze head must rerun all affected local,
+  black-box, performance, and exact-SHA gates.
+
 - Plan PR [#141](https://github.com/intact-software-systems/ar-eye-hunter/pull/141)
-  remains open at `8e277691f3bcd618c556d57ab5ee61cac248f1db`. PR 1 is
-  therefore based on that exact head. If #141 merges, PR 1 must be rebased onto
-  the resulting `main`, and every affected exact-tree result below becomes stale.
+  merged by an explicitly approved squash as
+  `28c49ceb4e0000d9527b4d80dfc4b922662385a7`, tree
+  `5ffac00c2012f64fe2d060477628817ccac3c48f`. That is now the exact
+  `origin/main` base for this stack. Resulting-main Hetzner supported-manifest
+  run `31380553431` attempt 1 passed preparation and manifests 01-04, then both
+  otherwise WebSocket-healthy agents timed out discovering an RTC peer in the
+  unchanged 10-second 05a readiness window. The immediately preceding main
+  workflow had passed the same manifest and PR #141 changed only this plan, so
+  the failed artifact remains classified as environment/runtime evidence.
+  Failed-job rerun attempt 2 preserved the exact SHA, manifest, agents, and
+  readiness limit and passed every supported manifest.
+- Resulting-main Deploy run `31380553469` attempt 1 reached 7,075/7,091 unit
+  tests and failed only because the group-topology ownership ratchet pins
+  historical source commit `8b1ebf54`, which a main-only clone could not reach
+  after PR #103 was squash-merged. The immutable tag
+  `test-fixture/group-topology-pr-a-source-8b1ebf54` now preserves that exact
+  commit without changing main or the test. A fresh clone using the workflow's
+  branch/tag refspec read the pinned blob and passed both ownership suites,
+  25/25. Exact-SHA Deploy run `31380553469` attempt 2 then passed the complete
+  Release Gate on resulting-main SHA `28c49ceb4e0000d9527b4d80dfc4b922662385a7`.
+- The required stack rebase is complete. PR 1 is now
+  `4c4961a4dbd19f3ed92ad46d9c0b4eded6990d8d`, tree
+  `ea35a92b51b8ae2d0df32653968b66a72c022a72`; PR 2 is
+  `481a30c5194dc08b2e562cebc2f30675454aac45`, tree
+  `279a24686a67f00ef93fab115a2f320bf52dd568`; and the current PR 3
+  content head is `74fbffb2b397d3b7d8a650f70530566eb2a20e8c`, tree
+  `64378a537f84a7e03bb54ff5c66a00e33322b4a4`. PR 1 and PR 2 are
+  published in the explicit stack; PR 3 remains local until this progress
+  record is frozen. Every earlier local, performance, Branch Release,
+  medium-scale, topology-proof, and merge-tree result is historical-only
+  evidence unless it names one of these exact heads and trees.
+- The rebased PR 1 predecessor `e093cf2998664a649fae82646e9347a6d3015ca9`
+  replaced an invalid borrowed `node_modules`
+  symlink after its first unit attempt failed only to resolve
+  `@vitejs/plugin-react`; exact `npm ci` then restored the checkout. The
+  unchanged head passes unit (739 files, 7,122 tests), `test:ci`, all-workspace
+  build, governance (34 files, 381 tests), the warning-only style scan, browser
+  bundle budgets, diff check, and clean status. Fresh focused evidence passes
+  nine Vitest files and 75 tests, 64 Deno/PGlite tests, all 20 migrations, and
+  PostgreSQL integration (12 files, 25 tests). Memory black-box passes 13/13,
+  ordinary PostgreSQL passes 13/13 plus cluster 5/5, CRDT passes 22/22,
+  medium-scale passes 2,748/2,748, and formation-large passes 1,322/1,322. The
+  fixed delivery workload passed 300 one-stream appends, 300 three-stream
+  appends, 30 duplicate races, and 100 rollbacks with exact row, HEAD, and
+  contiguous-sequence verification. Exact-SHA Branch Release run `31383322462`
+  and medium-scale run `31383326090` passed. All of this predecessor evidence
+  became historical when the performance correction below changed PR 1.
+- The rebased PR 2 predecessor `61f4c1796640ba03bbf851e130206b297f94f8d5`
+  installed with `npm ci` and passed unit (749
+  files, 7,168 tests), `test:ci`, all-workspace build, governance (34 files,
+  381 tests), the warning-only style scan, browser bundle budgets, diff check,
+  and clean status. The focused replay surface passes 13 Vitest files and 81
+  tests plus 70 Deno/PGlite tests. A first PostgreSQL integration attempt used
+  the retained PR 1 benchmark database and correctly discovered its unrelated
+  publisher streams, invalidating that evidence setup; the isolated passive-C
+  case then passed, followed by the full 13-file, 26-test suite on a fresh
+  20-migration database. No product or test content changed. Exact-SHA Branch
+  Release run `31383323188` passes, as do medium-scale runs `31383325375` and
+  `31383325611`. Its rebased local black-box evidence passes memory 13/13,
+  ordinary PostgreSQL 13/13 plus cluster 5/5, CRDT 22/22, medium-scale
+  2,748/2,748, and formation-large 1,333/1,333. The fixed replay-drain artifact
+  preserves caught-up zero handling, 100 entries in one page, 1,000 entries in
+  ten pages, 100-entry no-recipient/current-repair, and one gap cursor plus one
+  hydration. Rebase onto corrected PR 1 invalidated all of that exact-head
+  evidence. The first corrected-PR-1 rebase, `797b7b6c`, then failed strict
+  changed-style review on the single missing blank line separating topology
+  topic setup phases. That deliberate RED was fixed without behavioral change;
+  replacement PR 2 head `481a30c5` passes the focused Vitest set (14 files,
+  87 tests), 70 Deno/PGlite tests, strict changed-style review, `git diff
+  --check`, a fresh 20-migration database, PostgreSQL integration (13 files,
+  26 tests), governance (34 files, 381 tests), warning-only style, API check,
+  browser bundle budgets, unit (749 files, 7,170 tests), `test:ci`, and build.
+  Its black-box evidence so far passes memory 13/13, ordinary PostgreSQL 13/13
+  plus cluster 5/5, CRDT 22/22, and formation-large 1,318/1,318. The fixed
+  replay-drain artifact preserves caught-up zero handling, 100 entries in one
+  page, 1,000 entries in ten pages, 100-entry no-recipient/current-repair, and
+  one gap cursor plus one hydration. Medium-scale also passes the unchanged
+  2,748-step workload. API v1 Medium-Scale Gate `31390766153` passed exact head
+  `481a30c5`; Branch Release Gate `31390762335` passed the same exact head,
+  including its release suite, build, migrations, PostgreSQL integration,
+  black-box recipes, full-stack smoke, and presence-expiry integration. Every
+  `797b7b6c` result is obsolete.
+- Current-main compatibility was resolved without weakening either program.
+  State-write captures now require an explicit
+  `rtc-topology-durable-append` reason profile for the RTC resource matrix;
+  ordinary baseline captures remain reason-free, the group-topology reason-file
+  protocol remains exact, and selecting both mechanisms fails closed. Pure CLI
+  parsing moved into a cohesive owner, reducing the benchmark from 1,757 to
+  1,687 lines and clearing strict changed-style review. The first test-first RED
+  proved the profile was absent; the focused compatibility cohort then passed
+  14 files and 163 tests, including the original 13-case hard-gate harness,
+  11 pooling tests, and seven position-balanced pooling tests. Deno check also
+  passed for the benchmark and extracted options owner.
+- The canonical topology navigation map now retains current-main config/
+  mutation ownership and adds durable delivery/replay/hydration ownership in a
+  separate section. It preserves QueueBox, per-process streams, per-pair
+  cursors, strict durable authorization, fixed retention, and rollback
+  guidance rather than choosing either add/add side wholesale.
+- The consumed exact `630faed54679d9bf0b5963a1ca57587e3f62b204`
+  A-B-B-A sequence remains immutable failed historical evidence: its unchanged
+  comparator rejected pooled hot throughput 46.6751/s versus 49.8685/s, a
+  6.40% regression against the fixed 5% limit. It was not rerolled, waived,
+  relabeled, or followed by an out-of-scope optimization. The mandatory rebase
+  created a genuinely new exact candidate and therefore requires one new
+  non-rerolled sequence after the final progress freeze.
+- The later exact rebased PR 1 candidate `e093cf2998664a649fae82646e9347a6d3015ca9`
+  also has one immutable, non-rerolled governed A-B-B-A result. Workflow run
+  `31384490348` and artifact `9062195524` used base `28c49ceb`, candidate
+  `e093cf29`, positions A-B-B-A, one warmup, nine measurements per position,
+  concurrency 10, and identical pinned PostgreSQL/resource controls. Both
+  sides accepted exactly 12,600 mutations per workload with zero exhausted
+  writes, atomic-completion failures, or DBW findings. The unchanged hard
+  comparator rejected the candidate: uncontended p95 was 205.382661 ms versus
+  190.595848 ms (+7.76%, limit 5%) and p99 was 323.080643 ms versus 306.579532
+  ms (+5.38%, limit 5%). The candidate was not rerolled or waived.
+- Test-first query-shape regressions then exposed two in-scope PostgreSQL
+  planner barriers in the single-round-trip append: a forced materialization
+  of the single-use stream guard and a materialized clock relation. PR 1
+  `4c4961a4` removes those barriers and uses stable `statement_timestamp()` for
+  both lease checks and the update while preserving the per-stream CAS, lease
+  failure, atomic log append, exact rollback, workload constants, and public
+  contracts. Focused query-shape tests pass 3/3, the affected Vitest cohort
+  passes 18/18, true PostgreSQL concurrency passes 3/3, strict changed-style
+  review passes, and the fixed delivery workload again passes 300/300/30/100.
+  A local one-stream diagnostic improved from 245.31/s to 258.19/s, but that
+  noisy diagnostic is not a publication gate. `4c4961a4` is a genuinely changed
+  candidate and receives exactly one new governed A-B-B-A comparison after its
+  exact local and remote freeze. The unchanged exact tree now passes focused
+  Vitest (10 files, 98 tests), 64 Deno/PGlite tests, strict changed-style review,
+  `git diff --check`, all 20 fresh migrations, PostgreSQL integration (12 files,
+  25 tests), governance (34 files, 381 tests), warning-only style, API check,
+  browser bundle budgets, unit (739 files, 7,124 tests), `test:ci`, build,
+  memory 13/13, PostgreSQL 13/13 plus cluster 5/5, CRDT 22/22, medium-scale
+  2,748/2,748, and formation-large 1,318/1,318. Its fixed delivery workload
+  again passes 300 one-stream appends, 300 three-stream appends, 30 duplicate
+  races, and 100 rollbacks with exact rows, HEADs, and contiguous sequences.
+  Branch Release Gate `31388176849` and API v1 Medium-Scale Gate `31388181742`
+  passed exact head `4c4961a4`. The single governed replacement comparison is
+  run `31390582283`, launched by exact workflow commit `cac5eb00` against base
+  `28c49ceb` and candidate `4c4961a4`. It passed the unchanged comparator and
+  uploaded artifact `9064817798` with GitHub digest
+  `sha256:a19aecef2eff5eb964ded9d5f8149ecd2ba17156198a9f662a94101df2f35706`.
+  The downloaded manifest preserves A-B-B-A order, one warmup and nine measured
+  runs per position, concurrency 10, the exact base/candidate SHAs, and one
+  identical environment hash across all four positions. Every downloaded file
+  passed its recorded SHA-256 after normalizing only the runner's absolute
+  directory prefix. Both sides accepted exactly 12,600 mutations per workload
+  with zero exhausted writes, atomic-completion failures, or DBW findings.
+  Candidate uncontended p95/p99 changed by +0.53%/+2.51%, shared throughput by
+  +0.77%, and hot throughput by -4.92%, all within the fixed 5% hard limits.
+  PR 1 therefore has complete current exact-tree implementation evidence; the
+  schema-first production migration remains required before its merge.
 - Issue [#121](https://github.com/intact-software-systems/ar-eye-hunter/issues/121)
   remains open with the live-listener replay/current-state reconnect distinction
   intact. The implementation request selects the plan's Option A contract.
+- Rebased PR 3 content head `74fbffb2` has passed a preliminary current-tree
+  review cohort: 13 affected Vitest files and 165 tests, plus 58 Deno/PGlite
+  tests. The real profile-only PostgreSQL command created and migrated its own
+  isolated 20-migration database and passed the unchanged 10-second
+  three-process proof. Its artifact binds N1-N2 to A, N3-N4 to B, and N5-N6 to
+  C/C'; records distinct A/B streams at seeded HEAD 5/5 and live HEAD 6/6;
+  retains the exact publication identities; reports two poll wakes, zero
+  notification/local-commit wakes, and exactly two replayed entries; then
+  advances both publishers to 7/7 while C is stopped and hydrates a replacement
+  consumer using two exact current-state identities without a post-start
+  mutation. These are pre-freeze results only. The final progress commit changes
+  the PR 3 tree and therefore must receive a fresh unchanged-tree completion
+  sequence and exact-SHA workflows.
 - Code-derived revalidation confirmed the current atomic topology publication and
   `WS_OUTBOX` owner, QueueBox fast path, unused production fanout publish seam,
   transient listener boundary, separate random runtime IDs, WebSocket open
   callback timing, current-state repositories, three-process runner, and existing
-  validation commands. The new replay profile and command remain intentionally
-  absent until PR 3.
-- The untouched PR #141 tree passed `npm run test:unit`: 717 files and 6,562
-  tests. Node emitted only its existing experimental `localStorage` warnings.
+  validation commands. The replay profile and command are present on PR 3 but
+  remain absent from main until the ordered stack is integrated.
+- The untouched original PR #141 tree passed `npm run test:unit`: 717 files and
+  6,562 tests. That result is retained only as plan-review history.
 
 Stack record:
 
 | Layer | Branch | Base | State |
 | --- | --- | --- | --- |
-| Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 open |
-| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | PR #141 head | frozen at PR #143 head `871a7c7e` |
-| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | final PR 1 tree | implementation complete; exact gates pending |
-| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | final PR 2 tree | pending |
+| Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 merged as `28c49ceb` |
+| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | resulting `main` `28c49ceb` | merged as `263961b5`, tree `ea35a92b`; exact resulting-main gates pending |
+| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | resulting `main` `263961b5` | rebased head `dd68d090`, tree `279a2468`; affected exact gates pending |
+| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | rebased PR 2 `dd68d090` | rebased code/progress head `f51435fe`, tree `7e31c30b`; ledger freeze and affected exact gates pending |
 
-PR 1 is frozen at `871a7c7e9cfdffc3143b3f31d5d6d56d42a58ed4` with
-current exact-tree local, black-box, Branch Release Gate, medium-scale, and
-governed A-B-B-A evidence. Its schema-first production migration prerequisite
-remains an owner deployment action; replay stays disabled through PR 2.
+The detailed PR 1, PR 2, and PR 3 evidence below records the pre-rebase
+implementation history. It remains useful diagnostic and review evidence, but
+no old SHA, tree, performance result, or workflow satisfies the current
+publication gates. The schema-first production migration is complete; replay
+stays disabled through PR 2.
 
-PR 2 implementation is complete on the working tree. Focused unit, PGlite,
-Deno, and true-PostgreSQL tests pass, including the live passive-C poll proof;
-the deterministic replay-drain operation-count artifact records the caught-up,
-100-entry, 1,000-entry, no-recipient, current-repair, and gap-hydration cases.
-Review-driven lifecycle proofs also require production shutdown to await the
-in-flight drain and prevent cursor seeding when shutdown wins startup.
-Commit, exact-tree broad/local/black-box gates, draft publication, and the exact
-Branch Release Gate remain pending and therefore this layer is not complete.
+PR 3 implementation is complete on the working tree. Generation-fenced sends,
+strict durable reconnect hydration, enabled replay plus QueueBox, the managed
+C-to-C' lifecycle, exact-ID convergence recipe, deterministic N1-N6 passive-C
+proof, workflows, docs, and skills are implemented. The fixed reconnect batch
+no longer mutates the `Map` it is iterating, preventing a reconnect arriving
+during hydration from causing a synchronous loop. Focused proof passes 6 files
+and 91 tests plus 7 files and 72 tests; the full RTC topology surface passes 26
+files and 393 tests; API Deno passes 420 tests; and true PostgreSQL integration
+passes 13 files and 27 tests. Fresh black-box evidence passes memory 13/13,
+PostgreSQL 13/13 plus cluster 5/5, CRDT 22/22, medium-scale 2,748/2,748,
+formation-large 1,327/1,327, and the standalone A/B/C-to-C' topology replay
+proof. The fixed delivery and replay-drain workloads preserve every plan
+constant and bound. Pre-freeze repository-wide typecheck, governance, style,
+unit, CI, build, and browser-bundle gates passed; subsequent review fixes and
+later fixes invalidate those broad results until they are rerun from the
+unchanged final tree. Draft publication is complete at PR #148; the replacement
+final commit, exact-SHA A-B-B-A, and remote exact-SHA gates remain pending, so
+PR 3 and this plan remain active.
+
+An independent pre-publication review of the original staged PR 3 tree found
+that the profile-only topology command still depended on `clusterOnly` for
+database isolation, explicit C shutdown released cleanup ownership before stop
+and drain succeeded, in-flight hydration could send after abort, and the proof
+did not bind its observations and cumulative metrics to the intended live A/B
+entries or C' hydration. TDD now covers and fixes each boundary. Topology replay
+profiles always receive a disposable per-run PostgreSQL database while
+medium-scale retains its `clusterOnly` requirement; failed explicit stops remain
+owned for final cleanup; hydration checks cancellation after every durable read
+and immediately before send, resolves its own shutdown abort, and preserves an
+external gap abort. The proof first consumes exact baseline hydration, waits
+for a stable caught-up baseline, retains AL message identity, requires one exact
+publication and one exact HEAD/cursor increment on each distinct A/B publisher,
+requires exactly two post-baseline poll-replayed entries, and accepts C' only on
+exact current-state hydration identities. Its wire observer now models the
+production browser rule by dropping dominated snapshots, retaining monotonic
+adoptions, and rejecting equal conflicts or incomparable tuples. The topology
+convergence recipe identifies each concurrent publication by the mutation's
+committed group revision instead of trying to predict its independently
+serialized presence-summary revision, and one shared behaviorally tested
+assertion deadline restores the plan's 10-second bound. Structured failure
+evidence now wraps every coordinator phase rather than only live A.
+
+The expanded review-regression set passes 5 files and 36 tests; full workspace
+typecheck and strict changed-style review pass. The real profile-only command
+also passes against the intentionally reused task PostgreSQL root: it created a
+fresh `rallar_bb_*` database, applied all 20 migrations, ran the unchanged
+three-process proof, and dropped the isolated database. The credential-free
+artifact records baseline publisher HEADs 7/1, exact live A/B publication IDs
+and distinct HEADs 8/2, exact replay deltas of two poll wakes, zero notification
+or local-commit wakes, and two replayed entries, restart HEADs 9/3, two C'
+`rtc-topology-hydration` identities, a new replacement consumer stream, and no
+post-start mutation. These review fixes invalidate every earlier broad gate;
+the full local, PostgreSQL, black-box, performance, exact-SHA, and publication
+sequence must rerun from the final unchanged tree.
+
+The first exact-tree completion rerun passed repository governance, strict
+changed-style review, the warning-only full style scan, 734 files and 6,661 unit
+tests, `test:ci`, build, browser bundle budgets, API check plus 420 tests,
+PostgreSQL integration (13 files and 27 tests), memory black-box 13/13, and the
+ordinary PostgreSQL black-box 13/13. Its cluster phase then reproduced a real
+recipe defect: two overlapping mutations both returned presence revision 3,
+while their serialized summary workers correctly assigned publication presence
+revisions 4 and 5. The recipe had expected both as response presence plus one.
+A TDD regression now requires the existing publication-only
+`targets.minSnapshotVersion` discriminator to equal each mutation's exact group
+revision; current-state hydration lacks that field. The focused test passed 5/5
+and the unchanged three-process cluster workload then passed 5/5, including
+topology convergence 36/36. Because this is a tracked content change, every
+earlier exact-tree result and workflow is obsolete; the replacement SHA must
+rerun the complete local, database, black-box, performance, and publication
+sequence.
+
+The second published PR 3 candidate was
+`7263d93b70392b78bf6c002fb1a4dcd54c0ba2ba`, tree
+`d386ed8359cd0878e867a7d4b373743b71ab9508`. It passed the replacement focused
+set (10 files and 138 tests), full workspace typecheck, governance (33 files and
+371 tests), strict changed-style review, warning-only full style scan, unit (734
+files and 6,662 tests), `test:ci`, build, browser bundle budgets, API check plus
+420 tests, PostgreSQL integration (13 files and 27 tests), memory black-box
+13/13, and the fixed replay-drain operation-count workload. Manual exact-SHA API
+v1 Medium-Scale Gate run `31367660135` passed the unchanged 2,748-step workload
+plus all five cluster recipes, and Topology Replay Gate run `31367659994` passed
+with downloaded artifacts binding the same SHA and tree. Its deterministic
+artifact records exact A/B publication message identities, one HEAD/cursor
+advance on each distinct publisher, exactly two poll-only replay entries, and
+exact current-state hydration identities for C'. Branch Release Gate run
+`31367642080` remained in progress.
+
+A fresh review of that exact commit found one remaining external-cancellation
+race. If the topology page read rejected after the gap-repair signal aborted,
+the page-scan catch converted the abort to a generic retry instead of preserving
+the caller's abort reason. A focused TDD case failed with `requires retry`, then
+passed after the catch rechecked both the external and hydrator-stop signals
+before classifying a transient read failure. The focused hydrator suite now
+passes 17/17. This two-file tracked correction invalidates every result and
+workflow attached to `7263d93b`; a replacement exact SHA must rerun the full
+local, database, black-box, performance, and publication sequence.
+
+The subsequent whole-tree review found two deeper convergence/proof boundaries.
+First, a browser that had adopted a historical topology with an incomparable
+causal tuple rejected the durable current repair that the server selected to
+restore current state. The browser now recognizes only exact, server-origin
+current-repair or reconnect-hydration identities whose group/session audience,
+causal tuple, and version match the validated payload. That path overrides only
+an incomparable prior server snapshot; normal publication semantics still drop
+dominated state and reject equal-revision conflicting content. TDD covers both
+current-state identities, a forged session sender, mismatched identity fields,
+a delayed dominated repair, and an equal-tuple content conflict.
+
+Second, A/B HTTP ingress did not determine which process claimed the global
+`APP_OUTBOX` row, so the original proof's A/B labels were scheduler-dependent.
+The managed proof lifecycle now suspends the non-target API process while each
+baseline, live, and C-stopped mutation is claimed and durably appended, always
+resuming it in `finally` and before shutdown cleanup. It seeds and verifies two
+distinct publisher streams before opening the live phase. Before every HEAD
+snapshot or exact one-entry assertion, the proof also requires zero unresolved
+`APP_OUTBOX` rows. The database reader checks that queue condition before
+reading streams/cursors, closing the stale-HEAD/zero-work race because append
+and outbox completion commit atomically. Extracted fixture, scheduling, and
+browser state-cache boundaries keep the changed production/coordinator files
+within the repository reviewability limit.
+
+The then-uncommitted review candidate passed all 13 affected Vitest files
+(165 tests), full workspace typecheck, and strict changed-style review with no
+new findings. An independent current-tree review found no remaining code
+correctness blocker. The real profile-only PostgreSQL command created and
+migrated an isolated 20-migration database and passed the unchanged 10-second
+three-process proof. Its credential-free artifact records distinct seeded A/B
+publisher HEADs 4/6, exact live HEADs 5/7 with the matching publication
+identities, three poll wakes, zero notification/local-commit wakes, exactly two
+replayed entries, later A/B HEADs 6/8, and exact C' hydration identities with a
+new replacement consumer stream and no post-start mutation. These are
+working-tree review results only. The replacement commit must include all four
+new proof/browser modules and rerun every complete local, database, black-box,
+performance, exact-SHA, and publication gate; all `7263d93b` results remain
+obsolete.
+
+The reviewed replacement was published as
+`9dc6ad08ab80532b78b78119d79cb8b24f4eb801`, tree
+`1e3c502e8a02b95f6a0032ac6b710bf74c243073`. It contains the abort-race,
+authenticated browser current-state adoption, deterministic publisher-claim
+scheduling, unresolved-`APP_OUTBOX` quiescence, and extracted reviewability
+fixes above. An unchanged exact checkout passed `git diff --check`, the focused
+RTC/review set (29 files and 422 tests), full workspace typecheck, governance
+(33 files and 371 tests), strict changed-style review, the warning-only style
+scan, unit (734 files and 6,667 tests), `test:ci`, all-workspace build, browser
+bundle budgets, API check plus 420 Deno tests, and PostgreSQL integration (13
+files and 27 tests). Fresh black-box runs passed memory 13/13, PostgreSQL 13/13
+plus cluster 5/5, CRDT 22/22, medium-scale 2,748/2,748, formation-large
+1,327/1,327, and the standalone topology proof. The exact proof used distinct
+seeded A/B streams at HEAD 5/5, advanced both to 6/6 through two poll-only
+replayed entries, later advanced both to 7/7 while C was stopped, and hydrated
+C' with exact current-state identities and no post-start mutation.
+
+The fixed delivery-log benchmark passed its unchanged 300 one-stream, 300
+three-stream, 30 duplicate-race, and 100 rollback cases. The replay-drain
+benchmark preserved the caught-up zero-read case, 100-entry one-page and
+1,000-entry ten-page drains, the 100-entry no-recipient/current-repair path, and
+one gap cursor plus one hydration. The governed non-rerolled A-B-B-A state-write
+comparison used approved plan head `8e277691f3bcd618c556d57ab5ee61cac248f1db`
+for positions A/D and `9dc6ad08` for positions B/C. Every position used a fresh
+pinned PostgreSQL 16 container with identical 4-CPU/4-GiB controls, zero
+preflight rows, autovacuum disabled, zero pre/post automatic maintenance, one
+warmup, nine measured runs, and concurrency 10. The pooled comparator passed;
+both sides accepted 12,600 mutations per workload with zero exhausted writes,
+atomic-completion failures, or DBW findings. The candidate pooled throughput
+was 290.74/s uncontended, 243.01/s shared, and 49.98/s hot versus 277.64/s,
+235.64/s, and 50.76/s for the approved base.
+
+Remote exact-tree publication evidence also passed. Branch Release Gate run
+`31371264681` validated pushed head `9dc6ad08`. API v1 Medium-Scale Gate run
+`31371265778` and Topology Replay Gate run `31371265796` validated PR merge
+commit `be9e6b71b44c70af852a177b6cc2a7d463d063c0`, whose parents are PR 2
+`43753655` and exact head `9dc6ad08` and whose tree is the identical
+`1e3c502e...` tree. Downloaded artifacts bind that commit and tree; medium-scale
+passed 2,748/2,748 plus all five cluster recipes, and the topology artifact
+records deterministic non-target-process suspension, two distinct publisher
+streams, exact live publication identities, two poll wakes with zero
+notification/local-commit wakes, and exact C' hydration identities. The
+automatic Deno `rallar-server` preview status is red, but is not a required
+branch-protection or plan workflow; its authenticated build log is unavailable
+to the current session, so it remains explicitly unclassified rather than being
+claimed as an implementation result.
+
+This progress-only documentation freeze necessarily creates a later PR head;
+a commit cannot contain its own hash. Therefore all evidence above remains the
+complete reviewed code checkpoint, while the publication record on PR #148 must
+record the progress-freeze head and tree and rerun every exact-tree local and
+remote gate on that unchanged tree. PR 3 is not merge-ready until that rerun is
+green. The schema-first production migration is complete, PR 1 has merged, and
+the stack is rebased locally; the rebased heads are not yet published and
+current exact-tree/local/remote plus resulting-main gates remain pending, so
+PR 3, issue #121, and this plan remain active.
 
 PR 1 progress:
 
@@ -646,37 +1036,37 @@ state, not historical event delivery.
 
 Purpose: close restart semantics, enable the feature, and publish proof.
 
-- [ ] Add identity-fenced encoded send to `JsonWebSocketServer` with replacement
+- [x] Add identity-fenced encoded send to `JsonWebSocketServer` with replacement
       generation race tests.
-- [ ] Implement batched/paged reconnect and gap hydration with strict durable
+- [x] Implement batched/paged reconnect and gap hydration with strict durable
       group authorization and current-topology revalidation.
-- [ ] Register hydration at socket `onConnection`; add shutdown/cancellation and
+- [x] Register hydration at socket `onConnection`; add shutdown/cancellation and
       bounded retry behavior.
-- [ ] Add queue-worker-disabled API mode, default enabled, and validate it is
+- [x] Add queue-worker-disabled API mode, default enabled, and validate it is
       PostgreSQL-only.
-- [ ] Add a managed A/B/C proof coordinator and N1-N6 scenario under
+- [x] Add a managed A/B/C proof coordinator and N1-N6 scenario under
       `packages/shared-test/black-box-runner/topology-replay/**`.
-- [ ] Extend managed process lifecycle with explicit stop/restart controls and
+- [x] Extend managed process lifecycle with explicit stop/restart controls and
       non-overwriting restart logs.
-- [ ] Add `api-v1-black-box-topology-replay` runner profile and
+- [x] Add `api-v1-black-box-topology-replay` runner profile and
       `npm run test:api-v1:black-box:postgres:topology-replay`.
-- [ ] Run node C with PostgreSQL notifications and QueueBox workers disabled;
+- [x] Run node C with PostgreSQL notifications and QueueBox workers disabled;
       assert post-open A/B mutations reach N5/N6 only through replay.
-- [ ] Stop C, mutate through A/B, restart C' with a new process identity,
+- [x] Stop C, mutate through A/B, restart C' with a new process identity,
       reconnect N5/N6 using the same authenticated sessions and fresh one-use
       tickets, and assert current topology arrives without a post-restart
       mutation.
-- [ ] Preserve standard memory, Postgres, CRDT, medium-scale, and
+- [x] Preserve standard memory, Postgres, CRDT, medium-scale, and
       formation-large workload constants and profiles.
-- [ ] Wire the proof command and all four server logs (A, B, C, C' restart) into
+- [x] Wire the proof command and all four server logs (A, B, C, C' restart) into
       API-v1 Black-Box, Release Gate/Branch Release Gate, and failure artifacts.
-- [ ] Change replay default to enabled only after PR 1 and PR 2 are fully
+- [x] Change replay default to enabled only after PR 1 and PR 2 are fully
       deployed.
-- [ ] Remove `RtcTopologyPublicationFanout` from production composition,
+- [x] Remove `RtcTopologyPublicationFanout` from production composition,
       readiness, handler options, and api-v1 transport ownership. Preserve its
       existing `@shared-server` public export as deprecated compatibility data
       unless a separately approved breaking release removes it.
-- [ ] Update active docs and skills; do not rewrite historical
+- [x] Update active docs and skills; do not rewrite historical
       `docs/superpowers/**` records.
 
 ## Planned File Ownership

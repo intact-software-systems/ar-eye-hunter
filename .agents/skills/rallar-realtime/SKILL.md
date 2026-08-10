@@ -30,6 +30,9 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   `packages/shared-server/rallar-system/group-state/**`.
 - Canonical topology inbox handling:
   `packages/shared-server/rallar-system/topology/inbox/**`.
+- Durable RTC topology delivery replay and reconnect/gap hydration:
+  `packages/shared-server/rallar-system/topology/replay/**`; use its
+  `README.md` navigation map before changing ownership or lifecycle.
 - Canonical RTC RTT inbox handling:
   `packages/shared-server/rallar-system/rtc-topology/inbox/**`.
 - For group-state, topology inbox, and RTC RTT inbox capabilities,
@@ -51,6 +54,13 @@ rg -n "GroupRef|groupRef|groupId|roomId|createAndSwitch|createAndJoin|joinRoom|w
   domain deltas.
 - Keep the compact `MutationReceipt` family and `GroupStateCausalRevision` as
   replay and group/presence authority.
+- Keep one durable publisher HEAD per ephemeral process and one cursor per
+  consumer/publisher pair. QueueBox remains the low-latency path; replay
+  notification, poll, and local-commit events only wake one single-flight
+  bounded drain. Cross-stream sequence numbers never define authority.
+- Reconnect and retention-gap hydration must re-read current durable group
+  authority and fence the final send to the same socket generation. Cached
+  membership/presence does not authorize hydration.
 - Group user mutations require a real issued auth session or exact
   command-bound proof. Server maintenance remains a separately wired narrow
   capability, never a public bypass field.

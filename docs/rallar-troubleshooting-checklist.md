@@ -71,6 +71,37 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 - The server queuebox engine is started.
 - Default middleware topics are installed.
 
+## RTC Topology Durable Replay
+
+- QueueBox is still the expected low-latency path. A lost PostgreSQL
+  notification may add up to the one-second anti-entropy interval; it must not
+  cause permanent topology loss.
+- `RALLAR_RTC_TOPOLOGY_REPLAY` is `enabled` unless rollback deliberately sets
+  it to `disabled`. Disabling replay also disables reconnect/gap hydration but
+  does not disable stream logging, leases, compaction, or QueueBox.
+- Standard processes keep `RALLAR_API_QUEUE_WORKERS=enabled`. A disabled worker
+  process is PostgreSQL-only and should be deliberately passive.
+- `GET /api/admin/operations/realtime` exposes process-local values under
+  `rtcTopology.metrics.replay`. Check wake counts, drain failures, maximum lag,
+  entry outcomes, cursor conflicts/gaps, and hydration outcomes. Do not add
+  tenant, group, session, publication, stream, or request IDs as metric labels.
+- A live listener-outage check expects `wakeCountBySource.poll` to advance while
+  notification and local-commit wakes remain zero on the passive process.
+- Diagnose delivery with publisher-qualified positions such as A/11 and B/21.
+  Never compare bare sequence numbers from different streams.
+- A consumer cursor must equal the relevant captured publisher HEAD only after
+  its contiguous prefix was handled. A stalled cursor with `corrupt` or
+  `send-failed` evidence is fail-closed behavior, not permission to skip.
+- A retention gap should increment the gap outcome and hydrate all currently
+  open local sessions before cursor advancement.
+- Reconnect hydration requires current durable membership, principal/session
+  identity, live unexpired presence, and the exact socket generation. A retry
+  or unauthorized outcome should be traced to those facts before changing
+  retry limits.
+- Run `npm run test:api-v1:black-box:postgres:topology-replay` for the managed
+  A/B/passive-C/C' proof. Inspect `rtc-topology-replay-proof.json`, or the
+  current-run failure artifact and all four isolated server logs.
+
 ## RTC
 
 - `rallar.rtc.status()` shows the expected known peers.

@@ -270,6 +270,31 @@ export function setOverlayById(
     );
 }
 
+export function setCurrentServerOverlayById(
+    id: string,
+    overlay: OverlayInfo,
+    manager?: RepositoryManager,
+): void {
+    if (overlay.provenance !== 'server') {
+        throw new TypeError('Current topology repair must contain a server overlay');
+    }
+    const repository = requireOverlayRepository(manager);
+    const current = repository.read(id);
+    if (
+        !current ||
+        current.provenance === 'bootstrap' ||
+        compareOverlayInfoTuple(overlay, current) !== 'incomparable'
+    ) {
+        setOverlayById(id, overlay, manager);
+        return;
+    }
+
+    // The server emits this path only from a fresh durable current-state read.
+    // It deliberately supersedes an incomparable historical server publication.
+    emitOverlayAdoption(id, 'adopted');
+    repository.set(id, overlay);
+}
+
 export function getAllOverlays(
     manager?: RepositoryManager,
 ): OverlayInfo[] {

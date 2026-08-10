@@ -6,9 +6,7 @@ import type {
   RtcTopologyDeliveryAppendInput,
   RtcTopologyDeliveryAppendResult,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
-import {
-  isRtcTopologyDeliveryRetryableConflict,
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
+import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
 import {
   createPostgresSql,
   type PostgresSql,
@@ -25,14 +23,7 @@ describe('Postgres RTC topology delivery concurrency', () => {
   postgresIt(
     'keeps a same-stream HEAD gap-free across a true-overlap conflict and rollback',
     async () => {
-      await withDeliveryDatabases(async ({
-        sqlA,
-        sqlB,
-        observer,
-        streams,
-        pending,
-        releases,
-      }) => {
+      await withDeliveryDatabases(async ({ sqlA, sqlB, observer, streams, pending, releases }) => {
         const streamId = crypto.randomUUID();
         streams.push(streamId);
         const repositoryA = new PSqlRtcTopologyDeliveryRepository(sqlA);
@@ -78,11 +69,12 @@ describe('Postgres RTC topology delivery concurrency', () => {
         expect(firstOutcome.backendPid).not.toBe(blockedPid);
 
         await expect(
-          sqlB.begin(async (transaction) =>
-            await repositoryB.appendOrValidate(
-              transaction,
-              appendInput(streamId, 'same-stream-second'),
-            )
+          sqlB.begin(
+            async (transaction) =>
+              await repositoryB.appendOrValidate(
+                transaction,
+                appendInput(streamId, 'same-stream-second'),
+              ),
           ),
         ).resolves.toMatchObject({ status: 'appended', entry: { sequence: 2 } });
         await expect(
@@ -161,14 +153,7 @@ describe('Postgres RTC topology delivery concurrency', () => {
   postgresIt(
     'rolls back the losing stream HEAD when A and B race one canonical publication',
     async () => {
-      await withDeliveryDatabases(async ({
-        sqlA,
-        sqlB,
-        observer,
-        streams,
-        pending,
-        releases,
-      }) => {
+      await withDeliveryDatabases(async ({ sqlA, sqlB, observer, streams, pending, releases }) => {
         const streamA = crypto.randomUUID();
         const streamB = crypto.randomUUID();
         streams.push(streamA, streamB);
@@ -184,10 +169,7 @@ describe('Postgres RTC topology delivery concurrency', () => {
         const releaseWinner = deferred<void>();
         releases.push(releaseWinner.resolve);
         const winner = sqlA.begin(async (transaction) => {
-          const result = await repositoryA.appendOrValidate(
-            transaction,
-            winnerInput,
-          );
+          const result = await repositoryA.appendOrValidate(transaction, winnerInput);
           winnerAppended.resolve();
           await releaseWinner.promise;
           return result;
@@ -198,10 +180,7 @@ describe('Postgres RTC topology delivery concurrency', () => {
         const loserBackendPid = deferred<number>();
         const loser = sqlB.begin(async (transaction) => {
           loserBackendPid.resolve(await readBackendPid(transaction));
-          return await repositoryB.appendOrValidate(
-            transaction,
-            loserInput,
-          );
+          return await repositoryB.appendOrValidate(transaction, loserInput);
         });
         pending.push(loser);
         await waitForBlockedBackend(observer, await loserBackendPid.promise);
@@ -219,11 +198,8 @@ describe('Postgres RTC topology delivery concurrency', () => {
         expect(await readSequences(sqlA, streamB)).toEqual([]);
 
         await expect(
-          sqlB.begin(async (transaction) =>
-            await repositoryB.appendOrValidate(
-              transaction,
-              loserInput,
-            )
+          sqlB.begin(
+            async (transaction) => await repositoryB.appendOrValidate(transaction, loserInput),
           ),
         ).resolves.toMatchObject({
           status: 'existing',
@@ -234,6 +210,27 @@ describe('Postgres RTC topology delivery concurrency', () => {
     },
     60_000,
   );
+
+  postgresIt('compacts with millisecond-precise PostgreSQL clock values', async () => {
+    await withDeliveryDatabases(async ({ sqlA, streams }) => {
+      const streamId = crypto.randomUUID();
+      streams.push(streamId);
+      const repository = new PSqlRtcTopologyDeliveryRepository(sqlA);
+      await registerStream(repository, streamId);
+      await sqlA.begin(
+        async (transaction) =>
+          await repository.appendOrValidate(transaction, {
+            ...appendInput(streamId, 'expired-for-compaction'),
+            retainUntilEpochMs: 0,
+          }),
+      );
+
+      await expect(repository.compactExpiredEntries({ pageSize: 1_000 })).resolves.toMatchObject({
+        deletedEntryCount: expect.any(Number),
+      });
+      expect(await readSequences(sqlA, streamId)).toEqual([]);
+    });
+  });
 });
 
 interface DeliveryDatabases {

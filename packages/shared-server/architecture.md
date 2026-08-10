@@ -201,6 +201,9 @@ not current or approved exceptions.
 - [Client-state server navigation map](./rallar-system/client-state/README.md)
   links the canonical command and validation owners and records the unchanged
   AppInbox mutation timeline without duplicating runtime contracts.
+- [RTC topology server navigation map](./rallar-system/topology/README.md)
+  links planning, accepted publication, durable delivery replay, reconnect
+  hydration, and PostgreSQL ownership boundaries.
 - `rallar-server-repositories.md` inventories current persistence and data flow.
 - `rallar-server-repositories-improvements.md` is the historical hardening log.
 - `../../docs/rallar-convergent-state-and-rtc-topology.md` describes the

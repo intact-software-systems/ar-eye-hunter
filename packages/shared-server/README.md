@@ -35,6 +35,7 @@ means api-v1 owns:
 - HTTP route installers.
 - Runtime IDs such as `myServerId` and `myPublisherId`.
 - The Postgres listen/notify adapter that implements `QueueBoxPubSubBridge`.
+- Process-local RTC topology runtime identity and environment/cutover policy.
 - Static JSON dev clients passed into shared auth services.
 
 `shared-server` owns the reusable behaviour once those dependencies are supplied:
@@ -45,6 +46,10 @@ means api-v1 owns:
 - `createRallarServerApplication(...)` composes facade, REST route installers, and WS route installer.
 - `installQueueBoxPubSubBridge(...)` wires queuebox inbox/outbox events to a generic pub/sub bridge and returns only
   when the transport listener subscription is active. Subscription failure rejects runtime readiness.
+- `rallar-system/topology/replay/**` owns the durable topology stream/log,
+  per-consumer/per-publisher cursor drain, current-state repair, bounded
+  reconnect/gap hydration, and closed diagnostics contract. PostgreSQL adapters
+  live under `postgres/rtc-topology/**`.
 - `registerAuthUser(...)` and `loginAuthUser(...)` implement auth domain rules without app-local JSON loading.
 - `rallar-system/services/timing.ts` defines timing events and no-op-safe instrumentation helpers. API apps decide
   whether those events go to console, metrics, traces, or tests.
@@ -62,10 +67,22 @@ Queue pub/sub emits bounded `listener-subscribe` and `cluster-receive` timing ev
 channel, delivery shape, and queue-entry kind; they do not add application, workspace, principal, group, session,
 request, topic, context, or resource IDs as dimensions.
 
-The readiness barrier prevents api-v1 from starting its queue engine or HTTP listener before the configured queue
-transport can receive notifications. It is not notification replay: PostgreSQL `NOTIFY` remains transient, and the
-bridge does not scan durable queue rows to recover a notification sent before subscription or during a later listener
-outage. The durable queue row is authoritative when a key notification is received.
+The readiness barrier prevents api-v1 from starting its queue engine or HTTP
+listener before its process stream and replay consumer are registered. The
+QueueBox listener remains the low-latency path, while the durable topology
+replay service repairs a lost PostgreSQL notification through its one-second
+poll. Every process owns its own HEAD; every consumer owns one cursor for each
+publisher. Sequence numbers are meaningful only within one stream.
+
+Replay never turns an old publication into authority. It validates the exact
+publication and durable outbox row, reloads current topology, and sends current
+state when needed. The fixed 24-hour retention window is not cursor-pinned;
+retention gaps hydrate open connections before advancing. Reconnect hydration
+uses current durable membership, principal, session generation, presence, and
+expiry facts and fences the final send to the same socket generation.
+
+See the [topology navigation map](./rallar-system/topology/README.md) for module
+ownership, cutover/rollback settings, and validation commands.
 
 App-inbox wait behaviour is configurable by the API app. `apps/api-v1` currently reads:
 

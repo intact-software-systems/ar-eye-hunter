@@ -6,7 +6,10 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
-import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type {
+  PSqlSql,
+  PSqlTransactionSql,
+} from '../../../postgres/PostgresSqlClient.ts';
 import {
   ResourceInboxRepository,
 } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
@@ -14,7 +17,6 @@ import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
 import {
   RuntimeStateWriteConflictError,
 } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import type { RtcTopologyPublicationFanout } from '../../pubsub/RtcTopologyClusterTransport.ts';
 import {
   hashRtcTopologyExecutionCommand,
   type RtcTopologyPublication,
@@ -64,7 +66,6 @@ interface RtcTopologyWorkHandlerOptions {
   readonly database: PSqlSql;
   readonly topologyManagement: GroupTopologyManagementService;
   readonly executionRepository: RtcTopologyExecutionRepository;
-  readonly publicationFanout: RtcTopologyPublicationFanout;
   readonly topologyDelivery?: RtcTopologyDeliveryOptions;
   readonly onInactiveOverlay?: (overlayId: string) => void;
   readonly wakeQueue?: () => void;
@@ -320,9 +321,7 @@ async function finishRtcTopologyReservation(
   }
 }
 
-function toTopologyPublication(
-  input: ToTopologyPublicationInput,
-): RtcTopologyPublication {
+function toTopologyPublication(input: ToTopologyPublicationInput): RtcTopologyPublication {
   const { envelope, group, snapshot, facts } = input;
   const workId = toRtcTopologyExecutionId(envelope);
   return {

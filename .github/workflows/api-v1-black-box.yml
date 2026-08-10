@@ -34,8 +34,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
       RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: "100"
-      RALLAR_STATE_STRICT_READ_AUTH: "1"
+      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      RALLAR_STATE_STRICT_READ_AUTH: '1'
       AUTH_STATIC_CLIENTS_MODE: demo
       AUTH_REGISTRATION_MODE: public
     steps:
@@ -53,17 +53,71 @@ jobs:
         uses: ./.github/actions/api-v1-black-box-test
         with:
           backend: postgres
-          api-port: "18080"
-          secondary-api-port: "18081"
-          tertiary-api-port: "18082"
+          api-port: '18080'
+          secondary-api-port: '18081'
+          tertiary-api-port: '18082'
           artifact-dir: .artifacts/api-v1-black-box/postgres
-          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-postgres"
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-postgres'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: api-v1-black-box-postgres
           path: .artifacts/api-v1-black-box/postgres
+          if-no-files-found: warn
+
+  topology-replay:
+    name: API v1 topology replay Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d appdb"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/appdb
+      RALLAR_ICE_MODE: local
+      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      RALLAR_STATE_STRICT_READ_AUTH: '1'
+      AUTH_STATIC_CLIENTS_MODE: demo
+      AUTH_REGISTRATION_MODE: public
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - name: Run deterministic topology replay proof
+        uses: ./.github/actions/api-v1-black-box-test
+        with:
+          backend: postgres
+          api-port: '18080'
+          secondary-api-port: '18081'
+          tertiary-api-port: '18082'
+          artifact-dir: .artifacts/api-v1-black-box/topology-replay
+          profile: api-v1-black-box-topology-replay
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-topology-replay'
+      - name: Upload topology replay artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: api-v1-topology-replay
+          path: .artifacts/api-v1-black-box/topology-replay
           if-no-files-found: warn
 
   memory:
@@ -73,8 +127,8 @@ jobs:
     timeout-minutes: 20
     env:
       RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: "100"
-      RALLAR_STATE_STRICT_READ_AUTH: "1"
+      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      RALLAR_STATE_STRICT_READ_AUTH: '1'
       AUTH_STATIC_CLIENTS_MODE: demo
       AUTH_REGISTRATION_MODE: public
     steps:
@@ -92,10 +146,10 @@ jobs:
         uses: ./.github/actions/api-v1-black-box-test
         with:
           backend: pglite-memory
-          api-port: "18081"
+          api-port: '18081'
           artifact-dir: .artifacts/api-v1-black-box/memory
-          run-migrations: "false"
-          run-id: "${{ github.run_id }}-${{ github.run_attempt }}-memory"
+          run-migrations: 'false'
+          run-id: '${{ github.run_id }}-${{ github.run_attempt }}-memory'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v7

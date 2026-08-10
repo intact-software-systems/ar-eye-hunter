@@ -86,6 +86,86 @@ describe('API-v1 three-server recipe semantics', () => {
       type: 'ws.wait',
       connection: 'wsTertiary',
     });
+    expect(allSteps.find((step) => step.name === 'promoteBobThroughPrimary')).toMatchObject({
+      request: {
+        outputs: {
+          roleMutationRevision: 'body.causalRevision.groupRevision',
+        },
+      },
+    });
+    expect(allSteps.find((step) => step.name === 'updateGroupThroughSecondary')).toMatchObject({
+      request: {
+        outputs: {
+          groupMutationRevision: 'body.causalRevision.groupRevision',
+        },
+      },
+    });
+    for (const [stepName, connection, mutationName] of [
+      ['consumeBaselineCurrentTopologyOnPrimary', 'wsPrimary', 'promoteBobThroughPrimary'],
+      ['consumeBaselineCurrentTopologyOnTertiary', 'wsTertiary', 'updateGroupThroughSecondary'],
+    ] as const) {
+      const baselineIndex = allSteps.findIndex((step) => step.name === stepName);
+      const mutationIndex = allSteps.findIndex((step) => step.name === mutationName);
+      expect(baselineIndex, stepName).toBeGreaterThan(-1);
+      expect(baselineIndex, stepName).toBeLessThan(mutationIndex);
+      expect(allSteps[baselineIndex]).toMatchObject({
+        type: 'ws.wait',
+        connection,
+        expect: {
+          consume: true,
+          messages: [
+            {
+              route: { topicId: 'overlay.topology', contextId: '{groupId}' },
+              payload: { typeId: 'overlay.topology' },
+            },
+          ],
+        },
+      });
+    }
+  });
+
+  it('identifies concurrent topology publications by their committed group revisions', () => {
+    const { entries } = readMatrix();
+    const entry = entries.find((candidate) => candidate.id === 'api-v1-rtc-topology-convergence');
+    const recipe = readRecipe(entry!.recipe);
+    const allSteps = flattenRecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+
+    expect(allSteps.find((step) => step.name === 'promoteBobThroughPrimary')).toMatchObject({
+      request: {
+        outputs: {
+          roleMutationRevision: 'body.causalRevision.groupRevision',
+        },
+      },
+    });
+    expect(allSteps.find((step) => step.name === 'deriveRoleTopologyPresenceRevision')).toBeUndefined();
+    expect(allSteps.find((step) => step.name === 'deriveGroupTopologyPresenceRevision')).toBeUndefined();
+    expect(allSteps.find((step) => step.name === 'updateGroupThroughSecondary')).toMatchObject({
+      request: {
+        outputs: {
+          groupMutationRevision: 'body.causalRevision.groupRevision',
+        },
+      },
+    });
+
+    for (const stepName of ['waitForBothRevisionsOnPrimary', 'waitForBothRevisionsOnTertiary']) {
+      expect(allSteps.find((step) => step.name === stepName)).toMatchObject({
+        expect: {
+          ordered: false,
+          messages: [
+            {
+              targets: { minSnapshotVersion: '{roleMutationRevision}' },
+              route: { topicId: 'overlay.topology', contextId: '{groupId}' },
+              payload: { typeId: 'overlay.topology' },
+            },
+            {
+              targets: { minSnapshotVersion: '{groupMutationRevision}' },
+              route: { topicId: 'overlay.topology', contextId: '{groupId}' },
+              payload: { typeId: 'overlay.topology' },
+            },
+          ],
+        },
+      });
+    }
   });
 
   it('defines bounded three-server multi-client and multi-group churn coverage', () => {
@@ -167,17 +247,11 @@ describe('API-v1 three-server recipe semantics', () => {
           presenceRevision: {
             if: {
               condition: {
-                equals: [
-                  { path: 'outputs.latestChurnObservation.onlineMemberCount' },
-                  13,
-                ],
+                equals: [{ path: 'outputs.latestChurnObservation.onlineMemberCount' }, 13],
               },
               then: { path: 'outputs.latestChurnObservation.presenceRevision' },
               else: {
-                add: [
-                  { path: 'outputs.latestChurnObservation.presenceRevision' },
-                  1,
-                ],
+                add: [{ path: 'outputs.latestChurnObservation.presenceRevision' }, 1],
               },
             },
           },

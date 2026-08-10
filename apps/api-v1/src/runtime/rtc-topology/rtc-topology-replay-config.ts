@@ -27,7 +27,7 @@ export function readApiRtcTopologyReplayConfig(
       env,
       RTC_TOPOLOGY_REPLAY_ENV,
       RTC_TOPOLOGY_REPLAY_MODES,
-      'disabled',
+      'enabled',
     ),
     queueWorkers: readMode(
       env,

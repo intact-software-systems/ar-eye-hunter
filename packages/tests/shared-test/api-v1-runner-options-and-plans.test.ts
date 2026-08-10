@@ -24,6 +24,7 @@ describe('API-v1 runner options and process plans', () => {
       'bb:api-v1:postgres',
       'bb:api-v1:postgres:crdt',
       'bb:api-v1:postgres:medium-scale',
+      'bb:api-v1:postgres:topology-replay',
     ]) {
       expect(packageJson.scripts?.[scriptName], scriptName).toContain('--secondary-port=18081');
       expect(packageJson.scripts?.[scriptName], scriptName).toContain('--tertiary-port=18082');
@@ -82,6 +83,29 @@ describe('API-v1 runner options and process plans', () => {
     expect(() => parseApiV1BlackBoxArgs(['--cluster-only'])).toThrow(
       /cluster-only.*secondary-port.*tertiary-port/i,
     );
+  });
+
+  it('selects the dedicated topology replay profile and makes only C passive', () => {
+    const options = parseApiV1BlackBoxArgs([
+      '--backend=postgres',
+      '--secondary-port=18081',
+      '--tertiary-port=18082',
+      '--cluster-only',
+      '--cluster-profile=api-v1-black-box-topology-replay',
+    ]);
+    const env = toApiV1BlackBoxEnvironment(options, {});
+    const [primary, secondary, tertiary] = toManagedApiServerPlans(options, env, '/tmp/api-v1-bb');
+
+    expect(options.clusterProfile).toBe('api-v1-black-box-topology-replay');
+    expect(primary?.env.RALLAR_API_QUEUE_WORKERS).not.toBe('disabled');
+    expect(primary?.env.RALLAR_DB_PUBSUB).not.toBe('disabled');
+    expect(secondary?.env.RALLAR_API_QUEUE_WORKERS).not.toBe('disabled');
+    expect(secondary?.env.RALLAR_DB_PUBSUB).not.toBe('disabled');
+    expect(tertiary?.env).toMatchObject({
+      RALLAR_API_QUEUE_WORKERS: 'disabled',
+      RALLAR_DB_PUBSUB: 'disabled',
+      RALLAR_RTC_TOPOLOGY_REPLAY: 'enabled',
+    });
   });
 
   it.each([

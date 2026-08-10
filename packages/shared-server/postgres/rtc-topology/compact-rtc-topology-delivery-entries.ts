@@ -41,11 +41,7 @@ export async function compactRtcTopologyDeliveryEntries(
   for (const stream of streams) {
     deletedEntryCount += await input.database.begin(
       async (transaction) =>
-        await compactStreamEntries(
-          transaction,
-          stream.stream_id,
-          input.compaction.pageSize,
-        ),
+        await compactStreamEntries(transaction, stream.stream_id, input.compaction.pageSize),
     );
   }
   return {
@@ -63,7 +59,7 @@ async function compactStreamEntries(
     select
       head_sequence::double precision as head_sequence,
       retained_from_sequence::double precision as retained_from_sequence,
-      (extract(epoch from clock_timestamp()) * 1000)::double precision
+      floor(extract(epoch from clock_timestamp()) * 1000)::double precision
         as database_now_epoch_ms
     from rtc_topology_delivery_stream
     where stream_id = ${streamId}
@@ -95,7 +91,7 @@ async function compactStreamEntries(
   const rows = await sql<CompactionEntryRow[]>`
     select
       sequence::double precision as sequence,
-      (extract(epoch from retain_until) * 1000)::double precision
+      floor(extract(epoch from retain_until) * 1000)::double precision
         as retain_until_epoch_ms
     from rtc_topology_delivery_log
     where publisher_stream_id = ${streamId}
@@ -131,9 +127,7 @@ async function compactStreamEntries(
   if (expiredCount === 0) return 0;
 
   const lastDeletedSequence = retainedFromSequence + expiredCount - 1;
-  const deleted = await sql<
-    Readonly<{ sequence: RtcTopologyDeliveryBoundaryNumber }>[]
-  >`
+  const deleted = await sql<Readonly<{ sequence: RtcTopologyDeliveryBoundaryNumber }>[]>`
     delete from rtc_topology_delivery_log
     where publisher_stream_id = ${streamId}
       and sequence >= ${retainedFromSequence}

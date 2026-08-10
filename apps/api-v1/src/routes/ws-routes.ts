@@ -10,11 +10,12 @@ import {
 import type { ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
 import type { GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/rallar-system/services/app-group-ws-session-lifecycle.ts';
-
-const AUTHORISED_CONNECTIONS = new Map<
-  string,
-  ClientAuthorisedWsSessionConnectAppInboxPayload
->();
+import {
+  hasAuthorisedWsCloseFacts as hasAuthorisedWsCloseFactsFromRegistry,
+  readAuthorisedWsConnection as readAuthorisedWsConnectionFromRegistry,
+  releaseAuthorisedWsCloseFacts as releaseAuthorisedWsCloseFactsFromRegistry,
+  rememberAuthorisedWsConnection,
+} from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 
 export function init(app: Hono): void {
   app.get(
@@ -130,52 +131,19 @@ export function toGroupPresenceSessionCleanupInput(
 export function releaseAuthorisedWsCloseFacts(
   input: RallarWsLifecycleCloseInput,
 ): void {
-  const key = toAuthorisedConnectionKey(input.sessionId, input.generationId);
-  const connection = AUTHORISED_CONNECTIONS.get(key);
-  if (
-    connection &&
-    connection.generationStartedAtEpochMs === input.generationStartedAtEpochMs
-  ) {
-    AUTHORISED_CONNECTIONS.delete(key);
-  }
+  releaseAuthorisedWsCloseFactsFromRegistry(input);
 }
 
 export function hasAuthorisedWsCloseFacts(
   input: RallarWsLifecycleCloseInput,
 ): boolean {
-  const connection = AUTHORISED_CONNECTIONS.get(
-    toAuthorisedConnectionKey(input.sessionId, input.generationId),
-  );
-  return connection?.generationStartedAtEpochMs === input.generationStartedAtEpochMs;
-}
-
-function rememberAuthorisedWsConnection(
-  sessionId: string,
-  generationId: string,
-  connection: ClientAuthorisedWsSessionConnectAppInboxPayload,
-): void {
-  AUTHORISED_CONNECTIONS.set(
-    toAuthorisedConnectionKey(sessionId, generationId),
-    connection,
-  );
+  return hasAuthorisedWsCloseFactsFromRegistry(input);
 }
 
 function readAuthorisedWsConnection(
   input: RallarWsLifecycleCloseInput,
 ): ClientAuthorisedWsSessionConnectAppInboxPayload {
-  const key = toAuthorisedConnectionKey(input.sessionId, input.generationId);
-  const connection = AUTHORISED_CONNECTIONS.get(key);
-  if (
-    !connection ||
-    connection.generationStartedAtEpochMs !== input.generationStartedAtEpochMs
-  ) {
-    throw new Error('Trusted authorised WebSocket connection facts are unavailable');
-  }
-  return connection;
-}
-
-function toAuthorisedConnectionKey(sessionId: string, generationId: string): string {
-  return [sessionId, generationId].map(encodeURIComponent).join(':');
+  return readAuthorisedWsConnectionFromRegistry(input);
 }
 
 function isWebSocketUpgradeHeader(upgrade?: string): boolean {

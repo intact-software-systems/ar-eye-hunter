@@ -21,6 +21,7 @@ const MANAGED_API_V1_CLUSTER_PROFILES = new Set([
   'api-v1-black-box-crdt',
   'api-v1-black-box-medium-scale',
   'api-v1-black-box-formation-large',
+  'api-v1-black-box-topology-replay',
 ]);
 
 interface ApiV1ClusterOptionValues {
@@ -69,13 +70,9 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
     ...(secondaryPort === undefined ? {} : { secondaryPort }),
     ...(tertiaryPort === undefined ? {} : { tertiaryPort }),
     profile,
-    clusterProfile: String(
-      values.get('--cluster-profile') ?? API_V1_CLUSTER_MATRIX_PROFILE,
-    ),
+    clusterProfile: String(values.get('--cluster-profile') ?? API_V1_CLUSTER_MATRIX_PROFILE),
     clusterOnly,
-    artifactDir: String(
-      values.get('--artifact-dir') ?? `.artifacts/api-v1-black-box/${backend}`,
-    ),
+    artifactDir: String(values.get('--artifact-dir') ?? `.artifacts/api-v1-black-box/${backend}`),
     runId: String(values.get('--run-id') ?? `local-${Date.now()}`),
     requireGates: values.get('--no-require-gates') !== true,
     runMigrations: backend === 'postgres' && !recipesOnly && values.get('--no-migrate') !== true,
@@ -83,15 +80,13 @@ export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOp
   };
 }
 
-function validateApiV1ClusterOptionValues(
-  values: ApiV1ClusterOptionValues,
-): readonly string[] {
+function validateApiV1ClusterOptionValues(values: ApiV1ClusterOptionValues): readonly string[] {
   const issues: string[] = [];
   const hasIncompletePorts =
     (values.secondaryPort === undefined) !== (values.tertiaryPort === undefined);
   const hasManagedPorts = values.secondaryPort !== undefined && values.tertiaryPort !== undefined;
-  const usesManagedProfile = !values.recipesOnly &&
-    MANAGED_API_V1_CLUSTER_PROFILES.has(values.profile);
+  const usesManagedProfile =
+    !values.recipesOnly && MANAGED_API_V1_CLUSTER_PROFILES.has(values.profile);
   if (hasIncompletePorts) {
     issues.push(
       '--secondary-port and --tertiary-port must be provided together for a managed cluster.',

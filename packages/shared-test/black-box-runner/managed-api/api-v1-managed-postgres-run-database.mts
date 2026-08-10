@@ -2,6 +2,7 @@ import postgres from 'postgres';
 
 export interface ManagedPostgresRunSelector {
   readonly backend: string;
+  readonly profile?: string;
   readonly clusterOnly: boolean;
   readonly clusterProfile: string;
   readonly recipesOnly: boolean;
@@ -10,8 +11,10 @@ export interface ManagedPostgresRunSelector {
 export function requiresManagedPostgresRunDatabase(selector: ManagedPostgresRunSelector): boolean {
   return (
     selector.backend === 'postgres' &&
-    selector.clusterOnly &&
-    selector.clusterProfile === 'api-v1-black-box-medium-scale' &&
+    ((selector.clusterOnly &&
+      selector.clusterProfile === 'api-v1-black-box-medium-scale') ||
+      selector.clusterProfile === 'api-v1-black-box-topology-replay' ||
+      selector.profile === 'api-v1-black-box-topology-replay') &&
     !selector.recipesOnly
   );
 }

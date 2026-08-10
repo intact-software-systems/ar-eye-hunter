@@ -299,7 +299,6 @@ export function createRallarServer(
               wake: () => runtime.qboxEngine.wake(),
               wakeReplay: () => runtime.rtcTopologyReplay.wake('local-commit'),
               executionRepository: runtime.rtcTopologyExecutionRepository,
-              publicationFanout: runtime.rtcTopologyPublicationFanout,
               topologyDelivery: runtime.rtcTopologyDelivery,
               findGroupSnapshotByRef: (ref, cacheOptions) =>
                 runtime.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
