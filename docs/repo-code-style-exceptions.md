@@ -35,6 +35,29 @@ cohesive algorithm.
 
 ## Approved exceptions
 
+- Repository-relative path: `apps/rallar-black-box/src/hetzner-distributed-manifests.ts`
+  - Exception category: static lookup data
+  - Why cohesion is clearer: the file is the single ordered catalog for the
+    generated Hetzner manifest suite. Keeping its manifest inventory, shared
+    construction rules, and generation metadata together makes ordering and
+    cross-manifest lifecycle invariants directly reviewable.
+  - Approval date and reviewer: 2026-08-09, task requester
+  - Review or removal condition: split the catalog when it exceeds 1,200
+    physical lines or when a new independently generated manifest suite is
+    added.
+- Repository-relative path:
+  `packages/shared-test/rallar-bb-test/browser-adapter.ts`
+  - Exception category: parser or state-transition table
+  - Why cohesion is clearer: this adapter is the single browser-rallar command
+    dispatch and result-projection boundary. Keeping readiness result
+    projection with the command execution table makes the provider call and its
+    artifact-visible outcome traceable in one place; extracting only this small
+    projection would add a pass-through module without separating ownership.
+  - Approval date and reviewer: 2026-08-09, task requester
+  - Review or removal condition: remove the exception when browser-rallar
+    command families are decomposed into independently owned adapters, or
+    review it again if the file exceeds 3,100 physical lines.
+
 | Repository-relative path                               | Symbol      | Exception category | Why cohesion is clearer                                                                                                                                    | Approval date and reviewer                                                         | Owner                | Review or removal condition                                                                                                                                                                        |
 | ------------------------------------------------------ | ----------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scripts/perf/api-v1-state-write-concurrency-bench.ts` | Entire file | cohesive algorithm | Keep the unchanged measured orchestration together for this tooling wave while the named artifact owner is extracted; the file may not exceed 1,763 lines. | 2026-08-09; human approval of plan blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` | Group-topology child | Remove in a separately approved benchmark-architecture child that splits measurement orchestration into cohesive owners without changing benchmark behavior, artifacts, timing, or governance.     |

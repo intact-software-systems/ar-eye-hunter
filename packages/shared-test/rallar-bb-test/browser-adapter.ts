@@ -313,26 +313,14 @@ function withRtcConnectReadinessValue(
     value: unknown,
     readiness: RtcConnectReadinessResult,
 ): unknown {
-    const readinessValue = {
-        ready: readiness.ready,
-        minReadyPeers: readiness.minReadyPeers,
-        timeoutMs: readiness.timeoutMs,
-        intervalMs: readiness.intervalMs,
-        waitedMs: readiness.waitedMs,
-        readyPeerIds: readiness.readyPeerIds,
-        health: readiness.health,
-        ...(readiness.lastRefreshError !== undefined
-            ? { lastRefreshError: readiness.lastRefreshError }
-            : {}),
-    };
     return value && typeof value === 'object' && !Array.isArray(value)
         ? {
             ...(value as Record<string, unknown>),
-            readiness: readinessValue,
+            readiness,
         }
         : {
             diagnostics: value,
-            readiness: readinessValue,
+            readiness,
         };
 }
 

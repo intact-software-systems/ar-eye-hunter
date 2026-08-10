@@ -12,12 +12,14 @@ import {
 import {
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
-    createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
 } from '@shared-test/rallar-bb-test/recipe-fixtures.ts';
+import {
+    createHetznerProviderParityRecipe,
+} from './hetzner/create-hetzner-provider-parity-recipe.ts';
 
 export const HETZNER_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -134,11 +136,7 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             title: 'Provider parity 2-agent',
             description: 'Broader browser-rallar provider parity check for connect, direct, multicast, broadcast, health, close, and reset.',
             distributedRunId: 'hetzner-provider-parity-2-agent',
-            recipe: withoutDemoCredentials(createRallarBlackBoxProviderParityLiveRecipe({
-                group: HETZNER_DISTRIBUTED_MANIFEST_GROUP,
-                readyPeerCount: 1,
-                readyTimeoutMs: 10_000,
-            })),
+            recipe: createHetznerProviderParityRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
             agentCount: 2,
             profiles: ['rtc', 'parity'],
             live: true,
@@ -548,7 +546,7 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
         targetPolicyMode: input.targetPolicyMode ?? 'all-online-group-members',
         rolePattern: input.rolePattern ?? 'all-agents',
         ackTimeoutMs: DEFAULT_ACK_TIMEOUT_MS,
-        barrier: input.barrier
+        barrier: input.barrier || (input.live && input.agentCount >= 2)
             ? {
                   enabled: true,
                   timeoutMs: 15_000,
@@ -974,26 +972,4 @@ function fixtureRecipe(fixtureId: string): RallarBlackBoxTestRecipe {
         schemaVersion: 1,
         ...fixture.recipe,
     };
-}
-
-function withoutDemoCredentials(recipe: RallarBlackBoxTestRecipe): RallarBlackBoxTestRecipe {
-    const copy = structuredClone(recipe) as RallarBlackBoxTestRecipe;
-    for (const command of copy.commands) {
-        if (command.kind !== 'configure') {
-            continue;
-        }
-        const config = command.config as unknown;
-        if (!config || typeof config !== 'object' || Array.isArray(config)) {
-            continue;
-        }
-        const rallar = (config as { rallar?: unknown }).rallar;
-        if (!rallar || typeof rallar !== 'object' || Array.isArray(rallar)) {
-            continue;
-        }
-        delete (rallar as { username?: unknown }).username;
-        delete (rallar as { password?: unknown }).password;
-        delete (rallar as { token?: unknown }).token;
-        delete (rallar as { restoreSession?: unknown }).restoreSession;
-    }
-    return copy;
 }

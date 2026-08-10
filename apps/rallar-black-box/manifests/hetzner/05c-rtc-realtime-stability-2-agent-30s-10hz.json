@@ -207,6 +207,10 @@
     "expectedParticipantCount": 2
   },
   "ackTimeoutMs": 30000,
+  "barrier": {
+    "enabled": true,
+    "timeoutMs": 15000
+  },
   "startMode": "manual",
   "artifactPolicy": {
     "retainArtifacts": true,
