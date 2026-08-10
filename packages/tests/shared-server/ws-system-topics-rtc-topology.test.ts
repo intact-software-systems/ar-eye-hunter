@@ -24,7 +24,7 @@ import {
 } from '@shared-server/rallar-system/ws-system-topics.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';

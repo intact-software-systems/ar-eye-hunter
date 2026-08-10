@@ -28,26 +28,23 @@ harness.
 
 Date: 2026-08-08
 
-Status: Approved child in execution. PR A resulting main
-`cd69565936d881c960dbe151cfe48917a4a2e1bb` is an ancestor of the original PR B
-comparison base. Reconciled PR B candidate
-`4e32cd6f3d83e4d641e981ea67be3f64f036f794`, tree
-`0d4938185c49dcc7759fbfa4adb3667f78da8445`, merges exact current-main parent
-`cc98414867f22cc28f0137ef40a1887ab862f87d`, tree
-`6c071954df939b7dea9ba59aa5116fe7922a6cab`, into the validated
-pre-reconciliation PR B candidate without rebase or amendment. Independent
-reconciliation reviews reported Critical 0 / Important 0. PR A's preserved failed
-performance results, publication reconciliation, and exact-candidate human
-disposition remain historical evidence and are not rewritten by the PR B
-schema-v5 reconciliation below. The human
-approved original planning Git blob
+Status: Approved child in execution. Task 3 / PR B is complete at PR #151.
+Its exact feature head, frozen tree, measured comparison base/tree, approved
+performance envelope, accepted one-candidate disposition, retained block-2
+child-evaluator failure, squash audit, feature gate, merge, and resulting-main
+gate are preserved in Section 0.8. Task 4 / PR C is authorized only from
+resulting-main commit `1e5f5e55e6ff94c016bfe2cc11af92952a30e32f`, tree
+`324b2108c3a6754c2e9d85a4e00c5b8b936a67ea`, on isolated branch
+`codex/repository-human-traceability-pr-c`. PR D, the later ledger, RTC/RTT,
+and another child remain unstarted. No PR-C performance measurement is
+authorized until its exact candidate and fixed envelope receive separate human
+approval. The human approved original planning Git blob
 `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, performance-amendment blob
 `f83cc311369fff2bf255116253ec0f4fe911a43f`, and pooler-order correction blob
 `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc`, and gate-disposition amendment
 blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9`, and artifact-owner target-path
 correction blob `cf4d92db310c928b2e020f926efa4f731a2fd3b6`. No new measurement is
-authorized until the exact candidate, tools, conflict-reason input, and
-environment envelope receive their separate human approval.
+authorized without the task-specific candidate and environment envelope.
 
 ## 0. Prerequisite And Planning Publication Evidence
 
@@ -290,6 +287,38 @@ trailing newline, exact 2,571-byte regression output, benchmark line cap,
 code-style exceptions, both pooling protocols, immutable production candidate,
 comparator, evaluator, thresholds, dependencies, workflows, TypeScript,
 checker behavior, and failed historical evidence remain unchanged.
+
+### 0.8 Task 3 / PR B merge-closure evidence
+
+PR #151 was manually squash-merged. Its exact approved feature head is
+`17f9c237afd9fb006776aaa0335b86e1cb650c88`, with frozen feature tree
+`7199b061bf1a6fe3abb9c83c02313f5a676a6a5b`. The measured comparison base is
+`cc98414867f22cc28f0137ef40a1887ab862f87d`, tree
+`6c071954df939b7dea9ba59aa5116fe7922a6cab`. The approved measurement envelope
+SHA-256 is
+`27a9c8e8acdcaa8f1d737ced31a46708a973c0f92e586526b3c7369467f12ae6`.
+The accepted one-candidate performance disposition remains exact, including
+the honestly retained block-2 child-evaluator failure; it is not extended to
+PR C or unrelated current-main changes.
+
+The squash-merge commit is `1e5f5e55e6ff94c016bfe2cc11af92952a30e32f`,
+tree `324b2108c3a6754c2e9d85a4e00c5b8b936a67ea`, with parent
+`f43c1881e684fd2a423b0993c4389d969c264311`. The exact squash-integration audit
+proved that every measured PR-B persistence, lineage, compatibility, and
+prospective-tooling behavior was integrated unchanged; differences from the
+frozen feature tree were attributed to the advanced main parent or squash
+integration without lost PR-B behavior.
+
+Branch Release Gate run `31431692263`, attempt 1, concluded `success` on exact
+feature head `17f9c237afd9fb006776aaa0335b86e1cb650c88`. API v1 Topology Replay Gate
+run `31431791238`, attempt 1, and API v1 Medium-Scale Gate run `31431791252`,
+attempt 1, succeeded on that head. CodeQL workflow run `31431790976` completed
+both analysis jobs successfully. Separate CodeQL check `93596864919` failed as
+an application finding and remains tracked in issue #153; it was not a failed
+required feature-branch workflow gate. Run Hetzner Supported Distributed
+Manifests run `31432113008`, attempt 1, concluded `success` on exact resulting
+main `1e5f5e55e6ff94c016bfe2cc11af92952a30e32f`. The merge-closure comment is
+<https://github.com/intact-software-systems/ar-eye-hunter/pull/151#issuecomment-5246277664>.
 
 ## 1. Outcome, Scope, And Review Sizing
 
@@ -837,7 +866,7 @@ packages/shared-server/rallar-system/topology/
       migrate-legacy-group-topology-config-keys.ts
 
   planning/
-    group-topology-planning-contracts.ts
+    group-topology-planning-authority.ts
     group-topology-planning-service.ts
     materialize-rtc-overlay-topology-broadcast-message.ts
 
@@ -1082,7 +1111,7 @@ projection directly. Both paths are included in the performance blob manifest.
 | method `toTopologyConfigMutationResult` and helper `topologyConfigExecution`                                            | `config/mutation/to-topology-config-mutation-result.ts`: `toTopologyConfigMutationResult`                                                                                                                                               | C                 |
 | explicit reconfigure types                                                                                              | `reconfigure/group-topology-reconfigure-contracts.ts`                                                                                                                                                                                   | C                 |
 | explicit reconfigure read/compute/validate/write                                                                        | `reconfigure/group-topology-reconfigure-mutation.ts`                                                                                                                                                                                    | C                 |
-| planning authority, topology computation, observation, local compatibility planning                                     | `planning/group-topology-planning-contracts.ts` and `planning/group-topology-planning-service.ts`                                                                                                                                       | C                 |
+| planning authority, topology computation, observation, local compatibility planning                                     | `planning/group-topology-planning-authority.ts` and `planning/group-topology-planning-service.ts`                                                                                                                                       | C                 |
 | broadcast fact type plus `createRtcOverlayTopologyBroadcastMessage` and `materializeRtcOverlayTopologyBroadcastMessage` | `planning/materialize-rtc-overlay-topology-broadcast-message.ts`                                                                                                                                                                        | C                 |
 | `GroupTopologyValidationError`, `GroupTopologyCommitConflictError`, `GroupTopologyConfigIdempotencyConflictError`       | `group-topology-errors.ts`: same three public classes                                                                                                                                                                                   | C                 |
 | `topology/inbox/topology-app-inbox-handler.ts`                                                                          | Same path: thin operation dispatch to config and reconfigure owners                                                                                                                                                                     | C                 |
@@ -1490,20 +1519,20 @@ corruption owner and shares only deterministic fixture construction through
 each owner behavior-named and below 400 lines without adding a public
 compatibility path.
 
-- [ ] Split repository contracts, namespaces, keys, codecs, CRUD/CAS, exact
+- [x] Split repository contracts, namespaces, keys, codecs, CRUD/CAS, exact
       reads, stored-source decoding, backfill, and legacy migration.
-- [ ] Preserve every namespace, key, value, revision, ordering, corruption,
+- [x] Preserve every namespace, key, value, revision, ordering, corruption,
       expiry, page, migration, and retry rule byte-for-byte.
-- [ ] Make persistence depend on mutation contracts/validators, never on the
+- [x] Make persistence depend on mutation contracts/validators, never on the
       application service, inbox, public facade, RTC worker, or compatibility
       wrapper.
-- [ ] Split the 1,637-line repository test into behavior-named semantic owners.
-- [ ] Add exact key injectivity, complete-scope isolation, malformed row,
+- [x] Split the 1,637-line repository test into behavior-named semantic owners.
+- [x] Add exact key injectivity, complete-scope isolation, malformed row,
       equal-revision/different-content, batch/fallback, generation/invariant
       race, migration, and conditional-delete tests.
-- [ ] Redirect every exact Section 8 persistence consumer and remove the old
+- [x] Redirect every exact Section 8 persistence consumer and remove the old
       private repository/read/decoder paths after their active scans are empty.
-- [ ] Require scoped persistence review, PostgreSQL concurrency review, all PR
+- [x] Require scoped persistence review, PostgreSQL concurrency review, all PR
       B gates, exact commit/tree, Branch Release Gate, human merge, and exact
       resulting-main workflow.
 
@@ -1512,24 +1541,32 @@ governed performance protocol in Section 13 after the exact candidate freezes.
 
 ### Task 4: PR C — authoritative shell, query, reconfigure, and composition
 
-- [ ] Introduce the config query and config mutation services as cohesive
+PR C applies one private refinement by extracting deterministic snapshot
+selection into
+`planning/select-group-topology-planning-snapshot.ts`. The planning service
+still owns planning authority and lifecycle; the helper owns only the pure
+persisted/local/previous snapshot precedence decision. This keeps the planning
+owner below the hard file/function limits without changing RTC algorithms,
+publication, or adding a compatibility path.
+
+- [x] Introduce the config query and config mutation services as cohesive
       stateful owners.
-- [ ] Construct one `GroupTopologyConfigGenerationReadiness` instance and pass
+- [x] Construct one `GroupTopologyConfigGenerationReadiness` instance and pass
       it explicitly to both query and mutation services; preserve memoization,
       per-group keying, promise identity, failure eviction, and backfill order.
-- [ ] Move reconfigure read/compute/validate/write into the named mutation
+- [x] Move reconfigure read/compute/validate/write into the named mutation
       owner.
-- [ ] Move planning-authority and local compatibility planning into the named
+- [x] Move planning-authority and local compatibility planning into the named
       planning service without changing RTC algorithms or publication.
-- [ ] Make `TopologyAppInboxHandler` depend on exact config-mutation and
+- [x] Make `TopologyAppInboxHandler` depend on exact config-mutation and
       reconfigure capabilities rather than the broad public facade.
-- [ ] Preserve `AppGroupInboxService` constructor/setter signatures, setter
+- [x] Preserve `AppGroupInboxService` constructor/setter signatures, setter
       identity/idempotence/errors, handler registration order, and runtime
       readiness while ensuring mandatory handler dependencies are resolved
       before each registration.
-- [ ] Preserve public `GroupTopologyManagementService` as the direct
+- [x] Preserve public `GroupTopologyManagementService` as the direct
       compatibility facade and keep canonical callers out of old wrappers.
-- [ ] Add direct handler operation-matrix, registration/invocation,
+- [x] Add direct handler operation-matrix, registration/invocation,
       retry-reentry, durable-failure, collision rollback, 20-attempt
       exhaustion, query, reconfigure, and post-commit wake tests.
 - [ ] Run the complete config, AppInbox, API, RTC handoff, memory black-box,
@@ -2475,8 +2512,8 @@ measurements remain historical and are never relabeled for a changed tree.
       receipt, outbox, query, and topology invariants remain exact.
 - [ ] Semantic ownership/security/transaction/exit tests remain primary.
 - [ ] All temporary ratchets have owner and removal/replacement decisions.
-- [ ] PR A review, gates, merge, and resulting-main workflow succeeded.
-- [ ] PR B review, governed performance, merge, and resulting-main workflow
+- [x] PR A review, gates, merge, and resulting-main workflow succeeded.
+- [x] PR B review, governed performance, merge, and resulting-main workflow
       succeeded.
 - [ ] PR C review, governed performance, merge, and resulting-main workflow
       succeeded.
@@ -2521,8 +2558,8 @@ measurements remain historical and are never relabeled for a changed tree.
 | Auth prerequisite          | ledger-published                 | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Group-topology child plan  | approved/in execution            | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f`. Planning PR #127 merged approved correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` as feature `8e36fe1c303f695f0a6ec3d99be30eda12c96b11`, frozen/resulting tree `3d6cdf6abb46866e74895fe49150a4a9a4bde77c`, resulting main `df8346aaf39e8d8730e73a530da3e6f182aa071b`. Planning PR #129 merged approved gate-disposition blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` as feature `05c75cf2ad52589901e6983a687d28aa5b910582`, frozen/resulting tree `e3b309e9b913395e28645f1355400d380697c658`, resulting main `c7d6d4ec017edb23de239bba18c6d79f2ebb5dac`. Planning PR #131 merged approved target-path correction blob `cf4d92db310c928b2e020f926efa4f731a2fd3b6` as feature `42eb663177d731f3759fc2a2664db2ad3297f149`, frozen/resulting tree `3560eaa0677f219e109f3cad86b169145658cb7e`, resulting main `5e892aaff06cce0d994fbf79cfbcc12b235c7e48`.                                                                                                                                                                                                                                                                       |
 | PR A protocol/core         | publication reconciliation       | Exact candidate `ed7e77cd560a701ec41bc544769c60a715f68744`, tree `161e125131adb87dcd90bba737dfe91cb8d624b7`, preserves production candidate `74a62eb22583216e8c6651de069209d7e1a8ca67` and completed correctness plus Critical 0/Important 0 review. The v1 A-B-B-A failure and B4 isolation-guard failure remain historical evidence. The human accepted balanced block 1 and the seven-successful-position diagnostic for this exact candidate. Draft PR #103 was pushed, but Branch Release Gate run `31334618112`, attempt 1, failed only because the lineage manifest named Task 1 head `8b1ebf542d12c05a5ac226d3d07e543a171a2626` while the workflow resolved merge base `20020977507c3104949da07d27b95e89d3b91c96`; their three predecessor blobs are identical. Concurrent-main and exact-lineage-base reconciliation is in progress.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| PR B persistence           | prospective envelope preparation | Original comparison base `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`, tree `31671a750ec84577a9b94898c61cc49ec0c91c00`, contains PR A resulting main `cd69565936d881c960dbe151cfe48917a4a2e1bb` as an ancestor. Pre-reconciliation candidate `546f70deade1abe4f66b0262e5a9698a830527ea`, tree `2443467b0023ead540a5a4a1666f916b607deb1f`, completed semantic, ownership, type, unit, full CI, build, warning-only style, changed-style, Prettier, diff, isolated PostgreSQL, and Critical 0/Important 0 review gates; its governed schema-v5 performance evidence remains immutable historical evidence. Reconciled candidate `4e32cd6f3d83e4d641e981ea67be3f64f036f794`, tree `0d4938185c49dcc7759fbfa4adb3667f78da8445`, merges exact current-main parent `cc98414867f22cc28f0137ef40a1887ab862f87d`, tree `6c071954df939b7dea9ba59aa5116fe7922a6cab`, passed final focused, PostgreSQL, unit, CI, build, warning-only, changed-style, formatting, and Critical 0/Important 0 independent review gates. Current main changes the measured benchmark/runtime integration, so the old result is not carried forward. The prospective comparison now binds exact merge parent `cc98414867f22cc28f0137ef40a1887ab862f87d`; a replacement candidate/envelope and separate human approval remain required. No benchmark or publication is authorized. |
-| PR C authoritative shell   | blocked                          | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| PR B persistence           | complete                         | PR #151 feature `17f9c237afd9fb006776aaa0335b86e1cb650c88`, frozen tree `7199b061bf1a6fe3abb9c83c02313f5a676a6a5b`, measured base `cc98414867f22cc28f0137ef40a1887ab862f87d`, and approved envelope SHA-256 `27a9c8e8acdcaa8f1d737ced31a46708a973c0f92e586526b3c7369467f12ae6` retain the accepted one-candidate disposition and failed block-2 child evaluation. The clean squash audit proved unchanged PR-B behavior in merge `1e5f5e55e6ff94c016bfe2cc11af92952a30e32f`, tree `324b2108c3a6754c2e9d85a4e00c5b8b936a67ea`, parent `f43c1881e684fd2a423b0993c4389d969c264311`. Branch Release Gate `31431692263` and resulting-main Hetzner run `31432113008` succeeded. |
+| PR C authoritative shell   | in implementation                | Authorized only from commit `1e5f5e55e6ff94c016bfe2cc11af92952a30e32f`, tree `324b2108c3a6754c2e9d85a4e00c5b8b936a67ea`, on `codex/repository-human-traceability-pr-c`. Core query, shared readiness, mutation writer/service, reconfigure, planning, narrow handler owners, direct public facade, semantic tests, PR-C source-case inventory, and navigation updates are implemented. The changed-style ratchet, shared-server typecheck, 38 focused Vitest files, and 823 tests pass; three isolated-database tests remain separately gated. Broader API, black-box, PostgreSQL, review, governed performance, publication, and resulting-main gates remain pending. No performance measurement, PR D, ledger, RTC/RTT, or other child is authorized. |
 | PR D alignment/final trace | blocked                          | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Later topology ledger      | blocked                          | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | RTC/RTT and later domains  | blocked                          | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |

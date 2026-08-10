@@ -4,7 +4,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { computeRtcTopologyEntry } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 import {

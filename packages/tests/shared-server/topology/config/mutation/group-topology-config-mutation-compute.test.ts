@@ -99,37 +99,29 @@ describe('group topology config mutation compute', () => {
       expect(mutationSource, forbidden).not.toContain(forbidden);
     }
 
-    const managementSource = readProductionSource('services/group-topology-management-service.ts');
-    const appInboxSource = readProductionSource('topology/inbox/topology-app-inbox-handler.ts');
-    const read = appInboxSource.indexOf(
-      'const read = await topologyManagementService.readTopologyConfigMutation',
+    const writerSource = readProductionSource(
+      'topology/config/mutation/write-topology-config-mutation.ts',
     );
+    const appInboxSource = readProductionSource('topology/inbox/topology-app-inbox-handler.ts');
+    const read = appInboxSource.indexOf('const read = await owners.configMutationService.read');
     const compute = appInboxSource.indexOf(
-      'const computed = topologyManagementService.computeTopologyConfigMutation',
+      'const computed = owners.configMutationService.compute',
       read,
     );
-    const validate = appInboxSource.indexOf(
-      'topologyManagementService.validateTopologyConfigMutation',
-      compute,
-    );
+    const validate = appInboxSource.indexOf('owners.configMutationService.validate', compute);
     const transaction = appInboxSource.indexOf(
       'const result = await this.dependencies.writeMutation',
       validate,
     );
-    const write = appInboxSource.indexOf(
-      'await topologyManagementService.writeTopologyConfigMutation',
-      transaction,
-    );
+    const write = appInboxSource.indexOf('await owners.writeConfigMutation', transaction);
     expect(read).toBeGreaterThan(-1);
     expect(read).toBeLessThan(compute);
     expect(compute).toBeLessThan(validate);
     expect(validate).toBeLessThan(transaction);
     expect(transaction).toBeLessThan(write);
-    const writeHelper = managementSource.indexOf(
-      'export async function writeTopologyConfigMutation',
-    );
+    const writeHelper = writerSource.indexOf('export async function writeTopologyConfigMutation');
     expect(writeHelper).toBeGreaterThan(-1);
-    const writer = managementSource.slice(writeHelper);
+    const writer = writerSource.slice(writeHelper);
     expect(writer).toContain('transaction: PSqlTransactionSql');
     expect(writer).not.toContain('.begin(');
     expect(appInboxSource.slice(read, write)).not.toContain('.begin(');

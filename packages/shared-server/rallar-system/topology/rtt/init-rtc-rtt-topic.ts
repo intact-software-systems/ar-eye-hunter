@@ -16,7 +16,7 @@ import type { RtcTopologyRuntimeState } from '../../ws-rtc-topology-runtime.ts';
 import type { RtcTopologyWorkPublisher } from '../../services/RtcTopologyOutboxWork.ts';
 import type {
   GroupTopologyGroupSnapshotReader,
-} from '../../services/group-topology-management-service.ts';
+} from '../group-topology-management-service.ts';
 import type { RallarRtcTopologyService } from '../../services/rallar-rtc-topology-service.ts';
 import {
   evaluateRtcRttMeasurement,

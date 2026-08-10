@@ -5,7 +5,8 @@ import {
   AppInboxService,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import type { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import type { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { RtcRttAppInboxDependencies } from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { GROUP_MUTATION_INBOX_TYPES } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
@@ -100,7 +101,10 @@ async function assertCapturedDependencies(
   service: Awaited<ReturnType<typeof createAuthorityHarness>>['service'],
   registration: RegistrationSpy,
 ): Promise<void> {
-  const topology = {} as GroupTopologyManagementService;
+  const topology = {
+    configMutationService: {},
+    reconfigureMutation: {},
+  } as GroupTopologyManagementService;
   const rtc = {} as RtcRttAppInboxDependencies;
   const internals = service as unknown as DeferredHandlerInternals;
   const topologyProcess = vi
@@ -118,7 +122,12 @@ async function assertCapturedDependencies(
   await readHandler(registration, AppInboxType.TOPOLOGY_CONFIG_PUT)(undefined, context);
   await readHandler(registration, AppInboxType.RTC_RTT_SUBMIT)(undefined, context);
 
-  expect(topologyProcess).toHaveBeenCalledWith(context, topology);
+  expect(topologyProcess).toHaveBeenCalledWith(context, {
+    configMutationService: topology.configMutationService,
+    reconfigureMutation: topology.reconfigureMutation,
+    writeConfigMutation: expect.any(Function),
+    toConfigMutationResult: expect.any(Function),
+  });
   expect(rtcProcess).toHaveBeenCalledWith(context, rtc);
 }
 
@@ -134,7 +143,7 @@ interface DeferredHandlerInternals {
   readonly topologyAppInboxHandler: {
     processMutation(
       context: AppInboxMessageContext,
-      service: GroupTopologyManagementService,
+      owners: TopologyAppInboxMutationOwners,
     ): Promise<unknown>;
   };
   readonly rtcRttAppInboxHandler: {

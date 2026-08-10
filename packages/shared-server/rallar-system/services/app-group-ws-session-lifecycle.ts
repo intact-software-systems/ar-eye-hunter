@@ -8,4 +8,4 @@ export {
   toExpiredPresenceEnqueue,
   toGroupSessionCleanupEnqueue,
 } from '../group-state/presence/group-presence-service.ts';
-export { requireTopologyManagementService } from '../topology/inbox/topology-app-inbox-handler.ts';
+export { requireTopologyManagementService } from '../topology/group-topology-management-service.ts';

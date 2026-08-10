@@ -10,15 +10,13 @@ import {
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import {
-  GroupTopologyConfigRepository,
-} from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
+import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import type {
   RuntimeStateReadBatchSelection,

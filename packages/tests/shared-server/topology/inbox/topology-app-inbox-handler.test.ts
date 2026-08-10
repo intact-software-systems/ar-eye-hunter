@@ -4,14 +4,16 @@ import type { PersistedAuthSession } from '@shared-server/rallar-system/auth/per
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { authSessionProofSecret } from '@shared-server/rallar-system/auth/sessions/auth-session-proof-secret.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import type { GroupTopologyManagementService } from '@shared-server/rallar-system/services/group-topology-management-service.ts';
 import {
   type AppInboxMessageContext,
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
-import { TopologyAppInboxHandler } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import {
+  TopologyAppInboxHandler,
+  type TopologyAppInboxMutationOwners,
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 
 const NOW_EPOCH_MS = 1_000;
 const SESSION: IssuedAuthSession = {
@@ -29,30 +31,33 @@ describe('TopologyAppInboxHandler', () => {
     const context = await topologyContext(phases);
     const computed = { outcome: 'write' } as never;
     const expected = { status: 'accepted', requestId: 'handler-request' } as never;
-    const management = {
-      prepareTopologyConfigMutation: vi.fn(async () => {
-        phases.push('prepare');
-        return { command: { operation: 'putConfig' } } as never;
-      }),
-      readTopologyConfigMutation: vi.fn(async () => {
-        phases.push('read');
-        return {} as never;
-      }),
-      computeTopologyConfigMutation: vi.fn(() => {
-        phases.push('compute');
-        return computed;
-      }),
-      validateTopologyConfigMutation: vi.fn(() => {
-        phases.push('validate');
-      }),
-      writeTopologyConfigMutation: vi.fn(async () => {
+    const owners = {
+      configMutationService: {
+        prepare: vi.fn(async () => {
+          phases.push('prepare');
+          return { command: { operation: 'putConfig' } } as never;
+        }),
+        read: vi.fn(async () => {
+          phases.push('read');
+          return {} as never;
+        }),
+        compute: vi.fn(() => {
+          phases.push('compute');
+          return computed;
+        }),
+        validate: vi.fn(() => {
+          phases.push('validate');
+        }),
+      },
+      writeConfigMutation: vi.fn(async () => {
         phases.push('write');
       }),
-      toTopologyConfigMutationResult: vi.fn(() => {
+      toConfigMutationResult: vi.fn(() => {
         phases.push('result');
         return expected;
       }),
-    } as unknown as GroupTopologyManagementService;
+      reconfigureMutation: {} as never,
+    } satisfies TopologyAppInboxMutationOwners;
     const wakeQueue = vi.fn(() => phases.push('wake'));
     const handler = new TopologyAppInboxHandler({
       groupStateService: sessionReader(phases),
@@ -66,7 +71,7 @@ describe('TopologyAppInboxHandler', () => {
       },
     });
 
-    await expect(handler.processMutation(context, management)).resolves.toBe(expected);
+    await expect(handler.processMutation(context, owners)).resolves.toBe(expected);
     expect(phases).toEqual([
       'verify-authority',
       'prepare',
@@ -87,16 +92,21 @@ describe('TopologyAppInboxHandler', () => {
     const context = await topologyContext(phases);
     const writeMutation = vi.fn();
     const wakeQueue = vi.fn();
-    const management = {
-      prepareTopologyConfigMutation: vi.fn(async () => ({ command: {} })),
-      readTopologyConfigMutation: vi.fn(async () => ({})),
-      computeTopologyConfigMutation: vi.fn(() => ({
-        outcome: 'idempotency-conflict',
-        existingCommandHash: 'sha256:existing',
-        receivedCommandHash: 'sha256:received',
-      })),
-      validateTopologyConfigMutation: vi.fn(),
-    } as unknown as GroupTopologyManagementService;
+    const owners = {
+      configMutationService: {
+        prepare: vi.fn(async () => ({ command: {} })),
+        read: vi.fn(async () => ({})),
+        compute: vi.fn(() => ({
+          outcome: 'idempotency-conflict',
+          existingCommandHash: 'sha256:existing',
+          receivedCommandHash: 'sha256:received',
+        })),
+        validate: vi.fn(),
+      },
+      writeConfigMutation: vi.fn(),
+      toConfigMutationResult: vi.fn(),
+      reconfigureMutation: {} as never,
+    } as unknown as TopologyAppInboxMutationOwners;
     const handler = new TopologyAppInboxHandler({
       groupStateService: sessionReader(phases),
       nowEpochMs: () => NOW_EPOCH_MS,
@@ -104,11 +114,69 @@ describe('TopologyAppInboxHandler', () => {
       wakeQueue,
     });
 
-    await expect(handler.processMutation(context, management)).rejects.toMatchObject({
+    await expect(handler.processMutation(context, owners)).rejects.toMatchObject({
       code: 'group-topology-config-idempotency-conflict',
     });
     expect(writeMutation).not.toHaveBeenCalled();
     expect(wakeQueue).not.toHaveBeenCalled();
+  });
+
+  it('keeps reconfigure read-compute-validate-write ordered and wakes after commit', async () => {
+    const phases: string[] = [];
+    const context = await reconfigureTopologyContext(phases);
+    const owners = {
+      configMutationService: {} as never,
+      writeConfigMutation: vi.fn(),
+      toConfigMutationResult: vi.fn(),
+      reconfigureMutation: {
+        isPlatformAdmin: vi.fn(() => {
+          phases.push('admin');
+          return false;
+        }),
+        read: vi.fn(async () => {
+          phases.push('read');
+          return {} as never;
+        }),
+        compute: vi.fn(() => {
+          phases.push('compute');
+          return { resourceId: 'reconfigure-outbox' } as never;
+        }),
+        validate: vi.fn(() => {
+          phases.push('validate');
+        }),
+        write: vi.fn(async () => {
+          phases.push('write');
+        }),
+      },
+    } satisfies TopologyAppInboxMutationOwners;
+    const wakeQueue = vi.fn(() => phases.push('wake'));
+    const handler = new TopologyAppInboxHandler({
+      groupStateService: sessionReader(phases),
+      nowEpochMs: () => NOW_EPOCH_MS,
+      wakeQueue,
+      writeMutation: async (_context, write) => {
+        phases.push('transaction');
+        const result = await write(undefined as never);
+        phases.push('commit');
+        return result;
+      },
+    });
+
+    await expect(handler.processMutation(context, owners)).resolves.toMatchObject({
+      status: 'queued',
+      outboxId: 'reconfigure-outbox',
+    });
+    expect(phases).toEqual([
+      'verify-authority',
+      'admin',
+      'read',
+      'compute',
+      'validate',
+      'transaction',
+      'write',
+      'commit',
+      'wake',
+    ]);
   });
 });
 
@@ -127,6 +195,34 @@ async function topologyContext(phases: string[]): Promise<AppInboxMessageContext
   const enqueue = await createAuthenticatedTopologyEnqueue({
     enqueue: {
       type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+      resourceId: command.requestId,
+      data: command,
+    },
+    claimedAuthority: SESSION,
+    groupStateService: sessionReader(phases, false),
+    nowEpochMs: () => NOW_EPOCH_MS,
+  });
+  return {
+    enqueue,
+    entry: { dequeueAudit: { attempts: 7 } },
+  } as AppInboxMessageContext;
+}
+
+async function reconfigureTopologyContext(phases: string[]): Promise<AppInboxMessageContext> {
+  const command = await toTopologyAppInboxCommand({
+    actor: { principalId: SESSION.clientId, sessionId: SESSION.sessionId },
+    groupRef: {
+      applicationId: 'app-1',
+      workspaceId: 'workspace-1',
+      groupId: 'room-1',
+    },
+    requestId: 'handler-request',
+    capturedAtEpochMs: NOW_EPOCH_MS,
+    payload: { operation: 'reconfigureTopology', requestOptions: {}, publish: true },
+  });
+  const enqueue = await createAuthenticatedTopologyEnqueue({
+    enqueue: {
+      type: AppInboxType.TOPOLOGY_RECONFIGURE,
       resourceId: command.requestId,
       data: command,
     },

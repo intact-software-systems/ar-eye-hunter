@@ -144,9 +144,9 @@ describe('RTC topology mutation phases', () => {
             expect(contracts).toContain(`${operation}: '${operation}'`);
             expect(service).toContain(`AppInboxType.${operation}`);
         }
-        expect(topologyHandler).toMatch(/readTopologyMutation[\s\S]*computeTopologyMutation/);
-        expect(topologyHandler).toMatch(/computeTopologyMutation[\s\S]*validateTopologyMutation/);
-        expect(topologyHandler).toMatch(/validateTopologyMutation[\s\S]*writeMutation\(/);
+        expect(topologyHandler).toMatch(/mutation\.read[\s\S]*mutation\.compute/);
+        expect(topologyHandler).toMatch(/mutation\.compute[\s\S]*mutation\.validate/);
+        expect(topologyHandler).toMatch(/mutation\.validate[\s\S]*mutation\.write/);
     });
 
     it('keeps receipt-family cleanup reads and validation outside its write transaction', () => {

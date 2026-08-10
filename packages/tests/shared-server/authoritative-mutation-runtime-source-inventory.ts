@@ -2,6 +2,7 @@ const systemRoot = 'packages/shared-server/rallar-system';
 const serviceRoot = `${systemRoot}/services`;
 const groupStateRoot = `${systemRoot}/group-state`;
 const topologyMutationRoot = `${systemRoot}/topology/config/mutation`;
+const topologyRoot = `${systemRoot}/topology`;
 
 export const authoritativeMutationRuntimeSourcePaths = [
   `${serviceRoot}/AppInboxService.ts`,
@@ -31,7 +32,9 @@ export const authoritativeMutationRuntimeSourcePaths = [
   `${topologyMutationRoot}/validate-topology-config-receipt.ts`,
   `${topologyMutationRoot}/validate-topology-config-mutation.ts`,
   `${topologyMutationRoot}/topology-config-mutation-receipt.ts`,
-  `${serviceRoot}/group-topology-management-service.ts`,
+  `${topologyRoot}/config/group-topology-config-mutation-service.ts`,
+  `${topologyMutationRoot}/write-topology-config-mutation.ts`,
+  `${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`,
   `${groupStateRoot}/presence/group-presence-summary-work.ts`,
   `${serviceRoot}/rtc-rtt-mutation-service.ts`,
   `${serviceRoot}/canonical-command-hash.ts`,
