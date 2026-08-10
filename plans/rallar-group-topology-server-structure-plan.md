@@ -28,14 +28,18 @@ harness.
 
 Date: 2026-08-08
 
-Status: Approved child in execution, with PR A in post-measurement publication
-reconciliation after Branch Release Gate run `31334618112`, attempt 1, failed
-only because its structural-lineage manifest named Task 1 head
-`8b1ebf542d12c05a5ac226d3d07e543a171a2626` while the workflow resolved merge
-base `20020977507c3104949da07d27b95e89d3b91c96`. The three predecessor blobs are
-identical at both commits. The preserved failed performance results remain
-historical evidence, and the exact-candidate human performance disposition is
-accepted externally. The human
+Status: Approved child in execution. PR A resulting main
+`cd69565936d881c960dbe151cfe48917a4a2e1bb` is an ancestor of the original PR B
+comparison base. Reconciled PR B candidate
+`4e32cd6f3d83e4d641e981ea67be3f64f036f794`, tree
+`0d4938185c49dcc7759fbfa4adb3667f78da8445`, merges exact current-main parent
+`cc98414867f22cc28f0137ef40a1887ab862f87d`, tree
+`6c071954df939b7dea9ba59aa5116fe7922a6cab`, into the validated
+pre-reconciliation PR B candidate without rebase or amendment. Independent
+reconciliation reviews reported Critical 0 / Important 0. PR A's preserved failed
+performance results, publication reconciliation, and exact-candidate human
+disposition remain historical evidence and are not rewritten by the PR B
+schema-v5 reconciliation below. The human
 approved original planning Git blob
 `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, performance-amendment blob
 `f83cc311369fff2bf255116253ec0f4fe911a43f`, and pooler-order correction blob
@@ -820,6 +824,7 @@ packages/shared-server/rallar-system/topology/
     persistence/
       group-topology-config-repository-contracts.ts
       group-topology-config-repository.ts
+      group-topology-config-source-repository.ts
       group-topology-config-runtime-namespaces.ts
       group-topology-config-storage-keys.ts
       group-topology-config-persistence-codec.ts
@@ -888,9 +893,12 @@ packages/tests/shared-server/topology/
       group-topology-config-repository-keys.test.ts
       group-topology-config-repository-read-write.test.ts
       group-topology-config-repository-corruption.test.ts
+      group-topology-config-repository-scope-isolation.test.ts
+      group-topology-config-mutation-record-corruption.test.ts
       group-topology-config-exact-read.test.ts
       group-topology-config-generation.test.ts
       group-topology-config-legacy-migration.test.ts
+      group-topology-config-persistence-test-fixtures.ts
 
     maintenance/
       group-topology-config-generation-readiness.test.ts
@@ -918,6 +926,7 @@ packages/tests/repo/
   group-topology-server-navigation-map-integrity.test.ts
   group-topology-server-ownership.test.ts
   group-topology-server-pr-a-test-ownership.ts
+  group-topology-server-pr-b-test-ownership.ts
   group-topology-server-test-ast.ts
   group-topology-server-test-atom-endpoint-declaration.ts
   group-topology-server-test-atom-endpoint-declarations.ts
@@ -1012,6 +1021,20 @@ translation, and validation owners listed above keep this permanent ratchet
 human-navigable and below 400 lines. Aggregate counts remain supplementary
 diagnostics only.
 
+PR B adds the checker-owned structural lineage manifest
+`plans/repo-style-lineages/rallar-group-topology-server-pr-b.json`. It pins
+the exact concurrent-main merge parent
+`cc98414867f22cc28f0137ef40a1887ab862f87d`, byte-identical predecessor blobs,
+and genuine canonical primary targets for the two deleted private persistence
+and maintenance owners whose movement is not represented by Git-native rename
+detection. Git-native rename lineage owns the other three one-to-one moves:
+exact read, stored-source decoding, and mutation read. Together, the two
+structural-manifest rows and three detected renames cover all five deleted
+private persistence/read/maintenance owners.
+The behavior-named PR B test-ownership inventory independently maps every
+frozen repository and exact-read case to one target case; four new semantic
+cases are tracked outside that moved inventory.
+
 Task 2 also added
 `packages/tests/shared-server/authoritative-mutation-runtime-source-inventory.ts`
 as the descriptive inventory owner used by the retained cross-domain source
@@ -1045,7 +1068,8 @@ projection directly. Both paths are included in the performance blob manifest.
 | same, namespaces                                                                                                        | `config/persistence/group-topology-config-runtime-namespaces.ts`                                                                                                                                                                        | B                 |
 | same, key builders/decoders                                                                                             | `config/persistence/group-topology-config-storage-keys.ts`                                                                                                                                                                              | B                 |
 | same, stored value/entry decoding and corruption errors                                                                 | `config/persistence/group-topology-config-persistence-codec.ts`                                                                                                                                                                         | B                 |
-| same, repository CRUD/CAS/page operations                                                                               | `config/persistence/group-topology-config-repository.ts`                                                                                                                                                                                | B                 |
+| same, repository CRUD/CAS operations                                                                                    | `config/persistence/group-topology-config-repository.ts`                                                                                                                                                                                | B                 |
+| same, source/page and legacy-source lookup                                                                              | `config/persistence/group-topology-config-source-repository.ts`                                                                                                                                                                         | B                 |
 | `repositories/group-topology-mutation-exact-read.ts`                                                                    | `config/persistence/read-exact-group-topology-config-mutation.ts`                                                                                                                                                                       | B                 |
 | `repositories/group-topology-stored-source-values.ts`                                                                   | `config/persistence/decode-stored-group-topology-config.ts`                                                                                                                                                                             | B                 |
 | `services/group-topology-config-generation-backfill.ts` canonical backfill                                              | `config/maintenance/backfill-group-topology-config-generations.ts`                                                                                                                                                                      | B                 |
@@ -1080,21 +1104,21 @@ algorithms, repositories, outbox execution, or RTT ingress.
 
 ### 7.2 Mirrored tests and fixtures
 
-| Current path                                            | Target path or paths                                                                                                                                                                                                                                                                                                                    | Preserved responsibility                                                            |
-| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `group-topology-config-service.test.ts`                 | `topology/config/group-topology-config-resolution.test.ts` and the four exact pure `topology/config/mutation/*.test.ts` owners                                                                                                                                                                                                          | Defaults, patching, expiry, resolution, decisions, receipts, and validation         |
-| `group-topology-config-repository.test.ts`              | `topology/config/persistence/group-topology-config-repository-keys.test.ts`, `group-topology-config-repository-read-write.test.ts`, `group-topology-config-repository-corruption.test.ts`, `group-topology-config-exact-read.test.ts`, `group-topology-config-generation.test.ts`, and `group-topology-config-legacy-migration.test.ts` | Keys, scope, CRUD, corruption, exact read, generation, migration, rollback          |
-| `group-topology-management-service.test.ts`             | `topology/config/group-topology-config-query-service.test.ts`, `topology/config/maintenance/group-topology-config-generation-readiness.test.ts`, `topology/planning/group-topology-planning-service.test.ts`, and `topology/reconfigure/group-topology-reconfigure-mutation.test.ts`                                                    | Query/view, readiness, planning authority, reconfigure, local compatibility, errors |
-| `topology-app-inbox-contract.test.ts`                   | `topology/inbox/topology-app-inbox-command.test.ts`, `topology-app-inbox-authority.test.ts`, and `topology-app-inbox-handler.test.ts`                                                                                                                                                                                                   | Five operations, hashes, proof, durable decode, and handler exits                   |
-| `topology-app-inbox-ownership.test.ts`                  | `topology/inbox/topology-app-inbox-ownership.test.ts`                                                                                                                                                                                                                                                                                   | Canonical owners, dependency direction, identity, and registration                  |
-| `postgres-topology-app-inbox-concurrency.test.ts`       | `topology/concurrency/postgres-topology-app-inbox-concurrency.test.ts`                                                                                                                                                                                                                                                                  | Cross-client overlap, retry, receipt, outbox, and final state                       |
-| `postgres-topology-config-override-concurrency.test.ts` | `topology/concurrency/postgres-topology-config-override-concurrency.test.ts`                                                                                                                                                                                                                                                            | Config/override invariant surface and no lost update                                |
-| `postgres-topology-mutation-worker-concurrency.test.ts` | `topology/concurrency/postgres-topology-mutation-worker-concurrency.test.ts`                                                                                                                                                                                                                                                            | Independent worker retry, idempotency, and completion                               |
-| `postgres-topology-concurrency-fixtures.ts`             | `topology/concurrency/postgres-topology-concurrency-fixtures.ts`                                                                                                                                                                                                                                                                        | Barriers, clients, cleanup, and assertions                                          |
-| `postgres-topology-mutation-worker-fixtures.ts`         | `topology/concurrency/postgres-topology-mutation-worker-fixtures.ts`                                                                                                                                                                                                                                                                    | Worker protocol and deterministic fixture construction                              |
-| `fixtures/postgres-topology-app-inbox-worker.ts`        | `topology/concurrency/fixtures/postgres-topology-app-inbox-worker.ts`                                                                                                                                                                                                                                                                   | Child-process AppInbox worker runtime                                               |
-| `postgres-topology-app-outbox-concurrency.test.ts`      | unchanged                                                                                                                                                                                                                                                                                                                               | Downstream RTC APP_OUTBOX evidence; no ownership move                               |
-| `fixtures/postgres-topology-app-outbox-worker.ts`       | unchanged                                                                                                                                                                                                                                                                                                                               | Downstream RTC worker fixture; no ownership move                                    |
+| Current path                                            | Target path or paths                                                                                                                                                                                                                                                                                                                                                                                                                                            | Preserved responsibility                                                            |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `group-topology-config-service.test.ts`                 | `topology/config/group-topology-config-resolution.test.ts` and the four exact pure `topology/config/mutation/*.test.ts` owners                                                                                                                                                                                                                                                                                                                                  | Defaults, patching, expiry, resolution, decisions, receipts, and validation         |
+| `group-topology-config-repository.test.ts`              | `topology/config/persistence/group-topology-config-repository-keys.test.ts`, `group-topology-config-repository-read-write.test.ts`, `group-topology-config-repository-corruption.test.ts`, `group-topology-config-repository-scope-isolation.test.ts`, `group-topology-config-mutation-record-corruption.test.ts`, `group-topology-config-exact-read.test.ts`, `group-topology-config-generation.test.ts`, and `group-topology-config-legacy-migration.test.ts` | Keys, scope, CRUD, corruption, exact read, generation, migration, rollback          |
+| `group-topology-management-service.test.ts`             | `topology/config/group-topology-config-query-service.test.ts`, `topology/config/maintenance/group-topology-config-generation-readiness.test.ts`, `topology/planning/group-topology-planning-service.test.ts`, and `topology/reconfigure/group-topology-reconfigure-mutation.test.ts`                                                                                                                                                                            | Query/view, readiness, planning authority, reconfigure, local compatibility, errors |
+| `topology-app-inbox-contract.test.ts`                   | `topology/inbox/topology-app-inbox-command.test.ts`, `topology-app-inbox-authority.test.ts`, and `topology-app-inbox-handler.test.ts`                                                                                                                                                                                                                                                                                                                           | Five operations, hashes, proof, durable decode, and handler exits                   |
+| `topology-app-inbox-ownership.test.ts`                  | `topology/inbox/topology-app-inbox-ownership.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                           | Canonical owners, dependency direction, identity, and registration                  |
+| `postgres-topology-app-inbox-concurrency.test.ts`       | `topology/concurrency/postgres-topology-app-inbox-concurrency.test.ts`                                                                                                                                                                                                                                                                                                                                                                                          | Cross-client overlap, retry, receipt, outbox, and final state                       |
+| `postgres-topology-config-override-concurrency.test.ts` | `topology/concurrency/postgres-topology-config-override-concurrency.test.ts`                                                                                                                                                                                                                                                                                                                                                                                    | Config/override invariant surface and no lost update                                |
+| `postgres-topology-mutation-worker-concurrency.test.ts` | `topology/concurrency/postgres-topology-mutation-worker-concurrency.test.ts`                                                                                                                                                                                                                                                                                                                                                                                    | Independent worker retry, idempotency, and completion                               |
+| `postgres-topology-concurrency-fixtures.ts`             | `topology/concurrency/postgres-topology-concurrency-fixtures.ts`                                                                                                                                                                                                                                                                                                                                                                                                | Barriers, clients, cleanup, and assertions                                          |
+| `postgres-topology-mutation-worker-fixtures.ts`         | `topology/concurrency/postgres-topology-mutation-worker-fixtures.ts`                                                                                                                                                                                                                                                                                                                                                                                            | Worker protocol and deterministic fixture construction                              |
+| `fixtures/postgres-topology-app-inbox-worker.ts`        | `topology/concurrency/fixtures/postgres-topology-app-inbox-worker.ts`                                                                                                                                                                                                                                                                                                                                                                                           | Child-process AppInbox worker runtime                                               |
+| `postgres-topology-app-outbox-concurrency.test.ts`      | unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Downstream RTC APP_OUTBOX evidence; no ownership move                               |
+| `fixtures/postgres-topology-app-outbox-worker.ts`       | unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Downstream RTC worker fixture; no ownership move                                    |
 
 The first four one-to-many mappings resolve to these exact paths:
 
@@ -1108,6 +1132,8 @@ The first four one-to-many mappings resolve to these exact paths:
   `topology/config/persistence/group-topology-config-repository-keys.test.ts`,
   `topology/config/persistence/group-topology-config-repository-read-write.test.ts`,
   `topology/config/persistence/group-topology-config-repository-corruption.test.ts`,
+  `topology/config/persistence/group-topology-config-repository-scope-isolation.test.ts`,
+  `topology/config/persistence/group-topology-config-mutation-record-corruption.test.ts`,
   `topology/config/persistence/group-topology-config-exact-read.test.ts`,
   `topology/config/persistence/group-topology-config-generation.test.ts`, and
   `topology/config/persistence/group-topology-config-legacy-migration.test.ts`.
@@ -1455,6 +1481,15 @@ final Task 2 checkbox remains open.
 
 ### Task 3: PR B — persistence, exact reads, generations, and migration
 
+PR B applies the Section 1.5 private refinement by separating source/page and
+legacy-source lookup into
+`config/persistence/group-topology-config-source-repository.ts`. It also
+separates scope-isolation and mutation-record-corruption tests from the general
+corruption owner and shares only deterministic fixture construction through
+`group-topology-config-persistence-test-fixtures.ts`. These refinements keep
+each owner behavior-named and below 400 lines without adding a public
+compatibility path.
+
 - [ ] Split repository contracts, namespaces, keys, codecs, CRUD/CAS, exact
       reads, stored-source decoding, backfill, and legacy migration.
 - [ ] Preserve every namespace, key, value, revision, ordering, corruption,
@@ -1760,11 +1795,59 @@ After tooling implementation, a blob manifest must prove every production and
 runtime path is byte-identical to that commit and must identify only the
 approved plan, eight performance-tooling/test paths including the extracted
 artifact owner, and code-style exception registry change. The registry diff
-must contain only the two exact benchmark entries above. The global comparator
-and child evaluator remain byte-identical at SHA-256
+must contain only the two exact benchmark entries above. For the historical PR
+A tooling boundary, the global comparator and child evaluator remained
+byte-identical at SHA-256
 `00f40ac8450f0077b6978a1f8c27a8352586a92ca7b6754845156f02065d3150` and
 `5a317fc492a8cfd94770baee74fcda8fb0072b5ccf5928cb66b5899899e3e418`,
 respectively.
+
+The completed pre-reconciliation PR B measurement used human-approved base
+commit `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`, tree
+`31671a750ec84577a9b94898c61cc49ec0c91c00`. That base already contains the
+schema-v5 production-vs-production toolchain introduced by ancestor
+`8a42574d2347b4dc883a362d9d3015b293016c5d`: global comparator SHA-256
+`3d83f1acedb9bcb84de2a00094c7f4d3606d2e5c2eb58da725ddfa7e1a8fbf4c` and
+child evaluator SHA-256
+`d1271a152615cbdbcf973a28223b0acc131827a2027f06fb62d3d7ee0b63948a`.
+PR B must keep both tool files byte-identical to that base.
+
+That comparison and the governed A-B-B-A-B-A-A-B result apply only to the
+pre-reconciliation candidate
+`546f70deade1abe4f66b0262e5a9698a830527ea`, tree
+`2443467b0023ead540a5a4a1666f916b607deb1f`. Current-main merge parent
+`cc98414867f22cc28f0137ef40a1887ab862f87d` changes the state-write benchmark,
+its options and focused tests, API composition and middleware, and durable RTC
+topology replay/reconnect runtime. The comparator and child evaluator remain
+byte-identical, but the changed measured runtime, workload entry point, and
+artifact-producing harness make the accepted result historical after the
+merge. A reconciled candidate requires a separately frozen and approved
+prospective envelope against the exact merge parent; no measurement is
+authorized by this factual reconciliation.
+
+For prospective measurement of the reconciled candidate, the human-approved
+comparison base is exact current-main merge parent
+`cc98414867f22cc28f0137ef40a1887ab862f87d`, tree
+`6c071954df939b7dea9ba59aa5116fe7922a6cab`. The schema-v5 comparator and child
+evaluator are byte-identical at the hashes above. This prospective-base
+correction changes only the outer pooler's precommitted base identity, its
+independent semantic oracle, and these factual plan records. It does not alter
+pooling arithmetic, position order, artifacts, thresholds, scoring, or the
+historical evidence.
+
+The schema-v5 global protocol validates both comparison roles symmetrically as
+`rallar.api-v1.state-write.v5` artifacts against the production durable
+contract. It has no retired presence-split feature declaration, no legacy
+baseline or DBW-linked durable-evidence leniency, and no strict shared
+throughput-improvement requirement. Equal throughput is valid; the global
+comparator's shared and hot throughput tolerance is 5%. The unchanged child
+evaluator remains the governing topology structure-equivalence policy: its
+shared and hot throughput bands stay 1.5% and 10%, respectively, its resource
+band stays 1.5% with only the exact precommitted conflict-depth evidence path,
+and all existing correctness, latency, zero-baseline, unknown-finding, and
+fail-closed behavior remains in force. The fixed two-block order, conflict
+reasons, environment controls, thresholds, and no-reroll rules below are not
+changed by this toolchain reconciliation.
 
 ### 13.4 Prospective conflict-reason evidence
 
@@ -1819,18 +1902,32 @@ throughput never has a conflict-depth exception.
 
 ### 13.5 Freeze before a prospective measurement
 
-Before any new position, record and independently review:
+The prior PR A comparison base `20020977507c3104949da07d27b95e89d3b91c96`,
+production candidate `74a62eb22583216e8c6651de069209d7e1a8ca67`, and
+the original comparator/evaluator hashes recorded in Section 13.3 remain
+historical PR A evidence. They are not prospective PR B inputs.
 
-- the exact unchanged comparison base
-  `20020977507c3104949da07d27b95e89d3b91c96` and its tree;
-- the exact new candidate commit/tree and proof that its production/runtime
-  blobs equal `74a62eb22583216e8c6651de069209d7e1a8ca67`;
+Before any new PR B position, record and independently review:
+
+- the exact human-approved comparison base
+  `cc98414867f22cc28f0137ef40a1887ab862f87d` and tree
+  `6c071954df939b7dea9ba59aa5116fe7922a6cab`;
+- the exact new PR B candidate commit/tree and proof that its production/runtime
+  diff from that base is exactly the reviewed Task 3 persistence movement;
 - all correctness and security commands and their final-tree results;
 - the exact eight approved tooling/test files and their blobs;
 - the pinned PostgreSQL 16 image and resource/configuration limits;
 - autovacuum/analyze, preflight-row, automatic-maintenance, overlap, Deno-LSP,
   warmup, run, concurrency, transfer, and controlled-host rules;
-- unchanged global-comparator and child-evaluator hashes;
+- the unchanged schema-v5 global-comparator SHA-256
+  `3d83f1acedb9bcb84de2a00094c7f4d3606d2e5c2eb58da725ddfa7e1a8fbf4c`
+  and child-evaluator SHA-256
+  `d1271a152615cbdbcf973a28223b0acc131827a2027f06fb62d3d7ee0b63948a`,
+  plus proof that both files equal the exact comparison-base blobs;
+- the schema-v5 production-vs-production protocol stated in Section 13.3,
+  including symmetric durable-contract validation, the global 5% throughput
+  tolerance, and the unchanged child-specific thresholds and fail-closed
+  rules;
 - the exact extended v1-pooler hash plus regression evidence that its existing
   public entry is behavior-identical;
 - the new outer-pooler/CLI hashes;
@@ -1967,11 +2064,12 @@ the sequence permanently. A post-measurement pooling or evaluation tooling
 failure preserves all immutable raw evidence and may be corrected or reinvoked
 only with separate narrow human authorization; measurements are never rerun.
 
-If either child evaluation fails, PR A remains blocked with the exact evidence.
-Do not optimize speculatively, change a threshold, run a third block, or start
-PR B. If both pass, push only the exact measured candidate, update PR #103,
-require Branch Release Gate for that SHA, mark it ready, and stop for the human
-merge decision.
+If either child evaluation fails, PR B remains blocked with the exact evidence,
+and PR C remains unstarted. Do not optimize speculatively, change a threshold,
+run a third block, or start PR C. If both pass, later separately authorized
+publication may push only the exact measured PR B candidate through PR B's
+eventual pull request without predicting its number, require Branch Release
+Gate for that exact SHA, mark it ready, and stop for the human merge decision.
 
 ## 14. Validation Matrix
 
@@ -2090,6 +2188,8 @@ npx vitest run \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-keys.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-read-write.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-corruption.test.ts \
+  packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-scope-isolation.test.ts \
+  packages/tests/shared-server/topology/config/persistence/group-topology-config-mutation-record-corruption.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-exact-read.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-generation.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-legacy-migration.test.ts \
@@ -2137,6 +2237,8 @@ npx vitest run \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-keys.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-read-write.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-corruption.test.ts \
+  packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-scope-isolation.test.ts \
+  packages/tests/shared-server/topology/config/persistence/group-topology-config-mutation-record-corruption.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-exact-read.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-generation.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-legacy-migration.test.ts \
@@ -2205,6 +2307,8 @@ npx vitest run \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-keys.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-read-write.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-corruption.test.ts \
+  packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-scope-isolation.test.ts \
+  packages/tests/shared-server/topology/config/persistence/group-topology-config-mutation-record-corruption.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-exact-read.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-generation.test.ts \
   packages/tests/shared-server/topology/config/persistence/group-topology-config-legacy-migration.test.ts \
@@ -2383,45 +2487,45 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 18. Risks And Stop Conditions
 
-| Risk                                                                                                  | Required response                                                                                        |
-| ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Split creates generic services or forwarding-only helpers                                             | Repartition around protocol, decision, persistence, transaction, query, or planning authority.           |
-| Required handler dependency remains temporally optional                                               | Resolve before registration while preserving public setter behavior, or stop for architecture approval.  |
-| Config absorbs RTC algorithms, RTT, publication, or WS delivery                                       | Restore the downstream boundary; stop if the owner cannot stay separate.                                 |
-| Public/deep path needs a second compatibility hop                                                     | Keep one direct old-to-canonical export and return the exact consumer for review.                        |
-| Persisted field/key/expiry/migration changes                                                          | Stop for explicit persisted-contract approval.                                                           |
-| Authority, AppInbox, transaction, retry, receipt, or outbox changes                                   | Stop for explicit security/behavior approval.                                                            |
-| API-v1/OpenAPI organization or behavior changes                                                       | Revert to import-only compatibility or stop for a separate child.                                        |
-| Warning is ignored because checker exits zero                                                         | Stop until human disposition exists.                                                                     |
-| Ratchet replaces semantic behavior evidence                                                           | Restore semantic coverage and keep the ratchet supplementary.                                            |
-| Historical v1 failure is treated as accepted, replaced, or discarded                                  | Restore it as immutable failed evidence; this amendment is prospective only.                             |
-| Existing comparator, child evaluator, or v1 public-entry behavior changes                             | Revert; only the additive outer pooler, explicit-position entry, and reason-file ingress are authorized. |
-| Artifact extraction changes schema, property order, values, errors, timing, workload, or output bytes | Revert; the new owner is a behavior-neutral responsibility extraction only.                              |
-| Benchmark remains above 1,763 lines or exact-base `file.length` worsens                               | Stop; the narrow exception does not authorize file growth.                                               |
-| Whole-file Prettier exemption reaches another path or suppresses checker output                       | Revert; only the inherited benchmark file is exempt during this tooling wave.                            |
-| Exception registry omits owner/removal condition or broadens future authority                         | Stop; the two exact entries authorize no architecture-child implementation.                              |
-| Explicit-position entry bypasses v1 checks or changes numerical aggregation                           | Revert; it must reuse the same validation and role-pooling owners after descriptor validation.           |
-| Mirrored artifacts use the legacy wrapper or have timestamps/roles rewritten                          | Fail closed; use the explicit B-A-A-B descriptors and preserve raw evidence exactly.                     |
-| Conflict reasons are created or changed after the first preflight                                     | Fail the sequence; never edit raw or pooled artifacts to add a reason.                                   |
-| One mirrored block is discarded, averaged away, or used as a replacement rerun                        | Fail the complete sequence and preserve both blocks.                                                     |
-| A 36-sample combined result is used to mask block disagreement                                        | Reject it; both independent 18-sample-per-side v1 blocks must pass.                                      |
-| Production/runtime content differs from candidate `74a62eb`                                           | Stop for a separate code-remediation decision and a new protocol envelope.                               |
-| Performance protocol, environment, threshold, or candidate changes after freeze                       | Stop; no reroll, threshold change, or evidence relabeling.                                               |
-| Required external gate persistently fails                                                             | Stop with exact run/job/step; do not diagnose unrelated providers.                                       |
-| Unrelated plan, dependency, lockfile, workflow, checker, or TypeScript changes                        | Restore exact scope before publication.                                                                  |
+| Risk                                                                                                                                                                            | Required response                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Split creates generic services or forwarding-only helpers                                                                                                                       | Repartition around protocol, decision, persistence, transaction, query, or planning authority.           |
+| Required handler dependency remains temporally optional                                                                                                                         | Resolve before registration while preserving public setter behavior, or stop for architecture approval.  |
+| Config absorbs RTC algorithms, RTT, publication, or WS delivery                                                                                                                 | Restore the downstream boundary; stop if the owner cannot stay separate.                                 |
+| Public/deep path needs a second compatibility hop                                                                                                                               | Keep one direct old-to-canonical export and return the exact consumer for review.                        |
+| Persisted field/key/expiry/migration changes                                                                                                                                    | Stop for explicit persisted-contract approval.                                                           |
+| Authority, AppInbox, transaction, retry, receipt, or outbox changes                                                                                                             | Stop for explicit security/behavior approval.                                                            |
+| API-v1/OpenAPI organization or behavior changes                                                                                                                                 | Revert to import-only compatibility or stop for a separate child.                                        |
+| Warning is ignored because checker exits zero                                                                                                                                   | Stop until human disposition exists.                                                                     |
+| Ratchet replaces semantic behavior evidence                                                                                                                                     | Restore semantic coverage and keep the ratchet supplementary.                                            |
+| Historical v1 failure is treated as accepted, replaced, or discarded                                                                                                            | Restore it as immutable failed evidence; this amendment is prospective only.                             |
+| Existing comparator, child evaluator, or v1 public-entry behavior changes                                                                                                       | Revert; only the additive outer pooler, explicit-position entry, and reason-file ingress are authorized. |
+| Artifact extraction changes schema, property order, values, errors, timing, workload, or output bytes                                                                           | Revert; the new owner is a behavior-neutral responsibility extraction only.                              |
+| Benchmark remains above 1,763 lines or exact-base `file.length` worsens                                                                                                         | Stop; the narrow exception does not authorize file growth.                                               |
+| Whole-file Prettier exemption reaches another path or suppresses checker output                                                                                                 | Revert; only the inherited benchmark file is exempt during this tooling wave.                            |
+| Exception registry omits owner/removal condition or broadens future authority                                                                                                   | Stop; the two exact entries authorize no architecture-child implementation.                              |
+| Explicit-position entry bypasses v1 checks or changes numerical aggregation                                                                                                     | Revert; it must reuse the same validation and role-pooling owners after descriptor validation.           |
+| Mirrored artifacts use the legacy wrapper or have timestamps/roles rewritten                                                                                                    | Fail closed; use the explicit B-A-A-B descriptors and preserve raw evidence exactly.                     |
+| Conflict reasons are created or changed after the first preflight                                                                                                               | Fail the sequence; never edit raw or pooled artifacts to add a reason.                                   |
+| One mirrored block is discarded, averaged away, or used as a replacement rerun                                                                                                  | Fail the complete sequence and preserve both blocks.                                                     |
+| A 36-sample combined result is used to mask block disagreement                                                                                                                  | Reject it; both independent 18-sample-per-side v1 blocks must pass.                                      |
+| Historical PR A production/runtime content differs from candidate `74a62eb`, or reconciled prospective PR B content exceeds the exact reviewed Task 3 diff from base `cc984148` | Stop for a separate code-remediation decision and a new protocol envelope.                               |
+| Performance protocol, environment, threshold, or candidate changes after freeze                                                                                                 | Stop; no reroll, threshold change, or evidence relabeling.                                               |
+| Required external gate persistently fails                                                                                                                                       | Stop with exact run/job/step; do not diagnose unrelated providers.                                       |
+| Unrelated plan, dependency, lockfile, workflow, checker, or TypeScript changes                                                                                                  | Restore exact scope before publication.                                                                  |
 
 ## 19. Progress Record
 
-| Milestone                  | State                      | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth prerequisite          | ledger-published           | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Group-topology child plan  | approved/in execution      | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f`. Planning PR #127 merged approved correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` as feature `8e36fe1c303f695f0a6ec3d99be30eda12c96b11`, frozen/resulting tree `3d6cdf6abb46866e74895fe49150a4a9a4bde77c`, resulting main `df8346aaf39e8d8730e73a530da3e6f182aa071b`. Planning PR #129 merged approved gate-disposition blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` as feature `05c75cf2ad52589901e6983a687d28aa5b910582`, frozen/resulting tree `e3b309e9b913395e28645f1355400d380697c658`, resulting main `c7d6d4ec017edb23de239bba18c6d79f2ebb5dac`. Planning PR #131 merged approved target-path correction blob `cf4d92db310c928b2e020f926efa4f731a2fd3b6` as feature `42eb663177d731f3759fc2a2664db2ad3297f149`, frozen/resulting tree `3560eaa0677f219e109f3cad86b169145658cb7e`, resulting main `5e892aaff06cce0d994fbf79cfbcc12b235c7e48`. |
-| PR A protocol/core         | publication reconciliation | Exact candidate `ed7e77cd560a701ec41bc544769c60a715f68744`, tree `161e125131adb87dcd90bba737dfe91cb8d624b7`, preserves production candidate `74a62eb22583216e8c6651de069209d7e1a8ca67` and completed correctness plus Critical 0/Important 0 review. The v1 A-B-B-A failure and B4 isolation-guard failure remain historical evidence. The human accepted balanced block 1 and the seven-successful-position diagnostic for this exact candidate. Draft PR #103 was pushed, but Branch Release Gate run `31334618112`, attempt 1, failed only because the lineage manifest named Task 1 head `8b1ebf542d12c05a5ac226d3d07e543a171a2626` while the workflow resolved merge base `20020977507c3104949da07d27b95e89d3b91c96`; their three predecessor blobs are identical. Concurrent-main and exact-lineage-base reconciliation is in progress.                                                                                                                                                                                                                             |
-| PR B persistence           | blocked                    | Requires PR A merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| PR C authoritative shell   | blocked                    | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| PR D alignment/final trace | blocked                    | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Later topology ledger      | blocked                    | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| RTC/RTT and later domains  | blocked                    | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Milestone                  | State                            | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth prerequisite          | ledger-published                 | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and is retained only as non-gating plan-only external evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Group-topology child plan  | approved/in execution            | Planning PR #95 and original approved blob `c9b5e92686ebbc5d4ff136dbea678c93fea1579f` remain authoritative. Planning PR #125 merged approved amendment blob `f83cc311369fff2bf255116253ec0f4fe911a43f`. Planning PR #127 merged approved correction blob `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc` as feature `8e36fe1c303f695f0a6ec3d99be30eda12c96b11`, frozen/resulting tree `3d6cdf6abb46866e74895fe49150a4a9a4bde77c`, resulting main `df8346aaf39e8d8730e73a530da3e6f182aa071b`. Planning PR #129 merged approved gate-disposition blob `b6fd5aebfa77ee489e65fa30fbee165e033c14f9` as feature `05c75cf2ad52589901e6983a687d28aa5b910582`, frozen/resulting tree `e3b309e9b913395e28645f1355400d380697c658`, resulting main `c7d6d4ec017edb23de239bba18c6d79f2ebb5dac`. Planning PR #131 merged approved target-path correction blob `cf4d92db310c928b2e020f926efa4f731a2fd3b6` as feature `42eb663177d731f3759fc2a2664db2ad3297f149`, frozen/resulting tree `3560eaa0677f219e109f3cad86b169145658cb7e`, resulting main `5e892aaff06cce0d994fbf79cfbcc12b235c7e48`.                                                                                                                                                                                                                                                                       |
+| PR A protocol/core         | publication reconciliation       | Exact candidate `ed7e77cd560a701ec41bc544769c60a715f68744`, tree `161e125131adb87dcd90bba737dfe91cb8d624b7`, preserves production candidate `74a62eb22583216e8c6651de069209d7e1a8ca67` and completed correctness plus Critical 0/Important 0 review. The v1 A-B-B-A failure and B4 isolation-guard failure remain historical evidence. The human accepted balanced block 1 and the seven-successful-position diagnostic for this exact candidate. Draft PR #103 was pushed, but Branch Release Gate run `31334618112`, attempt 1, failed only because the lineage manifest named Task 1 head `8b1ebf542d12c05a5ac226d3d07e543a171a2626` while the workflow resolved merge base `20020977507c3104949da07d27b95e89d3b91c96`; their three predecessor blobs are identical. Concurrent-main and exact-lineage-base reconciliation is in progress.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| PR B persistence           | prospective envelope preparation | Original comparison base `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`, tree `31671a750ec84577a9b94898c61cc49ec0c91c00`, contains PR A resulting main `cd69565936d881c960dbe151cfe48917a4a2e1bb` as an ancestor. Pre-reconciliation candidate `546f70deade1abe4f66b0262e5a9698a830527ea`, tree `2443467b0023ead540a5a4a1666f916b607deb1f`, completed semantic, ownership, type, unit, full CI, build, warning-only style, changed-style, Prettier, diff, isolated PostgreSQL, and Critical 0/Important 0 review gates; its governed schema-v5 performance evidence remains immutable historical evidence. Reconciled candidate `4e32cd6f3d83e4d641e981ea67be3f64f036f794`, tree `0d4938185c49dcc7759fbfa4adb3667f78da8445`, merges exact current-main parent `cc98414867f22cc28f0137ef40a1887ab862f87d`, tree `6c071954df939b7dea9ba59aa5116fe7922a6cab`, passed final focused, PostgreSQL, unit, CI, build, warning-only, changed-style, formatting, and Critical 0/Important 0 independent review gates. Current main changes the measured benchmark/runtime integration, so the old result is not carried forward. The prospective comparison now binds exact merge parent `cc98414867f22cc28f0137ef40a1887ab862f87d`; a replacement candidate/envelope and separate human approval remain required. No benchmark or publication is authorized. |
+| PR C authoritative shell   | blocked                          | Requires PR B merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| PR D alignment/final trace | blocked                          | Requires PR C merge and exact resulting-main workflow success.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Later topology ledger      | blocked                          | Requires all four implementation publication envelopes and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| RTC/RTT and later domains  | blocked                          | Remain outside this child.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## 20. Self-Review Checklist
 
@@ -2458,6 +2562,9 @@ measurements remain historical and are never relabeled for a changed tree.
       before measurement rather than inserted into retained artifacts.
 - [x] Numerical thresholds and existing comparator/evaluator behavior remain
       unchanged.
+- [x] Prospective reconciled PR B measurement binds exact base `cc984148`, tree
+      `6c071954`, and the unchanged schema-v5 comparator/evaluator hashes;
+      historical PR A hashes remain historical evidence only.
 - [x] Semantic tests remain primary and ratchets supplementary.
 - [x] Non-circular planning, implementation, and ledger evidence is preserved.
 - [x] No production behavior is authorized without explicit human approval.

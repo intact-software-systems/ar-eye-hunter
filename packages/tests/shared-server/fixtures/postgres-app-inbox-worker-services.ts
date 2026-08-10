@@ -11,9 +11,9 @@ import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-stat
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import {
-  GROUP_TOPOLOGY_CONFIG_NAMESPACE,
   GroupTopologyConfigRepository,
-} from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+} from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';

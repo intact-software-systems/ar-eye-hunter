@@ -10,7 +10,7 @@ import { isRtcTopologyDeliveryRetryableConflict } from '@shared-server/rallar-sy
 import {
   createPostgresSql,
   type PostgresSql,
-} from '../../postgres-topology-concurrency-fixtures.ts';
+} from '../../topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 

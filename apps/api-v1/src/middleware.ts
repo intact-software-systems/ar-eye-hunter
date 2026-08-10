@@ -23,10 +23,8 @@ import {
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import {
-  createApiCrdtMutationInboxFactories,
-  findCurrentClientSnapshot,
-} from './services/create-api-crdt-document-authorizer.ts';
+import { createApiCrdtMutationInboxFactories, findCurrentClientSnapshot }
+  from './services/create-api-crdt-document-authorizer.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
@@ -36,10 +34,10 @@ import {
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { recordRallarTiming } from '@shared-server/rallar-system/services/timing.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
-import {
-  backfillAllGroupTopologyConfigGenerations,
-} from '@shared-server/rallar-system/services/group-topology-config-generation-backfill.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
+persistence/group-topology-config-repository.ts';
+import * as generationBackfill from '@shared-server/rallar-system/topology/config/maintenance/\
+backfill-group-topology-config-generations.ts';
 import { createClientStateService }
   from '@shared-server/rallar-system/services/client-state-service.ts';
 import { createGroupStateService }
@@ -180,7 +178,7 @@ function initialise(
   );
   runRuntimeStateExpiryStartupBarrier({
     backfillTopologyGenerations: () =>
-      backfillAllGroupTopologyConfigGenerations(
+      generationBackfill.backfillAllGroupTopologyConfigGenerations(
         new GroupTopologyConfigRepository(runtimeStateRepository),
       ),
     initialiseRtcRttReceiptFamilyCleanup: async () => {

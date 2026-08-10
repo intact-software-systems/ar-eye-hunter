@@ -1,10 +1,12 @@
 # Topology server navigation
 
 This map names the current canonical owners for topology mutation protocol,
-pure config decisions, durable RTC delivery replay, and reconnect hydration.
-It is navigation evidence, not runtime truth. The first sections retain the
-group-topology PR-A ownership record; later sections map the active durable
-delivery feature without transferring config-policy ownership.
+pure config decisions, persistence, durable RTC delivery replay, and reconnect
+hydration. It is navigation evidence, not runtime truth. The first sections
+retain the group-topology PR-A and PR-B ownership records; later sections map
+the active durable delivery feature without transferring config-policy or
+persistence ownership. PR C replaces the remaining deferred rows when
+authoritative shell ownership moves into this feature.
 
 ## Current PR-A owners
 
@@ -27,6 +29,22 @@ delivery feature without transferring config-policy ownership.
 | Shared topology and RTC RTT proof                   | [inbox/topology-mutation-authority-proof.ts](inbox/topology-mutation-authority-proof.ts)                                       | `createTopologyMutationAuthorityProof`      |
 | Existing AppInbox dispatch boundary                 | [inbox/topology-app-inbox-handler.ts](inbox/topology-app-inbox-handler.ts)                                                     | `TopologyAppInboxHandler`                   |
 
+## Current PR-B owners
+
+| Boundary                                      | Canonical owner                                                                                                                      | Primary symbol                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Persistence contracts and corruption exit     | [config/persistence/group-topology-config-repository-contracts.ts](config/persistence/group-topology-config-repository-contracts.ts) | `GroupTopologyConfigRepositoryInvariantCorruptionError` |
+| Durable CRUD, CAS, and retained records       | [config/persistence/group-topology-config-repository.ts](config/persistence/group-topology-config-repository.ts)                     | `GroupTopologyConfigRepository`                         |
+| Source listing and legacy-source lookup       | [config/persistence/group-topology-config-source-repository.ts](config/persistence/group-topology-config-source-repository.ts)       | `GroupTopologyConfigSourceRepository`                   |
+| Runtime-state namespaces                      | [config/persistence/group-topology-config-runtime-namespaces.ts](config/persistence/group-topology-config-runtime-namespaces.ts)     | `GROUP_TOPOLOGY_CONFIG_NAMESPACE`                       |
+| Scoped storage keys and slot validation       | [config/persistence/group-topology-config-storage-keys.ts](config/persistence/group-topology-config-storage-keys.ts)                 | `groupTopologyConfigStorageKey`                         |
+| Stored entry decoding and corruption wrapping | [config/persistence/group-topology-config-persistence-codec.ts](config/persistence/group-topology-config-persistence-codec.ts)       | `decodeGroupTopologyMutationEntry`                      |
+| Exact batch/fallback persistence read         | [config/persistence/read-exact-group-topology-config-mutation.ts](config/persistence/read-exact-group-topology-config-mutation.ts)   | `readGroupTopologyMutationExactEntries`                 |
+| Stored config/override source decoding        | [config/persistence/decode-stored-group-topology-config.ts](config/persistence/decode-stored-group-topology-config.ts)               | `decodeStoredGroupTopologyConfig`                       |
+| Generation backfill                           | [config/maintenance/backfill-group-topology-config-generations.ts](config/maintenance/backfill-group-topology-config-generations.ts) | `backfillAllGroupTopologyConfigGenerations`             |
+| Bounded legacy-key migration                  | [config/maintenance/migrate-legacy-group-topology-config-keys.ts](config/maintenance/migrate-legacy-group-topology-config-keys.ts)   | `migrateLegacyGroupTopologyConfigKeys`                  |
+| Mutation read assembly                        | [config/mutation/read-topology-config-mutation.ts](config/mutation/read-topology-config-mutation.ts)                                 | `readTopologyConfigMutation`                            |
+
 Canonical internal imports use these owners directly. The supported public
 compatibility boundaries remain `packages/shared-server/mod.ts`, the public
 management facade, and the direct one-hop topology command/type exports on
@@ -43,6 +61,12 @@ registration seam; PR C owns its approved replacement.
 The command and proof modules have no lifecycle. They receive complete command,
 session, group-state, and explicit clock values at invocation. The pure config
 mutation owners receive only command, read, facts, and defaults values.
+
+The persistence owners receive a runtime-state repository explicitly. Keys
+encode the complete application/workspace/group scope. Exact mutation reads
+select one ordered batch snapshot when the backend supports it and otherwise
+use the invariant-bracketed sequential fallback. Backfill and migration are
+explicit maintenance calls; neither runs as a module-import side effect.
 
 ## Runtime invocation
 
@@ -64,9 +88,6 @@ non-canonical recomputation throws at the same owning boundary as before.
 
 ## Deferred owners
 
-- **PR B:** repository contracts, namespaces, keys, codecs, exact reads,
-  generation state, backfill, and legacy migration remain at their existing
-  repository/service paths until the persistence PR moves them.
 - **PR C:** config query/readiness, mutation shell, transaction writer, result
   adapter, explicit reconfigure, planning, handler dispatch, and the public
   management facade remain at their existing paths until the authoritative

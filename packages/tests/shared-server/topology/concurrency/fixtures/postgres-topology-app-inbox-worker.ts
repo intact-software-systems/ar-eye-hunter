@@ -20,7 +20,7 @@ import {
   type TopologyReadBarrierPrimitive,
   type WorkerBarrier,
   waitForPostgresWorkerBarrier,
-} from './postgres-app-inbox-worker-runtime.ts';
+} from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
 
 interface WorkerInput {
   readonly command: 'put-config' | 'put-override';

@@ -6,7 +6,7 @@ import { ClientStateRepository } from
 import { GroupStateRepository } from
     '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { GroupTopologyConfigRepository } from
-    '@shared-server/rallar-system/repositories/GroupTopologyConfigRepository.ts';
+    '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { validateClientMutationIdempotencyRecord } from
     '@shared-server/rallar-system/services/client-state-mutations.ts';
 import { validateGroupMutationCommand } from

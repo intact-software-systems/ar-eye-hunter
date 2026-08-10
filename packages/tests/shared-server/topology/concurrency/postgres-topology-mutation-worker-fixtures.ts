@@ -41,9 +41,9 @@ export interface TopologyMutationWorkerHandle {
   readonly done: Promise<TopologyMutationWorkerOutput>;
 }
 
-const ROOT_DENO_CONFIG_PATH = fileURLToPath(new URL('../../../deno.json', import.meta.url));
+const ROOT_DENO_CONFIG_PATH = fileURLToPath(new URL('../../../../../deno.json', import.meta.url));
 const STATE_MUTATION_WORKER_PATH = fileURLToPath(
-  new URL('./fixtures/postgres-expiry-worker.ts', import.meta.url),
+  new URL('../../fixtures/postgres-expiry-worker.ts', import.meta.url),
 );
 
 export function spawnTopologyMutationWorker(
@@ -63,7 +63,7 @@ export function spawnTopologyMutationWorker(
       STATE_MUTATION_WORKER_PATH,
     ],
     {
-      cwd: fileURLToPath(new URL('../../../', import.meta.url)),
+      cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,
