@@ -1,0 +1,148 @@
+import { describe, expect, it } from 'vitest';
+
+const featureFiles = [
+  'rtc-baseline-contracts.ts',
+  'rtc-baseline-decoding.ts',
+  'rtc-baseline-artifact-decoding.ts',
+  'rtc-baseline-workload-catalog.ts',
+  'rtc-baseline-workload-manifest.ts',
+  'rtc-baseline-validation.ts',
+  'rtc-baseline-artifact-validation.ts',
+  'rtc-baseline-statistics.ts',
+  'rtc-baseline-evidence-layout.ts',
+  'rtc-baseline-evidence-store.ts',
+  'rtc-baseline-failure-accounting.ts',
+  'rtc-baseline-evidence-acceptance.ts',
+  'rtc-baseline-finalized-evidence.ts',
+  'rtc-baseline-finalized-reader.ts',
+  'rtc-baseline-envelope.ts',
+  'rtc-baseline-runtime-observation.ts',
+  'rtc-baseline-deno-adapters.ts',
+  'rtc-baseline-deno-runtime.ts',
+  'rtc-baseline-cli-options.ts',
+  'rtc-baseline-cli-grammar.ts',
+  'rtc-baseline-cli.ts',
+  'rtc-data-channel-drain-bench.ts',
+  'rtc-rtt-repository-filter-bench.ts',
+  'rtc-peer-connection-diagnostics-runtime.ts',
+];
+
+const repositoryTests = [
+  'rtc-performance-baseline-contract.test.ts',
+  'rtc-performance-baseline-decoding.test.ts',
+  'rtc-performance-baseline-validation.test.ts',
+  'rtc-performance-baseline-artifact-validation.test.ts',
+  'rtc-performance-baseline-statistics.test.ts',
+  'rtc-performance-baseline-workload-catalog.test.ts',
+  'rtc-performance-baseline-workload-manifest.test.ts',
+  'rtc-performance-baseline-evidence-acceptance.test.ts',
+  'rtc-performance-baseline-evidence-failure.test.ts',
+  'rtc-performance-baseline-evidence-store.test.ts',
+  'rtc-performance-baseline-harnesses.test.ts',
+  'rtc-performance-baseline-envelope.test.ts',
+  'rtc-performance-baseline-finalization.test.ts',
+  'rtc-performance-baseline-finalized-reader.test.ts',
+  'rtc-performance-baseline-deno-adapters.test.ts',
+  'rtc-performance-baseline-deno-runtime.test.ts',
+  'rtc-performance-baseline-cli-grammar.test.ts',
+  'rtc-performance-baseline-cli.test.ts',
+];
+
+const existingTypeScriptHarnesses = [
+  'rtc-peer-connection-diagnostics-burst.ts',
+  'rtc-ice-candidate-queue-bench.ts',
+  'rtc-peer-listener-cleanup-bench.ts',
+  'rtc-data-channel-replace-key-bench.ts',
+  'rtc-data-channel-close-retention-bench.ts',
+  'rtc-data-channel-error-reference-bench.ts',
+  'rtc-topology-star-bench.ts',
+  'rtc-topology-tree-no-rtt-bench.ts',
+  'rtc-topology-mesh-no-rtt-bench.ts',
+  'rtc-room-graph-rtt-bench.ts',
+  'rtc-topology-inactive-churn-bench.ts',
+  'rtc-multicast-serialization-bench.ts',
+  'webrtc-group-cache-fallback-bench.ts',
+  'webrtc-group-manager-state-bench.ts',
+  'webrtc-group-manager-peer-owners-bench.ts',
+  'webrtc-heartbeat-callback-churn-bench.ts',
+];
+
+const nodeSoak = ['rtc-data-channel-browser-soak.mjs'];
+
+describe('RTC baseline reservation inventory', () => {
+  it('retains the exact test-owned 24/18/16/1 inventory', () => {
+    expect({ featureFiles, repositoryTests, existingTypeScriptHarnesses, nodeSoak }).toEqual({
+      featureFiles: [
+        'rtc-baseline-contracts.ts',
+        'rtc-baseline-decoding.ts',
+        'rtc-baseline-artifact-decoding.ts',
+        'rtc-baseline-workload-catalog.ts',
+        'rtc-baseline-workload-manifest.ts',
+        'rtc-baseline-validation.ts',
+        'rtc-baseline-artifact-validation.ts',
+        'rtc-baseline-statistics.ts',
+        'rtc-baseline-evidence-layout.ts',
+        'rtc-baseline-evidence-store.ts',
+        'rtc-baseline-failure-accounting.ts',
+        'rtc-baseline-evidence-acceptance.ts',
+        'rtc-baseline-finalized-evidence.ts',
+        'rtc-baseline-finalized-reader.ts',
+        'rtc-baseline-envelope.ts',
+        'rtc-baseline-runtime-observation.ts',
+        'rtc-baseline-deno-adapters.ts',
+        'rtc-baseline-deno-runtime.ts',
+        'rtc-baseline-cli-options.ts',
+        'rtc-baseline-cli-grammar.ts',
+        'rtc-baseline-cli.ts',
+        'rtc-data-channel-drain-bench.ts',
+        'rtc-rtt-repository-filter-bench.ts',
+        'rtc-peer-connection-diagnostics-runtime.ts',
+      ],
+      repositoryTests: [
+        'rtc-performance-baseline-contract.test.ts',
+        'rtc-performance-baseline-decoding.test.ts',
+        'rtc-performance-baseline-validation.test.ts',
+        'rtc-performance-baseline-artifact-validation.test.ts',
+        'rtc-performance-baseline-statistics.test.ts',
+        'rtc-performance-baseline-workload-catalog.test.ts',
+        'rtc-performance-baseline-workload-manifest.test.ts',
+        'rtc-performance-baseline-evidence-acceptance.test.ts',
+        'rtc-performance-baseline-evidence-failure.test.ts',
+        'rtc-performance-baseline-evidence-store.test.ts',
+        'rtc-performance-baseline-harnesses.test.ts',
+        'rtc-performance-baseline-envelope.test.ts',
+        'rtc-performance-baseline-finalization.test.ts',
+        'rtc-performance-baseline-finalized-reader.test.ts',
+        'rtc-performance-baseline-deno-adapters.test.ts',
+        'rtc-performance-baseline-deno-runtime.test.ts',
+        'rtc-performance-baseline-cli-grammar.test.ts',
+        'rtc-performance-baseline-cli.test.ts',
+      ],
+      existingTypeScriptHarnesses: [
+        'rtc-peer-connection-diagnostics-burst.ts',
+        'rtc-ice-candidate-queue-bench.ts',
+        'rtc-peer-listener-cleanup-bench.ts',
+        'rtc-data-channel-replace-key-bench.ts',
+        'rtc-data-channel-close-retention-bench.ts',
+        'rtc-data-channel-error-reference-bench.ts',
+        'rtc-topology-star-bench.ts',
+        'rtc-topology-tree-no-rtt-bench.ts',
+        'rtc-topology-mesh-no-rtt-bench.ts',
+        'rtc-room-graph-rtt-bench.ts',
+        'rtc-topology-inactive-churn-bench.ts',
+        'rtc-multicast-serialization-bench.ts',
+        'webrtc-group-cache-fallback-bench.ts',
+        'webrtc-group-manager-state-bench.ts',
+        'webrtc-group-manager-peer-owners-bench.ts',
+        'webrtc-heartbeat-callback-churn-bench.ts',
+      ],
+      nodeSoak: ['rtc-data-channel-browser-soak.mjs'],
+    });
+  });
+
+  it('excludes the three historical probes from accepted harnesses', () => {
+    expect(existingTypeScriptHarnesses).not.toContain('rtc-room-graph-no-rtt-bench.ts');
+    expect(existingTypeScriptHarnesses).not.toContain('rtc-rtt-group-scan-bench.ts');
+    expect(existingTypeScriptHarnesses).not.toContain('rtc-topology-rtt-traffic-metrics.ts');
+  });
+});
