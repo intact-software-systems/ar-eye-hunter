@@ -13,7 +13,7 @@ Status: in progress. Implements the decision items of issue
 | Workstream | Status | Branch / PR |
 |---|---|---|
 | D0 fail-closed `rtc.send.expect` + http result redaction | in review | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
-| D1 `wait` absence mode | in review | `codex/bb-test-d1-wait-absence-mode` |
+| D1 `wait` absence mode | in review | [#181](https://github.com/intact-software-systems/ar-eye-hunter/pull/181) |
 | D2 assert operator extension | not started | — |
 | D3 `loop` until-success polling | not started | — |
 | D4 capability advertisement + preflight gating | not started | — |
