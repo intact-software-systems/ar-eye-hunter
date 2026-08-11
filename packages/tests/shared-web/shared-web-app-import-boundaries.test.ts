@@ -39,7 +39,7 @@ describe('shared-web app import boundaries', () => {
 
         expect(runtimeSource).toContain('export type RelicHuntersRuntimeDeps');
         expect(runtimeSource).toContain(
-            'constructor(private readonly deps: RelicHuntersRuntimeDeps = browserRelicRuntimeDeps())',
+            'constructor(deps: RelicHuntersRuntimeDeps = browserRelicRuntimeDeps())',
         );
 
         for (const sourcePath of relicSources) {
