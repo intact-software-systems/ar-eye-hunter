@@ -333,7 +333,14 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
   });
 
   it('coalesces concurrent identical effectful requests at the same causal state', async () => {
-    const harness = await createAuthorityHarness(['owner']);
+    const harness = await createAuthorityHarness(['owner'], {
+      serviceOptions: {
+        waitMaxElapsedMsecs: 25_000,
+        waitRetryIntervalMsecs: 10,
+        waitMaxRetryIntervalMsecs: 10,
+        waitJitterRatio: 0,
+      },
+    });
     await createRoom(harness, 'coalesced-room', 'Before Coalescing');
     const input: AppInboxEnqueueInput<GroupUpdateAppInboxPayload> = {
       type: AppInboxType.GROUP_UPDATE,

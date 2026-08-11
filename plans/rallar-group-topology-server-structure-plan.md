@@ -1599,6 +1599,15 @@ without changing its rollback or invariant-corruption assertions, and all
 three cases in that module pass. The former source-text ownership assertion was
 removed by the updated main branch's semantic-test policy and is not restored.
 
+Branch Release Gate run `31442602663`, attempt 1, then failed in the root CI
+step after 439.58 seconds because the retained concurrent-identical group
+request test exhausted its production-default 10-second completion wait before
+the test's manual dequeue. The result was the explicit unavailable left side,
+not a topology behavior mismatch. The test now injects a longer deterministic
+completion wait through its existing in-memory AppInbox harness; production
+defaults and the coalescing assertions remain unchanged. The failed run and its
+consequential missing-artifact upload remain historical evidence.
+
 The memory black-box gate passed all 13 recipes with 853 successful steps and
 zero failures. The three-server PostgreSQL medium-scale recipe passed with
 2,748 successful steps and zero failures. All four PostgreSQL topology

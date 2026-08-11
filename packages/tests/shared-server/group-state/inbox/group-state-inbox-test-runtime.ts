@@ -19,6 +19,7 @@ import {
   AppGroupInboxService,
   AppInboxService,
   type AppInboxEnqueueInput,
+  type AppInboxServiceOptions,
   AppInboxType,
   type GroupCreateAppInboxPayload,
   type GroupInviteCreateAppInboxPayload,
@@ -37,10 +38,7 @@ import {
   TestResourceInboxResults,
 } from './group-state-inbox-resource-fixtures.ts';
 
-export {
-  TestResourceInbox,
-  TestResourceInboxResults,
-} from './group-state-inbox-resource-fixtures.ts';
+export { TestResourceInbox, TestResourceInboxResults };
 
 export const SCOPE: StateScope = {
   applicationId: 'ar-eye-hunter',
@@ -61,6 +59,8 @@ export type AuthorityHarness = Readonly<{
   sessions: Readonly<Record<string, IssuedAuthSession>>;
   queueEntries(): readonly ResourceEntry[];
 }>;
+type HarnessOptions = Readonly<{ wakeQueue?: () => void; serviceOptions?: AppInboxServiceOptions }>;
+type QueueFixture = TestResourceInbox & { data: Map<string, ResourceEntry> };
 
 export type OperationMatrixCase = Readonly<{
   type: AppInboxType;
@@ -225,7 +225,7 @@ export async function runOperationMatrix(
 
 export async function createAuthorityHarness(
   principalIds: readonly string[],
-  options: Readonly<{ wakeQueue?: () => void }> = {},
+  options: HarnessOptions = {},
 ): Promise<AuthorityHarness> {
   const nowEpochMs = Date.now();
   const runtimeRepository = new FakeRuntimeStateRepository();
@@ -270,15 +270,14 @@ export async function createAuthorityHarness(
       database,
       groupStateService,
       wakeQueue: options.wakeQueue,
+      serviceOptions: options.serviceOptions,
     }),
     database,
     reader,
     queue,
     results,
     sessions,
-    queueEntries: () => [
-      ...(queue as unknown as { data: Map<string, ResourceEntry> }).data.values(),
-    ],
+    queueEntries: () => [...(queue as unknown as QueueFixture).data.values()],
   };
 }
 
@@ -289,6 +288,7 @@ interface AuthorityAppInboxServiceInput {
   readonly database: AppInboxTestDatabase;
   readonly groupStateService: GroupStateService;
   readonly wakeQueue?: () => void;
+  readonly serviceOptions?: AppInboxServiceOptions;
 }
 
 function createAuthorityAppInboxService(
@@ -302,7 +302,7 @@ function createAuthorityAppInboxService(
     input.groupStateService,
     'server-12345678',
     undefined,
-    undefined,
+    input.serviceOptions,
     input.wakeQueue,
   );
 }
