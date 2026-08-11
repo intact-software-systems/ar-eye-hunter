@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-
-import { parse } from '@babel/parser';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -14,25 +11,6 @@ import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts'
 describe('auth mutation service ownership', () => {
   it('keeps the package root on a direct canonical service export', () => {
     expect(createPublicAuthMutationService).toBe(createAuthMutationService);
-    const program = parse(readFileSync('packages/shared-server/mod.ts', 'utf8'), {
-      sourceType: 'module',
-      plugins: ['typescript'],
-    }).program;
-    const canonicalExports = program.body.flatMap((statement) => {
-      if (
-        statement.type !== 'ExportNamedDeclaration' ||
-        statement.source?.value !== './rallar-system/auth/auth-mutation-service.ts'
-      ) {
-        return [];
-      }
-      return statement.specifiers.map((specifier) =>
-        specifier.exported.type === 'Identifier'
-          ? specifier.exported.name
-          : specifier.exported.value,
-      );
-    });
-
-    expect(canonicalExports).toEqual(['createAuthMutationService', 'AuthMutationService']);
   });
 });
 

@@ -43,6 +43,49 @@ Human review observes checkpoints; it does not pause execution by default.
    validation, and skipped-check failures honestly; stop only for a real
    blocker, conflicting direction, or an explicit request to wait.
 
+## Plan Authoring And Production Legacy Closure
+
+Every production-affecting implementation plan must include a `Legacy baseline
+and exit criteria` section before implementation tasks. Reject or amend a plan
+that lacks it or lacks its final `Complete Code and Legacy Review` task.
+
+Production code is the primary design artifact; tests are secondary evidence.
+When an independently valid production design improves, rewrite, replace, or
+discard coupled tests rather than preserving an inferior production structure.
+Tests may prove approved compatibility behavior, but they never authorize an
+implicit legacy path or make a plan complete.
+
+The baseline inventories known affected-surface legacy by path, symbol, call
+path, and purpose; names the canonical production owner and behavior; and states
+whether each item will be removed, minimized, migrated, or proposed for
+retention. It records real compatibility and rollback requirements that prevent
+immediate removal. Newly discovered in-scope legacy is added to the active plan
+rather than deferred through an issue. Unclassified legacy at completion is
+prohibited.
+
+Each implementation task includes a `Legacy impact` field: it creates, uses,
+removes, minimizes, or does not affect production legacy. The affected surface
+includes legacy created, retained, depended on, expanded, materially touched, or
+placed on a changed production call path by the plan. Unrelated untouched legacy
+is outside this completion gate.
+
+Every production-affecting plan ends with `Complete Code and Legacy Review`.
+Freeze and record the base and head SHAs; dispatch an independent read-only
+reviewer; trace changed production paths from entry owner to result; and review
+the baseline, candidates, diff, and call paths for unnamed legacy. Give each
+item one disposition: `removed`, `minimized-boundary`, `resolved`, or
+`retained-pending-human-approval`.
+
+Resolve all Critical and Important findings, repeating the reviews after every
+production change. A proposed retained item must be presented to a human with
+its exact path and symbol, purpose and consumer dependency, unsafe-removal
+reason, minimization, canonical owner, compatibility tests, named owner,
+review/removal condition, and exact head SHA. Only explicit human approval of
+that exact ledger and SHA permits retention. An issue, silence, earlier plan
+approval, agent judgment, or automation is not approval. Record approval in the
+durable exception registry and PR review record; a corrective production change
+invalidates the reviews and approval.
+
 ## Follow-Up Issues
 
 When a discovery is mature enough to describe safely, search this repository's

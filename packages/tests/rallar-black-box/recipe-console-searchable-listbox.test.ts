@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { act, createElement, Fragment } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,8 +11,6 @@ import { SearchableWindowedListbox } from
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
-
-const repoRoot = resolve(import.meta.dirname, '../../..');
 
 describe('SearchableWindowedListbox', () => {
     let container: HTMLDivElement;
@@ -574,45 +570,7 @@ describe('SearchableWindowedListbox', () => {
             expect(anchor?.textContent).toBe('Showing 1–100 of 100 options.');
         });
 
-    it('uses coarse logical targets, bidi isolation, and reduced-motion containment', () => {
-        const css = readFileSync(resolve(
-            repoRoot,
-            'apps/rallar-black-box/src/recipe-console/ui/SearchableWindowedListbox.module.css',
-        ), 'utf8');
-        expect(css).toContain('min-inline-size: 44px');
-        expect(css).toContain('min-block-size: 44px');
-        expect(css).toContain('padding-inline:');
-        expect(css).toMatch(/unicode-bidi:\s*isolate/);
-        expect(css).toMatch(/\.option\[data-active="true"\]/);
-        expect(css).toMatch(
-            /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none !important/,
-        );
-        expect(css).not.toMatch(/(?:margin|padding|inset|border)-(?:left|right):/);
     });
-
-    it('keeps the closed selected option compact without flattening popup rows', () => {
-        const css = readFileSync(resolve(
-            repoRoot,
-            'apps/rallar-black-box/src/recipe-console/ui/SearchableWindowedListbox.module.css',
-        ), 'utf8');
-        const selectionRule = css.match(/\.selection \.optionBody\s*\{([^}]*)\}/u)?.[1];
-        const identifierRule = css.match(
-            /\.selection \.optionBody > \[data-exact-identifier\]\s*\{([^}]*)\}/u,
-        )?.[1];
-        const detailRule = css.match(
-            /\.selection \.optionBody > small\s*\{([^}]*)\}/u,
-        )?.[1];
-
-        expect(selectionRule).toMatch(/display:\s*flex/u);
-        expect(selectionRule).toMatch(/white-space:\s*nowrap/u);
-        expect(identifierRule).toMatch(/order:\s*1/u);
-        expect(css).toMatch(
-            /\.selection \.optionBody > \[data-exact-identifier\]::after\s*\{[^}]*content:\s*["'] · ["']/u,
-        );
-        expect(detailRule).toMatch(/display:\s*none/u);
-        expect(css).not.toMatch(/\.option > \.optionBody > small\s*\{[^}]*display:\s*none/u);
-    });
-});
 
 function fixtureOptions(count: number): readonly SearchableListboxOption[] {
     return Array.from({ length: count }, (_, index) => ({

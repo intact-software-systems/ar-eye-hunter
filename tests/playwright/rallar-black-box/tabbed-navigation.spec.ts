@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const ARTIFACT_FIXTURE_DIR = path.join(
@@ -83,6 +86,42 @@ test('moves legacy tab focus with roving keys and recovers it after panel naviga
     await expect(advanced).toHaveAttribute('aria-selected', 'true');
     await expect(advanced).toBeFocused();
     await expect(page.locator('#panel-advanced')).toBeVisible();
+});
+
+test('imports CI artifact files through the Runs panel and renders their analysis', async ({
+    page,
+}, testInfo) => {
+    const pageErrors: Error[] = [];
+    page.on('pageerror', error => pageErrors.push(error));
+    const artifact = createTuneArtifactEnvelope();
+    const artifactDirectory = testInfo.outputPath('distributed-artifact');
+    await mkdir(artifactDirectory, { recursive: true });
+    await Promise.all(
+        Object.entries(artifact.files ?? {}).map(([name, contents]) =>
+            writeFile(path.join(artifactDirectory, name), contents)
+        ),
+    );
+    await page.goto('/?provider=simulated&experience=legacy&tab=runs');
+
+    const runsPanel = page.locator('#panel-runs');
+    const fileInput = runsPanel.getByLabel('Import CI artifact');
+    await fileInput.setInputFiles(artifactDirectory);
+
+    const analysis = runsPanel.locator('.imported-distributed-artifact-analysis');
+    await expect(analysis.getByRole('heading', {
+        name: 'Imported CI artifact analysis',
+    })).toBeVisible();
+    await expect(analysis).toContainText('Required files');
+    await expect(analysis).toContainText('Selected files');
+    await expect(analysis).toContainText('Evidence Quality');
+    await expect(analysis).toContainText('Performance Health');
+    await expect(analysis).toContainText('Frame disposition');
+    const selectedRun = runsPanel
+        .locator('label.field')
+        .filter({ hasText: 'Distributed Run' })
+        .locator('select');
+    await expect(selectedRun).toHaveValue(artifact.distributedRunId);
+    await expect.poll(() => pageErrors.map(error => error.message)).toEqual([]);
 });
 
 test('recovers tab focus when a retained legacy panel becomes hidden', async ({ page }) => {

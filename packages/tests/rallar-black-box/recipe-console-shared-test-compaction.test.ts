@@ -231,26 +231,6 @@ function artifactIndexInvariantConflictCases(): readonly Readonly<{
 }
 
 describe('legacy Shared Test artifact-index compaction', () => {
-    it('owns bounded presentation outside the importer composition', () => {
-        const presentationPath = resolve(
-            legacySharedTestRoot,
-            'shared-test-artifact-index-presentation.ts',
-        );
-        const panelPath = resolve(
-            legacySharedTestRoot,
-            'SharedTestArtifactIndexPanel.tsx',
-        );
-        const importerPath = resolve(
-            legacySharedTestRoot,
-            'SharedTestArtifactImportPanel.tsx',
-        );
-
-        expect(existsSync(presentationPath)).toBe(true);
-        expect(existsSync(panelPath)).toBe(true);
-        expect(readFileSync(importerPath, 'utf8')).toContain(
-            '<SharedTestArtifactIndexPanel',
-        );
-    });
 
     it('keeps producer counts distinct from the loaded truncation marker', () => {
         const parsed = parseRallarBlackBoxSharedTestArtifactBundle(fixtureFiles());

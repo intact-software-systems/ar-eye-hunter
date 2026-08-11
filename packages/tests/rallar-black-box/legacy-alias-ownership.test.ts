@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
     appTabFromValue,
@@ -17,47 +15,6 @@ import type {
     RecipeConsoleUrlState,
 } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
-const repositoryRoot = resolve(import.meta.dirname, '../../..');
-const legacyRoot = resolve(
-    repositoryRoot,
-    'apps/rallar-black-box/src/legacy',
-);
-const compatibilityOwners = [
-    'shell/tabs/RunnerCompatibilityTabPanels.tsx',
-    'shell/tabs/LegacyCompatibilityTailTabPanels.tsx',
-] as const;
-const ownerInventory = [
-    {
-        component: 'ManualRallarSection',
-        owner: 'runner/advanced/RunnerAdvancedPanel.tsx',
-    },
-    {
-        component: 'LocalWorkbenchSection',
-        owner: 'runner/advanced/RunnerAdvancedPanel.tsx',
-    },
-    {
-        component: 'RunManagerPanel',
-        owner: 'runner/advanced/RunnerAdvancedPanel.tsx',
-    },
-    {
-        component: 'DistributedRecipesPanel',
-        owner: 'runner/advanced/RunnerAdvancedPanel.tsx',
-    },
-    {
-        component: 'SharedTestPanel',
-        owner: 'runner/advanced/RunnerAdvancedPanel.tsx',
-    },
-    {
-        component: 'FlowBuilderPanel',
-        owner: 'shell/tabs/RunnerWorkspaceTabPanels.tsx',
-    },
-] as const;
-const sourceFiles = [
-    'runner/advanced/RunnerAdvancedPanel.tsx',
-    'shell/tabs/RunnerWorkspaceTabPanels.tsx',
-    'shell/tabs/DirectConnectionTabPanels.tsx',
-    ...compatibilityOwners,
-] as const;
 const recipeConsoleState: RecipeConsoleUrlState = {
     v: 1,
     experience: 'recipe-console',
@@ -101,26 +58,6 @@ describe('legacy route alias ownership', () => {
                 expect.soft(url.searchParams.get('legacySurface'), `${alias}: stable leaf`)
                     .toBe(surface.id);
             }
-        }
-    });
-
-    it('keeps exactly one real owner for every previously duplicated workflow', () => {
-        const sources = sourceFiles
-            .filter(path => existsSync(resolve(legacyRoot, path)))
-            .map(path => ({
-                path,
-                source: readFileSync(resolve(legacyRoot, path), 'utf8'),
-            }));
-
-        for (const { component, owner } of ownerInventory) {
-            const calls = sources.flatMap(({ path, source }) =>
-                [...source.matchAll(new RegExp(`<${component}\\b`, 'g'))]
-                    .map(() => path)
-            );
-            expect.soft(calls, component).toEqual([owner]);
-        }
-        for (const path of compatibilityOwners) {
-            expect.soft(existsSync(resolve(legacyRoot, path)), path).toBe(false);
         }
     });
 });

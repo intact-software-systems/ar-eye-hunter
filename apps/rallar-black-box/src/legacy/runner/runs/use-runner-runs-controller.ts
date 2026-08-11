@@ -6,12 +6,8 @@ import {
     selectRallarBlackBoxLatestStats,
 } from '@shared-test/rallar-bb-test/selectors.ts';
 import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactBundleFromFiles,
-    distributedArtifactSnapshotsFromFiles,
-    type DistributedRunAnalysis,
-    type DistributedRunArtifactFiles,
+import type {
+    DistributedRunAnalysis,
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
@@ -57,6 +53,7 @@ import {
     readDistributedRunSeedFromUrl,
     writeDistributedRunSeedToUrl,
 } from './distributed-run-seed-url.ts';
+import { readDistributedArtifactFiles } from './read-distributed-artifact-files.ts';
 import { readLegacyRunsUrlSelection } from './legacy-run-url-selection.ts';
 import {
     DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
@@ -422,31 +419,23 @@ export function useRunnerRunsController({
     const handleDistributedArtifactFiles = async (
         event: ChangeEvent<HTMLInputElement>,
     ): Promise<void> => {
-        const selectedFiles = Array.from(event.currentTarget.files ?? []);
+        const fileInput = event.currentTarget;
+        const selectedFiles = Array.from(fileInput.files ?? []);
         if (selectedFiles.length === 0) {
             return;
         }
         setDistributedBusy('artifact import');
         setDistributedError(undefined);
         try {
-            const files: Record<string, string> = {};
-            await Promise.all(selectedFiles.map(async (file) => {
-                files[file.name] = await file.text();
-            }));
             const generatedAtEpochMs = Date.now();
-            const artifactFiles: DistributedRunArtifactFiles = files;
-            const analysis = analyzeDistributedRunArtifactFiles({
-                files: artifactFiles,
-                generatedAtEpochMs,
-            });
-            const snapshots = distributedArtifactSnapshotsFromFiles(
+            const {
                 artifactFiles,
+                analysis,
+                snapshots,
+                artifactBundle,
+            } = await readDistributedArtifactFiles(
+                selectedFiles,
                 generatedAtEpochMs,
-            );
-            const bundle = distributedArtifactBundleFromFiles(
-                artifactFiles,
-                generatedAtEpochMs,
-                analysis.distributedRunId,
             );
             activeSyntheticSeedRef.current = undefined;
             setActiveSyntheticSeed(undefined);
@@ -466,7 +455,7 @@ export function useRunnerRunsController({
             setSelectedDistributedRunId(snapshots.distributedRun.distributedRunId);
             setControlRunId(snapshots.controlRun.runId);
             setDistributedControlRun(snapshots.controlRun);
-            setArtifactBundle(bundle ?? snapshots.artifactBundle);
+            setArtifactBundle(artifactBundle ?? snapshots.artifactBundle);
             setLastDistributedRefresh(generatedAtEpochMs);
             setCompareLeftId(snapshots.distributedRun.distributedRunId);
             setCompareRightId('');
@@ -475,7 +464,7 @@ export function useRunnerRunsController({
             setDistributedError(runnerFriendlyErrorMessage(error));
         } finally {
             setDistributedBusy(undefined);
-            event.currentTarget.value = '';
+            fileInput.value = '';
         }
     };
 

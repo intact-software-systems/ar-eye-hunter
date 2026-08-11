@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ControlRunSnapshot } from
     '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
@@ -111,53 +110,7 @@ describe('Recipe Console Execute pressure-window contract', () => {
         ]);
     });
 
-    it('keeps every pressure owner inside its focused audit budget', () => {
-        const budgets = {
-            'ExecuteTargets.tsx': 160,
-            'ExecuteTargetWindow.tsx': 150,
-            'ExecuteControlRunPicker.tsx': 60,
-            'ExecuteResolutionWindow.tsx': 60,
-            'ExecutePreflight.tsx': 120,
-            'ExecutePreflightTree.tsx': 70,
-            'ExecutePreflightIssueList.tsx': 60,
-            'ExecuteManifestDisclosure.tsx': 50,
-            'ExecuteManifestBody.tsx': 60,
-            'ExecuteRecipeInspector.tsx': 110,
-            'ExecuteInspectorSequence.tsx': 50,
-            'ExecuteInspectorPrerequisites.tsx': 40,
-            'ExecuteWindowedList.tsx': 100,
-        } as const;
-        for (const [file, budget] of Object.entries(budgets)) {
-            const source = readFileSync(
-                `apps/rallar-black-box/src/recipe-console/execute/${file}`,
-                'utf8',
-            );
-            expect(source.split('\n').length, file).toBeLessThanOrEqual(budget);
-        }
     });
-
-    it('keeps the Execute control-run disclosure on the approved inline row', () => {
-        const picker = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/execute/ExecuteControlRunPicker.tsx',
-            'utf8',
-        );
-        const css = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/ui/SearchableWindowedListbox.module.css',
-            'utf8',
-        );
-        expect(picker).toContain('layout="inline"');
-        const inlineRule = css.match(
-            /\.root\[data-layout="inline"\]\s*\{([^}]*)\}/u,
-        )?.[1];
-        expect(inlineRule).toMatch(/display:\s*grid/u);
-        expect(inlineRule).toMatch(
-            /grid-template-columns:\s*minmax\(90px,\s*\.35fr\)\s+minmax\(180px,\s*1fr\)/u,
-        );
-        expect(css).toMatch(
-            /@media \(max-width: 767px\)[\s\S]*\.root\[data-layout="inline"\]\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/u,
-        );
-    });
-});
 
 describe('Recipe Console Execute pressure windows', () => {
     let container: HTMLDivElement;

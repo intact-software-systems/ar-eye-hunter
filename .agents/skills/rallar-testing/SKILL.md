@@ -29,6 +29,14 @@ not an acceptance criterion.
   transaction, retry, protocol, or lifecycle family, assert semantic behavior
   at the entry, transaction, commit return, after-commit, failure, cleanup, and
   final result boundaries.
+- Production code is the primary design artifact; tests are secondary evidence.
+  Tests protect independently stated observable behavior, public contracts,
+  safety and correctness invariants, and approved architecture boundaries. They
+  do not own incidental file trees, helper names, call order, line counts,
+  migration history, or implementation topology. Classify a failure as a
+  production regression or obsolete test coupling before changing production;
+  never restore inferior production structure merely to make a coupled test
+  pass.
 
 - Shared contracts: run the relevant `packages/tests/shared*` Vitest files and the package `tsc`.
 - When shared state contracts, mandatory fields, repository interfaces, or
