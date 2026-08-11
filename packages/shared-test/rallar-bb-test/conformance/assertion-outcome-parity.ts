@@ -39,7 +39,7 @@ export interface AssertionOutcomeParityRow {
 interface ComparatorParityFixture {
     readonly fixtureId: string;
     readonly value: any;
-    readonly runnerComparator: Readonly<Record<string, unknown>> & Readonly<{ path: string }>;
+    readonly runnerComparator: Readonly<Record<string, any>> & Readonly<{ path: string }>;
     readonly runtimeOperator: RallarBlackBoxTestAssertOperator;
     readonly runtimeExpected: any;
     readonly expectedVerdict: AssertionOutcomeVerdict;
