@@ -39,3 +39,4 @@ export * from './composite-conformance.ts';
 export * from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
 export * from './wait/wait-for-event.ts';
 export * from './assert/assert-value-operators.ts';
+export * from './loop/loop-until.ts';

@@ -289,3 +289,50 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.t
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
 ```
+
+```text
+Title: loop gains until: 'first-success' polling with optional backoff
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D3
+
+Change type:
+- Compatible optional addition (fail-closed on old agents)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (loop branch)
+- validateRallarBlackBoxTestCommand loop allowlist and field checks
+
+Old shape:
+loop aborted on the first child failure or, with continueOnFailure, ran every
+iteration and still succeeded. Polling required hand-unrolled repetition.
+
+New shape:
+loop accepts until: 'first-success' plus optional backoffMultiplier (>= 1).
+Attempts stop at their first failing child; the loop exits on the first
+attempt where every child succeeds; between failed attempts the agent sleeps
+intervalMs x backoffMultiplier^n; exhausted count/duration/deadline bounds
+fail with RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED carrying the attempt count
+and last failing redacted child. continueOnFailure is rejected in until
+mode; backoffMultiplier without until is rejected.
+
+Migration:
+No change for existing loops. Recipes using until dispatched to agents built
+before this change fail closed at validateKeys — intended. World-fleet
+manifests must not adopt until loops before the D4 capability gate.
+
+Golden corpus updates:
+golden-composite-wait-assert-v1 gained golden-loop-until-v1; new invalid
+case loop-until-unknown-mode.
+
+Prompt/documentation updates:
+New "Prompt: Poll Until Convergence" section; loop capability metadata lists
+until and backoffMultiplier; schema-and-capabilities.md documents polling
+semantics; composite-conformance matrix gained loop-until-convergence and
+loop-until-exhausted.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-loop-until.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
+```

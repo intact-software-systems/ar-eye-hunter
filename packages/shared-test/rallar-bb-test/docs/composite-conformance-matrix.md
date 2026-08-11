@@ -22,14 +22,20 @@ transport permutation:
   delivered frame carries an unexpected array element and the
   `matchesShapeComplete` assert must fail with
   `RALLAR_BLACK_BOX_ASSERT_FAILED`.
+- `loop-until-convergence`: an `until: 'first-success'` loop polls an
+  `http.request`/`assert` pair and exits on the first fully passing attempt.
+- `loop-until-exhausted`: the polling broken control — a never-converging
+  until loop must exhaust its bounds with
+  `RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED` carrying the last attempt.
 - `negative-no-peer`: no-peer send failure separated from local composite
   orchestration.
 
 Case recipes are built in
 `conformance/create-rallar-black-box-composite-conformance-recipe.ts`
 (absence cases in `wait/wait-absence-conformance-recipes.ts`, assert shape
-cases in `assert/assert-shape-complete-violated-recipe.ts`) from the shared
-command fixtures in `conformance/composite-conformance-command-fixtures.ts`.
+cases in `assert/assert-shape-complete-violated-recipe.ts`, polling cases in
+`loop/loop-until-conformance-recipes.ts`) from the shared command fixtures
+in `conformance/composite-conformance-command-fixtures.ts`.
 
 Provider rows are:
 

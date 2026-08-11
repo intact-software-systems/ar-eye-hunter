@@ -425,6 +425,23 @@
           ]
         },
         {
+          "kind": "loop",
+          "commandId": "golden-loop-until-v1",
+          "until": "first-success",
+          "backoffMultiplier": 2,
+          "count": 5,
+          "intervalMs": 100,
+          "commands": [
+            {
+              "kind": "assert",
+              "commandId": "golden-loop-until-assert-v1",
+              "source": "state.commandHistory.length",
+              "operator": "gte",
+              "expected": 1
+            }
+          ]
+        },
+        {
           "kind": "wait",
           "commandId": "golden-wait-v1",
           "timeoutMs": 5000,
@@ -713,6 +730,29 @@
             "commandId": "assert-unknown-operator",
             "source": "state.messages.length",
             "operator": "matchesShapeExact"
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "loop-until-unknown-mode",
+      "expectedErrors": [
+        "$.commands[0].until: Expected \"first-success\"."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "recipeId": "loop-until-unknown-mode",
+        "commands": [
+          {
+            "kind": "loop",
+            "commandId": "loop-until-bad-mode",
+            "until": "always",
+            "commands": [
+              {
+                "kind": "health",
+                "commandId": "loop-until-bad-child"
+              }
+            ]
           }
         ]
       }

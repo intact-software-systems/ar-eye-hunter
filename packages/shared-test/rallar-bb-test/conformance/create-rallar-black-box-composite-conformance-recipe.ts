@@ -27,6 +27,10 @@ import {
 import {
     assertShapeCompleteViolatedRecipe,
 } from '../assert/assert-shape-complete-violated-recipe.ts';
+import {
+    loopUntilConvergenceRecipe,
+    loopUntilExhaustedRecipe,
+} from '../loop/loop-until-conformance-recipes.ts';
 
 export function createRallarBlackBoxCompositeConformanceRecipe(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
@@ -47,6 +51,10 @@ export function createRallarBlackBoxCompositeConformanceRecipe(
             return waitAbsenceViolatedRecipe(options);
         case 'assert-shape-complete-violated':
             return assertShapeCompleteViolatedRecipe(options);
+        case 'loop-until-convergence':
+            return loopUntilConvergenceRecipe(options);
+        case 'loop-until-exhausted':
+            return loopUntilExhaustedRecipe(options);
         case 'negative-no-peer':
             return negativeNoPeerRecipe(options);
     }

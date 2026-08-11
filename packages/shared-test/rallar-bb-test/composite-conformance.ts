@@ -25,6 +25,8 @@ export type RallarBlackBoxCompositeConformanceCaseId =
     | 'wait-absence-hold'
     | 'wait-absence-violated'
     | 'assert-shape-complete-violated'
+    | 'loop-until-convergence'
+    | 'loop-until-exhausted'
     | 'negative-no-peer';
 
 export type RallarBlackBoxCompositeConformanceProviderId =
@@ -219,6 +221,25 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES:
             liveSafe: true,
         },
         {
+            caseId: 'loop-until-convergence',
+            title: 'Loop Until Convergence',
+            intent: 'Prove until mode polls an http.request/assert pair and exits on first success.',
+            expectedStatus: 'ok',
+            requiredCommandKinds: ['configure', 'loop', 'http.request', 'assert', 'stats'],
+            requiredCompositeKinds: ['loop'],
+            liveSafe: true,
+        },
+        {
+            caseId: 'loop-until-exhausted',
+            title: 'Loop Until Exhausted Control',
+            intent: 'Prove a never-converging until loop exhausts its bounds with the last attempt.',
+            expectedStatus: 'failed',
+            requiredCommandKinds: ['configure', 'loop', 'assert'],
+            requiredCompositeKinds: ['loop'],
+            expectedFailureCodes: ['RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED'],
+            liveSafe: true,
+        },
+        {
             caseId: 'negative-no-peer',
             title: 'No-peer Negative Case',
             intent: 'Prove delivery failure is reported separately from local composite orchestration.',
@@ -246,6 +267,8 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS:
                 'wait-absence-hold',
                 'wait-absence-violated',
                 'assert-shape-complete-violated',
+                'loop-until-convergence',
+                'loop-until-exhausted',
                 'negative-no-peer',
             ],
             capabilityDifferences: [
@@ -265,6 +288,8 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS:
                 'wait-absence-hold',
                 'wait-absence-violated',
                 'assert-shape-complete-violated',
+                'loop-until-convergence',
+                'loop-until-exhausted',
                 'negative-no-peer',
             ],
             requires: {
@@ -302,6 +327,8 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS:
                 'wait-absence-hold',
                 'wait-absence-violated',
                 'assert-shape-complete-violated',
+                'loop-until-convergence',
+                'loop-until-exhausted',
                 'negative-no-peer',
             ],
             requires: {
