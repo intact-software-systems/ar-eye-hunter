@@ -160,7 +160,10 @@ describe('executeBlackBox expect.maxDurationMs', () => {
             onclose: ((event: unknown) => void) | undefined;
             onerror: ((event: unknown) => void) | undefined;
 
-            constructor(public readonly url: string) {
+            public readonly url: string;
+
+            constructor(url: string) {
+                this.url = url;
                 setTimeout(() => {
                     this.readyState = InstantOpenWebSocket.OPEN;
                     this.onopen?.({ url: this.url });
