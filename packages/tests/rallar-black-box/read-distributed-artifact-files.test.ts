@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    type ReadDistributedArtifactFiles,
+    type ReadDistributedArtifactFilesOutput,
     readDistributedArtifactFiles,
 } from '../../../apps/rallar-black-box/src/legacy/runner/runs/read-distributed-artifact-files.ts';
 
@@ -35,7 +35,7 @@ describe('distributed artifact file reader', () => {
                 heartbeats: [],
             }),
         ];
-        const result: ReadDistributedArtifactFiles.Output =
+        const result: ReadDistributedArtifactFilesOutput =
             await readDistributedArtifactFiles(files, 1_000);
 
         expect(result.artifactFiles).toHaveProperty('distributed-run.json');

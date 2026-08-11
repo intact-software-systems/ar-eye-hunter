@@ -4,21 +4,23 @@ import {
     distributedArtifactSnapshotsFromFiles,
     type DistributedRunAnalysis,
     type DistributedRunArtifactFiles,
+    type DistributedRunArtifactSnapshots,
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type {
+    ControlDistributedRunArtifactBundle,
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 
-export namespace ReadDistributedArtifactFiles {
-    export interface Output {
-        readonly artifactFiles: DistributedRunArtifactFiles;
-        readonly analysis: DistributedRunAnalysis;
-        readonly snapshots: ReturnType<typeof distributedArtifactSnapshotsFromFiles>;
-        readonly artifactBundle: ReturnType<typeof distributedArtifactBundleFromFiles>;
-    }
+export interface ReadDistributedArtifactFilesOutput {
+    readonly artifactFiles: DistributedRunArtifactFiles;
+    readonly analysis: DistributedRunAnalysis;
+    readonly snapshots: DistributedRunArtifactSnapshots;
+    readonly artifactBundle: ControlDistributedRunArtifactBundle | undefined;
 }
 
 export async function readDistributedArtifactFiles(
     selectedFiles: readonly File[],
     generatedAtEpochMs: number,
-): Promise<ReadDistributedArtifactFiles.Output> {
+): Promise<ReadDistributedArtifactFilesOutput> {
     const fileContents: Record<string, string> = {};
     await Promise.all(selectedFiles.map(async (file) => {
         fileContents[file.name] = await file.text();
