@@ -903,14 +903,13 @@ function strictProfileIssues(
 
         if (type.startsWith('assert')) {
             const hasExpected = expect.body !== undefined ||
-                expect.expect !== undefined ||
-                expect.expected !== undefined ||
-                Array.isArray(expect.anyOf)
+                expect.expect !== undefined || expect.expected !== undefined ||
+                Array.isArray(expect.anyOf) || Array.isArray(expect.comparators)
             if (!hasExpected) {
                 issues.push({
                     severity: 'error',
                     code: 'STRICT_ASSERT_EXPECTED',
-                    message: 'Strict assert steps require expect.body, expect.expected, expect.expect, or expect.anyOf.',
+                    message: 'Strict assert steps need an expected value or expect.comparators.',
                     path,
                 })
             }

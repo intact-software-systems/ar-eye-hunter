@@ -15,7 +15,7 @@ Status: in execution as a stacked PR series based on
 | W1 `expect.absent` | implemented; in review | `codex/black-box-w1-ws-rtc-absent` |
 | W2 `poll-until` | runner capability implemented; recipe rewrite blocked on decision | `codex/black-box-w2-poll-until` |
 | W3 comparators + `compatible-complete` | implemented; in review | `codex/black-box-w3-comparators` |
-| W4 pure-API recipes | not started | — |
+| W4 pure-API recipes | implemented; in review | `codex/black-box-w4-pure-api-recipes` |
 | W5 `expect.headers` | not started | — |
 | W6 `expect.maxDurationMs` | not started | — |
 | W7 observability-routed evidence plan | not started (plan-only) | — |
