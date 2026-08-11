@@ -37,18 +37,20 @@ export async function seedPresenceSession(
     expiresAtEpochMs: number;
   }> = {},
 ): Promise<void> {
+  const lastHeartbeatAtEpochMs = overrides.lastHeartbeatAtEpochMs ?? 2_000;
+  const expiresAtEpochMs = overrides.expiresAtEpochMs ?? Date.now() + 60_000;
   await createGroupStateService({
     runtimeRepository,
     syncPublisher: createPublisher(),
-    now: () => 2_000,
+    now: () => Math.max(2_000, lastHeartbeatAtEpochMs),
     serviceId: 'group-service',
   }).connectPresenceSession(SCOPE, groupId, 'session-1', {
     principalId: 'alice',
     generationId: 'generation-session-1',
     actorPrincipalId: 'alice',
     connectedAtEpochMs: 2_000,
-    lastHeartbeatAtEpochMs: overrides.lastHeartbeatAtEpochMs ?? 2_000,
-    expiresAtEpochMs: overrides.expiresAtEpochMs ?? Date.now() + 60_000,
+    lastHeartbeatAtEpochMs,
+    expiresAtEpochMs,
     requestId: `seed-session-${groupId}`,
   });
 }

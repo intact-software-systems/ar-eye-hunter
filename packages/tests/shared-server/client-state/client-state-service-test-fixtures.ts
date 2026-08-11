@@ -22,10 +22,12 @@ export async function seedConnectedSession(
     expiresAtEpochMs: number;
   }> = {},
 ): Promise<void> {
+  const lastHeartbeatAtEpochMs = overrides.lastHeartbeatAtEpochMs ?? 2_000;
+  const expiresAtEpochMs = overrides.expiresAtEpochMs ?? Date.now() + 60_000;
   await createClientStateService({
     runtimeRepository,
     syncPublisher: createPublisher(),
-    now: () => 2_000,
+    now: () => Math.max(2_000, lastHeartbeatAtEpochMs),
     serviceId: 'client-service',
   }).connectSession(CLIENT_MUTATION_SERVICE_SCOPE, principalId, clientInstanceId, sessionId, {
     generationId: `generation-${sessionId}`,
@@ -33,8 +35,8 @@ export async function seedConnectedSession(
     actorPrincipalId: principalId,
     actorSessionId: sessionId,
     connectedAtEpochMs: 2_000,
-    lastHeartbeatAtEpochMs: overrides.lastHeartbeatAtEpochMs ?? 2_000,
-    expiresAtEpochMs: overrides.expiresAtEpochMs ?? Date.now() + 60_000,
+    lastHeartbeatAtEpochMs,
+    expiresAtEpochMs,
     requestId: `seed-${sessionId}`,
   });
 }

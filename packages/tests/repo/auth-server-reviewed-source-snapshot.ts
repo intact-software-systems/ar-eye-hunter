@@ -206,7 +206,7 @@ export const authNavigationSourceSnapshot: readonly AuthNavigationSourceSnapshot
   ),
   navigationSource(
     'packages/shared-server/http/request-auth-service.ts',
-    '9bd5cab55a669c66b21a7d1257eec4c44280b339',
+    '4a01b0d5b448445f6d74281aaee7dd1eb79092d1',
     ['readBearerToken', 'requireApiAuthSession'],
   ),
   navigationSource(

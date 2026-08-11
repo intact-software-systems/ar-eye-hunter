@@ -22,6 +22,7 @@ import {
   validateStoredGeneration,
 } from '../../persistence/validate-persisted-group-presence.ts';
 import { requirePositiveSafeInteger } from '../../group-state-validation-primitives.ts';
+import { isPresenceTimestampWithinSkew } from '../../../presence/presence-lease.ts';
 import { toExpiredAwareInsertCandidate } from '../../presence/group-expired-state-authority.ts';
 import {
   computeConnectPresenceAdmission,
@@ -131,12 +132,22 @@ function resolvePresenceConnectionTiming({
       ? existing.value.connectedAtEpochMs
       : (command.input.connectedAtEpochMs ?? facts.nowEpochMs);
   requirePositiveSafeInteger(connectedAt, 'Group presence connectedAtEpochMs');
+  if (!isPresenceTimestampWithinSkew(connectedAt, facts.nowEpochMs)) {
+    throw new GroupMutationRejectedError(
+      'Group presence connectedAtEpochMs is too far in the future.',
+    );
+  }
   if (!isConnectGenerationCurrent(command, read, connectedAt)) return null;
   const sameGeneration =
     existing !== null &&
     existing.value.generationId === command.input.generationId &&
     existing.value.generationVersion === connectedAt;
   const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
+  if (!isPresenceTimestampWithinSkew(heartbeatAt, facts.nowEpochMs)) {
+    throw new GroupMutationRejectedError(
+      'Group presence lastHeartbeatAtEpochMs is too far in the future.',
+    );
+  }
   const expiresAt =
     command.input.expiresAtEpochMs ?? facts.nowEpochMs + DEFAULT_GROUP_SESSION_TTL_MS;
   if (heartbeatAt < connectedAt || expiresAt < heartbeatAt) {
@@ -203,6 +214,11 @@ export function computeHeartbeatPresence(
   const member = read.targetMember ?? undefined;
   if (!member || member.status !== 'active') return noOp(command, read, facts);
   const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? facts.nowEpochMs;
+  if (!isPresenceTimestampWithinSkew(heartbeatAt, facts.nowEpochMs)) {
+    throw new GroupMutationRejectedError(
+      'Group presence lastHeartbeatAtEpochMs is too far in the future.',
+    );
+  }
   if (heartbeatAt < existing.value.lastHeartbeatAtEpochMs) return noOp(command, read, facts);
   const expiresAt = Math.max(
     existing.value.expiresAtEpochMs,

@@ -1,6 +1,10 @@
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
+import type {
+    CrdtMutationResponseAudience,
+} from '@shared-server/rallar-system/services/crdt-mutation-contracts.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -20,55 +24,89 @@ export function createApiCrdtDocumentAuthorizer(
     options: ApiCrdtDocumentAuthorizerOptions,
 ): CurrentMutationAuthority['authorizeDocument'] {
     return async (command, session) => {
-        const document = command.document;
-        if (document.scope === 'room') {
-            if (
-                !document.roomRef ||
-                command.responseAudience.kind !== 'room' ||
-                command.responseAudience.contextId !== document.roomRef.groupId
-            ) return denied();
-            const snapshot = await options.readGroupSnapshot(document.roomRef);
-            const member = snapshot?.members.find((candidate) =>
-                candidate.principalId === command.actor.principalId &&
-                candidate.status === 'active'
-            );
-            const activeSession = snapshot?.activeSessions.find((candidate) =>
-                candidate.principalId === command.actor.principalId &&
-                candidate.sessionId === session.sessionId &&
-                candidate.status === 'active' &&
-                candidate.expiresAtEpochMs > options.nowEpochMs()
-            );
-            return member && activeSession ? allowed() : denied();
+        if (!responseAudienceMatchesDocument(command.responseAudience, command.document)) {
+            return denied();
         }
-        if (document.scope === 'principal') {
-            if (
-                document.principalId !== command.actor.principalId ||
-                command.responseAudience.kind !== 'principal' ||
-                command.responseAudience.contextId !== document.principalId
-            ) return denied();
-            return await authorizeCurrentClientDocument(
-                options,
-                document.applicationId,
-                document.workspaceId,
-                document.principalId,
-                session.sessionId,
-            );
-        }
-        if (document.scope === 'app') {
-            if (
-                command.responseAudience.kind !== 'app' ||
-                command.responseAudience.contextId !== document.applicationId
-            ) return denied();
-            return await authorizeCurrentClientDocument(
-                options,
-                document.applicationId,
-                document.workspaceId,
-                command.actor.principalId,
-                session.sessionId,
-            );
-        }
-        return denied();
+        return await authorizeCrdtDocumentAccess(options, {
+            document: command.document,
+            actorPrincipalId: command.actor.principalId,
+            sessionId: session.sessionId,
+        });
     };
+}
+
+/**
+ * Authorize a caller against a CRDT document by membership and live session,
+ * independent of any response-routing audience. Every transport that reads or
+ * mutates a document — the WS bridge, the durable mutation inbox, and the
+ * synchronous HTTP catch-up route — must gate on this so authorization cannot be
+ * bypassed by choosing a different transport.
+ */
+export async function authorizeCrdtDocumentAccess(
+    options: ApiCrdtDocumentAuthorizerOptions,
+    input: Readonly<{
+        document: RallarCrdtDocumentRef;
+        actorPrincipalId: string;
+        sessionId: string;
+    }>,
+): Promise<ReturnType<typeof allowed> | ReturnType<typeof denied>> {
+    const { document, actorPrincipalId, sessionId } = input;
+    if (document.scope === 'room') {
+        if (!document.roomRef) return denied();
+        const snapshot = await options.readGroupSnapshot(document.roomRef);
+        const member = snapshot?.members.find((candidate) =>
+            candidate.principalId === actorPrincipalId &&
+            candidate.status === 'active'
+        );
+        const activeSession = snapshot?.activeSessions.find((candidate) =>
+            candidate.principalId === actorPrincipalId &&
+            candidate.sessionId === sessionId &&
+            candidate.status === 'active' &&
+            candidate.expiresAtEpochMs > options.nowEpochMs()
+        );
+        return member && activeSession ? allowed() : denied();
+    }
+    if (document.scope === 'principal') {
+        if (document.principalId !== actorPrincipalId) return denied();
+        return await authorizeCurrentClientDocument(
+            options,
+            document.applicationId,
+            document.workspaceId,
+            document.principalId,
+            sessionId,
+        );
+    }
+    if (document.scope === 'app') {
+        return await authorizeCurrentClientDocument(
+            options,
+            document.applicationId,
+            document.workspaceId,
+            actorPrincipalId,
+            sessionId,
+        );
+    }
+    return denied();
+}
+
+function responseAudienceMatchesDocument(
+    responseAudience: CrdtMutationResponseAudience,
+    document: RallarCrdtDocumentRef,
+): boolean {
+    if (document.scope === 'room') {
+        const roomRef = document.roomRef;
+        if (!roomRef) return false;
+        return responseAudience.kind === 'room' &&
+            responseAudience.contextId === roomRef.groupId;
+    }
+    if (document.scope === 'principal') {
+        return responseAudience.kind === 'principal' &&
+            responseAudience.contextId === document.principalId;
+    }
+    if (document.scope === 'app') {
+        return responseAudience.kind === 'app' &&
+            responseAudience.contextId === document.applicationId;
+    }
+    return false;
 }
 
 export function findCurrentClientSnapshot(

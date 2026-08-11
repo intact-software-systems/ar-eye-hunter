@@ -158,8 +158,8 @@
     },
     {
       "name": "assertAtomicAppInboxCompletion", "type": "assert",
-      "actual": { "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}", "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}", "completedAppInboxStatus": "{stateWriteEvidence.completedAppInboxStatus}", "appendReply": "{appendReplyPayload}", "durableFanout": "{tertiaryFanoutPayload}", "durableUpdateId": "{durableCrdtUpdateId}" },
-      "expect": { "body": { "atomicCompletionFailures": 0, "intermediateMutationIntents": [], "completedAppInboxStatus": "COMPLETED", "appendReply": "string", "durableFanout": "string", "durableUpdateId": "crdt-update-{runId}" } }
+      "actual": { "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}", "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}", "completedAppInboxStatus": "{stateWriteEvidence.completedAppInboxStatus}", "appendReply": "{appendReplyPayload}", "durableFanout": "{tertiaryFanoutPayload}", "durableUpdateId": "{durableCrdtUpdateId}" },
+      "expect": { "body": { "atomicCompletionFailures": 0, "intermediateMutationIntentCount": 0, "completedAppInboxStatus": "COMPLETED", "appendReply": "string", "durableFanout": "string", "durableUpdateId": "crdt-update-{runId}" } }
     },
     { "name": "closePrimaryCrdtSocket", "type": "ws.close", "connection": "wsPrimary", "request": { "code": 1000, "reason": "done" } },
     { "name": "closeTertiaryCrdtSocket", "type": "ws.close", "connection": "wsTertiary", "request": { "code": 1000, "reason": "done" } }

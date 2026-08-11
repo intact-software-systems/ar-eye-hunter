@@ -252,6 +252,7 @@ function createDerivedEvidenceResult(input: DerivedEvidenceResultInput): ApiV1St
     finalEffectFailureCount: input.effectFailures.length,
     finalEffectFailures: input.effectFailures.slice(0, evidenceLimit).map((row) => row.resourceId),
     finalEffectFailureEvidenceTruncated: input.effectFailures.length > evidenceLimit,
+    intermediateMutationIntentCount: input.intermediateMutationIntents.length,
     intermediateMutationIntents: input.intermediateMutationIntents,
     appInbox: input.appInbox.slice(0, evidenceLimit),
     appInboxEvidenceTruncated: input.appInbox.length > evidenceLimit,

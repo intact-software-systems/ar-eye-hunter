@@ -196,14 +196,14 @@
       "type": "assert",
       "actual": {
         "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
-        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}",
         "completedAppInboxCount": "{stateWriteEvidence.completedAppInboxCount}",
         "failedAppInboxCount": "{stateWriteEvidence.failedAppInboxCount}"
       },
       "expect": {
         "body": {
           "atomicCompletionFailures": 0,
-          "intermediateMutationIntents": [],
+          "intermediateMutationIntentCount": 0,
           "completedAppInboxCount": 1,
           "failedAppInboxCount": 1
         }
