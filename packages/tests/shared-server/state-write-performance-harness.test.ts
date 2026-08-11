@@ -3,9 +3,7 @@ import {
   compareStateWriteArtifacts,
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import {
-  STATE_WRITE_REASONS,
-} from '../../../scripts/perf/rtc-topology/state-write-reasons.ts';
+import { STATE_WRITE_REASONS } from '../../../scripts/perf/rtc-topology/state-write-reasons.ts';
 import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
@@ -203,9 +201,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
   it('records durable append resource costs without weakening hard throughput gates', () => {
     const reasons = STATE_WRITE_REASONS;
     expect(reasons).toHaveLength(12);
-    expect(
-      new Set(reasons.map(({ workload, metric }) => `${workload}:${metric}`)),
-    ).toEqual(
+    expect(new Set(reasons.map(({ workload, metric }) => `${workload}:${metric}`))).toEqual(
       new Set(
         ['uncontended', 'shared', 'hot'].flatMap((workload) =>
           [
@@ -213,7 +209,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             'sql.rowsRead',
             'sql.serializedResultBytes',
             'postgres.transactionDurationMs',
-          ].map((metric) => `${workload}:${metric}`)
+          ].map((metric) => `${workload}:${metric}`),
         ),
       ),
     );
