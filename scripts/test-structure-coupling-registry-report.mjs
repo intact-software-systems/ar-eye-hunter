@@ -90,6 +90,7 @@ export function validateRegistry(registry, candidates) {
 
 function validateContracts(errors, contractValues) {
   const contracts = new Map();
+  const contractsByCoverage = new Map();
   for (const contract of contractValues) {
     if (!isPlainObject(contract) || !hasMeaningfulText(contract.id)) {
       errors.push('contract requires id');
@@ -108,6 +109,28 @@ function validateContracts(errors, contractValues) {
     if (!hasSpecificSemanticCoverage(contract.semanticCoverage)) {
       errors.push(`contract requires specific semanticCoverage: ${contract.id}`);
     }
+    if (!hasConcreteText(contract.coverageRelation)) {
+      errors.push(`contract requires a concrete coverageRelation: ${contract.id}`);
+    }
+    const sharedContracts = contractsByCoverage.get(contract.semanticCoverage) ?? [];
+    sharedContracts.push(contract);
+    contractsByCoverage.set(contract.semanticCoverage, sharedContracts);
+  }
+  for (const sharedContracts of contractsByCoverage.values()) {
+    if (sharedContracts.length < 2) {
+      continue;
+    }
+    const sharedCoverageGroups = new Set(
+      sharedContracts.map((contract) => contract.sharedCoverageGroup).filter(hasConcreteText),
+    );
+    if (
+      sharedCoverageGroups.size !== 1 ||
+      sharedContracts.some((contract) => !hasConcreteText(contract.sharedCoverageGroup))
+    ) {
+      errors.push(
+        'semanticCoverage is reused by multiple contracts without an explicit shared coverage group',
+      );
+    }
   }
   return contracts;
 }
@@ -120,6 +143,9 @@ function validateDisposition(errors, entry) {
     const kind =
       entry.disposition === 'durable-boundary' ? 'durable boundary' : 'temporary ratchet';
     errors.push(`${kind} entry requires owner: ${entry.id}`);
+  }
+  if (usesGeneratedRationaleFormula(entry.rationale)) {
+    errors.push(`registry entry ${entry.id} uses a generated rationale formula`);
   }
   if (entry.disposition === 'durable-boundary') {
     if (!['public', 'security', 'compatibility'].includes(entry.boundary)) {
@@ -134,6 +160,17 @@ function validateDisposition(errors, entry) {
   } else {
     errors.push(`registry entry has unsupported disposition: ${entry.id}`);
   }
+}
+
+function usesGeneratedRationaleFormula(value) {
+  return (
+    typeof value === 'string' &&
+    (/^(?:Contract input read|Required boundary assertion|Compatibility-path assertion|Published inventory assertion|Repository-interface analysis):/u.test(
+      value.trim(),
+    ) ||
+      value.includes('Its only durable purpose is the linked') ||
+      /^In [“"](.+?)[”"], this [a-z-]+ occurrence /u.test(value.trim()))
+  );
 }
 
 export function printReport({

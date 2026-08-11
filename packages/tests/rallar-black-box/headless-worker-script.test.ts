@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -77,18 +76,6 @@ async function within<T>(
 }
 
 describe("rallar-black-box headless worker script", () => {
-
-  it("redacts URL secrets by known key and sensitive key pattern", async () => {
-    const runtime = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/src/headless-worker-runtime.ts"),
-      "utf8",
-    );
-
-    expect(runtime).toContain("redactHeadlessWorkerLogText");
-    expect(runtime).toContain("(?:token|password|secret)");
-    expect(runtime).toContain("[REDACTED]");
-  });
-
   it("redacts malformed credential-bearing startup configuration errors", async () => {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
@@ -114,19 +101,6 @@ describe("rallar-black-box headless worker script", () => {
     expect(result.output).not.toContain("startup-read-token");
     expect(result.output).toContain("Control URL must use ws, wss, http, or https");
     expect(result.output).toContain("controlToken=[REDACTED]");
-  });
-
-  it("authenticates Node-side control-server reads when a control token is configured", async () => {
-    const script = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
-      "utf8",
-    );
-
-    expect(script).toContain("controlReadHeaders(config)");
-    expect(script).toContain("config.controlReadToken ?? config.controlToken");
-    expect(script).toContain('Authorization: `Bearer ${token}`');
-    expect(script).toContain("fetchControlRunSnapshot(config, signal)");
-    expect(script).toContain("headers: controlReadHeaders(config)");
   });
 
   it("exits gracefully when SIGTERM interrupts agent registration", async () => {

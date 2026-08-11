@@ -341,6 +341,116 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).toContain('semanticCoverage does not match linked contract');
   });
 
+  it('rejects generated candidate rationale formulas instead of treating them as review', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    });
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    writeRegistry(
+      fixture.root,
+      candidates.map((candidate) => ({
+        ...durableEntry(candidate),
+        rationale:
+          'Contract input read: const source = readFileSync(. Its only durable purpose is the linked Example package public API contract.',
+      })),
+      [
+        {
+          ...exampleContract(),
+          coverageRelation:
+            'The executable public API assertion observes the consumer result protected by this boundary.',
+        },
+      ],
+    );
+
+    const result = runChecker(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('uses a generated rationale formula');
+  });
+
+  it('rejects location-filled rationale templates that only restate checker metadata', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    });
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    writeRegistry(
+      fixture.root,
+      candidates.map((candidate) => ({
+        ...durableEntry(candidate),
+        rationale:
+          'In “exposes publicApi”, this production-source-read occurrence uses the concrete tracked input “const source” because the test reads production source.',
+      })),
+    );
+
+    const result = runChecker(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('uses a generated rationale formula');
+  });
+
+  it('requires a concrete contract-to-assertion relation and unique coverage reference', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    });
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    const [firstCandidate, secondCandidate] = candidates;
+    const sharedCoverage =
+      'packages/tests/example/public-contract.test.ts#exposes the public behavior';
+    writeRegistry(
+      fixture.root,
+      [
+        {
+          ...durableEntry(firstCandidate),
+          contract: 'first-public-contract',
+          semanticCoverage: sharedCoverage,
+        },
+        {
+          ...durableEntry(secondCandidate),
+          contract: 'second-public-contract',
+          semanticCoverage: sharedCoverage,
+        },
+      ],
+      [
+        {
+          ...exampleContract('first-public-contract'),
+          semanticCoverage: sharedCoverage,
+          coverageRelation: '',
+        },
+        {
+          ...exampleContract('second-public-contract'),
+          semanticCoverage: sharedCoverage,
+          coverageRelation:
+            'This assertion observes the second consumer-visible public contract result.',
+        },
+      ],
+    );
+
+    const result = runChecker(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'contract requires a concrete coverageRelation: first-public-contract',
+    );
+    expect(result.stdout).toContain(
+      'semanticCoverage is reused by multiple contracts without an explicit shared coverage group',
+    );
+  });
+
   it('reports changed-range candidate deletion neutrally rather than claiming a semantic replacement', () => {
     const fixture = createGitFixture({
       'packages/example/src/public.ts': 'export const publicApi = true;\n',
@@ -840,6 +950,8 @@ function exampleContract(id = 'example-public-contract'): Record<string, unknown
     owner: 'example-owner',
     summary: 'Consumers can call the public API and observe its documented result.',
     semanticCoverage: 'packages/tests/example/public-contract.test.ts#exposes the public behavior',
+    coverageRelation:
+      'The executable public API assertion observes the consumer result protected by this boundary.',
   };
 }
 

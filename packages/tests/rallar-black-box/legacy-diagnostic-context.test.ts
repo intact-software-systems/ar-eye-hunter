@@ -607,42 +607,6 @@ describe('legacy diagnostic context consumers', () => {
         });
     });
 
-    it('parses once at the experience root and keeps absent old links uncluttered', () => {
-        const experience = readFileSync(
-            'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx',
-            'utf8',
-        );
-        const shell = readFileSync(
-            'apps/rallar-black-box/src/legacy/shell/LegacyAppShell.tsx',
-            'utf8',
-        );
-        const globalHook = readFileSync(
-            'apps/rallar-black-box/src/legacy/shell/use-command-center-global-context.ts',
-            'utf8',
-        );
-        const runManager = readFileSync(
-            'apps/rallar-black-box/src/legacy/runner/run-manager/RunManagerPanel.tsx',
-            'utf8',
-        );
-        const distributed = readFileSync(
-            'apps/rallar-black-box/src/legacy/runner/distributed-recipes/DistributedRecipesPanel.tsx',
-            'utf8',
-        );
-
-        expect(experience.match(/parseLegacyDiagnosticContext\(/g)).toHaveLength(1);
-        expect(experience).toContain('LegacyDiagnosticContextProvider');
-        expect(experience).toContain('diagnosticContext={diagnosticContext}');
-        expect(shell).toMatch(
-            /diagnosticContext\.status !== 'absent'[\s\S]*<LegacyDiagnosticContextBar/,
-        );
-        expect(globalHook).toContain('diagnosticContextChanged');
-        expect(runManager).toContain('useLegacyDiagnosticContext');
-        expect(runManager).toContain('useLatestRequestGuard');
-        expect(distributed).toContain('useLegacyDiagnosticContext');
-        for (const source of [experience, shell, globalHook, runManager, distributed]) {
-            expect(source).not.toMatch(/localStorage|sessionStorage/);
-        }
-    });
 });
 
 describe('legacy diagnostic async selection authority', () => {

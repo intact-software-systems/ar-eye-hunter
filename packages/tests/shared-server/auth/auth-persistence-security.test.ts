@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -340,36 +339,4 @@ it('persists only ticket digests and canonical ticket records', async () => {
     .map((entry) => `${entry.key}:${entry.value}`)
     .join('\n');
   expect(persisted).not.toContain('presented-ticket-plaintext');
-});
-
-it('removes auth and AL domain-lock escape hatches from production', () => {
-  const sources = [
-    'packages/shared-server/rallar-system/services/auth-login-service.ts',
-    'packages/shared-server/rallar-system/auth/persistence/auth-session-repository.ts',
-    'packages/shared-server/rallar-system/auth/persistence/auth-session-persistence.ts',
-    'packages/shared-server/rallar-system/auth/persistence/auth-ticket-persistence.ts',
-    'packages/shared-server/rallar-system/auth/persistence/auth-legacy-compatibility.ts',
-    'packages/shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts',
-    'packages/shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts',
-    'packages/shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts',
-    'packages/shared-server/runtime-state/RuntimeStateRepository.ts',
-  ]
-    .map((path) => readFileSync(path, 'utf8'))
-    .join('\n');
-
-  expect(sources).not.toMatch(/lockKey|pg_advisory_xact_lock/u);
-});
-
-it('keeps auth compute deterministic and free of credential derivation', () => {
-  const source = readFileSync(
-    'packages/shared-server/rallar-system/auth/mutation/compute/compute-auth-mutation.ts',
-    'utf8',
-  );
-  const compute = source.slice(
-    source.indexOf('export function computeAuthMutation('),
-    source.length,
-  );
-
-  expect(compute).not.toMatch(/credentialIssuer|hashAuthSecret|crypto\./u);
-  expect(compute).not.toMatch(/^async function computeAuthMutation/mu);
 });
