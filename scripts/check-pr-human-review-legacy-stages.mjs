@@ -22,11 +22,12 @@ if (record?.scope === 'exempt') {
     stages.push({ name: `milestone-${index + 1}`, review });
   if (!event.pull_request?.draft && record?.finalReview)
     stages.push({ name: 'final', review: record.finalReview, final: true });
-  for (const stage of stages) runStage(stage, options['current-head'], options.registry);
+  for (const stage of stages)
+    runStage(stage, options['current-head'], options['trusted-base'], options.registry);
   console.log(`PASS: validated ${stages.length} exact-SHA legacy candidate review stage(s)`);
 }
 
-function runStage(stage, currentHead, registry) {
+function runStage(stage, currentHead, trustedBase, registry) {
   const base = stage.review?.mergeBaseSha;
   const head = stage.review?.headSha;
   if (!isSha(base) || !isSha(head)) fail(`${stage.name} review must contain exact SHAs`);
@@ -36,8 +37,9 @@ function runStage(stage, currentHead, registry) {
   ])
     if (!git(['cat-file', '-e', `${sha}^{commit}`]))
       fail(`${stage.name} ${label} is not a fetched commit`);
-  if (!git(['merge-base', '--is-ancestor', base, head]))
-    fail(`${stage.name} merge base is not an ancestor of stage head`);
+  const actualBase = gitText(['merge-base', trustedBase, head]);
+  if (actualBase !== base)
+    fail(`${stage.name} recorded merge base does not match trusted PR base history`);
   if (stage.final ? head !== currentHead : !git(['merge-base', '--is-ancestor', head, currentHead]))
     fail(`${stage.name} review head is not reachable from current candidate head`);
   const temp = mkdtempSync(path.join(tmpdir(), 'legacy-stage-'));
@@ -78,6 +80,13 @@ function git(args) {
     return true;
   } catch {
     return false;
+  }
+}
+function gitText(args) {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8' }).trim();
+  } catch {
+    fail(`could not read Git evidence: git ${args.join(' ')}`);
   }
 }
 function isSha(value) {

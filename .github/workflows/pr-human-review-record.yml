@@ -60,4 +60,5 @@ jobs:
           node scripts/check-pr-human-review-legacy-stages.mjs
           --event "$GITHUB_EVENT_PATH"
           --registry "$RUNNER_TEMP/production-legacy-exceptions.md"
+          --trusted-base "${{ github.event.pull_request.base.sha }}"
           --current-head "${{ github.event.pull_request.head.sha }}"
