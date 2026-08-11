@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-explicit-any
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '../assert/assert-value-operators.ts';
 import type {
     RallarBlackBoxControlAgentCapabilities,
@@ -28,8 +29,8 @@ const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
     'lte',
 ];
 
-export const RALLAR_BLACK_BOX_EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] =
-    RALLAR_BLACK_BOX_ASSERT_OPERATORS
+export const RALLAR_BLACK_BOX_EXTENDED_ASSERT_OPERATORS:
+    readonly RallarBlackBoxTestAssertOperator[] = RALLAR_BLACK_BOX_ASSERT_OPERATORS
         .filter(operator => !BASELINE_ASSERT_OPERATORS.includes(operator));
 
 export interface DistributedAssertionFeatures {
@@ -68,7 +69,7 @@ export function toControlAgentCapabilities(
 }
 
 export function parseControlAgentCapabilities(
-    value: unknown,
+    value: any,
 ): RallarBlackBoxControlAgentCapabilities | undefined {
     if (!isRecord(value)) {
         return undefined;
@@ -163,7 +164,7 @@ export function validateAgentAssertionCapability(
 }
 
 function parseAssertionsCapability(
-    value: unknown,
+    value: any,
 ): RallarBlackBoxControlAgentAssertionsCapability | undefined {
     if (!isRecord(value)) {
         return undefined;
@@ -201,10 +202,10 @@ function hasCrdtRuntimeHints(config: RallarBlackBoxTestConfig | undefined): bool
     );
 }
 
-function optionalString(value: unknown): string | undefined {
+function optionalString(value: any): string | undefined {
     return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: any): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
