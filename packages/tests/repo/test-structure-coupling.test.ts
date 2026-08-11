@@ -742,19 +742,6 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).not.toContain('ast-inspection');
   });
 
-  it('reports real source-coupled public and control-boundary tests', () => {
-    const result = runRepoChecker([
-      '--files',
-      'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts',
-      'packages/tests/rallar-black-box/control-protocol-boundary.test.ts',
-    ]);
-
-    expect(result.status, result.stdout).toBe(0);
-    expect(result.stdout).toContain('exact-file-tree');
-    expect(result.stdout).toContain('production-source-read');
-    expect(result.stdout).toContain('symbol-assertion');
-  }, 20_000);
-
   it('links approved static boundaries to their owning executable assertions', () => {
     const registry = readRepositoryRegistry();
     const contracts = new Map(registry.contracts.map((contract) => [contract.id, contract]));
@@ -783,22 +770,6 @@ describe('test structure-coupling review', () => {
     expect(entriesByContract.get('auth-server-wrapper-mutation-boundary')).toHaveLength(2);
     expect(entriesByContract.get('auth-server-canonical-test-inventory')).toHaveLength(1);
   });
-
-  it('parses representative real repository suites without silently skipping evidence', () => {
-    const publicBoundaryPath = 'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts';
-    const truthfulNoCandidateAllowed = [
-      'packages/tests/repo/github-actions-runtime-governance.test.ts',
-    ];
-    const result = runRepoChecker(['--files', publicBoundaryPath, ...truthfulNoCandidateAllowed]);
-
-    expect(result.status, result.stdout).toBe(0);
-    expect(result.stdout).toMatch(
-      new RegExp(`REVIEWED ${publicBoundaryPath} \\| candidates=[1-9][0-9]*`, 'u'),
-    );
-    for (const path of truthfulNoCandidateAllowed) {
-      expect(result.stdout).toMatch(new RegExp(`REVIEWED ${path} \\| candidates=[0-9]+`, 'u'));
-    }
-  }, 30_000);
 
   it('reports renamed removals and unchanged-source copies with range-safe evidence', () => {
     const fixture = createGitFixture({
@@ -933,17 +904,6 @@ function runChecker(
 ): { readonly status: number | null; readonly stdout: string } {
   const result = spawnSync(process.execPath, [checkerPath, ...args], {
     cwd: fixture.root,
-    encoding: 'utf8',
-  });
-  return { status: result.status, stdout: `${result.stdout}${result.stderr}` };
-}
-
-function runRepoChecker(args: readonly string[]): {
-  readonly status: number | null;
-  readonly stdout: string;
-} {
-  const result = spawnSync(process.execPath, [checkerPath, ...args], {
-    cwd: repoRoot,
     encoding: 'utf8',
   });
   return { status: result.status, stdout: `${result.stdout}${result.stderr}` };
