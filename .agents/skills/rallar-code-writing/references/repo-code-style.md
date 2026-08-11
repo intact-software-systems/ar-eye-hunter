@@ -67,7 +67,8 @@ inventing another abstraction.
   repository-wide cleanup.
 - The manual review gate is active now. The full-repository checker remains warning-only while legacy debt remains.
   No global strict checker mode is available. Feature-branch CI blocks only new or worsened findings against the merge
-  base.
+  base. For file length, worsened means crossing a size tier (400/500/800) or same-tier growth of more than
+  max(10% of the merge-base length, 25 physical lines); every other rule treats any magnitude growth as worsened.
 - Tests, mocks, stories, fixtures, and generated artifacts are excluded from the default production-code checker, but
   not from the human-readable standard.
 - A deliberate exception requires explicit human approval and a short rationale in the task handoff. Existing violations
