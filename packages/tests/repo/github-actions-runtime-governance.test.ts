@@ -1,4 +1,7 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { readdir, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -40,15 +43,74 @@ function sourceLine(source: string, offset: number): number {
 }
 
 describe('GitHub Actions runtime governance', () => {
-  it('blocks changed structure-coupling candidates without individual classifications', async () => {
+  it('resolves an immutable merge-base range and invokes both changed checkers directly', async () => {
     const releaseGate = await readFile(
       path.join(repoRoot, '.github/workflows/release-gate.yml'),
       'utf8',
     );
 
-    expect(releaseGate).toContain(
-      'npm run check:test-structure-coupling -- "--changed" "${{ inputs.changed_repo_style_base }}" HEAD',
+    expect(releaseGate).toContain('node scripts/resolve-changed-review-range.mjs');
+    expect(releaseGate).toContain('tee -a "$GITHUB_OUTPUT"');
+    expect(releaseGate).toContain('steps.changed_review_range.outputs.base');
+    expect(releaseGate).toContain('steps.changed_review_range.outputs.head');
+    expect(releaseGate).toContain('node scripts/check-changed-repo-style.mjs');
+    expect(releaseGate).toContain('node scripts/check-test-structure-coupling.mjs --changed');
+    expect(releaseGate).not.toContain('npm run check:test-structure-coupling');
+  });
+
+  it('uses the exact merge base when the trusted base tip has diverged', async () => {
+    const fixtureRoot = mkdtempSync(path.join(tmpdir(), 'rallar-changed-review-range-'));
+    try {
+      runGit(fixtureRoot, ['init']);
+      runGit(fixtureRoot, ['config', 'user.email', 'test@example.com']);
+      runGit(fixtureRoot, ['config', 'user.name', 'Test User']);
+      mkdirSync(path.join(fixtureRoot, 'scripts'), { recursive: true });
+      writeFileSync(path.join(fixtureRoot, 'contract.txt'), 'common\n');
+      runGit(fixtureRoot, ['add', '.']);
+      runGit(fixtureRoot, ['commit', '-m', 'common']);
+      const common = runGit(fixtureRoot, ['rev-parse', 'HEAD']).trim();
+      runGit(fixtureRoot, ['branch', 'feature']);
+      writeFileSync(path.join(fixtureRoot, 'base.txt'), 'advanced base\n');
+      runGit(fixtureRoot, ['add', '.']);
+      runGit(fixtureRoot, ['commit', '-m', 'advance trusted base']);
+      const trustedBaseTip = runGit(fixtureRoot, ['rev-parse', 'HEAD']).trim();
+      runGit(fixtureRoot, ['switch', 'feature']);
+      writeFileSync(path.join(fixtureRoot, 'feature.txt'), 'candidate\n');
+      runGit(fixtureRoot, ['add', '.']);
+      runGit(fixtureRoot, ['commit', '-m', 'candidate']);
+      const candidateHead = runGit(fixtureRoot, ['rev-parse', 'HEAD']).trim();
+
+      const output = execFileSync(
+        process.execPath,
+        [
+          path.join(repoRoot, 'scripts/resolve-changed-review-range.mjs'),
+          trustedBaseTip,
+          candidateHead,
+        ],
+        { cwd: fixtureRoot, encoding: 'utf8' },
     );
+
+      expect(output).toContain(`trusted_base_tip=${trustedBaseTip}`);
+      expect(output).toContain(`base=${common}`);
+      expect(output).toContain(`head=${candidateHead}`);
+      expect(output).not.toContain(`base=${trustedBaseTip}`);
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('cannot bypass structure review by replacing the package script with a no-op', async () => {
+    const releaseGate = await readFile(
+      path.join(repoRoot, '.github/workflows/release-gate.yml'),
+      'utf8',
+    );
+    const structureCommand = releaseGate.match(
+      /node scripts\/check-test-structure-coupling\.mjs\s+--changed/u,
+    )?.[0];
+
+    expect(structureCommand).toBeDefined();
+    expect(structureCommand).not.toContain('npm run');
+    expect(structureCommand).not.toContain('check:test-structure-coupling');
   });
 
   it('uses the Node 24 action releases throughout executable automation', async () => {
@@ -80,3 +142,7 @@ describe('GitHub Actions runtime governance', () => {
     expect(violations).toEqual([]);
   });
 });
+
+function runGit(root: string, args: readonly string[]): string {
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+}
