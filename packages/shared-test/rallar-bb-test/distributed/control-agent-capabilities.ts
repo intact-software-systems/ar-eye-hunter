@@ -206,6 +206,6 @@ function optionalString(value: any): string | undefined {
     return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
-function isRecord(value: any): value is Record<string, unknown> {
+function isRecord(value: any): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
