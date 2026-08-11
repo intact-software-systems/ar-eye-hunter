@@ -88,7 +88,13 @@ function validateDisposition(errors, entry) {
   }
 }
 
-export function printReport({ reviewInput, reportCandidates, registry }) {
+export function printReport({
+  reviewInput,
+  reportCandidates,
+  reviewedPaths,
+  registry,
+  hasFailures,
+}) {
   console.log(
     [
       'WARN: test structure-coupling review is advisory;',
@@ -101,11 +107,16 @@ export function printReport({ reviewInput, reportCandidates, registry }) {
     console.log(`head=${reviewInput.head}`);
   }
   const entries = new Map(registry.entries.filter(isPlainObject).map((entry) => [entry.id, entry]));
+  if (reviewInput.mode === 'changed-files') {
+    printSelectedPathEvidence(reviewedPaths, reportCandidates);
+  }
   for (const candidate of reportCandidates) {
     console.log(toCandidateReport(candidate, entries.get(candidate.id)));
   }
-  if (reportCandidates.length === 0) {
+  if (reportCandidates.length === 0 && !hasFailures) {
     console.log('PASS: no current structure-coupled test candidates');
+  } else if (reportCandidates.length === 0) {
+    console.log('WARN: no candidates reported because validation did not complete successfully.');
   } else {
     const count = reportCandidates.length;
     console.log(
@@ -119,6 +130,16 @@ export function printReport({ reviewInput, reportCandidates, registry }) {
     console.log(
       'WARN: changed-range evidence does not block changed files while the inventory is reviewed.',
     );
+  }
+}
+
+function printSelectedPathEvidence(reviewedPaths, candidates) {
+  const countByPath = new Map();
+  for (const candidate of candidates) {
+    countByPath.set(candidate.path, (countByPath.get(candidate.path) ?? 0) + 1);
+  }
+  for (const path of reviewedPaths) {
+    console.log(`REVIEWED ${path} | candidates=${countByPath.get(path) ?? 0}`);
   }
 }
 

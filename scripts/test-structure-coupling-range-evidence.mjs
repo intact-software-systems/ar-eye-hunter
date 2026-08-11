@@ -59,35 +59,49 @@ export function readReportCandidates(reviewInput) {
     return scanWorkingPaths(readWorkingTestPaths());
   }
   if (reviewInput.mode === 'changed-files') {
-    return scanWorkingPaths(reviewInput.paths.filter(isTestPath).toSorted()).map(
-      withChange('selected'),
+    return withCandidateChange(
+      scanWorkingPaths(reviewInput.paths.filter(isTestPath).toSorted()),
+      'selected',
     );
   }
-  const reported = [];
+  const candidates = [];
+  const errors = [];
+  const reviewedPaths = [];
   for (const change of reviewInput.changes) {
-    reported.push(...readChangeCandidates({ reviewInput, change }));
+    const result = readChangeCandidates({ reviewInput, change });
+    candidates.push(...result.candidates);
+    errors.push(...result.errors);
+    reviewedPaths.push(...result.reviewedPaths);
   }
-  return reported.toSorted(compareCandidates);
+  return {
+    candidates: candidates.toSorted(compareCandidates),
+    errors: errors.toSorted(),
+    reviewedPaths: [...new Set(reviewedPaths)].toSorted(),
+  };
 }
 
 function readChangeCandidates({ reviewInput, change }) {
-  const previous = isTestPath(change.source)
+  const previousResult = isTestPath(change.source)
     ? scanRevisionPaths(reviewInput.base, [change.source])
-    : [];
-  const current =
+    : emptyScan();
+  const currentResult =
     change.target && isTestPath(change.target)
       ? scanRevisionPaths(reviewInput.head, [change.target])
-      : [];
+      : emptyScan();
   const changeName = readChangeName(change.kind);
-  const reported = current.map((candidate) => ({
+  const candidates = currentResult.candidates.map((candidate) => ({
     ...candidate,
     change: changeName,
     origin: change.kind === 'C' ? 'copy' : undefined,
   }));
   if (change.kind === 'R' || change.kind === 'M' || change.kind === 'D') {
-    reported.push(...readDeletedCandidates(previous, current));
+    candidates.push(...readDeletedCandidates(previousResult.candidates, currentResult.candidates));
   }
-  return reported;
+  return {
+    candidates,
+    errors: [...previousResult.errors, ...currentResult.errors],
+    reviewedPaths: [...previousResult.reviewedPaths, ...currentResult.reviewedPaths],
+  };
 }
 
 function readChangeName(kind) {
@@ -117,6 +131,10 @@ function countSemanticKeys(candidates) {
     counts.set(candidate.semanticKey, (counts.get(candidate.semanticKey) ?? 0) + 1);
   }
   return counts;
+}
+
+function emptyScan() {
+  return { candidates: [], errors: [], reviewedPaths: [] };
 }
 
 export function readCompleteCurrentCandidates(reviewInput) {
@@ -157,6 +175,14 @@ export function readRevisionFile(revision, file) {
 
 function withChange(change) {
   return (candidate) => ({ ...candidate, change });
+}
+
+function withCandidateChange(result, change) {
+  return {
+    candidates: result.candidates.map(withChange(change)),
+    errors: result.errors,
+    reviewedPaths: result.reviewedPaths,
+  };
 }
 
 function runGit(args) {

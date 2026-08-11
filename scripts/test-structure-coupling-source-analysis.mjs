@@ -14,20 +14,46 @@ import {
 } from './test-structure-coupling-source-dataflow.mjs';
 
 export function scanSources(sources) {
-  return sources
-    .flatMap(({ file, source }) => scanTestSource(file, source))
-    .toSorted(compareCandidates);
+  const candidates = [];
+  const errors = [];
+  const reviewedPaths = [];
+  for (const { file, source } of sources) {
+    const result = scanTestSource(file, source);
+    candidates.push(...result.candidates);
+    errors.push(...result.errors);
+    if (result.errors.length === 0) {
+      reviewedPaths.push(file);
+    }
+  }
+  return {
+    candidates: candidates.toSorted(compareCandidates),
+    errors: errors.toSorted(),
+    reviewedPaths: reviewedPaths.toSorted(),
+  };
 }
 
 function scanTestSource(file, source) {
   try {
-    const dataflow = readTestSourceDataflow(source);
-    return dataflow.blocks.flatMap((block) =>
-      scanBlock({ file, source, block, context: dataflow.context }),
-    );
-  } catch {
-    return [];
+    const dataflow = readTestSourceDataflow({ file, source });
+    return {
+      candidates: dataflow.blocks.flatMap((block) =>
+        scanBlock({ file, source, block, context: dataflow.context }),
+      ),
+      errors: [],
+    };
+  } catch (error) {
+    return { candidates: [], errors: [toParseError(file, error)] };
   }
+}
+
+function toParseError(file, error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const reason = message
+    .replaceAll(/[\u0000-\u001f\u007f]/gu, ' ')
+    .replaceAll(/\s+/gu, ' ')
+    .trim()
+    .slice(0, 240);
+  return `supported test source could not be parsed: ${file}: ${reason || 'unknown parser error'}`;
 }
 
 function scanBlock({ file, source, block, context }) {
@@ -261,7 +287,10 @@ function createCandidate({ file, source, location, kind, reason }) {
 }
 
 export function isTestPath(file) {
-  return /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(file);
+  const isTestLocation =
+    /(?:^|\/)(?:tests?|__tests__)(?:\/|$)/u.test(file) ||
+    /\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(file);
+  return isTestLocation && /\.(?:[cm]?js|jsx|[cm]?ts|tsx)$/u.test(file);
 }
 
 export function compareCandidates(left, right) {

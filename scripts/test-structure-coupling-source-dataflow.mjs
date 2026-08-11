@@ -1,22 +1,29 @@
-import { parse } from '@babel/parser';
-import { createScanner, SyntaxKind } from 'typescript/unstable/ast';
+import { extname } from 'node:path';
 
-export function readTestSourceDataflow(source) {
-  lexTypeScript(source);
-  const program = parse(source, { sourceType: 'module', plugins: ['typescript', 'jsx'] }).program;
+import { parse } from '@babel/parser';
+
+export function readTestSourceDataflow({ file, source }) {
+  const extension = extname(file).toLowerCase();
+  const plugins = readParserPlugins(extension);
+  const program = parse(source, {
+    sourceFilename: file,
+    sourceType: 'unambiguous',
+    plugins,
+  }).program;
   const context = createSourceContext(source, program);
   const blocks = readTestBlocks(program);
   return { context, blocks: blocks.length === 0 ? [program] : blocks };
 }
 
-function lexTypeScript(source) {
-  const scanner = createScanner(false, undefined, source);
-  for (let tokenCount = 0; tokenCount <= source.length * 2; tokenCount += 1) {
-    if (scanner.scan() === SyntaxKind.EndOfFile) {
-      return;
-    }
+function readParserPlugins(extension) {
+  const plugins = ['decorators-legacy', 'explicitResourceManagement', 'importAttributes'];
+  if (['.ts', '.tsx', '.mts', '.cts'].includes(extension)) {
+    plugins.push('typescript');
   }
-  throw new Error('TypeScript scanner did not reach end of file');
+  if (extension === '.jsx' || extension === '.tsx') {
+    plugins.push('jsx');
+  }
+  return plugins;
 }
 
 function createSourceContext(source, program) {

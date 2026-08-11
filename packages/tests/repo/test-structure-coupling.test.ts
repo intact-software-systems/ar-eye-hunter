@@ -118,6 +118,60 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).toContain('PASS: no current structure-coupled test candidates');
   });
 
+  it('excludes non-code artifacts under test directories from source parsing', () => {
+    const fixture = createGitFixture({
+      'packages/tests/example/artifact.json': '{ deliberately invalid JSON',
+      'packages/tests/example/notes.md': '# source = readFileSync(',
+      'packages/tests/example/report.html': '<script>const broken = </script>',
+      'packages/tests/example/screenshot.png': 'not image bytes and not source code',
+      'packages/tests/example/semantic.test.ts': 'expect(true).toBe(true);\n',
+    });
+
+    const result = runChecker(fixture);
+    const selectedArtifact = runChecker(fixture, [
+      '--files',
+      'packages/tests/example/artifact.json',
+    ]);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('PASS: no current structure-coupled test candidates');
+    expect(result.stdout).not.toContain('artifact.json');
+    expect(result.stdout).not.toContain('notes.md');
+    expect(result.stdout).not.toContain('report.html');
+    expect(result.stdout).not.toContain('screenshot.png');
+    expect(selectedArtifact.status, selectedArtifact.stdout).toBe(0);
+    expect(selectedArtifact.stdout).toContain('PASS: no current structure-coupled test candidates');
+    expect(selectedArtifact.stdout).not.toContain('artifact.json');
+  });
+
+  it('fails closed with path-specific evidence when supported test source cannot parse', () => {
+    const fixture = createGitFixture({
+      'packages/tests/example/broken.test.ts': "it('valid', () => {});\n",
+    });
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    writeFileSync(
+      path.join(fixture.root, 'packages/tests/example/broken.test.ts'),
+      "it('broken', () => {\n",
+    );
+    const head = commitFixture(fixture.root, 'break supported test source');
+
+    const results = [
+      runChecker(fixture),
+      runChecker(fixture, ['--files', 'packages/tests/example/broken.test.ts']),
+      runChecker(fixture, ['--changed', base, head]),
+    ];
+
+    for (const result of results) {
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(
+        'FAIL: supported test source could not be parsed: packages/tests/example/broken.test.ts:',
+      );
+      expect(result.stdout).not.toContain(' at parse (');
+      expect(result.stdout).not.toContain('PASS: no current structure-coupled test candidates');
+      expect(result.stdout).not.toContain('PASS: registry entries are complete and current');
+    }
+  });
+
   it('accepts individually registered durable public boundaries and temporary ratchets', () => {
     const fixture = createGitFixture({
       'packages/example/src/public.ts': 'export const publicApi = true;\n',
@@ -431,6 +485,33 @@ describe('test structure-coupling review', () => {
     expect(controlBoundary.stdout).toContain('production-source-read');
     expect(controlBoundary.stdout).toContain('symbol-assertion');
   }, 20_000);
+
+  it('parses representative real repository suites without silently skipping evidence', () => {
+    const recipeConsolePath = 'packages/tests/rallar-black-box/recipe-console-structure.test.ts';
+    const truthfulNoCandidateAllowed = [
+      'packages/tests/repo/api-v1-group-state-route-lineage-provenance.test.ts',
+      'packages/tests/repo/github-actions-runtime-governance.test.ts',
+      'packages/tests/repo/auth-server-navigation-map-integrity.test.ts',
+      'packages/tests/repo/client-state-navigation-map-integrity.test.ts',
+    ];
+    const result = runRepoChecker(['--files', recipeConsolePath, ...truthfulNoCandidateAllowed]);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toMatch(
+      new RegExp(`REVIEWED ${recipeConsolePath} \\| candidates=[1-9][0-9]*`, 'u'),
+    );
+    for (const path of truthfulNoCandidateAllowed) {
+      expect(result.stdout).toMatch(new RegExp(`REVIEWED ${path} \\| candidates=[0-9]+`, 'u'));
+    }
+  }, 30_000);
+
+  it('parses every tracked supported test source without silent omission', () => {
+    const result = runRepoChecker([]);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).not.toContain('supported test source could not be parsed');
+    expect(result.stdout).toContain('PASS: registry entries are complete and current');
+  }, 30_000);
 
   it('reports renamed removals and unchanged-source copies with range-safe evidence', () => {
     const fixture = createGitFixture({

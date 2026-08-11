@@ -13,12 +13,24 @@ import {
 } from './test-structure-coupling-registry-report.mjs';
 
 const reviewInput = readReviewInput(process.argv.slice(2));
-const reportCandidates = readReportCandidates(reviewInput);
-const completeCurrentCandidates = readCompleteCurrentCandidates(reviewInput);
+const report = readReportCandidates(reviewInput);
+const completeCurrent = readCompleteCurrentCandidates(reviewInput);
 const registry = readRegistry(reviewInput);
-const validationErrors = validateRegistry(registry, completeCurrentCandidates);
+const validationErrors = [
+  ...new Set([
+    ...report.errors,
+    ...completeCurrent.errors,
+    ...validateRegistry(registry, completeCurrent.candidates),
+  ]),
+].toSorted();
 
-printReport({ reviewInput, reportCandidates, registry });
+printReport({
+  reviewInput,
+  reportCandidates: report.candidates,
+  reviewedPaths: report.reviewedPaths,
+  registry,
+  hasFailures: validationErrors.length > 0,
+});
 for (const error of validationErrors) {
   console.log(`FAIL: ${error}`);
 }
