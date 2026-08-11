@@ -386,7 +386,10 @@ understood. The merge-base feature-branch gate below is active.
 
 The full-repository scan remains warning-only so legacy debt does not block
 unrelated work. Feature branches run a separate comparison against their merge
-base and fail only for new or worsened findings:
+base and fail only for new or worsened findings. For file length, worsened
+means crossing a size tier (400/500/800) or same-tier growth of more than
+max(10% of the merge-base length, 25 physical lines); every other rule treats
+any magnitude growth as worsened:
 
 ```bash
 npm run check:repo-style:changed -- origin/main
