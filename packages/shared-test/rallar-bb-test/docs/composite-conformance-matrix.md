@@ -22,7 +22,7 @@ transport permutation:
   orchestration.
 
 Case recipes are built in
-`conformance/composite-conformance-recipes.ts` (absence cases in
+`conformance/create-rallar-black-box-composite-conformance-recipe.ts` (absence cases in
 `wait/wait-absence-conformance-recipes.ts`) from the shared command fixtures
 in `conformance/composite-conformance-command-fixtures.ts`.
 

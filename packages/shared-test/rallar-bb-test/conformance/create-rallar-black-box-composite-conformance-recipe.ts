@@ -47,7 +47,9 @@ export function createRallarBlackBoxCompositeConformanceRecipe(
     }
 }
 
-function loopedRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptions): RallarBlackBoxTestRecipe {
+function loopedRtcRecipe(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
@@ -58,7 +60,14 @@ function loopedRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOption
         metadata: recipeMetadata('looped-rtc-send'),
         commands: [
             configureCommand('looped-rtc-send', options),
-            rtcConnectCommand('looped-rtc-send', 'looped-rtc-send-connect', connection, roomId, transport, options),
+            rtcConnectCommand(
+                'looped-rtc-send',
+                'looped-rtc-send-connect',
+                connection,
+                roomId,
+                transport,
+                options,
+            ),
             {
                 kind: 'loop',
                 commandId: 'looped-rtc-send-loop',
@@ -96,7 +105,9 @@ function loopedRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOption
     };
 }
 
-function parallelWsRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptions): RallarBlackBoxTestRecipe {
+function parallelWsRtcRecipe(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const wsConnection = options.wsConnection ?? DEFAULT_WS_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
@@ -116,7 +127,14 @@ function parallelWsRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOp
                 timeoutMs: timeoutMs(options),
                 metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-open'),
             },
-            rtcConnectCommand('parallel-ws-rtc-groups', 'parallel-rtc-connect', connection, roomId, transport, options),
+            rtcConnectCommand(
+                'parallel-ws-rtc-groups',
+                'parallel-rtc-connect',
+                connection,
+                roomId,
+                transport,
+                options,
+            ),
             {
                 kind: 'parallel',
                 commandId: 'parallel-ws-rtc',
@@ -135,7 +153,10 @@ function parallelWsRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOp
                                         source: 'ws',
                                     },
                                 },
-                                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-send'),
+                                metadata: commandMetadata(
+                                    'parallel-ws-rtc-groups',
+                                    'parallel-ws-send',
+                                ),
                             },
                         ],
                     },
@@ -156,7 +177,10 @@ function parallelWsRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOp
                                     roomId,
                                     ...scopeFields(options),
                                 },
-                                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-rtc-send'),
+                                metadata: commandMetadata(
+                                    'parallel-ws-rtc-groups',
+                                    'parallel-rtc-send',
+                                ),
                             },
                         ],
                     },
@@ -177,7 +201,9 @@ function parallelWsRtcRecipe(options: RallarBlackBoxCompositeConformanceRecipeOp
     };
 }
 
-function waitAssertRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptions): RallarBlackBoxTestRecipe {
+function waitAssertRecipe(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
@@ -188,7 +214,14 @@ function waitAssertRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptio
         metadata: recipeMetadata('wait-assert-evidence'),
         commands: [
             configureCommand('wait-assert-evidence', options),
-            rtcConnectCommand('wait-assert-evidence', 'wait-assert-connect', connection, roomId, transport, options),
+            rtcConnectCommand(
+                'wait-assert-evidence',
+                'wait-assert-connect',
+                connection,
+                roomId,
+                transport,
+                options,
+            ),
             {
                 kind: 'rtc.send',
                 commandId: 'wait-assert-send',
@@ -231,7 +264,9 @@ function waitAssertRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptio
     };
 }
 
-function cancelDuringLoopRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptions): RallarBlackBoxTestRecipe {
+function cancelDuringLoopRecipe(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): RallarBlackBoxTestRecipe {
     return {
         recipeId: recipeId('cancel-during-loop', options),
         name: 'Composite conformance: cancellation during loop',
@@ -264,7 +299,9 @@ function cancelDuringLoopRecipe(options: RallarBlackBoxCompositeConformanceRecip
     };
 }
 
-function negativeNoPeerRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptions): RallarBlackBoxTestRecipe {
+function negativeNoPeerRecipe(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
@@ -275,7 +312,14 @@ function negativeNoPeerRecipe(options: RallarBlackBoxCompositeConformanceRecipeO
         metadata: recipeMetadata('negative-no-peer'),
         commands: [
             configureCommand('negative-no-peer', options),
-            rtcConnectCommand('negative-no-peer', 'negative-no-peer-connect', connection, roomId, transport, options),
+            rtcConnectCommand(
+                'negative-no-peer',
+                'negative-no-peer-connect',
+                connection,
+                roomId,
+                transport,
+                options,
+            ),
             {
                 kind: 'rtc.send',
                 commandId: 'negative-no-peer-send',

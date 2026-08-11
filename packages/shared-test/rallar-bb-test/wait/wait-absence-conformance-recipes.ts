@@ -19,7 +19,9 @@ import {
     timeoutMs,
 } from '../conformance/composite-conformance-command-fixtures.ts';
 
-export function waitAbsenceHoldRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptions): RallarBlackBoxTestRecipe {
+export function waitAbsenceHoldRecipe(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
@@ -30,7 +32,14 @@ export function waitAbsenceHoldRecipe(options: RallarBlackBoxCompositeConformanc
         metadata: recipeMetadata('wait-absence-hold'),
         commands: [
             configureCommand('wait-absence-hold', options),
-            rtcConnectCommand('wait-absence-hold', 'wait-absence-hold-connect', connection, roomId, transport, options),
+            rtcConnectCommand(
+                'wait-absence-hold',
+                'wait-absence-hold-connect',
+                connection,
+                roomId,
+                transport,
+                options,
+            ),
             {
                 kind: 'rtc.send',
                 commandId: 'wait-absence-hold-send',
@@ -57,7 +66,10 @@ export function waitAbsenceHoldRecipe(options: RallarBlackBoxCompositeConformanc
                     payloadPath: 'data.topic',
                     equals: 'rallar.conformance.wait-absence-hold',
                 },
-                metadata: commandMetadata('wait-absence-hold', 'wait-absence-hold-positive-control'),
+                metadata: commandMetadata(
+                    'wait-absence-hold',
+                    'wait-absence-hold-positive-control',
+                ),
             },
             {
                 kind: 'wait',
@@ -78,7 +90,9 @@ export function waitAbsenceHoldRecipe(options: RallarBlackBoxCompositeConformanc
     };
 }
 
-export function waitAbsenceViolatedRecipe(options: RallarBlackBoxCompositeConformanceRecipeOptions): RallarBlackBoxTestRecipe {
+export function waitAbsenceViolatedRecipe(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
     const transport = options.transport ?? 'realtime';
@@ -89,7 +103,14 @@ export function waitAbsenceViolatedRecipe(options: RallarBlackBoxCompositeConfor
         metadata: recipeMetadata('wait-absence-violated'),
         commands: [
             configureCommand('wait-absence-violated', options),
-            rtcConnectCommand('wait-absence-violated', 'wait-absence-violated-connect', connection, roomId, transport, options),
+            rtcConnectCommand(
+                'wait-absence-violated',
+                'wait-absence-violated-connect',
+                connection,
+                roomId,
+                transport,
+                options,
+            ),
             {
                 kind: 'rtc.send',
                 commandId: 'wait-absence-violated-send',
@@ -116,7 +137,10 @@ export function waitAbsenceViolatedRecipe(options: RallarBlackBoxCompositeConfor
                     payloadPath: 'data.topic',
                     equals: 'rallar.conformance.wait-absence-violated',
                 },
-                metadata: commandMetadata('wait-absence-violated', 'wait-absence-violated-positive-control'),
+                metadata: commandMetadata(
+                    'wait-absence-violated',
+                    'wait-absence-violated-positive-control',
+                ),
             },
             {
                 kind: 'wait',

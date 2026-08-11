@@ -25,7 +25,9 @@ export interface WaitForEventInput {
     readonly subscribe: (listener: () => void) => () => void;
 }
 
-export async function waitForEvent(input: WaitForEventInput): Promise<RallarBlackBoxTestCommandOutcome> {
+export async function waitForEvent(
+    input: WaitForEventInput,
+): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
     if (!command.match || Object.keys(command.match).length === 0) {
         return waitInvalid(command, 'Wait requires at least one match field.');
@@ -126,7 +128,9 @@ export async function waitForEvent(input: WaitForEventInput): Promise<RallarBlac
 // Parity with the runner's absence waits: the full window is always held —
 // an absence claim is only as strong as the time the agent kept listening —
 // then the whole buffer is scanned once, so earlier events violate by design.
-async function holdForEventAbsence(input: WaitForEventInput): Promise<RallarBlackBoxTestCommandOutcome> {
+async function holdForEventAbsence(
+    input: WaitForEventInput,
+): Promise<RallarBlackBoxTestCommandOutcome> {
     const command = input.command;
     const deadlineEpochMs = waitDeadlineEpochMs(command, input.now);
 

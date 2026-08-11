@@ -3,7 +3,9 @@ import {
     type RallarBlackBoxCompositeResultSummary,
 } from './composite-results.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
-import { createRallarBlackBoxCompositeConformanceRecipe } from './conformance/composite-conformance-recipes.ts';
+import {
+    createRallarBlackBoxCompositeConformanceRecipe,
+} from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -181,7 +183,14 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES:
             title: 'Wait Absence Hold',
             intent: 'Prove an absence wait holds the full window and passes when nothing matches.',
             expectedStatus: 'ok',
-            requiredCommandKinds: ['configure', 'rtc.connect', 'rtc.send', 'wait', 'stats', 'close'],
+            requiredCommandKinds: [
+                'configure',
+                'rtc.connect',
+                'rtc.send',
+                'wait',
+                'stats',
+                'close',
+            ],
             requiredCompositeKinds: [],
             requiredEventTopics: ['rallar.conformance.message'],
             liveSafe: true,

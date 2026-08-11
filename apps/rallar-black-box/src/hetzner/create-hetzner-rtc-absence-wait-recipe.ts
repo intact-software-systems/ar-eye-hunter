@@ -19,6 +19,7 @@ export function createHetznerRtcAbsenceWaitRecipe(
         groupId: group.groupId,
     };
     const scopedGroup = `${group.applicationId}:${group.workspaceId}:${group.groupId}`;
+    const statePrefix = `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}`;
 
     return {
         recipeId: 'rtc-absence-wait-recipe',
@@ -40,7 +41,7 @@ export function createHetznerRtcAbsenceWaitRecipe(
                 },
                 request: {
                     method: 'POST',
-                    path: `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups`,
+                    path: `${statePrefix}/groups`,
                     body: {
                         requestId: `rtc-absence:ensure-group:${scopedGroup}:{auth.sessionId}`,
                         groupId: group.groupId,
@@ -59,15 +60,17 @@ export function createHetznerRtcAbsenceWaitRecipe(
                 commandId: 'rtc-absence-ensure-member',
                 timeoutMs: 5_000,
                 metadata: {
-                    purpose: 'Ensure the logged-in browser client is an active group member before RTC room join.',
+                    purpose: 'Ensure the logged-in browser client is an active group member ' +
+                        'before RTC room join.',
                     idempotent: true,
                     group: roomRef,
                 },
                 request: {
                     method: 'PUT',
-                    path: `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}/groups/${group.groupId}/members/{auth.clientId}`,
+                    path: `${statePrefix}/groups/${group.groupId}/members/{auth.clientId}`,
                     body: {
-                        requestId: `rtc-absence:ensure-member:${scopedGroup}:{auth.clientId}:{auth.sessionId}`,
+                        requestId: `rtc-absence:ensure-member:${scopedGroup}` +
+                            ':{auth.clientId}:{auth.sessionId}',
                         status: 'active',
                     },
                 },
@@ -117,7 +120,8 @@ export function createHetznerRtcAbsenceWaitRecipe(
                 commandId: 'rtc-absence-positive-control',
                 timeoutMs: 10_000,
                 metadata: {
-                    purpose: 'Same-room positive control: the control frame must arrive before any absence claim.',
+                    purpose: 'Same-room positive control: the control frame must arrive ' +
+                        'before any absence claim.',
                 },
                 match: {
                     kind: 'message',
