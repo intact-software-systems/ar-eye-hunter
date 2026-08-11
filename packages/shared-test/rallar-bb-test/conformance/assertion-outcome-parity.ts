@@ -150,7 +150,10 @@ export function evaluateComparatorOutcomeParityRows(): readonly AssertionOutcome
         )
             ? 'pass'
             : 'fail';
-        return toRow(fixture.fixtureId, 'comparators', fixture.expectedVerdict, {
+        return toRow({
+            fixtureId: fixture.fixtureId,
+            family: 'comparators',
+            expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
             runtimeVerdict,
         });
@@ -198,7 +201,10 @@ export function evaluateCompleteArrayOutcomeParityRows(): readonly AssertionOutc
         )
             ? 'pass'
             : 'fail';
-        return toRow(fixture.fixtureId, 'complete-array', fixture.expectedVerdict, {
+        return toRow({
+            fixtureId: fixture.fixtureId,
+            family: 'complete-array',
+            expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
             runtimeVerdict,
         });
@@ -272,7 +278,10 @@ export async function evaluateAbsenceOutcomeParityRows(): Promise<
             },
         });
         const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
-        rows.push(toRow(fixture.fixtureId, 'absence', fixture.expectedVerdict, {
+        rows.push(toRow({
+            fixtureId: fixture.fixtureId,
+            family: 'absence',
+            expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
             runtimeVerdict,
         }));
@@ -363,7 +372,10 @@ export async function evaluatePollingOutcomeParityRows(
             ] satisfies readonly RallarBlackBoxTestCommand[],
         });
         const runtimeVerdict: AssertionOutcomeVerdict = runtimeResult.ok ? 'pass' : 'fail';
-        rows.push(toRow(fixture.fixtureId, 'polling', fixture.expectedVerdict, {
+        rows.push(toRow({
+            fixtureId: fixture.fixtureId,
+            family: 'polling',
+            expectedVerdict: fixture.expectedVerdict,
             runnerVerdict,
             runtimeVerdict,
         }));
@@ -371,24 +383,24 @@ export async function evaluatePollingOutcomeParityRows(
     return rows;
 }
 
-function toRow(
-    fixtureId: string,
-    family: AssertionOutcomeParityFamily,
-    expectedVerdict: AssertionOutcomeVerdict,
-    verdicts: Readonly<{
-        runnerVerdict: AssertionOutcomeVerdict;
-        runtimeVerdict: AssertionOutcomeVerdict;
-    }>,
-): AssertionOutcomeParityRow {
+interface ToRowInput {
+    readonly fixtureId: string;
+    readonly family: AssertionOutcomeParityFamily;
+    readonly expectedVerdict: AssertionOutcomeVerdict;
+    readonly runnerVerdict: AssertionOutcomeVerdict;
+    readonly runtimeVerdict: AssertionOutcomeVerdict;
+}
+
+function toRow(input: ToRowInput): AssertionOutcomeParityRow {
     return {
-        fixtureId,
-        family,
-        expectedVerdict,
-        runnerVerdict: verdicts.runnerVerdict,
-        runtimeVerdict: verdicts.runtimeVerdict,
-        agree: verdicts.runnerVerdict === verdicts.runtimeVerdict,
-        matchesExpected: verdicts.runnerVerdict === expectedVerdict &&
-            verdicts.runtimeVerdict === expectedVerdict,
+        fixtureId: input.fixtureId,
+        family: input.family,
+        expectedVerdict: input.expectedVerdict,
+        runnerVerdict: input.runnerVerdict,
+        runtimeVerdict: input.runtimeVerdict,
+        agree: input.runnerVerdict === input.runtimeVerdict,
+        matchesExpected: input.runnerVerdict === input.expectedVerdict &&
+            input.runtimeVerdict === input.expectedVerdict,
     };
 }
 
