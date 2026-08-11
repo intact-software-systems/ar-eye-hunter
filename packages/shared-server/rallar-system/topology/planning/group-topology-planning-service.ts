@@ -6,16 +6,12 @@ import {
 } from '@shared/api/group-client-views.ts';
 import type {
   EffectiveGroupTopologyConfig,
-  GroupTopologyConfigPatch,
   ReconfigureGroupTopologyResponse,
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import * as processRttRepository from '@shared/repository/rtt-repository.ts';
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 
-import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
-import type { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
 import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
 import {
   RallarRtcTopologyService,
@@ -34,7 +30,10 @@ import type {
   GroupTopologyConfigQueryService,
 } from '../config/group-topology-config-query-service.ts';
 import type { GroupTopologyServerOptions } from '../config/group-topology-config.ts';
-import type { GroupTopologyPlanningAuthority } from './group-topology-planning-authority.ts';
+import type {
+  GroupTopologyPlanningAuthority,
+  ReadGroupTopologyPlanningAuthorityInput,
+} from './group-topology-planning-authority.ts';
 // prettier-ignore
 import {
   createRtcOverlayTopologyBroadcastMessage,
@@ -48,15 +47,19 @@ export interface GroupTopologyPlanningServiceDependencies {
   readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
   readonly queryService: Pick<
     GroupTopologyConfigQueryService,
-    'findCurrentGroupSnapshot' | 'readConfig' | 'readResolvedTopologyConfig'
+    'readConfig' | 'readResolvedTopologyConfig'
   >;
   readonly topologyService: RallarRtcTopologyService;
-  readonly groupStateRepository?: GroupStateRepository;
-  readonly rttRepository?: RtcRttRepository;
-  readonly processRttReader?: () => readonly RttMeasurementInfo[];
+  readonly readCurrentGroupSnapshot: (
+    groupRef: GroupRef,
+    knownGroup: GroupSnapshot | undefined,
+  ) => Promise<GroupSnapshot | undefined>;
+  readonly readRttMeasurements: (
+    group: GroupSnapshot,
+  ) => readonly RttMeasurementInfo[] | Promise<readonly RttMeasurementInfo[]>;
+  readonly topologyMode: 'local' | 'persistent';
   readonly publisher?: GroupTopologyPublisher;
   readonly serverDefaults?: GroupTopologyServerOptions;
-  readonly persistentTopology?: boolean;
 }
 
 export class GroupTopologyPlanningService {
@@ -70,20 +73,22 @@ export class GroupTopologyPlanningService {
     this.dependencies.topologyService.recordTopologyPublishResult(published);
   }
 
+  recordTopologyRebuildSkippedFingerprint(): void {
+    this.dependencies.topologyService.recordTopologyRebuildSkippedFingerprint();
+  }
+
   async readTopologyPlanningAuthority(
-    groupRef: GroupRef,
-    requestOptions?: GroupTopologyConfigPatch,
-    knownGroup?: GroupSnapshot,
-    useKnownGroupRevision = false,
+    input: ReadGroupTopologyPlanningAuthorityInput,
   ): Promise<GroupTopologyPlanningAuthority> {
-    const currentGroup = knownGroup
-      ? await this.findTopologyPlanningGroupSnapshot(groupRef, knownGroup)
-      : undefined;
-    const group = knownGroup
-      ? selectGroupTopologyPlanningSnapshot(knownGroup, currentGroup, useKnownGroupRevision)
-      : await this.dependencies.queryService.findCurrentGroupSnapshot(groupRef);
+    const currentGroup = await this.dependencies.readCurrentGroupSnapshot(
+      input.groupRef,
+      input.knownGroup,
+    );
+    const group = input.knownGroup
+      ? selectGroupTopologyPlanningSnapshot(input.knownGroup, currentGroup, input.snapshotSelection)
+      : requireGroupTopologyPlanningSnapshot(input.groupRef, currentGroup);
     const [config, rttMeasurements] = await Promise.all([
-      this.dependencies.queryService.readResolvedTopologyConfig(group.group, requestOptions),
+      this.dependencies.queryService.readResolvedTopologyConfig(group.group, input.requestOptions),
       this.readRawRttMeasurements(group),
     ]);
     return {
@@ -121,7 +126,11 @@ export class GroupTopologyPlanningService {
     group: GroupSnapshot,
     previous: RallarOverlayTopologySnapshot | undefined,
   ): Promise<ReconcileGroupTopologyResult> {
-    const authority = await this.readTopologyPlanningAuthority(group.group, undefined, group);
+    const authority = await this.readTopologyPlanningAuthority({
+      groupRef: group.group,
+      knownGroup: group,
+      snapshotSelection: 'prefer-current',
+    });
     return this.computeTopologyFromAuthority(authority, previous);
   }
 
@@ -161,7 +170,7 @@ export class GroupTopologyPlanningService {
   }
 
   async reconcileGroupTopology(group: GroupSnapshot): Promise<ReconcileGroupTopologyResult> {
-    if (this.dependencies.persistentTopology) {
+    if (this.dependencies.topologyMode === 'persistent') {
       throw new TypeError('Persistent topology reconciliation requires APP_OUTBOX');
     }
     const previous = this.dependencies.topologyService.readSnapshot(group);
@@ -181,7 +190,7 @@ export class GroupTopologyPlanningService {
   async flushDueGroupTopology(
     input: ReconfigureGroupTopologyInput,
   ): Promise<ReconfigureGroupTopologyResponse | undefined> {
-    if (this.dependencies.persistentTopology) {
+    if (this.dependencies.topologyMode === 'persistent') {
       return undefined;
     }
     const group = await this.readReconfigureGroup(input);
@@ -216,7 +225,7 @@ export class GroupTopologyPlanningService {
   }
 
   removeGroupTopology(group: GroupSnapshot): Promise<void> {
-    if (!this.dependencies.persistentTopology) {
+    if (this.dependencies.topologyMode === 'local') {
       this.dependencies.topologyService.removeGroupTopology(group);
     }
     return Promise.resolve();
@@ -231,29 +240,10 @@ export class GroupTopologyPlanningService {
     return group;
   }
 
-  private async findTopologyPlanningGroupSnapshot(
-    groupRef: GroupRef,
-    knownGroup: GroupSnapshot,
-  ): Promise<GroupSnapshot | undefined> {
-    if (this.dependencies.groupStateRepository) {
-      return await this.dependencies.groupStateRepository.readSnapshot(groupRef);
-    }
-    return (
-      (await this.dependencies.findGroupSnapshotByRef(groupRef, {
-        minCausalRevision: knownGroup.causalRevision,
-      })) ?? (await this.dependencies.findGroupSnapshotByRef(groupRef))
-    );
-  }
-
   private async readRawRttMeasurements(
     group: GroupSnapshot,
   ): Promise<readonly RttMeasurementInfo[]> {
-    if (this.dependencies.rttRepository) {
-      return await this.dependencies.rttRepository.listMeasurementsForSessionIds(
-        group.activeSessions.map((session) => session.sessionId),
-      );
-    }
-    return this.dependencies.processRttReader?.() ?? processRttRepository.getAllRtt();
+    return await this.dependencies.readRttMeasurements(group);
   }
 
   private filterRttMeasurementsForGroup(
@@ -320,10 +310,20 @@ export class GroupTopologyPlanningService {
   }
 
   private requireLocalTopology(message: string): void {
-    if (this.dependencies.persistentTopology) {
+    if (this.dependencies.topologyMode === 'persistent') {
       throw new TypeError(message);
     }
   }
+}
+
+function requireGroupTopologyPlanningSnapshot(
+  groupRef: GroupRef,
+  snapshot: GroupSnapshot | undefined,
+): GroupSnapshot {
+  if (!snapshot) {
+    throw new Error(`Group snapshot not found: ${groupRef.groupId}`);
+  }
+  return snapshot;
 }
 
 function removedTopologyResult(

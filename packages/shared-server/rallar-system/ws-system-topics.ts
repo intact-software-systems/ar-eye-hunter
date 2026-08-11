@@ -131,7 +131,7 @@ export function initRallarSystemWsTopics(
       createRtcTopologyWorkHandler({
         runtime: rtcTopologyAppOutbox,
         database: rtcTopologyAppOutboxOptions.database,
-        topologyManagement: rtcTopologyManagement,
+        topologyPlanning: rtcTopologyManagement.planningService,
         executionRepository: rtcTopologyAppOutboxOptions.executionRepository,
         topologyDelivery: rtcTopologyAppOutboxOptions.topologyDelivery,
         wakeQueue: rtcTopologyAppOutboxOptions.wake,

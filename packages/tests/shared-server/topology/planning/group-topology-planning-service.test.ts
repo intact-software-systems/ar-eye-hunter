@@ -16,7 +16,11 @@ describe('GroupTopologyPlanningService', () => {
     const service = createPlanningService({ group, config });
 
     await expect(
-      service.readTopologyPlanningAuthority(group.group, { degreeLimit: 7 }),
+      service.readTopologyPlanningAuthority({
+        groupRef: group.group,
+        requestOptions: { degreeLimit: 7 },
+        snapshotSelection: 'prefer-current',
+      }),
     ).resolves.toEqual({
       group,
       config,
@@ -63,12 +67,14 @@ function createPlanningService(input: {
   const topologyService = new RallarRtcTopologyService({ now: () => 2_000 });
   return new GroupTopologyPlanningService({
     findGroupSnapshotByRef: async () => input.group,
+    readCurrentGroupSnapshot: async () => input.group,
+    readRttMeasurements: async () => [],
+    topologyMode: 'local',
     queryService: {
       findCurrentGroupSnapshot: async () => input.group,
       readConfig: async () => input.config ?? resolveGroupTopologyConfig({}),
       readResolvedTopologyConfig: async () => input.config ?? resolveGroupTopologyConfig({}),
     },
     topologyService,
-    processRttReader: () => [],
   });
 }

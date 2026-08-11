@@ -48,6 +48,30 @@ describe('GroupTopologyReconfigureMutation', () => {
     );
   });
 
+  it('uses the mutation authority dependency as the sole administrator decision', () => {
+    const read = createRead();
+    const command = { ...createCommand(), actorPrincipalId: 'intruder' };
+    const allowedMutation = createMutation(() => true);
+    const deniedMutation = createMutation(() => false);
+    const callerDeniedCommand = { ...command, isPlatformAdmin: false };
+    const callerAllowedCommand = { ...command, isPlatformAdmin: true };
+
+    expect(() =>
+      allowedMutation.validate(
+        callerDeniedCommand,
+        read,
+        allowedMutation.compute(callerDeniedCommand, read),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      deniedMutation.validate(
+        callerAllowedCommand,
+        read,
+        deniedMutation.compute(callerAllowedCommand, read),
+      ),
+    ).toThrow('Forbidden: An active group member is required for this operation.');
+  });
+
   it('rejects altered computation before the transaction boundary', () => {
     const mutation = createMutation();
     const command = createCommand();
@@ -60,10 +84,13 @@ describe('GroupTopologyReconfigureMutation', () => {
   });
 });
 
-function createMutation(): GroupTopologyReconfigureMutation {
+function createMutation(
+  isPlatformAdmin: (principalId: string) => boolean = () => false,
+): GroupTopologyReconfigureMutation {
   return new GroupTopologyReconfigureMutation({
+    groupStateRepository: {} as never,
     readPlanningAuthority: async () => createRead().authority,
-    isPlatformAdmin: () => false,
+    isPlatformAdmin,
   });
 }
 
@@ -75,7 +102,6 @@ function createCommand() {
     capturedAtEpochMs: 1_000,
     requestOptions: { degreeLimit: 7 },
     publish: true,
-    isPlatformAdmin: false,
   } as const;
 }
 

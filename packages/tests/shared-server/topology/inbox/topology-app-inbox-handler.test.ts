@@ -10,10 +10,21 @@ import {
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import { toTopologyConfigMutationResult } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
+import { writeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
 import {
   TopologyAppInboxHandler,
   type TopologyAppInboxMutationOwners,
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+
+vi.mock(
+  '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts',
+  () => ({ writeTopologyConfigMutation: vi.fn() }),
+);
+vi.mock(
+  '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts',
+  () => ({ toTopologyConfigMutationResult: vi.fn() }),
+);
 
 const NOW_EPOCH_MS = 1_000;
 const SESSION: IssuedAuthSession = {
@@ -49,28 +60,27 @@ describe('TopologyAppInboxHandler', () => {
           phases.push('validate');
         }),
       },
-      writeConfigMutation: vi.fn(async () => {
-        phases.push('write');
-      }),
-      toConfigMutationResult: vi.fn(() => {
-        phases.push('result');
-        return expected;
-      }),
-      reconfigureMutation: {} as never,
     } satisfies TopologyAppInboxMutationOwners;
+    vi.mocked(writeTopologyConfigMutation).mockImplementationOnce(
+      async () => (phases.push('write'), {} as never),
+    );
+    vi.mocked(toTopologyConfigMutationResult).mockImplementationOnce(
+      () => (phases.push('result'), expected),
+    );
     const wakeQueue = vi.fn(() => phases.push('wake'));
     const handler = new TopologyAppInboxHandler({
       groupStateService: sessionReader(phases),
       nowEpochMs: () => NOW_EPOCH_MS,
       wakeQueue,
-      writeMutation: async (_context, write) => {
-        phases.push('transaction');
-        const result = await write(undefined as never);
-        phases.push('commit');
-        return result;
+      transactionWriter: {
+        writeMutation: async (_context, write) => {
+          phases.push('transaction');
+          const result = await write(undefined as never);
+          phases.push('commit');
+          return result;
+        },
       },
     });
-
     await expect(handler.processMutation(context, owners)).resolves.toBe(expected);
     expect(phases).toEqual([
       'verify-authority',
@@ -103,14 +113,12 @@ describe('TopologyAppInboxHandler', () => {
         })),
         validate: vi.fn(),
       },
-      writeConfigMutation: vi.fn(),
-      toConfigMutationResult: vi.fn(),
       reconfigureMutation: {} as never,
     } as unknown as TopologyAppInboxMutationOwners;
     const handler = new TopologyAppInboxHandler({
       groupStateService: sessionReader(phases),
       nowEpochMs: () => NOW_EPOCH_MS,
-      writeMutation,
+      transactionWriter: { writeMutation },
       wakeQueue,
     });
 
@@ -126,13 +134,7 @@ describe('TopologyAppInboxHandler', () => {
     const context = await reconfigureTopologyContext(phases);
     const owners = {
       configMutationService: {} as never,
-      writeConfigMutation: vi.fn(),
-      toConfigMutationResult: vi.fn(),
       reconfigureMutation: {
-        isPlatformAdmin: vi.fn(() => {
-          phases.push('admin');
-          return false;
-        }),
         read: vi.fn(async () => {
           phases.push('read');
           return {} as never;
@@ -154,11 +156,13 @@ describe('TopologyAppInboxHandler', () => {
       groupStateService: sessionReader(phases),
       nowEpochMs: () => NOW_EPOCH_MS,
       wakeQueue,
-      writeMutation: async (_context, write) => {
-        phases.push('transaction');
-        const result = await write(undefined as never);
-        phases.push('commit');
-        return result;
+      transactionWriter: {
+        writeMutation: async (_context, write) => {
+          phases.push('transaction');
+          const result = await write(undefined as never);
+          phases.push('commit');
+          return result;
+        },
       },
     });
 
@@ -168,7 +172,6 @@ describe('TopologyAppInboxHandler', () => {
     });
     expect(phases).toEqual([
       'verify-authority',
-      'admin',
       'read',
       'compute',
       'validate',

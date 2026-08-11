@@ -10,10 +10,10 @@ import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../sc
 import { createStateWritePerformanceArtifact } from './state-write-performance-artifact-fixture.ts';
 
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
-const APPROVED_PR_C_BASE_COMMIT = '1e5f5e55e6ff94c016bfe2cc11af92952a30e32f';
+const APPROVED_PR_C_BASE_COMMIT = '33fa104d2cbf347eab1d02a54107c01f064aad00';
 const FORMER_PR_B_BASE_COMMIT = 'cc98414867f22cc28f0137ef40a1887ab862f87d';
 const HISTORICAL_PR_A_BASE_COMMIT = '20020977507c3104949da07d27b95e89d3b91c96';
-const BASE_TREE = '324b2108c3a6754c2e9d85a4e00c5b8b936a67ea';
+const BASE_TREE = 'd6ff24a3d760ed7c5590cbe868f2a05693f0a860';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const HASHES = {
   outerPooler: '1'.repeat(64),

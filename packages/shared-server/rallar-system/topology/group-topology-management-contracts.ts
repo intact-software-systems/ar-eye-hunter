@@ -38,22 +38,22 @@ export type GroupTopologyGroupSnapshotReader = (
   }>,
 ) => GroupSnapshot | undefined | Promise<GroupSnapshot | undefined>;
 
-export type GroupTopologyManagementServiceOptions = Readonly<{
-  findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
-  groupStateRepository?: GroupStateRepository;
-  configRepository?: GroupTopologyConfigRepository;
-  topologyService: RallarRtcTopologyService;
-  topologySnapshotRepository?: RtcTopologySnapshotRepository;
-  rttRepository?: RtcRttRepository;
-  processRttReader?: () => readonly RttMeasurementInfo[];
-  publisher?: GroupTopologyPublisher;
-  serverDefaults?: GroupTopologyServerOptions;
-  now?: () => number;
-  sleep?: (delayMs: number) => Promise<void>;
-  timing?: RallarTimingSink;
-  serviceId?: string;
-  adminPrincipalIds?: ReadonlySet<string>;
-}>;
+export interface GroupTopologyManagementServiceOptions {
+  readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
+  readonly groupStateRepository?: GroupStateRepository;
+  readonly configRepository?: GroupTopologyConfigRepository;
+  readonly topologyService: RallarRtcTopologyService;
+  readonly topologySnapshotRepository?: RtcTopologySnapshotRepository;
+  readonly rttRepository?: RtcRttRepository;
+  readonly processRttReader?: () => readonly RttMeasurementInfo[];
+  readonly publisher?: GroupTopologyPublisher;
+  readonly serverDefaults?: GroupTopologyServerOptions;
+  readonly now?: () => number;
+  readonly sleep?: (delayMs: number) => Promise<void>;
+  readonly timing?: RallarTimingSink;
+  readonly serviceId?: string;
+  readonly adminPrincipalIds?: ReadonlySet<string>;
+}
 
 export type ReconfigureGroupTopologyInput = Readonly<{
   groupRef: GroupRef;
