@@ -9,6 +9,8 @@ restating a different version of these rules.
 ## Contents
 
 - [First principle: code is for human developers](#first-principle-code-is-for-human-developers)
+- [Minimum cognitive indirection](#minimum-cognitive-indirection)
+- [Production code, tests, and legacy](#production-code-tests-and-legacy)
 - [Scope and adoption](#scope-and-adoption)
 - [Formatting and spacing](#formatting-and-spacing)
 - [Predictable file layout](#predictable-file-layout)
@@ -51,6 +53,58 @@ The rules below are defaults derived from this principle together with the
 repository's correctness and operational requirements. When two rules pull in
 different directions, state the concrete tradeoff and ask the human rather than
 inventing another abstraction.
+
+## Minimum cognitive indirection
+
+> “The goal is not minimum syntax. The goal is minimum cognitive indirection.”
+
+Cognitive indirection is an avoidable semantic hop a reader must make to
+understand vocabulary, ownership, files, abstractions, dataflow, decisions,
+callbacks, side effects, failures, tests, compatibility layers, or legacy paths.
+Prefer the shape whose owner-to-result path a human can trace with the fewest
+such hops. Shorter syntax is not a benefit when it makes that path harder to
+find or reconstruct.
+
+Indirection is permitted only when it exposes a real domain, lifecycle, policy,
+translation, compatibility, protocol, or side-effect boundary. Each retained
+layer must name its boundary, preserve the dataflow and failure semantics, and
+make the canonical owner easier to locate. A helper, alias, adapter, callback,
+or file split that merely moves work elsewhere is cognitive overhead, not an
+abstraction benefit.
+
+## Production code, tests, and legacy
+
+Production code is the primary design artifact; tests are secondary evidence.
+Tests protect independently stated observable behavior, public contracts, safety
+and correctness invariants, and approved architecture boundaries. They do not
+own incidental file trees, helper names, call order, line counts, migration
+history, or implementation topology.
+
+When production design improves without breaking an independent requirement,
+rewrite, replace, or discard the coupled test. First classify a failing test as
+either a production regression or obsolete test coupling. Never restore inferior
+production structure merely to make a coupled test pass.
+
+Within a plan's affected production surface, legacy candidates include duplicate
+predecessor implementations; deprecated entry points or exports; compatibility
+aliases, adapters, routes, flags, modes, and fallbacks; migration bridges,
+shims, and workarounds; parallel old/new implementations; rollback paths that
+retain a predecessor; and historical vocabulary or types retained only for
+compatibility.
+
+Unapproved production legacy may exist only while an active plan explicitly owns
+its disposition. At completion, each affected item is `removed`,
+`minimized-boundary`, `resolved`, or `retained-pending-human-approval`.
+`minimized-boundary` means a thin, explicitly named compatibility boundary that
+delegates to the canonical implementation and contains no duplicate business
+logic. A retained item requires explicit human approval for its exact candidate
+tree; agent judgment, automation, an issue, silence, or approval for older code
+does not suffice.
+
+Unrelated, untouched repository legacy is outside the completion gate unless the
+plan depends on it, expands it, materially touches it, or makes it part of a
+changed production call path. Newly discovered in-scope legacy is added to the
+active plan and cannot be deferred through an issue to complete the plan.
 
 ## Scope and adoption
 

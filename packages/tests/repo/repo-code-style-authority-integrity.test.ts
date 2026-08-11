@@ -29,6 +29,48 @@ describe('repo code style authority integrity', () => {
     expect(skillDescription).toContain('all human-authored code');
   });
 
+  it('makes minimum cognitive indirection, production authority, and legacy closure plan gates explicit', () => {
+    const agents = readRepo('AGENTS.md');
+    const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
+    const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
+    const publishing = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
+    const canonicalStyle = readRepo(canonicalStylePath);
+    const humanGuide = readRepo('docs/repo-human-style-guide.md');
+    const slogan = 'The goal is not minimum syntax. The goal is minimum cognitive indirection.';
+
+    expect(agents).toContain(slogan);
+    expect(canonicalStyle).toContain(slogan);
+    expectAllNormalized(canonicalStyle, [
+      'vocabulary, ownership, files, abstractions, dataflow, decisions, callbacks, side effects, failures, tests, compatibility layers, or legacy paths',
+      'real domain, lifecycle, policy, translation, compatibility, protocol, or side-effect boundary',
+    ]);
+
+    for (const source of [codeWriting, testing, canonicalStyle, humanGuide]) {
+      expectAllNormalized(source, [
+        'Production code is the primary design artifact; tests are secondary evidence',
+        'Tests protect independently stated observable behavior, public contracts, safety and correctness invariants, and approved architecture boundaries',
+      ]);
+      expect(source.replace(/\s+/g, ' ')).toMatch(
+        /never restore inferior production structure merely to make a coupled test pass/iu,
+      );
+    }
+
+    expectAllNormalized(publishing, [
+      'Every production-affecting implementation plan must include a `Legacy baseline and exit criteria` section',
+      'Each implementation task includes a `Legacy impact` field',
+      'Complete Code and Legacy Review',
+      'Production code is the primary design artifact; tests are secondary evidence',
+      'Tests may prove approved compatibility behavior, but they never authorize an implicit legacy path or make a plan complete',
+      'Newly discovered in-scope legacy is added to the active plan rather than deferred through an issue',
+      'Unclassified legacy at completion',
+    ]);
+    expectAllNormalized(canonicalStyle, [
+      'Unapproved production legacy may exist only while an active plan explicitly owns its disposition',
+      'Unrelated, untouched repository legacy is outside the completion gate',
+      '`removed`, `minimized-boundary`, `resolved`, or `retained-pending-human-approval`',
+    ]);
+  });
+
   it('routes every TypeScript change through one repo-wide style authority', () => {
     const agents = readRepo('AGENTS.md');
     const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');

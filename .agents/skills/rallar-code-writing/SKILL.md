@@ -17,6 +17,14 @@ hides a decision, fragments one dataflow, weakens names, or makes ownership
 less obvious. When a detailed rule conflicts with human understandability,
 stop and explain the conflict instead of satisfying the rule mechanically.
 
+Production code is the primary design artifact; tests are secondary evidence.
+Tests protect independently stated observable behavior, public contracts, safety
+and correctness invariants, and approved architecture boundaries. Classify a
+failing test as a production regression or obsolete test coupling before changing
+production. Never restore inferior production structure merely to make a coupled
+test pass. Apply the canonical standard's cognitive-indirection and
+affected-surface legacy-closure rules to every changed production path.
+
 The first principle, construction and callback rules, responsibility boundaries,
 explicit dataflow, and testability doctrine apply to all human-authored code.
 Always read `references/repo-code-style.md` completely before writing,

@@ -17,6 +17,22 @@ the dataflow, decisions, side effects, failures, and result without unnecessary
 jumps. Mechanical compliance does not compensate for code that became harder
 to understand.
 
+> “The goal is not minimum syntax. The goal is minimum cognitive indirection.”
+
+Cognitive indirection is an avoidable semantic hop through vocabulary,
+ownership, files, abstractions, dataflow, decisions, callbacks, side effects,
+failures, tests, compatibility layers, or legacy paths. Retain a hop only when
+it exposes a real domain, lifecycle, policy, translation, compatibility,
+protocol, or side-effect boundary. Review the owner-to-result path, not merely
+syntax or file count.
+
+Production code is the primary design artifact; tests are secondary evidence.
+Tests protect independently stated observable behavior, public contracts, safety
+and correctness invariants, and approved architecture boundaries. When an
+improved production design breaks a coupled test without breaking an independent
+requirement, rewrite, replace, or delete the test. Classify the failure first;
+never restore inferior production structure merely to make a coupled test pass.
+
 ## Human review sequence
 
 ### 1. Read the change as dataflow
@@ -223,6 +239,30 @@ temporary ratchet has a named owner and removal condition, remains supplementary
 to semantic runtime or architecture assertions, and is removed or replaced after
 the move's resulting-main workflow and later ledger are published when semantic
 assertions cover the same loss risk.
+
+### 10. Review affected production legacy
+
+For the active plan's affected production surface, inspect duplicate predecessor
+implementations; deprecated entry points and exports; compatibility aliases,
+adapters, routes, flags, modes, and fallbacks; bridges, shims, and workarounds;
+parallel old/new paths; rollback paths; and historical vocabulary or types kept
+only for compatibility. Do not infer that a clean vocabulary scan proves the
+absence of legacy: trace actual production call paths.
+
+Unapproved production legacy may exist only while an active plan explicitly owns
+its disposition. Every affected item must be `removed`, `minimized-boundary`,
+`resolved`, or `retained-pending-human-approval`. A minimized boundary is thin,
+explicitly named, delegates to the canonical implementation, and contains no
+duplicate business logic. Unrelated untouched legacy is outside the completion
+gate unless the plan depends on, expands, materially touches, or routes changed
+production flow through it.
+
+Never allow an issue, reviewer silence, prior approval, agent judgment, or an
+automated result to approve retained legacy. For every retained item, verify the
+human approved its exact path and symbol, purpose and consumer dependency,
+unsafe-removal reason, minimization, canonical owner, compatibility tests,
+named owner, review/removal condition, and current candidate SHA. A production
+change invalidates that approval and requires the complete review again.
 
 ## Warning-only checker
 
