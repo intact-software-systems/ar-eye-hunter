@@ -8,7 +8,8 @@ export const ObservableValueEventType = {
     Deleted: 'deleted',
 } as const;
 
-export type ObservableValueEventType = (typeof ObservableValueEventType)[keyof typeof ObservableValueEventType];
+export type ObservableValueEventType =
+    (typeof ObservableValueEventType)[keyof typeof ObservableValueEventType];
 
 export type ObservableValueEvent<T> = Readonly<{
     type: ObservableValueEventType;

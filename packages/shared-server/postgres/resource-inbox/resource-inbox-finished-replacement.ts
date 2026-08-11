@@ -31,7 +31,8 @@ export async function replaceFinishedResourceEntryIfMatch(
         expected.key.contextId !== next.key.contextId ||
         expected.typeId !== next.typeId ||
         !(COMPLETED_STATUSES.has(expected.status) || isFailed(expected.status)) ||
-        !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[]).includes(next.status) ||
+        !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
+            .includes(next.status) ||
         next.dequeueAudit.attempts !== 0 ||
         !Number.isSafeInteger(expectedGeneration) ||
         expectedGeneration < 1
