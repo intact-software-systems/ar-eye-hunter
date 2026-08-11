@@ -1282,6 +1282,44 @@
       "description": "No-browser API-v1 SPA statistics missing-auth denial, non-member group denial, scoped success reads, and OpenAPI contract coverage."
     },
     {
+      "id": "api-v1-crdt-catch-up-auth",
+      "recipe": "tests/api-v1/api-v1-crdt-catch-up-auth.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-crdt-catch-up-auth",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 durable CRDT catch-up authorization: non-member room denial, non-owner principal denial, and unauthenticated denial."
+    },
+    {
+      "id": "api-v1-presence-lease-bound",
+      "recipe": "tests/api-v1/api-v1-presence-lease-bound.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-presence-lease-bound",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 presence lease bounding: group and client sessions reject far-future connect/heartbeat timestamps while normal connects still succeed."
+    },
+    {
       "id": "rallar-signaling-two-peer-chat-dry",
       "recipe": "examples/rtc-rallar-two-peer-chat.json",
       "category": "rallar-signaling",

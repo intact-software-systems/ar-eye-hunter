@@ -15,6 +15,8 @@ import {
   toClientChildCandidate,
   toDefaultClientPrincipal,
 } from './compute-client-mutation-state.ts';
+import { rejectClientMutation } from '../../client-state-validation-primitives.ts';
+import { isPresenceTimestampWithinSkew } from '../../../presence-lease.ts';
 
 type ConnectCommand = Extract<
   ClientMutationCommand,
@@ -122,8 +124,15 @@ function toActiveClientSession(
   principal: ClientPrincipal,
   existing: ClientSession | undefined,
 ): ClientSession {
-  const connectedAt = command.input.connectedAtEpochMs ?? command.facts.nowEpochMs;
+  const nowEpochMs = command.facts.nowEpochMs;
+  const connectedAt = command.input.connectedAtEpochMs ?? nowEpochMs;
+  if (!isPresenceTimestampWithinSkew(connectedAt, nowEpochMs)) {
+    rejectClientMutation('Client session connectedAtEpochMs is too far in the future.');
+  }
   const heartbeatAt = command.input.lastHeartbeatAtEpochMs ?? connectedAt;
+  if (!isPresenceTimestampWithinSkew(heartbeatAt, nowEpochMs)) {
+    rejectClientMutation('Client session lastHeartbeatAtEpochMs is too far in the future.');
+  }
   return {
     applicationId: principal.applicationId,
     workspaceId: principal.workspaceId,

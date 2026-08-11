@@ -9,7 +9,11 @@ import type {
 } from '@shared/crdt/mod.ts';
 import { RALLAR_CRDT_PROTOCOL_VERSION } from '@shared/crdt/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import { requireApiAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
+import {
+  requireApiAuthSession,
+  toAuthErrorResponse,
+  toAuthSession,
+} from '../services/request-auth-service.ts';
 
 export type RallarCrdtAdminMutationOperation =
   | 'rebuild-projection'
@@ -38,20 +42,16 @@ export type RallarCrdtAdminRoutesOptions = Readonly<{
     }>,
   ) => boolean | Promise<boolean>;
   requireApiAdminSession?: (context: Context) => Promise<AuthSession>;
+  requireApiUserSession?: (context: Context) => Promise<AuthSession>;
+  authorizeCatchUp?: (
+    input: Readonly<{ document: RallarCrdtDocumentRef; session: AuthSession }>,
+  ) => Promise<Readonly<{ allowed: boolean }>>;
 }>;
 
 export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
   const requireAuth = options.requireAuth ?? true;
 
   if (requireAuth) {
-    app.use('/api/crdt/catch-up', async (c, next) => {
-      try {
-        await requireApiAuthSession(c.req);
-        await next();
-      } catch (error) {
-        return toAuthErrorResponse(c, error);
-      }
-    });
     app.use('/api/crdt/admin/*', async (c, next) => {
       try {
         await requireCrdtAdminSession(c, options);
@@ -62,12 +62,28 @@ export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
     });
   }
 
-  app.post('/api/crdt/catch-up', (c) =>
-    withAdminError(c, async () => {
+  app.post('/api/crdt/catch-up', async (c) => {
+    let session: AuthSession | undefined;
+    if (requireAuth) {
+      try {
+        session = options.requireApiUserSession
+          ? await options.requireApiUserSession(c)
+          : toAuthSession(await requireApiAuthSession(c.req));
+      } catch (error) {
+        return toAuthErrorResponse(c, error);
+      }
+    }
+    return await withAdminError(c, async () => {
       const body = await readJson<Partial<RallarCrdtCatchUpRequestEnvelope>>(
         c,
       );
       const document = readDocument(body);
+      if (session && options.authorizeCatchUp) {
+        const decision = await options.authorizeCatchUp({ document, session });
+        if (!decision.allowed) {
+          throw forbidden('CRDT catch-up authorization required.');
+        }
+      }
       const page = await options.repository.listAfter({
         document,
         afterSequence: body.afterSequence,
@@ -86,7 +102,8 @@ export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
         page,
       };
       return response;
-    }));
+    });
+  });
 
   app.post('/api/crdt/admin/documents/list', (c) =>
     withAdminError(
@@ -173,6 +190,10 @@ async function mutate(
     operation,
     { adminSession, request },
   );
+}
+
+function forbidden(message: string): Error {
+  return Object.assign(new Error(`Forbidden: ${message}`), { status: 403 });
 }
 
 async function withAdminError(

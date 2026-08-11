@@ -1696,7 +1696,11 @@ paths:
       description: |
         Returns the latest server snapshot unless `includeSnapshot` is false,
         plus a page of accepted updates after `afterSequence` or `afterCursor`.
-        This route is authenticated but does not require CRDT admin privileges.
+        This route does not require CRDT admin privileges, but the caller is
+        authorized against the requested document the same way the WebSocket
+        catch-up path is: room documents require an active membership and live
+        session, principal documents require ownership, and app documents require
+        an active client session. Callers without access receive 403.
       security:
         - bearerAuth: []
           clientIdHeader: []
@@ -1721,6 +1725,12 @@ paths:
                 $ref: '#/components/schemas/CrdtRouteErrorResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The caller is not authorized to read the requested document.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrdtRouteErrorResponse'
 
   /api/crdt/admin/documents/list:
     post:

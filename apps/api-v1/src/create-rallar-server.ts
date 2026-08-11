@@ -42,6 +42,7 @@ import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer
 import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';
 import { createApiAdminMutationGateway } from './services/create-api-admin-mutation-gateway.ts';
 import { readConfiguredCrdtPolicies } from './services/create-api-mutation-inbox-factories.ts';
+import { authorizeCrdtDocumentAccess } from './services/create-api-crdt-document-authorizer.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
@@ -379,6 +380,19 @@ export function createRallarServer(
             mutations: middleware.appCrdtInboxService,
             audit: options.crdtAuditSink,
             adminClientIds,
+            authorizeCatchUp: ({ document, session }) =>
+              authorizeCrdtDocumentAccess(
+                {
+                  readGroupSnapshot: (ref) => middleware.groupsRepository.readSnapshot(ref),
+                  readClientSnapshot: (ref) => middleware.clientsRepository.readSnapshot(ref),
+                  nowEpochMs: now,
+                },
+                {
+                  document,
+                  actorPrincipalId: session.username,
+                  sessionId: session.sessionId,
+                },
+              ),
           }),
         (app) =>
           adminOperationsRoutes.init(app, {
