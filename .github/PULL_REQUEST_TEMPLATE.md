@@ -109,9 +109,12 @@ Completed work requires zero unresolved Critical or Important findings.
 
 ### Human approval for retained legacy
 
-List every `retained-pending-human-approval` item. Every other affected legacy
-item has exactly one disposition: `removed`, `minimized-boundary`, or
-`resolved`.
+List every `retained-pending-human-approval` item. Every confirmed affected
+legacy item uses `classification: legacy` and exactly one disposition:
+`removed`, `minimized-boundary`, `resolved`, or
+`retained-pending-human-approval`. A heuristic candidate that is not legacy uses
+`classification: not-legacy` with a concrete rationale; it is not a legacy
+exception or an implicit disposition.
 
 The final review's `Legacy ledger and dispositions` field is the one bound,
 human-readable retained ledger. `Legacy exception ID` is the projection's `id`.

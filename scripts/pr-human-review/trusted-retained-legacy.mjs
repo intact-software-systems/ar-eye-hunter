@@ -254,7 +254,9 @@ function ledgerItem(item, approval) {
     id: item?.id,
     path: item?.path,
     symbol: item?.symbol,
+    classification: item?.classification,
     disposition: item?.disposition,
+    rationale: item?.rationale,
   };
   return approval ? { ...canonicalItem, ...approvalDetail(approval) } : canonicalItem;
 }
@@ -274,7 +276,7 @@ function approvalDetail(approval) {
   return Object.fromEntries(fields.map((field) => [field, approval?.[field]]));
 }
 
-function readRegistrySection(registry, identifier) {
+export function readRegistrySection(registry, identifier) {
   const matches = [
     ...registry.matchAll(new RegExp(`^### ${escapeRegExp(identifier)}\\s*$`, 'gmu')),
   ];
@@ -286,7 +288,7 @@ function readRegistrySection(registry, identifier) {
   return registry.slice(start, nextHeading === -1 ? undefined : nextHeading);
 }
 
-function readRegistryField(section, label) {
+export function readRegistryField(section, label) {
   const matches = [...section.matchAll(new RegExp(`^- ${escapeRegExp(label)}:\\s*(.+)$`, 'gmu'))];
   return matches.length === 1 ? matches[0][1] : undefined;
 }

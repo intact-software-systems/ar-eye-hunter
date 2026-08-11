@@ -49,6 +49,13 @@ describe('PR human review record validator', () => {
     expect(workflow).toContain('Read candidate legacy registry as data');
     expect(workflow).toContain('gh api --paginate --slurp');
     expect(workflow).toContain('--event "$GITHUB_EVENT_PATH"');
+    expect(workflow).toContain('Validate candidate ledger against changed production paths');
+    expect(workflow).toContain("hashFiles('scripts/review-legacy.mjs')");
+    expect(workflow).toContain(
+      'node scripts/review-legacy.mjs "$merge_base" "$CANDIDATE_HEAD_SHA"',
+    );
+    expect(workflow).toContain('--stage "$stage"');
+    expect(workflow).toContain('--stage milestone');
 
     const registryStep = workflow.slice(
       workflow.indexOf('Read candidate legacy registry as data'),

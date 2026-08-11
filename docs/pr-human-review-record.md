@@ -129,6 +129,43 @@ head SHA.
 
 ## Legacy ledger and human approval
 
+### Changed production legacy candidate report
+
+Run the warning-oriented changed-diff report before each initial, milestone, and
+final review:
+
+```sh
+npm run review:legacy -- <merge-base> <candidate-head>
+```
+
+It inspects changed runtime production files under `apps/**` and `packages/**`,
+plus deployed operational support under `scripts/deploy/**` and
+`scripts/github-actions/**`. It excludes tests, documentation, and governance
+tooling. It reports stable candidate IDs for legacy vocabulary, compatibility
+exports, predecessor modes, parallel old/new paths, and duplicate adapter or
+route targets. A candidate is review evidence, not a finding that the path is
+wrong: vocabulary and diff patterns cannot decide legitimacy.
+
+A clean report does not prove that no production legacy exists. The reviewer
+still traces the actual changed production call paths. Copy every reported ID,
+path, symbol, and exactly one disposition into the final legacy ledger. To
+check a prepared metadata record against the report, run:
+
+```sh
+npm run review:legacy -- <merge-base> <candidate-head> \
+  --review-record path/to/pull-request-body.md \
+  --registry docs/production-legacy-exceptions.md
+```
+
+Candidate presence remains warning/report evidence. A supplied ledger must have
+the exact candidate-ID set for the reviewed stage: no stale, extra, duplicate,
+or missing items, and its count must equal both its items and the report.
+Classify an actual legacy item as `legacy` and give it one of the four mandatory
+dispositions. Classify a heuristic false positive as `not-legacy` and provide a
+concrete, non-placeholder rationale. A retained item must also appear in the
+durable registry; this command validates neither semantic quality nor human
+approval, which remain the PR record validator and human's responsibility.
+
 Every legacy item in the active plan's affected production surface has exactly
 one disposition:
 

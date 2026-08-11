@@ -38,6 +38,14 @@ improved production design breaks a coupled test without breaking an independent
 requirement, rewrite, replace, or delete the test. Classify the failure first;
 never restore inferior production structure merely to make a coupled test pass.
 
+Run `npm run review:legacy -- <merge-base> <candidate-head>` for every changed
+production review. It reports heuristic, changed-surface candidates only; a
+clean report does not prove that no legacy exists and a report does not decide
+whether a candidate is legitimate. Review the actual call paths, then give each
+reported candidate exactly one final-ledger disposition: `removed`,
+`minimized-boundary`, `resolved`, or `retained-pending-human-approval`. A
+retained item still needs explicit human approval and a durable registry entry.
+
 ## Human review sequence
 
 ### 1. Read the change as dataflow

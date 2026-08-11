@@ -303,8 +303,24 @@ function validateLegacyLedger(legacy, stage, errors) {
     for (const field of ['id', 'path', 'symbol']) {
       validateText(item[field], `${stage} review legacy ${field}`, errors);
     }
-    if (!validDispositions.has(item.disposition)) {
-      errors.push(`${stage} review legacy disposition is invalid: ${String(item.disposition)}`);
+    if (item.classification === 'not-legacy') {
+      validateText(item.rationale, `${stage} review not-legacy rationale`, errors);
+      if (
+        item.disposition !== undefined ||
+        retainedLegacy?.some((approval) => approval?.id === item.id)
+      ) {
+        errors.push(
+          `${stage} review not-legacy item must not contain legacy disposition or approval`,
+        );
+      }
+    } else if (item.classification === 'legacy' || item.classification === undefined) {
+      if (!validDispositions.has(item.disposition)) {
+        errors.push(`${stage} review legacy disposition is invalid: ${String(item.disposition)}`);
+      }
+    } else {
+      errors.push(
+        `${stage} review legacy classification is invalid: ${String(item.classification)}`,
+      );
     }
     if (identifiers.has(item.id)) {
       errors.push(`${stage} review legacy ledger has a duplicate item ID: ${item.id}`);
