@@ -40,6 +40,17 @@ function sourceLine(source: string, offset: number): number {
 }
 
 describe('GitHub Actions runtime governance', () => {
+  it('blocks changed structure-coupling candidates without individual classifications', async () => {
+    const releaseGate = await readFile(
+      path.join(repoRoot, '.github/workflows/release-gate.yml'),
+      'utf8',
+    );
+
+    expect(releaseGate).toContain(
+      'npm run check:test-structure-coupling -- "--changed" "${{ inputs.changed_repo_style_base }}" HEAD',
+    );
+  });
+
   it('uses the Node 24 action releases throughout executable automation', async () => {
     const yamlFiles = (await Promise.all(githubAutomationRoots.map(findYamlFiles))).flat();
     const observedActions = new Set<GovernedActionName>();

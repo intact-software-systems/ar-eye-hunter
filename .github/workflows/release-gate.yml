@@ -72,6 +72,10 @@ jobs:
         if: ${{ inputs.changed_repo_style_base != '' }}
         run: npm run check:repo-style:changed -- "${{ inputs.changed_repo_style_base }}" HEAD
 
+      - name: Check changed test structure coupling
+        if: ${{ inputs.changed_repo_style_base != '' }}
+        run: npm run check:test-structure-coupling -- "--changed" "${{ inputs.changed_repo_style_base }}" HEAD
+
       - name: Type-check TypeScript 7 workspaces
         run: npm run typecheck
 
