@@ -298,6 +298,15 @@ and assert liveness only; convergence polls (4 × 1 s + 5 s `ws.wait`)
 comfortably cover the 500 ms debounce. If any capture path proves
 incompatible, the recipe change ships in the same slice that caused it.
 
+Recorded delta (implementation): one cluster recipe,
+`api-v1-rtc-topology-convergence`, asserted a topology publication per
+concurrent group revision. A role promotion plus a metadata update leave the
+topology-input fingerprint unchanged, so the damped server correctly plans
+nothing; the recipe now observes cross-server convergence of both revisions
+on the state plane (both `group-state.snapshot` broadcasts on both servers),
+which damping preserves per transition. The medium-scale gate's recipe files
+are untouched. Details in the phase-2 results document.
+
 Out of scope (later phases per the program plan): delta dissemination and
 read-through (Phase 3), join admission control (Phase 3), incremental
 planning/hysteresis (Phase 4), RTT threshold refinement (Phase 4, M8),

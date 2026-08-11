@@ -1,6 +1,7 @@
 import { normalize } from 'node:path';
 
 import {
+  GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE,
   RTC_TOPOLOGY_REGRESSION_REASON_PROFILE,
 } from '../rtc-topology/state-write-reasons.ts';
 
@@ -25,7 +26,9 @@ export interface StateWriteBenchmarkOptions {
   readonly concurrency: number;
   readonly out: string;
   readonly regressionReasonsFile?: string;
-  readonly regressionReasonProfile?: typeof RTC_TOPOLOGY_REGRESSION_REASON_PROFILE;
+  readonly regressionReasonProfile?:
+    | typeof RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
+    | typeof GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE;
 }
 
 export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchmarkOptions {
@@ -40,7 +43,8 @@ export function parseBenchmarkOptions(args: readonly string[]): StateWriteBenchm
   if (regressionReasonsFile !== undefined) assertPerfInputPath(regressionReasonsFile);
   if (
     regressionReasonProfile !== undefined &&
-    regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE
+    regressionReasonProfile !== RTC_TOPOLOGY_REGRESSION_REASON_PROFILE &&
+    regressionReasonProfile !== GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE
   ) {
     throw new Error(
       `Unsupported state-write regression reason profile: ${regressionReasonProfile}`,

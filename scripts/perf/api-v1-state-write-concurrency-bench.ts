@@ -552,6 +552,7 @@ function createServiceRuntime(
   const authSessionRepository = new AuthSessionRepository(runtimeRepository);
   const groupState = createGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createGroupStateEventStore: createGroupStateEventRepository,
     serviceId,
     timing,
@@ -569,6 +570,7 @@ function createServiceRuntime(
     instrumentedSql,
     createClientStateService({
       runtimeRepository,
+      formationDamping: 'damped',
       createClientStateEventStore: createClientStateEventRepository,
       serviceId,
       timing,
