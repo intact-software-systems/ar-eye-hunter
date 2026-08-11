@@ -66,6 +66,7 @@ export function createPostgresAppInboxWorkerServices(
   });
   const groupState = createGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createGroupStateEventStore: createGroupStateEventRepository,
     authSessionRepository: authSessions,
     now: () => input.atEpochMs,
