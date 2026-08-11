@@ -56,19 +56,8 @@ jobs:
           --reviews "$RUNNER_TEMP/pull-request-reviews.json"
       - name: Validate candidate ledger against changed production paths
         if: ${{ hashFiles('scripts/review-legacy.mjs') != '' }}
-        env:
-          CANDIDATE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          CANDIDATE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          CANDIDATE_DRAFT: ${{ github.event.pull_request.draft }}
-        run: |
-          merge_base="$(git merge-base "$CANDIDATE_BASE_SHA" "$CANDIDATE_HEAD_SHA")"
-          stage="final"
-          if [ "$CANDIDATE_DRAFT" = "true" ]; then stage="initial"; fi
-          node scripts/review-legacy.mjs "$merge_base" "$CANDIDATE_HEAD_SHA" \
-            --review-record "$GITHUB_EVENT_PATH" \
-            --registry "$RUNNER_TEMP/production-legacy-exceptions.md" \
-            --stage "$stage"
-          node scripts/review-legacy.mjs "$merge_base" "$CANDIDATE_HEAD_SHA" \
-            --review-record "$GITHUB_EVENT_PATH" \
-            --registry "$RUNNER_TEMP/production-legacy-exceptions.md" \
-            --stage milestone
+        run: >-
+          node scripts/check-pr-human-review-legacy-stages.mjs
+          --event "$GITHUB_EVENT_PATH"
+          --registry "$RUNNER_TEMP/production-legacy-exceptions.md"
+          --current-head "${{ github.event.pull_request.head.sha }}"
