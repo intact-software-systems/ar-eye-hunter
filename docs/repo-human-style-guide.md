@@ -8,6 +8,11 @@ The authoritative coding standard is
 reviewing a change. This guide supplies the review sequence and checker usage; it
 does not define a second version of the rules.
 
+Record independent pull-request reviews in the
+[PR Human Review Record v1](./pr-human-review-record.md). That record captures
+exact-SHA review evidence and retained-legacy approval; this guide remains the
+authoritative human review sequence.
+
 Code is written first for human developers. Correctness, safety, security,
 compatibility, and required performance remain mandatory; within those
 constraints, human understandability is the governing review criterion.
