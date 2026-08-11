@@ -162,7 +162,7 @@ export class AppInboxService {
     }
     private async writeAppInboxResult(
         entry: ResourceEntry,
-        status: EntityStatus.COMPLETED,
+        status: typeof EntityStatus.COMPLETED,
         value: unknown,
     ): Promise<void> {
         await this.resourceInboxResults.replace(

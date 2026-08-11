@@ -234,8 +234,8 @@ export class ResourceInboxRepository {
             expected.key.resourceId !== next.key.resourceId ||
             expected.key.contextId !== next.key.contextId ||
             expected.typeId !== next.typeId ||
-            ![EntityStatus.NEW, EntityStatus.RETRY].includes(expected.status) ||
-            ![EntityStatus.NEW, EntityStatus.RETRY].includes(next.status) ||
+            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[]).includes(expected.status) ||
+            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[]).includes(next.status) ||
             next.dequeueAudit.attempts !== expected.dequeueAudit.attempts ||
             !Number.isSafeInteger(expectedGeneration) ||
             expectedGeneration < 1
@@ -879,7 +879,7 @@ export class ResourceInboxRepository {
     async finishReserved(
         key: Key,
         expectedAttempts: number,
-        status: EntityStatus.COMPLETED | EntityStatus.FAILED,
+        status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
         completedAt: Date,
     ): Promise<boolean> {
         if (

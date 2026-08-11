@@ -67,7 +67,7 @@ interface RtcTopologyGroupRevisionWork {
 }
 
 interface RtcTopologyWorkEnvelope {
-    readonly type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE;
+    readonly type: typeof AppOutboxType.RTC_TOPOLOGY_RECOMPUTE;
     readonly topicId: string;
     readonly resourceId: string;
     readonly contextId: string;

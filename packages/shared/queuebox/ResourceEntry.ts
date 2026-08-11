@@ -25,17 +25,19 @@ export function isKeysEqual(key1: Key, key2: Key): boolean {
     );
 }
 
-export enum EntityStatus {
-    NEW = 'NEW',
-    RETRY = 'RETRY',
-    RESERVED = 'RESERVED',
-    COMPLETED = 'COMPLETED',
-    FAILED = 'FAILED',
-    ABORTED = 'ABORTED',
-    NON_RETRYABLE = 'NON_RETRYABLE',
-    PARTITIONED = 'PARTITIONED',
-    MERGED = 'MERGED'
-}
+export const EntityStatus = {
+    NEW: 'NEW',
+    RETRY: 'RETRY',
+    RESERVED: 'RESERVED',
+    COMPLETED: 'COMPLETED',
+    FAILED: 'FAILED',
+    ABORTED: 'ABORTED',
+    NON_RETRYABLE: 'NON_RETRYABLE',
+    PARTITIONED: 'PARTITIONED',
+    MERGED: 'MERGED',
+} as const;
+
+export type EntityStatus = (typeof EntityStatus)[keyof typeof EntityStatus];
 
 export type Audit = {
     readonly date: Temporal.PlainTime

@@ -19,27 +19,31 @@ export type AuthSession = {
     readonly expiresAtEpochMs: number;
 };
 
-export enum EnqueuedType {
-    WS_INBOX = 'WS_INBOX',
-    WS_OUTBOX = 'WS_OUTBOX',
-    RTC_INBOX = 'RTC_INBOX',
-    RTC_OUTBOX = 'RTC_OUTBOX',
-    APP_INBOX = 'APP_INBOX',
-    APP_OUTBOX = 'APP_OUTBOX'
-}
+export const EnqueuedType = {
+    WS_INBOX: 'WS_INBOX',
+    WS_OUTBOX: 'WS_OUTBOX',
+    RTC_INBOX: 'RTC_INBOX',
+    RTC_OUTBOX: 'RTC_OUTBOX',
+    APP_INBOX: 'APP_INBOX',
+    APP_OUTBOX: 'APP_OUTBOX',
+} as const;
 
-export enum AppTopics {
-    chat = 'chat',
-    rtcSignaling = 'rtc-signaling',
-    clientStateSnapshot = 'client-state.snapshot',
-    clientStateEvent = 'client-state.event',
-    groupStateSnapshot = 'group-state.snapshot',
-    groupStateEvent = 'group-state.event',
-    groupDirectorySnapshot = 'group-directory.snapshot',
-    graphs = 'graphs',
-    overlayTopology = 'overlay.topology',
-    rtt = 'rtt',
-}
+export type EnqueuedType = (typeof EnqueuedType)[keyof typeof EnqueuedType];
+
+export const AppTopics = {
+    chat: 'chat',
+    rtcSignaling: 'rtc-signaling',
+    clientStateSnapshot: 'client-state.snapshot',
+    clientStateEvent: 'client-state.event',
+    groupStateSnapshot: 'group-state.snapshot',
+    groupStateEvent: 'group-state.event',
+    groupDirectorySnapshot: 'group-directory.snapshot',
+    graphs: 'graphs',
+    overlayTopology: 'overlay.topology',
+    rtt: 'rtt',
+} as const;
+
+export type AppTopics = (typeof AppTopics)[keyof typeof AppTopics];
 
 // TODO: Conflict free replicated data types, how to model?
 

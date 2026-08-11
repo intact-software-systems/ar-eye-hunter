@@ -141,7 +141,7 @@ describe('RTC topology mutation phases', () => {
         ];
 
         for (const operation of expected) {
-            expect(contracts).toContain(`${operation} = '${operation}'`);
+            expect(contracts).toContain(`${operation}: '${operation}'`);
             expect(service).toContain(`AppInboxType.${operation}`);
         }
         expect(topologyHandler).toMatch(/readTopologyMutation[\s\S]*computeTopologyMutation/);

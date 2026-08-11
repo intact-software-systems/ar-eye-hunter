@@ -18,7 +18,7 @@ export type AppInboxHandlerFinalization =
   | Readonly<{ state: 'pending' }>
   | Readonly<{
       state: 'transaction-finalized';
-      status: EntityStatus.COMPLETED | EntityStatus.FAILED;
+      status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
       result: unknown;
     }>;
 
@@ -229,7 +229,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
   private async finish(
     context: AppInboxMessageContext,
     inbox: ResourceInboxRepository,
-    status: EntityStatus.COMPLETED | EntityStatus.FAILED,
+    status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
     completedAtEpochMs: number,
   ): Promise<void> {
     const completed = await inbox.finishReserved(
@@ -246,7 +246,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
 
 export function toFinalizedResourceEntry(
   context: AppInboxMessageContext,
-  status: EntityStatus.COMPLETED | EntityStatus.FAILED,
+  status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
   completedAtEpochMs: number,
 ) {
   return {

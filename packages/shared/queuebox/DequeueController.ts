@@ -33,14 +33,16 @@ function toExponentialBackoffSeconds(failureCounter: number, maxSeconds = 60): n
     return Math.min(secs, maxSeconds);
 }
 
-export enum Reservator {
-    FINALIZATION = 'FINALIZATION',
-    NEW = 'NEW',
-    RETRY = 'RETRY',
-    FAILED = 'FAILED',
-    FAIRNESS = 'FAIRNESS',
-    TIMEOUT = 'TIMEOUT',
-}
+export const Reservator = {
+    FINALIZATION: 'FINALIZATION',
+    NEW: 'NEW',
+    RETRY: 'RETRY',
+    FAILED: 'FAILED',
+    FAIRNESS: 'FAIRNESS',
+    TIMEOUT: 'TIMEOUT',
+} as const;
+
+export type Reservator = (typeof Reservator)[keyof typeof Reservator];
 
 export class FailureDto<K, V> {
     public readonly key: K;

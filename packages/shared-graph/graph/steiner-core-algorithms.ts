@@ -1,10 +1,12 @@
 import { VertexId, VertexSet, WeightedGraph } from '../graph-props.ts';
 
-export enum CoreSelectionAlgo {
-    MEDIAN_DISTANCE = 'MEDIAN_DISTANCE',
-    AVERAGE_DISTANCE = 'AVERAGE_DISTANCE',
-    CENTER_SELECTION = 'CENTER_SELECTION'
-}
+export const CoreSelectionAlgo = {
+    MEDIAN_DISTANCE: 'MEDIAN_DISTANCE',
+    AVERAGE_DISTANCE: 'AVERAGE_DISTANCE',
+    CENTER_SELECTION: 'CENTER_SELECTION',
+} as const;
+
+export type CoreSelectionAlgo = (typeof CoreSelectionAlgo)[keyof typeof CoreSelectionAlgo];
 
 type RankedNode = {
     node: VertexId;

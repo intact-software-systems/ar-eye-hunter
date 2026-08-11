@@ -106,13 +106,13 @@ export function readGroupSessionCleanupCommand(data: unknown) {
 }
 
 export function isGeneralClientCommand(type: AppInboxType): boolean {
-    return [
+    return ([
         AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         AppInboxType.CLIENT_INSTANCE_UPSERT,
         AppInboxType.CLIENT_SESSION_CONNECT,
         AppInboxType.CLIENT_SESSION_HEARTBEAT,
         AppInboxType.CLIENT_SESSION_DISCONNECT,
-    ].includes(type);
+    ] as readonly AppInboxType[]).includes(type);
 }
 
 export function isTopologyConfigCommand(type: AppInboxType): boolean {

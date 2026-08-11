@@ -275,11 +275,13 @@ export class SlidingWindowCounter {
     }
 }
 
-export enum CircuitBreakerState {
-    OPEN = 'OPEN',
-    CLOSE = 'CLOSE',
-    HALF_OPEN = 'HALF_OPEN',
-}
+export const CircuitBreakerState = {
+    OPEN: 'OPEN',
+    CLOSE: 'CLOSE',
+    HALF_OPEN: 'HALF_OPEN',
+} as const;
+
+export type CircuitBreakerState = (typeof CircuitBreakerState)[keyof typeof CircuitBreakerState];
 
 export class CircuitBreakerPolicy {
     public readonly maxConsecutiveFailures: number;

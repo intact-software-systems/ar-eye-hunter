@@ -6,13 +6,15 @@ import {
     QRtcSignalingType
 } from './QRtcSignalingContracts.ts';
 
-enum QRtcSessionState {
-    Idle = 'Idle',
-    Connecting = 'Connecting',
-    Open = 'Open',
-    Closed = 'Closed',
-    Failed = 'Failed',
-}
+const QRtcSessionState = {
+    Idle: 'Idle',
+    Connecting: 'Connecting',
+    Open: 'Open',
+    Closed: 'Closed',
+    Failed: 'Failed',
+} as const;
+
+type QRtcSessionState = (typeof QRtcSessionState)[keyof typeof QRtcSessionState];
 
 export type QRtcDataExchanged = {
     description: RTCSessionDescription | null

@@ -53,16 +53,16 @@ export type ResourceInboxWorkAdvertisementInput =
     | ResourceInboxWorkAdvertisementOptions;
 
 export type ResourceInboxTerminalReleaseStatus =
-    | Resource.EntityStatus.COMPLETED
-    | Resource.EntityStatus.FAILED
-    | Resource.EntityStatus.ABORTED
-    | Resource.EntityStatus.NON_RETRYABLE
-    | Resource.EntityStatus.PARTITIONED
-    | Resource.EntityStatus.MERGED;
+    | typeof Resource.EntityStatus.COMPLETED
+    | typeof Resource.EntityStatus.FAILED
+    | typeof Resource.EntityStatus.ABORTED
+    | typeof Resource.EntityStatus.NON_RETRYABLE
+    | typeof Resource.EntityStatus.PARTITIONED
+    | typeof Resource.EntityStatus.MERGED;
 
 export type ResourceInboxReleaseDisposition =
     | Readonly<{
-        status: Resource.EntityStatus.RETRY;
+        status: typeof Resource.EntityStatus.RETRY;
         delayMs: number;
     }>
     | Readonly<{

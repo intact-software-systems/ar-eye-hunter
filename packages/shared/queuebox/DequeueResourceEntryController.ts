@@ -62,7 +62,7 @@ export type ResourceInboxRetryExhaustionRecovery = Readonly<{
     entry: ResourceEntry;
     processingAttempts: number;
     reservationAttempt: number;
-    lane: Reservator.FINALIZATION;
+    lane: typeof Reservator.FINALIZATION;
     classification: 'retryable';
     exhausted: true;
     failure: Readonly<{ source: 'finalization-recovery' }>;

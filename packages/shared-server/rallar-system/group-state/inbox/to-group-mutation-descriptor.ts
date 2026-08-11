@@ -45,10 +45,10 @@ export function toGroupMutationDescriptor(
 function toAggregateMutationDescriptor(
   enqueue: Extract<
     AuthenticatedGroupMutationEnqueue,
-    | { readonly type: AppInboxType.GROUP_CREATE }
-    | { readonly type: AppInboxType.GROUP_UPDATE }
-    | { readonly type: AppInboxType.GROUP_DIRECTOR_APPOINT }
-    | { readonly type: AppInboxType.GROUP_JOIN_CODE_ROTATE }
+    | { readonly type: typeof AppInboxType.GROUP_CREATE }
+    | { readonly type: typeof AppInboxType.GROUP_UPDATE }
+    | { readonly type: typeof AppInboxType.GROUP_DIRECTOR_APPOINT }
+    | { readonly type: typeof AppInboxType.GROUP_JOIN_CODE_ROTATE }
   >,
 ): GroupMutationDescriptor {
   const enqueueType = enqueue.type;
@@ -96,10 +96,10 @@ function toAggregateMutationDescriptor(
 function toAdmissionMutationDescriptor(
   enqueue: Extract<
     AuthenticatedGroupMutationEnqueue,
-    | { readonly type: AppInboxType.GROUP_JOIN }
-    | { readonly type: AppInboxType.GROUP_INVITE_CREATE }
-    | { readonly type: AppInboxType.GROUP_INVITE_REVOKE }
-    | { readonly type: AppInboxType.GROUP_INVITE_ACCEPT }
+    | { readonly type: typeof AppInboxType.GROUP_JOIN }
+    | { readonly type: typeof AppInboxType.GROUP_INVITE_CREATE }
+    | { readonly type: typeof AppInboxType.GROUP_INVITE_REVOKE }
+    | { readonly type: typeof AppInboxType.GROUP_INVITE_ACCEPT }
   >,
 ): GroupMutationDescriptor {
   const enqueueType = enqueue.type;
@@ -149,9 +149,9 @@ function toAdmissionMutationDescriptor(
 function toMembershipMutationDescriptor(
   enqueue: Extract<
     AuthenticatedGroupMutationEnqueue,
-    | { readonly type: AppInboxType.GROUP_MEMBER_REMOVE }
-    | { readonly type: AppInboxType.GROUP_MEMBER_BAN }
-    | { readonly type: AppInboxType.GROUP_MEMBER_UNBAN }
+    | { readonly type: typeof AppInboxType.GROUP_MEMBER_REMOVE }
+    | { readonly type: typeof AppInboxType.GROUP_MEMBER_BAN }
+    | { readonly type: typeof AppInboxType.GROUP_MEMBER_UNBAN }
   >,
 ): GroupMutationDescriptor {
   const enqueueType = enqueue.type;
@@ -194,9 +194,9 @@ function toMembershipMutationDescriptor(
 function toGovernanceMutationDescriptor(
   enqueue: Extract<
     AuthenticatedGroupMutationEnqueue,
-    | { readonly type: AppInboxType.GROUP_MEMBER_ROLE_SET }
-    | { readonly type: AppInboxType.GROUP_OWNERSHIP_TRANSFER }
-    | { readonly type: AppInboxType.GROUP_MEMBER_UPSERT }
+    | { readonly type: typeof AppInboxType.GROUP_MEMBER_ROLE_SET }
+    | { readonly type: typeof AppInboxType.GROUP_OWNERSHIP_TRANSFER }
+    | { readonly type: typeof AppInboxType.GROUP_MEMBER_UPSERT }
   >,
 ): GroupMutationDescriptor {
   const enqueueType = enqueue.type;
@@ -239,9 +239,9 @@ function toGovernanceMutationDescriptor(
 function toPresenceMutationDescriptor(
   enqueue: Extract<
     AuthenticatedGroupMutationEnqueue,
-    | { readonly type: AppInboxType.GROUP_PRESENCE_CONNECT }
-    | { readonly type: AppInboxType.GROUP_PRESENCE_HEARTBEAT }
-    | { readonly type: AppInboxType.GROUP_PRESENCE_DISCONNECT }
+    | { readonly type: typeof AppInboxType.GROUP_PRESENCE_CONNECT }
+    | { readonly type: typeof AppInboxType.GROUP_PRESENCE_HEARTBEAT }
+    | { readonly type: typeof AppInboxType.GROUP_PRESENCE_DISCONNECT }
   >,
 ): GroupMutationDescriptor {
   const enqueueType = enqueue.type;

@@ -1,14 +1,18 @@
 import { GraphProp, TreeGraph, VertexId } from './graph-props.ts';
 
-export enum MessageType {
-    TO_SERVER_ENTER = 'TO_SERVER_ENTER',
-    TO_SERVER_LEAVE = 'TO_SERVER_LEAVE',
-}
+export const MessageType = {
+    TO_SERVER_ENTER: 'TO_SERVER_ENTER',
+    TO_SERVER_LEAVE: 'TO_SERVER_LEAVE',
+} as const;
 
-export enum ReconfigAlgo {
-    TEST_OPTIMAL_PAIR_WISE = 'TEST_OPTIMAL_PAIR_WISE',
-    NO_RECONFIG_ALGO = 'NO_RECONFIG_ALGO',
-}
+export type MessageType = (typeof MessageType)[keyof typeof MessageType];
+
+export const ReconfigAlgo = {
+    TEST_OPTIMAL_PAIR_WISE: 'TEST_OPTIMAL_PAIR_WISE',
+    NO_RECONFIG_ALGO: 'NO_RECONFIG_ALGO',
+} as const;
+
+export type ReconfigAlgo = (typeof ReconfigAlgo)[keyof typeof ReconfigAlgo];
 
 export type MessageLike = {
     type: MessageType;
