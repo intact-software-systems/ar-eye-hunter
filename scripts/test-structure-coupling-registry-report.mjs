@@ -128,7 +128,10 @@ function validateContracts(errors, contractValues) {
       sharedContracts.some((contract) => !hasConcreteText(contract.sharedCoverageGroup))
     ) {
       errors.push(
-        'semanticCoverage is reused by multiple contracts without an explicit shared coverage group',
+        [
+          'semanticCoverage is reused by multiple contracts without an explicit',
+          'shared coverage group',
+        ].join(' '),
       );
     }
   }
@@ -163,11 +166,16 @@ function validateDisposition(errors, entry) {
 }
 
 function usesGeneratedRationaleFormula(value) {
+  const generatedPrefixes = [
+    'Contract input read:',
+    'Required boundary assertion:',
+    'Compatibility-path assertion:',
+    'Published inventory assertion:',
+    'Repository-interface analysis:',
+  ];
   return (
     typeof value === 'string' &&
-    (/^(?:Contract input read|Required boundary assertion|Compatibility-path assertion|Published inventory assertion|Repository-interface analysis):/u.test(
-      value.trim(),
-    ) ||
+    (generatedPrefixes.some((prefix) => value.trim().startsWith(prefix)) ||
       value.includes('Its only durable purpose is the linked') ||
       /^In [“"](.+?)[”"], this [a-z-]+ occurrence /u.test(value.trim()))
   );

@@ -41,8 +41,8 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | --- | ---: | --- |
 | Source-analysis interface | 1 | One parser owner supplies normalized, path-aware analysis to repository tests. |
 | Hetzner workflow and Deno runtime | 9 | Executed operations are compared with their emitted artifacts, manifests, and deployed config. |
-| Browser control protocol | 7 | Consumers must use the shared protocol owner and not recreate it in the SPA. |
-| Auth compatibility | 3 | The complete retained consumer inventory must resolve to canonical runtime identities. |
+| Browser control protocol | 7 | Two approved assertions protect server import direction and shared-test monitor ownership. |
+| Auth compatibility | 3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges. |
 | Repository style and release interfaces | 2 | Automation consumes stable rule and release-gate mappings. |
 | AppInbox transport routing | 7 | Concrete route mutations must fail before they bypass the canonical transaction owner. |
 | Mutation-analysis implementation interface | 3 | The audit must follow new files, re-exports, and type declarations fail-closed. |
@@ -162,12 +162,20 @@ moved or changed test.
       "coverageRelation": "The AppInbox transaction suite proves the canonical owner commits mutation, result, effects, and completion atomically; this mutation fixture proves the routing analyzer rejects the named way a transport could bypass or misroute that owner."
     },
     {
-      "id": "auth-server-compatibility",
-      "domain": "Auth server compatibility ledger",
+      "id": "auth-server-wrapper-mutation-boundary",
+      "domain": "Auth compatibility wrapper directness",
       "owner": "Rallar repository maintainers",
-      "summary": "Every retained auth compatibility consumer is named, bounded, and tied to its canonical runtime owner. Executable assertion: “rejects export kind, target, and second-hop changes”.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities",
-      "coverageRelation": "The runtime-identity suite imports every retained compatibility path and proves it resolves directly to the canonical implementation represented by this inventory."
+      "summary": "Retained auth wrappers preserve export kind, canonical target, and directness. Executable assertion: “rejects export kind, target, and second-hop changes”.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes",
+      "coverageRelation": "The mutation assertion rewrites each approved wrapper shape and must reject a type/runtime export swap, a different canonical target, and a second compatibility hop. Runtime identity alone cannot detect type-only drift or an extra indirection that currently resolves to the same value."
+    },
+    {
+      "id": "auth-server-canonical-test-inventory",
+      "domain": "Canonical auth test import boundary",
+      "owner": "Rallar repository maintainers",
+      "summary": "Canonical auth tests import canonical owners rather than compatibility wrappers. Executable assertion: “keeps every canonical auth test free of compatibility wrappers”.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#keeps every canonical auth test free of compatibility wrappers",
+      "coverageRelation": "The assertion enumerates every canonical auth test and checks its imports against the wrapper ledger. Running the auth behavior suite cannot prove that a newly added test did not start depending on a deprecated compatibility path."
     },
     {
       "id": "black-box-schema-public-interface--keeps-schema-compatibility-guide-json-examples-validating",
@@ -194,12 +202,20 @@ moved or changed test.
       "coverageRelation": "The named schema test parses and validates the exact published fixture, application example, compatibility corpus, or guide example represented by this filesystem occurrence."
     },
     {
+      "id": "control-protocol-server-import-direction",
+      "domain": "Control-server protocol import direction",
+      "owner": "Shared Test maintainers",
+      "summary": "The control server cannot import the SPA-owned protocol module. Executable assertion: “does not import control protocol from the SPA app into the control server”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server",
+      "coverageRelation": "This approved architecture assertion enumerates the control-server source and rejects the forbidden SPA protocol import. Runtime protocol behavior cannot reveal an app-local fork or a reversed server-to-SPA dependency when both copies still behave alike."
+    },
+    {
       "id": "control-protocol-browser-boundary",
-      "domain": "Browser control protocol boundary",
-      "owner": "Rallar Black Box maintainers",
-      "summary": "The browser client consumes the shared control protocol and rejects app-local protocol duplication. Executable assertion: “keeps distributed run monitor derivation in shared-test instead of the SPA app”.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands",
-      "coverageRelation": "The shared-test protocol suite executes the canonical public contract, while this boundary audit proves the browser and control server consume that owner instead of an app-local duplicate."
+      "domain": "Distributed monitor production ownership",
+      "owner": "Shared Test maintainers",
+      "summary": "The SPA delegates distributed monitor, analysis, and verdict derivation to shared-test. Executable assertion: “keeps distributed run monitor derivation in shared-test instead of the SPA app”.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app",
+      "coverageRelation": "This approved package-boundary assertion inspects the SPA integration module for its canonical shared-test import and absence of three local derivations. Rendered monitor behavior cannot distinguish delegation from a behaviorally identical app-local duplicate."
     },
     {
       "id": "group-http-mutation-contract--rejects-a-conditional-private-owner-call-in-the-exported-family-",
@@ -677,9 +693,9 @@ moved or changed test.
       "id": "repo-style-checker-interface",
       "domain": "Repository style checker interface",
       "owner": "Rallar repository maintainers",
-      "summary": "Governed rule identifiers and workflow registration remain stable for repository automation consumers. Executable assertion: “keeps TypeScript formatter settings aligned with the canonical baseline”.",
-      "semanticCoverage": "packages/tests/repo/repo-style-construction-check.test.ts#reports a callback that captures a service assigned after consumer construction",
-      "coverageRelation": "The named checker test executes the governed rule and this configuration assertion preserves the identifier through which repository automation selects that behavior."
+      "summary": "Every governed Deno configuration inherits the canonical TypeScript formatter settings. Executable assertion: “keeps TypeScript formatter settings aligned with the canonical baseline”.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline",
+      "coverageRelation": "The assertion reads each governed Deno config and compares its formatter object with the canonical baseline. Formatting one sample file cannot prove that every repository formatter entrypoint uses the same settings."
     },
     {
       "id": "shared-web-app-import-boundary",
@@ -821,7 +837,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a family call before resolved dependencies and authorization exist”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Moves family construction ahead of dependency and authorization resolution, testing lifecycle order at the root composition boundary.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call before resolved dependencies and authorization exist"
     },
     {
@@ -834,7 +850,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "The catalog or recipe input “expect(() => readFileSync(path.join(runnerRoot, entry.recipe), 'utf8')).not.toThrow();” is what “points every entry at a catalog recipe file” uses to verify the named uniqueness, coverage, compatibility, or CLI promise across published files.",
+      "rationale": "Opens the recipe file referenced by each matrix entry, proving catalog paths resolve to shipped executable fixtures.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file"
     },
     {
@@ -847,7 +863,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "For “forbids literal SET values from claiming durable state-write evidence”, “readFileSync(path.join(recipeRoot, name), 'utf8'),” loads the command/evidence pair whose digest, revision, effect, or execution identity is then asserted semantically.",
+      "rationale": "Reads every state-write recipe selected by the evidence catalog and rejects literal SET payloads that bypass generated durable evidence.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#forbids literal SET values from claiming durable state-write evidence"
     },
     {
@@ -860,7 +876,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “await expect(readFile(denoLock, 'utf8')).resolves.toBe('clean\\n');” lets “repairs known Deno lockfile drift before the controlled rollout dirty checkout guard” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Reads the rollout workflow order to verify the narrow lockfile repair occurs before the dirty-checkout guard evaluates operator changes.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#repairs known Deno lockfile drift before the controlled rollout dirty checkout guard"
     },
     {
@@ -873,7 +889,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“rejects a CRDT type removed from its imported live registration collection” changes the live registration family through “const source = readFileSync(CRDT_TYPES, 'utf8');”; this occurrence proves the audit follows the authoritative collection rather than a similarly named domain value.",
+      "rationale": "Removes one CRDT type from the imported live collection, establishing the exact collection mutation the rejection case evaluates.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection"
     },
     {
@@ -886,7 +902,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "For “executes the topology exact-revision assertions before every cleanup step”, “const recipe = JSON.parse(readFileSync(path.join(” loads the command/evidence pair whose digest, revision, effect, or execution identity is then asserted semantically.",
+      "rationale": "Parses the topology state-write recipe and compares exact-revision assertion positions with each cleanup command.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#executes the topology exact-revision assertions before every cleanup step"
     },
     {
@@ -899,7 +915,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "For “selects auth ticket races by the redacted secret and exact durable digest”, “const recipe = JSON.parse(readFileSync(path.join(” loads the command/evidence pair whose digest, revision, effect, or execution identity is then asserted semantically.",
+      "rationale": "Parses the auth-ticket race recipe so candidate selection is tied to its redacted secret and computed durable digest together.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#selects auth ticket races by the redacted secret and exact durable digest"
     },
     {
@@ -912,7 +928,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“maps all 50 entrypoints and 46 types to real registrations and owners” depends on “const program = parse(readFileSync(resolved, 'utf8'), {” to distinguish type declarations from executable mutation owners before comparing the complete inventory.",
+      "rationale": "Inspects the canonical capability declarations so every inventoried mutation type can be joined to an actual registration and owner.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#maps all 50 entrypoints and 46 types to real registrations and owners"
     },
     {
@@ -925,7 +941,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “const manifest = JSON.parse(await readFile(path.join(repoRoot, manifestPath), 'utf8'));” lets “prepares the supported commit once before running the serial manifest matrix” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Reads the workflow job steps to establish that checkout preparation precedes, and is not repeated inside, each serial manifest execution.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#prepares the supported commit once before running the serial manifest matrix"
     },
     {
@@ -938,8 +954,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "For “keeps distributed run monitor derivation in shared-test instead of the SPA app”, “expect(source).not.toContain('export function deriveDistributedRunMonitor');” is the exact import/owner edge checked against the canonical shared-test protocol; the occurrence prevents an app-local protocol fork.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+      "rationale": "Opens the SPA distributed-recipes integration module, the single consumer in which a local monitor fork could otherwise hide.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
       "id": "test-structure-coupling-1b4734649c1d8e9f",
@@ -951,7 +967,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The mutation fixture line “const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');” creates the precise routing defect named by “rejects an exact route registered only from a request-time callback”; rejection proves that transport cannot evade the AppInbox transaction owner.",
+      "rationale": "Moves the exact presence registration into request-time control flow, making this source read the evidence that startup ownership is no longer guaranteed.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects an exact route registered only from a request-time callback"
     },
     {
@@ -964,7 +980,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(PRESENCE_ROUTES, 'utf8');” supplies the construction mutation described by “rejects an uninventoryed live private owner and route in a family”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Introduces a working private owner and route that are absent from the canonical inventory, ensuring live but unnamed mutation paths remain rejected.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
     },
     {
@@ -977,7 +993,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The mutation fixture line “const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');” creates the precise routing defect named by “rejects a dead exact registration masking the live named route owner”; rejection proves that transport cannot evade the AppInbox transaction owner.",
+      "rationale": "Starts from the live presence registrar, adds a dead exact registration, and verifies that the unreachable decoy cannot satisfy named-owner discovery.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead exact registration masking the live named route owner"
     },
     {
@@ -990,7 +1006,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "The catalog or recipe input “expect(source).toContain('api-v1-black-box');” is what “advertises the API-v1 profile in recipe-matrix CLI usage” uses to verify the named uniqueness, coverage, compatibility, or CLI promise across published files.",
+      "rationale": "Requires the recipe-matrix CLI source to name api-v1-black-box in its usage output, protecting the operator-visible profile selector.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
     },
     {
@@ -1003,7 +1019,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“expect(read(AUTHORISED_WS_HELPER)).toContain(” is the concrete canonical or mutated module input for “uses one named readonly input object for each authorised websocket enqueue helper”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Requires the authorised websocket helper to accept its first named readonly input object rather than a positional mutation tuple.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
@@ -1016,7 +1032,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The consumer import read “expect(runtimeSource).toContain(” lets “keeps Relic on its runtime adapter boundary without the broad shared-web barrel” prove that this app uses its intended narrow shared-web surface and does not reverse package ownership.",
+      "rationale": "Requires the Relic runtime module to import its narrow browser adapter, recording the consumer-to-adapter dependency edge.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts#keeps Relic on its runtime adapter boundary without the broad shared-web barrel"
     },
     {
@@ -1029,7 +1045,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“expect(source, directFallback).not.toContain(directFallback);” is the concrete canonical or mutated module input for “requires the admin mutation gateway and contains no direct-write fallback”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Checks each forbidden direct-write fragment against AdminOperations, covering the concrete fallback statements that could bypass the gateway.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
@@ -1042,7 +1058,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The AST parse at “const program = parse(readFileSync(normalized, 'utf8'), {” follows the re-export case exercised by “resolves mutable repository capabilities through the shared-server barrel” until the mutable capability reaches its canonical module.",
+      "rationale": "Reads the shared-server barrel as the starting export graph, proving mutable capabilities remain traceable through the package public surface.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel"
     },
     {
@@ -1055,7 +1071,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(PRESENCE_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a different app passed from a family to its private owner”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Mutates the family-to-owner call to pass a different app object, isolating instance continuity across the private ownership boundary.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a different app passed from a family to its private owner"
     },
     {
@@ -1068,7 +1084,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects an exact registration inside a literal-false owner branch”, the fixture uses “const source = readFileSync(PRESENCE_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Nests exact registration under a literal-false owner branch, testing reachability of the public route installation.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration inside a literal-false owner branch"
     },
     {
@@ -1081,8 +1097,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "For “keeps distributed run monitor derivation in shared-test instead of the SPA app”, “expect(source).toContain('@shared-test/rallar-bb-test/distributed-run-monitor.ts');” is the exact import/owner edge checked against the canonical shared-test protocol; the occurrence prevents an app-local protocol fork.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+      "rationale": "Requires the shared-test distributed-run-monitor import, establishing delegation to the package owner rather than copied analysis logic.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
       "id": "test-structure-coupling-3755f294155bc847",
@@ -1094,7 +1110,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“expect(source).not.toContain('if (this.options.mutationGateway)');” is the concrete canonical or mutated module input for “requires the admin mutation gateway and contains no direct-write fallback”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Forbids a truthiness guard around mutationGateway, because optional control flow would reopen the direct-write path.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
@@ -1107,7 +1123,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "“starts three API servers for every managed Postgres cluster command” reads the real runner manifest at “await readFile(path.join(repoRoot, 'packages/shared-test/package.json'), 'utf8'),” so its three-server command assertion covers the published npm interface rather than a copied command.",
+      "rationale": "Reads the shared-test package manifest and extracts the real managed Postgres commands whose process plans must contain all three API servers.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-runner-options-and-plans.test.ts#starts three API servers for every managed Postgres cluster command"
     },
     {
@@ -1120,7 +1136,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = read(ADMIN_OPERATIONS);” is the concrete canonical or mutated module input for “requires the admin mutation gateway and contains no direct-write fallback”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Reads AdminOperations once as the canonical module on which the required-gateway and no-fallback assertions operate.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
@@ -1133,7 +1149,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a separately bound command declared after its submission”, the fixture uses “const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Moves the separately bound command declaration below AppInbox submission, so the analyzer must reject use before authoritative construction.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a separately bound command declared after its submission"
     },
     {
@@ -1146,7 +1162,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "The catalog or recipe input “const legacyAliasFixture = JSON.parse(readFileSync(” is what “uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture” uses to verify the named uniqueness, coverage, compatibility, or CLI promise across published files.",
+      "rationale": "Loads the designated legacy alias fixture separately so the catalog can require rallar-signaling everywhere else without deleting compatibility evidence.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture"
     },
     {
@@ -1159,7 +1175,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“expect(source).toContain('mutationGateway: AdminOperationsMutationGateway;');” is the concrete canonical or mutated module input for “requires the admin mutation gateway and contains no direct-write fallback”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Requires the non-optional AdminOperationsMutationGateway field declaration, making gateway ownership explicit in the constructor contract.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
@@ -1172,7 +1188,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects wrong root-to-family arguments”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Substitutes a different resolved dependency at the root/family edge, testing provenance rather than just argument count.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects wrong root-to-family arguments"
     },
     {
@@ -1185,7 +1201,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "“return analyzeSource(readFileSync(filePath, 'utf8'), filePath);” is where the shared helper turns tracked module text into the normalized model exercised by “normalizes TypeScript and TSX module syntax without exposing parser nodes”; without that parse, callers would regain ad hoc parser ownership.",
+      "rationale": "Reads source text at the shared helper boundary and immediately converts it into the normalized path-aware analysis model consumed by repository tests.",
       "semanticCoverage": "packages/tests/helpers/source-analysis.test.ts#normalizes TypeScript and TSX module syntax without exposing parser nodes"
     },
     {
@@ -1198,8 +1214,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "Repository automation consumes the identifier reached through “const deno = readJson(denoConfigPath) as {”; “keeps TypeScript formatter settings aligned with the canonical baseline” keeps that selector attached to the executable construction rule.",
-      "semanticCoverage": "packages/tests/repo/repo-style-construction-check.test.ts#reports a callback that captures a service assigned after consumer construction"
+      "rationale": "Reads each enumerated Deno configuration and compares its fmt object with the canonical formatter object consumed by repository automation.",
+      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline"
     },
     {
       "id": "test-structure-coupling-50ed43bd66d7d0ae",
@@ -1211,7 +1227,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects an exact registration after an unconditional owner return”, the fixture uses “const source = readFileSync(PRESENCE_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Moves the exact route registration below an unconditional owner return, making it dead despite remaining in the source.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects an exact registration after an unconditional owner return"
     },
     {
@@ -1224,7 +1240,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a correct handoff found only in a literal-false handler branch”, the fixture uses “expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Compares the false-branch mutant with the original membership registrar so the assertion proves it tested unreachable rather than canonical source.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in a literal-false handler branch"
     },
     {
@@ -1237,7 +1253,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The owned-module inventory at “const runtimeFiles = readdirSync(runtimeDirectory).filter((fileName) =>” is the precise internal surface guarded by “keeps capability controllers behind injected ports”, keeping that runtime capability behind its public entrypoint or injected port.",
+      "rationale": "Enumerates runtime controller modules and checks each for injected-port use, preventing a newly added controller from escaping the capability boundary.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps capability controllers behind injected ports"
     },
     {
@@ -1250,7 +1266,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects duplicate direct operation properties in the command object”, the fixture uses “const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Duplicates the command operation key, making the final submitted operation ambiguous to a source-only first-match check.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct operation properties in the command object"
     },
     {
@@ -1263,7 +1279,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "The workflow read “const sharedTestManifest = readJson<PackageManifest>(” is the release-gate half of “keeps TypeScript and Deno checking as separate release gates”, pairing the npm TypeScript command with the separately owned Deno check.",
+      "rationale": "Reads the shared-test manifest’s TypeScript check command and pairs it with the independently executed Deno workflow gate.",
       "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates"
     },
     {
@@ -1276,7 +1292,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a family removed from the exported root”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Deletes one canonical family invocation from the root fixture so the analyzer must report the missing owner family.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family removed from the exported root"
     },
     {
@@ -1289,7 +1305,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "“uses the control-server Deno config for Hetzner cache warming and systemd start” loads the deployed Deno configuration at “const controlConfig = JSON.parse(await readFile(controlServerConfigPath, 'utf8')) as {” so the assertion follows the same cache and systemd config path used on Hetzner.",
+      "rationale": "Reads the deployed control-server Deno config that both cache warming and systemd execute, preventing the host script from validating a different runtime graph.",
       "semanticCoverage": "packages/tests/hetzner/spa-env-script.test.ts#uses the control-server Deno config for Hetzner cache warming and systemd start"
     },
     {
@@ -1302,7 +1318,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The mutation fixture line “const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');” creates the precise routing defect named by “rejects a membership route constant swapped to the presence path”; rejection proves that transport cannot evade the AppInbox transaction owner.",
+      "rationale": "Mutates the membership registrar’s path constant to the presence route so the audit must detect cross-family route ownership rather than accept a valid-looking path.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a membership route constant swapped to the presence path"
     },
     {
@@ -1315,7 +1331,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The predicate case named “narrows the imported CRDT collection with an exact equality filter” is expressed at “const source = readFileSync(CRDT_OWNER, 'utf8');”, where fail-closed evaluation must distinguish an exact handler filter from false or opaque logic.",
+      "rationale": "Narrows the imported CRDT types to one equality match so owner coverage reflects the effective iterable, not its unfiltered declaration.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the imported CRDT collection with an exact equality filter"
     },
     {
@@ -1324,12 +1340,12 @@ moved or changed test.
       "line": 24,
       "column": 17,
       "kind": "symbol-assertion",
-      "contract": "control-protocol-browser-boundary",
+      "contract": "control-protocol-server-import-direction",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "For “keeps distributed run monitor derivation in shared-test instead of the SPA app”, “expect(source, `${file} imports ${forbidden}`).not.toContain(forbidden);” is the exact import/owner edge checked against the canonical shared-test protocol; the occurrence prevents an app-local protocol fork.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+      "rationale": "Reads each enumerated control-server module so the assertion covers the whole server import surface, including files added to the approved inventory.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
       "id": "test-structure-coupling-674f545af17ca390",
@@ -1341,7 +1357,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a canonical family name rebound to a different imported family”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Reads the exported root before rebinding a canonical family identifier to another imported registrar, testing binding identity rather than call spelling.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a canonical family name rebound to a different imported family"
     },
     {
@@ -1354,8 +1370,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "For “keeps distributed run monitor derivation in shared-test instead of the SPA app”, “const source = readFileSync('apps/rallar-black-box/src/distributed-recipes.ts', 'utf8');” is the exact import/owner edge checked against the canonical shared-test protocol; the occurrence prevents an app-local protocol fork.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+      "rationale": "Forbids a local deriveDistributedRunMonitor declaration, which is the primary duplicate implementation this boundary is intended to prevent.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
       "id": "test-structure-coupling-6dfda4a637579910",
@@ -1367,7 +1383,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“rejects a CRDT type removed from its imported live registration collection” changes the live registration family through “[CRDT_OWNER, readFileSync(CRDT_OWNER, 'utf8')],”; this occurrence proves the audit follows the authoritative collection rather than a similarly named domain value.",
+      "rationale": "Loads the CRDT owner module alongside the shortened collection so the analyzer must compare registrations with their real owner surface.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects a CRDT type removed from its imported live registration collection"
     },
     {
@@ -1380,7 +1396,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “const sourceBefore = await readFile(sourcePath, 'utf8');” lets “materializes a deterministic isolated group throughout executable manifest data” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Captures the source manifest before group materialization so the assertion can compare the generated execution copy without losing its immutable baseline.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data"
     },
     {
@@ -1393,7 +1409,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "The parsed recipe occurrence “const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {” carries the run-scoped or tertiary evidence asserted by “proves tertiary scalar and causal floors with revision and source headers”; removing it would stop exercising that checked-in contract.",
+      "rationale": "Loads the convergence recipe section containing tertiary value, revision, and source-header assertions so those causal floors remain executable data.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#proves tertiary scalar and causal floors with revision and source headers"
     },
     {
@@ -1406,7 +1422,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects an extra root-to-family argument”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Adds a root-owned value to a family invocation beyond its approved signature, testing the public composition tuple exactly.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an extra root-to-family argument"
     },
     {
@@ -1419,7 +1435,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The predicate case named “narrows the auth registration array with an exact equality filter” is expressed at “const source = readFileSync(AUTH_OWNER, 'utf8');”, where fail-closed evaluation must distinguish an exact handler filter from false or opaque logic.",
+      "rationale": "Filters the auth type collection by an exact equality and verifies the audit follows the resulting live subset.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the auth registration array with an exact equality filter"
     },
     {
@@ -1432,7 +1448,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The owned-module inventory at “const runtimeFiles = readdirSync(” is the precise internal surface guarded by “keeps runtime controllers independent from the aggregate contract”, keeping that runtime capability behind its public entrypoint or injected port.",
+      "rationale": "Enumerates runtime controllers and forbids imports from the aggregate contract, preserving their narrower dependency surfaces.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the aggregate contract"
     },
     {
@@ -1445,7 +1461,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The owned-module inventory at “const runtimeFiles = readdirSync(” is the precise internal surface guarded by “keeps runtime controllers independent from the compatibility entrypoint”, keeping that runtime capability behind its public entrypoint or injected port.",
+      "rationale": "Scans the complete runtime-controller inventory for compatibility-entrypoint imports that runtime behavior would not reveal.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps runtime controllers independent from the compatibility entrypoint"
     },
     {
@@ -1458,7 +1474,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const program = parse(read(AUTHORISED_WS_HELPER), {” is the concrete canonical or mutated module input for “uses one named readonly input object for each authorised websocket enqueue helper”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Reads and parses that helper module so parameter declarations are evaluated as syntax, not brittle substring matches.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
@@ -1471,7 +1487,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“binds topology loops to their live types” changes the live registration family through “const group = readFileSync(GROUP_OWNER, 'utf8');”; this occurrence proves the audit follows the authoritative collection rather than a similarly named domain value.",
+      "rationale": "Inspects the topology registration loop so the audit evaluates its iterated live type collection rather than only the loop body.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#binds topology loops to their live types"
     },
     {
@@ -1484,7 +1500,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“rejects GROUP_CREATE removed from the imported live group registration collection” changes the live registration family through “const source = readFileSync(GROUP_TYPES, 'utf8');”; this occurrence proves the audit follows the authoritative collection rather than a similarly named domain value.",
+      "rationale": "Deletes GROUP_CREATE from the imported group type collection and requires the owner audit to report that specific missing live route.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
@@ -1497,7 +1513,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The mutation fixture line “const source = readFileSync(GROUP_COMMAND_TRANSLATOR, 'utf8');” creates the precise routing defect named by “rejects a translator case routed to another operation type”; rejection proves that transport cannot evade the AppInbox transaction owner.",
+      "rationale": "Reads the command translator as the mutation target for swapping one case’s operation type; no route-file proxy can exercise this translation defect.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a translator case routed to another operation type"
     },
     {
@@ -1510,7 +1526,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "For “uses one bounded execution identity for the command and its evidence”, “const recipe = JSON.parse(readFileSync(path.join(” loads the command/evidence pair whose digest, revision, effect, or execution identity is then asserted semantically.",
+      "rationale": "Reads the bounded-execution recipe and compares the command identity with the evidence query identity in the same parsed fixture.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
     },
     {
@@ -1523,7 +1539,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "For “observes committed socket authorization before clustered WS effects”, “readFileSync(path.join(recipeRoot, name), 'utf8'),” loads the command/evidence pair whose digest, revision, effect, or execution identity is then asserted semantically.",
+      "rationale": "Loads the socket-authorization recipe to verify its commit observation precedes the clustered websocket effect assertion.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#observes committed socket authorization before clustered WS effects"
     },
     {
@@ -1536,7 +1552,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The predicate case named “fails closed for an opaque registration predicate” is expressed at “const source = readFileSync(GROUP_OWNER, 'utf8');”, where fail-closed evaluation must distinguish an exact handler filter from false or opaque logic.",
+      "rationale": "Introduces a predicate whose result cannot be statically resolved, and requires classification as unknown instead of assuming registration.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#fails closed for an opaque registration predicate"
     },
     {
@@ -1545,12 +1561,12 @@ moved or changed test.
       "line": 38,
       "column": 11,
       "kind": "production-source-read",
-      "contract": "auth-server-compatibility",
+      "contract": "auth-server-wrapper-mutation-boundary",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar repository maintainers",
-      "rationale": "The compatibility inventory uses “readRepositorySource(wrapper).replace(” while “rejects export kind, target, and second-hop changes” proves every listed consumer resolves to its direct canonical runtime identity.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities"
+      "rationale": "Loads the approved wrapper and changes its direct export kind or canonical target; that mutant proves the ledger rejects compatibility drift at the first hop.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes"
     },
     {
       "id": "test-structure-coupling-82ba58a8bd767596",
@@ -1562,7 +1578,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a duplicate private-owner call in the exported family registrar”, the fixture uses “const source = readFileSync(PRESENCE_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Duplicates the private-owner setup inside the family registrar to enforce a single authoritative registration pass.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a duplicate private-owner call in the exported family registrar"
     },
     {
@@ -1575,7 +1591,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The owned-module inventory at “const runtimeFiles = readdirSync(” is the precise internal surface guarded by “limits the full runtime context to the composer and port contracts”, keeping that runtime capability behind its public entrypoint or injected port.",
+      "rationale": "Enumerates runtime modules and permits full-context access only in the composer and explicit port contracts.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#limits the full runtime context to the composer and port contracts"
     },
     {
@@ -1588,7 +1604,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a private-owner call after a family-registrar return”, the fixture uses “const source = readFileSync(PRESENCE_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Places private-owner installation after the family registrar returns, distinguishing reachable construction from token presence.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a private-owner call after a family-registrar return"
     },
     {
@@ -1601,7 +1617,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The traversal scenario “uses the canonical inventory in the original routing contract test” reaches “const source = readFileSync(” through an export, helper, or capability edge and must still resolve the mutation to AppInbox.",
+      "rationale": "Opens the original routing contract test to verify it consumes the extracted canonical inventory rather than maintaining a second list.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts#uses the canonical inventory in the original routing contract test"
     },
     {
@@ -1614,7 +1630,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects an operation overridden by a later command-object spread”, the fixture uses “const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Places an operation-changing spread after the approved command property, catching last-write-wins command drift.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a later command-object spread"
     },
     {
@@ -1627,8 +1643,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "For “keeps distributed run monitor derivation in shared-test instead of the SPA app”, “expect(source).not.toContain('export function deriveDistributedRunAnalysisReport');” is the exact import/owner edge checked against the canonical shared-test protocol; the occurrence prevents an app-local protocol fork.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+      "rationale": "Separately excludes a local deriveDistributedRunAnalysisReport declaration so report derivation cannot fork while monitor derivation remains shared.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
       "id": "test-structure-coupling-885894411448b277",
@@ -1640,7 +1656,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “const source = await readFile(” lets “persists control-server snapshots with an atomic temp-file rename” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Inspects the snapshot writer used in the executed control-server process and verifies persistence crosses the temp-file rename boundary atomically.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#persists control-server snapshots with an atomic temp-file rename"
     },
     {
@@ -1653,7 +1669,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(PRESENCE_ROUTES, 'utf8');” supplies the construction mutation described by “rejects reordered family-to-private-owner arguments”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Swaps two same-surface arguments at the private-owner call, a defect runtime smoke coverage may not distinguish until values diverge.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects reordered family-to-private-owner arguments"
     },
     {
@@ -1666,7 +1682,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The consumer import read “const runtimeSource = readSource(” lets “keeps Relic on its runtime adapter boundary without the broad shared-web barrel” prove that this app uses its intended narrow shared-web surface and does not reverse package ownership.",
+      "rationale": "Reads the Relic runtime source that owns package imports, keeping the two positive assertions tied to the actual consumer module.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts#keeps Relic on its runtime adapter boundary without the broad shared-web barrel"
     },
     {
@@ -1679,7 +1695,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects an AppInbox type overridden by a computed result-object property”, the fixture uses “const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Adds a computed result property that overwrites the approved AppInbox type, exercising final object semantics rather than the first visible key.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a computed result-object property"
     },
     {
@@ -1692,7 +1708,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The owned-module inventory at “const runtimeFiles = readdirSync(” is the precise internal surface guarded by “keeps mutable state-cache access inside the state store”, keeping that runtime capability behind its public entrypoint or injected port.",
+      "rationale": "Walks every runtime module outside the state store and rejects direct mutable cache access, including future files in that directory.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts#keeps mutable state-cache access inside the state store"
     },
     {
@@ -1705,7 +1721,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“binds direct client registrations to their live types” changes the live registration family through “const client = readFileSync(CLIENT_OWNER, 'utf8');”; this occurrence proves the audit follows the authoritative collection rather than a similarly named domain value.",
+      "rationale": "Reads the direct client registration collection and resolves each handler to the live imported type it actually installs.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#binds direct client registrations to their live types"
     },
     {
@@ -1718,7 +1734,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“expect(source).not.toContain('mutationGateway?:');” is the concrete canonical or mutated module input for “requires the admin mutation gateway and contains no direct-write fallback”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Separately rejects the optional-field spelling so a superficially present gateway cannot remain bypassable.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
@@ -1731,7 +1747,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "“return JSON.parse(readFileSync(path.join(runnerRoot, relativePath), 'utf8'));” is one of the loader's two concrete inputs—repository path or YAML text—used by “defines a no-browser three-server topology convergence recipe” to execute the checked-in recipe shape.",
+      "rationale": "Reads a caller-selected recipe path through the shared loader, providing the exact checked-in YAML/JSON fixture exercised by the topology semantics suite.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
@@ -1744,7 +1760,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The mutation fixture line “const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');” creates the precise routing defect named by “rejects a wrong local presence route constant”; rejection proves that transport cannot evade the AppInbox transaction owner.",
+      "rationale": "Changes the locally declared presence path while leaving the handler intact, proving the audit resolves the actual route constant rather than a handler name.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a wrong local presence route constant"
     },
     {
@@ -1757,7 +1773,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects an operation overridden by a computed command-object property”, the fixture uses “const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Overrides the command operation through a computed property, proving the audit evaluates the effective object value.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects an operation overridden by a computed command-object property"
     },
     {
@@ -1770,7 +1786,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "“keeps schema compatibility guide JSON examples validating” obtains the exact published fixture/example/corpus at “const blocks = jsonCodeBlocks(readFileSync(schemaCompatibilityGuidePath, 'utf8'));” and sends that value through the schema validator used by consumers.",
+      "rationale": "Extracts JSON code blocks from the published compatibility guide and submits each example to the real recipe schema validator.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#keeps schema compatibility guide JSON examples validating"
     },
     {
@@ -1783,7 +1799,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects reordered root-to-family arguments”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Reorders the root arguments passed into one family registrar, preserving arity while violating ownership position.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects reordered root-to-family arguments"
     },
     {
@@ -1792,12 +1808,12 @@ moved or changed test.
       "line": 156,
       "column": 37,
       "kind": "exact-file-tree",
-      "contract": "auth-server-compatibility",
+      "contract": "auth-server-canonical-test-inventory",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar repository maintainers",
-      "rationale": "The compatibility inventory uses “const compatibilityReferences = readdirSync(canonicalAuthTestRoot)” while “rejects export kind, target, and second-hop changes” proves every listed consumer resolves to its direct canonical runtime identity.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities"
+      "rationale": "Enumerates the canonical auth test directory so new test files enter the compatibility-import audit instead of escaping a hand-maintained filename list.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#keeps every canonical auth test free of compatibility wrappers"
     },
     {
       "id": "test-structure-coupling-a21189fdee14ad9b",
@@ -1809,7 +1825,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a removed private-owner call from the exported family registrar”, the fixture uses “const source = readFileSync(PRESENCE_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Removes the family’s only private-owner call, directly testing the missing handoff that would leave routes unowned.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a removed private-owner call from the exported family registrar"
     },
     {
@@ -1822,7 +1838,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "“return JSON.parse(readFileSync(path.join(runnerRoot, 'recipe-matrix.json'), 'utf8'));” is one of the loader's two concrete inputs—repository path or YAML text—used by “defines a no-browser three-server topology convergence recipe” to execute the checked-in recipe shape.",
+      "rationale": "Loads recipe-matrix.json through the same repository-root-aware fixture interface so catalog resolution is tested against the published matrix.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
@@ -1835,7 +1851,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The predicate case named “evaluates safe logical includes and identity map chains exactly” is expressed at “const source = readFileSync(AUTH_OWNER, 'utf8');”, where fail-closed evaluation must distinguish an exact handler filter from false or opaque logic.",
+      "rationale": "Builds the approved includes/identity-map predicate chain, proving the evaluator resolves these transparent collection operations without guessing.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly"
     },
     {
@@ -1848,7 +1864,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a duplicate family call in the exported root”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Duplicates one family registration in the exported root, exercising exactly-once construction rather than simple presence.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a duplicate family call in the exported root"
     },
     {
@@ -1857,12 +1873,12 @@ moved or changed test.
       "line": 22,
       "column": 28,
       "kind": "production-source-read",
-      "contract": "control-protocol-browser-boundary",
+      "contract": "control-protocol-server-import-direction",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "For “keeps distributed run monitor derivation in shared-test instead of the SPA app”, “const source = readFileSync(file, 'utf8');” is the exact import/owner edge checked against the canonical shared-test protocol; the occurrence prevents an app-local protocol fork.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+      "rationale": "Checks the current server module against the forbidden SPA protocol specifier; this is the negative dependency edge that would expose reversed ownership.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
       "id": "test-structure-coupling-af4e5d78146d7966",
@@ -1874,7 +1890,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects an AppInbox type overridden by a later result-object spread”, the fixture uses “const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Appends a spread after the result type property so the effective AppInbox type can differ from the earlier literal.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a later result-object spread"
     },
     {
@@ -1887,7 +1903,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(PRESENCE_ROUTES, 'utf8');” supplies the construction mutation described by “rejects an extra family-to-private-owner argument”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Adds an unapproved argument at the family/private-owner handoff, catching widened construction that could conceal a second dependency source.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
     },
     {
@@ -1900,7 +1916,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The mutation fixture line “const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');” creates the precise routing defect named by “fails closed when a named route path uses an unknown expression”; rejection proves that transport cannot evade the AppInbox transaction owner.",
+      "rationale": "Loads the presence route table before replacing a named path with an unevaluable expression; the analyzer must fail closed on that exact source value.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#fails closed when a named route path uses an unknown expression"
     },
     {
@@ -1913,7 +1929,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "The parsed recipe occurrence “const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {” carries the run-scoped or tertiary evidence asserted by “defines run-scoped identifiers as interpolated string values”; removing it would stop exercising that checked-in contract.",
+      "rationale": "Parses the state-read convergence recipe and inspects its identifier values for run interpolation, rather than validating a copied fixture object.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#defines run-scoped identifiers as interpolated string values"
     },
     {
@@ -1926,7 +1942,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "“keeps shared-web from declaring graphology directly” reads “readFileSync(” to establish the declared dependency set before bundling narrow browser entrypoints and checking their actual graph.",
+      "rationale": "Reads the shared-web package manifest before bundling and confirms graphology is not declared as a direct browser-package dependency.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts#keeps shared-web from declaring graphology directly"
     },
     {
@@ -1939,7 +1955,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The traversal scenario “uses the canonical inventory in the original routing contract test” reaches “expect(source).not.toContain('const MUTATION_ROUTE_INVENTORY');” through an export, helper, or capability edge and must still resolve the mutation to AppInbox.",
+      "rationale": "Rejects a local MUTATION_ROUTE_INVENTORY declaration, the concrete duplication that would let the original test drift from the shared inventory.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts#uses the canonical inventory in the original routing contract test"
     },
     {
@@ -1952,7 +1968,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a conditional family call in the exported root”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Wraps one root family call in conditional control flow so construction is no longer guaranteed for every server startup.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a conditional family call in the exported root"
     },
     {
@@ -1965,7 +1981,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects duplicate direct AppInbox type properties in the result object”, the fixture uses “const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Duplicates the direct result type property, rejecting an object whose authoritative outcome depends on property order.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects duplicate direct AppInbox type properties in the result object"
     },
     {
@@ -1978,7 +1994,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "“keeps the app-local RTC example self-contained for headless browser agents” obtains the exact published fixture/example/corpus at “const recipe = readJsonFile(” and sends that value through the schema validator used by consumers.",
+      "rationale": "Reads the shipped app-local RTC recipe and validates that exact example, including the fields a headless agent cannot obtain from app state.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#keeps the app-local RTC example self-contained for headless browser agents"
     },
     {
@@ -1991,7 +2007,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The traversal scenario “uses the canonical inventory in the original routing contract test” reaches “expect(source).toContain(\"from './mutation-routing-inventory.ts'\");” through an export, helper, or capability edge and must still resolve the mutation to AppInbox.",
+      "rationale": "Requires the mutation-routing-inventory import, recording the positive ownership edge paired with the no-local-copy assertion.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts#uses the canonical inventory in the original routing contract test"
     },
     {
@@ -2004,7 +2020,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "The recipe load “const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {” gives “names every group poll for the API node that executes it” the actual poll/service pairs whose named API node must match the convergence evidence.",
+      "rationale": "Parses the checked-in medium-scale recipe so each group poll’s service name can be compared with the API node that actually executes it.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-medium-scale-recipe-routing.test.ts#names every group poll for the API node that executes it"
     },
     {
@@ -2017,7 +2033,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The predicate case named “narrows the group registration array with an exact equality filter” is expressed at “const source = readFileSync(GROUP_OWNER, 'utf8');”, where fail-closed evaluation must distinguish an exact handler filter from false or opaque logic.",
+      "rationale": "Applies an equality filter to group registrations, exercising collection narrowing for the group family rather than auth or CRDT paths.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#narrows the group registration array with an exact equality filter"
     },
     {
@@ -2030,7 +2046,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“rejects an auth registration loop replaced with an empty iterable” changes the live registration family through “const source = readFileSync(AUTH_OWNER, 'utf8');”; this occurrence proves the audit follows the authoritative collection rather than a similarly named domain value.",
+      "rationale": "Replaces the auth registrar’s live collection with an empty iterable, testing that a syntactically valid loop cannot mask total registration loss.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects an auth registration loop replaced with an empty iterable"
     },
     {
@@ -2043,7 +2059,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a conditional private-owner call in the exported family registrar”, the fixture uses “const source = readFileSync(PRESENCE_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Wraps the presence private-owner invocation in a condition, making the exported family registrar unable to guarantee owner installation.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a conditional private-owner call in the exported family registrar"
     },
     {
@@ -2052,12 +2068,12 @@ moved or changed test.
       "line": 47,
       "column": 11,
       "kind": "production-source-read",
-      "contract": "auth-server-compatibility",
+      "contract": "auth-server-wrapper-mutation-boundary",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar repository maintainers",
-      "rationale": "The compatibility inventory uses “readRepositorySource(wrapper).replace(” while “rejects export kind, target, and second-hop changes” proves every listed consumer resolves to its direct canonical runtime identity.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities"
+      "rationale": "Loads the wrapper again to introduce a second compatibility hop, exercising directness rather than merely checking the final runtime identity.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes"
     },
     {
       "id": "test-structure-coupling-dcbdd6335044f080",
@@ -2069,7 +2085,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The predicate case named “rejects a group registration filter that is always false” is expressed at “const source = readFileSync(GROUP_OWNER, 'utf8');”, where fail-closed evaluation must distinguish an exact handler filter from false or opaque logic.",
+      "rationale": "Changes the group filter to a literal-false predicate, proving the analyzer reports a live collection reduced to no registrations.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false"
     },
     {
@@ -2082,7 +2098,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a second exact registration in the exported family registrar”, the fixture uses “const source = readFileSync(PRESENCE_ROUTES, 'utf8');” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Adds another exact route registration to the same family, guarding against ambiguous competing handlers.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a second exact registration in the exported family registrar"
     },
     {
@@ -2095,7 +2111,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “await readFile(” lets “rejects an executable command scoped outside the source manifest group” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Reads the source manifest as the ownership baseline before injecting a command for another group; the validator must reject that executable scope escape.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#rejects an executable command scoped outside the source manifest group"
     },
     {
@@ -2108,7 +2124,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "“validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets” obtains the exact published fixture/example/corpus at “expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, readJsonFile(path.join(appExamplesRoot, fileName)));” and sends that value through the schema validator used by consumers.",
+      "rationale": "Reads each discovered application recipe example and validates its actual JSON against the published recipe schema.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets"
     },
     {
@@ -2121,7 +2137,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “expect(await readFile(sourcePath, 'utf8')).toBe(sourceBefore);” lets “materializes a deterministic isolated group throughout executable manifest data” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Re-reads the source manifest after execution and proves isolation was materialized in a copy rather than persisted back into the operator input.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data"
     },
     {
@@ -2134,7 +2150,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “await readFile(” lets “preserves a parallel label that happens to equal the source room” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Loads the manifest whose parallel label collides with its source room, letting the materializer prove labels and group identities are distinct fields.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#preserves a parallel label that happens to equal the source room"
     },
     {
@@ -2147,7 +2163,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "“expect(source, directFallback).not.toContain(directFallback);” is the concrete canonical or mutated module input for “requires the admin mutation gateway and contains no direct-write fallback”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Classifies every forbidden fallback fragment as compatibility topology, documenting that these historical direct-write paths may not reappear.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
@@ -2160,7 +2176,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "“validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets” obtains the exact published fixture/example/corpus at “for (const fileName of readdirSync(appExamplesRoot).filter(name => name.endsWith('.recipe.json'))) {” and sends that value through the schema validator used by consumers.",
+      "rationale": "Enumerates every .recipe.json application example so newly published fixtures enter schema validation automatically.",
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets"
     },
     {
@@ -2173,7 +2189,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“expect(read(AUTHORISED_WS_HELPER)).toContain(” is the concrete canonical or mutated module input for “uses one named readonly input object for each authorised websocket enqueue helper”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Checks the second enqueue helper in the same module for its own named readonly input object.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
@@ -2186,7 +2202,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(ROOT_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a family call after an exported-root return”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Moves a required family call below the root return; the occurrence proves syntactic presence is insufficient when the handoff is unreachable.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call after an exported-root return"
     },
     {
@@ -2199,7 +2215,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "The consumer import read “expect(runtimeSource).toContain('export type RelicHuntersRuntimeDeps');” lets “keeps Relic on its runtime adapter boundary without the broad shared-web barrel” prove that this app uses its intended narrow shared-web surface and does not reverse package ownership.",
+      "rationale": "Requires the adapter to expose RelicHuntersRuntimeDeps, the narrow type contract that replaces the broad shared-web barrel.",
       "semanticCoverage": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts#keeps Relic on its runtime adapter boundary without the broad shared-web barrel"
     },
     {
@@ -2212,8 +2228,8 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "For “keeps distributed run monitor derivation in shared-test instead of the SPA app”, “expect(source).not.toContain('export function deriveRunVerdictView');” is the exact import/owner edge checked against the canonical shared-test protocol; the occurrence prevents an app-local protocol fork.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+      "rationale": "Separately excludes a local deriveRunVerdictView declaration because verdict policy is another independently duplicable part of the same shared owner.",
+      "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
       "id": "test-structure-coupling-f4d3cb333ab20ada",
@@ -2225,7 +2241,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const routeFiles = readdirSync('apps/api-v1/src/routes')” enumerates the authoritative route surface supplied to the audit exercised by “exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions”, making newly added routes fail closed instead of disappearing from review.",
+      "rationale": "Parses the analyzer module itself to enumerate its exported syntax-aware entrypoint; consumers need this stable repository-test interface for every supported import form.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
     },
     {
@@ -2238,7 +2254,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "The catalog or recipe input “const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');” is what “advertises the API-v1 profile in recipe-matrix CLI usage” uses to verify the named uniqueness, coverage, compatibility, or CLI promise across published files.",
+      "rationale": "Reads the executable recipe-matrix CLI module whose help text is the published command-line interface under review.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#advertises the API-v1 profile in recipe-matrix CLI usage"
     },
     {
@@ -2251,7 +2267,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "The artifact or input read “await readFile(path.join(repoRoot, 'apps/rallar-black-box/package.json'), 'utf8'),” lets “keeps Playwright packages aligned past the Node 24 browser-install hang regression” compare the executed operations result with the durable file operators receive, rather than merely inspecting script spelling.",
+      "rationale": "Reads the workflow package-install steps and verifies both Playwright packages advance together beyond the known Node 24 hang combination.",
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#keeps Playwright packages aligned past the Node 24 browser-install hang regression"
     },
     {
@@ -2264,7 +2280,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const program = parse(read(AUTHORISED_WS_HELPER), {” is the concrete canonical or mutated module input for “uses one named readonly input object for each authorised websocket enqueue helper”; the analyzer must classify that named owner/path evasion rather than accept a marker elsewhere.",
+      "rationale": "Uses the parsed parameter nodes to distinguish one object contract from several positional parameters across both helpers.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
@@ -2277,7 +2293,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "“const source = readFileSync(PRESENCE_ROUTES, 'utf8');” supplies the construction mutation described by “rejects a missing family-to-private-owner argument”, allowing the audit to reject that exact rebound, missing, duplicate, or reordered owner call.",
+      "rationale": "Removes one private-owner argument from a family call, proving the boundary tracks the complete dependency tuple.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a missing family-to-private-owner argument"
     },
     {
@@ -2290,7 +2306,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a correct handoff found only after the handler return”, the fixture uses “expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Uses the canonical membership source as the comparison guard after relocating the correct handoff below the handler return.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only after the handler return"
     },
     {
@@ -2303,7 +2319,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "To exercise “rejects a correct handoff found only in an uninvoked nested handler function”, the fixture uses “expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));” as the malformed command/result/control-flow occurrence whose public HTTP handoff must be rejected.",
+      "rationale": "Confirms the nested-function mutant differs from the membership source before requiring rejection of the never-invoked handoff.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in an uninvoked nested handler function"
     },
     {
@@ -2316,7 +2332,7 @@ moved or changed test.
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "The mutation fixture line “const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');” creates the precise routing defect named by “rejects a remove-member route translated through the ban operation”; rejection proves that transport cannot evade the AppInbox transaction owner.",
+      "rationale": "Rewrites the remove-member translator to emit the ban operation, directly exercising the command-to-operation mismatch at the membership boundary.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a remove-member route translated through the ban operation"
     }
   ]

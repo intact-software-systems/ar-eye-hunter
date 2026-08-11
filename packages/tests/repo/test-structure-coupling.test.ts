@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -755,6 +755,35 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).toContain('symbol-assertion');
   }, 20_000);
 
+  it('links approved static boundaries to their owning executable assertions', () => {
+    const registry = readRepositoryRegistry();
+    const contracts = new Map(registry.contracts.map((contract) => [contract.id, contract]));
+    const entriesByContract = Map.groupBy(registry.entries, (entry) => entry.contract);
+
+    expect(contracts.get('control-protocol-server-import-direction')?.semanticCoverage).toBe(
+      'packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server',
+    );
+    expect(contracts.get('control-protocol-browser-boundary')?.semanticCoverage).toBe(
+      'packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app',
+    );
+    expect(entriesByContract.get('control-protocol-server-import-direction')).toHaveLength(2);
+    expect(entriesByContract.get('control-protocol-browser-boundary')).toHaveLength(5);
+
+    expect(contracts.get('repo-style-checker-interface')?.semanticCoverage).toBe(
+      'packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline',
+    );
+    expect(entriesByContract.get('repo-style-checker-interface')).toHaveLength(1);
+
+    expect(contracts.get('auth-server-wrapper-mutation-boundary')?.semanticCoverage).toBe(
+      'packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes',
+    );
+    expect(contracts.get('auth-server-canonical-test-inventory')?.semanticCoverage).toBe(
+      'packages/tests/repo/auth-server-compatibility-governance.test.ts#keeps every canonical auth test free of compatibility wrappers',
+    );
+    expect(entriesByContract.get('auth-server-wrapper-mutation-boundary')).toHaveLength(2);
+    expect(entriesByContract.get('auth-server-canonical-test-inventory')).toHaveLength(1);
+  });
+
   it('parses representative real repository suites without silently skipping evidence', () => {
     const publicBoundaryPath = 'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts';
     const truthfulNoCandidateAllowed = [
@@ -847,6 +876,28 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).not.toContain('unrelated.test.ts');
   });
 });
+
+function readRepositoryRegistry(): Readonly<{
+  contracts: readonly Readonly<{
+    id: string;
+    semanticCoverage: string;
+  }>[];
+  entries: readonly Readonly<{
+    contract: string;
+  }>[];
+}> {
+  const source = readFileSync(
+    path.join(repoRoot, 'docs/test-structure-coupling-exceptions.md'),
+    'utf8',
+  );
+  const metadata = source.match(
+    /```test-structure-coupling-registry-v1\s*\n([\s\S]*?)\n```/u,
+  )?.[1];
+  if (!metadata) {
+    throw new Error('Test structure-coupling registry metadata is missing.');
+  }
+  return JSON.parse(metadata) as ReturnType<typeof readRepositoryRegistry>;
+}
 
 function createGitFixture(files: Record<string, string>): { readonly root: string } {
   const root = mkdtempSync(path.join(tmpdir(), 'rallar-test-structure-coupling-'));
