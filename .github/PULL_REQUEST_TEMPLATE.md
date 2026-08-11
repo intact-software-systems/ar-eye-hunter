@@ -59,6 +59,8 @@ request is created. Record `not yet required` only for an explicit exemption.
 Add one entry for every milestone where a new ownership, control-flow, or
 legacy family appears. Use `not applicable` only when no such family appeared.
 
+- Milestone classification: `none` | `reviewed`
+
 - Reviewer and independence (separate agent or human):
 - Exact merge base SHA:
 - Exact candidate head SHA:
@@ -156,8 +158,9 @@ retained legacy.
       "automationGaps": "",
       "completeFindings": ""
     },
-    "legacy": { "candidateCount": 0, "items": [] }
+    "legacy": { "candidateCount": 0, "items": [], "candidatesInspected": "" }
   },
+  "milestoneReview": { "classification": "none" },
   "finalReview": null,
   "retainedLegacy": []
 }

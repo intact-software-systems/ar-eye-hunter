@@ -31,6 +31,7 @@ export function validateReviewRecord(input) {
     return errors;
   }
   const visibleSections = readVisibleSections(visibleBody, errors);
+  validateMilestone(record.milestoneReview, visibleSections.milestone, errors);
   const initialReview = validateReview({
     review: record.initialReview,
     stage: 'initial',
@@ -192,8 +193,20 @@ function readVisibleSections(body, errors) {
   }
   return {
     initial: body.slice(positions[0], positions[1]),
+    milestone: body.slice(positions[1], positions[2]),
     final: body.slice(positions[2]),
   };
+}
+
+function validateMilestone(milestone, section, errors) {
+  if (!isPlainRecord(milestone) || milestone.classification !== 'none') {
+    errors.push('milestone metadata must explicitly classify no milestone as none');
+    return;
+  }
+  const visible = readVisibleField(section, 'Milestone classification');
+  if (normalize(visible) !== 'none') {
+    errors.push('visible milestone classification contradicts metadata');
+  }
 }
 
 function validateVisibleReview({ review, stage, visibleSections, errors }) {
@@ -227,6 +240,7 @@ function visibleFields(review, stage) {
           tests: 'Tests rewritten or removed, with independent behavior retained',
         };
   return [
+    ...(stage === 'initial' ? [['Record status', review.status, 'recordStatus']] : []),
     [
       'Reviewer and independence (separate agent or human)',
       `${review.reviewer} — ${review.independence}`,
@@ -262,6 +276,22 @@ function visibleFields(review, stage) {
       'automationGaps',
     ],
     ['Legacy candidate count', String(review.legacy?.candidateCount), 'legacyCandidateCount'],
+    [
+      'Legacy ledger and dispositions',
+      JSON.stringify(
+        [...review.legacy.items].sort((left, right) => left.id.localeCompare(right.id)),
+      ),
+      'legacyLedger',
+    ],
+    ...(stage === 'final'
+      ? [
+          [
+            'Legacy candidates inspected (baseline, automated report, changed files, and production call paths)',
+            review.legacy.candidatesInspected,
+            'candidatesInspected',
+          ],
+        ]
+      : []),
     [
       'Critical findings unresolved',
       String(review.unresolvedFindings?.critical),

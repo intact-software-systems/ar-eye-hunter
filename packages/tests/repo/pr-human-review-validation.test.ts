@@ -60,6 +60,18 @@ describe('PR human review record validator', () => {
     expect(registryStep).not.toContain('GH_TOKEN');
   });
 
+  it('keeps every parser-bound visible field in the canonical PR template', () => {
+    const template = readFileSync(path.join(repoRoot, '.github/PULL_REQUEST_TEMPLATE.md'), 'utf8');
+    for (const label of [
+      'Record status:',
+      'Milestone classification:',
+      'Legacy ledger and dispositions:',
+      'Legacy candidates inspected (baseline, automated report, changed files, and production call paths):',
+    ]) {
+      expect(template).toContain(label);
+    }
+  });
+
   it.each(['null', 'true', 'false', '1', '"record"', '[]'])(
     'rejects a non-object metadata value: %s',
     (metadata) => {
@@ -157,6 +169,35 @@ describe('PR human review record validator', () => {
 
     expect(duplicateResult.status).toBe(1);
     expect(duplicateResult.stdout).toContain('exactly one ### Initial independent review section');
+  });
+
+  it('binds milestone classification and the visible final legacy ledger', () => {
+    const item = retainedItemExample();
+    const finalReview = review({ stage: 'final', legacy: { candidateCount: 1, items: [item] } });
+    const milestoneMismatch = createFixture({
+      body: recordBody({
+        initialReview: review(),
+        milestoneReview: { classification: 'none' },
+      }).replace('Milestone classification: none', 'Milestone classification: reviewed'),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+    const milestoneResult = runValidator(milestoneMismatch);
+    expect(milestoneResult.status).toBe(1);
+    expect(milestoneResult.stdout).toContain(
+      'visible milestone classification contradicts metadata',
+    );
+
+    const ledgerMismatch = createFixture({
+      draft: false,
+      body: recordBody({ initialReview: review(), finalReview }).replace(
+        '"production-legacy-example"',
+        '"contradictory-legacy"',
+      ),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+    const ledgerResult = runValidator(ledgerMismatch);
+    expect(ledgerResult.status).toBe(1);
+    expect(ledgerResult.stdout).toContain('legacyLedger');
   });
 
   it('rejects kind-mismatched and nested-code exemptions after path normalization', () => {
@@ -820,6 +861,7 @@ function writeFixture(fixtureRoot: string, relativePath: string, source: string)
 }
 
 interface Review {
+  readonly status: string;
   readonly reviewer: string;
   readonly independence: string;
   readonly mergeBaseSha: string;
@@ -837,11 +879,14 @@ interface Review {
   readonly legacy: {
     readonly candidateCount: number;
     readonly items: readonly Record<string, string>[];
+    readonly candidatesInspected: string;
   };
 }
 
 function review(input: Partial<Review> & { readonly stage?: 'initial' | 'final' } = {}): Review {
+  const { legacy: legacyInput, ...reviewInput } = input;
   return {
+    status: 'complete',
     reviewer: 'Independent reviewer',
     independence: 'separate-agent-or-human',
     mergeBaseSha: baseSha,
@@ -856,8 +901,20 @@ function review(input: Partial<Review> & { readonly stage?: 'initial' | 'final' 
       automationGaps: 'The validator cannot approve semantic quality.',
       completeFindings: 'No Critical or Important findings remain.',
     },
-    legacy: { candidateCount: 0, items: [] },
-    ...input,
+    legacy: {
+      candidateCount: 0,
+      items: [],
+      candidatesInspected:
+        'Reviewed baseline, automated report, changed files, and production paths.',
+    },
+    ...reviewInput,
+    legacy: {
+      candidateCount: 0,
+      items: [],
+      candidatesInspected:
+        'Reviewed baseline, automated report, changed files, and production paths.',
+      ...legacyInput,
+    },
   };
 }
 
@@ -970,6 +1027,7 @@ interface RecordInput {
   readonly exemption?: { readonly kind: string; readonly changedPaths: readonly string[] };
   readonly initialReview?: Review;
   readonly finalReview?: Review;
+  readonly milestoneReview?: { readonly classification: string };
   readonly retainedLegacy?: readonly ReturnType<typeof retainedApproval>[];
 }
 
@@ -980,6 +1038,7 @@ function recordBody(input: RecordInput = {}): string {
     exemption: input.exemption ?? null,
     initialReview: input.initialReview ?? null,
     finalReview: input.finalReview ?? null,
+    milestoneReview: input.milestoneReview ?? { classification: 'none' },
     retainedLegacy: input.retainedLegacy ?? [],
   };
   return `${requiredNarrative(record)}\n\n\`\`\`pr-human-review-record-v1\n${JSON.stringify(record, null, 2)}\n\`\`\`\n`;
@@ -988,6 +1047,7 @@ function recordBody(input: RecordInput = {}): string {
 function requiredNarrative(record?: {
   readonly initialReview?: Review | null;
   readonly finalReview?: Review | null;
+  readonly milestoneReview?: { readonly classification: string };
 }): string {
   return [
     '## PR Human Review Record v1',
@@ -995,7 +1055,7 @@ function requiredNarrative(record?: {
     '### Initial independent review',
     ...visibleReview(record?.initialReview, 'initial'),
     '### Milestone review',
-    '- No new ownership, control-flow, or legacy family appeared.',
+    `- Milestone classification: ${record?.milestoneReview?.classification ?? 'none'}`,
     '### Complete code and legacy review',
     ...visibleReview(record?.finalReview, 'final'),
   ].join('\n');
@@ -1018,6 +1078,7 @@ function visibleReview(review: Review | null | undefined, stage: 'initial' | 'fi
       ? 'Tests rewritten or removed'
       : 'Tests rewritten or removed, with independent behavior retained';
   return [
+    ...(stage === 'initial' ? [`- Record status: ${review.status}`] : []),
     `- Reviewer and independence (separate agent or human): ${review.reviewer} — ${review.independence}`,
     `- Exact merge base SHA: ${review.mergeBaseSha}`,
     `- Exact candidate head SHA: ${review.headSha}`,
@@ -1028,6 +1089,14 @@ function visibleReview(review: Review | null | undefined, stage: 'initial' | 'fi
     `- Production was not compromised for tests: ${review.narrative.productionNotCompromisedForTests}`,
     `- Behavior and judgment not proven by automation: ${review.narrative.automationGaps}`,
     `- Legacy candidate count: ${review.legacy.candidateCount}`,
+    `- Legacy ledger and dispositions: ${JSON.stringify(
+      [...review.legacy.items].sort((left, right) => left.id.localeCompare(right.id)),
+    )}`,
+    ...(stage === 'final'
+      ? [
+          `- Legacy candidates inspected (baseline, automated report, changed files, and production call paths): ${review.legacy.candidatesInspected}`,
+        ]
+      : []),
     `- Critical findings unresolved: ${review.unresolvedFindings.critical}`,
     `- Important findings unresolved: ${review.unresolvedFindings.important}`,
     `- Verdict: ${review.verdict}`,
