@@ -1,0 +1,31 @@
+name: PR Human Review Record
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - converted_to_draft
+      - ready_for_review
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate exact-SHA review evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Validate PR Human Review Record v1
+        run: node scripts/check-pr-human-review.mjs --event "$GITHUB_EVENT_PATH"

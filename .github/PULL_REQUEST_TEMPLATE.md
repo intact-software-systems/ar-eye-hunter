@@ -133,3 +133,36 @@ before completion.
 - Passed commands and exact current-head workflow evidence:
 - Failed or skipped commands and reason:
 - Follow-up issues: none | links:
+
+### Validator metadata
+
+Replace every value in this JSON fence with the exact evidence recorded above.
+The check rejects placeholder text and does not approve semantic quality or
+retained legacy.
+
+```pr-human-review-record-v1
+{
+  "version": 1,
+  "scope": "code-changing",
+  "exemption": null,
+  "initialReview": {
+    "reviewer": "",
+    "independence": "separate-agent-or-human",
+    "baseSha": "",
+    "headSha": "",
+    "verdict": "pass",
+    "unresolvedFindings": { "critical": 0, "important": 0 },
+    "narrative": {
+      "productionOwnerToResultTrace": "",
+      "cognitiveIndirectionFindings": "",
+      "testsRewrittenOrRemoved": "",
+      "productionNotCompromisedForTests": "",
+      "automationGaps": "",
+      "completeFindings": ""
+    },
+    "legacy": { "candidateCount": 0, "items": [] }
+  },
+  "finalReview": null,
+  "retainedLegacy": []
+}
+```

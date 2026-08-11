@@ -14,6 +14,39 @@ Use [the pull request template](../.github/PULL_REQUEST_TEMPLATE.md) as the
 record. Its labels are intentionally stable so `check:pr-human-review` can
 validate presence and freshness without judging the code or approving legacy.
 
+## Validator metadata and command
+
+The pull request body ends with one `pr-human-review-record-v1` JSON fence.
+It is evidence metadata for the surrounding narrative, not a second review
+record. Fill every required string with concrete evidence; `TODO`, `TBD`,
+`not applicable`, and placeholder text are invalid evidence.
+
+The metadata contains `version: 1`, `scope`, an optional explicit exemption,
+an `initialReview`, an optional `finalReview`, and `retainedLegacy`. Each review
+contains its reviewer and `separate-agent-or-human` independence declaration,
+exact base and head SHA, verdict, unresolved Critical and Important counts,
+the six narrative evidence fields, and a legacy candidate count plus ledger.
+Every ledger item has an ID, path, symbol, and one valid disposition.
+
+Run the deterministic, read-only check locally with explicit evidence files:
+
+```sh
+npm run check:pr-human-review -- \
+  --body path/to/pull-request-body.md \
+  --changed-paths path/to/changed-paths.txt \
+  --registry docs/production-legacy-exceptions.md \
+  --base <40-character-base-sha> \
+  --head <40-character-head-sha> \
+  --draft true
+```
+
+In GitHub Actions, `--event "$GITHUB_EVENT_PATH"` reads the `pull_request`
+payload and derives changed paths from the exact base and head commits. The
+validator checks evidence completeness, exact-SHA freshness, path-valid
+exemptions, ledger completeness, registry IDs, and explicit human-approval
+metadata. It does not approve semantic quality, an independent reviewer, or
+retained legacy.
+
 ## Scope and exemptions
 
 Plan-, documentation-, and agent-guidance-only pull requests may use the
