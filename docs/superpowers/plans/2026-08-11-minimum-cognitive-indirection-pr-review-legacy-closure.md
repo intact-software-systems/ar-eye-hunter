@@ -144,4 +144,3 @@ production behavior.
   `npm run build`.
 - Require Branch Release Gate for the exact final feature head and Run Hetzner
   Supported Distributed Manifests for the resulting default-branch commit.
-
