@@ -16,7 +16,7 @@ import {
   toDefaultClientPrincipal,
 } from './compute-client-mutation-state.ts';
 import { rejectClientMutation } from '../../client-state-validation-primitives.ts';
-import { isPresenceTimestampWithinSkew } from '../../../presence-lease.ts';
+import { isPresenceTimestampWithinSkew } from '../../../presence/presence-lease.ts';
 
 type ConnectCommand = Extract<
   ClientMutationCommand,

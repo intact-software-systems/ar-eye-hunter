@@ -76,16 +76,16 @@ export function toAuthErrorResponse(
     error: unknown,
 ): Response {
     const message = error instanceof Error ? error.message : String(error);
-    const status = readExplicitAuthErrorStatus(error) ??
+    const status = readExplicitAuthErrorStatus(typeof error === 'object' ? error : null) ??
         (message.startsWith('Unauthorized:') ? 401 : 400);
     return c.json({ error: message }, status);
 }
 
 const AUTH_ERROR_STATUSES: readonly number[] = [400, 401, 403, 404, 409, 429, 503];
 
-function readExplicitAuthErrorStatus(error: unknown): number | undefined {
-    if (!error || typeof error !== 'object' || !('status' in error)) return undefined;
-    const status = Number((error as { status: unknown }).status);
+function readExplicitAuthErrorStatus(error: object | null): number | undefined {
+    if (!error || !('status' in error)) return undefined;
+    const status = Number((error as { status?: number | string }).status);
     return AUTH_ERROR_STATUSES.includes(status) ? status : undefined;
 }
 

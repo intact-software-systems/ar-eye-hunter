@@ -22,7 +22,7 @@ import {
   validateStoredGeneration,
 } from '../../persistence/validate-persisted-group-presence.ts';
 import { requirePositiveSafeInteger } from '../../group-state-validation-primitives.ts';
-import { isPresenceTimestampWithinSkew } from '../../../presence-lease.ts';
+import { isPresenceTimestampWithinSkew } from '../../../presence/presence-lease.ts';
 import { toExpiredAwareInsertCandidate } from '../../presence/group-expired-state-authority.ts';
 import {
   computeConnectPresenceAdmission,

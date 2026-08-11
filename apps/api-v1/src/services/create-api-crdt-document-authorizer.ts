@@ -2,7 +2,9 @@ import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-type
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
-import type { CrdtMutationResponseAudience } from '@shared-server/rallar-system/services/crdt-mutation-contracts.ts';
+import type {
+    CrdtMutationResponseAudience,
+} from '@shared-server/rallar-system/services/crdt-mutation-contracts.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';

@@ -84,24 +84,7 @@ export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
           throw forbidden('CRDT catch-up authorization required.');
         }
       }
-      const page = await options.repository.listAfter({
-        document,
-        afterSequence: body.afterSequence,
-        afterCursor: body.afterCursor,
-        limit: body.maxUpdateCount,
-      });
-      const snapshot = body.includeSnapshot === false
-        ? undefined
-        : await options.repository.readSnapshot(document);
-      const response: RallarCrdtCatchUpResponseEnvelope = {
-        protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
-        requestId: body.requestId ?? crypto.randomUUID(),
-        document,
-        createdAtEpochMs: options.now?.() ?? Date.now(),
-        snapshot,
-        page,
-      };
-      return response;
+      return await readCrdtCatchUpResponse(options, body, document);
     });
   });
 
@@ -271,4 +254,28 @@ function readDocument(input: unknown): RallarCrdtDocumentRef {
   }
 
   return candidate as RallarCrdtDocumentRef;
+}
+
+async function readCrdtCatchUpResponse(
+  options: RallarCrdtAdminRoutesOptions,
+  body: Partial<RallarCrdtCatchUpRequestEnvelope>,
+  document: RallarCrdtDocumentRef,
+): Promise<RallarCrdtCatchUpResponseEnvelope> {
+  const page = await options.repository.listAfter({
+    document,
+    afterSequence: body.afterSequence,
+    afterCursor: body.afterCursor,
+    limit: body.maxUpdateCount,
+  });
+  const snapshot = body.includeSnapshot === false
+    ? undefined
+    : await options.repository.readSnapshot(document);
+  return {
+    protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
+    requestId: body.requestId ?? crypto.randomUUID(),
+    document,
+    createdAtEpochMs: options.now?.() ?? Date.now(),
+    snapshot,
+    page,
+  };
 }

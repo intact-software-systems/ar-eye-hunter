@@ -2,7 +2,7 @@ import type { ClientSession } from '@shared/api/client-types.ts';
 
 import { sameClientSessionState } from '../../client-state-semantic-equality.ts';
 import { rejectClientMutation } from '../../client-state-validation-primitives.ts';
-import { isPresenceTimestampWithinSkew } from '../../../presence-lease.ts';
+import { isPresenceTimestampWithinSkew } from '../../../presence/presence-lease.ts';
 import type {
   ClientMutationCommand,
   ClientMutationComputed,
