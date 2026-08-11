@@ -68,12 +68,8 @@ const AUTH_TYPES = [
 export class AppAuthInboxService extends AppInboxService {
   private readonly authInboxHandler: AuthInboxHandler;
 
-  public override readonly inbox: InboxQueueReader;
-  public override readonly resourceInbox: ResourceInboxRepository;
-  public override readonly resourceInboxResults: ResourceInboxResultsRepository;
   public readonly authMutationService: AuthMutationService;
   public readonly credentialIssuer: AuthCredentialIssuer;
-  public override readonly serviceId: string;
 
   constructor(
     inbox: InboxQueueReader,
@@ -98,12 +94,8 @@ export class AppAuthInboxService extends AppInboxService {
       options,
       wakeQueue,
     );
-    this.inbox = inbox;
-    this.resourceInbox = resourceInbox;
-    this.resourceInboxResults = resourceInboxResults;
     this.authMutationService = authMutationService;
     this.credentialIssuer = credentialIssuer;
-    this.serviceId = serviceId;
     this.authInboxHandler = new AuthInboxHandler({
       mutationService: authMutationService,
       credentialIssuer,
