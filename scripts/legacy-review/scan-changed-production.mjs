@@ -47,9 +47,9 @@ function addFileCandidates({ candidates, file, kind, lines }) {
     );
   }
   addVocabularyCandidates({ candidates, file, lines });
-  addSplitModeCandidate({ candidates, file, source });
+  const splitModeLines = addSplitModeCandidates({ candidates, file, source });
   addExportAliasCandidates({ candidates, file, lines });
-  addInlineModeCandidates({ candidates, file, lines });
+  addInlineModeCandidates({ candidates, file, lines, splitModeLines });
 }
 
 function addVocabularyCandidates({ candidates, file, lines }) {
@@ -70,26 +70,30 @@ function addVocabularyCandidates({ candidates, file, lines }) {
   }
 }
 
-function addSplitModeCandidate({ candidates, file, source }) {
+function addSplitModeCandidates({ candidates, file, source }) {
   const splitPredecessorMode = new RegExp(
     '\\b((?:(?:old|legacy|previous)\\w*(?:enabled|flag|mode)?|' +
       '\\w*(?:flag|mode|variant|version)\\w*))\\s*:\\s*\\n\\s*' +
       '(true|[\'"](?:old|legacy|previous|v\\d+)[\'"])',
     'giu',
   );
+  const splitModeLines = new Set();
   for (const match of source.matchAll(splitPredecessorMode)) {
     if (match.index === undefined) continue;
+    const line = source.slice(0, match.index).split('\n').length;
+    splitModeLines.add(line);
     candidates.push(
       candidate({
         kind: 'predecessor-mode',
         path: file,
-        line: source.slice(0, match.index).split('\n').length,
+        line,
         symbol: match[1],
         reason: 'feature flag or mode retaining a predecessor',
         detail: `${match[1]}: ${match[2]}`,
       }),
     );
   }
+  return splitModeLines;
 }
 
 function addExportAliasCandidates({ candidates, file, lines }) {
@@ -107,8 +111,11 @@ function addExportAliasCandidates({ candidates, file, lines }) {
   }
 }
 
-function addInlineModeCandidates({ candidates, file, lines }) {
+function addInlineModeCandidates({ candidates, file, lines, splitModeLines }) {
   for (const line of lines) {
+    if (splitModeLines.has(line.line)) {
+      continue;
+    }
     if (
       !modePattern.test(line.text) &&
       !/\b(?:old|legacy|previous)\w*(?:enabled|flag|mode)\b/iu.test(line.text)

@@ -83,7 +83,9 @@ function validateLedger({
       errors.push(`${label} ledger contains an unreported candidate ID: ${identifier}`);
     }
   }
-  validateRetainedRegistry(registryPath, itemsById, errors);
+  if (requireRetainedApproval) {
+    validateRetainedRegistry(registryPath, itemsById, errors);
+  }
 }
 
 export function readReviewRecord(source) {

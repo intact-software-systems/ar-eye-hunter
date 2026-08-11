@@ -174,6 +174,26 @@ describe('changed production legacy review', () => {
     );
   });
 
+  it('reports one candidate for one complete split predecessor declaration', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/options.ts': [
+        'export const routeOptions = {',
+        '  oldRouteEnabled:',
+        '    true,',
+        '};',
+      ].join('\n'),
+    });
+
+    const result = runLegacyReview(fixture);
+    const splitCandidates = candidateLines(result.stdout).filter((line) =>
+      line.endsWith('feature flag or mode retaining a predecessor'),
+    );
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(splitCandidates).toHaveLength(1);
+    expect(splitCandidates[0]).toContain('packages/example/src/options.ts:2 | oldRouteEnabled |');
+  });
+
   it('excludes repository test and generated conventions while retaining operational code', () => {
     const fixture = createGitFixture({
       'packages/example/src/__fixtures__/legacy-route.ts': 'export const legacy = true;\n',
