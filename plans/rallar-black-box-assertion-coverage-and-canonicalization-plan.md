@@ -14,7 +14,7 @@ Status: in execution as a stacked PR series based on
 |---|---|---|
 | W1 `expect.absent` | implemented; in review | `codex/black-box-w1-ws-rtc-absent` |
 | W2 `poll-until` | runner capability implemented; recipe rewrite blocked on decision | `codex/black-box-w2-poll-until` |
-| W3 comparators + `compatible-complete` | not started | — |
+| W3 comparators + `compatible-complete` | implemented; in review | `codex/black-box-w3-comparators` |
 | W4 pure-API recipes | not started | — |
 | W5 `expect.headers` | not started | — |
 | W6 `expect.maxDurationMs` | not started | — |
@@ -182,6 +182,17 @@ expectations to use `compatible-complete`. Run governance + memory black-box.
 
 **Done when:** an array with an unexpected extra element fails
 `compatible-complete`; the tightened recipes still pass on correct data.
+
+**Execution correction (2026-08-11):** of the five app-inbox evidence recipes,
+only `api-v1-state-write-convergence` has blocking single-element
+member/session expectations (`activateOwnerMembership`,
+`reconnectReusedSession`, `readPostExpiryGeneration` — all three tightened to
+`compatible-complete`). `api-v1-admin-operations`, `api-v1-auth-session`, and
+`api-v1-crdt-app-inbox` assert evidence fields, not member/session arrays —
+nothing to tighten. `api-v1-state-medium-scale-churn`'s 50 single-element
+`activeSessions` expects all live inside the non-blocking poll rounds of the
+protected medium-scale gate and were left untouched (same open decision as
+W2's poll-round rewrite).
 
 ---
 

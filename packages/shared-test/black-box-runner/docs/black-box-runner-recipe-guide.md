@@ -232,7 +232,11 @@ Common fields:
 - `expect.statusCodes`: accepted status array
 - `expect.body`: expected response JSON
 - `expect.bodyAnyOf`: accepted response body shapes
-- `expect.comparison`: comparison mode
+- `expect.comparison`: comparison mode (`compatible` default, `compatible-structure`,
+  `compatible-complete`, `exact-structure`, `exact`); `compatible-complete` keeps
+  extra object keys tolerated but rejects unexpected array elements, closing the
+  vacuous-assertion gap where `compatible` matches an empty expected array
+  against anything
 - `output`: optional output name for the step result
 - `outputPath`: optional path inside the result to store under `output`
 - `outputs`: optional map of output names to result paths
@@ -455,12 +459,43 @@ Common fields:
 - `request.actual` or `actual`: actual value
 - `expect.expected`, `expect.expect`, or `expect.body`: expected value
 - `expect.anyOf`: accepted expected values
-- `expect.comparison`: comparison mode
+- `expect.comparators`: value comparators over paths inside the resolved actual
+- `expect.comparison`: comparison mode (`compatible` default, `compatible-structure`,
+  `compatible-complete`, `exact-structure`, `exact`); `compatible-complete` keeps
+  extra object keys tolerated but rejects unexpected array elements, closing the
+  vacuous-assertion gap where `compatible` matches an empty expected array
+  against anything
 - `expect.ignoreJsonKeys`: keys to ignore
 - `expect.ignoreJsonPaths`: paths to ignore
 
 ASSERT steps are useful after a previous step stored a result in `outputs` or
 when a recipe needs to compare two observed payloads.
+
+`expect.comparators` is a list of `{path, ...comparator}` entries evaluated
+against the resolved actual; every failing entry is reported, never just the
+first. Numeric comparators are `gt`, `gte`, `lt`, `lte`, and
+`between: [low, high]` (inclusive); `length` requires an array or string of the
+exact length; string comparators are `contains` and `matches` (a regular
+expression source). Comparator bounds resolve placeholders, so a captured floor
+like `{floorRevision}` works. An ASSERT step may use comparators alone —
+without `expect.body` — or combine them with a body comparison; a path that
+does not resolve is a failure, which is what makes a comparator-based check
+non-vacuous.
+
+```json
+{
+  "name": "assertConvergedStats",
+  "type": "assert",
+  "actual": "{groupStats}",
+  "expect": {
+    "comparators": [
+      { "path": "stats.memberCount", "gte": 1, "lte": 100 },
+      { "path": "activeSessions", "length": 1 },
+      { "path": "receipt.causalRevision.groupRevision", "gte": "{floorRevision}" }
+    ]
+  }
+}
+```
 
 ### SET
 

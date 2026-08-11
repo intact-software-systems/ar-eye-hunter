@@ -34,6 +34,7 @@ import {
 import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
 import { normalizeBlackBoxResponseHeaders } from './http/normalize-black-box-response-headers.ts';
 import { executeHttpInteraction } from './http/execute-http-interaction.ts';
+import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
 import {
     toHttpInteractionStatus,
     toStatus,
@@ -1071,17 +1072,8 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
     });
 }
 
-function executeAssertInteraction(interaction: any, config: any, context: any): Promise<any> {
-    const expectedAlternatives = Array.isArray(interaction.response.anyOf)
-        ? interaction.response.anyOf
-        : [];
-    const expected = interaction.response.body !== undefined
-        ? interaction.response.body
-        : interaction.response.expect !== undefined
-            ? interaction.response.expect
-            : interaction.response.expected;
-
-    const actual = interaction.response.actual !== undefined
+function toResolvedAssertActual(interaction: any, context: any): any {
+    return interaction.response.actual !== undefined
         ? isRecord(interaction.response.actual) && interaction.response.actual.transform !== undefined
             ? evaluateScenarioTransform({
                 transform: interaction.response.actual.transform,
@@ -1094,13 +1086,56 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
                 interaction.response.missingActualValue,
             )
         : interaction.request.actual;
+}
 
-    if (expected === undefined && expectedAlternatives.length <= 0) {
+function toAssertAnyOfStatus(interaction: any, config: any, actual: any): any {
+    const expectedAlternatives = interaction.response.anyOf;
+    const comparisons = expectedAlternatives.map((expectedValue: any) => compareJson(
+        expectedValue,
+        actual,
+        toConfig(
+            interaction.response?.comparison || COMPARISON.COMPATIBLE,
+            interaction.response?.ignoreJsonKeys || [],
+            interaction.response?.ignoreJsonPaths || [],
+        ),
+    ));
+    const matchedIndex = comparisons.findIndex((result: any) => result.isEqual);
+
+    if (matchedIndex < 0) {
+        return toAssertFailureStatus(config, interaction, actual, 'Assert comparison failed', {
+            anyOf: expectedAlternatives,
+            comparisons,
+        });
+    }
+
+    return toAssertSuccessStatus(config, interaction, actual, {
+        anyOfMatchedIndex: matchedIndex,
+        comparison: comparisons[matchedIndex],
+    });
+}
+
+function executeAssertInteraction(interaction: any, config: any, context: any): Promise<any> {
+    const expectedAlternatives = Array.isArray(interaction.response.anyOf)
+        ? interaction.response.anyOf
+        : [];
+    const comparators = Array.isArray(interaction.response.comparators)
+        ? interaction.response.comparators
+        : [];
+    const expected = interaction.response.body !== undefined
+        ? interaction.response.body
+        : interaction.response.expect !== undefined
+            ? interaction.response.expect
+            : interaction.response.expected;
+
+    const actual = toResolvedAssertActual(interaction, context);
+
+    if (expected === undefined && expectedAlternatives.length <= 0 && comparators.length <= 0) {
         return Promise.resolve(toAssertFailureStatus(
             config,
             interaction,
             actual,
-            'Assert step is missing expected value. Use expect.body, expect.expect, or expect.expected.',
+            'Assert step is missing expected value. ' +
+                'Use expect.body, expect.expect, expect.expected, or expect.comparators.',
         ));
     }
 
@@ -1130,34 +1165,27 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
         ));
     }
 
-    if (expectedAlternatives.length > 0) {
-        const comparisons = expectedAlternatives.map((expectedValue: any) => compareJson(
-            expectedValue,
+    const comparatorIssues = validateAssertValueComparators(actual, comparators);
+    if (comparatorIssues.length > 0) {
+        return Promise.resolve(toAssertFailureStatus(
+            config,
+            interaction,
             actual,
-            toConfig(
-                interaction.response?.comparison || COMPARISON.COMPATIBLE,
-                interaction.response?.ignoreJsonKeys || [],
-                interaction.response?.ignoreJsonPaths || [],
-            ),
+            'Assert comparator failed',
+            {
+                comparators,
+                failures: comparatorIssues,
+            },
         ));
-        const matchedIndex = comparisons.findIndex((result: any) => result.isEqual);
+    }
 
-        if (matchedIndex < 0) {
-            return Promise.resolve(toAssertFailureStatus(
-                config,
-                interaction,
-                actual,
-                'Assert comparison failed',
-                {
-                    anyOf: expectedAlternatives,
-                    comparisons,
-                },
-            ));
-        }
+    if (expectedAlternatives.length > 0) {
+        return Promise.resolve(toAssertAnyOfStatus(interaction, config, actual));
+    }
 
+    if (expected === undefined) {
         return Promise.resolve(toAssertSuccessStatus(config, interaction, actual, {
-            anyOfMatchedIndex: matchedIndex,
-            comparison: comparisons[matchedIndex],
+            comparators,
         }));
     }
 
