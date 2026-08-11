@@ -81,11 +81,7 @@ type AdminPruneComputed = Readonly<{
 export class AppAdminInboxService extends AppInboxService {
   private readonly aggregateWaitPolicy: TryWithPolicy;
 
-  public override readonly inbox: InboxQueueReader;
-  public override readonly resourceInbox: ResourceInboxRepository;
-  public override readonly resourceInboxResults: ResourceInboxResultsRepository;
   private readonly pruner: AdminOperationsPruner;
-  public override readonly serviceId: string;
   private readonly pageSize: number;
   private readonly readAuthority: AdminPruneAuthorityReader;
   private readonly wakeQueue?: () => void;
@@ -115,11 +111,7 @@ export class AppAdminInboxService extends AppInboxService {
       options,
       wakeQueue,
     );
-    this.inbox = inbox;
-    this.resourceInbox = resourceInbox;
-    this.resourceInboxResults = resourceInboxResults;
     this.pruner = pruner;
-    this.serviceId = serviceId;
     this.pageSize = pageSize;
     this.readAuthority = readAuthority;
     this.wakeQueue = wakeQueue;

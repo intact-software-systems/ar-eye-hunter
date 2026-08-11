@@ -120,11 +120,7 @@ class AppGroupInboxService extends AppInboxService {
   private topologyManagementService?: GroupTopologyManagementService;
   private rtcRttDependencies?: RtcRttAppInboxDependencies;
 
-  public override readonly inbox: InboxQueueReader;
-  public override readonly resourceInbox: ResourceInboxRepository;
-  public override readonly resourceInboxResults: ResourceInboxResultsRepository;
   public readonly groupStateService: GroupStateService;
-  public override readonly serviceId: string;
   private readonly wakeQueue?: () => void;
 
   constructor(
@@ -150,11 +146,7 @@ class AppGroupInboxService extends AppInboxService {
       options,
       wakeQueue,
     );
-    this.inbox = inbox;
-    this.resourceInbox = resourceInbox;
-    this.resourceInboxResults = resourceInboxResults;
     this.groupStateService = groupStateService;
-    this.serviceId = serviceId;
     this.wakeQueue = wakeQueue;
     this.groupStateInboxHandler = new GroupStateInboxHandler({
       mutationService: this.groupStateService,
