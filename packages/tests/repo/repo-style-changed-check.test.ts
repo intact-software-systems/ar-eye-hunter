@@ -124,6 +124,58 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('Line 1 exceeds 100 chars');
   });
 
+  it('tolerates small same-tier growth of an over-limit file', () => {
+    const fixture = createGitFixture({
+      'apps/example/legacy-large.ts': linesSource(600),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(618));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
+  it('fails when same-tier growth exceeds the tolerance band', () => {
+    const fixture = createGitFixture({
+      'apps/example/legacy-large.ts': linesSource(600),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(700));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(1);
+    expect(result.stdout).toContain('file.length');
+  });
+
+  it('fails when tolerated-size growth crosses a file-size tier', () => {
+    const fixture = createGitFixture({
+      'apps/example/legacy-large.ts': linesSource(495),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(507));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(1);
+    expect(result.stdout).toContain('file.length');
+  });
+
+  it('fails when a compliant file grows past the 400-line limit within the band', () => {
+    const fixture = createGitFixture({
+      'apps/example/growing-file.ts': linesSource(395),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/growing-file.ts', linesSource(410));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(1);
+    expect(result.stdout).toContain('file.length');
+  });
+
   it('fails when an existing finding becomes measurably worse', () => {
     const fixture = createGitFixture({
       'apps/example/feature.ts': overlongSource('x'.repeat(1)),
@@ -344,6 +396,10 @@ function runGit(fixtureRoot: string, args: readonly string[]): void {
 
 function overlongSource(label: string): string {
   return `const value = '${label}${'x'.repeat(110)}';\n`;
+}
+
+function linesSource(lineCount: number): string {
+  return Array.from({ length: lineCount }, (_, index) => `const value${index} = true;`).join('\n');
 }
 
 function forwardCaptureSource(): string {

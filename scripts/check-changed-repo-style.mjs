@@ -7,6 +7,12 @@ import {
   isProductionCodeFile,
   scanProductionSources,
 } from './repo-style-check/repository-scan.mjs';
+import {
+  boundaryUnknownMagnitude,
+  compareFindingMagnitudeDescending,
+  findingMagnitude,
+  matchesBaseMagnitude,
+} from './repo-style-check/finding-magnitude.mjs';
 import { isReviewedDisposition } from './repo-style-check/reviewed-dispositions.mjs';
 import {
   readStructuralLineageMap,
@@ -215,8 +221,8 @@ function subtractExistingFindings(input) {
     const baseMagnitudes = baseMagnitudesByKey.get(key) ?? [];
     for (const finding of findings.toSorted(compareFindingMagnitudeDescending)) {
       const targetMagnitude = findingMagnitude(finding);
-      const matchIndex = baseMagnitudes.findIndex(
-        (baseMagnitude) => baseMagnitude >= targetMagnitude,
+      const matchIndex = baseMagnitudes.findIndex((baseMagnitude) =>
+        matchesBaseMagnitude(finding.ruleId, baseMagnitude, targetMagnitude),
       );
       if (matchIndex < 0) {
         newFindingSet.add(finding);
@@ -245,20 +251,6 @@ function groupStructuralBoundaryCapacity(input) {
     }
   }
   return capacityByPath;
-}
-
-function boundaryUnknownMagnitude(finding) {
-  if (Number.isInteger(finding.affectedCount) && finding.affectedCount > 0) {
-    return finding.affectedCount;
-  }
-  const summaryPrefix = '... and ';
-  const summarySuffix =
-    ' additional unknown occurrences. Reduce unknown propagation at domain boundaries.';
-  if (!finding.message.startsWith(summaryPrefix) || !finding.message.endsWith(summarySuffix)) {
-    return 1;
-  }
-  const magnitude = finding.message.slice(summaryPrefix.length, -summarySuffix.length);
-  return /^\d+$/u.test(magnitude) ? Number(magnitude) : 1;
 }
 
 function findingKey(repoRoot, finding, logicalSourceByTargetPath) {
@@ -302,28 +294,6 @@ function findingVariant(finding) {
     return prefixMatch === null ? finding.message : `prefix:${prefixMatch[1]}`;
   }
   return finding.message.startsWith('... and ') ? 'summary' : 'detail';
-}
-
-function findingMagnitude(finding) {
-  const patternsByRule = {
-    'file.length': /File length (\d+)/u,
-    'line.width': /(?:actual |\.\.\. and )(\d+)/u,
-    'route.handler-length': /has (\d+) lines/u,
-    'route.handler-complexity': /complexity (\d+)/u,
-    'factory.spacing': /has a (\d+)-line block/u,
-    'function.input-contract': /has (\d+) parameters/u,
-    'layout.directory-density': /directory has (\d+) direct production TypeScript files/u,
-    'layout.feature-prefix-cluster': /appears in (\d+) direct files/u,
-  };
-  const match = patternsByRule[finding.ruleId]?.exec(finding.message);
-  if (match !== undefined && match !== null) {
-    return Number(match[1]);
-  }
-  return finding.affectedCount ?? 0;
-}
-
-function compareFindingMagnitudeDescending(left, right) {
-  return findingMagnitude(right) - findingMagnitude(left);
 }
 
 function toRenameMap(changes) {
