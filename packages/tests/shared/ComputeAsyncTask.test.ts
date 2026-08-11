@@ -2,9 +2,10 @@
 import { describe, expect, test } from 'vitest';
 import {
     filterOutFinishedTasks,
-    Loop,
-    Loops,
-    Submit,
+    type LoopsInputDto,
+    runLoopsWhileWork,
+    runLoopWhileWork,
+    submitAsyncTasks,
     TrackedTask,
     waitForAll,
 } from '@shared/resilience/ComputeAsyncTask.ts';
@@ -16,7 +17,7 @@ function sleep(ms: number): Promise<void> {
 describe('ComputeAsyncTask', () => {
     const MAX_CONCURRENCY = 4;
 
-    test('Submit.submitAsyncTasks creates at most maxConcurrency tasks in flight', async () => {
+    test('submitAsyncTasks creates at most maxConcurrency tasks in flight', async () => {
         let ongoing: TrackedTask[] = [];
 
         // runnable that completes a bit later
@@ -25,7 +26,7 @@ describe('ComputeAsyncTask', () => {
         };
 
         for (let i = 0; i < 50; i++) {
-            const computed = Submit.submitAsyncTasks({
+            const computed = submitAsyncTasks({
                 runnable,
                 ongoingTasks: ongoing,
                 maxConcurrency: MAX_CONCURRENCY,
@@ -45,11 +46,11 @@ describe('ComputeAsyncTask', () => {
         expect(remaining).toEqual([]);
     });
 
-    test('Loop.runWhileWork halts when isWork becomes false', async () => {
+    test('runLoopWhileWork halts when isWork becomes false', async () => {
         let checks = 0;
         const numTimesIsWorkTrue = 10;
 
-        const computed = await Loop.runWhileWork({
+        const computed = await runLoopWhileWork({
             maxConcurrency: () => 1,
             isWork: () => ++checks < numTimesIsWorkTrue,
             runnable: async () => {
@@ -70,7 +71,7 @@ describe('ComputeAsyncTask', () => {
         expect(computed.tasksInFlight.length).toBeLessThanOrEqual(1);
     });
 
-    test('Loops.runWhileWork calls only tasks whose isWork is true', async () => {
+    test('runLoopsWhileWork calls only tasks whose isWork is true', async () => {
         let c1 = 0;
         let c2 = 0;
         let c3 = 0;
@@ -110,9 +111,9 @@ describe('ComputeAsyncTask', () => {
             maxSuccessiveNoTasksCreated: 0,
             sleep: async () => {
             }, // keep test fast
-        } satisfies Loops.InputDto;
+        } satisfies LoopsInputDto;
 
-        const computed = await Loops.runWhileWork(input);
+        const computed = await runLoopsWhileWork(input);
 
         const allTasks = computed.tasks.flatMap((t) => t.tasksInFlight);
         const remaining = await waitForAll(allTasks, 200);
@@ -123,11 +124,11 @@ describe('ComputeAsyncTask', () => {
         expect(c3).toBe(0);
     });
 
-    test('Loops.runWhileWork does not sleep after the terminal no-work iteration', async () => {
+    test('runLoopsWhileWork does not sleep after the terminal no-work iteration', async () => {
         let checks = 0;
         let sleepCalls = 0;
 
-        const computed = await Loops.runWhileWork({
+        const computed = await runLoopsWhileWork({
             tasks: [
                 {
                     name: 'idle-task',
@@ -157,11 +158,11 @@ describe('ComputeAsyncTask', () => {
         expect(computed.numSuccessiveNoTasksCreated).toBe(1);
     });
 
-    test('Loops.runWhileWork sleeps only between nonterminal no-work iterations', async () => {
+    test('runLoopsWhileWork sleeps only between nonterminal no-work iterations', async () => {
         let checks = 0;
         const sleepDelays: number[] = [];
 
-        const computed = await Loops.runWhileWork({
+        const computed = await runLoopsWhileWork({
             tasks: [
                 {
                     name: 'idle-task',
@@ -206,7 +207,7 @@ describe('ComputeAsyncTask', () => {
 
         const maxCounting = 10;
 
-        const input: Loops.InputDto = {
+        const input: LoopsInputDto = {
             tasks: [
                 {
                     name: 'Task-1',
@@ -238,7 +239,7 @@ describe('ComputeAsyncTask', () => {
             },
         };
 
-        const computed = await Loops.runWhileWork(input);
+        const computed = await runLoopsWhileWork(input);
 
         const allTasks = computed.tasks.flatMap((t) => t.tasksInFlight);
         const remaining = await waitForAll(allTasks, 200);
