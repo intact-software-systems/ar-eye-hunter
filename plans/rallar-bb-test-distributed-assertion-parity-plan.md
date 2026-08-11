@@ -7,7 +7,13 @@
 > intended starting instruction; the baked-in decision resolves the one choice
 > that would otherwise block mid-task.
 
-Status: in progress. Implements the decision items of issue
+Status: in progress — D0-D5 implemented and in review as a stacked draft-PR
+chain (#178 plan root -> #180 -> #181 -> #182 -> #187 -> #190 -> #192); D6
+not yet mandated. Remaining before completion: stack merges, Branch Release
+Gate on the final feature commits, the approved Hetzner dispatch of
+16-rtc-absence-wait-2-agent (D1), and Run Hetzner Supported Distributed
+Manifests on the resulting default-branch commit. Implements the decision
+items of issue
 [#176](https://github.com/intact-software-systems/ar-eye-hunter/issues/176).
 
 | Workstream | Status | Branch / PR |
@@ -17,7 +23,7 @@ Status: in progress. Implements the decision items of issue
 | D2 assert operator extension | in review | [#182](https://github.com/intact-software-systems/ar-eye-hunter/pull/182) |
 | D3 `loop` until-success polling | in review | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
 | D4 capability advertisement + preflight gating | in review | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
-| D5 parity and conformance deepening | in review | `codex/bb-test-d5-parity-deepening` |
+| D5 parity and conformance deepening | in review | [#192](https://github.com/intact-software-systems/ar-eye-hunter/pull/192) |
 | D6 coordinator-evaluated group assertions | not started | — |
 
 Plan evidence base: authored 2026-08-11 after the W1–W8 assertion-coverage
