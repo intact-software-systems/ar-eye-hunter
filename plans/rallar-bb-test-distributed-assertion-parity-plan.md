@@ -13,7 +13,7 @@ Status: in progress. Implements the decision items of issue
 | Workstream | Status | Branch / PR |
 |---|---|---|
 | D0 fail-closed `rtc.send.expect` + http result redaction | in review | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
-| D1 `wait` absence mode | not started | — |
+| D1 `wait` absence mode | in review | `codex/bb-test-d1-wait-absence-mode` |
 | D2 assert operator extension | not started | — |
 | D3 `loop` until-success polling | not started | — |
 | D4 capability advertisement + preflight gating | not started | — |
@@ -187,6 +187,21 @@ dispatch the manifest through the Hetzner workflow once reviewed.
 **Done when:** the conformance absence case passes on deterministic local and
 browser providers, its broken control fails with the offending event, and the
 new manifest passes a real Hetzner dispatch.
+
+**D1 revalidation (2026-08-11):** the checked-in Hetzner manifest cannot
+express literal cross-room non-delivery — the Hetzner isolation contract
+(`scripts/github-actions/hetzner-run-manifest-scope.mjs`) pins every
+`applicationId`/`workspaceId`/`groupId`/`roomId`, state path, and
+ensure-group/member request identity in a manifest to one effective group,
+and the materializer fails closed on any second room. The shipped extended
+manifest `16-rtc-absence-wait-2-agent` therefore proves the strongest
+in-contract absence claims: a same-room positive control delivery first,
+then absence of leak-probe frames on the same connection and absence of
+silent `rallar.bb.rtc.send_failed` diagnostics. A true cross-room manifest
+needs an isolation-contract decision (declared secondary rooms) — deferred
+to a product call, not taken unilaterally. Cross-topic/cross-scope absence
+remains fully expressible in recipes outside the Hetzner materializer (the
+conformance cases cover it).
 
 ---
 
