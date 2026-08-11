@@ -72,6 +72,29 @@ describe('PR human review record validator', () => {
     }
   });
 
+  it('fills and validates the actual canonical template for a code-changing draft', () => {
+    const fixture = createFixture({
+      body: filledCanonicalTemplate({ initialReview: review() }),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+
+    const result = runValidator(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+  });
+
+  it('validates complete initial-review status instead of accepting a pending template state', () => {
+    const fixture = createFixture({
+      body: recordBody({ initialReview: review({ status: 'required' }) }),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+
+    const result = runValidator(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('initial review status must be complete');
+  });
+
   it.each(['null', 'true', 'false', '1', '"record"', '[]'])(
     'rejects a non-object metadata value: %s',
     (metadata) => {
@@ -198,6 +221,56 @@ describe('PR human review record validator', () => {
     const ledgerResult = runValidator(ledgerMismatch);
     expect(ledgerResult.status).toBe(1);
     expect(ledgerResult.stdout).toContain('legacyLedger');
+  });
+
+  it('accepts reviewed milestone entries and binds every review field to visible evidence', () => {
+    const milestone = milestoneReview();
+    const fixture = createFixture({
+      body: filledCanonicalTemplate({
+        initialReview: review(),
+        milestoneReview: { classification: 'reviewed', entries: [milestone] },
+      }),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+
+    const validResult = runValidator(fixture);
+    expect(validResult.status, validResult.stdout).toBe(0);
+
+    const contradictoryFixture = createFixture({
+      body: filledCanonicalTemplate({
+        initialReview: review(),
+        milestoneReview: { classification: 'reviewed', entries: [milestone] },
+      }).replace(milestone.newFamily, 'A different visible ownership family.'),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+    const contradictoryResult = runValidator(contradictoryFixture);
+
+    expect(contradictoryResult.status).toBe(1);
+    expect(contradictoryResult.stdout).toContain('milestone visible review newFamily');
+  });
+
+  it('rejects contradictory reviewed-milestone metadata shapes', () => {
+    const missingEntryFixture = createFixture({
+      body: recordBody({
+        initialReview: review(),
+        milestoneReview: { classification: 'reviewed', entries: [] },
+      }),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+    const noneWithEntryFixture = createFixture({
+      body: recordBody({
+        initialReview: review(),
+        milestoneReview: { classification: 'none', entries: [milestoneReview()] },
+      }),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+
+    expect(runValidator(missingEntryFixture).stdout).toContain(
+      'reviewed milestone metadata requires at least one entry',
+    );
+    expect(runValidator(noneWithEntryFixture).stdout).toContain(
+      'none milestone metadata must not contain reviewed entries',
+    );
   });
 
   it('rejects kind-mismatched and nested-code exemptions after path normalization', () => {
@@ -487,6 +560,46 @@ describe('PR human review record validator', () => {
     expect(olderApprovalResult.status).toBe(1);
     expect(olderApprovalResult.stdout).toContain(
       'production change invalidates retained legacy approval',
+    );
+  });
+
+  it('fills the canonical template with the exact enriched retained ledger presented for approval', () => {
+    const retainedItem = retainedItemExample();
+    const approval = approvalForItems([retainedItem]);
+    const record = {
+      initialReview: review({ legacy: { candidateCount: 1, items: [retainedItem] } }),
+      finalReview: review({
+        stage: 'final',
+        legacy: { candidateCount: 1, items: [retainedItem] },
+      }),
+      retainedLegacy: [approval],
+    };
+    const fixture = createFixture({
+      draft: false,
+      body: filledCanonicalTemplate(record),
+      changedPaths: ['scripts/new-check.mjs'],
+      registry: registryEntry(approval),
+      reviews: [trustedReview(retainedItem, approval)],
+    });
+
+    const validResult = runValidator(fixture);
+    expect(validResult.status, validResult.stdout).toBe(0);
+
+    const contradictoryFixture = createFixture({
+      draft: false,
+      body: filledCanonicalTemplate(record).replace(
+        approval.unsafeRemovalReason,
+        'A different visible unsafe-removal reason.',
+      ),
+      changedPaths: ['scripts/new-check.mjs'],
+      registry: registryEntry(approval),
+      reviews: [trustedReview(retainedItem, approval)],
+    });
+    const contradictoryResult = runValidator(contradictoryFixture);
+
+    expect(contradictoryResult.status).toBe(1);
+    expect(contradictoryResult.stdout).toContain(
+      'final visible review contradicts metadata: legacyLedger',
     );
   });
 
@@ -883,6 +996,10 @@ interface Review {
   };
 }
 
+interface MilestoneReview extends Review {
+  readonly newFamily: string;
+}
+
 function review(input: Partial<Review> & { readonly stage?: 'initial' | 'final' } = {}): Review {
   const { legacy: legacyInput, ...reviewInput } = input;
   return {
@@ -915,6 +1032,14 @@ function review(input: Partial<Review> & { readonly stage?: 'initial' | 'final' 
         'Reviewed baseline, automated report, changed files, and production paths.',
       ...legacyInput,
     },
+  };
+}
+
+function milestoneReview(input: Partial<MilestoneReview> = {}): MilestoneReview {
+  return {
+    ...review(),
+    newFamily: 'The validator now owns reviewed milestone evidence.',
+    ...input,
   };
 }
 
@@ -1027,7 +1152,10 @@ interface RecordInput {
   readonly exemption?: { readonly kind: string; readonly changedPaths: readonly string[] };
   readonly initialReview?: Review;
   readonly finalReview?: Review;
-  readonly milestoneReview?: { readonly classification: string };
+  readonly milestoneReview?: {
+    readonly classification: string;
+    readonly entries?: readonly MilestoneReview[];
+  };
   readonly retainedLegacy?: readonly ReturnType<typeof retainedApproval>[];
 }
 
@@ -1047,7 +1175,11 @@ function recordBody(input: RecordInput = {}): string {
 function requiredNarrative(record?: {
   readonly initialReview?: Review | null;
   readonly finalReview?: Review | null;
-  readonly milestoneReview?: { readonly classification: string };
+  readonly milestoneReview?: {
+    readonly classification: string;
+    readonly entries?: readonly MilestoneReview[];
+  };
+  readonly retainedLegacy?: readonly ReturnType<typeof retainedApproval>[];
 }): string {
   return [
     '## PR Human Review Record v1',
@@ -1056,25 +1188,38 @@ function requiredNarrative(record?: {
     ...visibleReview(record?.initialReview, 'initial'),
     '### Milestone review',
     `- Milestone classification: ${record?.milestoneReview?.classification ?? 'none'}`,
+    ...(record?.milestoneReview?.entries ?? []).flatMap(visibleMilestoneReview),
     '### Complete code and legacy review',
-    ...visibleReview(record?.finalReview, 'final'),
+    ...visibleReview(record?.finalReview, 'final', record?.retainedLegacy),
   ].join('\n');
 }
 
-function visibleReview(review: Review | null | undefined, stage: 'initial' | 'final'): string[] {
+function visibleMilestoneReview(review: MilestoneReview): string[] {
+  return [
+    '#### Milestone review entry',
+    `- New ownership, control-flow, or legacy family: ${review.newFamily}`,
+    ...visibleReview(review, 'milestone'),
+  ];
+}
+
+function visibleReview(
+  review: Review | null | undefined,
+  stage: 'initial' | 'milestone' | 'final',
+  retainedLegacy: readonly ReturnType<typeof retainedApproval>[] = [],
+): string[] {
   if (!review) {
     return [];
   }
   const ownerTraceLabel =
-    stage === 'initial'
+    stage !== 'final'
       ? 'Production owner-to-result trace'
       : 'Changed production owner-to-result trace, including decisions, effects, failures, callbacks, compatibility branches, and tests';
   const cognitiveLabel =
-    stage === 'initial'
+    stage !== 'final'
       ? 'Cognitive-indirection findings'
       : 'Cognitive-indirection findings and resolution';
   const testsLabel =
-    stage === 'initial'
+    stage !== 'final'
       ? 'Tests rewritten or removed'
       : 'Tests rewritten or removed, with independent behavior retained';
   return [
@@ -1090,7 +1235,9 @@ function visibleReview(review: Review | null | undefined, stage: 'initial' | 'fi
     `- Behavior and judgment not proven by automation: ${review.narrative.automationGaps}`,
     `- Legacy candidate count: ${review.legacy.candidateCount}`,
     `- Legacy ledger and dispositions: ${JSON.stringify(
-      [...review.legacy.items].sort((left, right) => left.id.localeCompare(right.id)),
+      stage === 'final'
+        ? enrichedLedgerForTest(review.legacy.items, retainedLegacy)
+        : [...review.legacy.items].sort((left, right) => left.id.localeCompare(right.id)),
     )}`,
     ...(stage === 'final'
       ? [
@@ -1101,4 +1248,114 @@ function visibleReview(review: Review | null | undefined, stage: 'initial' | 'fi
     `- Important findings unresolved: ${review.unresolvedFindings.important}`,
     `- Verdict: ${review.verdict}`,
   ];
+}
+
+function enrichedLedgerForTest(
+  items: readonly Record<string, string>[],
+  approvals: readonly ReturnType<typeof retainedApproval>[],
+): readonly Record<string, unknown>[] {
+  const approvalById = new Map(approvals.map((approval) => [approval.id, approval]));
+  return [...items]
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((item) => {
+      const approval = approvalById.get(item.id);
+      if (!approval) {
+        return item;
+      }
+      return {
+        ...item,
+        purpose: approval.purpose,
+        consumerDependency: approval.consumerDependency,
+        unsafeRemovalReason: approval.unsafeRemovalReason,
+        minimization: approval.minimization,
+        canonicalOwner: approval.canonicalOwner,
+        compatibilityTests: approval.compatibilityTests,
+        owner: approval.owner,
+        removalCondition: approval.removalCondition,
+        approvedProductionSha: approval.approvedProductionSha,
+      };
+    });
+}
+
+function filledCanonicalTemplate(input: RecordInput): string {
+  const template = readFileSync(path.join(repoRoot, '.github/PULL_REQUEST_TEMPLATE.md'), 'utf8');
+  const match = template.match(/```pr-human-review-record-v1\s*\n([\s\S]*?)\n```/u);
+  expect(match).not.toBeNull();
+  const templateRecord = JSON.parse(match?.[1] ?? '{}') as Record<string, unknown>;
+  const initialReview = input.initialReview ?? null;
+  const initialWithoutStatus = initialReview ? { ...initialReview, status: undefined } : null;
+  if (initialWithoutStatus) {
+    delete initialWithoutStatus.status;
+  }
+  const record = {
+    ...templateRecord,
+    scope: input.scope ?? 'code-changing',
+    exemption: input.exemption ?? null,
+    initialReview: initialReview
+      ? { ...(templateRecord.initialReview as Record<string, unknown>), ...initialWithoutStatus }
+      : null,
+    milestoneReview: input.milestoneReview ?? templateRecord.milestoneReview,
+    finalReview: input.finalReview ?? null,
+    retainedLegacy: input.retainedLegacy ?? [],
+  };
+  const withMetadata = template.replace(
+    /```pr-human-review-record-v1\s*\n[\s\S]*?\n```/u,
+    `\`\`\`pr-human-review-record-v1\n${JSON.stringify(record, null, 2)}\n\`\`\``,
+  );
+  const withInitial = fillTemplateReviewFields(
+    withMetadata,
+    '### Initial independent review',
+    '### Milestone review',
+    visibleReview(initialReview, 'initial'),
+  );
+  const withMilestone = fillTemplateMilestone(withInitial, input.milestoneReview);
+  return fillTemplateReviewFields(
+    withMilestone,
+    '### Complete code and legacy review',
+    '### Human approval for retained legacy',
+    visibleReview(input.finalReview, 'final', input.retainedLegacy),
+  );
+}
+
+function fillTemplateReviewFields(
+  body: string,
+  heading: string,
+  nextHeading: string,
+  visibleLines: readonly string[],
+): string {
+  const start = body.indexOf(heading);
+  const end = body.indexOf(nextHeading, start);
+  let section = body.slice(start, end);
+  for (const line of visibleLines) {
+    const separator = line.indexOf(': ');
+    if (!line.startsWith('- ') || separator === -1) {
+      continue;
+    }
+    const label = line.slice(2, separator);
+    const pattern = new RegExp(`^- ${escapeRegExpForTest(label)}:.*$`, 'mu');
+    expect(section, `canonical template field: ${label}`).toMatch(pattern);
+    section = section.replace(pattern, line);
+  }
+  return `${body.slice(0, start)}${section}${body.slice(end)}`;
+}
+
+function fillTemplateMilestone(body: string, milestone: RecordInput['milestoneReview']): string {
+  const classification = milestone?.classification ?? 'none';
+  const withClassification = body.replace(
+    /- Milestone classification:.*$/mu,
+    `- Milestone classification: ${classification}`,
+  );
+  if (classification === 'none') {
+    return withClassification;
+  }
+  const heading = '### Milestone review';
+  const nextHeading = '### Complete code and legacy review';
+  const start = withClassification.indexOf(heading) + heading.length;
+  const end = withClassification.indexOf(nextHeading, start);
+  const reviewedEntries = (milestone?.entries ?? []).flatMap(visibleMilestoneReview).join('\n');
+  return `${withClassification.slice(0, start)}\n\n- Milestone classification: reviewed\n\n${reviewedEntries}\n\n${withClassification.slice(end)}`;
+}
+
+function escapeRegExpForTest(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

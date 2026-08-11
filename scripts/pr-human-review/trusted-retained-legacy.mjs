@@ -236,15 +236,27 @@ function validateRegistry(input) {
 }
 
 export function retainedLedgerHash(input) {
+  return createHash('sha256')
+    .update(JSON.stringify(retainedLedgerProjection(input)))
+    .digest('hex');
+}
+
+export function retainedLedgerProjection(input) {
   const items = input.items ?? [input.item];
   const approvalById = input.approvalById ?? new Map([[input.approval?.id, input.approval]]);
-  const ledger = items
-    .map((item) => ({
-      ...item,
-      ...approvalDetail(approvalById.get(item.id)),
-    }))
+  return items
+    .map((item) => ledgerItem(item, approvalById.get(item.id)))
     .sort((left, right) => String(left.id).localeCompare(String(right.id)));
-  return createHash('sha256').update(JSON.stringify(ledger)).digest('hex');
+}
+
+function ledgerItem(item, approval) {
+  const canonicalItem = {
+    id: item?.id,
+    path: item?.path,
+    symbol: item?.symbol,
+    disposition: item?.disposition,
+  };
+  return approval ? { ...canonicalItem, ...approvalDetail(approval) } : canonicalItem;
 }
 
 function approvalDetail(approval) {

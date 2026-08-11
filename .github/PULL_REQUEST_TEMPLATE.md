@@ -61,6 +61,12 @@ legacy family appears. Use `not applicable` only when no such family appeared.
 
 - Milestone classification: `none` | `reviewed`
 
+When the classification is `reviewed`, add the exact heading
+`#### Milestone review entry` immediately before the fields below. Copy the
+complete heading-and-fields block for each additional reviewed milestone. When
+the classification is `none`, leave the metadata `entries` array empty and do
+not add that heading.
+
 - Reviewer and independence (separate agent or human):
 - Exact merge base SHA:
 - Exact candidate head SHA:
@@ -107,18 +113,15 @@ List every `retained-pending-human-approval` item. Every other affected legacy
 item has exactly one disposition: `removed`, `minimized-boundary`, or
 `resolved`.
 
-- Legacy exception ID:
-- Exact path and symbol:
-- Purpose and current consumer or operational dependency:
-- Why removal is unsafe now:
-- Minimization already performed:
-- Canonical implementation owner:
-- Compatibility tests rather than internal-structure tests:
-- Named owner:
-- Review or removal condition:
-- Exact candidate head SHA:
-- Explicit human approver and approval date:
-- GitHub PR review ID:
+The final review's `Legacy ledger and dispositions` field is the one bound,
+human-readable retained ledger. `Legacy exception ID` is the projection's `id`.
+Each retained item also presents the exact path and symbol, purpose, consumer
+or operational dependency, unsafe-removal
+reason, minimization, canonical owner, compatibility tests, named owner,
+review/removal condition, and approved production SHA. The validator hashes
+that exact canonical projection. Record trusted GitHub approval provenance in
+the `retainedLegacy` metadata and durable registry; do not duplicate the
+approval details in another unbound visible block.
 
 Silence, an issue, an earlier plan approval, agent judgment, or automation is
 not approval. A production change invalidates the final review and any
@@ -144,6 +147,7 @@ retained legacy.
   "scope": "code-changing",
   "exemption": null,
   "initialReview": {
+    "status": "complete",
     "reviewer": "",
     "independence": "separate-agent-or-human",
     "mergeBaseSha": "",
@@ -160,7 +164,7 @@ retained legacy.
     },
     "legacy": { "candidateCount": 0, "items": [], "candidatesInspected": "" }
   },
-  "milestoneReview": { "classification": "none" },
+  "milestoneReview": { "classification": "none", "entries": [] },
   "finalReview": null,
   "retainedLegacy": []
 }

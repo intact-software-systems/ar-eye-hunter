@@ -22,7 +22,9 @@ record. Fill every required string with concrete evidence; `TODO`, `TBD`,
 `not applicable`, and placeholder text are invalid evidence.
 
 The metadata contains `version: 1`, `scope`, an optional explicit exemption,
-an `initialReview`, an optional `finalReview`, and `retainedLegacy`. Each review
+an `initialReview`, a `milestoneReview`, an optional `finalReview`, and
+`retainedLegacy`. The initial review uses `status: complete`; pending or exempt
+template states are not valid code-changing review evidence. Each review
 contains its reviewer and `separate-agent-or-human` independence declaration,
 the exact computed merge base and head SHA, verdict, unresolved Critical and
 Important counts, the six narrative evidence fields, and a legacy candidate
@@ -30,6 +32,11 @@ count plus ledger. The stable labeled fields in the visible Initial, Milestone,
 and Complete review sections appear exactly once, in that order, and bind
 directly to metadata values; every ledger item has an ID, path, symbol, and one
 valid disposition.
+
+`milestoneReview.classification` is either `none`, with an empty `entries`
+array, or `reviewed`, with one ordered entry for each reviewed milestone. Each
+entry binds the new ownership, control-flow, or legacy family and all normal
+review evidence to one visible `#### Milestone review entry` block.
 
 Run the deterministic, read-only check locally with explicit evidence files:
 
@@ -141,6 +148,14 @@ symbol; purpose and current consumer or operational dependency; why removal is
 unsafe now; minimization already performed; canonical implementation owner;
 tests protecting compatibility rather than internal structure; named owner;
 review or removal condition; and exact candidate head SHA.
+
+The final visible `Legacy ledger and dispositions` field is the canonical,
+sorted human approval ledger. Retained items enrich the normal ID, path,
+symbol, and disposition with purpose, consumer dependency, unsafe-removal
+reason, minimization, canonical owner, compatibility tests, named owner,
+review/removal condition, and approved production SHA. The trusted approval's
+whole-ledger SHA-256 is calculated from exactly that visible projection; there
+is no second unbound retained-details block.
 
 Silence, an issue, an earlier plan approval, agent judgment, or automation is
 not approval. Only an explicit human GitHub approval for the exact production
