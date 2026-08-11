@@ -257,9 +257,9 @@ function hasConcreteText(value) {
   if (visibleWords.join('').length < 12) {
     return false;
   }
-  return !/^(?:semantic coverage|runtime behavior|same file|supporting contract|source check)$/iu.test(
-    visibleWords.join(' '),
-  );
+  const vagueEvidence =
+    /^(?:semantic coverage|runtime behavior|same file|supporting contract|source check)$/iu;
+  return !vagueEvidence.test(visibleWords.join(' '));
 }
 
 function hasSpecificSemanticCoverage(value) {
