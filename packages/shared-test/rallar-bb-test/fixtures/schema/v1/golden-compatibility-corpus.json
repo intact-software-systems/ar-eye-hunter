@@ -135,7 +135,9 @@
           "commandId": "ws-open-v1",
           "connection": "goldenWs",
           "url": "{config.wsBaseUrl}/api/ws",
-          "protocols": ["rallar-json"]
+          "protocols": [
+            "rallar-json"
+          ]
         },
         {
           "kind": "ws.send",
@@ -206,7 +208,9 @@
             "operations": [
               {
                 "kind": "register.set",
-                "path": ["title"],
+                "path": [
+                  "title"
+                ],
                 "value": "Golden",
                 "policy": "lww"
               }
@@ -265,7 +269,9 @@
           "operations": [
             {
               "kind": "register.set",
-              "path": ["title"],
+              "path": [
+                "title"
+              ],
               "value": "Untitled",
               "policy": "lww"
             }
@@ -280,7 +286,9 @@
           "operations": [
             {
               "kind": "register.set",
-              "path": ["title"],
+              "path": [
+                "title"
+              ],
               "value": "Golden",
               "policy": "lww"
             }
@@ -428,6 +436,18 @@
           }
         },
         {
+          "kind": "wait",
+          "commandId": "golden-wait-absent-v1",
+          "absent": true,
+          "timeoutMs": 1500,
+          "match": {
+            "kind": "message",
+            "topic": "room.golden.other-room",
+            "payloadPath": "data.messageId",
+            "contains": "golden"
+          }
+        },
+        {
           "kind": "assert",
           "commandId": "golden-assert-v1",
           "source": "events.length",
@@ -520,7 +540,9 @@
       "targetPolicy": {
         "mode": "role-map",
         "roles": {
-          "sender": ["agent-alice"]
+          "sender": [
+            "agent-alice"
+          ]
         },
         "expectedParticipantCount": 1
       },
@@ -540,7 +562,9 @@
   "invalidRecipes": [
     {
       "caseId": "unsupported-recipe-schema-version",
-      "expectedErrors": ["$.schemaVersion: Expected 1."],
+      "expectedErrors": [
+        "$.schemaVersion: Expected 1."
+      ],
       "value": {
         "schemaVersion": 2,
         "recipeId": "invalid-v2-recipe",
@@ -553,7 +577,9 @@
     },
     {
       "caseId": "missing-recipe-id",
-      "expectedErrors": ["Missing required property recipeId"],
+      "expectedErrors": [
+        "Missing required property recipeId"
+      ],
       "value": {
         "schemaVersion": 1,
         "commands": [
@@ -565,7 +591,9 @@
     },
     {
       "caseId": "nested-child-missing-required-field",
-      "expectedErrors": ["Missing required property request"],
+      "expectedErrors": [
+        "Missing required property request"
+      ],
       "value": {
         "schemaVersion": 1,
         "recipeId": "invalid-nested-child",
@@ -585,7 +613,9 @@
     },
     {
       "caseId": "invalid-wait-event-kind",
-      "expectedErrors": ["Expected one of"],
+      "expectedErrors": [
+        "Expected one of"
+      ],
       "value": {
         "schemaVersion": 1,
         "recipeId": "invalid-wait",
@@ -602,7 +632,9 @@
     },
     {
       "caseId": "rtc-send-expect-rejected",
-      "expectedErrors": ["$.commands[0].expect: Unexpected property."],
+      "expectedErrors": [
+        "$.commands[0].expect: Unexpected property."
+      ],
       "value": {
         "schemaVersion": 1,
         "recipeId": "rtc-send-expect-rejected",
@@ -629,7 +661,9 @@
   "invalidDistributedManifests": [
     {
       "caseId": "unsupported-manifest-schema-version",
-      "expectedErrors": ["$.schemaVersion: Expected 1."],
+      "expectedErrors": [
+        "$.schemaVersion: Expected 1."
+      ],
       "value": {
         "schemaVersion": 2,
         "distributedRunId": "invalid-manifest-v2",
@@ -650,7 +684,9 @@
     },
     {
       "caseId": "invalid-inline-recipe",
-      "expectedErrors": ["Missing required property request"],
+      "expectedErrors": [
+        "Missing required property request"
+      ],
       "value": {
         "schemaVersion": 1,
         "distributedRunId": "invalid-inline-recipe",
@@ -675,7 +711,9 @@
         ],
         "targetPolicy": {
           "mode": "selected-agents",
-          "agentIds": ["agent-a"],
+          "agentIds": [
+            "agent-a"
+          ],
           "expectedParticipantCount": 1
         }
       }

@@ -196,3 +196,50 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-rtc-send-expect-fail-closed.test.ts
 ```
+
+```text
+Title: wait gains an optional absent: true absence mode
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D1
+
+Change type:
+- Compatible optional addition (with a fail-closed rollout edge)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (wait branch)
+- validateRallarBlackBoxTestCommand wait allowlist
+
+Old shape:
+wait matched only positively: it succeeded when an event matched and timed
+out otherwise. Non-delivery could not be asserted.
+
+New shape:
+wait accepts optional absent: true. The agent holds the full wait window,
+then scans the whole event buffer once; any match (buffered or new) fails
+with RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED carrying the offending redacted
+event, an empty scan succeeds with matched: false, absent: true. Only the
+literal true is accepted. Semantics mirror the runner's expect.absent.
+
+Migration:
+No change for existing recipes. Recipes using absent: true dispatched to
+agents built before this change fail closed at validateKeys with
+"wait has unsupported field: absent." — intended behavior. World-fleet
+manifests must not adopt absence waits until the D4 capability gate exists.
+
+Golden corpus updates:
+golden-composite-wait-assert-v1 gained an absent wait command
+(golden-wait-absent-v1).
+
+Prompt/documentation updates:
+New "Prompt: Distributed Absence Wait" section; wait capability metadata
+lists absent; schema-and-capabilities.md documents the hold-then-scan
+semantics; composite-conformance matrix gained wait-absence-hold and
+wait-absence-violated cases.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-wait-absence.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
+```

@@ -194,6 +194,7 @@ export type RallarBlackBoxTestWaitCommand =
     & RallarBlackBoxTestCommandBase<'wait'>
     & Readonly<{
     match: RallarBlackBoxTestWaitMatch;
+    absent?: true;
 }>;
 
 export type RallarBlackBoxTestAssertOperator =
@@ -746,6 +747,7 @@ export type RallarBlackBoxTestParallelResultValue = Readonly<{
 export type RallarBlackBoxTestWaitResultValue = Readonly<{
     commandId: string;
     matched: boolean;
+    absent?: true;
     timedOut?: boolean;
     cancelled?: boolean;
     match: RallarBlackBoxTestWaitMatch;
