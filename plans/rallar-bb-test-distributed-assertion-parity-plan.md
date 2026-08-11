@@ -12,7 +12,7 @@ Status: in progress. Implements the decision items of issue
 
 | Workstream | Status | Branch / PR |
 |---|---|---|
-| D0 fail-closed `rtc.send.expect` + http result redaction | in review | `codex/bb-test-d0-fail-closed-rtc-send-expect` |
+| D0 fail-closed `rtc.send.expect` + http result redaction | in review | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
 | D1 `wait` absence mode | not started | — |
 | D2 assert operator extension | not started | — |
 | D3 `loop` until-success polling | not started | — |
