@@ -113,22 +113,30 @@ export function printReport({
   for (const candidate of reportCandidates) {
     console.log(toCandidateReport(candidate, entries.get(candidate.id)));
   }
+  const unclassified = reportCandidates.filter(
+    (candidate) => candidate.change !== 'deleted' && !entries.has(candidate.id),
+  );
   if (reportCandidates.length === 0 && !hasFailures) {
     console.log('PASS: no current structure-coupled test candidates');
   } else if (reportCandidates.length === 0) {
     console.log('WARN: no candidates reported because validation did not complete successfully.');
+  } else if (unclassified.length === 0) {
+    console.log(
+      `PASS: all ${reportCandidates.length} current structure-coupling candidates are individually classified`,
+    );
   } else {
-    const count = reportCandidates.length;
     console.log(
       [
-        `WARN: ${count} reported candidates await individual human classification;`,
+        `WARN: ${unclassified.length} reported candidates await individual human classification;`,
         'this command does not create a baseline or grandfather findings.',
       ].join(' '),
     );
   }
   if (reviewInput.mode === 'changed-range') {
     console.log(
-      'WARN: changed-range evidence does not block changed files while the inventory is reviewed.',
+      unclassified.length === 0
+        ? 'PASS: changed-range structure-coupling review has complete individual classifications'
+        : 'WARN: changed-range structure-coupling review blocks unclassified current evidence.',
     );
   }
 }

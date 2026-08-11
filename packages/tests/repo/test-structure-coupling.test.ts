@@ -199,6 +199,9 @@ describe('test structure-coupling review', () => {
     expect(result.status, result.stdout).toBe(0);
     expect(result.stdout).toContain('evidence=durable-public-boundary');
     expect(result.stdout).toContain('evidence=temporary-ratchet');
+    expect(result.stdout).toContain(
+      'PASS: all 3 current structure-coupling candidates are individually classified',
+    );
     expect(result.stdout).toContain('PASS: registry entries are complete and current');
   });
 
@@ -270,13 +273,14 @@ describe('test structure-coupling review', () => {
 
     const result = runChecker(fixture, ['--changed', base, head]);
 
-    expect(result.status, result.stdout).toBe(0);
+    expect(result.status, result.stdout).toBe(1);
     expect(result.stdout).toContain('mode=changed-range');
     expect(result.stdout).toContain('change=deleted');
     expect(result.stdout).not.toContain('deleted-or-replaced-semantic-coverage');
     expect(result.stdout).toContain('change=touched');
     expect(result.stdout).toContain('evidence=unreviewed');
-    expect(result.stdout).toContain('does not block changed files while the inventory is reviewed');
+    expect(result.stdout).toContain('FAIL: changed candidate lacks individual classification');
+    expect(result.stdout).toContain('changed-range structure-coupling review blocks');
   });
 
   it('reports a newly added structural test without Git missing-path noise', () => {
@@ -298,9 +302,42 @@ describe('test structure-coupling review', () => {
 
     const result = runChecker(fixture, ['--changed', base, head]);
 
-    expect(result.status, result.stdout).toBe(0);
+    expect(result.status, result.stdout).toBe(1);
     expect(result.stdout).toContain('change=new');
+    expect(result.stdout).toContain('FAIL: changed candidate lacks individual classification');
     expect(result.stdout).not.toContain('fatal: path');
+  });
+
+  it('accepts changed structural evidence only after every current occurrence is registered', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+    });
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    const testPath = path.join(fixture.root, 'packages/tests/example/new-structure.test.ts');
+    mkdirSync(path.dirname(testPath), { recursive: true });
+    writeFileSync(
+      testPath,
+      [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    );
+    commitFixture(fixture.root, 'add structural test');
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    writeRegistry(
+      fixture.root,
+      candidates.map((candidate) => temporaryEntry(candidate)),
+    );
+    const head = commitFixture(fixture.root, 'classify structural test');
+
+    const result = runChecker(fixture, ['--changed', base, head]);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain(
+      'PASS: changed-range structure-coupling review has complete individual classifications',
+    );
+    expect(result.stdout).not.toContain('lacks individual classification');
   });
 
   it('reports renamed non-ASCII test paths as renamed using NUL-safe Git evidence', () => {
@@ -322,7 +359,7 @@ describe('test structure-coupling review', () => {
 
     const result = runChecker(fixture, ['--changed', base, head]);
 
-    expect(result.status, result.stdout).toBe(0);
+    expect(result.status, result.stdout).toBe(1);
     expect(result.stdout).toContain('å-renamed-structure.test.ts');
     expect(result.stdout).toContain('change=renamed');
   });
@@ -486,7 +523,8 @@ describe('test structure-coupling review', () => {
   }, 20_000);
 
   it('parses representative real repository suites without silently skipping evidence', () => {
-    const recipeConsolePath = 'packages/tests/rallar-black-box/recipe-console-structure.test.ts';
+    const recipeConsolePath =
+      'packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts';
     const truthfulNoCandidateAllowed = [
       'packages/tests/repo/github-actions-runtime-governance.test.ts',
     ];
@@ -546,7 +584,7 @@ describe('test structure-coupling review', () => {
 
     const result = runChecker(fixture, ['--changed', base, head]);
 
-    expect(result.status, result.stdout).toBe(0);
+    expect(result.status, result.stdout).toBe(1);
     expect(result.stdout).toContain('change=renamed');
     expect(result.stdout).toContain('change=deleted');
     expect(result.stdout).toContain('origin=copy');

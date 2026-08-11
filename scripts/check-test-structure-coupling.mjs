@@ -16,11 +16,17 @@ const reviewInput = readReviewInput(process.argv.slice(2));
 const report = readReportCandidates(reviewInput);
 const completeCurrent = readCompleteCurrentCandidates(reviewInput);
 const registry = readRegistry(reviewInput);
+const registeredCandidateIds = new Set(
+  registry.entries
+    .filter((entry) => entry && typeof entry === 'object' && typeof entry.id === 'string')
+    .map((entry) => entry.id),
+);
 const validationErrors = [
   ...new Set([
     ...report.errors,
     ...completeCurrent.errors,
     ...validateRegistry(registry, completeCurrent.candidates),
+    ...changedClassificationErrors(reviewInput, report.candidates, registeredCandidateIds),
   ]),
 ].toSorted();
 
@@ -33,6 +39,21 @@ printReport({
 });
 for (const error of validationErrors) {
   console.log(`FAIL: ${error}`);
+}
+
+function changedClassificationErrors(reviewInput, candidates, registeredCandidateIds) {
+  if (reviewInput.mode !== 'changed-range') {
+    return [];
+  }
+  return candidates
+    .filter(
+      (candidate) => candidate.change !== 'deleted' && !registeredCandidateIds.has(candidate.id),
+    )
+    .map(
+      (candidate) =>
+        `changed candidate lacks individual classification: ${candidate.id} ` +
+        `${candidate.path}:${candidate.line}:${candidate.column}`,
+    );
 }
 if (validationErrors.length > 0) {
   process.exitCode = 1;
