@@ -1,97 +1,348 @@
 import { QRtcPeerConnection } from '@shared/webrtc/QRtcPeerConnection.ts';
 
-type BenchResult = Readonly<{
-    run: number;
-    durationMs: number;
-    candidateCount: number;
-    addedCandidates: number;
-    remainingQueuedCandidates: number;
-}>;
+import {
+  rtcBaselineIssue,
+  type RtcBaselineJson,
+  type RtcBaselineSampleIdentityDto,
+  type RtcBaselineSampleDto,
+} from './rtc-baseline/rtc-baseline-contracts.ts';
+import {
+  parseRtcBaselineBoundedInteger,
+  parseRtcBaselineOneTokenOptions,
+} from './rtc-baseline/rtc-baseline-cli-options.ts';
+import { validateRtcBaselineId } from './rtc-baseline/rtc-baseline-validation.ts';
 
-const OUT = readArg('--out') ??
-    'tmp/perf/results/rtc-ice-candidate-queue.json';
-const CANDIDATES = Number(readArg('--candidates') ?? '25000');
-const RUNS = Number(readArg('--runs') ?? '5');
+interface QueueInput {
+  readonly candidates: number;
+  readonly runs: number;
+}
+interface DiagnosticArguments {
+  readonly mode: 'diagnostic';
+  readonly input: QueueInput;
+  readonly out: string;
+}
+interface AcceptedArguments {
+  readonly mode: 'accepted';
+  readonly input: QueueInput;
+  readonly baselineId: string;
+  readonly intendedPhase: 'warmup' | 'retained';
+  readonly outerOrdinal: number;
+  readonly sampleIds: readonly string[];
+}
+export interface RtcIceCandidateQueueResult {
+  readonly durationMs: number;
+  readonly candidateCount: number;
+  readonly addedCandidates: number;
+  readonly remainingQueuedCandidates: number;
+}
+interface BenchResult extends RtcIceCandidateQueueResult {
+  readonly run: number;
+}
+interface CreateRtcIceCandidateQueueSampleInput {
+  readonly identity: RtcBaselineSampleIdentityDto;
+  readonly outcome: 'passed' | 'failed' | 'not-run';
+  readonly rawEvidence: RtcIceCandidateQueueResult | null;
+  readonly issues: RtcBaselineSampleDto['issues'];
+}
 
-const writeLine = console.log.bind(console);
-console.log = () => {
-};
-console.warn = () => {
-};
+const acceptedNames = [
+  'capture',
+  'baseline-id',
+  'workload',
+  'case-id',
+  'input-key',
+  'intended-phase',
+  'outer-ordinal',
+  'sample-ids',
+  'rtc-candidates',
+  'rtc-inner-runs',
+];
+
+export function parseRtcIceCandidateQueueArguments(arguments_: readonly string[]) {
+  const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  const parsed = parseRtcBaselineOneTokenOptions(
+    arguments_,
+    accepted ? acceptedNames : ['candidates', 'runs', 'out'],
+  );
+  if (!parsed.ok) return parsed;
+  return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
+}
+
+export function createRtcIceCandidateQueueSamples(input: {
+  worker: AcceptedArguments;
+  results: readonly RtcIceCandidateQueueResult[];
+}): RtcBaselineSampleDto[] {
+  let priorFailureId: string | undefined;
+  return input.worker.sampleIds.map((sampleId, index) => {
+    const identity = createIdentity(input.worker, sampleId, index + 1);
+    const result = input.results[index];
+    if (priorFailureId !== undefined || result === undefined) {
+      return createSample({
+        identity,
+        outcome: 'not-run',
+        rawEvidence: null,
+        issues: [
+          rtcBaselineIssue(
+            '$.rawEvidence',
+            'causal-not-run',
+            priorFailureId ?? 'Missing inner run.',
+          ),
+        ],
+      });
+    }
+    const issues = validateResult(input.worker.input, result);
+    if (issues.length > 0) priorFailureId = sampleId;
+    return createSample({
+      identity,
+      outcome: issues.length === 0 ? 'passed' : 'failed',
+      rawEvidence: result,
+      issues,
+    });
+  });
+}
+
+export async function runRtcIceCandidateQueueAcceptedSamples(input: {
+  worker: AcceptedArguments;
+  run: () => Promise<RtcIceCandidateQueueResult>;
+}): Promise<RtcBaselineSampleDto[]> {
+  const results: RtcIceCandidateQueueResult[] = [];
+  for (let run = 0; run < input.worker.input.runs; run += 1) {
+    const result = await input.run();
+    results.push(result);
+    if (validateResult(input.worker.input, result).length > 0) break;
+  }
+  return createRtcIceCandidateQueueSamples({ worker: input.worker, results });
+}
+
+async function main(): Promise<void> {
+  const parsed = parseRtcIceCandidateQueueArguments(Deno.args);
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues));
+  const writeLine = console.log.bind(console);
+  console.log = () => {};
+  console.warn = () => {};
+  if (parsed.value.mode === 'accepted') {
+    const samples = await runRtcIceCandidateQueueAcceptedSamples({
+      worker: parsed.value,
+      run: () => runQueue(parsed.value.input.candidates),
+    });
+    writeLine(JSON.stringify(samples));
+    return;
+  }
+  const results: BenchResult[] = [];
+  for (let run = 1; run <= parsed.value.input.runs; run += 1) {
+    results.push({ run, ...(await runQueue(parsed.value.input.candidates)) });
+  }
+  await Deno.writeTextFile(
+    parsed.value.out,
+    JSON.stringify(
+      {
+        createdAt: new Date().toISOString(),
+        input: { candidateCount: parsed.value.input.candidates, runs: parsed.value.input.runs },
+        results,
+      },
+      null,
+      2,
+    ),
+    { createNew: true },
+  );
+  writeLine(`Wrote ${parsed.value.out}`);
+}
+
+async function runQueue(candidates: number): Promise<RtcIceCandidateQueueResult> {
+  const peer = new QRtcPeerConnection(
+    { send: async () => {} },
+    {
+      sessionId: 'self',
+      token: 'token',
+      peerSessionId: 'peer',
+      iceCandidates: { iceServers: [], expiresAtEpochMs: Date.now() + 60_000 },
+      isPolite: true,
+    },
+  );
+  const status = peer.status;
+  status.iceCandidateQueue = Array.from({ length: candidates }, (_value, index) => ({
+    candidate: `candidate-${index}`,
+    sdpMid: '0',
+    sdpMLineIndex: 0,
+  }));
+  const nativePeer = new FakeRTCPeerConnection();
+  const startedAt = performance.now();
+  await (
+    peer as unknown as {
+      flushIceCandidateQueue(
+        peerConnection: Pick<RTCPeerConnection, 'addIceCandidate'>,
+      ): Promise<void>;
+    }
+  ).flushIceCandidateQueue(nativePeer);
+  return {
+    durationMs: performance.now() - startedAt,
+    candidateCount: candidates,
+    addedCandidates: nativePeer.addedCandidates,
+    remainingQueuedCandidates: status.iceCandidateQueue.length,
+  };
+}
+
+function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+  const out = options.out ?? 'tmp/perf/results/rtc-ice-candidate-queue.json';
+  const outComponents = out.split('/');
+  const validOut =
+    out.startsWith('tmp/perf/results/') &&
+    !out.includes('\\') &&
+    outComponents.every((component) => component !== '' && component !== '.' && component !== '..');
+  const candidates = parseRtcBaselineBoundedInteger(
+    options.candidates ?? '25000',
+    'candidates',
+    1,
+    25000,
+  );
+  const runs = parseRtcBaselineBoundedInteger(options.runs ?? '5', 'runs', 1, 5);
+  if (!candidates.ok || !runs.ok || !validOut) {
+    return {
+      ok: false as const,
+      issues: [
+        ...(!candidates.ok ? candidates.issues : []),
+        ...(!runs.ok ? runs.issues : []),
+        ...(!validOut
+          ? [rtcBaselineIssue('$.out', 'invalid-diagnostic-output', 'Expected tmp/perf/results/.')]
+          : []),
+      ],
+    };
+  }
+  return {
+    ok: true as const,
+    value: {
+      mode: 'diagnostic' as const,
+      input: { candidates: candidates.value, runs: runs.value },
+      out,
+    },
+  };
+}
+
+function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+  const outer = parseRtcBaselineBoundedInteger(
+    options['outer-ordinal'] ?? '',
+    'outer-ordinal',
+    1,
+    999,
+  );
+  const issues = outer.ok ? [] : [...outer.issues];
+  issues.push(...validateRtcBaselineId(options['baseline-id'] ?? ''));
+  const expected = {
+    capture: 'worker',
+    workload: 'RTC-B01',
+    'case-id': 'ice-candidate-queue',
+    'input-key': 'candidates-25000',
+    'rtc-candidates': '25000',
+    'rtc-inner-runs': '5',
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    if (options[name] !== value) {
+      issues.push(rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`));
+    }
+  }
+  const phase = options['intended-phase'];
+  if (phase !== 'warmup' && phase !== 'retained') {
+    issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
+  }
+  const ordinal = outer.ok ? outer.value : 0;
+  const sampleIds = (options['sample-ids'] ?? '').split(',');
+  const expectedIds = createExpectedSampleIds(phase === 'warmup' ? phase : 'retained', ordinal);
+  if (JSON.stringify(sampleIds) !== JSON.stringify(expectedIds)) {
+    issues.push(rtcBaselineIssue('$.sample-ids', 'unexpected-worker-input', 'Invalid sample IDs.'));
+  }
+  return issues.length > 0
+    ? { ok: false as const, issues }
+    : {
+        ok: true as const,
+        value: {
+          mode: 'accepted' as const,
+          input: { candidates: 25000, runs: 5 },
+          baselineId: options['baseline-id']!,
+          intendedPhase: phase as 'warmup' | 'retained',
+          outerOrdinal: ordinal,
+          sampleIds,
+        },
+      };
+}
+
+function createExpectedSampleIds(phase: string, outerOrdinal: number): string[] {
+  const attemptPrefix =
+    `rtc-b01-ice-candidate-queue-candidates-25000-${phase}-` +
+    String(outerOrdinal).padStart(3, '0');
+  return Array.from(
+    { length: 5 },
+    (_value, index) => `${attemptPrefix}-${String(index + 1).padStart(3, '0')}`,
+  );
+}
+
+function createIdentity(
+  worker: AcceptedArguments,
+  sampleId: string,
+  innerOrdinal: number,
+): RtcBaselineSampleIdentityDto {
+  return {
+    sampleId,
+    workloadId: 'RTC-B01' as const,
+    caseId: 'ice-candidate-queue',
+    inputKey: 'candidates-25000',
+    intendedPhase: worker.intendedPhase,
+    outerOrdinal: worker.outerOrdinal,
+    innerOrdinal,
+  };
+}
+
+function createSample(sampleInput: CreateRtcIceCandidateQueueSampleInput): RtcBaselineSampleDto {
+  const { identity, outcome, rawEvidence, issues } = sampleInput;
+  return {
+    schema: 'rallar.rtc-baseline.sample.v1',
+    identity,
+    outcome,
+    evidenceClass: 'synthetic-path',
+    metrics: rawEvidence
+      ? [{ metric: 'durationMs', unit: 'ms', value: rawEvidence.durationMs }]
+      : [],
+    rawEvidence: rawEvidence === null ? null : createRawEvidence(rawEvidence),
+    rawReferences: [],
+    issues,
+    runtimeObservation: null,
+  };
+}
+
+function validateResult(input: QueueInput, result: RtcIceCandidateQueueResult) {
+  const issues = [];
+  if (result.candidateCount !== input.candidates) {
+    issues.push(
+      rtcBaselineIssue('$.rawEvidence.candidateCount', 'counter-mismatch', 'Unexpected.'),
+    );
+  }
+  if (result.addedCandidates !== input.candidates) {
+    issues.push(
+      rtcBaselineIssue('$.rawEvidence.addedCandidates', 'counter-mismatch', 'Unexpected.'),
+    );
+  }
+  if (result.remainingQueuedCandidates !== 0) {
+    issues.push(
+      rtcBaselineIssue('$.rawEvidence.remainingQueuedCandidates', 'cleanup-nonzero', 'Expected 0.'),
+    );
+  }
+  return issues;
+}
+
+function createRawEvidence(result: RtcIceCandidateQueueResult): RtcBaselineJson {
+  return {
+    durationMs: result.durationMs,
+    candidateCount: result.candidateCount,
+    addedCandidates: result.addedCandidates,
+    remainingQueuedCandidates: result.remainingQueuedCandidates,
+  };
+}
 
 class FakeRTCPeerConnection {
-    addedCandidates = 0;
-
-    addIceCandidate(_candidate?: RTCIceCandidateInit): Promise<void> {
-        this.addedCandidates += 1;
-        return Promise.resolve();
-    }
+  addedCandidates = 0;
+  addIceCandidate(_candidate?: RTCIceCandidateInit | null): Promise<void> {
+    this.addedCandidates += 1;
+    return Promise.resolve();
+  }
 }
 
-const results: BenchResult[] = [];
-
-for (let run = 1; run <= RUNS; run++) {
-    const peer = new QRtcPeerConnection(
-        {
-            send: async () => {
-            },
-        },
-        {
-            sessionId: 'self',
-            token: 'token',
-            peerSessionId: 'peer',
-            iceCandidates: {
-                iceServers: [],
-                expiresAtEpochMs: Date.now() + 60_000,
-            },
-            isPolite: true,
-        },
-    );
-    const queuedCandidates = Array.from(
-        { length: CANDIDATES },
-        (_unused, index) => ({
-            candidate: `candidate-${index}`,
-            sdpMid: '0',
-            sdpMLineIndex: 0,
-        } satisfies RTCIceCandidateInit),
-    );
-    const status = peer.status as unknown as {
-        iceCandidateQueue: RTCIceCandidateInit[];
-    };
-    status.iceCandidateQueue = queuedCandidates;
-    const pc = new FakeRTCPeerConnection();
-    const start = performance.now();
-
-    await (peer as unknown as {
-        flushIceCandidateQueue: (
-            pc: Pick<RTCPeerConnection, 'addIceCandidate'>,
-        ) => Promise<void>;
-    }).flushIceCandidateQueue(pc);
-
-    results.push({
-        run,
-        durationMs: performance.now() - start,
-        candidateCount: CANDIDATES,
-        addedCandidates: pc.addedCandidates,
-        remainingQueuedCandidates: status.iceCandidateQueue.length,
-    });
-}
-
-await Deno.writeTextFile(
-    OUT,
-    JSON.stringify({
-        createdAt: new Date().toISOString(),
-        input: {
-            candidateCount: CANDIDATES,
-            runs: RUNS,
-        },
-        results,
-    }, null, 2),
-);
-
-writeLine(`Wrote ${OUT}`);
-
-function readArg(name: string): string | undefined {
-    return Deno.args.find((arg) => arg.startsWith(`${name}=`))
-        ?.slice(name.length + 1);
-}
+if (import.meta.main) await main();

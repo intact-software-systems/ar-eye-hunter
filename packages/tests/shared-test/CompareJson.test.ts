@@ -291,3 +291,104 @@ describe('CompareJson facade', () => {
         expect(result.isEqual).toBe(false);
     });
 });
+
+describe('CompareJson compatible-complete', () => {
+    it('accepts arrays whose elements are exactly the expected ones', () => {
+        const expected = {
+            members: [
+                {principalId: 'client-1', status: 'active'},
+            ],
+        };
+
+        const actual = {
+            members: [
+                {principalId: 'client-1', status: 'active', joinedAtEpochMs: 1},
+            ],
+            traceId: 'extra-object-fields-stay-allowed',
+        };
+
+        const result = CompareJson.compatibleComplete(expected, actual);
+
+        expect(result.isEqual).toBe(true);
+    });
+
+    it('rejects an unexpected extra array element that plain compatible accepts', () => {
+        const expected = {
+            members: [
+                {principalId: 'client-1', status: 'active'},
+            ],
+        };
+
+        const actual = {
+            members: [
+                {principalId: 'client-1', status: 'active'},
+                {principalId: 'intruder', status: 'active'},
+            ],
+        };
+
+        expect(CompareJson.compatible(expected, actual).isEqual).toBe(true);
+
+        const result = CompareJson.compatibleComplete(expected, actual);
+        expect(result.isEqual).toBe(false);
+        if (!result.isEqual) {
+            expect(result.message).toBe('Json array has unexpected elements');
+            expect(result.actualNotFound).toEqual([
+                {principalId: 'intruder', status: 'active'},
+            ]);
+        }
+    });
+
+    it('still reports missing expected elements', () => {
+        const expected = {
+            activeSessions: [
+                {sessionId: 'session-1'},
+                {sessionId: 'session-2'},
+            ],
+        };
+
+        const actual = {
+            activeSessions: [
+                {sessionId: 'session-1'},
+            ],
+        };
+
+        const result = CompareJson.compatibleComplete(expected, actual);
+
+        expect(result.isEqual).toBe(false);
+    });
+
+    it('keeps object extra-key tolerance unlike exact', () => {
+        const expected = {
+            group: {groupId: 'g-1'},
+            members: [
+                {principalId: 'client-1'},
+            ],
+        };
+
+        const actual = {
+            group: {groupId: 'g-1', displayName: 'Group One'},
+            members: [
+                {principalId: 'client-1', status: 'active'},
+            ],
+        };
+
+        expect(CompareJson.compatibleComplete(expected, actual).isEqual).toBe(true);
+        expect(CompareJson.exact(expected, actual).isEqual).toBe(false);
+    });
+
+    it('supports wildcard tokens inside complete arrays', () => {
+        const expected = {
+            members: [
+                {principalId: 'string', status: 'active|invited'},
+            ],
+        };
+
+        const actual = {
+            members: [
+                {principalId: 'client-77', status: 'invited'},
+            ],
+        };
+
+        expect(CompareJson.compatibleComplete(expected, actual).isEqual).toBe(true);
+    });
+});

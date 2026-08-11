@@ -1,0 +1,497 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-cpi"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "workspace-cpi-{runId}"
+    },
+    "aliceGroupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "cpi-alice-only-group-{runId}"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "wsAlice": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsBob": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "aliceSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "bobSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createAliceWebSocketTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{aliceSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceWebSocketUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAliceWebSocket",
+      "type": "ws.open",
+      "connection": "wsAlice",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "createBobWebSocketTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{bobSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveBobWebSocketUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openBobWebSocket",
+      "type": "ws.open",
+      "connection": "wsBob",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "observeAliceOwnClientSnapshot",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 15000,
+        "message": {
+          "route": {
+            "topicId": "client-state.snapshot"
+          },
+          "payload": {
+            "typeId": "client-state.snapshot"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "principalId": "{aliceClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "observeBobOwnClientSnapshot",
+      "type": "ws.wait",
+      "connection": "wsBob",
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 15000,
+        "message": {
+          "route": {
+            "topicId": "client-state.snapshot"
+          },
+          "payload": {
+            "typeId": "client-state.snapshot"
+          },
+          "targets": {
+            "mode": "broadcast",
+            "scope": "principal",
+            "principalRef": {
+              "principalId": "{bobClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "createAliceOnlyGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "create-cpi-{aliceGroupId}-{runId}",
+          "groupId": "{aliceGroupId}",
+          "displayName": "Alice-only group {runId}",
+          "kind": "room",
+          "joinMode": "invite-only",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ]
+      }
+    },
+    {
+      "name": "joinAliceToAliceOnlyGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{aliceGroupId}/members/{aliceClientId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "join-cpi-{aliceGroupId}-{aliceClientId}-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "connectAlicePresenceForClientStateChurn",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{aliceGroupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-cpi-{aliceSessionId}-{runId}",
+          "generationId": "generation-cpi-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "assertNoAlicePrincipalFrameOnBob",
+      "type": "ws.wait",
+      "connection": "wsBob",
+      "expect": {
+        "connection": "wsBob",
+        "withinMs": 4000,
+        "absent": {
+          "targets": {
+            "principalRef": {
+              "principalId": "{aliceClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "assertNoBobPrincipalFrameOnAlice",
+      "type": "ws.wait",
+      "connection": "wsAlice",
+      "expect": {
+        "connection": "wsAlice",
+        "withinMs": 2000,
+        "absent": {
+          "targets": {
+            "principalRef": {
+              "principalId": "{bobClientId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAliceWebSocket",
+      "type": "ws.close",
+      "connection": "wsAlice",
+      "request": {
+        "code": 1000,
+        "reason": "api-v1 cross-principal isolation recipe done"
+      }
+    },
+    {
+      "name": "closeBobWebSocket",
+      "type": "ws.close",
+      "connection": "wsBob",
+      "request": {
+        "code": 1000,
+        "reason": "api-v1 cross-principal isolation recipe done"
+      }
+    },
+    {
+      "name": "disconnectAlicePresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{aliceGroupId}/sessions/{aliceSessionId}/disconnect",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "disconnect-cpi-{aliceSessionId}-{runId}",
+          "generationId": "generation-cpi-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "logoutAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    },
+    {
+      "name": "logoutBob",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200
+      }
+    }
+  ]
+}

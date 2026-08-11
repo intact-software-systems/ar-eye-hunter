@@ -8983,7 +8983,7 @@
       "type": "assert",
       "actual": {
         "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
-        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}",
         "completedAppInboxStatus": "{stateWriteEvidence.completedAppInboxStatus}",
         "naturalBoundedRetryObserved": "{stateWriteEvidence.naturalBoundedRetryObserved}",
         "mutationStatus": "{resultsByName.runMediumScaleStateChurn.0.status}"
@@ -8991,7 +8991,7 @@
       "expect": {
         "body": {
           "atomicCompletionFailures": 0,
-          "intermediateMutationIntents": [],
+          "intermediateMutationIntentCount": 0,
           "completedAppInboxStatus": "COMPLETED",
           "naturalBoundedRetryObserved": true,
           "mutationStatus": "SUCCESS"

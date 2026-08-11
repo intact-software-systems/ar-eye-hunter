@@ -220,7 +220,7 @@
       "type": "assert",
       "actual": {
         "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
-        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}",
         "completedAppInboxStatus": "{stateWriteEvidence.completedAppInboxStatus}",
         "pruneStatus": "{boundedPruneStatus}",
         "boundedPages": "{boundedPruneResults}"
@@ -228,7 +228,7 @@
       "expect": {
         "body": {
           "atomicCompletionFailures": 0,
-          "intermediateMutationIntents": [],
+          "intermediateMutationIntentCount": 0,
           "completedAppInboxStatus": "COMPLETED",
           "pruneStatus": "completed",
           "boundedPages": [

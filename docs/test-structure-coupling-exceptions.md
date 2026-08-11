@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 116 entries were reviewed by independently meaningful behavior,
+The current 118 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -52,7 +52,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Mutation registration collections and predicates | 12 | Live handler families and exact predicates must remain complete and authoritative. |
 | API-v1 recipe loading and routing | 4 | Checked-in recipes and runner plans are executable public test interfaces. |
 | State-read convergence recipes | 2 | Parsed fixtures carry run-scoped identity and tertiary causal evidence. |
-| Black-box schema and recipe matrix | 8 | Published fixtures, examples, compatibility corpus, and catalog promises are validated directly. |
+| Black-box schema and recipe matrix | 10 | Published fixtures, examples, compatibility corpus, evidence tiers, and catalog promises are validated directly. |
 | State-write recipe evidence | 5 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity. |
 | Shared-web package boundaries | 9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction. |
 
@@ -674,6 +674,14 @@ moved or changed test.
       "coverageRelation": "The named matrix test loads the published catalog or referenced recipe and asserts the exact uniqueness, coverage, compatibility, or CLI promise represented by this occurrence."
     },
     {
+      "id": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
+      "domain": "Supported recipe matrix",
+      "owner": "Shared Test maintainers",
+      "summary": "Every API-v1 recipe declares whether it is a Tier 1 public-interface test or a Tier 2 durability proof that reads SQL evidence. Executable assertion: “labels every api-v1 entry with an honest evidence tier”.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier",
+      "coverageRelation": "The named matrix test compares each published tier with the concrete SQL-evidence operator used by its shipped recipe. Executing the recipe can prove its assertions but cannot reveal whether the evidence came from the public API or the database, so the static operator classification is part of the operator-facing catalog contract."
+    },
+    {
       "id": "recipe-matrix-public-interface--points-every-entry-at-a-catalog-recipe-file",
       "domain": "Supported recipe matrix",
       "owner": "Shared Test maintainers",
@@ -841,9 +849,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call before resolved dependencies and authorization exist"
     },
     {
-      "id": "test-structure-coupling-043da39cb34cfa87",
+      "id": "test-structure-coupling-d326eafe832b6f45",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 76,
+      "line": 77,
       "column": 26,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--points-every-entry-at-a-catalog-recipe-file",
@@ -997,9 +1005,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead exact registration masking the live named route owner"
     },
     {
-      "id": "test-structure-coupling-23e21b30c080db3a",
+      "id": "test-structure-coupling-a01caac38cdd0c2c",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 385,
+      "line": 418,
       "column": 9,
       "kind": "symbol-assertion",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
@@ -1153,9 +1161,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a separately bound command declared after its submission"
     },
     {
-      "id": "test-structure-coupling-46997be678a26e87",
+      "id": "test-structure-coupling-610c1849ac572c39",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 113,
+      "line": 114,
       "column": 47,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--uses-rallar-signaling-for-signaling-recipe-examples-and-keeps-on",
@@ -1164,6 +1172,32 @@ moved or changed test.
       "owner": "Shared Test maintainers",
       "rationale": "Loads the designated legacy alias fixture separately so the catalog can require rallar-signaling everywhere else without deleting compatibility evidence.",
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture"
+    },
+    {
+      "id": "test-structure-coupling-5908e33a9ba75a63",
+      "path": "packages/tests/shared-test/recipe-matrix.test.ts",
+      "line": 270,
+      "column": 32,
+      "kind": "production-source-read",
+      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "Reads each catalogued API-v1 recipe as shipped so its declared evidence tier is checked against the evidence source the runner will actually execute.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
+    },
+    {
+      "id": "test-structure-coupling-c09bbb4fb7297b90",
+      "path": "packages/tests/shared-test/recipe-matrix.test.ts",
+      "line": 271,
+      "column": 37,
+      "kind": "symbol-assertion",
+      "contract": "recipe-matrix-public-interface--labels-every-api-v1-entry-with-an-honest-evidence-tier",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared Test maintainers",
+      "rationale": "Uses the canonical state-write-evidence recipe operator as the exact Tier 2 discriminator; runtime success alone cannot distinguish a public-API assertion from direct SQL evidence.",
+      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#labels every api-v1 entry with an honest evidence tier"
     },
     {
       "id": "test-structure-coupling-4b048f6cdfdd5d69",
@@ -1400,9 +1434,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#materializes a deterministic isolated group throughout executable manifest data"
     },
     {
-      "id": "test-structure-coupling-6f764d53470df486",
+      "id": "test-structure-coupling-1fd9fab573bb6f2f",
       "path": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts",
-      "line": 36,
+      "line": 37,
       "column": 31,
       "kind": "production-source-read",
       "contract": "state-read-convergence-recipe--proves-tertiary-scalar-and-causal-floors-with-revision-and-sourc",
@@ -1920,9 +1954,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#fails closed when a named route path uses an unknown expression"
     },
     {
-      "id": "test-structure-coupling-b49789fd23ed38c2",
+      "id": "test-structure-coupling-1a7f6167bcb90129",
       "path": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts",
-      "line": 24,
+      "line": 25,
       "column": 31,
       "kind": "production-source-read",
       "contract": "state-read-convergence-recipe--defines-run-scoped-identifiers-as-interpolated-string-values",
@@ -2245,9 +2279,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
     },
     {
-      "id": "test-structure-coupling-f54a571f6a255e2f",
+      "id": "test-structure-coupling-814719f0638eaab8",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 383,
+      "line": 416,
       "column": 24,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",

@@ -347,6 +347,7 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "memberCount": 1,
           "members": [
@@ -515,6 +516,7 @@
               },
               "expect": {
                 "status": 200,
+                "comparison": "compatible-complete",
                 "body": {
                   "activeSessions": [
                     {
@@ -693,6 +695,7 @@
       },
       "expect": {
         "status": 200,
+        "comparison": "compatible-complete",
         "body": {
           "activeSessions": [
             {
@@ -2013,7 +2016,7 @@
       "type": "assert",
       "actual": {
         "atomicCompletionFailures": "{stateWriteEvidence.atomicCompletionFailures}",
-        "intermediateMutationIntents": "{stateWriteEvidence.intermediateMutationIntents}",
+        "intermediateMutationIntentCount": "{stateWriteEvidence.intermediateMutationIntentCount}",
         "overdueRecovered": "{stateWriteEvidence.overdueRecoveryFixture.recovered}",
         "notBeforeSatisfied": "{stateWriteEvidence.overdueRecoveryFixture.notBeforeSatisfied}",
         "overdueAtClaim": "{stateWriteEvidence.overdueRecoveryFixture.overdueAtClaim}",
@@ -2023,7 +2026,7 @@
       "expect": {
         "body": {
           "atomicCompletionFailures": 0,
-          "intermediateMutationIntents": [],
+          "intermediateMutationIntentCount": 0,
           "overdueRecovered": true,
           "notBeforeSatisfied": true,
           "overdueAtClaim": true,

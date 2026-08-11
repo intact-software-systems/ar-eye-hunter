@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "6e0638c880537341d8f88c6e159281a5986e47ed",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/execute-black-box.ts",
+        "blob": "f5f30bb18b2916879e06dd9a0c3d4f1b8e72124a"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/http/execute-http-interaction.ts",
+        "packages/shared-test/black-box-runner/http/http-response-expectations.ts",
+        "packages/shared-test/black-box-runner/ws/ws-interaction-statuses.ts",
+        "packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts"
+      ]
+    },
+    {
+      "mergeBase": "6e0638c880537341d8f88c6e159281a5986e47ed",
+      "source": {
+        "path": "packages/shared-test/black-box-runner/rtc-provider.ts",
+        "blob": "6ea975ff1134aa7b2e94364aadf6e925deb9aebf"
+      },
+      "targets": [
+        "packages/shared-test/black-box-runner/rtc/rtc-wait-expectations.ts"
+      ]
+    }
+  ]
+}
