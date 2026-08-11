@@ -293,11 +293,21 @@ Common fields:
 - `request.send`, `request.message`, or `request.body`: outbound payload
 - `expect.message`: one expected inbound message
 - `expect.messages`: multiple expected inbound messages
+- `expect.absent`: one partial matcher that must NOT match any buffered message
 - `expect.close`: expected close event
-- `expect.withinMs`: wait timeout
+- `expect.withinMs`: wait timeout, or the full absence window for `expect.absent`
 - `expect.consume`: remove a matched message or close event from the store
 - `expect.ordered`: require expected messages in order
 - `output`, `outputPath`, `outputs`: extract values from the WS step result
+
+An `expect.absent` wait always waits the full `expect.withinMs` window, then
+scans the whole message buffer for the connection: the step fails with the
+offending frame if any message received since the socket opened matches, and
+passes otherwise. Use it for negative delivery contracts such as cross-scope
+isolation ("a session in application B must never receive a frame targeted at
+application A's group"). Pair it with a positive same-scope expectation on the
+same socket first, so a silent dead socket cannot make the absence pass
+vacuously. `expect.absent` applies to `ws.wait` only, not to `ws.send`.
 
 WS steps are transport-level. Do not add Rallar-specific commands such as
 `rallar.messages.ws.send` to the runner core. Express that behavior as a normal
@@ -335,12 +345,20 @@ Common fields:
 - `expect.connection`: target connection for message expectations
 - `expect.message`: expected message or diagnostic event
 - `expect.messages`: multiple expected messages or diagnostic events
+- `expect.absent`: one partial matcher that must NOT match any buffered message
 - `expect.diagnostic`: one expected provider diagnostic event
 - `expect.diagnostics`: multiple expected provider diagnostic events
 - `expect.health`: expected provider health/diagnostic snapshot
 - `expect.close`: expected close event
-- `expect.withinMs`: wait timeout
+- `expect.withinMs`: wait timeout, or the full absence window for `expect.absent`
 - `output`, `outputPath`, `outputs`: extract values from the RTC step result
+
+RTC `expect.absent` has the same semantics as the WS operator: wait the full
+window, then fail with the offending frame when any buffered message matches.
+It is dispatched by the shared client-factory providers (`rallar-signaling`,
+`rallar-memory`, `rallar-browser`, custom `createRtcProviderFromClientFactory`
+providers) and by `rallar-stub`; the `rallar-remote-browser` RTC wait does not
+support it yet.
 
 Provider-specific fields are allowed inside provider-owned objects such as
 `rallar`, `browser`, `control`, or `signaling`. The runner should pass those

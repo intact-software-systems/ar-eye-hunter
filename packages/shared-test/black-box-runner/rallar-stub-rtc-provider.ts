@@ -12,6 +12,7 @@ import {
     toRtcSuccessStatus,
     waitForRtcClose,
     waitForRtcMessage,
+    waitForRtcMessageAbsence,
     waitForRtcMessages,
 } from './rtc-provider.ts'
 
@@ -109,6 +110,15 @@ export function createRallarStubRtcProvider(): RtcProvider {
                 });
             }
 
+            if (interaction.response?.absent !== undefined) {
+                return waitForRtcMessageAbsence({
+                    interaction,
+                    config,
+                    context,
+                    details: { stub: true },
+                });
+            }
+
             if (interaction.response?.messages) {
                 return waitForRtcMessages(interaction, config, context, {
                     stub: true,
@@ -121,10 +131,15 @@ export function createRallarStubRtcProvider(): RtcProvider {
                 });
             }
 
-            return Promise.resolve(toRtcFailureStatus(config, interaction, 'RTC wait expects expect.message, expect.messages, or expect.close', {
-                stub: true,
-                connection: toRtcExpectedConnectionName(interaction),
-            }));
+            return Promise.resolve(toRtcFailureStatus(
+                config,
+                interaction,
+                'RTC wait expects expect.message, expect.messages, expect.absent, or expect.close',
+                {
+                    stub: true,
+                    connection: toRtcExpectedConnectionName(interaction),
+                },
+            ));
         },
 
         close: (interaction: any, config: any, context: any): Promise<any> => {

@@ -1,14 +1,22 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
-import { toBoundedWsWaitMessages } from './artifacts/with-bounded-artifact-report-results.ts';
 import {
-    createMissingRtcProvider,
     rememberRtcCloseEvent,
     type RtcClient,
     type RtcProvider,
     toRtcPayload,
     toRtcFailureStatus, toRtcSuccessStatus,
 } from './rtc-provider.ts';
+import {
+    toWsConnectionName,
+    toWsExpectedConnectionName,
+    toWsFailureStatus,
+    toWsSuccessStatus,
+    waitForWsClose,
+    waitForWsMessage,
+    waitForWsMessageAbsence,
+    waitForWsMessages,
+} from './ws/ws-wait-expectations.ts';
 import { createRallarStubRtcProvider } from './rallar-stub-rtc-provider.ts';
 import { createRallarWebRtcWebSocketSignalingProvider } from './rallar-webrtc-runtime.ts';
 import {createRallarInMemoryProvider} from './rallar-in-memory-runtime.ts';
@@ -296,6 +304,26 @@ export function redactBlackBoxData<T>(value: T, redactions: Redaction[] = []): T
     }
 
     return value;
+}
+
+function createMissingRtcProvider(providerName: string): RtcProvider {
+    const missing = (interaction: any, config: any, context: any): Promise<any> => {
+        return Promise.resolve(toRtcFailureStatus(
+            config,
+            interaction,
+            'RTC provider is not configured: ' + providerName,
+            {
+                availableProviders: Object.keys(context.rtcProviders || {}),
+            },
+        ));
+    };
+
+    return {
+        connect: missing,
+        send: missing,
+        wait: missing,
+        close: missing,
+    };
 }
 
 function createRtcProviders(): Record<string, RtcProvider> {
@@ -1700,72 +1728,6 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
     }
 }
 
-function toWsConnectionName(request: any): string {
-    return request.connection || request.name || 'default';
-}
-
-function toWsExpectedConnectionName(interaction: any): string {
-    return interaction.response?.connection
-        || interaction.response?.onConnection
-        || interaction.request?.expectConnection
-        || toWsConnectionName(interaction.request);
-}
-
-function toWsComparisonConfig(interaction: any): any {
-    return toConfig(
-        interaction.response?.comparison || COMPARISON.COMPATIBLE,
-        interaction.response?.ignoreJsonKeys || [],
-        interaction.response?.ignoreJsonPaths || [],
-    );
-}
-
-function findWsMessageIndex(
-    messages: any[],
-    expectedMessage: any,
-    interaction: any,
-    excludedIndexes: number[] = [],
-): number {
-    return messages.findIndex((message, index) => {
-        if (excludedIndexes.includes(index)) {
-            return false;
-        }
-
-        const result = compareJson(
-            expectedMessage,
-            message.data,
-            toWsComparisonConfig(interaction),
-        );
-
-        return result.isEqual;
-    });
-}
-
-function findWsMessageIndexFrom(
-    messages: any[],
-    expectedMessage: any,
-    interaction: any,
-    fromIndex = 0,
-    excludedIndexes: number[] = [],
-): number {
-    for (let index = fromIndex; index < messages.length; index++) {
-        if (excludedIndexes.includes(index)) {
-            continue;
-        }
-
-        const result = compareJson(
-            expectedMessage,
-            messages[index].data,
-            toWsComparisonConfig(interaction),
-        );
-
-        if (result.isEqual) {
-            return index;
-        }
-    }
-
-    return -1;
-}
-
 function toWsUrl(request: any): string | undefined {
     return request.url || request.path;
 }
@@ -1841,62 +1803,6 @@ function rememberWsCloseEvent(connectionName: string, closeEvent: any, context: 
     }
 
     context.wsCloseEvents[connectionName].push(closeEvent);
-}
-
-function findWsCloseEventIndex(closeEvents: any[], expectedCloseEvent: any, interaction: any): number {
-    return closeEvents.findIndex(closeEvent => {
-        const result = compareJson(
-            expectedCloseEvent,
-            closeEvent,
-            toConfig(
-                interaction.response?.comparison || COMPARISON.COMPATIBLE,
-                interaction.response?.ignoreJsonKeys || [],
-                interaction.response?.ignoreJsonPaths || [],
-            ),
-        );
-
-        return result.isEqual;
-    });
-}
-
-function toWsSuccessStatus(config: any, interaction: any, details: any = {}): any {
-    return {
-        name: config.interactionName,
-        status: SUCCESS,
-        transport: 'WS',
-        ...toCorrelationReportFields(interaction),
-        action: interaction.request.action,
-        connection: interaction.request.connection || interaction.response?.connection,
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: details,
-        ...toOutputReportFields(interaction),
-        input: interaction.request.input,
-    };
-}
-
-function toWsFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
-    return {
-        name: config.interactionName,
-        status: FAILURE,
-        result,
-        transport: 'WS',
-        ...toCorrelationReportFields(interaction),
-        action: interaction.request.action,
-        connection: interaction.request.connection || interaction.response?.connection,
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: details,
-        ...config,
-    };
 }
 
 function openWs(interaction: any, config: any, context: any): Promise<any> {
@@ -2094,189 +2000,6 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
         connection: connectionName,
         ...details,
     }));
-}
-
-function waitForWsMessage(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
-    const request = interaction.request;
-    const connectionName = toWsExpectedConnectionName(interaction);
-    const expectedMessage = interaction.response.message;
-    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
-    const startedAt = Date.now();
-    const consume = interaction.response.consume === true;
-
-    return new Promise(resolve => {
-        const interval = setInterval(() => {
-            const messages = context.wsMessages[connectionName] || [];
-            const matchIndex = findWsMessageIndex(messages, expectedMessage, interaction);
-
-            if (matchIndex >= 0) {
-                clearInterval(interval);
-                const match = messages[matchIndex];
-
-                if (consume) {
-                    messages.splice(matchIndex, 1);
-                }
-
-                resolve(toWsSuccessStatus(config, interaction, {
-                    ...details,
-                    connection: connectionName,
-                    matchedMessage: match,
-                    consumed: consume,
-                    waitedMs: Date.now() - startedAt,
-                }));
-                return;
-            }
-
-            if (Date.now() - startedAt >= timeoutMs) {
-                clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket message was not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedMessage, ...toBoundedWsWaitMessages(messages),
-                    waitedMs: Date.now() - startedAt,
-                }));
-            }
-        }, 25);
-    });
-}
-
-function waitForWsMessages(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
-    const request = interaction.request;
-    const connectionName = toWsExpectedConnectionName(interaction);
-    const expectedMessages = interaction.response.messages;
-    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
-    const startedAt = Date.now();
-    const consume = interaction.response.consume === true;
-    const ordered = interaction.response.ordered === true;
-
-    if (!Array.isArray(expectedMessages) || expectedMessages.length <= 0) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket messages must be a non-empty array', {
-            ...details,
-            connection: connectionName,
-            expectedMessages,
-        }));
-    }
-
-    return new Promise(resolve => {
-        const interval = setInterval(() => {
-            const messages = context.wsMessages[connectionName] || [];
-            const matchedMessages: any[] = [];
-            const matchedIndexes: number[] = [];
-
-            let nextOrderedSearchIndex = 0;
-
-            for (const expectedMessage of expectedMessages) {
-                const matchIndex = ordered
-                    ? findWsMessageIndexFrom(messages, expectedMessage, interaction, nextOrderedSearchIndex, matchedIndexes)
-                    : findWsMessageIndex(messages, expectedMessage, interaction, matchedIndexes);
-
-                if (matchIndex >= 0) {
-                    matchedIndexes.push(matchIndex);
-                    matchedMessages.push({
-                        expectedMessage,
-                        matchedMessage: messages[matchIndex],
-                    });
-
-                    if (ordered) {
-                        nextOrderedSearchIndex = matchIndex + 1;
-                    }
-                } else if (ordered) {
-                    break;
-                }
-            }
-
-            if (matchedMessages.length === expectedMessages.length) {
-                clearInterval(interval);
-
-                if (consume) {
-                    matchedIndexes
-                        .sort((a, b) => b - a)
-                        .forEach(index => messages.splice(index, 1));
-                }
-
-                resolve(toWsSuccessStatus(config, interaction, {
-                    ...details,
-                    connection: connectionName,
-                    matchedMessages,
-                    consumed: consume,
-                    ordered,
-                    waitedMs: Date.now() - startedAt,
-                }));
-                return;
-            }
-
-            if (Date.now() - startedAt >= timeoutMs) {
-                clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, ordered
-                    ? 'Expected WebSocket messages were not received in the expected order'
-                    : 'Expected WebSocket messages were not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedMessages,
-                    matchedMessages,
-                    missingMessages: expectedMessages.filter((expectedMessage: any) => {
-                        return matchedMessages.every(match => match.expectedMessage !== expectedMessage);
-                    }),
-                    ordered, ...toBoundedWsWaitMessages(messages),
-                    waitedMs: Date.now() - startedAt,
-                }));
-            }
-        }, 25);
-    });
-}
-
-function waitForWsClose(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
-    const request = interaction.request;
-    const connectionName = toWsExpectedConnectionName(interaction);
-    const expectedClose = interaction.response.close === true
-        ? {}
-        : interaction.response.close;
-    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
-    const startedAt = Date.now();
-    const consume = interaction.response.consume === true;
-
-    if (expectedClose === undefined) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket close expectation is missing. Use expect.close.', {
-            ...details,
-            connection: connectionName,
-        }));
-    }
-
-    return new Promise(resolve => {
-        const interval = setInterval(() => {
-            const closeEvents = context.wsCloseEvents[connectionName] || [];
-            const matchIndex = findWsCloseEventIndex(closeEvents, expectedClose, interaction);
-
-            if (matchIndex >= 0) {
-                clearInterval(interval);
-                const match = closeEvents[matchIndex];
-
-                if (consume) {
-                    closeEvents.splice(matchIndex, 1);
-                }
-
-                resolve(toWsSuccessStatus(config, interaction, {
-                    ...details,
-                    connection: connectionName,
-                    matchedCloseEvent: match,
-                    consumed: consume,
-                    waitedMs: Date.now() - startedAt,
-                }));
-                return;
-            }
-
-            if (Date.now() - startedAt >= timeoutMs) {
-                clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket close event was not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedClose,
-                    closeEvents,
-                    waitedMs: Date.now() - startedAt,
-                }));
-            }
-        }, 25);
-    });
 }
 
 function toRemoteWsPayload(request: any): unknown {
@@ -2570,6 +2293,15 @@ async function waitRemoteWs(interaction: any, config: any, context: any): Promis
     const remote = toRemoteWsConfig(interaction, config, context);
     const fetchFn = remoteBrowserFetch(context);
     return waitWithRemoteWsEventSync(remote, fetchFn, context, () => {
+        if (interaction.response?.absent !== undefined) {
+            return waitForWsMessageAbsence({
+                interaction,
+                config,
+                context,
+                details: { remote },
+            });
+        }
+
         if (interaction.response?.close !== undefined) {
             return waitForWsClose(interaction, config, context, {
                 remote,
@@ -2591,7 +2323,7 @@ async function waitRemoteWs(interaction: any, config: any, context: any): Promis
         return Promise.resolve(toRemoteWsFailure(
             config,
             interaction,
-            'WebSocket wait expects expect.message, expect.messages, or expect.close',
+            'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close',
         ));
     });
 }
@@ -2671,6 +2403,10 @@ function executeWsInteraction(interaction: any, config: any, context: any): Prom
     }
 
     if (action === 'wait' || action === 'expect') {
+        if (interaction.response?.absent !== undefined) {
+            return waitForWsMessageAbsence({ interaction, config, context });
+        }
+
         if (interaction.response?.close !== undefined) {
             return waitForWsClose(interaction, config, context);
         }
@@ -2683,7 +2419,7 @@ function executeWsInteraction(interaction: any, config: any, context: any): Prom
             return waitForWsMessage(interaction, config, context);
         }
 
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket wait expects expect.message, expect.messages, or expect.close'));
+        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'));
     }
 
     if (action === 'close') {
