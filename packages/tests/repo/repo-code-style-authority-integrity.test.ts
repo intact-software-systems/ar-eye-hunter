@@ -180,7 +180,9 @@ describe('repo code style authority integrity', () => {
     expect(branchReleaseGate).toContain('changed_repo_style_base: origin/main');
     expect(releaseGate).toContain('changed_repo_style_base:');
     expect(releaseGate).toContain('fetch-depth: 0');
-    expect(releaseGate).toContain('npm run check:repo-style:changed --');
+    expect(releaseGate).toContain('node scripts/check-changed-repo-style.mjs');
+    expect(releaseGate).toContain('steps.changed_review_range.outputs.base');
+    expect(releaseGate).toContain('steps.changed_review_range.outputs.head');
     expect(humanGuide).toContain('new or worsened findings');
     expect(humanGuide).toContain('No global strict mode yet');
     expect(canonicalStyle).toMatch(/full-repository checker remains warning-only/iu);
