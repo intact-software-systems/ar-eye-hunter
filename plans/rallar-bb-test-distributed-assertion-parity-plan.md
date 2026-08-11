@@ -18,6 +18,7 @@ Status: proposed; not started. Implements the decision items of issue
 | D3 `loop` until-success polling | not started | — |
 | D4 capability advertisement + preflight gating | not started | — |
 | D5 parity and conformance deepening | not started | — |
+| D6 coordinator-evaluated group assertions | not started | — |
 
 Plan evidence base: authored 2026-08-11 after the W1–W8 assertion-coverage
 stack landed on `main` at `93483f47` (Branch Release Gate green on
@@ -318,6 +319,66 @@ naming the new failure code with a usable fix proposal.
 
 ---
 
+## D6 — Coordinator-evaluated group assertions (P1)
+
+**Serves:** the assertion altitude neither dialect has: invariants over the
+collected evidence of every agent in the shared group. Per-agent asserts can
+never state "we all agree" or "no agent saw it"; today those facts are
+checked by humans reading artifacts.
+
+**Baked-in decision:** a manifest-level `groupAssertions` block beside
+`targetPolicy`/`barrier`, evaluated by the control server's distributed-run
+rollup after barrier/required-recipe completion — **coordinator-side only**,
+so agents are unchanged and D4's capability gate does not apply. Each
+assertion names an `assertionId`; a `scope` (`role`, `minParticipants`); a
+`source` address (`recipeId`, `commandId`, dot `path` into that command's
+result value — the same coordinates `resultCache` and composite result paths
+already use); and an `aggregate`. v1 aggregates, strict by default:
+
+- `allEqual` / `allEqualWithin` (numeric tolerance) — agreement/convergence;
+- `noneMatched` — group absence (fleet-scale isolation; failures name the
+  violating agents and their redacted matching evidence);
+- `countMatching` with `equals`/`gte`/`lte` — exactly-one-winner, exactly-K,
+  fan-out completeness;
+- `forall` — every agent's numeric satisfies a bound (sugar over
+  `countMatching == participants`);
+- optional `minRatio` quorum on any aggregate for world-fleet runs — an
+  explicit, visible weakening, never a default.
+
+A participating agent that contributes no value at the source address is a
+violation by default; `minParticipants` interacts with
+`targetPolicy.expectedParticipantCount` and must be stated per assertion.
+Failure evidence is a redacted per-agent value table plus violating agent
+IDs, recorded in `failures.json` and named for the analyzer. Spread/fairness
+and cross-agent ordering aggregates are explicitly deferred; perf-flavored
+group checks stay in analyzer thresholds, not run-failing asserts.
+
+**Prompt:**
+
+```
+Add a manifest-level groupAssertions block to the rallar-bb-test distributed
+run contract, evaluated coordinator-side in the distributed-run rollup after
+barrier/required-recipe completion: allEqual/allEqualWithin, noneMatched,
+countMatching (equals/gte/lte), forall, with scope (role, minParticipants),
+result-address sources (recipeId, commandId, path), optional minRatio quorum,
+and missing-evidence-is-violation semantics. Implement evaluation in a new
+distributed-run module (net-neutral wiring in existing over-cap files),
+update the manifest schema + golden corpus + distributed-run-contract doc +
+control-server OpenAPI examples, emit redacted per-agent value tables with
+named failure codes into failures.json and the artifact analyzer, and add a
+conformance case per aggregate with a deliberately-broken control, plus one
+checked-in Hetzner manifest asserting allEqual convergence and noneMatched
+isolation across the fleet. Run the schema, distributed-run, control-server
+deno, conformance, and artifact-analysis suites plus test:repo-governance;
+dispatch the manifest through the Hetzner workflow once reviewed.
+```
+
+**Done when:** a synthetic run with one disagreeing agent fails `allEqual`
+naming that agent; one leaked frame anywhere fails `noneMatched` with the
+offending evidence; a missing agent fails by default; quorum mode passes the
+same runs only when explicitly configured; and the Hetzner manifest passes a
+real dispatch.
+
 ## Sequencing and guardrails
 
 | # | Depends on | Notes |
@@ -328,6 +389,7 @@ naming the new failure code with a usable fix proposal.
 | D3 | — | independent |
 | D4 | D1–D3 shapes | capability names must match shipped fields |
 | D5 | D1–D3 | parity needs both sides implemented |
+| D6 | D1–D3 evidence shapes | coordinator-side only; old agents work unchanged, so D4's gate does not apply |
 
 - One capability per PR; every PR carries its schema branch, capability
   metadata, validating example, corpus update, docs, and upgrade note — the
