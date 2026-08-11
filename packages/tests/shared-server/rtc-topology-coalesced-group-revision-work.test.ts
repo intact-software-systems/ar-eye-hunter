@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
+import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/QueueBoxTypes.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/RtcTopologyWorkEntryContract.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   COALESCED_APP_OUTBOX_WORK_FIELD,
@@ -105,6 +107,94 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
     expect(envelope.data.sourceGroupStateRevision).toBe(toGroupSnapshotStateRevision(4, 5));
     expect(second.entry.status).toBe(EntityStatus.RETRY);
     expect(second.entry.dequeueAudit.attempts).toBe(first.entry.dequeueAudit.attempts);
+  });
+
+  it('keeps merged generations canonical so handler-finalized releases stay idempotent', () => {
+    const unexpiredBaseEpochMs = 1_800_000_000_000;
+    const unexpiredExpireAtEpochMs = unexpiredBaseEpochMs + 3_600_000;
+    const first = computeCoalescedRtcTopologyGroupRevisionWork({
+      aggregateRef: GROUP_REF,
+      groupSnapshot: createGroupSnapshot(4, 3),
+      requestedAtEpochMs: unexpiredBaseEpochMs,
+      expireAtEpochMs: unexpiredExpireAtEpochMs,
+      recomputeDebounceMs: DEBOUNCE_MS,
+      senderId: 'server-1',
+      previousEntry: null,
+    });
+    const second = computeCoalescedRtcTopologyGroupRevisionWork({
+      aggregateRef: GROUP_REF,
+      groupSnapshot: createGroupSnapshot(4, 5),
+      requestedAtEpochMs: unexpiredBaseEpochMs + 200,
+      expireAtEpochMs: unexpiredExpireAtEpochMs + 200,
+      recomputeDebounceMs: DEBOUNCE_MS,
+      senderId: 'server-1',
+      previousEntry: first.entry,
+    });
+    const merged = JSON.parse(second.entry.resource) as {
+      id: { ts: number };
+      audit: { createdTs: number };
+      constraints: { expiresAtMs: number };
+    };
+
+    expect(merged.id.ts).toBe(unexpiredBaseEpochMs);
+    expect(merged.audit.createdTs).toBe(unexpiredBaseEpochMs);
+    expect(merged.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
+    expect(isCanonicalRtcTopologyWorkEntry(second.entry)).toBe(true);
+
+    const reserved: ResourceEntry = {
+      ...second.entry,
+      status: EntityStatus.RESERVED,
+      dequeueAudit: { attempts: 1 },
+    };
+    const finalized: ResourceEntry = {
+      ...second.entry,
+      status: EntityStatus.COMPLETED,
+      dequeueAudit: { attempts: 1 },
+    };
+    expect(
+      isIdempotentHandlerFinalizedRelease(finalized, reserved, {
+        status: EntityStatus.COMPLETED,
+        delayMs: null,
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps the original message identity through a terminal revival', () => {
+    const unexpiredBaseEpochMs = 1_800_000_000_000;
+    const unexpiredExpireAtEpochMs = unexpiredBaseEpochMs + 3_600_000;
+    const first = computeCoalescedRtcTopologyGroupRevisionWork({
+      aggregateRef: GROUP_REF,
+      groupSnapshot: createGroupSnapshot(4, 3),
+      requestedAtEpochMs: unexpiredBaseEpochMs,
+      expireAtEpochMs: unexpiredExpireAtEpochMs,
+      recomputeDebounceMs: DEBOUNCE_MS,
+      senderId: 'server-1',
+      previousEntry: null,
+    });
+    const completedFirst: ResourceEntry = {
+      ...first.entry,
+      status: EntityStatus.COMPLETED,
+      dequeueAudit: { attempts: 1 },
+    };
+    const revived = computeCoalescedRtcTopologyGroupRevisionWork({
+      aggregateRef: GROUP_REF,
+      groupSnapshot: createGroupSnapshot(4, 5),
+      requestedAtEpochMs: unexpiredBaseEpochMs + 5_000,
+      expireAtEpochMs: unexpiredExpireAtEpochMs + 5_000,
+      recomputeDebounceMs: DEBOUNCE_MS,
+      senderId: 'server-1',
+      previousEntry: completedFirst,
+    });
+    const revivedMessage = JSON.parse(revived.entry.resource) as {
+      id: { ts: number };
+      constraints: { expiresAtMs: number };
+    };
+
+    expect(revived.entry.dequeueAudit.attempts).toBe(0);
+    expect(revivedMessage.id.ts).toBe(unexpiredBaseEpochMs);
+    expect(revivedMessage.constraints.expiresAtMs).toBe(unexpiredExpireAtEpochMs);
+    expect(revived.entry.audit).toEqual(first.entry.audit);
+    expect(isCanonicalRtcTopologyWorkEntry(revived.entry)).toBe(true);
   });
 
   it('keeps the newer predecessor snapshot when the incoming revision is older', () => {

@@ -9,6 +9,10 @@ import {
     isCanonicalGroupPresenceSummaryEntry,
 } from './GroupPresenceSummaryEntryContract.ts';
 import { isCanonicalRtcTopologyWorkEntry } from './RtcTopologyWorkEntryContract.ts';
+import {
+    COALESCED_APP_OUTBOX_WORK_FIELD,
+    tryReadCoalescedAppOutboxWorkEnvelope,
+} from './coalesced-app-outbox-work-envelope.ts';
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 
@@ -105,6 +109,9 @@ export function isIdempotentHandlerFinalizedRelease(
     disposition: ResourceInboxReleaseDisposition,
 ): boolean {
     try {
+        if (isCoalescedRevivalAfterHandlerFinalization(current, reserved, disposition)) {
+            return true;
+        }
         const remoteDeliveryRequeue =
             disposition.status === Resource.EntityStatus.COMPLETED &&
             disposition.delayMs === null &&
@@ -146,6 +153,40 @@ export function isIdempotentHandlerFinalizedRelease(
     } catch {
         return false;
     }
+}
+
+/**
+ * A coalesced APP_OUTBOX row may be revived in place after a handler finalized
+ * the reserved work: the revival compare-and-set matches only terminal
+ * statuses, so a same-key row whose coalesced generation advanced past the
+ * reserved entry's with a reset dequeue lifecycle proves the reservation was
+ * finalized first and then legitimately superseded. Releasing that
+ * reservation as completed is idempotent, not a lost reservation.
+ */
+function isCoalescedRevivalAfterHandlerFinalization(
+    current: ResourceEntry,
+    reserved: ResourceEntry,
+    disposition: ResourceInboxReleaseDisposition,
+): boolean {
+    if (
+        disposition.status !== Resource.EntityStatus.COMPLETED ||
+        disposition.delayMs !== null ||
+        reserved.status !== Resource.EntityStatus.RESERVED ||
+        reserved.typeId !== EnqueuedType.APP_OUTBOX ||
+        current.typeId !== EnqueuedType.APP_OUTBOX ||
+        !Resource.isKeysEqual(current.key, reserved.key) ||
+        (current.status !== Resource.EntityStatus.NEW &&
+            current.status !== Resource.EntityStatus.RETRY) ||
+        current.dequeueAudit.attempts !== 0
+    ) {
+        return false;
+    }
+    const reservedWork = tryReadCoalescedAppOutboxWorkEnvelope(reserved);
+    const currentWork = tryReadCoalescedAppOutboxWorkEnvelope(current);
+    return reservedWork !== undefined &&
+        currentWork !== undefined &&
+        currentWork.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation >
+            reservedWork.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation;
 }
 
 export function toResourceInboxReservationOptions(

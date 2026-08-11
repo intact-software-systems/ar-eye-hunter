@@ -215,6 +215,25 @@ gate artifacts stay uncommitted under `tmp/perf/`
   both revisions on the state plane (both `group-state.snapshot` broadcasts on
   both servers), which damping preserves per transition. The medium-scale
   convergence gate's recipe files are untouched.
+- **Post-gate defect found and fixed: coalesced generations broke release
+  idempotency.** Queue rows never rewrite their created-audit columns — the
+  pending merge and terminal revival compare-and-sets update resource and
+  lifecycle only — but the first M1 implementation stamped each new generation's
+  persisted message with the latest request time. From generation 2 onward the
+  row stopped satisfying the canonical work contract behind
+  `isIdempotentHandlerFinalizedRelease`, so the queue engine treated every
+  handler-finalized completion as a lost reservation and wedged the APP_OUTBOX
+  worker in 1s-backoff retry loops (deterministically reproduced by the
+  full-stack WS quick test on a single-process memory server; postgres tiers
+  ground through via reservation timeouts, which is why recipe assertions had
+  still passed). Fix: every generation now preserves the original message
+  creation and expiry identity (latest request/due times live in the coalesced
+  metadata), in both the compute builder and the coalesced service's merge
+  path, plus a revival-aware arm in the release-idempotency predicate for the
+  finalize-then-revive window. Regression coverage: canonical + release
+  contract cases in the coalesced unit suite and
+  `coalesced-revival-release-contract.test.ts`; the WS quick test passes 3/3
+  repeats with zero lost-reservation log lines after the fix.
 - **Durable replay proof pinned to the retained legacy path.** The
   deterministic topology replay proof (standalone gate workflow and the same
   step inside the release gate) drives publications with description and

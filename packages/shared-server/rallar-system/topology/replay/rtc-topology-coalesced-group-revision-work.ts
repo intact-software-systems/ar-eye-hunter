@@ -72,6 +72,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
     data: incoming,
     dequeueAudit: { attempts: 0 },
     entryAudit: null,
+    messageIdentity: null,
   });
   if (input.previousEntry === null) {
     return {
@@ -82,6 +83,7 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
         data: incoming,
         dequeueAudit: { attempts: 0 },
         entryAudit: null,
+        messageIdentity: null,
       }),
       successorEntry,
     };
@@ -109,9 +111,26 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
       dequeueAudit: {
         attempts: carriesPreviousLifecycle ? input.previousEntry.dequeueAudit.attempts : 0,
       },
-      entryAudit: carriesPreviousLifecycle ? input.previousEntry.audit : null,
+      entryAudit: input.previousEntry.audit,
+      messageIdentity: readPreviousMessageIdentity(input.previousEntry),
     }),
     successorEntry,
+  };
+}
+
+/**
+ * A stored coalesced row never rewrites its created-audit columns — both the
+ * pending merge and the terminal revival compare-and-set update the resource
+ * and lifecycle only. Every later generation must therefore keep the original
+ * message creation and expiry identity, or the row stops satisfying the
+ * canonical work contract that release idempotency checks. The latest request
+ * and due times live in the coalesced metadata, not the message identity.
+ */
+function readPreviousMessageIdentity(previousEntry: ResourceEntry): CoalescedMessageIdentity {
+  const message = JSON.parse(previousEntry.resource) as ALMessage;
+  return {
+    tsEpochMs: message.id.ts,
+    expiresAtEpochMs: message.constraints?.expiresAtMs ?? null,
   };
 }
 
@@ -170,12 +189,18 @@ function readPreviousCoalescedGroupRevisionEnvelope(
   return envelope;
 }
 
+interface CoalescedMessageIdentity {
+  readonly tsEpochMs: number;
+  readonly expiresAtEpochMs: number | null;
+}
+
 interface ToCoalescedGroupRevisionEntryInput {
   readonly input: RtcTopologyCoalescedGroupRevisionInput;
   readonly resourceId: string;
   readonly data: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>;
   readonly dequeueAudit: Readonly<{ attempts: number }>;
   readonly entryAudit: ResourceEntry['audit'] | null;
+  readonly messageIdentity: CoalescedMessageIdentity | null;
 }
 
 function toCoalescedGroupRevisionEntry(
@@ -191,6 +216,10 @@ function toCoalescedGroupRevisionEntry(
   });
   const metadata = data[COALESCED_APP_OUTBOX_WORK_FIELD];
   const messageId = `${resourceId}:g${metadata.generation}`;
+  const messageTsEpochMs = entryInput.messageIdentity?.tsEpochMs ?? input.requestedAtEpochMs;
+  const messageExpiresAtEpochMs = entryInput.messageIdentity
+    ? entryInput.messageIdentity.expiresAtEpochMs
+    : input.expireAtEpochMs;
   const envelope: CoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork> = {
     type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
     topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
@@ -204,11 +233,13 @@ function toCoalescedGroupRevisionEntry(
     id: {
       v: 2,
       msgId: messageId,
-      ts: input.requestedAtEpochMs,
+      ts: messageTsEpochMs,
       senderId: createdBy,
     },
     route: key,
-    constraints: { expiresAtMs: input.expireAtEpochMs },
+    ...(messageExpiresAtEpochMs === null
+      ? {}
+      : { constraints: { expiresAtMs: messageExpiresAtEpochMs } }),
     ordering: {
       orderingKey: key.contextId,
       epoch: causalRevision.groupRevision,
@@ -226,11 +257,11 @@ function toCoalescedGroupRevisionEntry(
     },
     audit: {
       createdBy,
-      createdTs: input.requestedAtEpochMs,
+      createdTs: messageTsEpochMs,
     },
   };
   const isDue = metadata.dueAtEpochMs <= input.requestedAtEpochMs;
-  const createdTs = Temporal.Instant.fromEpochMilliseconds(input.requestedAtEpochMs)
+  const createdTs = Temporal.Instant.fromEpochMilliseconds(messageTsEpochMs)
     .toZonedDateTimeISO('UTC')
     .toPlainDateTime();
   return {

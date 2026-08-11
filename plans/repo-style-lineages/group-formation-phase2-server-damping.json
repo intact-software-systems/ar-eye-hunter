@@ -40,6 +40,16 @@
       "targets": [
         "packages/shared-server/rallar-system/topology/replay/finish-rtc-topology-work.ts"
       ]
+    },
+    {
+      "mergeBase": "1e5f5e55e6ff94c016bfe2cc11af92952a30e32f",
+      "source": {
+        "path": "packages/shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts",
+        "blob": "274e6b826b57ae6406ed10a8a627d2c0cb1a39ca"
+      },
+      "targets": [
+        "packages/shared/queuebox/coalesced-app-outbox-work-envelope.ts"
+      ]
     }
   ]
 }

@@ -320,6 +320,16 @@ retained path they were authored against; the durable replay machinery itself
 to the damped contract (fingerprint-affecting drivers, revision-exact
 correlation) is a recorded follow-up issue.
 
+Recorded delta (implementation): coalesced work generations must preserve the
+original persisted-message creation and expiry identity, because queue rows
+never rewrite their created-audit columns and the release-idempotency
+predicate proves handler finalization through the canonical work contract.
+The first M1 cut stamped each generation with the latest request time, which
+wedged the APP_OUTBOX worker in lost-reservation retry loops from generation
+2 onward (caught post-gate by the full-stack WS quick test; fixed in the
+compute builder, the coalesced service merge path, and with a revival-aware
+release-idempotency arm; details in the phase-2 results document).
+
 Recorded delta (implementation): the branch-CI changed-style gate rejects
 worsened file-length and layout findings, so the damping additions that had
 grown pre-existing large files were extracted into feature modules instead:

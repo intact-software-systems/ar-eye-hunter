@@ -6,9 +6,16 @@ import {
 } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
-    COMPLETED_STATUSES,
+    COALESCED_APP_OUTBOX_WORK_FIELD,
+    type CoalescedAppOutboxWorkData,
+    type CoalescedAppOutboxWorkEnvelope,
+    type CoalescedAppOutboxWorkMetadata,
+    isMutableCoalescedStatus,
+    isTerminalCoalescedStatus,
+    tryReadCoalescedAppOutboxWorkEnvelope,
+} from '@shared/queuebox/coalesced-app-outbox-work-envelope.ts';
+import {
     EntityStatus,
-    isFailed,
     type Key,
     type ResourceEntry,
 } from '@shared/queuebox/ResourceEntry.ts';
@@ -24,29 +31,15 @@ import {
     replaceFinishedResourceEntryIfMatch,
 } from '../../postgres/resource-inbox/resource-inbox-finished-replacement.ts';
 
-export const COALESCED_APP_OUTBOX_WORK_FIELD = '__rallarCoalescedWork';
-
-export type CoalescedAppOutboxWorkMetadata = Readonly<{
-    generation: number;
-    requestedAtEpochMs: number;
-    dueAtEpochMs: number;
-    reasons: readonly string[];
-}>;
-
-export type CoalescedAppOutboxWorkData<T extends object> =
-    & T
-    & Readonly<{
-    [COALESCED_APP_OUTBOX_WORK_FIELD]: CoalescedAppOutboxWorkMetadata;
-}>;
-
-export type CoalescedAppOutboxWorkEnvelope<T extends object> = Readonly<{
-    type: string;
-    topicId: string;
-    resourceId: string;
-    contextId: string;
-    senderId: string;
-    data: CoalescedAppOutboxWorkData<T>;
-}>;
+export {
+    COALESCED_APP_OUTBOX_WORK_FIELD,
+    type CoalescedAppOutboxWorkData,
+    type CoalescedAppOutboxWorkEnvelope,
+    type CoalescedAppOutboxWorkMetadata,
+    isMutableCoalescedStatus,
+    isTerminalCoalescedStatus,
+    tryReadCoalescedAppOutboxWorkEnvelope,
+};
 
 export type CoalescedAppOutboxWorkMerge<T extends object> = (
     existing: CoalescedAppOutboxWorkData<T>,
@@ -227,7 +220,7 @@ export class CoalescedAppOutboxWorkService {
 
                 return {
                     ...this.toScheduledEntry(
-                        nextEntry,
+                        this.toLifecyclePreservingEntry(nextEntry, previous),
                         nextEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD]
                             .dueAtEpochMs,
                         now,
@@ -321,6 +314,32 @@ export class CoalescedAppOutboxWorkService {
         );
     }
 
+    /**
+     * A merge keeps the predecessor row's entry audit, so the persisted
+     * message must keep the predecessor's creation and expiry identity or the
+     * merged entry stops satisfying the canonical work contract that release
+     * idempotency checks. The latest request and due times live in the
+     * coalesced metadata, not the message identity.
+     */
+    private toLifecyclePreservingEntry(
+        entry: ResourceEntry,
+        previous: ResourceEntry,
+    ): ResourceEntry {
+        const message = JSON.parse(entry.resource) as ALMessage;
+        const previousMessage = JSON.parse(previous.resource) as ALMessage;
+        const identityPreserved: ALMessage = {
+            ...message,
+            id: { ...message.id, ts: previousMessage.id.ts },
+            ...(previousMessage.constraints === undefined
+                ? {}
+                : { constraints: previousMessage.constraints }),
+            ...(previousMessage.audit === undefined
+                ? {}
+                : { audit: previousMessage.audit }),
+        };
+        return { ...entry, resource: JSON.stringify(identityPreserved) };
+    }
+
     private toScheduledEntry(
         entry: ResourceEntry,
         dueAtEpochMs: number,
@@ -346,53 +365,8 @@ export class CoalescedAppOutboxWorkService {
     }
 }
 
-export function tryReadCoalescedAppOutboxWorkEnvelope<T extends object>(
-    entry: ResourceEntry,
-): CoalescedAppOutboxWorkEnvelope<T> | undefined {
-    try {
-        const message = JSON.parse(entry.resource) as ALMessage;
-        const envelope = JSON.parse(
-            message.payload.resource,
-        ) as CoalescedAppOutboxWorkEnvelope<T>;
-        return isCoalescedEnvelope(envelope) ? envelope : undefined;
-    } catch {
-        return undefined;
-    }
-}
-
 function sameKey(left: Key, right: Key): boolean {
     return left.topicId === right.topicId &&
         left.resourceId === right.resourceId &&
         left.contextId === right.contextId;
-}
-
-export function isTerminalCoalescedStatus(status: EntityStatus): boolean {
-    return COMPLETED_STATUSES.has(status) || isFailed(status);
-}
-
-export function isMutableCoalescedStatus(status: EntityStatus): boolean {
-    return status === EntityStatus.NEW || status === EntityStatus.RETRY;
-}
-
-function isCoalescedEnvelope(
-    value: unknown,
-): value is CoalescedAppOutboxWorkEnvelope<object> {
-    if (!value || typeof value !== 'object') {
-        return false;
-    }
-
-    const maybe = value as Partial<CoalescedAppOutboxWorkEnvelope<object>>;
-    const data = maybe.data as Record<string, unknown> | undefined;
-    const metadata = data?.[COALESCED_APP_OUTBOX_WORK_FIELD] as
-        | Partial<CoalescedAppOutboxWorkMetadata>
-        | undefined;
-
-    return typeof maybe.type === 'string' &&
-        typeof maybe.topicId === 'string' &&
-        typeof maybe.resourceId === 'string' &&
-        typeof maybe.contextId === 'string' &&
-        typeof maybe.senderId === 'string' &&
-        typeof metadata?.generation === 'number' &&
-        typeof metadata.requestedAtEpochMs === 'number' &&
-        typeof metadata.dueAtEpochMs === 'number';
 }
