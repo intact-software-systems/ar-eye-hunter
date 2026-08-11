@@ -2771,9 +2771,34 @@ function executeBlackBoxRecursive(
         })
         .then(data => {
             const endedAtEpochMs = Date.now();
-            return executeNext({ ...data, startedAtEpochMs, endedAtEpochMs,
-                durationMs: endedAtEpochMs - startedAtEpochMs });
+            return executeNext(withMaxDurationBound({ ...data, startedAtEpochMs, endedAtEpochMs,
+                durationMs: endedAtEpochMs - startedAtEpochMs }, interactionWithConfig));
         });
+}
+
+// A bound never masks the step's own failure: only a step that succeeded and
+// overran expect.maxDurationMs is flipped, keeping its original actual data.
+function withMaxDurationBound(interactionData: any, interactionWithConfig: any): any {
+    const response = toExecutableInteraction(interactionWithConfig)?.response;
+    const maxDurationMs = Number.parseInt(String(response?.maxDurationMs ?? ''), 10);
+
+    if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
+        return interactionData;
+    }
+
+    if (interactionData.status !== SUCCESS || interactionData.durationMs <= maxDurationMs) {
+        return {
+            ...interactionData,
+            maxDurationMs,
+        };
+    }
+
+    return {
+        ...interactionData,
+        status: FAILURE,
+        result: 'Step duration exceeded expect.maxDurationMs',
+        maxDurationMs,
+    };
 }
 
 function closeAllWsConnections(context: any): void {

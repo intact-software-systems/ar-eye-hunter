@@ -238,6 +238,10 @@ Common fields:
   fails
 - `expect.body`: expected response JSON
 - `expect.bodyAnyOf`: accepted response body shapes
+- `expect.maxDurationMs`: fail the step when its measured `durationMs` exceeds
+  the bound; a bound never masks the step's own failure, and it also applies to
+  WS steps. Use it for smoke bounds only — do not put latency SLOs into
+  convergence gates
 - `expect.comparison`: comparison mode (`compatible` default, `compatible-structure`,
   `compatible-complete`, `exact-structure`, `exact`); `compatible-complete` keeps
   extra object keys tolerated but rejects unexpected array elements, closing the

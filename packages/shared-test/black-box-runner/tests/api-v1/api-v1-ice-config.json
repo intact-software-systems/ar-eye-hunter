@@ -106,6 +106,7 @@
       },
       "expect": {
         "status": 200,
+        "maxDurationMs": 10000,
         "body": {
           "iceServers": [],
           "expiresAtEpochMs": "integer"

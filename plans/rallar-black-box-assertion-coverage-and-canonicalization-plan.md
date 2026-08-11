@@ -17,7 +17,7 @@ Status: in execution as a stacked PR series based on
 | W3 comparators + `compatible-complete` | implemented; in review | `codex/black-box-w3-comparators` |
 | W4 pure-API recipes | implemented; in review | `codex/black-box-w4-pure-api-recipes` |
 | W5 `expect.headers` | implemented; in review | `codex/black-box-w5-expect-headers` |
-| W6 `expect.maxDurationMs` | not started | — |
+| W6 `expect.maxDurationMs` | implemented; in review | `codex/black-box-w6-max-duration` |
 | W7 observability-routed evidence plan | not started (plan-only) | — |
 | W8 recipe tiering | not started | — |
 
