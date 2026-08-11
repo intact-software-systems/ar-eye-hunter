@@ -46,7 +46,7 @@ import {
 import {
   computeCoalescedRtcTopologyGroupRevisionWork,
   toRtcTopologyCoalescedGroupRevisionResourceId,
-} from '../../services/rtc-topology-coalesced-group-revision-work.ts';
+} from '../../topology/replay/rtc-topology-coalesced-group-revision-work.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../services/rtc-topology-outbox-entry.ts';
 import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
 import { groupStateGroupStorageKey } from '../persistence/group-state-storage-keys.ts';

@@ -46,7 +46,7 @@ describe('API-v1 state-write recipe evidence', () => {
         const terminalNames = [
             'assertPrimaryExactRevisions',
             'assertTertiaryExactRevisions',
-            'assertTopologyPayloadsAcrossPrimaryAndTertiary',
+            'assertSnapshotPayloadsAcrossPrimaryAndTertiary',
             'closeAliceWebSocket',
             'closeBobWebSocket',
             'logoutAliceThroughPrimary',
@@ -58,25 +58,23 @@ describe('API-v1 state-write recipe evidence', () => {
 
         const assertionSteps = recipe.steps.slice(-terminalNames.length, -4);
         expect(assertionSteps[0].actual).toEqual({
-            firstRevision: '{primaryFirstTopology.sourceGroupStateCausalRevision.groupRevision}',
-            secondRevision: '{primarySecondTopology.sourceGroupStateCausalRevision.groupRevision}',
+            firstRevision: '{primaryFirstSnapshot.causalRevision.groupRevision}',
+            secondRevision: '{primarySecondSnapshot.causalRevision.groupRevision}',
         });
-        const groupRef = {
+        const group = {
             applicationId: 'app', workspaceId: 'workspace', groupId: 'group',
         };
-        const topology = (groupRevision: number, presenceRevision: number) => ({
-            sourceGroupStateCausalRevision: { groupRevision, presenceRevision },
-            state: 'active', version: 3, groupRef,
-            activeSessionIds: ['alice-session', 'bob-session'],
+        const snapshot = (groupRevision: number, presenceRevision: number) => ({
+            causalRevision: { groupRevision, presenceRevision },
+            group,
         });
         const variables = {
             applicationId: 'app', workspaceId: 'workspace', groupId: 'group',
-            aliceSessionId: 'alice-session', bobSessionId: 'bob-session',
             roleMutationRevision: 3, groupMutationRevision: 4,
-            primaryFirstTopology: topology(3, 4),
-            primarySecondTopology: topology(4, 5),
-            tertiaryFirstTopology: topology(4, 5),
-            tertiarySecondTopology: topology(3, 4),
+            primaryFirstSnapshot: snapshot(3, 7),
+            primarySecondSnapshot: snapshot(4, 8),
+            tertiaryFirstSnapshot: snapshot(4, 8),
+            tertiarySecondSnapshot: snapshot(3, 7),
         };
         const interactions = [
             ...assertionSteps.map((step, index) => ({

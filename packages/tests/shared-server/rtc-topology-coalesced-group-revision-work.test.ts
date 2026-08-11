@@ -13,7 +13,7 @@ import {
   computeCoalescedRtcTopologyGroupRevisionWork,
   mergeRtcTopologyGroupRevisionWork,
   toRtcTopologyCoalescedGroupRevisionResourceId,
-} from '@shared-server/rallar-system/services/rtc-topology-coalesced-group-revision-work.ts';
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-coalesced-group-revision-work.ts';
 import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import { computeRtcTopologyInputFingerprint } from '@shared-server/rallar-system/topology/replay/rtc-topology-input-fingerprint.ts';
 import {

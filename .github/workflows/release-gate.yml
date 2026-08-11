@@ -122,6 +122,12 @@ jobs:
 
       - name: Run deterministic topology replay proof
         uses: ./.github/actions/api-v1-black-box-test
+        # The replay proof pins the legacy per-command publication contract
+        # (one durable publication per mutation), which damped coalescing and
+        # the fingerprint change gate intentionally eliminate; it runs against
+        # the retained legacy path until adapted to the damped contract.
+        env:
+          RALLAR_GROUP_FORMATION_DAMPING: legacy
         with:
           backend: postgres
           api-port: '18080'

@@ -1,22 +1,28 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
   fromCanonicalGroupTopologyConfigPatch,
-  isPreserveOnlyCanonicalGroupTopologyConfigPatch,
 } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
 import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
-import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import {
+  RuntimeStateWriteConflictError,
+} from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
   hashRtcTopologyExecutionCommand,
   type RtcTopologyPublication,
   toRtcTopologyPublicationId,
 } from '../../repositories/RtcTopologyPublicationRepository.ts';
-import type { RtcTopologyExecutionRepository } from '../../repositories/RtcTopologyExecutionRepository.ts';
+import type {
+  RtcTopologyExecutionRepository,
+} from '../../repositories/RtcTopologyExecutionRepository.ts';
+import {
+  finishRtcTopologyReservation,
+  finishRtcTopologyWork,
+} from './finish-rtc-topology-work.ts';
 import type { RtcTopologyDeliveryAppendPort } from './rtc-topology-delivery-append-port.ts';
 import { RtcTopologyDeliveryLeaseLostError } from './rtc-topology-delivery-stream-service.ts';
 import {
@@ -36,7 +42,9 @@ import {
 } from '../../services/rtc-topology-mutations.ts';
 import { writeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyWorkRuntime } from '../../services/RtcTopologyOutboxWork.ts';
-import { COALESCED_APP_OUTBOX_WORK_FIELD } from '../../services/CoalescedAppOutboxWorkService.ts';
+import {
+  isChangeGatedGroupRevisionWork,
+} from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeRtcTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
 import {
   type PersistedRtcTopologyWork,
@@ -260,14 +268,6 @@ async function computeAcceptedRtcTopologyWork(
   };
 }
 
-function isChangeGatedGroupRevisionWork(work: PersistedRtcTopologyWork): boolean {
-  return (
-    work.kind === 'group-revision' &&
-    work[COALESCED_APP_OUTBOX_WORK_FIELD] !== undefined &&
-    isPreserveOnlyCanonicalGroupTopologyConfigPatch(work.requestOptions)
-  );
-}
-
 async function writeAcceptedRtcTopologyWork(
   options: RtcTopologyWorkHandlerOptions,
   entry: ResourceEntry,
@@ -360,27 +360,6 @@ async function writePublicationDelivery(
     throw new RtcTopologyDeliveryLeaseLostError(
       `RTC topology publisher stream ${delivery.publisherStreamId} lost its lease`,
     );
-  }
-}
-
-async function finishRtcTopologyWork(database: PSqlSql, entry: ResourceEntry): Promise<void> {
-  await runInTransaction(database, async (transaction) => {
-    await finishRtcTopologyReservation(transaction, entry);
-  });
-}
-
-async function finishRtcTopologyReservation(
-  transaction: PSqlTransactionSql,
-  entry: ResourceEntry,
-): Promise<void> {
-  const finished = await new ResourceInboxRepository(transaction).finishReserved(
-    entry.key,
-    entry.dequeueAudit.attempts,
-    EntityStatus.COMPLETED,
-    new Date(),
-  );
-  if (!finished) {
-    throw new RuntimeStateWriteConflictError();
   }
 }
 

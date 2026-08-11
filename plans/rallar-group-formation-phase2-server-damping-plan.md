@@ -307,6 +307,34 @@ on the state plane (both `group-state.snapshot` broadcasts on both servers),
 which damping preserves per transition. The medium-scale gate's recipe files
 are untouched. Details in the phase-2 results document.
 
+Recorded delta (implementation): the deterministic durable-topology replay
+proof (`api-v1-topology-replay-gate.yml` and the same step inside
+`release-gate.yml`) pins the legacy per-command publication contract: its
+drivers are description and member-role mutations, and it asserts exactly one
+durable publisher append per mutation plus a per-command publication message
+id and a presence-revision bump per expansion. The damped default
+intentionally eliminates all three for non-topology-affecting mutations, so
+both proof steps now run with `RALLAR_GROUP_FORMATION_DAMPING: legacy` — the
+retained path they were authored against; the durable replay machinery itself
+(streams, cursors, hydration) is unchanged by this phase. Adapting the proof
+to the damped contract (fingerprint-affecting drivers, revision-exact
+correlation) is a recorded follow-up issue.
+
+Recorded delta (implementation): the branch-CI changed-style gate rejects
+worsened file-length and layout findings, so the damping additions that had
+grown pre-existing large files were extracted into feature modules instead:
+`state-sync/state-sync-payload.ts` and `state-sync/validate-state-sync.ts`
+(from the publisher/routing pair), `topology/rallar-rtc-topology-metrics.ts`
+(from the topology service), `topology/replay/finish-rtc-topology-work.ts`
+(from the work handler), `postgres/resource-inbox/resource-inbox-finished-replacement.ts`
+(the terminal-revival CAS as a standalone function; `ResourceInboxRepository`
+is byte-identical to main), and the coalesced group-revision work module now
+lives in `topology/replay/` beside its consumer and owns
+`isChangeGatedGroupRevisionWork` plus `DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS`.
+Structural-lineage manifests in
+`plans/repo-style-lineages/group-formation-phase2-server-damping.json` map
+the extractions for the changed-style checker.
+
 Out of scope (later phases per the program plan): delta dissemination and
 read-through (Phase 3), join admission control (Phase 3), incremental
 planning/hysteresis (Phase 4), RTT threshold refinement (Phase 4, M8),

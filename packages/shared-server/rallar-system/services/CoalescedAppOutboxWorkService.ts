@@ -20,6 +20,9 @@ import {
 } from './app-inbox-queue-key.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import {
+    replaceFinishedResourceEntryIfMatch,
+} from '../../postgres/resource-inbox/resource-inbox-finished-replacement.ts';
 
 export const COALESCED_APP_OUTBOX_WORK_FIELD = '__rallarCoalescedWork';
 
@@ -117,11 +120,11 @@ export class CoalescedAppOutboxWorkService {
             );
         }
         if (isTerminalCoalescedStatus(expected.status)) {
-            const revived = await repository.replaceFinishedIfMatch(
+            const revived = await replaceFinishedResourceEntryIfMatch(transaction, {
                 expected,
-                computed.entry,
+                next: computed.entry,
                 expectedGeneration,
-            );
+            });
             if (revived !== null) {
                 return {
                     action: 'updated',

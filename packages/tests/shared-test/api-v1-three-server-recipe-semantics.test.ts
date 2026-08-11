@@ -82,7 +82,9 @@ describe('API-v1 three-server recipe semantics', () => {
     expect(allSteps.find((step) => step.name === 'updateGroupThroughSecondary')).toMatchObject({
       connection: 'apiSecondary',
     });
-    expect(allSteps.find((step) => step.name === 'waitForBothRevisionsOnTertiary')).toMatchObject({
+    expect(
+      allSteps.find((step) => step.name === 'waitForBothRevisionSnapshotsOnTertiary'),
+    ).toMatchObject({
       type: 'ws.wait',
       connection: 'wsTertiary',
     });
@@ -147,20 +149,57 @@ describe('API-v1 three-server recipe semantics', () => {
       },
     });
 
-    for (const stepName of ['waitForBothRevisionsOnPrimary', 'waitForBothRevisionsOnTertiary']) {
+    for (const [stepName, firstOutput, secondOutput] of [
+      [
+        'waitForBothRevisionSnapshotsOnPrimary',
+        'primaryFirstSnapshotPayload',
+        'primarySecondSnapshotPayload',
+      ],
+      [
+        'waitForBothRevisionSnapshotsOnTertiary',
+        'tertiaryFirstSnapshotPayload',
+        'tertiarySecondSnapshotPayload',
+      ],
+    ] as const) {
       expect(allSteps.find((step) => step.name === stepName)).toMatchObject({
+        request: {
+          outputs: {
+            [firstOutput]: 'matchedMessages.0.matchedMessage.data.payload.resource',
+            [secondOutput]: 'matchedMessages.1.matchedMessage.data.payload.resource',
+          },
+        },
         expect: {
+          consume: true,
           ordered: false,
           messages: [
             {
-              targets: { minSnapshotVersion: '{roleMutationRevision}' },
-              route: { topicId: 'overlay.topology', contextId: '{groupId}' },
-              payload: { typeId: 'overlay.topology' },
+              route: { topicId: 'group-state.snapshot' },
+              payload: { typeId: 'group-state.snapshot' },
             },
             {
-              targets: { minSnapshotVersion: '{groupMutationRevision}' },
-              route: { topicId: 'overlay.topology', contextId: '{groupId}' },
-              payload: { typeId: 'overlay.topology' },
+              route: { topicId: 'group-state.snapshot' },
+              payload: { typeId: 'group-state.snapshot' },
+            },
+          ],
+        },
+      });
+    }
+    for (const [assertName, firstActual] of [
+      ['assertPrimaryExactRevisions', '{primaryFirstSnapshot.causalRevision.groupRevision}'],
+      ['assertTertiaryExactRevisions', '{tertiaryFirstSnapshot.causalRevision.groupRevision}'],
+    ] as const) {
+      expect(allSteps.find((step) => step.name === assertName)).toMatchObject({
+        type: 'assert',
+        actual: { firstRevision: firstActual },
+        expect: {
+          anyOf: [
+            {
+              firstRevision: '{roleMutationRevision}',
+              secondRevision: '{groupMutationRevision}',
+            },
+            {
+              firstRevision: '{groupMutationRevision}',
+              secondRevision: '{roleMutationRevision}',
             },
           ],
         },

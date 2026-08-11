@@ -4,14 +4,17 @@ import { EnqueuedType } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { readGroupCausalRevision, readGroupStateRevision } from '@shared/api/group-client-views.ts';
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
+import {
+  isPreserveOnlyCanonicalGroupTopologyConfigPatch,
+  toCanonicalGroupTopologyConfigPatch,
+} from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
-import { AppOutboxType } from './AppOutboxService.ts';
-import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
+import { groupStateGroupStorageKey } from '../../group-state-storage-keys.ts';
+import { AppOutboxType } from '../../services/AppOutboxService.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
 import {
   COALESCED_APP_OUTBOX_WORK_FIELD,
   type CoalescedAppOutboxWorkData,
@@ -19,9 +22,12 @@ import {
   type ComputedCoalescedAppOutboxWork,
   isMutableCoalescedStatus,
   tryReadCoalescedAppOutboxWorkEnvelope,
-} from './CoalescedAppOutboxWorkService.ts';
-import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from './rtc-topology-outbox-entry.ts';
-import type { RtcTopologyGroupRevisionWork } from './RtcTopologyOutboxWork.ts';
+} from '../../services/CoalescedAppOutboxWorkService.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../services/rtc-topology-outbox-entry.ts';
+import type { RtcTopologyGroupRevisionWork } from '../../services/RtcTopologyOutboxWork.ts';
+import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';
+
+export const DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS = 500;
 
 export interface RtcTopologyCoalescedGroupRevisionInput {
   readonly aggregateRef: GroupRef;
@@ -109,6 +115,19 @@ export function computeCoalescedRtcTopologyGroupRevisionWork(
   };
 }
 
+/**
+ * The M3 change gate applies only to coalesced group-revision recomputes whose
+ * request carries a preserve-only topology-config patch; explicit reconfigures
+ * and legacy per-command work always rebuild.
+ */
+export function isChangeGatedGroupRevisionWork(work: PersistedRtcTopologyWork): boolean {
+  return (
+    work.kind === 'group-revision' &&
+    work[COALESCED_APP_OUTBOX_WORK_FIELD] !== undefined &&
+    isPreserveOnlyCanonicalGroupTopologyConfigPatch(work.requestOptions)
+  );
+}
+
 export function mergeRtcTopologyGroupRevisionWork(
   existing: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>,
   incoming: CoalescedAppOutboxWorkData<RtcTopologyGroupRevisionWork>,
@@ -144,7 +163,8 @@ function readPreviousCoalescedGroupRevisionEnvelope(
     tryReadCoalescedAppOutboxWorkEnvelope<RtcTopologyGroupRevisionWork>(previousEntry);
   if (!envelope || envelope.data.kind !== 'group-revision') {
     throw new TypeError(
-      `Coalesced group-revision predecessor is not coalesced topology work: ${previousEntry.key.resourceId}`,
+      'Coalesced group-revision predecessor is not coalesced topology work: ' +
+        previousEntry.key.resourceId,
     );
   }
   return envelope;

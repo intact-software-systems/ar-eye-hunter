@@ -1,4 +1,12 @@
+import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type {
+  GroupPresenceSummaryTopologyIntent,
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+import {
+  DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS,
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-coalesced-group-revision-work.ts';
 import type { EnvReader } from '../../db/database-config.ts';
+import { readApiTopologyRecomputeDebounceMs } from '../../services/rtc-topology-config.ts';
 
 export const GROUP_FORMATION_DAMPING_MODES = ['damped', 'legacy'] as const;
 
@@ -24,6 +32,21 @@ export function readApiGroupFormationDampingConfig(
       GROUP_FORMATION_DAMPING_MODES.join(', ')
     }. Received: ${value}`,
   );
+}
+
+export function readApiGroupFormationTopologyIntent(
+  outboxQueueReader: OutboxQueueReader,
+  env: EnvReader = Deno.env,
+): GroupPresenceSummaryTopologyIntent {
+  if (readApiGroupFormationDampingConfig(env).damping === 'legacy') {
+    return { damping: 'legacy' };
+  }
+  return {
+    damping: 'damped',
+    outboxQueueReader,
+    recomputeDebounceMs: readApiTopologyRecomputeDebounceMs(env) ??
+      DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS,
+  };
 }
 
 export function groupFormationDampingStartupLogLine(

@@ -597,11 +597,7 @@ function createServiceRuntime(
     timing,
     serviceId,
   }));
-  return {
-    client, group, inbox,
-    resilience: createBenchmarkResilience(),
-    serviceId,
-  };
+  return { client, group, inbox, resilience: createBenchmarkResilience(), serviceId };
 }
 
 function createBenchmarkResilience(): ResilienceDto {

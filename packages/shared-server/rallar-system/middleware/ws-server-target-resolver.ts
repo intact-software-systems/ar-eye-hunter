@@ -1,7 +1,10 @@
 import { type ALMessage, readALTargetGroupRef } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
-import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
+import {
+  compareGroupCausalRevision,
+  readGroupCausalRevision,
+} from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
   WsServerResolvedRecipient,
@@ -9,10 +12,8 @@ import type {
 } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { isClientSnapshotSessionLive, isGroupSnapshotSessionLive } from '../snapshot-presence.ts';
-import {
-  readGroupSnapshotStateSyncPayload,
-  resolveStateSyncRecipients,
-} from '../state-sync-routing.ts';
+import { readGroupSnapshotStateSyncPayload } from '../state-sync/state-sync-payload.ts';
+import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
 import type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
 
 export function createWsServerTargetResolver(

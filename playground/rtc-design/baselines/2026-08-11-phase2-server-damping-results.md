@@ -215,3 +215,13 @@ gate artifacts stay uncommitted under `tmp/perf/`
   both revisions on the state plane (both `group-state.snapshot` broadcasts on
   both servers), which damping preserves per transition. The medium-scale
   convergence gate's recipe files are untouched.
+- **Durable replay proof pinned to the retained legacy path.** The
+  deterministic topology replay proof (standalone gate workflow and the same
+  step inside the release gate) drives publications with description and
+  member-role mutations and asserts one durable publisher append per mutation
+  with a per-command publication message id — the legacy contract this phase
+  intentionally retires under the damped default. Both proof steps now run
+  with `RALLAR_GROUP_FORMATION_DAMPING: legacy`; the durable replay machinery
+  they prove (publisher streams, replay cursors, reconnect hydration) is
+  untouched by damping. Adapting the proof's drivers and correlation to the
+  damped contract is tracked as a follow-up issue.

@@ -74,7 +74,7 @@ import {
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
 import {
   computeCoalescedRtcTopologyGroupRevisionWork,
-} from '@shared-server/rallar-system/services/rtc-topology-coalesced-group-revision-work.ts';
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-coalesced-group-revision-work.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   ClientStateEventCollisionError,

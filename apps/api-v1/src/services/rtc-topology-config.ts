@@ -20,11 +20,13 @@ export function getApiRtcTopologyServiceOptions(
       env,
       'RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS',
     ),
-    topologyRecomputeDebounceMs: readNonNegativeIntegerEnv(
-      env,
-      'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS',
-    ),
   });
+}
+
+export function readApiTopologyRecomputeDebounceMs(
+  env: EnvReader = Deno.env,
+): number | undefined {
+  return readNonNegativeIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS');
 }
 
 function compactOptions(

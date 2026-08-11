@@ -40,6 +40,13 @@ describe('RTC topology APP_OUTBOX work', () => {
       ),
       'utf8',
     );
+    const completionSource = readFileSync(
+      new URL(
+        '../../shared-server/rallar-system/topology/replay/finish-rtc-topology-work.ts',
+        import.meta.url,
+      ),
+      'utf8',
+    );
     const handlerStart = source.indexOf('export function createRtcTopologyWorkHandler');
     const handler = source.slice(handlerStart);
 
@@ -49,11 +56,23 @@ describe('RTC topology APP_OUTBOX work', () => {
     expect(handler).toMatch(/runInTransaction/);
     expect(handler).toMatch(/writeTopologyMutation\(\s*transaction/);
     expect(handler).toMatch(/appendOrValidate\(\s*transaction/);
-    expect(handler).toMatch(/new ResourceInboxRepository\(transaction\)\.finishReserved/);
+    expect(handler).toMatch(/finishRtcTopologyReservation\(transaction, entry\)/);
     expect(handler.indexOf('writeTopologyMutation')).toBeLessThan(
       handler.indexOf('appendOrValidate'),
     );
-    expect(handler.indexOf('appendOrValidate')).toBeLessThan(handler.indexOf('finishReserved'));
+    const fencedTransaction = handler.slice(
+      handler.indexOf('async function writeRtcTopologyPublicationTransaction'),
+    );
+    expect(fencedTransaction.indexOf('await write(transaction)')).toBeGreaterThanOrEqual(0);
+    expect(fencedTransaction.indexOf('await write(transaction)')).toBeLessThan(
+      fencedTransaction.indexOf('finishRtcTopologyReservation(transaction, entry)'),
+    );
+    expect(completionSource).not.toMatch(/waitForRuntimeStateWriteRetry/);
+    expect(completionSource).not.toMatch(/\bfor\s*\([^)]*attempt/);
+    expect(completionSource).toMatch(
+      /new ResourceInboxRepository\(transaction\)\.finishReserved/,
+    );
+    expect(completionSource).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
   });
 
   it('keeps each committed group revision as an immutable queue entry', async () => {

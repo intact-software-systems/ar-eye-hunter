@@ -96,11 +96,8 @@ import {
 } from './runtime/rtc-topology/rtc-topology-replay-config.ts';
 import {
   readApiGroupFormationDampingConfig,
+  readApiGroupFormationTopologyIntent,
 } from './runtime/group-formation/group-formation-damping-config.ts';
-import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
-import {
-  DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS,
-} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import {
   beginMiddlewareStartupGeneration,
   registerMiddlewareBackgroundTask,
@@ -149,14 +146,7 @@ function initialise(
   setRtcTopologyOutboxWriteSink(groupFormationMetrics.topologyOutboxWritten);
   const databaseConfig = readApiV1DatabaseBackendConfig();
   const pubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
-  const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig(
-    Deno.env,
-    databaseConfig,
-  );
-  const groupFormationDamping = readApiGroupFormationDampingConfig().damping;
-  const topologyRecomputeDebounceMs =
-    getApiRtcTopologyServiceOptions().topologyRecomputeDebounceMs ??
-      DEFAULT_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS;
+  const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig(Deno.env, databaseConfig);
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
   });
@@ -273,9 +263,10 @@ function initialise(
       outboxQueueReader,
       wakeQueueEngine,
     }) => {
+      const topologyIntent = readApiGroupFormationTopologyIntent(outboxQueueReader);
       const durable = createGroupStateService({
         runtimeRepository: runtimeStateRepository,
-        formationDamping: groupFormationDamping,
+        formationDamping: topologyIntent.damping,
         authSessionRepository,
         createGroupStateEventStore: createGroupStateEventRepository,
         serviceId: myServerId,
@@ -287,13 +278,7 @@ function initialise(
       });
       const presenceSummary = new GroupPresenceSummaryWork({
         runtimeRepository: runtimeStateRepository,
-        topologyIntent: groupFormationDamping === 'damped'
-          ? {
-            damping: 'damped',
-            outboxQueueReader,
-            recomputeDebounceMs: topologyRecomputeDebounceMs,
-          }
-          : { damping: 'legacy' },
+        topologyIntent,
         database: postgresSql,
         serviceId: myServerId,
         wakeQueue: wakeQueueEngine,
@@ -325,7 +310,7 @@ function initialise(
       const clientStateService = createCachedClientStateService({
         durable: createClientStateService({
           runtimeRepository: runtimeStateRepository,
-          formationDamping: groupFormationDamping,
+          formationDamping: readApiGroupFormationDampingConfig().damping,
           createClientStateEventStore: createClientStateEventRepository,
           serviceId: myServerId,
           timing,
