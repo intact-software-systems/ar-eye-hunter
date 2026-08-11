@@ -38,13 +38,10 @@ jobs:
           "$CANDIDATE_HEAD_SHA"
       - name: Read candidate legacy registry as data
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api \
-            repos/${{ github.repository }}/contents/docs/production-legacy-exceptions.md?ref=${{ github.event.pull_request.head.sha }} \
-            --jq .content > "$RUNNER_TEMP/production-legacy-exceptions.base64"
-          base64 --decode "$RUNNER_TEMP/production-legacy-exceptions.base64" \
-            > "$RUNNER_TEMP/production-legacy-exceptions.md"
+          CANDIDATE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          git show "$CANDIDATE_HEAD_SHA:docs/production-legacy-exceptions.md"
+          > "$RUNNER_TEMP/production-legacy-exceptions.md"
       - name: Read trusted GitHub review evidence
         env:
           GH_TOKEN: ${{ github.token }}

@@ -49,6 +49,15 @@ describe('PR human review record validator', () => {
     expect(workflow).toContain('Read candidate legacy registry as data');
     expect(workflow).toContain('gh api --paginate --slurp');
     expect(workflow).toContain('--event "$GITHUB_EVENT_PATH"');
+
+    const registryStep = workflow.slice(
+      workflow.indexOf('Read candidate legacy registry as data'),
+      workflow.indexOf('Read trusted GitHub review evidence'),
+    );
+    expect(registryStep).toContain(
+      'git show "$CANDIDATE_HEAD_SHA:docs/production-legacy-exceptions.md"',
+    );
+    expect(registryStep).not.toContain('GH_TOKEN');
   });
 
   it.each(['null', 'true', 'false', '1', '"record"', '[]'])(
@@ -501,10 +510,7 @@ interface CreateFixtureInput {
   readonly changedPaths: readonly string[];
   readonly draft?: boolean;
   readonly registry?: string;
-  readonly reviews?: readonly (
-    | Record<string, unknown>
-    | readonly Record<string, unknown>[]
-  )[];
+  readonly reviews?: readonly (Record<string, unknown> | readonly Record<string, unknown>[])[];
   readonly pathsAfterApproval?: Readonly<Record<string, readonly string[]>>;
 }
 
