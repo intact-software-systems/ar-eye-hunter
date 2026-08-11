@@ -19,7 +19,7 @@ Status: in execution as a stacked PR series based on
 | W5 `expect.headers` | implemented; in review | `codex/black-box-w5-expect-headers` |
 | W6 `expect.maxDurationMs` | implemented; in review | `codex/black-box-w6-max-duration` |
 | W7 observability-routed evidence plan | plan written; awaiting review | `codex/black-box-w7-evidence-endpoint-plan` |
-| W8 recipe tiering | not started | — |
+| W8 recipe tiering | implemented; in review | `codex/black-box-w8-recipe-tiering` |
 
 Base revalidation 2026-08-11: origin/main moved to e921c460 (#160, #162) while
 the stack bases on 7c0aaf5d (PR #161). #162 is perf-script-only — no plan

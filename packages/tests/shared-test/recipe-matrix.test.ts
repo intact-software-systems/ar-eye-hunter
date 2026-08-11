@@ -9,6 +9,7 @@ type MatrixEntry = {
     recipe: string;
     category: string;
     mode: string;
+    tier?: number;
     profiles: string[];
     expectedExitCode: number;
     artifactName?: string;
@@ -258,6 +259,26 @@ describe('black-box runner recipe matrix', () => {
         const adminEntry = crdtLiveEntries.find(entry => entry.id === 'crdt-admin-http-integrity-live');
         expect(adminEntry?.requires?.env).toContain('RALLAR_ADMIN_ACCESS_TOKEN');
         expect(adminEntry?.requires?.env).toContain('RALLAR_CRDT_DOCUMENT_KEY');
+    });
+
+    it('labels every api-v1 entry with an honest evidence tier', () => {
+        const { entries } = readMatrix();
+        const apiEntries = entries.filter(entry => entry.category === 'api-v1-black-box');
+
+        expect(apiEntries.length).toBeGreaterThan(0);
+        apiEntries.forEach(entry => {
+            const recipeText = readFileSync(path.join(runnerRoot, entry.recipe), 'utf8');
+            const usesSqlEvidence = recipeText.includes('state-write-evidence');
+
+            expect([1, 2]).toContain(entry.tier);
+            expect(entry.tier).toBe(usesSqlEvidence ? 2 : 1);
+        });
+
+        entries
+            .filter(entry => entry.category !== 'api-v1-black-box')
+            .forEach(entry => {
+                expect(entry.tier).toBeUndefined();
+            });
     });
 
     it('defines a no-browser API-v1 black-box profile', () => {
