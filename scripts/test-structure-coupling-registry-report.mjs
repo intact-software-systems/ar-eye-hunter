@@ -122,7 +122,10 @@ export function printReport({
     console.log('WARN: no candidates reported because validation did not complete successfully.');
   } else if (unclassified.length === 0) {
     console.log(
-      `PASS: all ${reportCandidates.length} current structure-coupling candidates are individually classified`,
+      [
+        `PASS: all ${reportCandidates.length} current structure-coupling candidates`,
+        'are individually classified',
+      ].join(' '),
     );
   } else {
     console.log(
