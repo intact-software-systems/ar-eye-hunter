@@ -33,6 +33,7 @@
     }
   },
   "compilerOptions": {
+    "erasableSyntaxOnly": true,
     "strict": true,
     "lib": [
       "deno.ns",

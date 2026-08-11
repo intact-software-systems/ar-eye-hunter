@@ -25,6 +25,7 @@
     "prisma": "npm:prisma@^7.8.0"
   },
   "compilerOptions": {
+    "erasableSyntaxOnly": true,
     "strict": true,
     "lib": [
       "deno.ns",
