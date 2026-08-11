@@ -121,6 +121,7 @@ export function validateFacts(facts: GroupMutationFacts): void {
       'resolvedJoinCode',
       'joinCodeVerifier',
       'internalAuthority',
+      'formationDamping',
       'authenticatedAuthority',
       'attemptCount',
     ],
@@ -140,6 +141,9 @@ export function validateFacts(facts: GroupMutationFacts): void {
   }
   if (!['none', 'expiry', 'session-cleanup'].includes(facts.internalAuthority)) {
     throw new TypeError('Group mutation internal authority is invalid');
+  }
+  if (!['damped', 'legacy'].includes(facts.formationDamping)) {
+    throw new TypeError('Group mutation formation damping is invalid');
   }
   validateAuthenticatedAuthority(facts.authenticatedAuthority);
   validateResolvedJoinCodePair(facts);

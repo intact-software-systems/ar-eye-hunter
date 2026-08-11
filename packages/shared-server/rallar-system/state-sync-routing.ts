@@ -1,8 +1,9 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { AppTopics } from '@shared/api/api-config.ts';
-import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import {
+    readALPrincipalBroadcastTarget,
+} from '@shared/al-contracts/read-al-principal-broadcast-target.ts';
+import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -13,16 +14,17 @@ import {
     isGroupSnapshotSessionLive,
     type RallarSnapshotPresenceClock,
 } from './snapshot-presence.ts';
-
-type StateSyncScope = Readonly<{
-    applicationId: string;
-    workspaceId: string;
-}>;
+import {
+    parseStateSyncPayload,
+    sameScope,
+    type StateSyncScope,
+} from './state-sync/state-sync-payload.ts';
 
 export type StateSyncRoutingOptions = Readonly<{
     findGroupSnapshotByRef?: (ref: GroupRef) => GroupSnapshot | undefined;
     findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
     readClientSnapshots?: () => readonly ClientSnapshot[];
+    readGroupSnapshots?: () => readonly GroupSnapshot[];
     now?: RallarSnapshotPresenceClock;
 }>;
 
@@ -31,6 +33,10 @@ export function resolveStateSyncRecipients(
     message: ALMessage,
     options: StateSyncRoutingOptions = {},
 ): readonly WsServerResolvedRecipient[] | undefined {
+    const principalTarget = readALPrincipalBroadcastTarget(message);
+    if (principalTarget) {
+        return resolvePrincipalRecipients(webSocketServer, principalTarget, options);
+    }
     const payload = parseStateSyncPayload(message);
     if (!payload) {
         return undefined;
@@ -107,6 +113,41 @@ export function sendStateSyncMessage(
     }
 
     return sent;
+}
+
+/**
+ * Scope 'principal' resolves at delivery time to the principal's own live
+ * sessions plus live sessions of groups the principal is an active member of.
+ * It never falls through to every open connection, unlike the legacy
+ * world-broadcast rows whose payload sniffing this branch bypasses.
+ */
+function resolvePrincipalRecipients(
+    webSocketServer: JsonWebSocketServer,
+    principalRef: ClientPrincipalRef,
+    options: StateSyncRoutingOptions,
+): readonly WsServerResolvedRecipient[] {
+    const clientSnapshots = options.readClientSnapshots?.() ??
+        clientStateSnapshotsRepository.getAllClientStateSnapshots();
+    const ownRecipients = clientSnapshots
+        .filter((snapshot) =>
+            sameScope(snapshot.principal, principalRef) &&
+            snapshot.principal.principalId === principalRef.principalId
+        )
+        .flatMap((snapshot) =>
+            toOpenClientSessionRecipients(webSocketServer, snapshot, options)
+        );
+    const groupSnapshots = options.readGroupSnapshots?.() ??
+        groupStateSnapshotsRepository.getAllGroupStateSnapshots();
+    const coGroupRecipients = groupSnapshots
+        .filter((snapshot) =>
+            sameScope(snapshot.group, principalRef) &&
+            snapshot.members.some((member) =>
+                member.principalId === principalRef.principalId &&
+                member.status === 'active'
+            )
+        )
+        .flatMap((snapshot) => resolveGroupRecipients(webSocketServer, snapshot, options));
+    return dedupRecipients([...ownRecipients, ...coGroupRecipients]);
 }
 
 function resolveScopeRecipients(
@@ -203,206 +244,6 @@ function toOpenClientSessionRecipients(
             peerId: snapshot.principal.principalId,
             connectionId: session.sessionId,
         }));
-}
-
-function parseStateSyncPayload(message: ALMessage):
-    | Readonly<{
-    kind: 'client';
-    scope: StateSyncScope;
-    snapshot?: ClientSnapshot;
-}>
-    | Readonly<{
-    kind: 'group';
-    snapshot: GroupSnapshot;
-}>
-    | Readonly<{
-    kind: 'group-directory';
-    snapshot: GroupSnapshot;
-}>
-    | Readonly<{
-    kind: 'group-event';
-    scope: StateSyncScope;
-    groupId: string;
-}>
-    | Readonly<{
-    kind: 'invalid';
-}>
-    | undefined {
-    try {
-        switch (message.payload.typeId) {
-            case AppTopics.clientStateSnapshot: {
-                const snapshot = JSON.parse(message.payload.resource);
-                if (!isClientSnapshot(snapshot)) {
-                    return { kind: 'invalid' };
-                }
-                return {
-                    kind: 'client',
-                    scope: snapshot.principal,
-                    snapshot,
-                };
-            }
-            case AppTopics.clientStateEvent: {
-                const event = JSON.parse(message.payload.resource);
-                if (!isClientEvent(event)) {
-                    return { kind: 'invalid' };
-                }
-                return {
-                    kind: 'client',
-                    scope: event,
-                };
-            }
-            case AppTopics.groupStateSnapshot: {
-                const snapshot = JSON.parse(message.payload.resource);
-                if (
-                    !isGroupSnapshot(snapshot) ||
-                    !hasMatchingExplicitGroupAudience(message, snapshot.group)
-                ) {
-                    return { kind: 'invalid' };
-                }
-                return {
-                    kind: 'group',
-                    snapshot,
-                };
-            }
-            case AppTopics.groupDirectorySnapshot: {
-                const snapshot = JSON.parse(message.payload.resource);
-                if (
-                    !isGroupSnapshot(snapshot) ||
-                    !hasMatchingExplicitGroupAudience(message, snapshot.group)
-                ) {
-                    return { kind: 'invalid' };
-                }
-                return {
-                    kind: 'group-directory',
-                    snapshot,
-                };
-            }
-            case AppTopics.groupStateEvent: {
-                const event = JSON.parse(message.payload.resource);
-                if (
-                    !isGroupEvent(event) ||
-                    !hasMatchingExplicitGroupAudience(message, event)
-                ) {
-                    return { kind: 'invalid' };
-                }
-                return {
-                    kind: 'group-event',
-                    scope: event,
-                    groupId: event.groupId,
-                };
-            }
-            case AppTopics.overlayTopology: {
-                const snapshot = JSON.parse(message.payload.resource);
-                if (
-                    !isOverlayTopologySnapshot(snapshot) ||
-                    !hasMatchingExplicitGroupAudience(message, snapshot.groupRef)
-                ) {
-                    return { kind: 'invalid' };
-                }
-                return {
-                    kind: 'group-event',
-                    scope: snapshot.groupRef,
-                    groupId: snapshot.groupRef.groupId,
-                };
-            }
-            default:
-                return undefined;
-        }
-    } catch {
-        return isStateSyncTopic(message.payload.typeId)
-            ? { kind: 'invalid' }
-            : undefined;
-    }
-}
-
-function hasMatchingExplicitGroupAudience(
-    message: ALMessage,
-    groupRef: GroupRef,
-): boolean {
-    const targets = message.targets;
-    const targetRef = targets?.mode === 'multicast'
-        ? targets.groupRef
-        : targets?.mode === 'broadcast' && targets.groupRef !== undefined
-        ? targets.groupRef
-        : undefined;
-    return targetRef === undefined ||
-        (
-            targetRef.applicationId === groupRef.applicationId &&
-            targetRef.workspaceId === groupRef.workspaceId &&
-            targetRef.groupId === groupRef.groupId
-        );
-}
-
-function sameScope(
-    left: StateSyncScope,
-    right: StateSyncScope,
-): boolean {
-    return left.applicationId === right.applicationId &&
-        (left.workspaceId ?? '') === (right.workspaceId ?? '');
-}
-
-function isStateSyncTopic(typeId: string): boolean {
-    return typeId === AppTopics.clientStateSnapshot ||
-        typeId === AppTopics.clientStateEvent ||
-        typeId === AppTopics.groupStateSnapshot ||
-        typeId === AppTopics.groupDirectorySnapshot ||
-        typeId === AppTopics.groupStateEvent ||
-        typeId === AppTopics.overlayTopology;
-}
-
-function isOverlayTopologySnapshot(
-    value: unknown,
-): value is RallarOverlayTopologySnapshot {
-    if (!isRecord(value) || !isRecord(value.groupRef)) {
-        return false;
-    }
-
-    const groupRef = value.groupRef;
-    return typeof groupRef.groupId === 'string' &&
-        hasStateSyncScope(groupRef) &&
-        typeof value.overlayId === 'string' &&
-        typeof value.topology === 'string' &&
-        isRecord(value.nextHopsBySessionId);
-}
-
-function isClientSnapshot(value: unknown): value is ClientSnapshot {
-    return isRecord(value) &&
-        isRecord(value.principal) &&
-        typeof value.principal.principalId === 'string' &&
-        hasStateSyncScope(value.principal) &&
-        Array.isArray(value.activeSessions);
-}
-
-function isClientEvent(value: unknown): value is ClientEvent {
-    return isRecord(value) &&
-        typeof value.principalId === 'string' &&
-        typeof value.snapshotVersion === 'number' &&
-        hasStateSyncScope(value);
-}
-
-function isGroupSnapshot(value: unknown): value is GroupSnapshot {
-    return isRecord(value) &&
-        isRecord(value.group) &&
-        typeof value.group.groupId === 'string' &&
-        hasStateSyncScope(value.group) &&
-        Array.isArray(value.members) &&
-        Array.isArray(value.activeSessions);
-}
-
-function isGroupEvent(value: unknown): value is GroupEvent {
-    return isRecord(value) &&
-        typeof value.groupId === 'string' &&
-        typeof value.snapshotVersion === 'number' &&
-        hasStateSyncScope(value);
-}
-
-function hasStateSyncScope(value: Record<string, unknown>): value is StateSyncScope {
-    return typeof value.applicationId === 'string' &&
-        (value.workspaceId === undefined || typeof value.workspaceId === 'string');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
 }
 
 function dedupRecipients(

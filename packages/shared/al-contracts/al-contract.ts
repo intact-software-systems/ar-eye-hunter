@@ -1,4 +1,5 @@
 import type { ALQosPolicyRequest } from './al-policy.ts';
+import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
 
 // -------------------------------------------------------
@@ -41,8 +42,9 @@ export type ALTargets =
 }>
     | Readonly<{
     mode: 'broadcast';
-    scope: 'room' | 'world' | 'all';
+    scope: 'room' | 'world' | 'all' | 'principal';
     groupRef?: GroupRef;
+    principalRef?: ClientPrincipalRef; // scope 'principal': own + co-group live sessions only
     exceptPeerIds?: readonly string[];
     minSnapshotVersion?: number;
     /** Immutable logical audience captured by authoritative server work. */
@@ -331,9 +333,7 @@ export function toALGroupTargetKey(group: string | GroupRef): string {
     ]);
 }
 
-export function readALMulticastTargetGroupRef(
-    message: ALMessage,
-): GroupRef | undefined {
+export function readALMulticastTargetGroupRef(message: ALMessage): GroupRef | undefined {
     const targets = message.targets;
     if (targets?.mode !== 'multicast') {
         return undefined;
@@ -342,9 +342,7 @@ export function readALMulticastTargetGroupRef(
     return toALGroupRef(targets.groupRef);
 }
 
-export function readALTargetGroupRef(
-    message: ALMessage,
-): GroupRef | undefined {
+export function readALTargetGroupRef(message: ALMessage): GroupRef | undefined {
     const targets = message.targets;
     if (targets?.mode === 'multicast') {
         return toALGroupRef(targets.groupRef);

@@ -95,6 +95,10 @@ import {
   readApiRtcTopologyReplayConfig,
 } from './runtime/rtc-topology/rtc-topology-replay-config.ts';
 import {
+  readApiGroupFormationDampingConfig,
+  readApiGroupFormationTopologyIntent,
+} from './runtime/group-formation/group-formation-damping-config.ts';
+import {
   beginMiddlewareStartupGeneration,
   registerMiddlewareBackgroundTask,
   shutdownMiddlewareBackgroundTasks,
@@ -142,10 +146,7 @@ function initialise(
   setRtcTopologyOutboxWriteSink(groupFormationMetrics.topologyOutboxWritten);
   const databaseConfig = readApiV1DatabaseBackendConfig();
   const pubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
-  const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig(
-    Deno.env,
-    databaseConfig,
-  );
+  const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig(Deno.env, databaseConfig);
   const groupSnapshotReadThroughCache = createGroupStateSnapshotReadThroughCache({
     groupsRepository,
   });
@@ -262,8 +263,10 @@ function initialise(
       outboxQueueReader,
       wakeQueueEngine,
     }) => {
+      const topologyIntent = readApiGroupFormationTopologyIntent(outboxQueueReader);
       const durable = createGroupStateService({
         runtimeRepository: runtimeStateRepository,
+        formationDamping: topologyIntent.damping,
         authSessionRepository,
         createGroupStateEventStore: createGroupStateEventRepository,
         serviceId: myServerId,
@@ -275,6 +278,7 @@ function initialise(
       });
       const presenceSummary = new GroupPresenceSummaryWork({
         runtimeRepository: runtimeStateRepository,
+        topologyIntent,
         database: postgresSql,
         serviceId: myServerId,
         wakeQueue: wakeQueueEngine,
@@ -306,6 +310,7 @@ function initialise(
       const clientStateService = createCachedClientStateService({
         durable: createClientStateService({
           runtimeRepository: runtimeStateRepository,
+          formationDamping: readApiGroupFormationDampingConfig().damping,
           createClientStateEventStore: createClientStateEventRepository,
           serviceId: myServerId,
           timing,

@@ -251,6 +251,7 @@ async function command(
       eventId: `event:${input.commandId}`,
       attemptCount: 1,
       expireAtEpochMs: 20_000,
+      formationDamping: 'damped',
     },
     authority,
   );

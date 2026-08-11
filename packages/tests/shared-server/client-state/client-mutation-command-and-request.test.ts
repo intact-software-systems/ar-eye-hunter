@@ -110,6 +110,7 @@ describe('client mutation command and request projection', () => {
       eventId: 'event-1',
       attemptCount: 1,
       expireAtEpochMs: 10_000,
+      formationDamping: 'damped',
     };
 
     const command = await toClientMutationCommand(input, facts, authority);

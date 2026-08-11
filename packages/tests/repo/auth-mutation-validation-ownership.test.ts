@@ -53,7 +53,9 @@ const directValidationImportOwners = [
 ] as const;
 
 describe('auth mutation validation ownership', () => {
-  it('keeps validation helpers out of the public package root', async () => {
+  // Importing the whole package root can exceed the default timeout under a
+  // fully parallel suite run; the ownership assertion itself is instant.
+  it('keeps validation helpers out of the public package root', { timeout: 20_000 }, async () => {
     const packageRoot = await import(absolute('packages/shared-server/mod.ts'));
 
     for (const name of privateValidationExports) {

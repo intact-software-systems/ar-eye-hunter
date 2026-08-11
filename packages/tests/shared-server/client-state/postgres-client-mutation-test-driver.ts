@@ -109,6 +109,7 @@ function createPostgresClientMutationExecutor(
           eventId: `postgres-client-event:${commandInput.commandId}`,
           attemptCount: attempt,
           expireAtEpochMs: options.atEpochMs + 24 * 60 * 60 * 1_000,
+          formationDamping: 'damped',
         },
         commandInput.operation === 'expireSession'
           ? toClientMutationSystemAuthority(options.serviceId)

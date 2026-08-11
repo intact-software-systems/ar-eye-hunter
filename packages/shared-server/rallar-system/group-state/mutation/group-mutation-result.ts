@@ -20,6 +20,7 @@ import type {
   GroupMutationCommand,
   GroupMutationComputed,
   GroupMutationFacts,
+  GroupMutationIdempotencyRecord,
   GroupMutationRead,
   GroupMutationReceipt,
   PresenceAdmissionCandidate,
@@ -43,6 +44,7 @@ export interface GroupMutationWriteInput {
   readonly presenceAdmission?: PresenceAdmissionCandidate | null;
   readonly eventType: GroupEventType;
   readonly eventGroup?: Group;
+  readonly presenceSummaryWork: 'enqueue' | 'none';
 }
 
 export interface RejectedGroupMutationInput {
@@ -89,18 +91,23 @@ export function computeGroupMutationWriteResult(
     command,
     facts,
   });
-  const outboxEntry = computeGroupPresenceSummaryEntry(
-    {
-      effectKind: 'group-presence-summary',
-      aggregateRef: command.aggregateRef,
-      commandId: command.commandId,
-      createdAtEpochMs: facts.nowEpochMs,
-      expireAtEpochMs: facts.expireAtEpochMs,
-      acceptedCausalRevision: causalRevision,
-      event,
-    },
-    facts.serviceId,
-  );
+  const outboxEntries =
+    input.presenceSummaryWork === 'none'
+      ? []
+      : [
+          computeGroupPresenceSummaryEntry(
+            {
+              effectKind: 'group-presence-summary',
+              aggregateRef: command.aggregateRef,
+              commandId: command.commandId,
+              createdAtEpochMs: facts.nowEpochMs,
+              expireAtEpochMs: facts.expireAtEpochMs,
+              acceptedCausalRevision: causalRevision,
+              event,
+            },
+            facts.serviceId,
+          ),
+        ];
   const receipt = receiptFor(command, facts, {
     outcome: 'applied',
     causalRevision,
@@ -108,18 +115,9 @@ export function computeGroupMutationWriteResult(
     acceptedStorageRevision:
       input.guard.operation === 'insert' ? 0 : input.guard.expectedRevision + 1,
     eventId: event.eventId,
-    outboxIds: [outboxEntry.key.resourceId],
+    outboxIds: outboxEntries.map((outboxEntry) => outboxEntry.key.resourceId),
     rejection: null,
   });
-  const idempotency =
-    command.requestId === null
-      ? null
-      : {
-          aggregateRef: command.aggregateRef,
-          requestId: command.requestId,
-          commandHash: facts.commandHash,
-          receipt,
-        };
   return {
     outcome: 'write',
     guard: input.guard,
@@ -128,8 +126,22 @@ export function computeGroupMutationWriteResult(
     presenceAdmission: input.presenceAdmission ?? null,
     event,
     receipt,
-    idempotency,
-    outboxEntries: [outboxEntry],
+    idempotency: toGroupMutationIdempotency(command, facts, receipt),
+    outboxEntries,
+  };
+}
+
+function toGroupMutationIdempotency(
+  command: GroupMutationCommand,
+  facts: GroupMutationFacts,
+  receipt: GroupMutationReceipt,
+): GroupMutationIdempotencyRecord | null {
+  if (command.requestId === null) return null;
+  return {
+    aggregateRef: command.aggregateRef,
+    requestId: command.requestId,
+    commandHash: facts.commandHash,
+    receipt,
   };
 }
 

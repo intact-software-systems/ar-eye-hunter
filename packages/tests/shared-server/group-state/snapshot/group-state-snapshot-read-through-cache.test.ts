@@ -175,10 +175,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
 
   it('evicts only identities that have not advanced in either cache layer', async () => {
     type ConditionallyEvictable = Readonly<{
-      evictIfUnchanged?: (
-        ref: GroupRef,
-        expected: GroupSnapshot,
-      ) => boolean;
+      evictIfUnchanged?: (ref: GroupRef, expected: GroupSnapshot) => boolean;
     }>;
     configureTestCacheRepositories();
     const repository = new GroupStateRepository(new FakeRuntimeStateRepository());
@@ -194,14 +191,10 @@ describe('GroupStateSnapshotReadThroughCache', () => {
     expect(cache.observe(newer)).toBe('advanced');
     const conditionallyEvictable = cache as ConditionallyEvictable;
 
-    expect(
-      conditionallyEvictable.evictIfUnchanged?.(loaded.group, loaded) ?? false,
-    ).toBe(true);
+    expect(conditionallyEvictable.evictIfUnchanged?.(loaded.group, loaded) ?? false).toBe(true);
     expect(cache.peek(newer.group)).toBe(newer);
 
-    expect(
-      conditionallyEvictable.evictIfUnchanged?.(newer.group, newer) ?? false,
-    ).toBe(true);
+    expect(conditionallyEvictable.evictIfUnchanged?.(newer.group, newer) ?? false).toBe(true);
     expect(cache.peek(newer.group)).toBeUndefined();
   });
 });
@@ -229,6 +222,7 @@ async function convergePresenceSummaryForCacheTest(
     acceptedCausalRevision,
   });
   const work = new GroupPresenceSummaryWork({
+    topologyIntent: { damping: 'legacy' },
     runtimeRepository: runtime,
     now: () => 2_001,
     serviceId: 'cache-convergence-test',

@@ -41,7 +41,15 @@ export function validateClientMutationFacts(facts: unknown): void {
   const value = requirePlainRecord(facts, 'Client mutation facts');
   requireExactKeys(
     value,
-    ['nowEpochMs', 'serviceId', 'eventId', 'commandHash', 'attemptCount', 'expireAtEpochMs'],
+    [
+      'nowEpochMs',
+      'serviceId',
+      'eventId',
+      'commandHash',
+      'attemptCount',
+      'expireAtEpochMs',
+      'formationDamping',
+    ],
     'Client mutation facts',
   );
   requireTimestamp(value.nowEpochMs, 'Client mutation facts.nowEpochMs');
@@ -50,6 +58,9 @@ export function validateClientMutationFacts(facts: unknown): void {
   requireSha256(value.commandHash, 'Client mutation facts.commandHash');
   requirePositiveSafeInteger(value.attemptCount, 'Client mutation facts.attemptCount');
   requireTimestamp(value.expireAtEpochMs, 'Client mutation facts.expireAtEpochMs');
+  if (value.formationDamping !== 'damped' && value.formationDamping !== 'legacy') {
+    rejectClientMutation('Client mutation facts.formationDamping is invalid');
+  }
   if ((value.expireAtEpochMs as number) <= (value.nowEpochMs as number)) {
     rejectClientMutation('Client mutation facts.expireAtEpochMs must follow nowEpochMs');
   }

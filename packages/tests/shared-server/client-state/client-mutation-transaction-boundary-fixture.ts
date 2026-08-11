@@ -88,6 +88,7 @@ export async function createHandlerHarness(
       },
     },
     sessionGenerationLifecycle: {} as never,
+    formationDamping: 'damped',
     expiryCandidates: { listExpiredSessionCandidates: async () => [] },
     snapshotObserver: {
       observeSnapshot: async (snapshot) => {

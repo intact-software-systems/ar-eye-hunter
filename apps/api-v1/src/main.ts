@@ -21,6 +21,9 @@ import {
   readApiRtcTopologyReplayConfig,
   shouldStartApiQueueWorkers,
 } from './runtime/rtc-topology/rtc-topology-replay-config.ts';
+import {
+  logGroupFormationDampingConfig,
+} from './runtime/group-formation/group-formation-damping-config.ts';
 
 const app: Hono = new Hono();
 addEventListener('unload', () => {
@@ -36,6 +39,7 @@ logPGliteSchemaInitConfig();
 logDatabasePubSubConfig();
 const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig();
 logRtcTopologyReplayConfig(console.log, rtcTopologyReplayConfig);
+logGroupFormationDampingConfig(console.log);
 
 const apiCors = cors(
   {

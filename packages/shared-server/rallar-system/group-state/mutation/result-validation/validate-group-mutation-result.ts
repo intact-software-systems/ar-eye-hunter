@@ -201,7 +201,7 @@ function validateAppliedReceipt({
   }
   requirePositiveSafeInteger(receipt.snapshotVersion, `${label} applied snapshotVersion`);
   requirePositiveSafeInteger(causalRevision.groupRevision, `${label} applied groupRevision`);
-  if (outboxIds.length !== 1) {
+  if (outboxIds.length > 1) {
     throw new TypeError(`${label} outboxIds differs from applied outcome`);
   }
 }

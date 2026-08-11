@@ -250,14 +250,13 @@ export async function createAuthorityHarness(
   const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
   const groupStateService = createGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createGroupStateEventStore: () => database.groupEventStore,
     serviceId: 'server-12345678',
     now: () => nowEpochMs,
     authSessionRepository: authSessions,
   } as Parameters<typeof createGroupStateService>[0] &
-    Readonly<{
-      authSessionRepository: AuthSessionRepository;
-    }>);
+    Readonly<{ authSessionRepository: AuthSessionRepository }>);
   return {
     nowEpochMs,
     runtimeRepository,

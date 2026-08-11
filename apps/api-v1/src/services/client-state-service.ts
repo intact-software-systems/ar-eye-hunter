@@ -8,6 +8,9 @@ import {
 } from '@shared-server/rallar-system/services/client-state-service.ts';
 import { myServerId } from '../runtime/runtime-identity.ts';
 import {
+  readApiGroupFormationDampingConfig,
+} from '../runtime/group-formation/group-formation-damping-config.ts';
+import {
   createClientStateEventRepository,
   createRuntimeStateRepository,
 } from '../repository/createStateRepositories.ts';
@@ -27,6 +30,7 @@ export function getClientStateService(): ClientStateService {
 
   return createClientStateService({
     runtimeRepository,
+    formationDamping: readApiGroupFormationDampingConfig().damping,
     createClientStateEventStore: createClientStateEventRepository,
     serviceId: myServerId,
     timing: getApiTimingSink(),

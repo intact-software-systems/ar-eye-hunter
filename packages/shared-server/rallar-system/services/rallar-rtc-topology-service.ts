@@ -8,6 +8,10 @@ import {
     type RallarRtcTopologyKind,
 } from '@shared/api/overlay-topology.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
+import {
+    emptyTopologyMetrics,
+    type RallarRtcTopologyMetrics,
+} from '../topology/rallar-rtc-topology-metrics.ts';
 import { normalizeRttReportingDegreeLimit } from '@shared/rtc/rtt-reporting-policy.ts';
 import {
     compareRtcTopologyIdentifiers,
@@ -44,40 +48,6 @@ export type RallarRtcTopologyServiceOptions = Readonly<{
     meshParamK?: number;
     rttRebuildDebounceMs?: number;
     now?: () => number;
-}>;
-
-export type RallarRtcTopologyMetrics = Readonly<{
-    topologyUpdateCount: number;
-    topologyChangedCount: number;
-    topologyUnchangedCount: number;
-    updatesWithRttMeasurementCount: number;
-    updatesWithoutRttMeasurementCount: number;
-    starPlanCount: number;
-    starPlanDurationMs: number;
-    noRttTreePlanCount: number;
-    noRttTreePlanDurationMs: number;
-    noRttMeshPlanCount: number;
-    noRttMeshPlanDurationMs: number;
-    weightedPlanCount: number;
-    weightedPlanDurationMs: number;
-    weightedRoomGraphBuildCount: number;
-    weightedRoomGraphBuildDurationMs: number;
-    weightedRoomGraphSparseFallbackCount: number;
-    rttQueueRequestCount: number;
-    rttQueueNewCount: number;
-    rttQueueCoalescedCount: number;
-    rttQueueImmediateCount: number;
-    rttFlushAttemptCount: number;
-    rttFlushSkippedCount: number;
-    rttFlushExecutedCount: number;
-    topologyPublishAttemptCount: number;
-    topologyPublishedCount: number;
-    topologyPublishSkippedUnchangedCount: number;
-    topologyRemovalRequestCount: number;
-    topologyRemovedCount: number;
-    topologyRemoveMissCount: number;
-    topologySnapshotCount: number;
-    pendingRttUpdateCount: number;
 }>;
 
 export type RallarRtcTopologyUpdateResult = Readonly<{
@@ -159,45 +129,6 @@ const DEFAULT_MESH_MIN_SIZE = 16;
 const DEFAULT_MESH_PARAM_K = 2;
 const DEFAULT_RTT_REBUILD_DEBOUNCE_MS = 250;
 
-type MutableRallarRtcTopologyMetrics = {
-    -readonly [K in keyof Omit<
-        RallarRtcTopologyMetrics,
-        'pendingRttUpdateCount' | 'topologySnapshotCount'
-    >]: number;
-};
-
-const emptyTopologyMetrics = (): MutableRallarRtcTopologyMetrics => ({
-    topologyUpdateCount: 0,
-    topologyChangedCount: 0,
-    topologyUnchangedCount: 0,
-    updatesWithRttMeasurementCount: 0,
-    updatesWithoutRttMeasurementCount: 0,
-    starPlanCount: 0,
-    starPlanDurationMs: 0,
-    noRttTreePlanCount: 0,
-    noRttTreePlanDurationMs: 0,
-    noRttMeshPlanCount: 0,
-    noRttMeshPlanDurationMs: 0,
-    weightedPlanCount: 0,
-    weightedPlanDurationMs: 0,
-    weightedRoomGraphBuildCount: 0,
-    weightedRoomGraphBuildDurationMs: 0,
-    weightedRoomGraphSparseFallbackCount: 0,
-    rttQueueRequestCount: 0,
-    rttQueueNewCount: 0,
-    rttQueueCoalescedCount: 0,
-    rttQueueImmediateCount: 0,
-    rttFlushAttemptCount: 0,
-    rttFlushSkippedCount: 0,
-    rttFlushExecutedCount: 0,
-    topologyPublishAttemptCount: 0,
-    topologyPublishedCount: 0,
-    topologyPublishSkippedUnchangedCount: 0,
-    topologyRemovalRequestCount: 0,
-    topologyRemovedCount: 0,
-    topologyRemoveMissCount: 0,
-});
-
 export class RallarRtcTopologyService {
     private readonly snapshotsByOverlayId = new Map<
         string,
@@ -253,6 +184,10 @@ export class RallarRtcTopologyService {
         } else {
             this.metrics.topologyPublishSkippedUnchangedCount += 1;
         }
+    }
+
+    recordTopologyRebuildSkippedFingerprint(): void {
+        this.metrics.topologyRebuildSkippedFingerprintCount += 1;
     }
 
     updateGroupTopology(

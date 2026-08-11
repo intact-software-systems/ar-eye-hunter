@@ -61,6 +61,7 @@ describe('client mutation stable-read concurrency', () => {
         eventId: 'stable-client-read-event',
         attemptCount: 1,
         expireAtEpochMs: session.expiresAtEpochMs + 60_000,
+        formationDamping: 'damped',
       },
       toClientMutationSystemAuthority('client-service'),
     );

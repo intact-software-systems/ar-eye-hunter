@@ -144,6 +144,7 @@ describe('convergent group and presence state', () => {
     const internalFacts: GroupMutationFacts = {
       ...publicFacts,
       internalAuthority: 'session-cleanup',
+      formationDamping: 'legacy',
       authenticatedAuthority: null,
     };
 

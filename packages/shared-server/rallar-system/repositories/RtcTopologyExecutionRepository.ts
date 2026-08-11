@@ -18,6 +18,9 @@ import {
     RtcTopologySnapshotRepository,
 } from './RtcTopologySnapshotRepository.ts';
 import {
+    RtcTopologyInputFingerprintRepository,
+} from '../topology/replay/rtc-topology-input-fingerprint.ts';
+import {
     computeTopologyMutation,
     type RtcTopologyMutationComputed,
     type RtcTopologyMutationRead,
@@ -71,6 +74,21 @@ export class RtcTopologyExecutionRepository {
     ): Promise<RallarOverlayTopologySnapshot | undefined> {
         return await new RtcTopologySnapshotRepository(this.runtimeRepository)
             .findSnapshot(groupRef);
+    }
+
+    async readTopologyInputFingerprint(groupRef: GroupRef): Promise<string | null> {
+        return await new RtcTopologyInputFingerprintRepository(this.runtimeRepository)
+            .findFingerprint(groupRef);
+    }
+
+    async writeTopologyInputFingerprint(
+        transaction: PSqlTransactionSql,
+        groupRef: GroupRef,
+        fingerprint: string,
+    ): Promise<void> {
+        await new RtcTopologyInputFingerprintRepository(
+            new PSqlRuntimeStateRepository(transaction),
+        ).putFingerprint(groupRef, fingerprint);
     }
 
     async readTopologyMutation(

@@ -1,4 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 // prettier-ignore
 import type {
@@ -9,6 +10,7 @@ import {
   toCanonicalGroupTopologyConfigPatch,
 } from '@shared/api/group-topology-config-canonical.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 // prettier-ignore
 import type {
@@ -36,6 +38,18 @@ import {
   type StateSyncAudience,
 } from '../../state-sync-publisher.ts';
 import { computeRtcTopologyEntry } from '../../services/RtcTopologyOutboxWork.ts';
+import {
+  CoalescedAppOutboxWorkService,
+  type ComputedCoalescedAppOutboxWork,
+} from '../../services/CoalescedAppOutboxWorkService.ts';
+// prettier-ignore
+import {
+  computeCoalescedRtcTopologyGroupRevisionWork,
+  toRtcTopologyCoalescedGroupRevisionResourceId,
+} from '../../topology/replay/rtc-topology-coalesced-group-revision-work.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../services/rtc-topology-outbox-entry.ts';
+import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
+import { groupStateGroupStorageKey } from '../persistence/group-state-storage-keys.ts';
 // prettier-ignore
 import type {
   GroupFormationPresenceSummarySink,
@@ -45,8 +59,17 @@ import {
   decodeCanonicalGroupPresenceSummaryWork,
 } from './decode-canonical-group-presence-summary-work.ts';
 
+export type GroupPresenceSummaryTopologyIntent =
+  | Readonly<{
+      damping: 'damped';
+      outboxQueueReader: OutboxQueueReader;
+      recomputeDebounceMs: number;
+    }>
+  | Readonly<{ damping: 'legacy' }>;
+
 export type GroupPresenceSummaryWorkOptions = Readonly<{
   runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+  topologyIntent: GroupPresenceSummaryTopologyIntent;
   database?: PSqlSql;
   now?: () => number;
   serviceId: string;
@@ -55,11 +78,17 @@ export type GroupPresenceSummaryWorkOptions = Readonly<{
   formationMetrics?: GroupFormationPresenceSummarySink;
 }>;
 
+export type GroupPresenceSummaryWorkRead = Readonly<{
+  presence: GroupPresenceSummaryRead;
+  coalescedTopologyEntry: ResourceEntry | null;
+}>;
+
 export type GroupPresenceSummaryComputedWork = Readonly<{
   work: GroupPresenceSummaryWorkData;
   summary: GroupPresenceSummaryComputed;
   snapshot: GroupSnapshot;
   downstreamOutboxEntries: readonly ResourceEntry[];
+  coalescedTopologyWork: ComputedCoalescedAppOutboxWork | null;
 }>;
 
 interface ComputeGroupPresenceSummaryOutboxInput {
@@ -68,53 +97,82 @@ interface ComputeGroupPresenceSummaryOutboxInput {
   readonly snapshot: GroupSnapshot;
   readonly audience: StateSyncAudience;
   readonly serviceId: string;
+  readonly includePerCommandTopologyEntry: boolean;
 }
 
 export class GroupPresenceSummaryWork {
   private readonly now: () => number;
+  private readonly coalescedTopologyWorkService: CoalescedAppOutboxWorkService | null;
 
   constructor(private readonly options: GroupPresenceSummaryWorkOptions) {
     this.now = options.now ?? (() => Date.now());
+    this.coalescedTopologyWorkService =
+      options.topologyIntent.damping === 'damped'
+        ? new CoalescedAppOutboxWorkService(
+            options.topologyIntent.outboxQueueReader,
+            options.serviceId,
+            this.now,
+          )
+        : null;
   }
 
-  async read(work: GroupPresenceSummaryWorkData): Promise<GroupPresenceSummaryRead> {
+  async read(work: GroupPresenceSummaryWorkData): Promise<GroupPresenceSummaryWorkRead> {
     const repository = new GroupStateRepository(this.options.runtimeRepository);
-    const [group, members, admissions, presenceSessions, current] = await Promise.all([
-      repository.findGroupEntry(work.aggregateRef),
-      repository.listMemberEntries(work.aggregateRef),
-      repository.listPresenceAdmissionEntries(work.aggregateRef),
-      repository.listPresenceSessionEntries(work.aggregateRef),
-      repository.findPresenceSummaryEntry(work.aggregateRef),
-    ]);
+    const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] =
+      await Promise.all([
+        repository.findGroupEntry(work.aggregateRef),
+        repository.listMemberEntries(work.aggregateRef),
+        repository.listPresenceAdmissionEntries(work.aggregateRef),
+        repository.listPresenceSessionEntries(work.aggregateRef),
+        repository.findPresenceSummaryEntry(work.aggregateRef),
+        this.readCoalescedTopologyEntry(work.aggregateRef),
+      ]);
     if (!group) {
       throw new TypeError(`Group not found for presence summary: ${work.aggregateRef.groupId}`);
     }
     return {
-      group,
-      members,
-      admissions,
-      presenceSessions,
-      current: current ?? null,
+      presence: {
+        group,
+        members,
+        admissions,
+        presenceSessions,
+        current: current ?? null,
+      },
+      coalescedTopologyEntry,
     };
+  }
+
+  private async readCoalescedTopologyEntry(ref: GroupRef): Promise<ResourceEntry | null> {
+    const intent = this.options.topologyIntent;
+    if (intent.damping !== 'damped') return null;
+    const key = toAppQueueKey({
+      topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
+      resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(toScopedOverlayId(ref)),
+      contextId: groupStateGroupStorageKey(ref),
+    });
+    return (await intent.outboxQueueReader.outbox.getItem(key)) ?? null;
   }
 
   compute(
     work: GroupPresenceSummaryWorkData,
-    read: GroupPresenceSummaryRead,
+    read: GroupPresenceSummaryWorkRead,
   ): GroupPresenceSummaryComputedWork {
     const summary = computeGroupPresenceSummary({
       ref: work.aggregateRef,
-      read,
+      read: read.presence,
       nowEpochMs: this.now(),
+      formationDamping: this.options.topologyIntent.damping,
     });
     const snapshot = assembleGroupStateSnapshot(
       {
-        group: read.group.value,
-        members: read.members.map((member) => member.value),
+        group: read.presence.group.value,
+        members: read.presence.members.map((member) => member.value),
         summary: summary.summary,
-        authoritativeSessions: read.presenceSessions.map((session) => session.value),
+        authoritativeSessions: read.presence.presenceSessions.map((session) => session.value),
         groupRevision: summary.summary.causalRevision.groupRevision,
         observedAtEpochMs: summary.summary.computedAtEpochMs,
+        sessionLeaseFields:
+          this.options.topologyIntent.damping === 'damped' ? 'authoritative' : 'summary-frozen',
       },
       (storageKey, message) => new Error(`${message}: ${storageKey}`),
     );
@@ -124,6 +182,7 @@ export class GroupPresenceSummaryWork {
       workspaceId: work.aggregateRef.workspaceId,
       resourceId: work.aggregateRef.groupId,
     };
+    const intent = this.options.topologyIntent;
     return {
       work,
       summary,
@@ -134,13 +193,26 @@ export class GroupPresenceSummaryWork {
         snapshot,
         audience,
         serviceId: this.options.serviceId,
+        includePerCommandTopologyEntry: intent.damping === 'legacy',
       }),
+      coalescedTopologyWork:
+        intent.damping === 'damped'
+          ? computeCoalescedRtcTopologyGroupRevisionWork({
+              aggregateRef: work.aggregateRef,
+              groupSnapshot: snapshot,
+              requestedAtEpochMs: summary.summary.computedAtEpochMs,
+              expireAtEpochMs: work.expireAtEpochMs,
+              recomputeDebounceMs: intent.recomputeDebounceMs,
+              senderId: this.options.serviceId,
+              previousEntry: read.coalescedTopologyEntry,
+            })
+          : null,
     };
   }
 
   validate(
     work: GroupPresenceSummaryWorkData,
-    read: GroupPresenceSummaryRead,
+    read: GroupPresenceSummaryWorkRead,
     computed: GroupPresenceSummaryComputedWork,
   ): void {
     if (computed.work !== work) {
@@ -148,8 +220,9 @@ export class GroupPresenceSummaryWork {
     }
     validateGroupPresenceSummary({
       ref: work.aggregateRef,
-      read,
+      read: read.presence,
       computed: computed.summary,
+      formationDamping: this.options.topologyIntent.damping,
     });
     if (
       work.event.applicationId !== work.aggregateRef.applicationId ||
@@ -181,6 +254,12 @@ export class GroupPresenceSummaryWork {
     for (const entry of computed.downstreamOutboxEntries) {
       await outbox.writeIfAbsentOrMatch(entry);
     }
+    if (computed.coalescedTopologyWork !== null) {
+      if (this.coalescedTopologyWorkService === null) {
+        throw new TypeError('Coalesced topology work requires the damped topology intent');
+      }
+      await this.coalescedTopologyWorkService.write(transaction, computed.coalescedTopologyWork);
+    }
   }
 
   async processReservedEntry(message: ALMessage, entry: ResourceEntry): Promise<void> {
@@ -206,9 +285,10 @@ export class GroupPresenceSummaryWork {
     this.options.wakeQueue?.();
     try {
       this.options.formationMetrics?.({
-        downstreamTopicIds: computed.downstreamOutboxEntries.map(
-          (outboxEntry) => outboxEntry.key.topicId,
-        ),
+        downstreamTopicIds: [
+          ...computed.downstreamOutboxEntries.map((outboxEntry) => outboxEntry.key.topicId),
+          ...(computed.coalescedTopologyWork !== null ? [APP_OUTBOX_RTC_TOPOLOGY_TOPIC] : []),
+        ],
       });
     } catch {
       // Recording must never affect presence-summary behavior.
@@ -261,6 +341,9 @@ function computeGroupPresenceSummaryOutboxEntries(
     },
     serviceId,
   );
+  if (!input.includePerCommandTopologyEntry) {
+    return [...eventEntries, ...snapshotEntries];
+  }
   const topologyEntry = computeGroupPresenceTopologyOutboxEntry(input);
   return [...eventEntries, ...snapshotEntries, topologyEntry];
 }

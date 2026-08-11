@@ -49,11 +49,13 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
   const groupEvents = createGroupStateEventRepository(runtime);
   const clientState = createClientStateService({
     runtimeRepository: runtime,
+    formationDamping: 'damped',
     createClientStateEventStore: createClientStateEventRepository,
     serviceId: 'pglite-close-test',
   });
   const groupState = createGroupStateService({
     runtimeRepository: runtime,
+    formationDamping: 'damped',
     createGroupStateEventStore: createGroupStateEventRepository,
     authSessionRepository: authSessions,
     serviceId: 'pglite-close-test',

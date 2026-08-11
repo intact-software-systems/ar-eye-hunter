@@ -72,6 +72,9 @@ import {
   groupStatePresenceSessionStorageKey,
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
+import {
+  computeCoalescedRtcTopologyGroupRevisionWork,
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-coalesced-group-revision-work.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   ClientStateEventCollisionError,
@@ -316,6 +319,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
     await authSessions.putSession(authority);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-group-service',
@@ -338,6 +342,11 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
       },
     );
     const summaryWork = new GroupPresenceSummaryWork({
+      topologyIntent: {
+        damping: 'damped',
+        outboxQueueReader: outboxReader,
+        recomputeDebounceMs: 0,
+      },
       runtimeRepository: runtime,
       database: sql,
       serviceId: 'pglite-group-service',
@@ -469,6 +478,7 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     await authSessions.putSession(authority);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-summary-fence',
@@ -553,6 +563,7 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     const repository = new GroupStateRepository(runtime);
     const summaryBefore = await repository.findPresenceSummaryEntry(ref);
     const work = new GroupPresenceSummaryWork({
+      topologyIntent: { damping: 'legacy' },
       runtimeRepository: runtime,
       database: sql,
       serviceId: 'pglite-summary-fence',
@@ -715,6 +726,7 @@ Deno.test('PGlite client write commits state, event, and ResourceInbox rows in o
     const repository = new ClientStateRepository(runtime, { events });
     const service = createClientStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createClientStateEventStore: () => events,
       serviceId: 'pglite-client-service',
     });
@@ -750,6 +762,7 @@ Deno.test('PGlite client write commits state, event, and ResourceInbox rows in o
           eventId: `${commandId}-event`,
           attemptCount: 1,
           expireAtEpochMs: FUTURE_MS,
+          formationDamping: 'damped',
         },
         toClientMutationIssuedSessionAuthority(authority, scope, 'upsertPrincipal'),
       );
@@ -809,6 +822,7 @@ async function createPGliteClientEventCollisionFixture(
   const repository = new ClientStateRepository(runtime, { events });
   const service = createClientStateService({
     runtimeRepository: runtime,
+    formationDamping: 'damped',
     createClientStateEventStore: () => events,
     serviceId: 'pglite-client-service',
   });
@@ -841,6 +855,7 @@ async function createPGliteClientEventCollisionFixture(
         eventId,
         attemptCount: 1,
         expireAtEpochMs: FUTURE_MS,
+        formationDamping: 'damped',
       },
       toClientMutationIssuedSessionAuthority(authority, scope, operation),
     );
@@ -1547,6 +1562,7 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
     });
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-topology-cross-target',
@@ -1690,6 +1706,7 @@ Deno.test('PGlite AppGroup reuses the first durable topology command and rejects
     for (const member of snapshot.members) await groupRepository.putMember(member);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-app-inbox-topology',
@@ -2226,6 +2243,7 @@ Deno.test('PGlite topology route preserves structured AppInbox terminal and unav
     for (const member of snapshot.members) await groupRepository.putMember(member);
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-topology-route-errors',
@@ -2439,6 +2457,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
     );
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: authSessions,
       serviceId: 'pglite-topology-retry',
@@ -3424,6 +3443,7 @@ Deno.test('PGlite group-state reads reject complete-contract corruption across p
       const runtime = new PSqlRuntimeStateRepository(sql);
       const service = createGroupStateService({
         runtimeRepository: runtime,
+        formationDamping: 'damped',
         createGroupStateEventStore: createGroupStateEventRepository,
         authSessionRepository: {
           findBySessionId: (sessionId) =>
@@ -3771,6 +3791,7 @@ Deno.test('PGlite group event collision rolls back the authoritative mutation tr
     const persistedAuthority = await toPersistedAuthSessionFixture(authority);
     const service = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: {
         findBySessionId: (sessionId) =>
@@ -3856,6 +3877,7 @@ Deno.test('PGlite group summary outbox collision rolls back state event and rece
     const persistedAuthority = await toPersistedAuthSessionFixture(authority);
     const service = createGroupStateService({
       runtimeRepository: runtime,
+      formationDamping: 'damped',
       createGroupStateEventStore: createGroupStateEventRepository,
       authSessionRepository: {
         findBySessionId: (sessionId) =>
@@ -4853,6 +4875,201 @@ Deno.test('transaction-bound APP_OUTBOX coalescing fences generation and reserve
         error instanceof ResourceInboxInvariantCorruptionError &&
         error.code === 'resource-inbox-invariant-corruption',
     );
+  });
+});
+
+Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in place', async () => {
+  await withPGliteSql(async (sql) => {
+    const repository = new ResourceInboxRepository(sql);
+    const queue = new PSqlQueueBox(repository);
+    const service = new CoalescedAppOutboxWorkService(
+      new OutboxQueueReader(queue),
+      'rallar-server',
+      () => 500,
+    );
+    const first = (await service.enqueue({
+      type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
+      topicId: 'app-outbox.rtc-topology',
+      resourceId: 'revive-overlay',
+      contextId: 'revive-room',
+      data: { overlayId: 'revive-overlay', revision: 1 },
+    })).entry;
+    const reserved = await queue.reserveEntries(
+      new Set([first.typeId]),
+      new Set([EntityStatus.NEW]),
+      { maxToReserve: 1, maxAttempts: 20 },
+    );
+    const observedReserved = [...reserved.values()][0];
+    assert.ok(observedReserved);
+    assert.ok(
+      await repository.finishReserved(
+        observedReserved.key,
+        observedReserved.dequeueAudit.attempts,
+        EntityStatus.COMPLETED,
+        new Date(600),
+      ),
+    );
+    const finished = await repository.findAnyByKey(first.key);
+    assert.equal(finished?.status, EntityStatus.COMPLETED);
+
+    const revivedEntry = advanceCoalescedGeneration({ ...first, resource: finished!.resource }, 2);
+    const successor = createResourceEntry('revive-successor', {
+      topicId: first.key.topicId,
+      contextId: first.key.contextId,
+      typeId: first.typeId,
+      payload: { generation: 2, kind: 'successor' },
+    });
+    const revived = await sql.begin(async (transaction) =>
+      await service.write(transaction, {
+        expectedEntry: finished!,
+        entry: revivedEntry,
+        successorEntry: successor,
+      })
+    );
+    assert.equal(revived.action, 'updated');
+    const stored = await repository.findByKey(first.key);
+    assert.equal(stored?.status, EntityStatus.NEW);
+    assert.equal(stored?.resource, revivedEntry.resource);
+    assert.equal(stored?.dequeueAudit.attempts, 0);
+
+    const staleExpected = await sql.begin(async (transaction) =>
+      await service.write(transaction, {
+        expectedEntry: finished!,
+        entry: revivedEntry,
+        successorEntry: successor,
+      })
+    );
+    assert.equal(staleExpected.action, 'successor');
+    assert.equal((await repository.findByKey(first.key))?.resource, revivedEntry.resource);
+    assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+  });
+});
+
+Deno.test('PGlite topology gates skip unchanged coalesced group-revision rebuilds and fail open', async () => {
+  await withPGliteSql(async (sql) => {
+    const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
+    const groupRef = {
+      applicationId: 'fingerprint-gate',
+      workspaceId: 'atomic-work',
+      groupId: 'room',
+    };
+    let currentSnapshot = topologyGroupSnapshotWithSessionIds(
+      groupRef,
+      ['session-a', 'session-b'],
+      nowEpochMs,
+    );
+    const runtimeRepository = new PSqlRuntimeStateRepository(sql);
+    const topologyService = new RallarRtcTopologyService({ now: () => nowEpochMs });
+    const topologyManagement = new GroupTopologyManagementService({
+      findGroupSnapshotByRef: () => currentSnapshot,
+      topologyService,
+      topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
+      processRttReader: () => [],
+      now: () => nowEpochMs,
+    });
+    const executionRepository = new RtcTopologyExecutionRepository(
+      runtimeRepository,
+      60_000,
+      () => nowEpochMs,
+    );
+    const resourceInbox = new ResourceInboxRepository(sql);
+    const queue = new PSqlQueueBox(resourceInbox);
+    const coalescedService = new CoalescedAppOutboxWorkService(
+      new OutboxQueueReader(queue),
+      'fingerprint-gate-worker',
+      () => nowEpochMs,
+    );
+    const handler = createRtcTopologyWorkHandler({
+      runtime: createRtcTopologyOutboxPublisher({
+        outboxQueueReader: new OutboxQueueReader(queue),
+        senderId: 'fingerprint-gate-worker',
+        now: () => nowEpochMs,
+      }),
+      database: sql,
+      topologyManagement,
+      executionRepository,
+    });
+    const toCoalescedComputed = (snapshot: GroupSnapshot, previousEntry: ResourceEntry | null) =>
+      computeCoalescedRtcTopologyGroupRevisionWork({
+        aggregateRef: groupRef,
+        groupSnapshot: snapshot,
+        requestedAtEpochMs: nowEpochMs,
+        expireAtEpochMs: FUTURE_MS,
+        recomputeDebounceMs: 0,
+        senderId: 'fingerprint-gate-worker',
+        previousEntry,
+      });
+    const coalescedKey = toCoalescedComputed(currentSnapshot, null).entry.key;
+    const runCoalescedIntent = async (snapshot: GroupSnapshot) => {
+      currentSnapshot = snapshot;
+      const previousEntry = (await queue.getItem(coalescedKey)) ?? null;
+      const computed = toCoalescedComputed(snapshot, previousEntry);
+      await sql.begin(async (transaction) => await coalescedService.write(transaction, computed));
+      await sql`
+        update resource_inbox
+        set ri_status = 'RESERVED', ri_attempts = ri_attempts + 1,
+            start_ts = now() at time zone 'UTC', end_ts = null, next_ts = null
+        where ri_topic_id = ${coalescedKey.topicId}
+          and ri_resource_id = ${coalescedKey.resourceId}
+          and fk_ext_bank_id = ${coalescedKey.contextId}
+      `;
+      const reserved = await resourceInbox.findAnyByKey(coalescedKey);
+      assert.ok(reserved);
+      await handler.onMessage(JSON.parse(reserved.resource) as ALMessage, reserved);
+      return reserved.key;
+    };
+
+    const firstKey = await runCoalescedIntent(currentSnapshot);
+    assert.equal((await resourceInbox.findAnyByKey(firstKey))?.status, EntityStatus.COMPLETED);
+    let metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyPublishedCount, 1);
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 0);
+    assert.ok(await executionRepository.readTopologyInputFingerprint(groupRef));
+
+    await runCoalescedIntent(currentSnapshot);
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 1);
+    assert.equal(metrics.topologyPublishedCount, 1);
+    assert.equal(metrics.topologyUpdateCount, 1);
+
+    const mismatchedFingerprint = `sha256:${'0'.repeat(64)}`;
+    await sql.begin(async (transaction) =>
+      await executionRepository.writeTopologyInputFingerprint(
+        transaction,
+        groupRef,
+        mismatchedFingerprint,
+      )
+    );
+    await runCoalescedIntent(currentSnapshot);
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 1);
+    assert.equal(metrics.topologyPublishSkippedUnchangedCount, 1);
+    assert.equal(metrics.topologyPublishedCount, 1);
+    assert.equal(metrics.topologyUpdateCount, 2);
+    assert.notEqual(
+      await executionRepository.readTopologyInputFingerprint(groupRef),
+      mismatchedFingerprint,
+    );
+
+    await runCoalescedIntent(currentSnapshot);
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 2);
+    assert.equal(metrics.topologyUpdateCount, 2);
+
+    const grownSnapshot = topologyGroupSnapshotWithSessionIds(
+      groupRef,
+      ['session-a', 'session-b', 'session-c'],
+      nowEpochMs,
+    );
+    await runCoalescedIntent({
+      ...grownSnapshot,
+      stateRevision: 5,
+      causalRevision: { groupRevision: 2, presenceRevision: 3 },
+      group: { ...grownSnapshot.group, presenceVersion: 3 },
+    });
+    metrics = topologyService.readMetrics();
+    assert.equal(metrics.topologyPublishedCount, 2);
+    assert.equal(metrics.topologyUpdateCount, 3);
   });
 });
 

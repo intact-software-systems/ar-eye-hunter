@@ -172,6 +172,7 @@ function validFacts() {
     commandHash: `sha256:${'0'.repeat(64)}`,
     attemptCount: 1,
     expireAtEpochMs: 2_000,
+    formationDamping: 'damped',
   };
 }
 

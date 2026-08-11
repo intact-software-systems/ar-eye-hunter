@@ -63,6 +63,7 @@ async function main(): Promise<void> {
     const groupRepository = new GroupStateRepository(repository);
     const service = createGroupStateService({
         runtimeRepository: repository,
+        formationDamping: 'damped',
         syncPublisher: noOpPublisher,
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
@@ -75,9 +76,8 @@ async function main(): Promise<void> {
         const sessionId = `session-${String(index).padStart(6, '0')}`;
         await groupRepository.putGroup(createGroup(groupId, principalId));
         await groupRepository.putMember(createMember(groupId, principalId));
-        await groupRepository.putPresenceSession(
-            createPresenceSession(groupId, principalId, sessionId),
-        );
+        await groupRepository
+            .putPresenceSession(createPresenceSession(groupId, principalId, sessionId));
     }
 
     const results: RunResult[] = [];

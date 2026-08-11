@@ -23,6 +23,12 @@ export function getApiRtcTopologyServiceOptions(
   });
 }
 
+export function readApiTopologyRecomputeDebounceMs(
+  env: EnvReader = Deno.env,
+): number | undefined {
+  return readNonNegativeIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS');
+}
+
 function compactOptions(
   options: Omit<RallarRtcTopologyServiceOptions, 'now'>,
 ): RallarRtcTopologyServiceOptions {

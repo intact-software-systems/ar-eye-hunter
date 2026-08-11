@@ -38,6 +38,10 @@ import {
     readGroupMemberSessionIds,
 } from '@shared/api/group-client-views.ts';
 import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
+// prettier-ignore
+import {
+    isTuplePreservingGroupLivenessReduction,
+} from '@shared/repository/group-state-snapshot-revision.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 import {
     GroupTopologyServerOptions,
@@ -237,6 +241,10 @@ export class GroupTopologyManagementService {
 
     recordTopologyPublication(published: boolean): void {
         this.options.topologyService.recordTopologyPublishResult(published);
+    }
+
+    recordTopologyRebuildSkippedFingerprint(): void {
+        this.options.topologyService.recordTopologyRebuildSkippedFingerprint();
     }
 
     isPlatformAdmin(principalId: string): boolean {
@@ -1242,70 +1250,6 @@ function selectTopologyPlanningGroup(
         );
     }
     return currentGroup;
-}
-
-function isTuplePreservingGroupLivenessReduction(
-    currentGroup: GroupSnapshot,
-    knownGroup: GroupSnapshot,
-): boolean {
-    const {
-        activeSessions: currentSessions,
-        onlineMemberCount: _currentOnlineMemberCount,
-        ...currentAuthority
-    } = currentGroup;
-    const {
-        activeSessions: knownSessions,
-        onlineMemberCount: _knownOnlineMemberCount,
-        ...knownAuthority
-    } = knownGroup;
-    if (
-        !rtcTopologySemanticEqual(currentAuthority, knownAuthority) ||
-        !hasConsistentGroupOnlineMemberCount(currentGroup) ||
-        !hasConsistentGroupOnlineMemberCount(knownGroup)
-    ) {
-        return false;
-    }
-
-    const knownSessionsById = new Map(
-        knownSessions.map((session, index) => [
-            session.sessionId,
-            { index, session },
-        ]),
-    );
-    if (
-        knownSessionsById.size !== knownSessions.length ||
-        new Set(currentSessions.map((session) => session.sessionId)).size !==
-            currentSessions.length
-    ) {
-        return false;
-    }
-    let previousKnownIndex = -1;
-    for (const currentSession of currentSessions) {
-        const known = knownSessionsById.get(currentSession.sessionId);
-        if (
-            !known ||
-            known.index <= previousKnownIndex ||
-            !rtcTopologySemanticEqual(currentSession, known.session)
-        ) {
-            return false;
-        }
-        previousKnownIndex = known.index;
-    }
-    return true;
-}
-
-function hasConsistentGroupOnlineMemberCount(snapshot: GroupSnapshot): boolean {
-    const activePrincipalIds = new Set(
-        snapshot.activeSessions.map((session) => session.principalId),
-    );
-    return (
-        snapshot.onlineMemberCount ===
-        snapshot.members.filter(
-            (member) =>
-                member.status === 'active' &&
-                activePrincipalIds.has(member.principalId),
-        ).length
-    );
 }
 
 function canonicalGroupRef(ref: GroupRef): GroupRef {

@@ -81,6 +81,7 @@ export function createTestGroupStateRuntime(
   const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
   const durable = createGroupStateService({
     runtimeRepository: dependencies.runtimeRepository,
+    formationDamping: 'damped',
     createGroupStateEventStore: dependencies.createGroupStateEventStore,
     now: dependencies.now,
     randomId: dependencies.randomId,

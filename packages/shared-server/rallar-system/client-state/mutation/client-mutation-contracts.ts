@@ -215,6 +215,7 @@ export type ClientMutationFacts = Readonly<{
   commandHash: string;
   attemptCount: number;
   expireAtEpochMs: number;
+  formationDamping: 'damped' | 'legacy';
 }>;
 
 export type ClientMutationCommandInput = ClientMutationCommand extends infer Command

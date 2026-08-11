@@ -6,19 +6,14 @@ import type {
   StateSnapshotReadResult,
   StateSnapshotReadSource,
 } from '@shared/api/state-snapshot-read.ts';
-import type {
-  GroupRef,
-  GroupSnapshot,
-  GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import {
   compareGroupCausalRevision,
   readGroupCausalRevision,
 } from '@shared/api/group-client-views.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
 
-export interface GroupRestSnapshotReadRequest
-  extends GroupStateSnapshotReadOptions {
+export interface GroupRestSnapshotReadRequest extends GroupStateSnapshotReadOptions {
   readonly strictMode?: boolean;
 }
 
@@ -50,11 +45,8 @@ interface GroupRestSnapshotReadContext {
   source: StateSnapshotReadSource;
 }
 
-class GroupRestSnapshotReadSelectorOwner
-  implements GroupRestSnapshotReadSelector {
-  public constructor(
-    private readonly dependencies: GroupRestSnapshotReadSelectorDependencies,
-  ) {}
+class GroupRestSnapshotReadSelectorOwner implements GroupRestSnapshotReadSelector {
+  public constructor(private readonly dependencies: GroupRestSnapshotReadSelectorDependencies) {}
 
   public async read(
     ref: GroupRef,
@@ -105,10 +97,7 @@ class GroupRestSnapshotReadSelectorOwner
       context.requestedFloor === undefined ||
       context.strictMode ||
       observed === undefined ||
-      !satisfiesGroupFloor(
-        readGroupCausalRevision(observed),
-        context.requestedFloor,
-      )
+      !satisfiesGroupFloor(readGroupCausalRevision(observed), context.requestedFloor)
     ) {
       return undefined;
     }
@@ -128,10 +117,7 @@ class GroupRestSnapshotReadSelectorOwner
     this.dependencies.cache.observe(snapshot);
     if (
       context.requestedFloor !== undefined &&
-      !satisfiesGroupFloor(
-        readGroupCausalRevision(snapshot),
-        context.requestedFloor,
-      )
+      !satisfiesGroupFloor(readGroupCausalRevision(snapshot), context.requestedFloor)
     ) {
       this.emit(context, {
         source: 'durable',
@@ -163,9 +149,7 @@ class GroupRestSnapshotReadSelectorOwner
     this.emit(context, {
       source: 'durable',
       result: 'not-found',
-      floorOutcome: context.requestedFloor === undefined
-        ? 'not-requested'
-        : 'not-satisfied',
+      floorOutcome: context.requestedFloor === undefined ? 'not-requested' : 'not-satisfied',
       cleanupOutcome,
       strictMode: context.strictMode,
     });

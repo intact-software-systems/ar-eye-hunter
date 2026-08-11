@@ -61,7 +61,12 @@ export function validateGroupMutation(
     if (input.computed.presenceAdmission) {
       validatePresenceAdmission(input.computed.presenceAdmission.value);
     }
-    validateComputedOutboxEntries(input.command, input.facts, input.computed);
+    validateComputedOutboxEntries({
+      command: input.command,
+      read: input.read,
+      facts: input.facts,
+      computed: input.computed,
+    });
     if (input.computed.event.eventId !== receipt.eventId) {
       throw new TypeError('Group mutation receipt event differs from write event');
     }

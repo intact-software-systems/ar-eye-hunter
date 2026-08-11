@@ -149,6 +149,7 @@ async function createTransactionBoundaryGroupStateService(
   await authSessions.putSession(authority);
   const groupStateService = createGroupStateService({
     runtimeRepository: storage.runtimeRepository,
+    formationDamping: 'damped',
     createGroupStateEventStore: () => storage.database.groupEventStore,
     serviceId: 'server-12345678',
     now: () => NOW_EPOCH_MS,

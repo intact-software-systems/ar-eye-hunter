@@ -326,6 +326,7 @@ describe('group presence concurrency', () => {
       expect(admission?.value.admittedSessions).toEqual([]);
 
       const work = new GroupPresenceSummaryWork({
+        topologyIntent: { damping: 'legacy' },
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 3_000,
         serviceId: 'summary-worker',

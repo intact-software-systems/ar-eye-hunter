@@ -116,15 +116,8 @@ export class GroupStateSnapshotReadThroughCache {
     await this.snapshots.whenIdle();
   }
 
-  public evictIfUnchanged(
-    ref: GroupRef,
-    expected: GroupSnapshot,
-  ): boolean {
-    const latestRemoved = removeGroupStateSnapshotIfUnchanged(
-      ref,
-      expected,
-      this.options.manager,
-    );
+  public evictIfUnchanged(ref: GroupRef, expected: GroupSnapshot): boolean {
+    const latestRemoved = removeGroupStateSnapshotIfUnchanged(ref, expected, this.options.manager);
     const loanedRemoved = this.snapshots.compareAndDelete(
       toGroupStateSnapshotRepositoryKey(ref),
       expected,
@@ -187,8 +180,7 @@ export function createGroupStateSnapshotReadThroughCache(
 }
 
 function toGroupRef(key: string): GroupRef {
-  const { applicationId, workspaceId, groupId } =
-    fromGroupStateSnapshotRepositoryKey(key);
+  const { applicationId, workspaceId, groupId } = fromGroupStateSnapshotRepositoryKey(key);
 
   return {
     applicationId,

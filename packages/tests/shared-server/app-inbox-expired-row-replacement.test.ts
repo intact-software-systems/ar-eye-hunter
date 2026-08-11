@@ -244,6 +244,7 @@ describe('AppInbox expired row replacement', () => {
         });
         const groupState = createGroupStateService({
             runtimeRepository: runtime,
+            formationDamping: 'damped',
             createGroupStateEventStore: () => database.groupEventStore,
             serviceId: 'expired-group-service',
             now: () => nowEpochMs,

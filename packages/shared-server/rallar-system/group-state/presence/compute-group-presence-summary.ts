@@ -64,6 +64,7 @@ interface GroupPresenceSummaryValidation {
   readonly groupRevision: number;
   readonly current: GroupPresenceSummary | undefined;
   readonly expectedNoOp: boolean;
+  readonly formationDamping: 'damped' | 'legacy';
 }
 
 export function computeGroupPresenceSummary(
@@ -71,9 +72,10 @@ export function computeGroupPresenceSummary(
     ref: GroupRef;
     read: GroupPresenceSummaryRead;
     nowEpochMs: number;
+    formationDamping: 'damped' | 'legacy';
   }>,
 ): GroupPresenceSummaryComputed {
-  const { ref, read, nowEpochMs } = input;
+  const { ref, read, nowEpochMs, formationDamping } = input;
   const content = deriveGroupPresenceSummaryContent(read, nowEpochMs);
   const groupRevision = read.group.value.snapshotVersion;
   const current = read.current?.value;
@@ -81,7 +83,10 @@ export function computeGroupPresenceSummary(
     current &&
     (current.causalRevision.groupRevision > groupRevision ||
       (current.causalRevision.groupRevision === groupRevision &&
-        jsonEquals(summaryContent(current), content)))
+        jsonEquals(
+          toComparableSummaryContent(summaryContent(current), formationDamping),
+          toComparableSummaryContent(content, formationDamping),
+        )))
   ) {
     return { outcome: 'no-op', evaluatedAtEpochMs: nowEpochMs, summary: current };
   }
@@ -110,6 +115,7 @@ export function validateGroupPresenceSummary(
     ref: GroupRef;
     read: GroupPresenceSummaryRead;
     computed: GroupPresenceSummaryComputed;
+    formationDamping: 'damped' | 'legacy';
   }>,
 ): void {
   const { ref, read, computed } = input;
@@ -136,14 +142,18 @@ export function validateGroupPresenceSummary(
     );
     validatePresenceSummaryValue(read.current.value, ref);
   }
-  validateGroupPresenceSummaryCandidate(ref, read, computed);
+  validateGroupPresenceSummaryCandidate(input);
 }
 
 function validateGroupPresenceSummaryCandidate(
-  ref: GroupRef,
-  read: GroupPresenceSummaryRead,
-  computed: GroupPresenceSummaryComputed,
+  input: Readonly<{
+    ref: GroupRef;
+    read: GroupPresenceSummaryRead;
+    computed: GroupPresenceSummaryComputed;
+    formationDamping: 'damped' | 'legacy';
+  }>,
 ): void {
+  const { ref, read, computed, formationDamping } = input;
   validatePresenceSummaryValue(computed.summary, ref);
   requirePositiveSafeInteger(
     computed.evaluatedAtEpochMs,
@@ -156,7 +166,10 @@ function validateGroupPresenceSummaryCandidate(
     current !== undefined &&
     (current.causalRevision.groupRevision > groupRevision ||
       (current.causalRevision.groupRevision === groupRevision &&
-        jsonEquals(summaryContent(current), expectedContent)));
+        jsonEquals(
+          toComparableSummaryContent(summaryContent(current), formationDamping),
+          toComparableSummaryContent(expectedContent, formationDamping),
+        )));
   const validation = {
     ref,
     read,
@@ -165,6 +178,7 @@ function validateGroupPresenceSummaryCandidate(
     groupRevision,
     current,
     expectedNoOp,
+    formationDamping,
   };
   validateGroupPresenceSummaryOutcome(validation);
   validateGroupPresenceSummaryCausalRevision(validation);
@@ -225,8 +239,14 @@ function validateGroupPresenceSummaryCausalRevision(
   if (
     comparison === 'equal' &&
     !jsonEquals(
-      summaryContent(validation.computed.summary),
-      summaryContent(validation.read.current.value),
+      toComparableSummaryContent(
+        summaryContent(validation.computed.summary),
+        validation.formationDamping,
+      ),
+      toComparableSummaryContent(
+        summaryContent(validation.read.current.value),
+        validation.formationDamping,
+      ),
     )
   ) {
     throw new TypeError('Equal group presence summary tuple has different content');
@@ -295,6 +315,27 @@ function summaryContent(summary: GroupPresenceSummary): Readonly<{
     activeSessions: summary.activeSessions,
     activePrincipalCount: summary.activePrincipalCount,
     activeSessionCount: summary.activeSessionCount,
+  };
+}
+
+/**
+ * Under damped formation the session lease fields are liveness, not content:
+ * a renewed lease over an identical session set must compare equal so a pure
+ * renewal never advances presenceRevision. Legacy keeps full-session content
+ * so heartbeats keep rewriting the summary exactly as before.
+ */
+function toComparableSummaryContent(
+  content: ReturnType<typeof summaryContent>,
+  formationDamping: 'damped' | 'legacy',
+): ReturnType<typeof summaryContent> {
+  if (formationDamping === 'legacy') return content;
+  return {
+    ...content,
+    activeSessions: content.activeSessions.map((session) => ({
+      ...session,
+      lastHeartbeatAtEpochMs: 0,
+      expiresAtEpochMs: 0,
+    })),
   };
 }
 

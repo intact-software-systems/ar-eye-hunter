@@ -60,11 +60,13 @@ export function createPostgresAppInboxWorkerServices(
   const waitOptions = createPostgresAppInboxWorkerWaitOptions(input.atEpochMs);
   const clientState = createClientStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createClientStateEventStore: createClientStateEventRepository,
     serviceId: input.serviceId,
   });
   const groupState = createGroupStateService({
     runtimeRepository,
+    formationDamping: 'damped',
     createGroupStateEventStore: createGroupStateEventRepository,
     authSessionRepository: authSessions,
     now: () => input.atEpochMs,

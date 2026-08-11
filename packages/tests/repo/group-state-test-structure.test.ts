@@ -106,7 +106,7 @@ describe('group-state test structure', () => {
   });
 
   it('keeps the independently written persistence fixture evidence cohort', () => {
-    expect(countSemanticLiterals(persistenceFixtureLiteralPaths)).toBe(508);
+    expect(countSemanticLiterals(persistenceFixtureLiteralPaths)).toBe(511);
     expect(countNamedCalls(persistenceFixtureCasePaths, new Set(['it', 'test']))).toBe(16);
     expect(countNamedCalls(persistenceFixtureCasePaths, new Set(['expect']))).toBe(31);
   });

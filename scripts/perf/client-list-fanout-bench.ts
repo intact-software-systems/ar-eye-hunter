@@ -42,6 +42,7 @@ async function main(): Promise<void> {
     const repository = new CountingRuntimeStateRepository();
     const service = createClientStateService({
         runtimeRepository: repository,
+        formationDamping: 'damped',
         syncPublisher: noOpPublisher,
         now: () => 1_700_000_000_000,
         serviceId: 'client-list-fanout-bench',

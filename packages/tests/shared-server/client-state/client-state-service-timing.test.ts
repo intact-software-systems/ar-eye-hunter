@@ -88,6 +88,7 @@ const TIMED_COMMAND = {
     commandHash: `sha256:${'a'.repeat(64)}`,
     attemptCount: 1,
     expireAtEpochMs: 2,
+    formationDamping: 'damped',
   },
   input: {},
 } as never as ClientMutationCommand;
@@ -116,6 +117,7 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
   const writeFailure = new Error('write failure must propagate');
   const service: ClientStateService = {
     sessionGenerationLifecycle: {} as never,
+    formationDamping: 'damped',
     listSnapshots: async () => [],
     readSnapshot: async () => undefined,
     readPresenceSnapshot: async () => undefined,

@@ -1601,6 +1601,7 @@ function createTestGroupStateService(
 > {
   const runtime = createTestGroupStateRuntime({
     runtimeRepository: new FakeRuntimeStateRepository(),
+    formationDamping: 'damped',
     syncPublisher,
     now: () => 1_000,
     serviceId: 'test-service',

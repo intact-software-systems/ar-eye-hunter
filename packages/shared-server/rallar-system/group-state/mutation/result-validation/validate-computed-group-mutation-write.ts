@@ -15,6 +15,10 @@ import {
   resolveGroupMutationTargetPrincipalId,
   resolveGroupMutationTargetSessionId,
 } from '../orchestration/resolve-group-mutation-target-identity.ts';
+// prettier-ignore
+import {
+  isPureLeaseRenewalHeartbeat,
+} from '../presence/compute-group-presence-mutation.ts';
 import {
   validateGroupMutationIdempotencyRecord,
   validateMutationReceipt,
@@ -53,7 +57,7 @@ export function validateComputedWrite(input: ValidateComputedWriteInput): void {
   validateComputedInitialPresenceSummary(input);
   validateComputedPresenceAdmission(input);
   validateComputedEventAndReceipt(input);
-  validateComputedOutboxEntries(input.command, input.facts, input.computed);
+  validateComputedOutboxEntries(input);
 }
 
 function validateComputedGuard({
@@ -304,12 +308,20 @@ function expectedMutationMemberPrincipalIds(
   }
 }
 
-export function validateComputedOutboxEntries(
-  command: GroupMutationCommand,
-  facts: GroupMutationFacts,
-  computed: Extract<GroupMutationComputed, { outcome: 'write' }>,
-): void {
-  if (!Array.isArray(computed.outboxEntries) || computed.outboxEntries.length !== 1) {
+export function validateComputedOutboxEntries(input: ValidateComputedWriteInput): void {
+  const { command, read, facts, computed } = input;
+  if (!Array.isArray(computed.outboxEntries)) {
+    throw new TypeError('Group mutation computed outbox entries must be an array');
+  }
+  const pureLeaseRenewal =
+    command.operation === 'heartbeatPresence' && isPureLeaseRenewalHeartbeat(command, read, facts);
+  if (pureLeaseRenewal) {
+    if (computed.outboxEntries.length !== 0 || computed.receipt.outboxIds.length !== 0) {
+      throw new TypeError('A pure lease renewal must not expand a presence summary');
+    }
+    return;
+  }
+  if (computed.outboxEntries.length !== 1) {
     throw new TypeError('Group mutation must compute one presence-summary outbox entry');
   }
   const expected = computeGroupPresenceSummaryEntry(

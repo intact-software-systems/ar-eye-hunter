@@ -258,6 +258,7 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
     input.database,
     createClientStateService({
       runtimeRepository: input.runtimeRepository,
+      formationDamping: 'damped',
       createClientStateEventStore: () => input.database.clientEventStore,
       serviceId: SERVICE_ID,
     }),

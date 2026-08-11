@@ -69,6 +69,7 @@ export const expectedGroupStateTestTree = [
   'mutation/write-group-state-mutation-equivalence.test.ts',
   'mutation/write-group-state-mutation-presence.test.ts',
   'mutation/write-group-state-mutation.test.ts',
+  'persistence/assemble-group-state-snapshot-lease.test.ts',
   'persistence/group-state-authority-fence.test.ts',
   'persistence/group-state-repository-corruption.test.ts',
   'persistence/group-state-repository-dispatch.test.ts',

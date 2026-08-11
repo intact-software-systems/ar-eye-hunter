@@ -72,9 +72,8 @@ export class GroupStateInboxHandler {
         sessionGenerationLifecycle: this.dependencies.sessionGenerationLifecycle,
       });
       if (outcome.status === 'inactive') {
-        const durableResult = await this.dependencies.transactionWriter.writeMutation(
-          context,
-          () => Promise.resolve(outcome),
+        const durableResult = await this.dependencies.transactionWriter.writeMutation(context, () =>
+          Promise.resolve(outcome),
         );
         this.recordGroupMutation(command, 'rejected');
         return durableResult;

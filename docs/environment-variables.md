@@ -75,6 +75,21 @@ for some Rallar Black Box runs.
 | `RALLAR_LOGIN_IP_RATE_LIMIT`   | No       | `30`     | Login attempts per client IP per 60 seconds. Must be a positive integer.                                                             |
 | `RALLAR_LOGIN_USER_RATE_LIMIT` | No       | `5`      | Login attempts per client IP plus username per 60 seconds. Must be a positive integer. Root memory-mode scripts raise this to `100`. |
 
+### Realtime Topology And Group Formation
+
+| Variable                                     | Required | Default   | Usage                                                                                                                                                                                                        |
+| -------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `RALLAR_GROUP_FORMATION_DAMPING`             | No       | `damped`  | Server damping for group formation. `damped` coalesces group-revision topology recomputes, gates rebuilds/publications on changed inputs, separates heartbeat lease renewals from presence revisions, and scopes principal state-sync audiences. `legacy` retains the pre-damping engine wholesale for rollback. |
+| `RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS`  | No       | `500`     | Debounce for coalesced group-revision topology recomputes. Non-negative integer; `0` makes coalesced work due immediately.                                                                                    |
+| `RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS`| No       | `250`     | Debounce for RTT-driven topology rebuilds and the global-graph RTT recompute. Non-negative integer.                                                                                                          |
+| `RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT`           | No       | `5`       | Maximum per-session degree used by topology planning. Positive integer.                                                                                                                                      |
+| `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`      | No       | Derived from the degree limit | Maximum peers per session for RTT reporting admission. Positive integer.                                                                                                                 |
+| `RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE`          | No       | `5`       | Smallest active-session count planned as a tree instead of a star. Positive integer.                                                                                                                         |
+| `RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE`          | No       | `16`      | Smallest active-session count planned as a mesh instead of a tree. Positive integer.                                                                                                                         |
+| `RALLAR_RTC_TOPOLOGY_MESH_PARAM_K`           | No       | `2`       | Mesh construction K parameter. Positive integer.                                                                                                                                                             |
+| `RALLAR_RTC_TOPOLOGY_REPLAY`                 | No       | `enabled` | Durable topology replay lane. Supported values: `enabled`, `disabled`.                                                                                                                                       |
+| `RALLAR_API_QUEUE_WORKERS`                   | No       | `enabled` | Queue workers on this process. `disabled` requires `RALLAR_SQL_BACKEND=postgres`.                                                                                                                            |
+
 ### Black Box Operator Tokens
 
 | Variable                                      | Required | Default      | Usage                                                                                                                                                         |
