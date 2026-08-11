@@ -584,7 +584,6 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
     'rtc.send': strictCommandSchema('rtc.send', [], {
         connection: stringSchema,
         send: anySchema,
-        expect: anySchema,
         applicationId: stringSchema,
         workspaceId: stringSchema,
         scope: recordSchema,
@@ -1021,12 +1020,11 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'rtc.send',
         title: 'RTC Send',
-        description: 'Sends JSON through a connected RTC/realtime provider and optionally records expectations.',
+        description: 'Sends JSON through a connected RTC/realtime provider.',
         requiredFields: [],
         optionalFields: [
             'connection',
             'send',
-            'expect',
             'applicationId',
             'workspaceId',
             'scope',

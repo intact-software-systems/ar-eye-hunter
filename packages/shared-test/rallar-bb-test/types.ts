@@ -239,7 +239,7 @@ export type RallarBlackBoxTestRtcSendCommand =
     & Readonly<{
     connection?: string;
     send?: unknown;
-    expect?: unknown;
+    expect?: unknown; // black-box-runner-adapter in-process only; control validators reject it
     applicationId?: string;
     workspaceId?: string;
     scope?: Readonly<Record<string, unknown>>;

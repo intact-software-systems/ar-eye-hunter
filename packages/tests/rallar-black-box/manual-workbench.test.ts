@@ -293,11 +293,10 @@ describe('rallar-black-box manual workbench helpers', () => {
                 negativeCase: 'not-yet-in-sync',
                 expectedOutcome: 'nack',
             },
-            expect: {
-                outcome: 'nack',
-                code: 'not-yet-in-sync',
-            },
         });
+        for (const command of recipe.commands) {
+            expect(command.expect, command.commandId).toBeUndefined();
+        }
     });
 
     it('carries browser-rallar auth defaults into manual configure commands', () => {

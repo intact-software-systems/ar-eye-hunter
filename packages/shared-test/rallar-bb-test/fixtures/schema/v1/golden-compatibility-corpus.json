@@ -599,6 +599,31 @@
           }
         ]
       }
+    },
+    {
+      "caseId": "rtc-send-expect-rejected",
+      "expectedErrors": ["$.commands[0].expect: Unexpected property."],
+      "value": {
+        "schemaVersion": 1,
+        "recipeId": "rtc-send-expect-rejected",
+        "commands": [
+          {
+            "kind": "rtc.send",
+            "commandId": "rtc-send-with-expect",
+            "connection": "rtc",
+            "transport": "realtime",
+            "send": {
+              "roomId": "bb-group",
+              "data": {
+                "topic": "room.negative.expect"
+              }
+            },
+            "expect": {
+              "outcome": "ack"
+            }
+          }
+        ]
+      }
     }
   ],
   "invalidDistributedManifests": [

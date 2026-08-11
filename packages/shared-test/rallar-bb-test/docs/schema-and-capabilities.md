@@ -87,6 +87,24 @@ identity is not recipe-resolvable because simulated providers and external
 runtime configuration can remain valid. `refreshRoom` is an internal runtime
 bridge operation, not a recipe command or public command-schema field.
 
+## RTC Send Boundary And HTTP Result Evidence
+
+`rtc.send` has no `expect` field on the control path: the command schema and
+`validateRallarBlackBoxTestCommand` reject it, because no agent runtime ever
+evaluates it and a control-dispatched recipe carrying it would validate green
+while asserting nothing. The `RallarBlackBoxTestRtcSendCommand.expect`
+TypeScript field exists only for the in-process black-box-runner adapter,
+which calls `runtime.execute` directly and records runner-side expectations.
+Distributed delivery expectations belong in `wait` and `assert` commands.
+
+`http.request` results record `url`, `status`, `statusText`, `ok`, the full
+response header record, and the decoded body. Every recorded result value,
+failure detail, and the mirrored `rallar.bb.http.response` event passes the
+runtime redaction pipeline, so sensitive header and body names (authorization,
+cookie, token, ticket, and the other default key substrings) appear as
+`<redacted>` in results, events, failures, and artifacts. Header evidence is
+therefore assertable from recorded results without extra capture options.
+
 ## Validation
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.
