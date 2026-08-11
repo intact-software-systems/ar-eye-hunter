@@ -38,10 +38,10 @@ export interface AssertionOutcomeParityRow {
 
 interface ComparatorParityFixture {
     readonly fixtureId: string;
-    readonly value: unknown;
+    readonly value: any;
     readonly runnerComparator: Readonly<Record<string, unknown>> & Readonly<{ path: string }>;
     readonly runtimeOperator: RallarBlackBoxTestAssertOperator;
-    readonly runtimeExpected: unknown;
+    readonly runtimeExpected: any;
     readonly expectedVerdict: AssertionOutcomeVerdict;
 }
 
@@ -138,7 +138,7 @@ export function evaluateComparatorOutcomeParityRows(): readonly AssertionOutcome
         ]);
         const runnerVerdict: AssertionOutcomeVerdict = runnerIssues.length === 0 ? 'pass' : 'fail';
         const path = fixture.runnerComparator.path;
-        const record = fixture.value as Record<string, unknown>;
+        const record = fixture.value as Record<string, any>;
         const lookup = {
             exists: Object.prototype.hasOwnProperty.call(record, path),
             value: record[path],
