@@ -8,6 +8,8 @@
         "blob": "f5f30bb18b2916879e06dd9a0c3d4f1b8e72124a"
       },
       "targets": [
+        "packages/shared-test/black-box-runner/http/execute-http-interaction.ts",
+        "packages/shared-test/black-box-runner/http/http-response-expectations.ts",
         "packages/shared-test/black-box-runner/ws/ws-interaction-statuses.ts",
         "packages/shared-test/black-box-runner/ws/ws-wait-expectations.ts"
       ]

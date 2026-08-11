@@ -219,7 +219,7 @@ Use HTTP steps for REST API calls and ordinary fetch-compatible network checks.
 
 Common fields:
 
-- `type`: `http` or `http.request`
+- `type`: `http`, `http.request`, or `http.poll-until`
 - `connection`: optional connection name from `connections`
 - `request.method`: HTTP method, defaulting to `GET`
 - `request.path` or `request.url`: endpoint path or absolute URL
@@ -271,6 +271,52 @@ Accepted status arrays are useful for idempotent operations:
         "code": "already-exists"
       }
     ]
+  }
+}
+```
+
+An `http.poll-until` step repeats the same request until its own `expect`
+passes, with exponential backoff between attempts. `request.poll` reuses the
+retry field names and adds one duration bound:
+
+- `poll.maxAttempts`: attempt bound, default `10`
+- `poll.maxDurationMs`: elapsed-time bound, default `15000`
+- `poll.backoffMs`: initial backoff, default `100`
+- `poll.backoffMultiplier`: exponential factor, default `2`
+
+Success is the step's own `expect` passing. Exhausting either bound fails the
+step with the last attempt's result plus `pollAttempts`, `pollExhausted`, and
+`pollElapsedMs` report fields. A connection error counts as a failed attempt
+and polling continues within the bounds. `request.retry` still applies inside
+each individual attempt (transport retry), so keep it minimal on polled steps.
+Use `http.poll-until` for read-your-writes and convergence reads instead of
+hand-unrolled `nonBlockingFailure` poll rounds when the poll is one HTTP
+request; rounds that fan out over `parallel` groups stay explicit.
+
+```json
+{
+  "name": "pollGroupConverged",
+  "type": "http.poll-until",
+  "connection": "api",
+  "request": {
+    "method": "GET",
+    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+    "headers": {
+      "Authorization": "{ownerAuthHeader}",
+      "x-client-id": "{ownerClientId}"
+    },
+    "poll": {
+      "maxAttempts": 8,
+      "maxDurationMs": 10000,
+      "backoffMs": 100,
+      "backoffMultiplier": 2
+    }
+  },
+  "expect": {
+    "status": 200,
+    "body": {
+      "onlineMemberCount": 13
+    }
   }
 }
 ```

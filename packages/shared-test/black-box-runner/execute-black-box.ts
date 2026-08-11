@@ -33,6 +33,11 @@ import {
 } from './rallar-remote-browser-provider.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
 import { normalizeBlackBoxResponseHeaders } from './http/normalize-black-box-response-headers.ts';
+import { executeHttpInteraction } from './http/execute-http-interaction.ts';
+import {
+    toHttpInteractionStatus,
+    toStatus,
+} from './http/http-response-expectations.ts';
 import {
     directSafeOutputTransformSpec,
     evaluateSafeOutputTransform,
@@ -706,124 +711,6 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function toRetryPolicy(request: any): any {
-    const retry = request?.resilience?.retry || request?.retry || {};
-
-    return {
-        maxAttempts: Number.parseInt(retry.maxAttempts || 1),
-        backoffMs: Number.parseInt(retry.backoffMs || 0),
-        backoffMultiplier: Number.parseFloat(retry.backoffMultiplier || 1),
-        onStatus: retry.onStatus || [],
-        onException: retry.onException !== false,
-    };
-}
-
-function shouldRetryStatus(response: any, retryPolicy: any): boolean {
-    return retryPolicy.onStatus
-        .map((status: any) => Number.parseInt(status))
-        .includes(response.status);
-}
-
-function toBackoffMs(retryPolicy: any, attemptNumber: number): number {
-    return retryPolicy.backoffMs * Math.pow(retryPolicy.backoffMultiplier, attemptNumber - 1);
-}
-
-async function fetchWithRetry(request: any): Promise<any> {
-    const retryPolicy = toRetryPolicy(request);
-    const maxAttempts = Number.isFinite(retryPolicy.maxAttempts) && retryPolicy.maxAttempts > 0
-        ? retryPolicy.maxAttempts
-        : 1;
-
-    let lastException: any;
-
-    for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++) {
-        try {
-            const response = await fetchDataBasic(request) as any;
-
-            response.blackBoxAttemptNumber = attemptNumber;
-            response.blackBoxMaxAttempts = maxAttempts;
-
-            if (attemptNumber < maxAttempts && shouldRetryStatus(response, retryPolicy)) {
-                const backoffMs = toBackoffMs(retryPolicy, attemptNumber);
-                if (backoffMs > 0) {
-                    await sleep(backoffMs);
-                }
-                continue;
-            }
-
-            return response;
-        } catch (e) {
-            lastException = e instanceof Error
-                ? e
-                : new Error(String(e));
-
-            lastException.blackBoxAttemptNumber = attemptNumber;
-            lastException.blackBoxMaxAttempts = maxAttempts;
-
-            if (!retryPolicy.onException || attemptNumber >= maxAttempts) {
-                throw lastException;
-            }
-
-            const backoffMs = toBackoffMs(retryPolicy, attemptNumber);
-            if (backoffMs > 0) {
-                await sleep(backoffMs);
-            }
-        }
-    }
-
-    throw lastException || new Error('Request failed without response');
-}
-
-function toBody(request: any): BodyInit | undefined {
-    if (request.form) {
-        return new URLSearchParams(request.form);
-    }
-
-    return request.body && request.method !== undefined && request.method !== 'GET'
-        ? JSON.stringify(request.body)
-        : undefined;
-}
-
-async function toJson(res: Response): Promise<any> {
-    return res.json()
-        .catch(() => {
-            return {};
-        });
-}
-
-function toStatus(
-    config: any,
-    result: string,
-    actualJson: any,
-    res: any,
-    interaction: any,
-    results: any = {},
-): any {
-    return {
-        name: config.interactionName,
-        status: FAILURE,
-        result,
-        ...toCorrelationReportFields(interaction),
-        method: interaction.request.method || 'GET',
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        attemptNumber: res.blackBoxAttemptNumber,
-        maxAttempts: res.blackBoxMaxAttempts,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: {
-            body: actualJson,
-            headers: normalizeBlackBoxResponseHeaders(res.headers),
-            statusCode: res.status,
-            statusText: res.statusText,
-        },
-        details: results,
-        ...config,
-    };
-}
-
 function toOutputReportFields(interaction: any): any {
     return {
         output: interaction.request.output,
@@ -834,124 +721,6 @@ function toOutputReportFields(interaction: any): any {
         redact: interaction.request.redact,
         redactAs: interaction.request.redactAs,
     };
-}
-
-function toSuccessStatus(config: any, actualJson: any, response: any, interaction: any): any {
-    return {
-        name: config.interactionName,
-        status: SUCCESS,
-        ...toCorrelationReportFields(interaction),
-        method: interaction.request.method,
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        attemptNumber: response.blackBoxAttemptNumber,
-        maxAttempts: response.blackBoxMaxAttempts,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: {
-            body: actualJson,
-            headers: normalizeBlackBoxResponseHeaders(response.headers),
-            statusCode: response.status,
-            statusText: response.statusText,
-        },
-        ...toOutputReportFields(interaction),
-        input: interaction.request.input,
-    };
-}
-
-function toNumberList(value: unknown): number[] {
-    if (Array.isArray(value)) {
-        return value
-            .map(item => Number.parseInt(String(item), 10))
-            .filter(item => Number.isFinite(item));
-    }
-
-    if (typeof value === 'string' && value.includes(',')) {
-        return toNumberList(value.split(','));
-    }
-
-    if (value !== undefined && value !== null) {
-        const parsed = Number.parseInt(String(value), 10);
-        return Number.isFinite(parsed)
-            ? [parsed]
-            : [];
-    }
-
-    return [];
-}
-
-function expectedHttpStatusCodes(response: any): number[] {
-    return [
-        ...toNumberList(response?.statusCode),
-        ...toNumberList(response?.status),
-        ...toNumberList(response?.statusCodes),
-        ...toNumberList(response?.allowedStatusCodes),
-    ];
-}
-
-function bodyExpectationAlternatives(response: any): any[] {
-    const alternatives = response?.bodyAnyOf ?? response?.anyBodyOf ?? response?.bodyIn;
-
-    return Array.isArray(alternatives)
-        ? alternatives
-        : [];
-}
-
-function compareExpectedBody(expectedBody: any, actualJson: any, interaction: any): any {
-    return compareJson(
-        expectedBody,
-        actualJson,
-        toConfig(
-            interaction.response?.comparison || COMPARISON.COMPATIBLE,
-            interaction.response?.ignoreJsonKeys || [],
-            interaction.response?.ignoreJsonPaths || [],
-        ),
-    );
-}
-
-function toHttpInteractionStatus(config: any, interaction: any, response: any, actualJson: any): any {
-    const expectedStatuses = expectedHttpStatusCodes(interaction.response);
-    const hasExpectedStatus = expectedStatuses.length > 0;
-
-    if (hasExpectedStatus && !expectedStatuses.includes(Number.parseInt(String(response.status), 10))) {
-        return toStatus(config, 'Expected responseCode not the same as actual responseCode', actualJson, response, interaction, {
-            expectedStatusCodes: expectedStatuses,
-        });
-    }
-
-    if (!response.ok && !hasExpectedStatus) {
-        return toStatus(config, 'Server request failed.', actualJson, response, interaction);
-    }
-
-    const bodyAlternatives = bodyExpectationAlternatives(interaction.response);
-    if (bodyAlternatives.length > 0) {
-        if (actualJson === undefined || actualJson === null) {
-            return toStatus(config, 'Server with no body in response. Expects a body.', actualJson, response, interaction);
-        }
-
-        const comparisons = bodyAlternatives.map(expectedBody => compareExpectedBody(expectedBody, actualJson, interaction));
-        const matchedIndex = comparisons.findIndex(result => result.isEqual);
-        if (matchedIndex < 0) {
-            return toStatus(config, 'Expected response not to match any accepted response body', actualJson, response, interaction, {
-                bodyAnyOf: bodyAlternatives,
-                comparisons,
-            });
-        }
-    } else if (interaction?.response?.body !== undefined) {
-        if (actualJson === undefined || actualJson === null) {
-            return toStatus(config, 'Server with no body in response. Expects a body.', actualJson, response, interaction);
-        }
-
-        const results = compareExpectedBody(interaction.response.body, actualJson, interaction);
-
-        if (!results.isEqual) {
-            return toStatus(config, 'Expected response not the same as actual response', actualJson, response, interaction, results);
-        }
-    }
-
-    return toSuccessStatus(config, actualJson, response, interaction);
 }
 
 function toInteractionName(interactionWithConfig: any): string {
@@ -2534,32 +2303,6 @@ function toReport(context: any, options: any, startedAtEpochMs: number, endedAtE
     }, context.redactions);
 }
 
-function fetchDataBasic(request: any): Promise<Response> {
-    const controller = request.timeoutMs
-        ? new AbortController()
-        : undefined;
-
-    const timeout = request.timeoutMs
-        ? setTimeout(() => controller?.abort(), Number.parseInt(request.timeoutMs))
-        : undefined;
-
-    return fetch(
-        request.path,
-        {
-            method: request.method,
-            credentials: request.credentials ? request.credentials : 'omit',
-            mode: request.mode ? request.mode : 'cors',
-            headers: request.headers,
-            body: toBody(request),
-            signal: controller?.signal,
-        },
-    ).finally(() => {
-        if (timeout) {
-            clearTimeout(timeout);
-        }
-    });
-}
-
 function isDryRunExecution(interaction: any, config: any, context: any): boolean {
     return interaction?.request?.dryRun === true
         || interaction?.dryRun === true
@@ -2805,30 +2548,7 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         return executeRemoteHttpInteraction(interaction, config, context);
     }
 
-    return fetchWithRetry(interaction.request)
-        .then(async response => {
-            const actualJson = await toJson(response);
-            return toHttpInteractionStatus(config, interaction, response, actualJson);
-        })
-        .catch(e => {
-            return {
-                name: config.interactionName,
-                exception: e?.name === 'AbortError'
-                    ? 'Request timed out after ' + interaction.request.timeoutMs + ' ms'
-                    : e?.message,
-                status: FAILURE,
-                ...toCorrelationReportFields(interaction),
-                method: interaction.request.method || 'GET',
-                path: interaction.request.path,
-                timeoutMs: interaction.request.timeoutMs,
-                attemptNumber: e.blackBoxAttemptNumber,
-                maxAttempts: e.blackBoxMaxAttempts,
-                scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-                interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-                repeatIndex: config.interaction.request.repeatIndex,
-                ...config,
-            };
-        });
+    return executeHttpInteraction(interaction, config);
 }
 
 function toParallelFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {

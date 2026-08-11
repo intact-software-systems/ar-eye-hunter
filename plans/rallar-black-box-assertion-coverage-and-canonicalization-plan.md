@@ -13,7 +13,7 @@ Status: in execution as a stacked PR series based on
 | Workstream | Status | Branch / PR |
 |---|---|---|
 | W1 `expect.absent` | implemented; in review | `codex/black-box-w1-ws-rtc-absent` |
-| W2 `poll-until` | not started | — |
+| W2 `poll-until` | runner capability implemented; recipe rewrite blocked on decision | `codex/black-box-w2-poll-until` |
 | W3 comparators + `compatible-complete` | not started | — |
 | W4 pure-API recipes | not started | — |
 | W5 `expect.headers` | not started | — |
@@ -139,6 +139,20 @@ and governance gates.
 **Done when:** the rewritten recipe asserts an identical final state to before
 and is materially shorter; a new recipe uses `poll-until` for read-your-writes
 (see W4).
+
+**Execution correction (2026-08-11):** the premise misnamed the target. As of
+#160, `api-v1-state-topology-churn.json` contains **zero** `nonBlockingFailure`
+poll rounds — it already uses revision-floor reads with transport `retry` plus
+one loop-based poll, and its structure is pinned by
+`api-v1-three-server-recipe-semantics.test.ts`. The hand-unrolled rounds live in
+`api-v1-state-medium-scale-churn.json` (5 rounds) and
+`api-v1-state-write-convergence.json` (5 rounds), and every one of them is a
+`parallel` step fanning over 3–15 groups — outside what a single-request
+`poll-until` can express, and both files are protected convergence gates. The
+W2 PR therefore ships the runner capability, unit tests, and documentation; no
+convergence recipe was rewritten. Rewriting those rounds needs either a
+group-scoped poll operator or explicit approval to restructure the gates —
+flagged to the plan owner as an open decision.
 
 ---
 
