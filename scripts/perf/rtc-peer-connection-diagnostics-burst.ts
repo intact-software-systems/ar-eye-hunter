@@ -1,348 +1,368 @@
+import type {
+  RtcBaselineJson,
+  RtcBaselineSampleIdentityDto,
+  RtcBaselineSampleDto,
+} from './rtc-baseline/rtc-baseline-contracts.ts';
+import { rtcBaselineIssue } from './rtc-baseline/rtc-baseline-contracts.ts';
 import {
-    QRtcPeerConnection,
-    type QRtcPeerConnectionDiagnostics,
-} from '@shared/webrtc/QRtcPeerConnection.ts';
-import { QRtcSignalingType } from '@shared/webrtc/QRtcSignalingContracts.ts';
+  parseRtcBaselineBoundedInteger,
+  parseRtcBaselineOneTokenOptions,
+} from './rtc-baseline/rtc-baseline-cli-options.ts';
+import { validateRtcBaselineId } from './rtc-baseline/rtc-baseline-validation.ts';
+import {
+  createRtcPeerConnectionDiagnosticsDependencies,
+  runRtcPeerConnectionDiagnostics,
+  type RtcPeerConnectionDiagnosticsResult,
+} from './rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts';
 
-type Args = Readonly<{
-    peers: number;
-    iceCandidatesPerPeer: number;
-    offerCollisionsPerPeer: number;
-    runs: number;
-    out: string;
-}>;
+export { createRtcPeerConnectionDiagnosticsDependencies };
 
-type NumericDiagnostics = {
-    [Key in keyof QRtcPeerConnectionDiagnostics as QRtcPeerConnectionDiagnostics[Key] extends number
-        ? Key
-        : never]: number;
-};
+interface DiagnosticsInput {
+  readonly peers: number;
+  readonly iceCandidatesPerPeer: number;
+  readonly offerCollisionsPerPeer: number;
+  readonly runs: number;
+}
+interface DiagnosticArguments {
+  readonly mode: 'diagnostic';
+  readonly input: DiagnosticsInput;
+  readonly out: string;
+}
+interface AcceptedArguments {
+  readonly mode: 'accepted';
+  readonly input: DiagnosticsInput;
+  readonly baselineId: string;
+  readonly intendedPhase: 'warmup' | 'retained';
+  readonly outerOrdinal: number;
+  readonly sampleIds: readonly string[];
+}
+interface BenchResult extends RtcPeerConnectionDiagnosticsResult {
+  readonly run: number;
+  readonly iceCandidatesPerPeer: number;
+  readonly offerCollisionsPerPeer: number;
+}
+interface CreateRtcPeerConnectionDiagnosticsSampleInput {
+  readonly identity: RtcBaselineSampleIdentityDto;
+  readonly outcome: 'passed' | 'failed' | 'not-run';
+  readonly rawEvidence: RtcPeerConnectionDiagnosticsResult | null;
+  readonly issues: RtcBaselineSampleDto['issues'];
+}
+const acceptedNames = [
+  'capture',
+  'baseline-id',
+  'workload',
+  'case-id',
+  'input-key',
+  'intended-phase',
+  'outer-ordinal',
+  'sample-ids',
+  'rtc-ice-candidates-per-peer',
+  'rtc-inner-runs',
+  'rtc-offer-collisions-per-peer',
+  'rtc-peers',
+];
+const diagnosticNames = ['peers', 'ice-candidates', 'offer-collisions', 'runs', 'out'];
 
-type BenchResult = Readonly<{
-    run: number;
-    durationMs: number;
-    peerCount: number;
-    iceCandidatesPerPeer: number;
-    offerCollisionsPerPeer: number;
-    signalingMessagesSent: number;
-    diagnostics: NumericDiagnostics;
-}>;
+export function parseRtcPeerConnectionDiagnosticsArguments(arguments_: readonly string[]) {
+  const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  const parsed = parseRtcBaselineOneTokenOptions(
+    arguments_,
+    accepted ? acceptedNames : diagnosticNames,
+  );
+  if (!parsed.ok) return parsed;
+  return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
+}
 
-type QueuedTimer = Readonly<{
-    id: number;
-    callback: () => void | Promise<void>;
-}>;
+export function createRtcPeerConnectionDiagnosticsSamples(input: {
+  worker: AcceptedArguments;
+  results: readonly RtcPeerConnectionDiagnosticsResult[];
+}): RtcBaselineSampleDto[] {
+  let priorFailureId: string | undefined;
+  return input.worker.sampleIds.map((sampleId, index) => {
+    const identity = createIdentity(input.worker, sampleId, index + 1);
+    const result = input.results[index];
+    if (priorFailureId !== undefined || result === undefined) {
+      return createSample({
+        identity,
+        outcome: 'not-run',
+        rawEvidence: null,
+        issues: [
+          rtcBaselineIssue(
+            '$.rawEvidence',
+            'causal-not-run',
+            priorFailureId ?? 'Missing inner run.',
+          ),
+        ],
+      });
+    }
+    const issues = validateResult(input.worker.input, result);
+    if (issues.length > 0) priorFailureId = sampleId;
+    return createSample({
+      identity,
+      outcome: issues.length === 0 ? 'passed' : 'failed',
+      rawEvidence: result,
+      issues,
+    });
+  });
+}
 
-let nextTimerId = 1;
-let timers: QueuedTimer[] = [];
+export async function runRtcPeerConnectionDiagnosticsAcceptedSamples(input: {
+  worker: AcceptedArguments;
+  run: () => Promise<RtcPeerConnectionDiagnosticsResult>;
+}): Promise<RtcBaselineSampleDto[]> {
+  const results: RtcPeerConnectionDiagnosticsResult[] = [];
+  for (let run = 0; run < input.worker.input.runs; run += 1) {
+    const result = await input.run();
+    results.push(result);
+    if (validateResult(input.worker.input, result).length > 0) break;
+  }
+  return createRtcPeerConnectionDiagnosticsSamples({ worker: input.worker, results });
+}
 
 async function main(): Promise<void> {
-    const args = parseArgs();
-    const writeLine = console.log.bind(console);
-    console.log = () => {
-    };
-    console.warn = () => {
-    };
-
-    installFakePeerConnection();
-
-    const originalSetTimeout = globalThis.setTimeout;
-    const originalClearTimeout = globalThis.clearTimeout;
-
-    (globalThis as unknown as {
-        setTimeout: typeof setTimeout;
-        clearTimeout: typeof clearTimeout;
-    }).setTimeout = ((callback: () => void | Promise<void>) => {
-        const id = nextTimerId++;
-        timers.push({ id, callback });
-        return id;
-    }) as typeof setTimeout;
-    (globalThis as unknown as {
-        clearTimeout: typeof clearTimeout;
-    }).clearTimeout = ((id: number) => {
-        timers = timers.filter((timer) => timer.id !== id);
-    }) as typeof clearTimeout;
-
-    try {
-        const results: BenchResult[] = [];
-
-        for (let run = 1; run <= args.runs; run++) {
-            FakeRTCPeerConnection.instances = [];
-            timers = [];
-            const start = performance.now();
-            const diagnostics = createZeroDiagnostics();
-            let signalingMessagesSent = 0;
-
-            for (let index = 0; index < args.peers; index++) {
-                const politePeer = createPeer(`polite-${index}`, true, () => {
-                    signalingMessagesSent++;
-                });
-                politePeer.connect();
-
-                for (let candidateIndex = 0; candidateIndex < args.iceCandidatesPerPeer; candidateIndex++) {
-                    await politePeer.handleSignal(QRtcSignalingType.IceCandidate, {
-                        description: null,
-                        candidate: {
-                            candidate: `candidate-${index}-${candidateIndex}`,
-                            sdpMid: '0',
-                            sdpMLineIndex: 0,
-                        },
-                    });
-                }
-
-                await politePeer.handleSignal(QRtcSignalingType.Offer, {
-                    description: {
-                        type: 'offer',
-                        sdp: `remote-offer-${index}`,
-                    } as RTCSessionDescription,
-                    candidate: null,
-                });
-
-                addDiagnostics(diagnostics, politePeer.readDiagnostics());
-
-                const impolitePeer = createPeer(`impolite-${index}`, false, () => {
-                    signalingMessagesSent++;
-                });
-                impolitePeer.connect();
-                const pc = FakeRTCPeerConnection.instances.at(-1);
-                if (!pc) {
-                    throw new Error('Expected fake RTCPeerConnection instance');
-                }
-                impolitePeer.status.makingOffer = true;
-                pc.signalingState = 'have-local-offer';
-
-                for (let collisionIndex = 0; collisionIndex < args.offerCollisionsPerPeer; collisionIndex++) {
-                    await impolitePeer.handleSignal(QRtcSignalingType.Offer, {
-                        description: {
-                            type: 'offer',
-                            sdp: `colliding-offer-${index}-${collisionIndex}`,
-                        } as RTCSessionDescription,
-                        candidate: null,
-                    });
-                }
-
-                pc.connectionState = 'failed';
-                await impolitePeer.handleReconnect();
-                await impolitePeer.handleReconnect();
-                await drainTimers();
-                await (impolitePeer as unknown as { signalingChain: Promise<void> }).signalingChain;
-                impolitePeer.status.reconnectAttempts = 5;
-                await impolitePeer.handleReconnect();
-
-                addDiagnostics(diagnostics, impolitePeer.readDiagnostics());
-            }
-
-            results.push({
-                run,
-                durationMs: performance.now() - start,
-                peerCount: args.peers * 2,
-                iceCandidatesPerPeer: args.iceCandidatesPerPeer,
-                offerCollisionsPerPeer: args.offerCollisionsPerPeer,
-                signalingMessagesSent,
-                diagnostics,
-            });
-        }
-
-        await Deno.writeTextFile(
-            args.out,
-            JSON.stringify({
-                createdAt: new Date().toISOString(),
-                input: args,
-                results,
-            }, null, 2),
-        );
-
-        writeLine(`Wrote ${args.out}`);
-    } finally {
-        (globalThis as unknown as {
-            setTimeout: typeof setTimeout;
-            clearTimeout: typeof clearTimeout;
-        }).setTimeout = originalSetTimeout;
-        (globalThis as unknown as {
-            clearTimeout: typeof clearTimeout;
-        }).clearTimeout = originalClearTimeout;
+  const parsed = parseRtcPeerConnectionDiagnosticsArguments(Deno.args);
+  if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues));
+  const writeLine = console.log.bind(console);
+  console.log = () => {};
+  console.warn = () => {};
+  const fakeRuntime = createRtcPeerConnectionDiagnosticsDependencies();
+  try {
+    if (parsed.value.mode === 'accepted') {
+      const samples = await runRtcPeerConnectionDiagnosticsAcceptedSamples({
+        worker: parsed.value,
+        run: () => runRtcPeerConnectionDiagnostics(parsed.value.input, fakeRuntime.dependencies),
+      });
+      writeLine(JSON.stringify(samples));
+      return;
     }
-}
-
-function parseArgs(): Args {
-    return {
-        peers: Number(readArg('--peers') ?? '500'),
-        iceCandidatesPerPeer: Number(readArg('--ice-candidates') ?? '5'),
-        offerCollisionsPerPeer: Number(readArg('--offer-collisions') ?? '3'),
-        runs: Number(readArg('--runs') ?? '3'),
-        out: readArg('--out') ??
-            'tmp/perf/results/rtc-peer-connection-diagnostics-burst.json',
-    };
-}
-
-function readArg(name: string): string | undefined {
-    return Deno.args.find((arg) => arg.startsWith(`${name}=`))
-        ?.slice(name.length + 1);
-}
-
-function createPeer(
-    id: string,
-    isPolite: boolean,
-    onSend: () => void,
-): QRtcPeerConnection {
-    return new QRtcPeerConnection(
+    const results: BenchResult[] = [];
+    for (let run = 1; run <= parsed.value.input.runs; run += 1) {
+      const result = await runRtcPeerConnectionDiagnostics(
+        parsed.value.input,
+        fakeRuntime.dependencies,
+      );
+      results.push({
+        ...result,
+        run,
+        iceCandidatesPerPeer: parsed.value.input.iceCandidatesPerPeer,
+        offerCollisionsPerPeer: parsed.value.input.offerCollisionsPerPeer,
+      });
+    }
+    await Deno.writeTextFile(
+      parsed.value.out,
+      JSON.stringify(
         {
-            send: async () => {
-                onSend();
-            },
+          createdAt: new Date().toISOString(),
+          input: { ...parsed.value.input, out: parsed.value.out },
+          results,
         },
-        {
-            sessionId: `self-${id}`,
-            token: 'token',
-            peerSessionId: `peer-${id}`,
-            iceCandidates: {
-                iceServers: [],
-                expiresAtEpochMs: Date.now() + 60_000,
-            },
-            isPolite,
-        },
+        null,
+        2,
+      ),
+      { createNew: true },
     );
+    writeLine(`Wrote ${parsed.value.out}`);
+  } finally {
+    fakeRuntime.restore();
+  }
 }
 
-async function drainTimers(): Promise<void> {
-    while (timers.length > 0) {
-        const pending = timers;
-        timers = [];
-
-        for (const timer of pending) {
-            await timer.callback();
-        }
-    }
-}
-
-function createZeroDiagnostics(): NumericDiagnostics {
+function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+  const out = options.out ?? 'tmp/perf/results/rtc-peer-connection-diagnostics-burst.json';
+  const outComponents = out.split('/');
+  const validOut =
+    out.startsWith('tmp/perf/results/') &&
+    !out.includes('\\') &&
+    outComponents.every((component) => component !== '' && component !== '.' && component !== '..');
+  const peers = parseRtcBaselineBoundedInteger(options.peers ?? '500', 'peers', 1, 500);
+  const ice = parseRtcBaselineBoundedInteger(
+    options['ice-candidates'] ?? '5',
+    'ice-candidates',
+    0,
+    5,
+  );
+  const collisions = parseRtcBaselineBoundedInteger(
+    options['offer-collisions'] ?? '3',
+    'offer-collisions',
+    0,
+    3,
+  );
+  const runs = parseRtcBaselineBoundedInteger(options.runs ?? '3', 'runs', 1, 5);
+  if (!peers.ok || !ice.ok || !collisions.ok || !runs.ok || !validOut) {
     return {
-        connectCallCount: 0,
-        connectIgnoredCount: 0,
-        resetCount: 0,
-        closedPeerConnectionCount: 0,
-        negotiationNeededCount: 0,
-        negotiationSkippedCount: 0,
-        offerCreatedCount: 0,
-        inboundOfferCount: 0,
-        inboundAnswerCount: 0,
-        inboundIceCandidateCount: 0,
-        staleAnswerIgnoredCount: 0,
-        offerCollisionCount: 0,
-        ignoredOfferCollisionCount: 0,
-        politeOfferRollbackCount: 0,
-        outboundOfferCount: 0,
-        outboundAnswerCount: 0,
-        outboundIceCandidateCount: 0,
-        queuedIceCandidateCount: 0,
-        addedIceCandidateCount: 0,
-        flushedIceCandidateCount: 0,
-        ignoredIceCandidateForIgnoredOfferCount: 0,
-        reconnectAttemptCount: 0,
-        reconnectTimerAlreadyActiveCount: 0,
-        reconnectExhaustedCount: 0,
-        iceRestartCount: 0,
-        iceRestartSkippedConnectedCount: 0,
-        outboundSignalingErrorCount: 0,
-        inboundSignalingErrorCount: 0,
-        pendingIceCandidateQueueLength: 0,
-        reconnectAttemptsInFlight: 0,
+      ok: false as const,
+      issues: [
+        ...(!peers.ok ? peers.issues : []),
+        ...(!ice.ok ? ice.issues : []),
+        ...(!collisions.ok ? collisions.issues : []),
+        ...(!runs.ok ? runs.issues : []),
+        ...(!validOut
+          ? [rtcBaselineIssue('$.out', 'invalid-diagnostic-output', 'Expected tmp/perf/results/.')]
+          : []),
+      ],
     };
+  }
+  return {
+    ok: true as const,
+    value: {
+      mode: 'diagnostic' as const,
+      input: {
+        peers: peers.value,
+        iceCandidatesPerPeer: ice.value,
+        offerCollisionsPerPeer: collisions.value,
+        runs: runs.value,
+      },
+      out,
+    },
+  };
 }
 
-function addDiagnostics(
-    aggregate: NumericDiagnostics,
-    diagnostics: QRtcPeerConnectionDiagnostics,
-): void {
-    for (const [key, value] of Object.entries(diagnostics)) {
-        if (typeof value === 'number') {
-            aggregate[key as keyof NumericDiagnostics] += value;
-        }
+function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+  const outer = parseRtcBaselineBoundedInteger(
+    options['outer-ordinal'] ?? '',
+    'outer-ordinal',
+    1,
+    999,
+  );
+  const issues = outer.ok ? [] : [...outer.issues];
+  issues.push(...validateRtcBaselineId(options['baseline-id'] ?? ''));
+  const expected = {
+    capture: 'worker',
+    workload: 'RTC-B01',
+    'case-id': 'peer-connection-diagnostics-burst',
+    'input-key': 'pairs-500',
+    'rtc-ice-candidates-per-peer': '5',
+    'rtc-inner-runs': '5',
+    'rtc-offer-collisions-per-peer': '3',
+    'rtc-peers': '500',
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    if (options[name] !== value) {
+      issues.push(rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`));
     }
+  }
+  const phase = options['intended-phase'];
+  if (phase !== 'warmup' && phase !== 'retained') {
+    issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
+  }
+  const ordinal = outer.ok ? outer.value : 0;
+  const sampleIds = (options['sample-ids'] ?? '').split(',');
+  const expectedIds = createExpectedSampleIds(
+    'peer-connection-diagnostics-burst-pairs-500',
+    phase === 'warmup' ? phase : 'retained',
+    ordinal,
+  );
+  if (JSON.stringify(sampleIds) !== JSON.stringify(expectedIds)) {
+    issues.push(rtcBaselineIssue('$.sample-ids', 'unexpected-worker-input', 'Invalid sample IDs.'));
+  }
+  return issues.length > 0
+    ? { ok: false as const, issues }
+    : {
+        ok: true as const,
+        value: {
+          mode: 'accepted' as const,
+          input: { peers: 500, iceCandidatesPerPeer: 5, offerCollisionsPerPeer: 3, runs: 5 },
+          baselineId: options['baseline-id']!,
+          intendedPhase: phase as 'warmup' | 'retained',
+          outerOrdinal: ordinal,
+          sampleIds,
+        },
+      };
 }
 
-function installFakePeerConnection(): void {
-    (globalThis as unknown as { RTCPeerConnection: typeof FakeRTCPeerConnection })
-        .RTCPeerConnection = FakeRTCPeerConnection;
+function createExpectedSampleIds(prefix: string, phase: string, outerOrdinal: number): string[] {
+  const attemptPrefix = `rtc-b01-${prefix}-${phase}-${String(outerOrdinal).padStart(3, '0')}`;
+  return Array.from(
+    { length: 5 },
+    (_value, index) => `${attemptPrefix}-${String(index + 1).padStart(3, '0')}`,
+  );
 }
 
-class FakeRTCPeerConnection {
-    static instances: FakeRTCPeerConnection[] = [];
-
-    connectionState: RTCPeerConnectionState = 'new';
-    signalingState: RTCSignalingState = 'stable';
-    iceConnectionState: RTCIceConnectionState = 'new';
-    iceGatheringState: RTCIceGatheringState = 'new';
-    localDescription: RTCSessionDescription | null = null;
-    remoteDescription: RTCSessionDescription | null = null;
-
-    onnegotiationneeded: (() => Promise<void>) | null = null;
-    onicecandidate:
-        | ((event: { candidate: RTCIceCandidateInit | null }) => Promise<void>)
-        | null = null;
-    ondatachannel: ((event: RTCDataChannelEvent) => Promise<void>) | null = null;
-    ontrack: ((event: RTCTrackEvent) => Promise<void>) | null = null;
-    oniceconnectionstatechange: (() => void) | null = null;
-    onsignalingstatechange: (() => void) | null = null;
-    onconnectionstatechange: (() => void) | null = null;
-
-    constructor(_configuration: RTCConfiguration) {
-        FakeRTCPeerConnection.instances.push(this);
-    }
-
-    addEventListener(_type: string, _listener: (event?: Event) => void): void {
-    }
-
-    removeEventListener(_type: string, _listener: (event?: Event) => void): void {
-    }
-
-    getTransceivers(): Array<{ stop: () => void }> {
-        return [];
-    }
-
-    close(): void {
-        this.connectionState = 'closed';
-    }
-
-    restartIce(): void {
-    }
-
-    createDataChannel(_label: string): RTCDataChannel {
-        return {} as RTCDataChannel;
-    }
-
-    addIceCandidate(_candidate?: RTCIceCandidateInit): Promise<void> {
-        return Promise.resolve();
-    }
-
-    async setRemoteDescription(description: RTCSessionDescription): Promise<void> {
-        this.remoteDescription = description;
-        this.signalingState = description.type === 'offer'
-            ? 'have-remote-offer'
-            : 'stable';
-    }
-
-    async setLocalDescription(
-        description?: RTCSessionDescriptionInit,
-    ): Promise<void> {
-        if (description) {
-            this.localDescription = description as RTCSessionDescription;
-        } else if (this.remoteDescription?.type === 'offer') {
-            this.localDescription = {
-                type: 'answer',
-                sdp: 'answer-sdp',
-            } as RTCSessionDescription;
-        } else {
-            this.localDescription = {
-                type: 'offer',
-                sdp: 'offer-sdp',
-            } as RTCSessionDescription;
-        }
-
-        this.signalingState = this.localDescription.type === 'offer'
-            ? 'have-local-offer'
-            : 'stable';
-    }
+function createIdentity(
+  worker: AcceptedArguments,
+  sampleId: string,
+  innerOrdinal: number,
+): RtcBaselineSampleIdentityDto {
+  return {
+    sampleId,
+    workloadId: 'RTC-B01' as const,
+    caseId: 'peer-connection-diagnostics-burst',
+    inputKey: 'pairs-500',
+    intendedPhase: worker.intendedPhase,
+    outerOrdinal: worker.outerOrdinal,
+    innerOrdinal,
+  };
 }
 
-await main();
+function createSample(
+  sampleInput: CreateRtcPeerConnectionDiagnosticsSampleInput,
+): RtcBaselineSampleDto {
+  const { identity, outcome, rawEvidence, issues } = sampleInput;
+  return {
+    schema: 'rallar.rtc-baseline.sample.v1',
+    identity,
+    outcome,
+    evidenceClass: 'synthetic-path',
+    metrics: rawEvidence
+      ? [{ metric: 'durationMs', unit: 'ms', value: rawEvidence.durationMs }]
+      : [],
+    rawEvidence: rawEvidence === null ? null : createRawEvidence(rawEvidence),
+    rawReferences: [],
+    issues,
+    runtimeObservation: null,
+  };
+}
+
+function validateResult(input: DiagnosticsInput, result: RtcPeerConnectionDiagnosticsResult) {
+  const counters = result.diagnostics;
+  const issues = [];
+  if (result.peerCount !== input.peers * 2) {
+    issues.push(rtcBaselineIssue('$.rawEvidence.peerCount', 'counter-mismatch', 'Unexpected.'));
+  }
+  if (result.signalingMessagesSent !== input.peers) {
+    issues.push(
+      rtcBaselineIssue('$.rawEvidence.signalingMessagesSent', 'counter-mismatch', 'Unexpected.'),
+    );
+  }
+  const expected = {
+    queuedIceCandidateCount: input.peers * input.iceCandidatesPerPeer,
+    flushedIceCandidateCount: input.peers * input.iceCandidatesPerPeer,
+    offerCollisionCount: input.peers * input.offerCollisionsPerPeer,
+    ignoredOfferCollisionCount: input.peers * input.offerCollisionsPerPeer,
+    reconnectAttemptCount: input.peers,
+    reconnectTimerAlreadyActiveCount: input.peers,
+    reconnectExhaustedCount: input.peers,
+    iceRestartCount: input.peers,
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    if (counters[name] !== value) {
+      issues.push(
+        rtcBaselineIssue(
+          `$.rawEvidence.diagnostics.${name}`,
+          'counter-mismatch',
+          `Expected ${value}.`,
+        ),
+      );
+    }
+  }
+  for (const [name, value] of Object.entries(result.cleanup)) {
+    if (value !== 0) {
+      issues.push(
+        rtcBaselineIssue(`$.rawEvidence.cleanup.${name}`, 'cleanup-nonzero', 'Expected 0.'),
+      );
+    }
+  }
+  return issues;
+}
+
+function createRawEvidence(result: RtcPeerConnectionDiagnosticsResult): RtcBaselineJson {
+  return {
+    durationMs: result.durationMs,
+    peerCount: result.peerCount,
+    signalingMessagesSent: result.signalingMessagesSent,
+    diagnostics: { ...result.diagnostics },
+    cleanup: { ...result.cleanup },
+  };
+}
+
+if (import.meta.main) await main();
