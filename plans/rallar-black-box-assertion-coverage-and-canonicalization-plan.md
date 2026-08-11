@@ -18,7 +18,7 @@ Status: in execution as a stacked PR series based on
 | W4 pure-API recipes | implemented; in review | `codex/black-box-w4-pure-api-recipes` |
 | W5 `expect.headers` | implemented; in review | `codex/black-box-w5-expect-headers` |
 | W6 `expect.maxDurationMs` | implemented; in review | `codex/black-box-w6-max-duration` |
-| W7 observability-routed evidence plan | not started (plan-only) | — |
+| W7 observability-routed evidence plan | plan written; awaiting review | `codex/black-box-w7-evidence-endpoint-plan` |
 | W8 recipe tiering | not started | — |
 
 Base revalidation 2026-08-11: origin/main moved to e921c460 (#160, #162) while
