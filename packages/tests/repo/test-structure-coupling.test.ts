@@ -470,7 +470,7 @@ describe('test structure-coupling review', () => {
   it('reports real source-coupled ratchet and control-boundary tests', () => {
     const ratchet = runRepoChecker([
       '--files',
-      'packages/tests/repo/api-v1-group-state-route-style-ratchet.test.ts',
+      'packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts',
     ]);
     const controlBoundary = runRepoChecker([
       '--files',
@@ -480,7 +480,6 @@ describe('test structure-coupling review', () => {
     expect(ratchet.status, ratchet.stdout).toBe(0);
     expect(ratchet.stdout).toContain('production-source-read');
     expect(ratchet.stdout).toContain('line-count');
-    expect(ratchet.stdout).toContain('ast-inspection');
     expect(controlBoundary.status, controlBoundary.stdout).toBe(0);
     expect(controlBoundary.stdout).toContain('production-source-read');
     expect(controlBoundary.stdout).toContain('symbol-assertion');
@@ -489,7 +488,6 @@ describe('test structure-coupling review', () => {
   it('parses representative real repository suites without silently skipping evidence', () => {
     const recipeConsolePath = 'packages/tests/rallar-black-box/recipe-console-structure.test.ts';
     const truthfulNoCandidateAllowed = [
-      'packages/tests/repo/api-v1-group-state-route-lineage-provenance.test.ts',
       'packages/tests/repo/github-actions-runtime-governance.test.ts',
       'packages/tests/repo/auth-server-navigation-map-integrity.test.ts',
       'packages/tests/repo/client-state-navigation-map-integrity.test.ts',

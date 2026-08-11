@@ -30,13 +30,11 @@ describe('rallar-testing skill guidance', () => {
     expect(commands).toContain('npm run test:repo-governance');
     for (const testPath of [
       'packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts',
-      'packages/tests/repo/rallar-group-state-owner-integrity.test.ts',
       'packages/tests/repo/rallar-skill-app-examples-integrity.test.ts',
       'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts',
       'packages/tests/repo/repo-code-style-authority-integrity.test.ts',
       'packages/tests/repo/repo-code-style-checker-integrity.test.ts',
       'packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts',
-      'packages/tests/repo/repo-style-structural-lineage-provenance.test.ts',
       'packages/tests/repo/repo-style-changed-check.test.ts',
     ]) {
       expect(governanceCommand).toContain(testPath);

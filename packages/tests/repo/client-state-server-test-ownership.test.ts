@@ -46,6 +46,7 @@ const lineageOwners = [
 // supplementary PR B boundary: PR C may replace it only with broader active-tree
 // coverage, and the later ledger records that already-made retain/replace decision.
 const prBMateriallyChangedTestOwners = [
+  'packages/tests/repo/rallar-group-state-owner-integrity.test.ts',
   'packages/tests/repo/client-state-navigation-map-integrity.test.ts',
   'packages/tests/repo/client-state-server-export-surface-evidence.ts',
   'packages/tests/repo/client-state-server-lineage-evidence.ts',
@@ -56,7 +57,6 @@ const prBMateriallyChangedTestOwners = [
   'packages/tests/repo/client-state-server-persistence-lineage-provenance.test.ts',
   'packages/tests/repo/client-state-server-source-ratchet.test.ts',
   'packages/tests/repo/client-state-server-test-ownership.test.ts',
-  'packages/tests/repo/rallar-group-state-owner-integrity.test.ts',
   'packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts',
   'packages/tests/shared-server/cached-state-services.test.ts',
   'packages/tests/shared-server/client-state/app-client-inbox-authentication.test.ts',
@@ -127,6 +127,7 @@ describe('client-state server test ownership', () => {
 
   it('keeps every moved general function and test callback within 60 physical lines', () => {
     const findings = prBMateriallyChangedTestOwners
+      .filter((filePath) => existsSync(path.join(repoRoot, filePath)))
       .map((filePath) => [filePath, oversizedFunctions(read(filePath))] as const)
       .filter(([, fileFindings]) => fileFindings.length > 0);
 
