@@ -1,11 +1,10 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { Either, EitherCollectors } from '../resilience/Either.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-breaker.ts';
 import {
-    CircuitBreaker,
-    CircuitBreakerPolicy,
     RateAdjuster,
     RateAdjusterPolicy,
-    RateLimiter
+    RateLimiter,
 } from '../resilience/Resilience.ts';
 import { DequeueController, FailureDto, Reservator, SuccessDto } from './DequeueController.ts';
 import {

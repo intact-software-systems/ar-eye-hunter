@@ -1,11 +1,7 @@
 import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
 import { Temporal } from '@js-temporal/polyfill';
-import {
-  CircuitBreaker,
-  CircuitBreakerPolicy,
-  RateLimiter,
-  RateLimiterPolicy,
-} from '@shared/resilience/Resilience.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-limit-service.ts';
 
 const STATE_API_RATE_LIMIT = new RateLimiterPolicy(60_000, 300);

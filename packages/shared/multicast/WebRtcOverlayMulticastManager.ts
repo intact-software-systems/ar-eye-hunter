@@ -40,7 +40,8 @@ import {
     ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
-import { CircuitBreaker, RateLimiter, toCircuitBreaker, toRateLimiter, } from '../resilience/Resilience.ts';
+import { CircuitBreaker, toCircuitBreaker } from '../resilience/circuit-breaker.ts';
+import { RateLimiter, toRateLimiter } from '../resilience/Resilience.ts';
 import {
     isOverlayForGroupRef,
     isSameGroupRef,

@@ -18,9 +18,29 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
-  it('freezes exactly the three approved path, rule, and symbol triples', () => {
+  it('freezes exactly the seven approved path, rule, and symbol triples', () => {
     expect(Object.isFrozen(reviewedDispositions)).toBe(true);
     expect(reviewedDispositions).toEqual([
+      {
+        path: 'packages/shared-web/browser/rallar-data.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+      },
+      {
+        path: 'packages/shared/alm/ALInboundAdmissionStore.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+      },
+      {
+        path: 'packages/shared/alm/ALOutboundAdmissionStore.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+      },
+      {
+        path: 'packages/shared/rallar-ai/rallar-ai-types.ts',
+        rule: 'boundary.unknown',
+        symbol: undefined,
+      },
       {
         path: 'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
         rule: 'boundary.unknown',

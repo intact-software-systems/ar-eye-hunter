@@ -1,10 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
-import {
-    CircuitBreaker,
-    CircuitBreakerPolicy,
-    RateLimiter,
-} from '@shared/resilience/Resilience.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';

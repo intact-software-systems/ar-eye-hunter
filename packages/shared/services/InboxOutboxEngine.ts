@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
-import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/Resilience.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-breaker.ts';
 
 const NOT_SET = -1;
 

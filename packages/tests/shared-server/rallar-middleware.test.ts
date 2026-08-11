@@ -19,7 +19,7 @@ import {
   DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
   type ResourceInboxRetryPolicy,
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';

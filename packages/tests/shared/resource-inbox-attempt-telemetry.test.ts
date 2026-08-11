@@ -9,7 +9,7 @@ import {
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from
     '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
 describe('ResourceInbox attempt release telemetry', () => {
     it.each([[1, 1], [2, 2], [3, 4], [4, 8], [5, 16]])(

@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { expect, it, vi } from 'vitest';
 
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
