@@ -121,6 +121,8 @@ describe('changed production legacy review', () => {
         'export const routeOptions = {',
         '  oldRouteEnabled:',
         '    true,',
+        '  routeMode:',
+        "    'legacy',",
         '};',
       ].join('\n'),
     });

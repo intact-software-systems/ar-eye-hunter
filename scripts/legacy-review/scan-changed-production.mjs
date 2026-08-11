@@ -72,7 +72,8 @@ function addVocabularyCandidates({ candidates, file, lines }) {
 
 function addSplitModeCandidate({ candidates, file, source }) {
   const splitPredecessorMode = new RegExp(
-    '\\b(?:old|legacy|previous)\\w*(?:enabled|flag|mode)?\\s*:\\s*\\n\\s*' +
+    '\\b(?:(?:old|legacy|previous)\\w*(?:enabled|flag|mode)?|' +
+      '\\w*(?:flag|mode|variant|version)\\w*)\\s*:\\s*\\n\\s*' +
       '(?:true|[\'"](?:old|legacy|previous)[\'"])',
     'iu',
   );
