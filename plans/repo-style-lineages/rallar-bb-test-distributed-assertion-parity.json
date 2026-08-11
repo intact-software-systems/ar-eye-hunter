@@ -22,7 +22,7 @@
       "targets": [
         "packages/shared-test/rallar-bb-test/conformance/composite-conformance-command-fixtures.ts",
         "packages/shared-test/rallar-bb-test/conformance/create-rallar-black-box-composite-conformance-recipe.ts",
-        "packages/shared-test/rallar-bb-test/conformance/wait-assert-evidence-recipe.ts"
+        "packages/shared-test/rallar-bb-test/conformance/wait-assert-recipe.ts"
       ]
     },
     {

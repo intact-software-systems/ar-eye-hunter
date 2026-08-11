@@ -31,7 +31,7 @@ import {
     loopUntilConvergenceRecipe,
     loopUntilExhaustedRecipe,
 } from '../loop/loop-until-conformance-recipes.ts';
-import { waitAssertRecipe } from './wait-assert-evidence-recipe.ts';
+import { waitAssertRecipe } from './wait-assert-recipe.ts';
 
 export function createRallarBlackBoxCompositeConformanceRecipe(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
