@@ -1139,6 +1139,15 @@ function minimalFixArea(input: Readonly<{
     if (text.includes('rtc-stream-performance') || isStreamFailureText(text)) {
         return 'RTC stream pacing/performance';
     }
+    if (text.includes('assertion-absence') || text.includes('absence')) {
+        return 'absence wait window or leaked traffic source';
+    }
+    if (text.includes('convergence-polling') || text.includes('until')) {
+        return 'convergence polling bounds or backend convergence';
+    }
+    if (text.includes('capability-gating') || text.includes('assertion capabilities')) {
+        return 'agent assertion capability rollout';
+    }
     if (text.includes('target')) return 'distributed targeting';
     if (text.includes('ack') || text.includes('readiness')) return 'headless agent readiness';
     if (text.includes('barrier')) return 'distributed barrier';
@@ -1155,6 +1164,11 @@ function minimalFixArea(input: Readonly<{
 function failureCategory(code: string | undefined, message: string): string {
     const text = `${code ?? ''} ${message}`.toLowerCase();
     if (isStreamFailureText(text)) return 'rtc-stream-performance';
+    if (text.includes('absence')) return 'assertion-absence';
+    if (text.includes('until')) return 'convergence-polling';
+    if (text.includes('assertion-capability') || text.includes('assertion capabilities')) {
+        return 'capability-gating';
+    }
     if (text.includes('target')) return 'targeting';
     if (text.includes('ack')) return 'readiness';
     if (text.includes('barrier')) return 'barrier';
