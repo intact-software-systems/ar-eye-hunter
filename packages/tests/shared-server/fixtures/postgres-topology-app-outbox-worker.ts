@@ -98,7 +98,7 @@ function registerTopologyAppOutboxHandler(
     createRtcTopologyWorkHandler({
       runtime,
       database: transactionGate.sql,
-      topologyManagement,
+      topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(
         runtimeRepository,
         undefined,

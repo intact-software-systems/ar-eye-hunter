@@ -11,6 +11,10 @@ import { isTuplePreservingGroupLivenessReduction } from '@shared/repository/grou
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
+// prettier-ignore
+import type {
+  GroupTopologyPlanningSnapshotSelection,
+} from './group-topology-planning-authority.ts';
 
 export function isGroupTopologyActiveAt(
   snapshot: GroupSnapshot,
@@ -26,7 +30,7 @@ export function isGroupTopologyActiveAt(
 export function selectGroupTopologyPlanningSnapshot(
   knownGroup: GroupSnapshot,
   currentGroup: GroupSnapshot | undefined,
-  useKnownGroupRevision: boolean,
+  snapshotSelection: GroupTopologyPlanningSnapshotSelection,
 ): GroupSnapshot {
   if (!currentGroup) {
     return knownGroup;
@@ -36,7 +40,7 @@ export function selectGroupTopologyPlanningSnapshot(
     readGroupCausalRevision(knownGroup),
   );
   if (comparison === 'dominates') {
-    return useKnownGroupRevision ? knownGroup : currentGroup;
+    return snapshotSelection === 'preserve-known-revision' ? knownGroup : currentGroup;
   }
   if (comparison === 'dominated') {
     return knownGroup;

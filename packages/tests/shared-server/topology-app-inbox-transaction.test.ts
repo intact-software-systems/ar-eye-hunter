@@ -123,7 +123,9 @@ describe('topology AppInbox transaction and idempotency', () => {
       groupStateService: harness.groupStateService,
       nowEpochMs: () => harness.nowEpochMs,
       wakeQueue,
-      writeMutation: async (_context, write) => await harness.database.begin(write),
+      transactionWriter: {
+        writeMutation: async (_context, write) => await harness.database.begin(write),
+      },
     });
 
     await expect(
@@ -170,11 +172,11 @@ function topologyManagement(
 function topologyMutationOwners(
   management: GroupTopologyManagementService,
 ): TopologyAppInboxMutationOwners {
+  if (!management.configMutationService || !management.reconfigureMutation) {
+    throw new TypeError('Expected complete topology mutation owners');
+  }
   return {
     configMutationService: management.configMutationService,
-    writeConfigMutation: async (transaction, computed) =>
-      await management.writeTopologyConfigMutation(transaction, computed),
-    toConfigMutationResult: (computed) => management.toTopologyConfigMutationResult(computed),
     reconfigureMutation: management.reconfigureMutation,
   };
 }

@@ -7,6 +7,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import * as processRttRepository from '@shared/repository/rtt-repository.ts';
 
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 // prettier-ignore
@@ -45,7 +46,10 @@ import type {
 import type {
   GroupTopologyPlanningAuthority,
 } from './planning/group-topology-planning-authority.ts';
-import { GroupTopologyPlanningService } from './planning/group-topology-planning-service.ts';
+import {
+  GroupTopologyPlanningService,
+  type GroupTopologyPlanningServiceDependencies,
+} from './planning/group-topology-planning-service.ts';
 import type {
   GroupTopologyReconfigureCommand,
   GroupTopologyReconfigureComputed,
@@ -72,20 +76,12 @@ export {
 } from './planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 
 export class GroupTopologyManagementService {
-  readonly configMutationService: Pick<
-    GroupTopologyConfigMutationService,
-    'prepare' | 'read' | 'compute' | 'validate'
-  >;
-  readonly reconfigureMutation: Pick<
-    GroupTopologyReconfigureMutation,
-    'isPlatformAdmin' | 'read' | 'compute' | 'validate' | 'write'
-  >;
+  readonly configMutationService: GroupTopologyConfigMutationService | undefined;
+  readonly reconfigureMutation: GroupTopologyReconfigureMutation | undefined;
+  readonly planningService: GroupTopologyPlanningService;
 
   private readonly options: GroupTopologyManagementServiceOptions;
   private readonly queryService: GroupTopologyConfigQueryService;
-  private readonly planningService: GroupTopologyPlanningService;
-  private readonly configMutationOwner: GroupTopologyConfigMutationService;
-  private readonly reconfigureOwner: GroupTopologyReconfigureMutation;
 
   constructor(options: GroupTopologyManagementServiceOptions) {
     this.options = options;
@@ -107,55 +103,31 @@ export class GroupTopologyManagementService {
       findGroupSnapshotByRef: options.findGroupSnapshotByRef,
       queryService: this.queryService,
       topologyService: options.topologyService,
-      groupStateRepository: options.groupStateRepository,
-      rttRepository: options.rttRepository,
-      processRttReader: options.processRttReader,
+      readCurrentGroupSnapshot: createTopologyPlanningSnapshotReader(options, this.queryService),
+      readRttMeasurements: createTopologyPlanningRttReader(options),
+      topologyMode: options.topologySnapshotRepository ? 'persistent' : 'local',
       publisher: options.publisher,
       serverDefaults: options.serverDefaults,
-      persistentTopology: options.topologySnapshotRepository !== undefined,
     });
-    this.configMutationOwner = new GroupTopologyConfigMutationService({
-      readiness,
-      configRepository: options.configRepository,
-      groupStateRepository: options.groupStateRepository,
-      serverDefaults: options.serverDefaults,
-      nowEpochMs: options.now ?? (() => Date.now()),
-      isPlatformAdmin: (principalId) => this.isPlatformAdmin(principalId),
-    });
-    this.reconfigureOwner = new GroupTopologyReconfigureMutation({
-      groupStateRepository: options.groupStateRepository,
-      readPlanningAuthority: async (groupRef, requestOptions, knownGroup) =>
-        await this.planningService.readTopologyPlanningAuthority(
-          groupRef,
-          requestOptions,
-          knownGroup,
-        ),
-      isPlatformAdmin: (principalId) => this.isPlatformAdmin(principalId),
-    });
-    this.configMutationService = this.createConfigMutationCapabilities();
-    this.reconfigureMutation = this.createReconfigureMutationCapabilities();
-  }
-
-  private createConfigMutationCapabilities(): typeof this.configMutationService {
-    return {
-      prepare: async (input) => await this.prepareTopologyConfigMutation(input),
-      read: async (command) => await this.readTopologyConfigMutation(command),
-      compute: (preparation, read, attemptCount) =>
-        this.computeTopologyConfigMutation(preparation, read, attemptCount),
-      validate: (preparation, read, attemptCount, computed) =>
-        this.validateTopologyConfigMutation(preparation, read, attemptCount, computed),
-    };
-  }
-
-  private createReconfigureMutationCapabilities(): typeof this.reconfigureMutation {
-    return {
-      isPlatformAdmin: (principalId) => this.isPlatformAdmin(principalId),
-      read: async (command) => await this.readTopologyMutation(command),
-      compute: (command, read) => this.computeTopologyMutation(command, read),
-      validate: (command, read, computed) => this.validateTopologyMutation(command, read, computed),
-      write: async (transaction, computed) =>
-        await this.writeTopologyMutation(transaction, computed),
-    };
+    this.configMutationService =
+      options.configRepository && options.groupStateRepository
+        ? new GroupTopologyConfigMutationService({
+            readiness,
+            configRepository: options.configRepository,
+            groupStateRepository: options.groupStateRepository,
+            serverDefaults: options.serverDefaults,
+            nowEpochMs: options.now ?? (() => Date.now()),
+            isPlatformAdmin: (principalId) => this.isPlatformAdmin(principalId),
+          })
+        : undefined;
+    this.reconfigureMutation = options.groupStateRepository
+      ? new GroupTopologyReconfigureMutation({
+          groupStateRepository: options.groupStateRepository,
+          readPlanningAuthority: async (input) =>
+            await this.planningService.readTopologyPlanningAuthority(input),
+          isPlatformAdmin: (principalId) => this.isPlatformAdmin(principalId),
+        })
+      : undefined;
   }
 
   recordTopologyPublication(published: boolean): void {
@@ -211,13 +183,13 @@ export class GroupTopologyManagementService {
     readonly commandHash: string;
     readonly capturedAtEpochMs: number;
   }): Promise<GroupTopologyConfigMutationPreparation> {
-    return await this.configMutationOwner.prepare(input);
+    return await this.requireConfigMutationService().prepare(input);
   }
 
   async readTopologyConfigMutation(
     command: mutationContracts.GroupTopologyConfigMutationCommand,
   ): Promise<GroupTopologyConfigMutationAttemptRead> {
-    return await this.configMutationOwner.read(command);
+    return await this.requireConfigMutationService().read(command);
   }
 
   computeTopologyConfigMutation(
@@ -225,7 +197,7 @@ export class GroupTopologyManagementService {
     read: GroupTopologyConfigMutationAttemptRead,
     attemptCount: number,
   ): mutationContracts.GroupTopologyConfigMutationComputed {
-    return this.configMutationOwner.compute(preparation, read, attemptCount);
+    return this.requireConfigMutationService().compute(preparation, read, attemptCount);
   }
 
   validateTopologyConfigMutation(
@@ -234,7 +206,7 @@ export class GroupTopologyManagementService {
     attemptCount: number,
     computed: mutationContracts.GroupTopologyConfigMutationComputed,
   ): void {
-    this.configMutationOwner.validate(preparation, read, attemptCount, computed);
+    this.requireConfigMutationService().validate(preparation, read, attemptCount, computed);
   }
 
   async writeTopologyConfigMutation(
@@ -259,14 +231,14 @@ export class GroupTopologyManagementService {
   async readTopologyMutation(
     command: GroupTopologyReconfigureCommand,
   ): Promise<GroupTopologyReconfigureRead> {
-    return await this.reconfigureOwner.read(command);
+    return await this.requireReconfigureMutation().read(command);
   }
 
   computeTopologyMutation(
     command: GroupTopologyReconfigureCommand,
     read: GroupTopologyReconfigureRead,
   ): GroupTopologyReconfigureComputed {
-    return this.reconfigureOwner.compute(command, read);
+    return this.requireReconfigureMutation().compute(command, read);
   }
 
   validateTopologyMutation(
@@ -274,14 +246,14 @@ export class GroupTopologyManagementService {
     read: GroupTopologyReconfigureRead,
     computed: GroupTopologyReconfigureComputed,
   ): void {
-    this.reconfigureOwner.validate(command, read, computed);
+    this.requireReconfigureMutation().validate(command, read, computed);
   }
 
   async writeTopologyMutation(
     transaction: PSqlTransactionSql,
     computed: GroupTopologyReconfigureComputed,
   ): Promise<void> {
-    await this.reconfigureOwner.write(transaction, computed);
+    await this.requireReconfigureMutation().write(transaction, computed);
   }
 
   async reconfigureGroupTopology(
@@ -315,12 +287,12 @@ export class GroupTopologyManagementService {
     knownGroup?: GroupSnapshot,
     useKnownGroupRevision = false,
   ): Promise<GroupTopologyPlanningAuthority> {
-    return await this.planningService.readTopologyPlanningAuthority(
+    return await this.planningService.readTopologyPlanningAuthority({
       groupRef,
       requestOptions,
       knownGroup,
-      useKnownGroupRevision,
-    );
+      snapshotSelection: useKnownGroupRevision ? 'preserve-known-revision' : 'prefer-current',
+    });
   }
 
   computeTopologyFromAuthority(
@@ -355,6 +327,53 @@ export class GroupTopologyManagementService {
   removeGroupTopology(group: GroupSnapshot): Promise<void> {
     return this.planningService.removeGroupTopology(group);
   }
+
+  private requireConfigMutationService(): GroupTopologyConfigMutationService {
+    if (!this.configMutationService) {
+      throw new TypeError('Topology config mutation owner is not configured');
+    }
+    return this.configMutationService;
+  }
+
+  private requireReconfigureMutation(): GroupTopologyReconfigureMutation {
+    if (!this.reconfigureMutation) {
+      throw new TypeError('Topology reconfigure mutation owner is not configured');
+    }
+    return this.reconfigureMutation;
+  }
+}
+
+function createTopologyPlanningSnapshotReader(
+  options: GroupTopologyManagementServiceOptions,
+  queryService: GroupTopologyConfigQueryService,
+): GroupTopologyPlanningServiceDependencies['readCurrentGroupSnapshot'] {
+  const groupStateRepository = options.groupStateRepository;
+  return async (groupRef, knownGroup) => {
+    if (!knownGroup) {
+      return await queryService.findCurrentGroupSnapshot(groupRef);
+    }
+    if (groupStateRepository) {
+      return await groupStateRepository.readSnapshot(groupRef);
+    }
+    return (
+      (await options.findGroupSnapshotByRef(groupRef, {
+        minCausalRevision: knownGroup.causalRevision,
+      })) ?? (await options.findGroupSnapshotByRef(groupRef))
+    );
+  };
+}
+
+function createTopologyPlanningRttReader(
+  options: GroupTopologyManagementServiceOptions,
+): GroupTopologyPlanningServiceDependencies['readRttMeasurements'] {
+  const rttRepository = options.rttRepository;
+  if (rttRepository) {
+    return async (group) =>
+      await rttRepository.listMeasurementsForSessionIds(
+        group.activeSessions.map((session) => session.sessionId),
+      );
+  }
+  return () => options.processRttReader?.() ?? processRttRepository.getAllRtt();
 }
 
 export function requireTopologyManagementService(

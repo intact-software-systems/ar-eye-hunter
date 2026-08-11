@@ -4,7 +4,6 @@ import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import {
   toCanonicalGroupTopologyConfigPatch,
 } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 // prettier-ignore
@@ -25,6 +24,7 @@ import { writeRtcTopologyOutbox } from '../../services/rtc-topology-outbox-entry
 // prettier-ignore
 import type {
   GroupTopologyPlanningAuthority,
+  ReadGroupTopologyPlanningAuthorityInput,
 } from '../planning/group-topology-planning-authority.ts';
 import type {
   GroupTopologyReconfigureCommand,
@@ -33,11 +33,9 @@ import type {
 } from './group-topology-reconfigure-contracts.ts';
 
 export interface GroupTopologyReconfigureMutationDependencies {
-  readonly groupStateRepository?: GroupStateRepository;
+  readonly groupStateRepository: GroupStateRepository;
   readonly readPlanningAuthority: (
-    groupRef: GroupRef,
-    requestOptions: GroupTopologyReconfigureCommand['requestOptions'],
-    knownGroup: GroupSnapshot,
+    input: ReadGroupTopologyPlanningAuthorityInput,
   ) => Promise<GroupTopologyPlanningAuthority>;
   readonly isPlatformAdmin: (principalId: string) => boolean;
 }
@@ -49,22 +47,19 @@ export class GroupTopologyReconfigureMutation {
     this.dependencies = dependencies;
   }
 
-  isPlatformAdmin(principalId: string): boolean {
-    return this.dependencies.isPlatformAdmin(principalId);
-  }
-
   async read(command: GroupTopologyReconfigureCommand): Promise<GroupTopologyReconfigureRead> {
-    const guarded = await this.requireGroupStateRepository().readSnapshotWithAuthorityGuard(
+    const guarded = await this.dependencies.groupStateRepository.readSnapshotWithAuthorityGuard(
       command.groupRef,
     );
     if (!guarded) {
       throw new Error(`Group snapshot not found: ${command.groupRef.groupId}`);
     }
-    const authority = await this.dependencies.readPlanningAuthority(
-      command.groupRef,
-      command.requestOptions,
-      guarded.snapshot,
-    );
+    const authority = await this.dependencies.readPlanningAuthority({
+      groupRef: command.groupRef,
+      requestOptions: command.requestOptions,
+      knownGroup: guarded.snapshot,
+      snapshotSelection: 'prefer-current',
+    });
     if (
       compareGroupCausalRevision(
         readGroupCausalRevision(authority.group),
@@ -137,7 +132,7 @@ export class GroupTopologyReconfigureMutation {
     command: GroupTopologyReconfigureCommand,
     read: GroupTopologyReconfigureRead,
   ): void {
-    if (command.isPlatformAdmin) {
+    if (this.dependencies.isPlatformAdmin(command.actorPrincipalId)) {
       return;
     }
     const policy = canUpdateGroupSnapshot({
@@ -148,13 +143,6 @@ export class GroupTopologyReconfigureMutation {
     if (!policy.allowed) {
       throw new GroupPolicyDeniedError(policy);
     }
-  }
-
-  private requireGroupStateRepository(): GroupStateRepository {
-    if (!this.dependencies.groupStateRepository) {
-      throw new TypeError('Topology config mutations require a production group-state repository');
-    }
-    return this.dependencies.groupStateRepository;
   }
 }
 

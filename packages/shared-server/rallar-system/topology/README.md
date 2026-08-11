@@ -53,6 +53,7 @@ persistence ownership.
 | Config mutation preparation/read/decision | [config/group-topology-config-mutation-service.ts](config/group-topology-config-mutation-service.ts)                                 | `GroupTopologyConfigMutationService`            |
 | Atomic config mutation write              | [config/mutation/write-topology-config-mutation.ts](config/mutation/write-topology-config-mutation.ts)                               | `writeTopologyConfigMutation`                   |
 | Config mutation result adapter            | [config/mutation/to-topology-config-mutation-result.ts](config/mutation/to-topology-config-mutation-result.ts)                       | `toTopologyConfigMutationResult`                |
+| AppInbox transaction/finalization         | [../services/app-inbox-transaction-writer.ts](../services/app-inbox-transaction-writer.ts)                                           | `AppInboxMutationTransactionWriter`             |
 | Reconfigure read/compute/validate/write   | [reconfigure/group-topology-reconfigure-mutation.ts](reconfigure/group-topology-reconfigure-mutation.ts)                             | `GroupTopologyReconfigureMutation`              |
 | Immutable planning authority              | [planning/group-topology-planning-authority.ts](planning/group-topology-planning-authority.ts)                                       | `GroupTopologyPlanningAuthority`                |
 | Topology planning and lifecycle           | [planning/group-topology-planning-service.ts](planning/group-topology-planning-service.ts)                                           | `GroupTopologyPlanningService`                  |
@@ -70,13 +71,13 @@ management facade, and the direct one-hop topology command/type exports on
 `create-rallar-server.ts` constructs the repositories, RTC topology service,
 public management facade, and authenticated `AppGroupInboxService`. The facade
 constructs one generation-readiness owner shared by config query and mutation,
-plus the planning and reconfigure owners. `AppGroupInboxService` passes only the
-exact config mutation, transaction writer/result adapter, and reconfigure
-mutation capabilities into `TopologyAppInboxHandler`. The captured capability
-adapter invokes the preserved public facade methods on every attempt so
-subclassed compatibility seams and retry re-entry retain their existing
-timing. `AppGroupInboxService` then registers all five queue types after those
-owners exist.
+plus the planning and reconfigure owners. Mutation owners are created only when
+their required repositories exist. `AppGroupInboxService` requires and captures
+the exact config and reconfigure owners before it registers all five queue
+types. `TopologyAppInboxHandler` receives those owners and the named AppInbox
+transaction writer directly; it invokes the standalone config writer and
+result adapter directly. Canonical execution does not route back through public
+facade methods.
 
 The command and proof modules have no lifecycle. They receive complete command,
 session, group-state, and explicit clock values at invocation. The pure config
@@ -106,8 +107,12 @@ return without a domain write. An idempotency conflict is a typed early exit.
 Malformed input, wrong scope, lifecycle/policy denial, proof mismatch, or a
 non-canonical recomputation throws at the same owning boundary as before.
 Reconfigure commands use the separate reconfigure mutation owner with their
-own read → compute → validate → transaction-write path. Planning remains an
-explicit service and retains existing RTC topology algorithm behavior.
+own read → compute → validate → transaction-write path. The mutation's injected
+administrator policy is the sole administrator decision; no command carries a
+caller-provided administrator bit. Planning receives named authority-read
+inputs, explicit snapshot-selection policy, required snapshot and RTT readers,
+and an explicit local/persistent mode. RTC APP_OUTBOX replay calls that planning
+owner directly. Existing RTC topology algorithm behavior remains unchanged.
 
 ## Deferred owners
 

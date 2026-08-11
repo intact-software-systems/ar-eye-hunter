@@ -164,7 +164,7 @@ class AppGroupInboxService extends AppInboxService {
     });
     this.topologyAppInboxHandler = new TopologyAppInboxHandler({
       groupStateService: this.groupStateService,
-      writeMutation: async (context, write) => await this.writeMutation(context, write),
+      transactionWriter: this.transactionWriter,
       nowEpochMs: () => this.nowEpochMs(),
       wakeQueue: this.wakeQueue,
     });
@@ -263,8 +263,9 @@ class AppGroupInboxService extends AppInboxService {
       }
       return;
     }
+    const owners = requireTopologyAppInboxMutationOwners(service);
     this.topologyManagementService = service;
-    this.registerTopologyStateMessageHandlers(service);
+    this.registerTopologyStateMessageHandlers(owners);
   }
 
   setRtcRttAppInboxDependencies(dependencies: RtcRttAppInboxDependencies): void {
@@ -329,14 +330,7 @@ class AppGroupInboxService extends AppInboxService {
     );
   }
 
-  private registerTopologyStateMessageHandlers(service: GroupTopologyManagementService): void {
-    const owners: TopologyAppInboxMutationOwners = {
-      configMutationService: service.configMutationService,
-      writeConfigMutation: async (transaction, computed) =>
-        await service.writeTopologyConfigMutation(transaction, computed),
-      toConfigMutationResult: (computed) => service.toTopologyConfigMutationResult(computed),
-      reconfigureMutation: service.reconfigureMutation,
-    };
+  private registerTopologyStateMessageHandlers(owners: TopologyAppInboxMutationOwners): void {
     for (const type of TOPOLOGY_CONFIG_INBOX_TYPES) {
       this.onStateMessage(
         type,
@@ -353,6 +347,18 @@ class AppGroupInboxService extends AppInboxService {
         await this.rtcRttAppInboxHandler.processMutation(context, dependencies),
     );
   }
+}
+
+function requireTopologyAppInboxMutationOwners(
+  service: GroupTopologyManagementService,
+): TopologyAppInboxMutationOwners {
+  if (!service.configMutationService || !service.reconfigureMutation) {
+    throw new TypeError('Topology AppInbox mutations require config and reconfigure owners');
+  }
+  return {
+    configMutationService: service.configMutationService,
+    reconfigureMutation: service.reconfigureMutation,
+  };
 }
 
 export { AppGroupInboxService };

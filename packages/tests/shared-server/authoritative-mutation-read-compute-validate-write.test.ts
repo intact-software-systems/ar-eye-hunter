@@ -195,8 +195,8 @@ it.each([
       'owners.configMutationService.read(',
       'owners.configMutationService.compute(',
       'owners.configMutationService.validate(',
-      'this.dependencies.writeMutation(',
-      'owners.writeConfigMutation(',
+      'this.dependencies.transactionWriter.writeMutation(',
+      'writeTopologyConfigMutation(',
     ],
   },
   {
@@ -207,7 +207,7 @@ it.each([
       'mutation.read(command)',
       'mutation.compute(command, read)',
       'mutation.validate(command, read, computed)',
-      'this.dependencies.writeMutation(',
+      'this.dependencies.transactionWriter.writeMutation(',
       'mutation.write(transaction, computed)',
     ],
   },
@@ -254,7 +254,7 @@ it('keeps AppInbox as the only retry and transaction owner for HTTP and WS mutat
     expect(source).not.toMatch(/waitForRuntimeStateWriteRetry/);
     expect(source).not.toMatch(/for\s*\([^)]*attempt/);
   }
-  expect(sources.topologyHandler).toContain('this.dependencies.writeMutation(');
+  expect(sources.topologyHandler).toContain('this.dependencies.transactionWriter.writeMutation(');
   expect(sources.rtcHandler).toContain('this.dependencies.writeMutation(');
   expect(sources.appGroup).toContain('AppInboxType.RTC_RTT_SUBMIT');
   expect(sources.appGroup).toContain('AppInboxType.TOPOLOGY_RECONFIGURE');

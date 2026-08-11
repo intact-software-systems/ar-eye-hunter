@@ -6,6 +6,10 @@ import {
   AppInboxType,
 } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { GroupTopologyConfigMutationService } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GroupTopologyReconfigureMutation } from '@shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 import type { RtcRttAppInboxDependencies } from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
 import { GROUP_MUTATION_INBOX_TYPES } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -15,8 +19,8 @@ import { createAuthorityHarness } from './group-state-inbox-test-runtime.ts';
 describe('AppGroupInboxService registration lifecycle', () => {
   it('keeps same-identity setter calls idempotent and distinct values rejected', async () => {
     const harness = await createAuthorityHarness(['owner']);
-    const firstTopology = {} as never;
-    const secondTopology = {} as never;
+    const firstTopology = createTopologyManagement(harness);
+    const secondTopology = createTopologyManagement(harness);
     const firstRttDependencies = {} as never;
     const secondRttDependencies = {} as never;
 
@@ -36,13 +40,26 @@ describe('AppGroupInboxService registration lifecycle', () => {
     );
   });
 
+  it('rejects topology registration when either canonical mutation owner is absent', async () => {
+    const harness = await createAuthorityHarness(['owner']);
+    const incomplete = new GroupTopologyManagementService({
+      findGroupSnapshotByRef: (ref) => harness.repository.readSnapshot(ref),
+      topologyService: new RallarRtcTopologyService(),
+    });
+
+    expect(incomplete.configMutationService).toBeUndefined();
+    expect(incomplete.reconfigureMutation).toBeUndefined();
+    expect(() => harness.service.setTopologyManagementService(incomplete)).toThrow(
+      'Topology AppInbox mutations require config and reconfigure owners',
+    );
+  });
   it('registers group callbacks first and each deferred family exactly once', async () => {
     const registration = vi
       .spyOn(AppInboxService.prototype, 'onStateMessage')
       .mockImplementation(() => undefined);
     try {
       const harness = await createAuthorityHarness(['owner']);
-      const topology = {} as GroupTopologyManagementService;
+      const topology = createTopologyManagement(harness);
       const rtc = {} as RtcRttAppInboxDependencies;
 
       expect(registeredTypes(registration)).toEqual(groupRegistrationOrder());
@@ -73,15 +90,19 @@ describe('AppGroupInboxService registration lifecycle', () => {
     }
   });
 
-  it('preserves facade virtual dispatch through the captured narrow capabilities', async () => {
-    const topology = new GroupTopologyManagementService({} as never);
-    const facadeRead = vi
-      .spyOn(topology, 'readTopologyConfigMutation')
+  it('exposes the canonical mutation owners directly and keeps facade delegation one-way', async () => {
+    const harness = await createAuthorityHarness(['owner']);
+    const topology = createTopologyManagement(harness);
+
+    expect(topology.configMutationService).toBeInstanceOf(GroupTopologyConfigMutationService);
+    expect(topology.reconfigureMutation).toBeInstanceOf(GroupTopologyReconfigureMutation);
+    const ownerRead = vi
+      .spyOn(topology.configMutationService!, 'read')
       .mockResolvedValue({} as never);
 
-    await topology.configMutationService.read({} as never);
+    await topology.readTopologyConfigMutation({} as never);
 
-    expect(facadeRead).toHaveBeenCalledOnce();
+    expect(ownerRead).toHaveBeenCalledOnce();
   });
 });
 
@@ -136,10 +157,19 @@ async function assertCapturedDependencies(
   expect(topologyProcess).toHaveBeenCalledWith(context, {
     configMutationService: topology.configMutationService,
     reconfigureMutation: topology.reconfigureMutation,
-    writeConfigMutation: expect.any(Function),
-    toConfigMutationResult: expect.any(Function),
   });
   expect(rtcProcess).toHaveBeenCalledWith(context, rtc);
+}
+
+function createTopologyManagement(
+  harness: Awaited<ReturnType<typeof createAuthorityHarness>>,
+): GroupTopologyManagementService {
+  return new GroupTopologyManagementService({
+    findGroupSnapshotByRef: (ref) => harness.repository.readSnapshot(ref),
+    groupStateRepository: harness.repository,
+    configRepository: new GroupTopologyConfigRepository(harness.runtimeRepository),
+    topologyService: new RallarRtcTopologyService(),
+  });
 }
 
 function readHandler(registration: RegistrationSpy, type: AppInboxType) {

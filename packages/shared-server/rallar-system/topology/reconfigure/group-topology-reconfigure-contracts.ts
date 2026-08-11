@@ -17,7 +17,6 @@ export interface GroupTopologyReconfigureCommand {
   readonly capturedAtEpochMs: number;
   readonly requestOptions: GroupTopologyConfigPatch;
   readonly publish: boolean;
-  readonly isPlatformAdmin: boolean;
 }
 
 export interface GroupTopologyReconfigureRead {

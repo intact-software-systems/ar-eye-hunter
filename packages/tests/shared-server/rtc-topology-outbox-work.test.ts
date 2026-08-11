@@ -160,7 +160,7 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
     const handler = createRtcTopologyWorkHandler({
       runtime,
-      topologyManagement,
+      topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
 
@@ -195,7 +195,7 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
     const handler = createRtcTopologyWorkHandler({
       runtime,
-      topologyManagement,
+      topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
 
@@ -243,7 +243,7 @@ describe('RTC topology APP_OUTBOX work', () => {
     });
     const handler = createRtcTopologyWorkHandler({
       runtime,
-      topologyManagement,
+      topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
 
@@ -366,10 +366,13 @@ describe('RTC topology APP_OUTBOX work', () => {
       topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
       processRttReader: () => [],
     });
-    const readAuthority = vi.spyOn(topologyManagement, 'readTopologyPlanningAuthority');
+    const readAuthority = vi.spyOn(
+      topologyManagement.planningService,
+      'readTopologyPlanningAuthority',
+    );
     const handler = createRtcTopologyWorkHandler({
       runtime,
-      topologyManagement,
+      topologyPlanning: topologyManagement.planningService,
       executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
     });
 

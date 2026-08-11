@@ -1541,25 +1541,24 @@ Deno.test('PGlite AppGroup retries cross-target topology CAS conflicts through R
     );
     let staleReadCount = 0;
     let delegatedReadCount = 0;
-    class StaleOnceTopologyService extends GroupTopologyManagementService {
-      override async readTopologyConfigMutation(
-        command: GroupTopologyConfigMutationCommand,
-      ) {
-        if (command.commandId === 'pglite-topology-b' && staleReadCount === 0) {
-          staleReadCount += 1;
-          return staleOverrideRead;
-        }
-        delegatedReadCount += 1;
-        return await super.readTopologyConfigMutation(command);
-      }
-    }
-    const topology = new StaleOnceTopologyService({
+    const topology = new GroupTopologyManagementService({
       findGroupSnapshotByRef: (ref) => groupStateRepository.readSnapshot(ref),
       groupStateRepository,
       configRepository,
       topologyService: new RallarRtcTopologyService(),
       now: () => nowEpochMs,
     });
+    const configMutation = topology.configMutationService;
+    assert.ok(configMutation);
+    const readTopologyConfigMutation = configMutation.read.bind(configMutation);
+    configMutation.read = async (command: GroupTopologyConfigMutationCommand) => {
+      if (command.commandId === 'pglite-topology-b' && staleReadCount === 0) {
+        staleReadCount += 1;
+        return staleOverrideRead;
+      }
+      delegatedReadCount += 1;
+      return await readTopologyConfigMutation(command);
+    };
     const groupState = createGroupStateService({
       runtimeRepository: runtime,
       formationDamping: 'damped',
@@ -2466,22 +2465,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
     let readCount = 0;
     let readsAtFirstRetryRelease = 0;
     let staleReadCount = 0;
-    class StaleOnceTopologyService extends GroupTopologyManagementService {
-      override async readTopologyConfigMutation(
-        command: GroupTopologyConfigMutationCommand,
-      ) {
-        readCount += 1;
-        if (
-          command.commandId === 'lifecycle-change-after-conflict' &&
-          staleReadCount === 0
-        ) {
-          staleReadCount += 1;
-          return staleConfigRead;
-        }
-        return await super.readTopologyConfigMutation(command);
-      }
-    }
-    const topology = new StaleOnceTopologyService({
+    const topology = new GroupTopologyManagementService({
       findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
       groupStateRepository: groupRepository,
       configRepository,
@@ -2489,6 +2473,20 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
       processRttReader: () => [],
       now: () => nowEpochMs,
     });
+    const configMutation = topology.configMutationService;
+    assert.ok(configMutation);
+    const readTopologyConfigMutation = configMutation.read.bind(configMutation);
+    configMutation.read = async (command: GroupTopologyConfigMutationCommand) => {
+      readCount += 1;
+      if (
+        command.commandId === 'lifecycle-change-after-conflict' &&
+        staleReadCount === 0
+      ) {
+        staleReadCount += 1;
+        return staleConfigRead;
+      }
+      return await readTopologyConfigMutation(command);
+    };
     onFirstRetryRelease = async () => {
       readsAtFirstRetryRelease = readCount;
       const current = await groupRepository.findGroupEntry(groupRef);
@@ -2886,19 +2884,7 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
     assert.equal(await snapshots.observeSnapshot(predecessor), 'inserted');
     const movedPredecessor = { ...predecessor, version: 1, updatedAtEpochMs: 2 };
     let authorityReadCount = 0;
-    class MovePredecessorAfterFirstRead extends GroupTopologyManagementService {
-      override async readTopologyPlanningAuthority(
-        ...args: Parameters<GroupTopologyManagementService['readTopologyPlanningAuthority']>
-      ) {
-        const authority = await super.readTopologyPlanningAuthority(...args);
-        authorityReadCount += 1;
-        if (authorityReadCount === 1) {
-          assert.equal(await snapshots.observeSnapshot(movedPredecessor), 'advanced');
-        }
-        return authority;
-      }
-    }
-    const topologyManagement = new MovePredecessorAfterFirstRead({
+    const topologyManagement = new GroupTopologyManagementService({
       findGroupSnapshotByRef: (ref) => groups.readSnapshot(ref),
       groupStateRepository: groups,
       configRepository: new GroupTopologyConfigRepository(runtimeRepository),
@@ -2907,6 +2893,18 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
       processRttReader: () => [],
       now: () => nowEpochMs,
     });
+    const readTopologyPlanningAuthority =
+      topologyManagement.planningService.readTopologyPlanningAuthority.bind(
+        topologyManagement.planningService,
+      );
+    topologyManagement.planningService.readTopologyPlanningAuthority = async (input) => {
+      const authority = await readTopologyPlanningAuthority(input);
+      authorityReadCount += 1;
+      if (authorityReadCount === 1) {
+        assert.equal(await snapshots.observeSnapshot(movedPredecessor), 'advanced');
+      }
+      return authority;
+    };
     const resourceInbox = new ResourceInboxRepository(sql);
     let retryReleaseCount = 0;
     class RetryObservedQueueBox extends PSqlQueueBox {
@@ -2936,7 +2934,7 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
       createRtcTopologyWorkHandler({
         runtime: workRuntime,
         database: sql,
-        topologyManagement,
+        topologyPlanning: topologyManagement.planningService,
         executionRepository,
       }),
     );
@@ -4986,7 +4984,7 @@ Deno.test('PGlite topology gates skip unchanged coalesced group-revision rebuild
         now: () => nowEpochMs,
       }),
       database: sql,
-      topologyManagement,
+      topologyPlanning: topologyManagement.planningService,
       executionRepository,
     });
     const toCoalescedComputed = (snapshot: GroupSnapshot, previousEntry: ResourceEntry | null) =>
@@ -5376,7 +5374,7 @@ async function createPGliteTopologyWorkFixture(
   const handler = createRtcTopologyWorkHandler({
     runtime,
     database: sql,
-    topologyManagement,
+    topologyPlanning: topologyManagement.planningService,
     executionRepository,
     topologyDelivery: {
       publisherStreamId,

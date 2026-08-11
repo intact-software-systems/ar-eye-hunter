@@ -110,10 +110,10 @@ describe('group topology config mutation compute', () => {
     );
     const validate = appInboxSource.indexOf('owners.configMutationService.validate', compute);
     const transaction = appInboxSource.indexOf(
-      'const result = await this.dependencies.writeMutation',
+      'const result = await this.dependencies.transactionWriter.writeMutation',
       validate,
     );
-    const write = appInboxSource.indexOf('await owners.writeConfigMutation', transaction);
+    const write = appInboxSource.indexOf('writeTopologyConfigMutation(', transaction);
     expect(read).toBeGreaterThan(-1);
     expect(read).toBeLessThan(compute);
     expect(compute).toBeLessThan(validate);

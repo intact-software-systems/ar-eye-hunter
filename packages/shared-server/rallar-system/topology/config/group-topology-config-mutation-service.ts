@@ -20,8 +20,8 @@ import type { GroupStateRepository } from '../../group-state/persistence/group-s
 
 export interface GroupTopologyConfigMutationServiceDependencies {
   readonly readiness: Pick<GroupTopologyConfigGenerationReadiness, 'ensure'>;
-  readonly configRepository?: GroupTopologyConfigRepository;
-  readonly groupStateRepository?: GroupStateRepository;
+  readonly configRepository: GroupTopologyConfigRepository;
+  readonly groupStateRepository: GroupStateRepository;
   readonly serverDefaults?: GroupTopologyServerOptions;
   readonly nowEpochMs: () => number;
   readonly isPlatformAdmin: (principalId: string) => boolean;
@@ -72,8 +72,8 @@ export class GroupTopologyConfigMutationService {
     await this.dependencies.readiness.ensure(command.aggregateRef);
     return {
       state: await readTopologyConfigMutation(
-        this.requireConfigRepository(),
-        this.requireGroupStateRepository(),
+        this.dependencies.configRepository,
+        this.dependencies.groupStateRepository,
         command,
       ),
       policyNowEpochMs: this.dependencies.nowEpochMs(),
@@ -143,19 +143,5 @@ export class GroupTopologyConfigMutationService {
       policyNowEpochMs: read.policyNowEpochMs,
       attemptCount,
     };
-  }
-
-  private requireConfigRepository(): GroupTopologyConfigRepository {
-    if (!this.dependencies.configRepository) {
-      throw new Error('Group topology config repository is not configured');
-    }
-    return this.dependencies.configRepository;
-  }
-
-  private requireGroupStateRepository(): GroupStateRepository {
-    if (!this.dependencies.groupStateRepository) {
-      throw new TypeError('Topology config mutations require a production group-state repository');
-    }
-    return this.dependencies.groupStateRepository;
   }
 }

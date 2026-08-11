@@ -3,9 +3,12 @@ import {
   fromCanonicalGroupTopologyConfigPatch,
 } from '@shared/api/group-topology-config-canonical.ts';
 
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
+// prettier-ignore
+import type {
+  AppInboxMutationTransactionWriter,
+} from '../../services/app-inbox-transaction-writer.ts';
 import type {
   AppInboxEnqueueInput,
   AppInboxMessageContext,
@@ -38,10 +41,7 @@ import type { TopologyReconfigureAppInboxAuthority } from './topology-app-inbox-
 
 export interface TopologyAppInboxHandlerDependencies {
   readonly groupStateService: GroupStateService;
-  readonly writeMutation: <Result>(
-    context: AppInboxMessageContext,
-    write: (transaction: PSqlTransactionSql) => Promise<Result>,
-  ) => Promise<Result>;
+  readonly transactionWriter: Pick<AppInboxMutationTransactionWriter, 'writeMutation'>;
   readonly nowEpochMs: () => number;
   readonly wakeQueue?: () => void;
 }
@@ -51,11 +51,9 @@ export interface TopologyAppInboxMutationOwners {
     GroupTopologyConfigMutationService,
     'prepare' | 'read' | 'compute' | 'validate'
   >;
-  readonly writeConfigMutation: typeof writeTopologyConfigMutation;
-  readonly toConfigMutationResult: typeof toTopologyConfigMutationResult;
   readonly reconfigureMutation: Pick<
     GroupTopologyReconfigureMutation,
-    'isPlatformAdmin' | 'read' | 'compute' | 'validate' | 'write'
+    'read' | 'compute' | 'validate' | 'write'
   >;
 }
 
@@ -121,12 +119,15 @@ export class TopologyAppInboxHandler {
         computed.receivedCommandHash,
       );
     }
-    const result = await this.dependencies.writeMutation(context, async (transaction) => {
-      if (computed.outcome === 'write' || computed.outcome === 'claim') {
-        await owners.writeConfigMutation(transaction, computed);
-      }
-      return owners.toConfigMutationResult(computed);
-    });
+    const result = await this.dependencies.transactionWriter.writeMutation(
+      context,
+      async (transaction) => {
+        if (computed.outcome === 'write' || computed.outcome === 'claim') {
+          await writeTopologyConfigMutation(transaction, computed);
+        }
+        return toTopologyConfigMutationResult(computed);
+      },
+    );
     if (computed.outcome === 'write') {
       this.dependencies.wakeQueue?.();
     }
@@ -150,20 +151,22 @@ export class TopologyAppInboxHandler {
         authority.command.payload.requestOptions,
       ),
       publish: authority.command.payload.publish,
-      isPlatformAdmin: mutation.isPlatformAdmin(authority.command.actor.principalId),
     };
     const read = await mutation.read(command);
     const computed = mutation.compute(command, read);
     mutation.validate(command, read, computed);
-    const result = await this.dependencies.writeMutation(context, async (transaction) => {
-      await mutation.write(transaction, computed);
-      return {
-        status: 'queued',
-        groupRef: command.groupRef,
-        requestId: command.commandId,
-        outboxId: computed.resourceId,
-      } as const;
-    });
+    const result = await this.dependencies.transactionWriter.writeMutation(
+      context,
+      async (transaction) => {
+        await mutation.write(transaction, computed);
+        return {
+          status: 'queued',
+          groupRef: command.groupRef,
+          requestId: command.commandId,
+          outboxId: computed.resourceId,
+        } as const;
+      },
+    );
     this.dependencies.wakeQueue?.();
     return result;
   }
