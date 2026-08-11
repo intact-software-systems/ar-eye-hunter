@@ -1,10 +1,4 @@
-import {
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -110,6 +104,19 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
+  it('does not enforce warning-only cognitive metrics in the changed gate', () => {
+    const fixture = createGitFixture({
+      'apps/example/decision-dense.ts': 'export const placeholderValue = 0;\n',
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/decision-dense.ts', decisionDenseSource(120));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
   it('fails when a changed file introduces a finding', () => {
     const fixture = createGitFixture({
       'apps/example/feature.ts': 'export const value = true;\n',
@@ -206,10 +213,7 @@ describe('changed repository style checker', () => {
 
   it('fails when an over-dense directory gains another production file', () => {
     const files = Object.fromEntries(
-      Array.from({ length: 21 }, (_, index) => [
-        `apps/example/feature-${index}.ts`,
-        '',
-      ]),
+      Array.from({ length: 21 }, (_, index) => [`apps/example/feature-${index}.ts`, '']),
     );
     const fixture = createGitFixture(files);
     commitAll(fixture, 'base');
@@ -225,18 +229,9 @@ describe('changed repository style checker', () => {
 
   it('compares feature-prefix cluster growth by prefix identity', () => {
     const files = Object.fromEntries([
-      ...Array.from({ length: 5 }, (_, index) => [
-        `apps/example/alpha-${index}.ts`,
-        '',
-      ]),
-      ...Array.from({ length: 4 }, (_, index) => [
-        `apps/example/beta-${index}.ts`,
-        '',
-      ]),
-      ...Array.from({ length: 12 }, (_, index) => [
-        `apps/example/filler${index}-entry.ts`,
-        '',
-      ]),
+      ...Array.from({ length: 5 }, (_, index) => [`apps/example/alpha-${index}.ts`, '']),
+      ...Array.from({ length: 4 }, (_, index) => [`apps/example/beta-${index}.ts`, '']),
+      ...Array.from({ length: 12 }, (_, index) => [`apps/example/filler${index}-entry.ts`, '']),
     ]);
     const fixture = createGitFixture(files);
     commitAll(fixture, 'base');
@@ -335,11 +330,7 @@ describe('changed repository style checker', () => {
       'apps/example/feature.ts': 'export const value = true;\n',
     });
     commitAll(fixture, 'base');
-    writeFixture(
-      fixture,
-      'plans/large-plan.md',
-      `${'unknown guidance\n'.repeat(500)}`,
-    );
+    writeFixture(fixture, 'plans/large-plan.md', `${'unknown guidance\n'.repeat(500)}`);
     commitAll(fixture, 'add documentation');
 
     const result = executeChecker(fixture, 'HEAD^', 'HEAD');
@@ -392,6 +383,20 @@ function executeChecker(fixtureRoot: string, ...args: string[]) {
 function runGit(fixtureRoot: string, args: readonly string[]): void {
   const result = spawnSync('git', args, { cwd: fixtureRoot, encoding: 'utf8' });
   expect(result.status, result.stderr).toBe(0);
+}
+
+function decisionDenseSource(decisionCount: number): string {
+  const branches = Array.from(
+    { length: decisionCount },
+    (_, index) => `  if (input > ${index}) { total += ${index}; }`,
+  );
+  return [
+    'export function computeDecisionDenseTotal(input: number): number {',
+    '  let total = 0;',
+    ...branches,
+    '  return total;',
+    '}',
+  ].join('\n');
 }
 
 function overlongSource(label: string): string {

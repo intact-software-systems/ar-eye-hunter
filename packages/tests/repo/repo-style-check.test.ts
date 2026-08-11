@@ -368,6 +368,7 @@ describe('repo style checker', () => {
       'scripts/repo-style-check/construction-callback-references.mjs',
       'scripts/repo-style-check/construction-rules.mjs',
       'scripts/repo-style-check/construction-scope-model.mjs',
+      'scripts/repo-style-check/cognitive-load-rules.mjs',
       'scripts/repo-style-check/factory-route-rules.mjs',
       'scripts/repo-style-check/finding-magnitude.mjs',
       'scripts/repo-style-check/function-analysis.mjs',
