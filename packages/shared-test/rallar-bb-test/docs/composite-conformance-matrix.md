@@ -11,8 +11,20 @@ transport permutation:
 - `parallel-ws-rtc-groups`: bounded parallel WS and RTC send branches.
 - `wait-assert-evidence`: send evidence consumed by `wait` and `assert`.
 - `cancel-during-loop`: cancellation propagation from inside a loop.
+- `wait-absence-hold`: a same-topic positive control delivery followed by an
+  `absent: true` wait on a different topic that holds the full window and
+  passes.
+- `wait-absence-violated`: the deliberately-broken control — the absence wait
+  targets the topic that was just delivered and must fail with
+  `RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED` carrying the offending redacted
+  event.
 - `negative-no-peer`: no-peer send failure separated from local composite
   orchestration.
+
+Case recipes are built in
+`conformance/composite-conformance-recipes.ts` (absence cases in
+`wait/wait-absence-conformance-recipes.ts`) from the shared command fixtures
+in `conformance/composite-conformance-command-fixtures.ts`.
 
 Provider rows are:
 

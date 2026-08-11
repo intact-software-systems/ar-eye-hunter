@@ -105,6 +105,22 @@ cookie, token, ticket, and the other default key substrings) appear as
 `<redacted>` in results, events, failures, and artifacts. Header evidence is
 therefore assertable from recorded results without extra capture options.
 
+## Wait Absence
+
+`wait` with `absent: true` asserts non-delivery: the agent holds the full wait
+window (`timeoutMs`/`deadlineEpochMs`, default 5000 ms — an absence claim is
+only as strong as the time spent listening), then scans the whole event
+buffer once. Any matching event — buffered before the wait started or arriving
+during the window — fails the command with
+`RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED` and the offending redacted event in
+the result value and error details; an empty scan succeeds with
+`matched: false, absent: true`. Past events match by design, exactly like
+positive waits. `absent` accepts only `true`; schema and control validation
+reject other values. Semantics mirror the black-box-runner's `expect.absent`
+waits. Pair every absence wait with a same-scope positive control delivery so
+a broken transport cannot masquerade as proven absence. Evaluation lives in
+`wait/wait-for-event.ts`; match semantics live in `wait/wait-event-match.ts`.
+
 ## Validation
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.

@@ -562,6 +562,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
     }),
     wait: strictCommandSchema('wait', ['match'], {
         match: waitMatchSchema,
+        absent: { const: true },
     }),
     assert: strictCommandSchema('assert', ['source', 'operator'], {
         source: stringSchema,
@@ -936,9 +937,16 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'wait',
         title: 'Wait For Runtime Evidence',
-        description: 'Waits for an existing or future browser-agent runtime event, diagnostic, message, result, stats, or report that matches simple fields.',
+        description: 'Waits for a matching runtime event; with absent: true it instead holds the full window and fails when any buffered or new event matches.',
         requiredFields: ['match'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'absent',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata',
+        ],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['the matching evidence must be emitted by earlier or concurrent commands, browser adapters, or provider event bridges'],

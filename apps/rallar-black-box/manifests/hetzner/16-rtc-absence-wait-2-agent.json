@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-rtc-absence-wait-2-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "RTC absence wait 2-agent",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "rtc-absence-wait-recipe",
+      "recipe": {
+        "recipeId": "rtc-absence-wait-recipe",
+        "name": "RTC absence wait recipe",
+        "continueOnFailure": false,
+        "metadata": {
+          "profile": "rtc-absence",
+          "group": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "hetzner-headless-room"
+          }
+        },
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "rtc-absence-ensure-group",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the backend group exists before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "body": {
+                "requestId": "rtc-absence:ensure-group:rallar-server:default:hetzner-headless-room:{auth.sessionId}",
+                "groupId": "hetzner-headless-room",
+                "displayName": "hetzner-headless-room",
+                "kind": "room",
+                "joinMode": "open"
+              }
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200,
+                201,
+                409
+              ]
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "rtc-absence-ensure-member",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "PUT",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
+              "body": {
+                "requestId": "rtc-absence:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}:{auth.sessionId}",
+                "status": "active"
+              }
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200,
+                201
+              ]
+            }
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "rtc-absence-connect",
+            "connection": "absenceRtc",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "timeoutMs": 15000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 10000,
+              "intervalMs": 100
+            }
+          },
+          {
+            "kind": "rtc.send",
+            "commandId": "rtc-absence-send-control",
+            "connection": "absenceRtc",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "send": {
+              "roomId": "hetzner-headless-room",
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              },
+              "data": {
+                "topic": "black-box.absence.control",
+                "marker": "same-room-positive-control",
+                "actor": "{auth.clientId}"
+              }
+            },
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "rtc-absence-positive-control",
+            "timeoutMs": 10000,
+            "metadata": {
+              "purpose": "Same-room positive control: the control frame must arrive before any absence claim."
+            },
+            "match": {
+              "kind": "message",
+              "connection": "absenceRtc",
+              "topic": "rallar.browser.realtime.message",
+              "payloadPath": "data.topic",
+              "equals": "black-box.absence.control"
+            }
+          },
+          {
+            "kind": "wait",
+            "commandId": "rtc-absence-no-leak-probe",
+            "absent": true,
+            "timeoutMs": 4000,
+            "metadata": {
+              "purpose": "No agent may ever observe a leak-probe frame on this connection."
+            },
+            "match": {
+              "kind": "message",
+              "connection": "absenceRtc",
+              "topic": "rallar.browser.realtime.message",
+              "payloadPath": "data.topic",
+              "equals": "black-box.absence.leak-probe"
+            }
+          },
+          {
+            "kind": "wait",
+            "commandId": "rtc-absence-no-send-failures",
+            "absent": true,
+            "timeoutMs": 2000,
+            "metadata": {
+              "purpose": "No silent rtc send failure may exist anywhere in the run buffer."
+            },
+            "match": {
+              "kind": "diagnostic",
+              "topic": "rallar.bb.rtc.send_failed"
+            }
+          },
+          {
+            "kind": "stats",
+            "commandId": "rtc-absence-stats"
+          }
+        ]
+      },
+      "profile": "rtc",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "ackTimeoutMs": 30000,
+  "barrier": {
+    "enabled": true,
+    "timeoutMs": 15000
+  },
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": false,
+    "expectedFailure": false
+  },
+  "description": "Same-room positive control delivery followed by absence waits proving no leak-probe frame and no silent rtc send failure."
+}

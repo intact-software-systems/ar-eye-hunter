@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "93483f4760b68db3c3274f05b32025d3e567b755",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/runtime.ts",
+        "blob": "01e6d1877dd91100d78edfd61d4eb6bb5a485a88"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/wait/wait-event-match.ts",
+        "packages/shared-test/rallar-bb-test/wait/wait-for-event.ts"
+      ]
+    },
+    {
+      "mergeBase": "93483f4760b68db3c3274f05b32025d3e567b755",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/composite-conformance.ts",
+        "blob": "0777ad7b71910da81763bf6a92a327852be29a26"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/conformance/composite-conformance-command-fixtures.ts",
+        "packages/shared-test/rallar-bb-test/conformance/composite-conformance-recipes.ts"
+      ]
+    }
+  ]
+}

@@ -20,6 +20,9 @@ import {
 import {
     createHetznerProviderParityRecipe,
 } from './hetzner/create-hetzner-provider-parity-recipe.ts';
+import {
+    createHetznerRtcAbsenceWaitRecipe,
+} from './hetzner/create-hetzner-rtc-absence-wait-recipe.ts';
 
 export const HETZNER_DISTRIBUTED_MANIFEST_GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'rallar-server',
@@ -51,6 +54,7 @@ export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/13-rtc-messages-principal-30-agent-30s-20hz-tree.json',
     'apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json',
     'apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json',
+    'apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json',
 ] as const;
 
 export type HetznerDistributedManifestEntry = Readonly<{
@@ -373,6 +377,16 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             }),
         }),
         ...buildRtcMessagesMainlineAlternativeEntries(),
+        buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[15],
+            title: 'RTC absence wait 2-agent',
+            description: 'Same-room positive control delivery followed by absence waits proving no leak-probe frame and no silent rtc send failure.',
+            distributedRunId: 'hetzner-rtc-absence-wait-2-agent',
+            recipe: createHetznerRtcAbsenceWaitRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
+            agentCount: 2,
+            profiles: ['rtc', 'absence', 'isolation', 'extended'],
+            live: true,
+        }),
         buildManifestEntry({
             filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
             title: 'Barrier health 2-agent',
