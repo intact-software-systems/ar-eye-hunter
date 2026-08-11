@@ -48,7 +48,7 @@ export function validateRetainedLegacy(input) {
   if (approvalById.size !== input.record.retainedLegacy.length) {
     input.errors.push('retained legacy approval IDs must be unique');
   }
-  const ledgerHash = retainedLedgerHash({ items: retainedItems });
+  const ledgerHash = retainedLedgerHash({ items: retainedItems, approvalById });
   const ledgerIds = retainedItems.map((item) => item.id).sort();
 
   for (const item of retainedItems) {
@@ -237,12 +237,29 @@ function validateRegistry(input) {
 
 export function retainedLedgerHash(input) {
   const items = input.items ?? [input.item];
+  const approvalById = input.approvalById ?? new Map([[input.approval?.id, input.approval]]);
   const ledger = items
-    .map((item) =>
-      Object.fromEntries(Object.entries(item).sort(([left], [right]) => left.localeCompare(right))),
-    )
+    .map((item) => ({
+      ...item,
+      ...approvalDetail(approvalById.get(item.id)),
+    }))
     .sort((left, right) => String(left.id).localeCompare(String(right.id)));
   return createHash('sha256').update(JSON.stringify(ledger)).digest('hex');
+}
+
+function approvalDetail(approval) {
+  const fields = [
+    'purpose',
+    'consumerDependency',
+    'unsafeRemovalReason',
+    'minimization',
+    'canonicalOwner',
+    'compatibilityTests',
+    'owner',
+    'removalCondition',
+    'approvedProductionSha',
+  ];
+  return Object.fromEntries(fields.map((field) => [field, approval?.[field]]));
 }
 
 function readRegistrySection(registry, identifier) {

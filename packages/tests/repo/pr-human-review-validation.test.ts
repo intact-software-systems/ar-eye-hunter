@@ -498,7 +498,11 @@ describe('PR human review record validator', () => {
       path: secondItem.path,
       symbol: secondItem.symbol,
     };
-    const ledgerHash = retainedLedgerHash({ items });
+    const approvalById = new Map([
+      [firstApproval.id, firstApproval],
+      [secondApproval.id, secondApproval],
+    ]);
+    const ledgerHash = retainedLedgerHash({ items, approvalById });
     firstApproval.ledgerSha256 = ledgerHash;
     secondApproval.ledgerSha256 = ledgerHash;
     const body = recordBody({
@@ -524,7 +528,13 @@ describe('PR human review record validator', () => {
         finalReview: review({ stage: 'final', legacy: { candidateCount: 2, items } }),
         retainedLegacy: [
           firstApproval,
-          { ...secondApproval, ledgerSha256: retainedLedgerHash({ items: [secondItem] }) },
+          {
+            ...secondApproval,
+            ledgerSha256: retainedLedgerHash({
+              items: [secondItem],
+              approvalById: new Map([[secondApproval.id, secondApproval]]),
+            }),
+          },
         ],
       }),
       changedPaths: ['scripts/new-check.mjs'],

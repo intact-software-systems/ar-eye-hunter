@@ -44,8 +44,7 @@ request is created. Record `not yet required` only for an explicit exemption.
 - Exact candidate head SHA:
 - Production owner-to-result trace:
 - Cognitive-indirection findings:
-- Complete review findings and resolution/status (correctness, safety,
-  contracts, and other human-review findings):
+- Complete review findings and resolution/status (correctness, safety, contracts, and other human-review findings):
 - Tests rewritten or removed:
 - Production was not compromised for tests:
 - Behavior and judgment not proven by automation:
@@ -66,8 +65,7 @@ legacy family appears. Use `not applicable` only when no such family appeared.
 - New ownership, control-flow, or legacy family:
 - Production owner-to-result trace:
 - Cognitive-indirection findings:
-- Complete review findings and resolution/status (correctness, safety,
-  contracts, and other human-review findings):
+- Complete review findings and resolution/status (correctness, safety, contracts, and other human-review findings):
 - Tests rewritten or removed:
 - Production was not compromised for tests:
 - Behavior and judgment not proven by automation:
@@ -86,16 +84,13 @@ changed production path from entry owner to result.
 - Reviewer and independence (separate agent or human):
 - Exact merge base SHA:
 - Exact candidate head SHA:
-- Changed production owner-to-result trace, including decisions, effects,
-  failures, callbacks, compatibility branches, and tests:
+- Changed production owner-to-result trace, including decisions, effects, failures, callbacks, compatibility branches, and tests:
 - Cognitive-indirection findings and resolution:
-- Complete review findings and resolution/status (correctness, safety,
-  contracts, and other human-review findings):
+- Complete review findings and resolution/status (correctness, safety, contracts, and other human-review findings):
 - Tests rewritten or removed, with independent behavior retained:
 - Production was not compromised for tests:
 - Behavior and judgment not proven by automation:
-- Legacy candidates inspected (baseline, automated report, changed files, and
-  production call paths):
+- Legacy candidates inspected (baseline, automated report, changed files, and production call paths):
 - Legacy candidate count:
 - Legacy ledger and dispositions:
 - Critical findings unresolved: `0`
