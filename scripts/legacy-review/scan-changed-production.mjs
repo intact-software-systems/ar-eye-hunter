@@ -72,24 +72,24 @@ function addVocabularyCandidates({ candidates, file, lines }) {
 
 function addSplitModeCandidate({ candidates, file, source }) {
   const splitPredecessorMode = new RegExp(
-    '\\b(?:(?:old|legacy|previous)\\w*(?:enabled|flag|mode)?|' +
-      '\\w*(?:flag|mode|variant|version)\\w*)\\s*:\\s*\\n\\s*' +
-      '(?:true|[\'"](?:old|legacy|previous)[\'"])',
-    'iu',
+    '\\b((?:(?:old|legacy|previous)\\w*(?:enabled|flag|mode)?|' +
+      '\\w*(?:flag|mode|variant|version)\\w*))\\s*:\\s*\\n\\s*' +
+      '(true|[\'"](?:old|legacy|previous|v\\d+)[\'"])',
+    'giu',
   );
-  if (!splitPredecessorMode.test(source)) {
-    return;
+  for (const match of source.matchAll(splitPredecessorMode)) {
+    if (match.index === undefined) continue;
+    candidates.push(
+      candidate({
+        kind: 'predecessor-mode',
+        path: file,
+        line: source.slice(0, match.index).split('\n').length,
+        symbol: match[1],
+        reason: 'feature flag or mode retaining a predecessor',
+        detail: `${match[1]}: ${match[2]}`,
+      }),
+    );
   }
-  candidates.push(
-    candidate({
-      kind: 'predecessor-mode',
-      path: file,
-      line: 1,
-      symbol: 'split-mode-declaration',
-      reason: 'feature flag or mode retaining a predecessor',
-      detail: 'split declaration',
-    }),
-  );
 }
 
 function addExportAliasCandidates({ candidates, file, lines }) {

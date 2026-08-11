@@ -134,6 +134,46 @@ describe('changed production legacy review', () => {
     expect(result.stdout).toContain('feature flag or mode retaining a predecessor');
   });
 
+  it('reports every split predecessor declaration at its source location', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/options.ts': [
+        'export const firstRouteOptions = {',
+        '  routeVariant:',
+        "    'v1',",
+        '};',
+        '',
+        'export const secondRouteOptions = {',
+        '  routeVariant:',
+        "    'v1',",
+        '  transportVersion:',
+        "    'previous',",
+        '};',
+      ].join('\n'),
+    });
+
+    const first = runLegacyReview(fixture);
+    const second = runLegacyReview(fixture);
+    const splitCandidates = candidateLines(first.stdout).filter((line) =>
+      line.endsWith('feature flag or mode retaining a predecessor'),
+    );
+
+    expect(first.status, first.stdout).toBe(0);
+    expect(splitCandidates).toHaveLength(3);
+    expect(splitCandidates).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('packages/example/src/options.ts:2 | routeVariant |'),
+        expect.stringContaining('packages/example/src/options.ts:7 | routeVariant |'),
+        expect.stringContaining('packages/example/src/options.ts:9 | transportVersion |'),
+      ]),
+    );
+    expect(new Set(splitCandidates.map((line) => line.split(' ')[1])).size).toBe(3);
+    expect(splitCandidates).toEqual(
+      candidateLines(second.stdout).filter((line) =>
+        line.endsWith('feature flag or mode retaining a predecessor'),
+      ),
+    );
+  });
+
   it('excludes repository test and generated conventions while retaining operational code', () => {
     const fixture = createGitFixture({
       'packages/example/src/__fixtures__/legacy-route.ts': 'export const legacy = true;\n',
@@ -228,6 +268,48 @@ describe('changed production legacy review', () => {
     expect(result.status, result.stdout).toBe(0);
   });
 
+  it('rejects a not-legacy candidate that also has a legacy disposition', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/legacy-route.ts': 'export const legacyRoute = () => 200;\n',
+    });
+    writeReviewRecord(
+      fixture.root,
+      reportedItems(fixture, undefined).map((item) => ({
+        ...item,
+        classification: 'not-legacy',
+        rationale: 'The product name is LegacyRoute; it has no predecessor implementation.',
+        disposition: 'resolved',
+      })),
+    );
+
+    const result = runLegacyReview(fixture, ['--review-record', 'review.json']);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'FAIL: final review not-legacy item must not contain legacy disposition or approval',
+    );
+  });
+
+  it('rejects a legacy disposition that also carries a not-legacy rationale', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/legacy-route.ts': 'export const legacyRoute = () => 200;\n',
+    });
+    writeReviewRecord(
+      fixture.root,
+      reportedItems(fixture, 'resolved').map((item) => ({
+        ...item,
+        rationale: 'This rationale belongs only to a not-legacy classification.',
+      })),
+    );
+
+    const result = runLegacyReview(fixture, ['--review-record', 'review.json']);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'FAIL: final review legacy item must not contain a not-legacy rationale',
+    );
+  });
+
   it('discovers renamed and deleted predecessor paths, non-ASCII paths, and operational support code', () => {
     const fixture = createGitFixture({
       'packages/example/src/old-route.ts': 'export const runRoute = () => 200;\n',
@@ -258,7 +340,7 @@ describe('changed production legacy review', () => {
     expect(result.stderr).not.toContain('Error:');
   });
 
-  it('rejects malformed dispositions and retained legacy that is absent from the durable registry', () => {
+  it('rejects retained legacy without complete approval metadata and a durable registry entry', () => {
     const fixture = createGitFixture({
       'packages/example/src/legacy-route.ts': 'export const legacyRoute = () => 200;\n',
     });
@@ -294,6 +376,7 @@ describe('changed production legacy review', () => {
     ]);
 
     expect(result.status).toBe(1);
+    expect(result.stdout).toContain('FAIL: retained legacy is missing complete approval evidence');
     expect(result.stdout).toContain('FAIL: retained legacy candidate is absent from registry');
     expect(result.stdout).toContain('does not approve retained legacy');
   });

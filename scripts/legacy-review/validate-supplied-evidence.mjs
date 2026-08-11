@@ -1,13 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import { readRegistrySection } from '../pr-human-review/trusted-retained-legacy.mjs';
-
-const validDispositions = new Set([
-  'removed',
-  'minimized-boundary',
-  'resolved',
-  'retained-pending-human-approval',
-]);
+import { validateLegacyItemShape } from '../pr-human-review/validate-legacy-item.mjs';
 
 export function validateSuppliedEvidence(input, candidates) {
   if (!input.reviewRecord) {
@@ -35,6 +29,8 @@ export function validateSuppliedEvidence(input, candidates) {
       errors,
       label: stage === 'milestone' ? `milestone review ${index + 1}` : `${stage} review`,
       registryPath: input.registry,
+      retainedLegacy: record.retainedLegacy,
+      requireRetainedApproval: stage === 'final',
     });
   }
   return errors;
@@ -52,7 +48,15 @@ function reviewsForStage(record, stage) {
   return [record?.finalReview];
 }
 
-function validateLedger({ legacy, candidates, errors, label, registryPath }) {
+function validateLedger({
+  legacy,
+  candidates,
+  errors,
+  label,
+  registryPath,
+  retainedLegacy,
+  requireRetainedApproval,
+}) {
   if (!legacy || !Array.isArray(legacy.items) || !Number.isInteger(legacy.candidateCount)) {
     errors.push(`${label} legacy ledger is required and must include candidateCount and items`);
     return;
@@ -63,7 +67,13 @@ function validateLedger({ legacy, candidates, errors, label, registryPath }) {
   if (legacy.items.length !== candidates.length) {
     errors.push(`${label} ledger candidate count must equal report count (${candidates.length})`);
   }
-  const itemsById = collectLedgerItems(legacy.items, errors, label);
+  const itemsById = collectLedgerItems({
+    items: legacy.items,
+    errors,
+    label,
+    retainedLegacy,
+    requireRetainedApproval,
+  });
   const candidateIds = new Set(candidates.map((candidate) => candidate.id));
   for (const candidate of candidates) {
     validateCandidateDisposition({ candidate, itemsById, errors, label });
@@ -91,24 +101,26 @@ export function readReviewRecord(source) {
   }
 }
 
-function collectLedgerItems(items, errors, label) {
+function collectLedgerItems({ items, errors, label, retainedLegacy, requireRetainedApproval }) {
   const itemsById = new Map();
+  const approvalById = new Map(
+    (Array.isArray(retainedLegacy) ? retainedLegacy : []).map((approval) => [
+      approval?.id,
+      approval,
+    ]),
+  );
   for (const item of items) {
     if (!item || typeof item.id !== 'string') {
       errors.push(`${label} ledger contains a malformed item`);
       continue;
     }
-    if (item.classification === 'not-legacy') {
-      if (!isRationale(item.rationale)) {
-        errors.push(`${label} not-legacy candidate requires a concrete rationale: ${item.id}`);
-      }
-    } else if (item.classification === 'legacy' || item.classification === undefined) {
-      if (!validDispositions.has(item.disposition)) {
-        errors.push(`${label} ledger contains a malformed disposition`);
-      }
-    } else {
-      errors.push(`${label} ledger classification is invalid: ${String(item.classification)}`);
-    }
+    validateLegacyItemShape({
+      item,
+      label,
+      retainedApproval: approvalById.get(item.id),
+      requireRetainedApproval,
+      errors,
+    });
     if (itemsById.has(item.id)) {
       errors.push(`final review ledger has a duplicate candidate ID: ${item.id}`);
     }
@@ -164,14 +176,6 @@ function validateRegistryEntry(registry, id, errors) {
       errors.push(`retained legacy registry entry is missing ${field}: ${id}`);
     }
   }
-}
-
-function isRationale(value) {
-  if (typeof value !== 'string' || value.trim().length < 12) {
-    return false;
-  }
-  const normalized = value.trim().toLowerCase();
-  return !['todo', 'tbd', 'not applicable', 'false positive', '...'].includes(normalized);
 }
 
 const requiredRegistryFields = [

@@ -162,9 +162,11 @@ the exact candidate-ID set for the reviewed stage: no stale, extra, duplicate,
 or missing items, and its count must equal both its items and the report.
 Classify an actual legacy item as `legacy` and give it one of the four mandatory
 dispositions. Classify a heuristic false positive as `not-legacy` and provide a
-concrete, non-placeholder rationale. A retained item must also appear in the
-durable registry; this command validates neither semantic quality nor human
-approval, which remain the PR record validator and human's responsibility.
+concrete, non-placeholder rationale. A retained final item must include complete
+`retainedLegacy` approval metadata and appear in the durable registry. This
+command validates their shape, but not semantic quality or whether the cited
+GitHub review is a trusted human approval; those remain the PR record validator
+and human's responsibility.
 
 Every legacy item in the active plan's affected production surface has exactly
 one disposition:

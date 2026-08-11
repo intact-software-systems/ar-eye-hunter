@@ -1,12 +1,7 @@
 import { retainedLedgerProjection } from './trusted-retained-legacy.mjs';
+import { validateLegacyItemShape } from './validate-legacy-item.mjs';
 
 const exactSha = /^[0-9a-f]{40}$/u;
-const validDispositions = new Set([
-  'removed',
-  'minimized-boundary',
-  'resolved',
-  'retained-pending-human-approval',
-]);
 
 export function validateReviewEvidence({ review, stage, section, retainedLegacy, errors }) {
   if (!isPlainRecord(review)) {
@@ -303,25 +298,13 @@ function validateLegacyLedger({ legacy, stage, retainedLegacy, errors }) {
     for (const field of ['id', 'path', 'symbol']) {
       validateText(item[field], `${stage} review legacy ${field}`, errors);
     }
-    if (item.classification === 'not-legacy') {
-      validateText(item.rationale, `${stage} review not-legacy rationale`, errors);
-      if (
-        item.disposition !== undefined ||
-        retainedLegacy?.some((approval) => approval?.id === item.id)
-      ) {
-        errors.push(
-          `${stage} review not-legacy item must not contain legacy disposition or approval`,
-        );
-      }
-    } else if (item.classification === 'legacy' || item.classification === undefined) {
-      if (!validDispositions.has(item.disposition)) {
-        errors.push(`${stage} review legacy disposition is invalid: ${String(item.disposition)}`);
-      }
-    } else {
-      errors.push(
-        `${stage} review legacy classification is invalid: ${String(item.classification)}`,
-      );
-    }
+    validateLegacyItemShape({
+      item,
+      label: `${stage} review`,
+      retainedApproval: retainedLegacy?.find((approval) => approval?.id === item.id),
+      requireRetainedApproval: stage === 'final',
+      errors,
+    });
     if (identifiers.has(item.id)) {
       errors.push(`${stage} review legacy ledger has a duplicate item ID: ${item.id}`);
     }

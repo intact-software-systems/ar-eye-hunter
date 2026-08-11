@@ -1,23 +1,5 @@
 import { createHash } from 'node:crypto';
 
-const requiredApprovalFields = [
-  'id',
-  'path',
-  'symbol',
-  'purpose',
-  'consumerDependency',
-  'unsafeRemovalReason',
-  'minimization',
-  'canonicalOwner',
-  'compatibilityTests',
-  'owner',
-  'removalCondition',
-  'approvedProductionSha',
-  'reviewId',
-  'reviewerLogin',
-  'approvalDate',
-  'ledgerSha256',
-];
 const registryFields = [
   ['Repository-relative path and symbol', 'pathAndSymbol'],
   ['Purpose', 'purpose'],
@@ -33,8 +15,6 @@ const registryFields = [
   ['GitHub PR review ID', 'reviewId'],
 ];
 const evidenceOnlyPaths = new Set(['docs/production-legacy-exceptions.md']);
-const exactSha = /^[0-9a-f]{40}$/u;
-const exactHash = /^[0-9a-f]{64}$/u;
 const authorizedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
 export function validateRetainedLegacy(input) {
@@ -72,23 +52,7 @@ export function validateRetainedLegacy(input) {
 function validateApproval(input) {
   const { approval, item, errors } = input;
   if (!isRecord(approval)) {
-    errors.push('retained legacy approval evidence must be an object');
     return;
-  }
-  for (const field of requiredApprovalFields) {
-    if (field === 'reviewId') {
-      if (!Number.isInteger(approval[field]) || approval[field] <= 0) {
-        errors.push('retained legacy reviewId must be a positive integer');
-      }
-      continue;
-    }
-    validateText(approval[field], `retained legacy ${field}`, errors);
-  }
-  if (!exactSha.test(approval.approvedProductionSha ?? '')) {
-    errors.push(`retained legacy approval SHA must be exact: ${item.id}`);
-  }
-  if (!exactHash.test(approval.ledgerSha256 ?? '')) {
-    errors.push(`retained legacy ledger SHA-256 must be exact: ${item.id}`);
   }
   if (approval.path !== item.path || approval.symbol !== item.symbol) {
     errors.push(`retained legacy approval must match final ledger path and symbol: ${item.id}`);
