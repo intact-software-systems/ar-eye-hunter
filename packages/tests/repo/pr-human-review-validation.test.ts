@@ -40,6 +40,8 @@ describe('PR human review record validator', () => {
     expect(workflow).toContain('pull-requests: read');
     expect(workflow).toContain('actions/checkout@v7');
     expect(workflow).toContain('actions/setup-node@v7');
+    expect(workflow).toContain('Install trusted base-branch validator dependencies');
+    expect(workflow).toContain('npm ci --ignore-scripts');
     expect(workflow).toContain('persist-credentials: false');
     expect(workflow).toContain('github.event.pull_request.base.sha');
     expect(workflow).toContain('ref: ${{ github.event.pull_request.base.sha }}');
