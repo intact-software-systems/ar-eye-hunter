@@ -138,7 +138,7 @@ export class CircuitBreaker {
 
         const sumInWindow = this.slidingWindow.sumInWindow();
         if (
-            // if sum of failures in window > maximum allowed failures in window, then trip circuit OPEN
+            // if failures in window exceed the maximum allowed, trip the circuit OPEN
             sumInWindow > this.policy.maxConsecutiveFailures ||
             // the breaker is tripped again into the OPEN state for another full resetTimeout
             this.state.get() === CircuitBreakerState.HALF_OPEN
