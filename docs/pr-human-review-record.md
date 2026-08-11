@@ -168,6 +168,33 @@ command validates their shape, but not semantic quality or whether the cited
 GitHub review is a trusted human approval; those remain the PR record validator
 and human's responsibility.
 
+### Aggregated not-legacy candidates for large reports
+
+A large candidate report can exceed GitHub's pull-request body size cap when
+every not-legacy candidate receives its own ledger row, because the ledger
+appears both in the visible section and in the metadata fence. For that case a
+stage ledger may replace its per-item `not-legacy` rows with one
+`notLegacyAggregate` object beside `items`:
+
+- `count`: the number of aggregated not-legacy candidates;
+- `reportSha256`: the whole-report SHA-256 printed as `REPORT-SHA256` by
+  `npm run review:legacy` (write the byte-exact report with
+  `--report-out path/to/report.json`);
+- `evidence`: where the full canonical report is preserved — a workflow
+  artifact or a committed evidence file;
+- `rationale`: one concrete rationale for the aggregate classification.
+
+Per-item rows stay mandatory for every `legacy`-classified item, and the
+aggregate never carries a disposition or approval fields. The stage's
+`Legacy candidate count` equals the per-item rows plus the aggregate count.
+The trusted stage check recomputes the stage's candidate report from Git data
+and rejects an aggregate whose `count` or `reportSha256` does not match the
+recomputed report, so the aggregate binds exactly the reported candidate set.
+Aggregation is optional: a report whose per-item rows fit the body cap keeps
+the fully itemized form, and previously published itemized records remain
+valid. Aggregated candidates remain human-classified evidence — the digest
+preserves auditability; it does not approve the classification.
+
 Every legacy item in the active plan's affected production surface has exactly
 one disposition:
 

@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -330,6 +331,117 @@ describe('changed production legacy review', () => {
     );
   });
 
+  it('emits a reproducible whole-report digest and canonical report file', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/compatibility-route.ts': [
+        "export { createCanonicalRoute as createLegacyRoute } from './canonical-route.ts';",
+        "export const fallbackMode = 'legacy';",
+      ].join('\n'),
+    });
+
+    const result = runLegacyReview(fixture, ['--report-out', 'report.json']);
+
+    expect(result.status, result.stdout).toBe(0);
+    const digest = reportDigest(result.stdout);
+    const reportText = readFileSync(path.join(fixture.root, 'report.json'), 'utf8');
+    expect(createHash('sha256').update(reportText).digest('hex')).toBe(digest);
+    const report = JSON.parse(reportText) as {
+      version: number;
+      mergeBase: string;
+      head: string;
+      candidateCount: number;
+      candidates: readonly { id: string }[];
+    };
+    expect(report.version).toBe(1);
+    expect(report.mergeBase).toBe(fixture.base);
+    expect(report.head).toBe(fixture.head);
+    expect(report.candidateCount).toBeGreaterThan(1);
+    expect(report.candidates.map((candidate) => candidate.id)).toEqual(candidateIds(result.stdout));
+  });
+
+  it('accepts an aggregated not-legacy ledger bound to the recomputed report digest', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/compatibility-route.ts': [
+        "export { createCanonicalRoute as createLegacyRoute } from './canonical-route.ts';",
+        "export const fallbackMode = 'legacy';",
+      ].join('\n'),
+    });
+    const digest = reportDigest(runLegacyReview(fixture).stdout);
+    const items = reportedItems(fixture, 'resolved');
+    writeFileSync(
+      path.join(fixture.root, 'review.json'),
+      JSON.stringify({
+        finalReview: {
+          legacy: {
+            candidateCount: items.length,
+            items: [items[0]],
+            notLegacyAggregate: {
+              count: items.length - 1,
+              reportSha256: digest,
+              evidence: 'Committed evidence file docs/evidence/legacy-report.json in this change.',
+              rationale: 'Heuristic vocabulary matches with no predecessor implementation.',
+            },
+          },
+        },
+      }),
+    );
+
+    const complete = runLegacyReview(fixture, ['--review-record', 'review.json']);
+
+    expect(complete.status, complete.stdout).toBe(0);
+    expect(complete.stdout).toContain(
+      'PASS: supplied final review ledger disposes every reported candidate',
+    );
+  });
+
+  it('rejects an aggregated ledger whose digest or count does not match the report', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/compatibility-route.ts': [
+        "export { createCanonicalRoute as createLegacyRoute } from './canonical-route.ts';",
+        "export const fallbackMode = 'legacy';",
+      ].join('\n'),
+    });
+    const digest = reportDigest(runLegacyReview(fixture).stdout);
+    const items = reportedItems(fixture, 'resolved');
+    const aggregatedReview = (aggregate: Readonly<Record<string, unknown>>) => ({
+      finalReview: {
+        legacy: {
+          candidateCount: items.length,
+          items: [items[0]],
+          notLegacyAggregate: aggregate,
+        },
+      },
+    });
+    const validAggregate = {
+      count: items.length - 1,
+      reportSha256: digest,
+      evidence: 'Committed evidence file docs/evidence/legacy-report.json in this change.',
+      rationale: 'Heuristic vocabulary matches with no predecessor implementation.',
+    };
+
+    writeFileSync(
+      path.join(fixture.root, 'review.json'),
+      JSON.stringify(aggregatedReview({ ...validAggregate, reportSha256: 'd'.repeat(64) })),
+    );
+    const staleDigest = runLegacyReview(fixture, ['--review-record', 'review.json']);
+
+    expect(staleDigest.status).toBe(1);
+    expect(staleDigest.stdout).toContain(
+      'FAIL: final review aggregate report digest does not match the recomputed report',
+    );
+
+    writeFileSync(
+      path.join(fixture.root, 'review.json'),
+      JSON.stringify(aggregatedReview({ ...validAggregate, count: items.length })),
+    );
+    const wrongCount = runLegacyReview(fixture, ['--review-record', 'review.json']);
+
+    expect(wrongCount.status).toBe(1);
+    expect(wrongCount.stdout).toContain(
+      'FAIL: final review ledger candidate count must equal items',
+    );
+  });
+
   it('discovers renamed and deleted predecessor paths, non-ASCII paths, and operational support code', () => {
     const fixture = createGitFixture({
       'packages/example/src/old-route.ts': 'export const runRoute = () => 200;\n',
@@ -470,6 +582,12 @@ function candidateLines(output: string): string[] {
 
 function candidateIds(output: string): string[] {
   return candidateLines(output).map((line) => line.split(' ')[1]);
+}
+
+function reportDigest(output: string): string {
+  const digestLine = output.split('\n').find((line) => line.startsWith('REPORT-SHA256: '));
+  expect(digestLine, output).toBeDefined();
+  return (digestLine ?? '').slice('REPORT-SHA256: '.length);
 }
 
 function writeFixture(root: string, file: string, content: string): void {

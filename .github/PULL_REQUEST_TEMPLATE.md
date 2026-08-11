@@ -116,6 +116,18 @@ legacy item uses `classification: legacy` and exactly one disposition:
 `classification: not-legacy` with a concrete rationale; it is not a legacy
 exception or an implicit disposition.
 
+When per-item `not-legacy` rows would push the pull request body over the
+GitHub body size cap, a stage ledger may record its not-legacy candidates in
+aggregate instead: a `notLegacyAggregate` object beside `items` holding the
+aggregated candidate count, the whole-report SHA-256 (the `REPORT-SHA256`
+line from `npm run review:legacy`, reproducible byte-exactly with
+`--report-out`), the location where the full report is preserved (a workflow
+artifact or a committed evidence file), and one concrete rationale. Every
+legacy-classified item keeps its own ledger row; the aggregate never carries
+a disposition or approval. `Legacy candidate count` equals the per-item rows
+plus the aggregate count, and the stage check recomputes the report and
+rejects an aggregate whose digest or count does not match.
+
 The final review's `Legacy ledger and dispositions` field is the one bound,
 human-readable retained ledger. `Legacy exception ID` is the projection's `id`.
 Each retained item also presents the exact path and symbol, purpose, consumer

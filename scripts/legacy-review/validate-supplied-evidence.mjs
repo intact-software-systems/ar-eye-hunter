@@ -1,7 +1,16 @@
 import { readFileSync } from 'node:fs';
 
 import { readRegistrySection } from '../pr-human-review/trusted-retained-legacy.mjs';
-import { validateLegacyItemShape } from '../pr-human-review/validate-legacy-item.mjs';
+import {
+  resolveNotLegacyAggregateCount,
+  validateLegacyItemShape,
+  validateNotLegacyAggregateShape,
+} from '../pr-human-review/validate-legacy-item.mjs';
+import {
+  computeReportSha256,
+  toCanonicalReport,
+  toCanonicalReportText,
+} from './candidate-report.mjs';
 
 export function validateSuppliedEvidence(input, candidates) {
   if (!input.reviewRecord) {
@@ -21,11 +30,17 @@ export function validateSuppliedEvidence(input, candidates) {
   if (reviews.length === 0) {
     return stage === 'milestone' ? [] : [`${stage} review legacy ledger is required`];
   }
+  const reportSha256 = computeReportSha256(
+    toCanonicalReportText(
+      toCanonicalReport({ mergeBase: input.mergeBase, head: input.head, candidates }),
+    ),
+  );
   const errors = [];
   for (const [index, review] of reviews.entries()) {
     validateLedger({
       legacy: review?.legacy,
       candidates,
+      reportSha256,
       errors,
       label: stage === 'milestone' ? `milestone review ${index + 1}` : `${stage} review`,
       registryPath: input.registry,
@@ -51,6 +66,7 @@ function reviewsForStage(record, stage) {
 function validateLedger({
   legacy,
   candidates,
+  reportSha256,
   errors,
   label,
   registryPath,
@@ -61,10 +77,18 @@ function validateLedger({
     errors.push(`${label} legacy ledger is required and must include candidateCount and items`);
     return;
   }
-  if (legacy.candidateCount !== legacy.items.length) {
+  const aggregate = legacy.notLegacyAggregate ?? undefined;
+  if (aggregate !== undefined) {
+    validateNotLegacyAggregateShape({ aggregate, label, errors });
+    if (aggregate?.reportSha256 !== reportSha256) {
+      errors.push(`${label} aggregate report digest does not match the recomputed report`);
+    }
+  }
+  const coveredCount = legacy.items.length + resolveNotLegacyAggregateCount(aggregate);
+  if (legacy.candidateCount !== coveredCount) {
     errors.push(`${label} ledger candidate count must equal items`);
   }
-  if (legacy.items.length !== candidates.length) {
+  if (coveredCount !== candidates.length) {
     errors.push(`${label} ledger candidate count must equal report count (${candidates.length})`);
   }
   const itemsById = collectLedgerItems({
@@ -76,7 +100,13 @@ function validateLedger({
   });
   const candidateIds = new Set(candidates.map((candidate) => candidate.id));
   for (const candidate of candidates) {
-    validateCandidateDisposition({ candidate, itemsById, errors, label });
+    validateCandidateDisposition({
+      candidate,
+      itemsById,
+      errors,
+      label,
+      aggregateCoversMissing: aggregate !== undefined,
+    });
   }
   for (const identifier of itemsById.keys()) {
     if (!candidateIds.has(identifier)) {
@@ -131,10 +161,18 @@ function collectLedgerItems({ items, errors, label, retainedLegacy, requireRetai
   return itemsById;
 }
 
-function validateCandidateDisposition({ candidate, itemsById, errors, label }) {
+function validateCandidateDisposition({
+  candidate,
+  itemsById,
+  errors,
+  label,
+  aggregateCoversMissing,
+}) {
   const item = itemsById.get(candidate.id);
   if (!item) {
-    errors.push(`${label} ledger is missing disposition: ${candidate.id}`);
+    if (!aggregateCoversMissing) {
+      errors.push(`${label} ledger is missing disposition: ${candidate.id}`);
+    }
     return;
   }
   if (item.path !== candidate.path || item.symbol !== candidate.symbol) {

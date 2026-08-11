@@ -117,6 +117,29 @@ describe('PR human review record contract', () => {
     ]);
   });
 
+  it('documents the aggregated not-legacy ledger option for oversized candidate reports', () => {
+    const template = readRepo(templatePath);
+    const contract = readRepo(reviewRecordPath);
+
+    for (const source of [template, contract]) {
+      expectAllNormalized(source, [
+        'notLegacyAggregate',
+        'REPORT-SHA256',
+        'workflow artifact or a committed evidence file',
+      ]);
+    }
+    expectAllNormalized(template, [
+      'Every legacy-classified item keeps its own ledger row',
+      'the aggregate never carries a disposition or approval',
+      'equals the per-item rows plus the aggregate count',
+    ]);
+    expectAllNormalized(contract, [
+      'Per-item rows stay mandatory for every `legacy`-classified item',
+      'rejects an aggregate whose `count` or `reportSha256` does not match',
+      'previously published itemized records remain valid',
+    ]);
+  });
+
   it('allows a documented exemption only for plan, documentation, or agent-guidance-only pull requests', () => {
     const template = readRepo(templatePath);
     const contract = readRepo(reviewRecordPath);
