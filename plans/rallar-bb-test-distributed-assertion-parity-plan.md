@@ -328,56 +328,103 @@ checked by humans reading artifacts.
 
 **Baked-in decision:** a manifest-level `groupAssertions` block beside
 `targetPolicy`/`barrier`, evaluated by the control server's distributed-run
-rollup after barrier/required-recipe completion — **coordinator-side only**,
-so agents are unchanged and D4's capability gate does not apply. Each
-assertion names an `assertionId`; a `scope` (`role`, `minParticipants`); a
-`source` address (`recipeId`, `commandId`, dot `path` into that command's
-result value — the same coordinates `resultCache` and composite result paths
-already use); and an `aggregate`. v1 aggregates, strict by default:
+rollup after required recipes and barriers complete — **coordinator-side
+only**, so agents are unchanged and D4's capability gate does not apply.
+Every assertion reads **one result value from every targeted agent** through
+a typed address `{ recipeId, commandId, path }` (the coordinates
+`resultCache` and composite result paths already use) and applies value
+predicates drawn from the assert operator vocabulary (including D2's
+extended operators — which is why D2 must ship its evaluation as pure,
+runtime-agnostic functions the control server can import, so agent-side and
+coordinator-side predicates cannot drift).
 
-- `allEqual` / `allEqualWithin` (numeric tolerance) — agreement/convergence;
-- `noneMatched` — group absence (fleet-scale isolation; failures name the
-  violating agents and their redacted matching evidence);
-- `countMatching` with `equals`/`gte`/`lte` — exactly-one-winner, exactly-K,
-  fan-out completeness;
-- `forall` — every agent's numeric satisfies a bound (sugar over
-  `countMatching == participants`);
-- optional `minRatio` quorum on any aggregate for world-fleet runs — an
-  explicit, visible weakening, never a default.
+v1 aggregate vocabulary — fixed, strict, deterministic:
 
-A participating agent that contributes no value at the source address is a
-violation by default; `minParticipants` interacts with
-`targetPolicy.expectedParticipantCount` and must be stated per assertion.
-Failure evidence is a redacted per-agent value table plus violating agent
-IDs, recorded in `failures.json` and named for the analyzer. Spread/fairness
-and cross-agent ordering aggregates are explicitly deferred; perf-flavored
-group checks stay in analyzer thresholds, not run-failing asserts.
+- `allMatch` — every participating agent's value satisfies a predicate
+  ("every receiver observed exactly 100 messages", "every agent reports the
+  expected topology revision", "every result matches the required shape").
+- `noneMatch` — no participating agent's value satisfies a predicate ("no
+  room-A agent received a room-B frame", "no agent reported an authorization
+  failure"). Kept as a named aggregate even though it equals
+  `countMatching == 0`: the intent and the diagnostics are clearer.
+- `countMatching` with `equals`/`gte`/`lte` — "exactly one agent became
+  leader", "at least 45 of 50 received it", "no more than two retried".
+  Quorum-style checks are expressed here, against the frozen participant
+  denominator — there is **no** generic `minRatio` modifier (its meaning is
+  ambiguous for `allEqual`); a separately defined `consensusRatio` aggregate
+  may come later if a real need appears.
+- `allEqual` — every participating agent contributed the same JSON value,
+  using **proper deep equality: object-key-order insensitive, array-order
+  sensitive**. Explicitly not `JSON.stringify` equality (the runtime's
+  `sameJsonValue` is disqualified), and not `json-compare`'s `exact` mode
+  either (its array matching is order-insensitive); D6 ships a small pure
+  `deepEqualJson` with exactly these semantics.
+- `allEqualWithin` — numeric agreement within an absolute tolerance
+  ("replicated counters differ by at most one").
+- `sum` (v1.1) — the sum of numeric values satisfies a comparison ("total
+  successful deliveries equal the expected fan-out", "aggregate loss is
+  zero"). Pull into v1 only if delivery accounting lands in the same cycle.
+
+Authoring rule recorded in the prompt guide: when the expected value is
+known, use `allMatch equals X` — `allEqual` alone passes when every agent
+agrees on the same *wrong* value; `allEqual` is for values the test cannot
+predict, and the two compose ("all equal AND the first one matches X").
+
+**Participation rules — mandatory on every group assertion:**
+
+- The expected participant set is **frozen during target resolution** and
+  recorded in the run snapshot; the assertion evaluates against that set.
+- Missing, duplicate, or unresolved evidence at the address **fails by
+  default** — absence of evidence is never a pass.
+- `scope.role` narrows participants to a manifest role; `minParticipants`
+  exists only as an explicit, visible relaxation of the frozen set.
+- Failure artifacts record a redacted per-agent value table and identify
+  both missing and violating agents by agent ID.
+
+**Deferred explicitly** (hard to explain and diagnose; revisit only with a
+concrete consumer): arbitrary expression languages, cross-agent temporal
+ordering, joins across multiple evidence sources, fairness/distribution
+analysis, percentiles and other performance calculations, and set-union /
+cross-agent message-ID reconciliation.
+
+**Open product decision (plan owner):** are group assertions exclusively
+run-failing *correctness* gates, or may fleet performance/SLO checks also
+fail a run? Recommendation: correctness-only in v1 — performance stays in
+artifact-analysis thresholds (`performance-thresholds.md`), matching the
+repo's "no latency SLOs in gates" doctrine — with a deliberate, per-contract
+promotion path later if a specific performance bound becomes an explicit
+product contract. Record the resolution here before implementing D6.
 
 **Prompt:**
 
 ```
 Add a manifest-level groupAssertions block to the rallar-bb-test distributed
 run contract, evaluated coordinator-side in the distributed-run rollup after
-barrier/required-recipe completion: allEqual/allEqualWithin, noneMatched,
-countMatching (equals/gte/lte), forall, with scope (role, minParticipants),
-result-address sources (recipeId, commandId, path), optional minRatio quorum,
-and missing-evidence-is-violation semantics. Implement evaluation in a new
+required recipes and barriers complete: allMatch, noneMatch, countMatching
+(equals/gte/lte), allEqual (deep equality: key-order insensitive,
+array-order sensitive — a new pure deepEqualJson, not sameJsonValue and not
+json-compare exact), and allEqualWithin, with typed sources
+{recipeId, commandId, path}, predicates reused as pure functions from D2's
+operator module, role scoping, a participant set frozen at target
+resolution, and missing/duplicate/unresolved evidence failing by default
+(minParticipants only as explicit relaxation). Implement evaluation in a new
 distributed-run module (net-neutral wiring in existing over-cap files),
 update the manifest schema + golden corpus + distributed-run-contract doc +
-control-server OpenAPI examples, emit redacted per-agent value tables with
-named failure codes into failures.json and the artifact analyzer, and add a
-conformance case per aggregate with a deliberately-broken control, plus one
-checked-in Hetzner manifest asserting allEqual convergence and noneMatched
-isolation across the fleet. Run the schema, distributed-run, control-server
-deno, conformance, and artifact-analysis suites plus test:repo-governance;
-dispatch the manifest through the Hetzner workflow once reviewed.
+control-server OpenAPI examples, emit redacted per-agent value tables naming
+missing and violating agents with named failure codes into failures.json and
+the artifact analyzer, and add a conformance case per aggregate with a
+deliberately-broken control, plus one checked-in Hetzner manifest asserting
+allEqual convergence and noneMatch isolation across the fleet. Run the
+schema, distributed-run, control-server deno, conformance, and
+artifact-analysis suites plus test:repo-governance; dispatch the manifest
+through the Hetzner workflow once reviewed.
 ```
 
 **Done when:** a synthetic run with one disagreeing agent fails `allEqual`
-naming that agent; one leaked frame anywhere fails `noneMatched` with the
-offending evidence; a missing agent fails by default; quorum mode passes the
-same runs only when explicitly configured; and the Hetzner manifest passes a
-real dispatch.
+naming that agent; one leaked frame anywhere fails `noneMatch` with the
+offending evidence; a missing agent fails by default; `countMatching`
+expresses the quorum cases against the frozen denominator; and the Hetzner
+manifest passes a real dispatch.
 
 ## Sequencing and guardrails
 
@@ -389,7 +436,7 @@ real dispatch.
 | D3 | — | independent |
 | D4 | D1–D3 shapes | capability names must match shipped fields |
 | D5 | D1–D3 | parity needs both sides implemented |
-| D6 | D1–D3 evidence shapes | coordinator-side only; old agents work unchanged, so D4's gate does not apply |
+| D6 | D2's pure operator module + D1–D3 evidence shapes | coordinator-side only; old agents work unchanged, so D4's gate does not apply; one open product decision recorded in its section |
 
 - One capability per PR; every PR carries its schema branch, capability
   metadata, validating example, corpus update, docs, and upgrade note — the
