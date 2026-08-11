@@ -1,149 +1,384 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { createGroupSnapshot } from '../../packages/tests/shared-graph/helpers.ts';
 
-type BenchResult = Readonly<{
-    run: number;
-    durationMs: number;
-    sessionCount: number;
-    rttCount: number;
-    nodeCount: number;
-    edgeCount: number;
-    sampleWeight: number;
-}>;
+import {
+  rtcBaselineIssue,
+  type RtcBaselineJson,
+  type RtcBaselineSampleDto,
+  type RtcBaselineSampleIdentityDto,
+} from './rtc-baseline/rtc-baseline-contracts.ts';
+import {
+  parseRtcBaselineBoundedInteger,
+  parseRtcBaselineOneTokenOptions,
+} from './rtc-baseline/rtc-baseline-cli-options.ts';
+import { validateRtcBaselineId } from './rtc-baseline/rtc-baseline-validation.ts';
 
-const OUT = readArg('--out') ?? 'tmp/perf/results/rtc-room-graph-rtt.json';
-const SESSIONS = Number(readArg('--sessions') ?? '600');
-const RUNS = Number(readArg('--runs') ?? '5');
-
-const memberSessionIds = createMemberIds(SESSIONS);
-const group = createGroupSnapshot('room-1', memberSessionIds);
-const rttMeasurements = createRttMeasurements(memberSessionIds);
-const results: BenchResult[] = [];
-
-for (let run = 1; run <= RUNS; run++) {
-    const service = new RallarRtcTopologyService();
-    const start = performance.now();
-    const graph = service.createRoomGraph(group, rttMeasurements);
-    const durationMs = performance.now() - start;
-    const sampleEdge = graph.edge('peer-1', 'peer-3');
-
-    results.push({
-        run,
-        durationMs,
-        sessionCount: SESSIONS,
-        rttCount: rttMeasurements.length,
-        nodeCount: graph.order,
-        edgeCount: graph.size,
-        sampleWeight: sampleEdge === undefined
-            ? Number.NaN
-            : graph.getEdgeAttribute(sampleEdge, 'weight') as number,
-    });
+export type RtcRoomGraphRttMode = 'sparse' | 'complete';
+interface RtcRoomGraphRttInput {
+  readonly sessions: number;
+  readonly mode: RtcRoomGraphRttMode;
+  readonly sparseDegree: number;
+  readonly runs: number;
+}
+interface RtcRoomGraphRttAcceptedArguments {
+  readonly mode: 'accepted';
+  readonly input: RtcRoomGraphRttInput;
+  readonly intendedPhase: 'warmup' | 'retained';
+  readonly outerOrdinal: number;
+  readonly sampleIds: readonly string[];
+}
+export interface RtcRoomGraphRttResult {
+  readonly durationMs: number;
+  readonly sessionIds: readonly string[];
+  readonly edgePairs: readonly (readonly [string, string])[];
+  readonly measurements: readonly RttMeasurementInfo[];
 }
 
-await Deno.writeTextFile(
-    OUT,
-    JSON.stringify({
-        createdAt: new Date().toISOString(),
-        input: {
-            sessionCount: SESSIONS,
-            runs: RUNS,
-            rttCount: rttMeasurements.length,
-        },
-        results,
-    }, null, 2),
-);
+const acceptedNames = `capture baseline-id workload case-id input-key intended-phase outer-ordinal
+sample-ids rtc-inner-runs rtc-sessions rtc-sparse-degree`.split(/\s+/);
+const acceptedSessionCounts = new Set([30, 100, 300]);
 
-console.log(`Wrote ${OUT}`);
+export function parseRtcRoomGraphRttArguments(arguments_: readonly string[]) {
+  const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  const parsed = parseRtcBaselineOneTokenOptions(
+    arguments_,
+    accepted ? acceptedNames : ['sessions', 'runs', 'out'],
+  );
+  if (!parsed.ok) {
+    return parsed;
+  }
+  return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
+}
 
-function createMemberIds(count: number): readonly string[] {
-    return Array.from({ length: count }, (_, index) => `peer-${index + 1}`);
+export function runRtcRoomGraphRtt(
+  sessions: number,
+  mode: RtcRoomGraphRttMode,
+  sparseDegree: number,
+): RtcRoomGraphRttResult {
+  const sessionIds = createSessionIds(sessions);
+  const group = createGroupSnapshot('room-1', sessionIds);
+  const measurements = createRttMeasurements(sessionIds, mode, sparseDegree);
+  const service = new RallarRtcTopologyService();
+  const startedAt = performance.now();
+  const graph = service.createRoomGraph(group, measurements);
+  const durationMs = performance.now() - startedAt;
+  const edgePairs = graph
+    .edges()
+    .map((edge) => {
+      const [from, to] = graph.extremities(edge);
+      return (from < to ? [from, to] : [to, from]) as readonly [string, string];
+    })
+    .sort(comparePairs);
+  return { durationMs, sessionIds: [...graph.nodes()].sort(), edgePairs, measurements };
+}
+
+export async function runRtcRoomGraphRttAcceptedSamples(input: {
+  readonly worker: RtcRoomGraphRttAcceptedArguments;
+  readonly run: () => Promise<RtcRoomGraphRttResult> | RtcRoomGraphRttResult;
+}): Promise<RtcBaselineSampleDto[]> {
+  const samples: RtcBaselineSampleDto[] = [];
+  let failureId: string | undefined;
+  for (let index = 0; index < input.worker.sampleIds.length; index += 1) {
+    const identity = createIdentity(input.worker, index);
+    if (failureId !== undefined) {
+      samples.push(
+        createSample(identity, null, [
+          rtcBaselineIssue('$.rawEvidence', 'causal-not-run', failureId),
+        ]),
+      );
+      continue;
+    }
+    const result = await input.run();
+    const issues = validateResult(input.worker.input, result);
+    if (issues.length > 0) {
+      failureId = identity.sampleId;
+    }
+    samples.push(createSample(identity, result, issues));
+  }
+  return samples;
+}
+
+function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+  const sessions = parseRtcBaselineBoundedInteger(options.sessions ?? '600', 'sessions', 2, 600);
+  const runs = parseRtcBaselineBoundedInteger(options.runs ?? '5', 'runs', 1, 5);
+  const out = options.out ?? 'tmp/perf/results/rtc-room-graph-rtt.json';
+  const issues = [...(!sessions.ok ? sessions.issues : []), ...(!runs.ok ? runs.issues : [])];
+  if (!isDiagnosticOutput(out)) {
+    issues.push(rtcBaselineIssue('$.out', 'invalid-diagnostic-output', 'Invalid result path.'));
+  }
+  if (issues.length > 0) {
+    return { ok: false as const, issues };
+  }
+  const input = {
+    sessions: sessions.ok ? sessions.value : 2,
+    mode: 'complete' as const,
+    sparseDegree: 4,
+    runs: runs.ok ? runs.value : 1,
+  };
+  return { ok: true as const, value: { mode: 'diagnostic' as const, input, out } };
+}
+
+function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+  const sessionValue = options['rtc-sessions'] ?? '';
+  const outerValue = options['outer-ordinal'] ?? '';
+  const sessions = parseRtcBaselineBoundedInteger(sessionValue, 'rtc-sessions', 30, 300);
+  const outer = parseRtcBaselineBoundedInteger(outerValue, 'outer-ordinal', 1, 999);
+  const issues = [...(!sessions.ok ? sessions.issues : []), ...(!outer.ok ? outer.issues : [])];
+  if (sessions.ok && !acceptedSessionCounts.has(sessions.value)) {
+    issues.push(rtcBaselineIssue('$.rtc-sessions', 'unexpected-worker-input', 'Invalid count.'));
+  }
+  issues.push(...validateRtcBaselineId(options['baseline-id'] ?? ''));
+  const caseId = options['case-id'];
+  let mode: RtcRoomGraphRttMode | undefined;
+  if (caseId === 'room-graph-rtt-sparse') {
+    mode = 'sparse';
+  } else if (caseId === 'room-graph-rtt-complete') {
+    mode = 'complete';
+  }
+  if (mode === undefined) {
+    issues.push(rtcBaselineIssue('$.case-id', 'unexpected-worker-input', 'Invalid graph case.'));
+  }
+  const sessionCount = sessions.ok ? sessions.value : 30;
+  const expected = {
+    capture: 'worker',
+    workload: 'RTC-B03',
+    'input-key': `sessions-${sessionCount}`,
+    'rtc-inner-runs': '5',
+    'rtc-sessions': String(sessionCount),
+    ...(mode === 'sparse' ? { 'rtc-sparse-degree': '4' } : {}),
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    if (options[name] !== value) {
+      issues.push(rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`));
+    }
+  }
+  if (mode === 'complete' && options['rtc-sparse-degree'] !== undefined) {
+    issues.push(rtcBaselineIssue('$.rtc-sparse-degree', 'unexpected-worker-input', 'Not used.'));
+  }
+  const phase = options['intended-phase'];
+  if (phase !== 'warmup' && phase !== 'retained') {
+    issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
+  }
+  const ordinal = outer.ok ? outer.value : 0;
+  const inputMode = mode ?? 'complete';
+  const input = { sessions: sessionCount, mode: inputMode, sparseDegree: 4, runs: 5 };
+  const sampleIds = (options['sample-ids'] ?? '').split(',');
+  const expectedIds = createExpectedSampleIds(
+    input,
+    phase === 'warmup' ? phase : 'retained',
+    ordinal,
+  );
+  if (JSON.stringify(sampleIds) !== JSON.stringify(expectedIds)) {
+    issues.push(rtcBaselineIssue('$.sample-ids', 'unexpected-worker-input', 'Invalid sample IDs.'));
+  }
+  if (issues.length > 0) {
+    return { ok: false as const, issues };
+  }
+  return {
+    ok: true as const,
+    value: {
+      mode: 'accepted' as const,
+      input,
+      intendedPhase: phase as 'warmup' | 'retained',
+      outerOrdinal: ordinal,
+      sampleIds,
+    },
+  };
+}
+
+function createExpectedSampleIds(
+  input: RtcRoomGraphRttInput,
+  phase: 'warmup' | 'retained',
+  outerOrdinal: number,
+): string[] {
+  const prefix =
+    `rtc-b03-room-graph-rtt-${input.mode}-sessions-${input.sessions}-${phase}-` +
+    String(outerOrdinal).padStart(3, '0');
+  return Array.from(
+    { length: 5 },
+    (_value, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`,
+  );
+}
+
+function createIdentity(
+  worker: RtcRoomGraphRttAcceptedArguments,
+  index: number,
+): RtcBaselineSampleIdentityDto {
+  return {
+    sampleId: worker.sampleIds[index],
+    workloadId: 'RTC-B03',
+    caseId: `room-graph-rtt-${worker.input.mode}`,
+    inputKey: `sessions-${worker.input.sessions}`,
+    intendedPhase: worker.intendedPhase,
+    outerOrdinal: worker.outerOrdinal,
+    innerOrdinal: index + 1,
+  };
+}
+
+function createSample(
+  identity: RtcBaselineSampleIdentityDto,
+  result: RtcRoomGraphRttResult | null,
+  issues: RtcBaselineSampleDto['issues'],
+): RtcBaselineSampleDto {
+  return {
+    schema: 'rallar.rtc-baseline.sample.v1',
+    identity,
+    outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+    evidenceClass: 'synthetic-path',
+    metrics:
+      result === null ? [] : [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }],
+    rawEvidence: result === null ? null : createRawEvidence(result),
+    rawReferences: [],
+    issues,
+    runtimeObservation: null,
+  };
+}
+
+function createRawEvidence(result: RtcRoomGraphRttResult): RtcBaselineJson {
+  return {
+    durationMs: result.durationMs,
+    sessionIds: [...result.sessionIds],
+    edgePairs: result.edgePairs.map(([from, to]) => [from, to]),
+    measurements: result.measurements.map((measurement) => ({ ...measurement })),
+  };
+}
+
+function validateResult(input: RtcRoomGraphRttInput, result: RtcRoomGraphRttResult) {
+  const expectedSessions = createSessionIds(input.sessions);
+  const expectedMeasurements = createRttMeasurements(
+    expectedSessions,
+    input.mode,
+    input.sparseDegree,
+  );
+  const validMeasurements =
+    JSON.stringify(result.measurements) === JSON.stringify(expectedMeasurements);
+  const validEdgeCount =
+    result.edgePairs.length >= input.sessions - 1 &&
+    result.edgePairs.length <= Math.floor((input.sessions * 5) / 2);
+  return JSON.stringify(result.sessionIds) === JSON.stringify(expectedSessions) &&
+    validEdgeCount &&
+    hasValidTopology(result) &&
+    validMeasurements
+    ? []
+    : [rtcBaselineIssue('$.rawEvidence', 'rtt-graph-invariant-mismatch', 'Unexpected RTT graph.')];
+}
+
+function hasValidTopology(result: RtcRoomGraphRttResult): boolean {
+  const neighbors = new Map(result.sessionIds.map((sessionId) => [sessionId, new Set<string>()]));
+  for (const [from, to] of result.edgePairs) {
+    if (from >= to || !neighbors.has(from) || !neighbors.has(to) || neighbors.get(from)?.has(to)) {
+      return false;
+    }
+    neighbors.get(from)?.add(to);
+    neighbors.get(to)?.add(from);
+  }
+  if ([...neighbors.values()].some((peers) => peers.size > 5)) {
+    return false;
+  }
+  const visited = new Set<string>();
+  const pending = [result.sessionIds[0]];
+  while (pending.length > 0) {
+    const sessionId = pending.pop();
+    if (sessionId === undefined || visited.has(sessionId)) {
+      continue;
+    }
+    visited.add(sessionId);
+    pending.push(...(neighbors.get(sessionId) ?? []));
+  }
+  return visited.size === result.sessionIds.length;
 }
 
 function createRttMeasurements(
-    memberSessionIds: readonly string[],
-): readonly RttMeasurementInfo[] {
-    const measurements: RttMeasurementInfo[] = [];
-    let version = 1;
-
-    for (let i = 0; i < memberSessionIds.length; i++) {
-        for (let j = i + 1; j < memberSessionIds.length; j++) {
-            measurements.push({
-                sessionIdFrom: memberSessionIds[i],
-                sessionIdTo: memberSessionIds[j],
-                rttMs: Math.abs(i - j) + 10,
-                createdAtEpochMs: version,
-                version: version++,
-            });
-        }
+  sessionIds: readonly string[],
+  mode: RtcRoomGraphRttMode,
+  sparseDegree: number,
+): RttMeasurementInfo[] {
+  const sparsePairs =
+    mode === 'sparse' ? createSparsePairSet(sessionIds.length, sparseDegree) : null;
+  const measurements: RttMeasurementInfo[] = [];
+  let version = 0;
+  for (let fromIndex = 0; fromIndex < sessionIds.length; fromIndex += 1) {
+    for (let toIndex = fromIndex + 1; toIndex < sessionIds.length; toIndex += 1) {
+      version += 1;
+      if (sparsePairs !== null && !sparsePairs.has(`${fromIndex}:${toIndex}`)) {
+        continue;
+      }
+      measurements.push({
+        sessionIdFrom: sessionIds[fromIndex],
+        sessionIdTo: sessionIds[toIndex],
+        rttMs: 5 + ((fromIndex * 31 + toIndex * 17) % 96),
+        createdAtEpochMs: version,
+        version,
+      });
     }
-
-    return measurements;
+  }
+  return measurements;
 }
 
-function createGroupSnapshot(
-    groupId: string,
-    memberSessionIds: readonly string[],
-): GroupSnapshot {
-    const applicationId = 'app-1';
-    const workspaceId = 'workspace-1';
-
-    return {
-        stateRevision: 1,
-        group: {
-            applicationId,
-            workspaceId,
-            groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
-            snapshotVersion: 1,
-            metadataVersion: 0,
-            rosterVersion: 1,
-            presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-        },
-        members: memberSessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-        })),
-        activeSessions: memberSessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        })),
-        memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length,
-    };
+function createSparsePairSet(sessionCount: number, sparseDegree: number): Set<string> {
+  const pairs = new Set<string>();
+  for (let index = 0; index < sessionCount; index += 1) {
+    for (let offset = 1; offset <= sparseDegree / 2; offset += 1) {
+      const neighbor = (index + offset) % sessionCount;
+      pairs.add(index < neighbor ? `${index}:${neighbor}` : `${neighbor}:${index}`);
+    }
+  }
+  return pairs;
 }
 
-function readArg(name: string): string | undefined {
-    return Deno.args.find((arg) => arg.startsWith(`${name}=`))
-        ?.slice(name.length + 1);
+function comparePairs(
+  [leftFrom, leftTo]: readonly [string, string],
+  [rightFrom, rightTo]: readonly [string, string],
+): number {
+  return leftFrom.localeCompare(rightFrom) || leftTo.localeCompare(rightTo);
+}
+
+function createSessionIds(count: number): string[] {
+  return Array.from(
+    { length: count },
+    (_value, index) => `session-${String(index).padStart(3, '0')}`,
+  );
+}
+
+function isDiagnosticOutput(out: string): boolean {
+  return (
+    out.startsWith('tmp/perf/results/') &&
+    !out.includes('\\') &&
+    out.split('/').every((component) => component !== '' && component !== '.' && component !== '..')
+  );
+}
+
+async function main(): Promise<void> {
+  const parsed = parseRtcRoomGraphRttArguments(Deno.args);
+  if (!parsed.ok) {
+    throw new Error(JSON.stringify(parsed.issues));
+  }
+  if (parsed.value.mode === 'accepted') {
+    const samples = await runRtcRoomGraphRttAcceptedSamples({
+      worker: parsed.value,
+      run: () =>
+        runRtcRoomGraphRtt(
+          parsed.value.input.sessions,
+          parsed.value.input.mode,
+          parsed.value.input.sparseDegree,
+        ),
+    });
+    console.log(JSON.stringify(samples));
+    return;
+  }
+  const results = Array.from({ length: parsed.value.input.runs }, (_value, index) => ({
+    run: index + 1,
+    ...runRtcRoomGraphRtt(parsed.value.input.sessions, 'complete', 4),
+  }));
+  await Deno.writeTextFile(
+    parsed.value.out,
+    `${JSON.stringify({ input: parsed.value.input, results }, null, 2)}\n`,
+    { createNew: true },
+  );
+  console.log(`Wrote ${parsed.value.out}`);
+}
+
+if (import.meta.main) {
+  await main();
 }
