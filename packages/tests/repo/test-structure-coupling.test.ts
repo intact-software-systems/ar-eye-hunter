@@ -489,8 +489,6 @@ describe('test structure-coupling review', () => {
     const recipeConsolePath = 'packages/tests/rallar-black-box/recipe-console-structure.test.ts';
     const truthfulNoCandidateAllowed = [
       'packages/tests/repo/github-actions-runtime-governance.test.ts',
-      'packages/tests/repo/auth-server-navigation-map-integrity.test.ts',
-      'packages/tests/repo/client-state-navigation-map-integrity.test.ts',
     ];
     const result = runRepoChecker(['--files', recipeConsolePath, ...truthfulNoCandidateAllowed]);
 
