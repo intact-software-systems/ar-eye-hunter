@@ -105,6 +105,58 @@ describe('changed production legacy review', () => {
     expect(result.stdout.match(/compatibility export alias/g)).toHaveLength(2);
   });
 
+  it('finds multiline duplicate targets and split predecessor mode declarations', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/adapter-a.ts': [
+        'export {',
+        '  createCanonicalRoute,',
+        "} from './canonical-route.ts';",
+      ].join('\n'),
+      'packages/example/src/adapter-b.ts': [
+        'export {',
+        '  createCanonicalRoute as createRoute,',
+        "} from './canonical-route.ts';",
+      ].join('\n'),
+      'packages/example/src/options.ts': [
+        'export const routeOptions = {',
+        '  oldRouteEnabled:',
+        '    true,',
+        '};',
+      ].join('\n'),
+    });
+
+    const result = runLegacyReview(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('duplicate adapter or route target');
+    expect(result.stdout).toContain('feature flag or mode retaining a predecessor');
+  });
+
+  it('excludes repository test and generated conventions while retaining operational code', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/__fixtures__/legacy-route.ts': 'export const legacy = true;\n',
+      'packages/example/src/__mocks__/legacy-route.ts': 'export const legacy = true;\n',
+      'packages/example/src/generated-types/legacy-route.ts': 'export const legacy = true;\n',
+      'packages/example/src/generated_types/legacy-route.ts': 'export const legacy = true;\n',
+      'packages/example/src/__generated__/legacy-route.ts': 'export const legacy = true;\n',
+      'packages/example/src/autogen/legacy-route.ts': 'export const legacy = true;\n',
+      'apps/example/tests/legacy-route.ts': 'export const legacy = true;\n',
+      'scripts/github-actions/legacy-release.mjs': 'export const legacyRelease = true;\n',
+    });
+
+    const result = runLegacyReview(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('scripts/github-actions/legacy-release.mjs');
+    expect(result.stdout).not.toContain('__fixtures__/legacy-route.ts');
+    expect(result.stdout).not.toContain('__mocks__/legacy-route.ts');
+    expect(result.stdout).not.toContain('generated-types/legacy-route.ts');
+    expect(result.stdout).not.toContain('generated_types/legacy-route.ts');
+    expect(result.stdout).not.toContain('__generated__/legacy-route.ts');
+    expect(result.stdout).not.toContain('autogen/legacy-route.ts');
+    expect(result.stdout).not.toContain('apps/example/tests/legacy-route.ts');
+  });
+
   it('checks every reported candidate against final ledger dispositions when a review record is supplied', () => {
     const fixture = createGitFixture({
       'packages/example/src/legacy-route.ts': 'export const legacyRoute = () => 200;\n',

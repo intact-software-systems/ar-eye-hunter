@@ -31,7 +31,7 @@ export function validateReviewEvidence({ review, stage, section, retainedLegacy,
   }
   validateFindings(review.unresolvedFindings, stage, errors);
   validateVisibleReview({ review, stage, section, retainedLegacy, errors });
-  validateLegacyLedger(review.legacy, stage, retainedLegacy, errors);
+  validateLegacyLedger({ legacy: review.legacy, stage, retainedLegacy, errors });
   return review;
 }
 
@@ -286,7 +286,7 @@ function readVisibleField(section, label) {
   return matches.length === 1 ? matches[0][1] : undefined;
 }
 
-function validateLegacyLedger(legacy, stage, retainedLegacy, errors) {
+function validateLegacyLedger({ legacy, stage, retainedLegacy, errors }) {
   if (!isPlainRecord(legacy) || !Array.isArray(legacy.items)) {
     errors.push(`${stage} review legacy ledger is required`);
     return;

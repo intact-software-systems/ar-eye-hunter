@@ -22,12 +22,18 @@ if (record?.scope === 'exempt') {
     stages.push({ name: `milestone-${index + 1}`, review });
   if (!event.pull_request?.draft && record?.finalReview)
     stages.push({ name: 'final', review: record.finalReview, final: true });
-  for (const stage of stages)
-    runStage(stage, options['current-head'], options['trusted-base'], options.registry);
+  for (const stage of stages) {
+    runStage({
+      stage,
+      currentHead: options['current-head'],
+      trustedBase: options['trusted-base'],
+      registry: options.registry,
+    });
+  }
   console.log(`PASS: validated ${stages.length} exact-SHA legacy candidate review stage(s)`);
 }
 
-function runStage(stage, currentHead, trustedBase, registry) {
+function runStage({ stage, currentHead, trustedBase, registry }) {
   const base = stage.review?.mergeBaseSha;
   const head = stage.review?.headSha;
   if (!isSha(base) || !isSha(head)) fail(`${stage.name} review must contain exact SHAs`);
