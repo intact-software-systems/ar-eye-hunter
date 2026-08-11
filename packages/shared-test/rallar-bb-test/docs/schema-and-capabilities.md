@@ -121,6 +121,34 @@ waits. Pair every absence wait with a same-scope positive control delivery so
 a broken transport cannot masquerade as proven absence. Evaluation lives in
 `wait/wait-for-event.ts`; match semantics live in `wait/wait-event-match.ts`.
 
+## Assert Operators
+
+`assert` evaluates a dot-path `source` over the runtime evidence roots
+(`state`, `config`, `lastResult`, `events`, `messages`, `diagnostics`,
+`reports`, `recent*`, `stats`, `failures`, `resultCache.<commandId>`).
+Operators:
+
+- `equals` / `notEquals` / `contains` / `exists` — historical semantics kept:
+  `notEquals` passes when the path is missing, and `gte` / `lte` accept only
+  values that are already numbers.
+- `gt` / `lt` / `between` — runner-comparator parity: values and bounds are
+  coerced with `Number(...)` and must be finite; `between` takes an inclusive
+  `[low, high]` pair and fails on a malformed pair.
+- `length` — exact length of an array or string; anything else fails.
+- `matches` — regular-expression source tested against a string value; a
+  non-string value or an invalid pattern fails the assert instead of
+  throwing.
+- `matchesShape` — `json-compare` `compatible` mode: the expected shape is a
+  subset the actual value must satisfy with equal values; extra object keys
+  and extra array elements in the actual value are allowed.
+- `matchesShapeComplete` — `compatible-complete` mode: like `matchesShape`
+  but arrays must be complete, so an unexpected array element fails. Extra
+  object keys are still allowed in both shape modes.
+
+Failing asserts fail the command with `RALLAR_BLACK_BOX_ASSERT_FAILED`; the
+result value and error details carry the redacted `expected`/`actual`
+evidence. Evaluation lives in `assert/assert-value-operators.ts`.
+
 ## Validation
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.

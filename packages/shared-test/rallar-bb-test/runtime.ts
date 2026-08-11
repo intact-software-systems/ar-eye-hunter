@@ -7,16 +7,18 @@ import {
     rallarBlackBoxParallelChildSourceRecipePath,
 } from './composite-results.ts';
 import {
-    containsValue,
     lookupPayloadPath,
     type PayloadPathLookup,
-    sameJsonValue,
 } from './wait/wait-event-match.ts';
 import { waitForEvent } from './wait/wait-for-event.ts';
 import {
+    assertValueMatches,
+    isRallarBlackBoxAssertOperator,
+    RALLAR_BLACK_BOX_ASSERT_OPERATORS,
+} from './assert/assert-value-operators.ts';
+import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
-    type RallarBlackBoxTestAssertOperator,
     type RallarBlackBoxTestAssertResultValue,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandContext,
@@ -104,7 +106,6 @@ type LoopResultMetrics = Readonly<{
 const LOOP_PLACEHOLDER_PATTERN = /\{loop\.(index|iteration|elapsedMs|commandIndex)\}/g;
 const LOOP_EXACT_PLACEHOLDER_PATTERN = /^\{loop\.(index|iteration|elapsedMs|commandIndex)\}$/;
 const RECENT_ASSERT_SOURCE_LIMIT = 20;
-const ASSERT_OPERATORS = ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'] as const;
 const ABORT_ERROR_CODE = 'RALLAR_BLACK_BOX_ABORTED';
 const RALLAR_CONFIG_AUTH_INTENT_KEYS = [
     'username',
@@ -357,26 +358,6 @@ function replaceLoopPlaceholders(value: unknown, context: LoopContext): unknown 
     }
 
     return value;
-}
-
-function containsAssertValue(value: unknown, expected: unknown): boolean {
-    if (Array.isArray(value)) {
-        return value.some(entry => sameJsonValue(entry, expected));
-    }
-
-    if (typeof value === 'string') {
-        return value.includes(String(expected));
-    }
-
-    if (value && typeof value === 'object') {
-        if (typeof expected === 'string') {
-            return containsValue(value, expected);
-        }
-        return Object.values(value as Record<string, unknown>)
-            .some(entry => sameJsonValue(entry, expected));
-    }
-
-    return containsValue(value, String(expected));
 }
 
 class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
@@ -1928,15 +1909,15 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         if (typeof command.source !== 'string' || command.source.trim().length === 0) {
             return this.assertInvalid(command, 'Assert requires a non-empty source.');
         }
-        if (!this.isAssertOperator(command.operator)) {
+        if (!isRallarBlackBoxAssertOperator(command.operator)) {
             return this.assertInvalid(command, 'Assert operator is not supported.', {
                 operator: command.operator,
-                supportedOperators: ASSERT_OPERATORS,
+                supportedOperators: RALLAR_BLACK_BOX_ASSERT_OPERATORS,
             });
         }
 
         const source = this.resolveAssertSource(command.source);
-        const passed = this.assertValueMatches(
+        const passed = assertValueMatches(
             source,
             command.operator,
             command.expected,
@@ -1961,11 +1942,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             },
             nextStatus: 'failed',
         };
-    }
-
-    private isAssertOperator(value: unknown): value is RallarBlackBoxTestAssertOperator {
-        return typeof value === 'string' &&
-            ASSERT_OPERATORS.includes(value as RallarBlackBoxTestAssertOperator);
     }
 
     private resolveAssertSource(source: string): PayloadPathLookup {
@@ -2022,35 +1998,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             failures: this.currentState.failures,
             resultCache: this.currentState.resultCache,
         };
-    }
-
-    private assertValueMatches(
-        source: PayloadPathLookup,
-        operator: RallarBlackBoxTestAssertOperator,
-        expected: unknown,
-    ): boolean {
-        switch (operator) {
-            case 'equals':
-                return source.exists && sameJsonValue(source.value, expected);
-            case 'notEquals':
-                return !source.exists || !sameJsonValue(source.value, expected);
-            case 'contains':
-                return source.exists && containsAssertValue(source.value, expected);
-            case 'exists':
-                return expected === undefined
-                    ? source.exists
-                    : source.exists === Boolean(expected);
-            case 'gte':
-                return source.exists &&
-                    typeof source.value === 'number' &&
-                    typeof expected === 'number' &&
-                    source.value >= expected;
-            case 'lte':
-                return source.exists &&
-                    typeof source.value === 'number' &&
-                    typeof expected === 'number' &&
-                    source.value <= expected;
-        }
     }
 
     private toAssertResultValue(

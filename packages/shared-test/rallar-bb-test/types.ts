@@ -203,7 +203,14 @@ export type RallarBlackBoxTestAssertOperator =
     | 'contains'
     | 'exists'
     | 'gte'
-    | 'lte';
+    | 'lte'
+    | 'gt'
+    | 'lt'
+    | 'between'
+    | 'length'
+    | 'matches'
+    | 'matchesShape'
+    | 'matchesShapeComplete';
 
 export type RallarBlackBoxTestAssertCommand =
     & RallarBlackBoxTestCommandBase<'assert'>

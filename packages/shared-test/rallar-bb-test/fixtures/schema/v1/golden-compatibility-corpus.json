@@ -453,6 +453,48 @@
           "source": "events.length",
           "operator": "gte",
           "expected": 1
+        },
+        {
+          "kind": "assert",
+          "commandId": "golden-assert-gt-v1",
+          "source": "state.messages.length",
+          "operator": "gt",
+          "expected": 0
+        },
+        {
+          "kind": "assert",
+          "commandId": "golden-assert-between-v1",
+          "source": "state.messages.length",
+          "operator": "between",
+          "expected": [
+            1,
+            50
+          ]
+        },
+        {
+          "kind": "assert",
+          "commandId": "golden-assert-matches-v1",
+          "source": "messages.0.topic",
+          "operator": "matches",
+          "expected": "^room\\.golden\\."
+        },
+        {
+          "kind": "assert",
+          "commandId": "golden-assert-shape-v1",
+          "source": "messages.0.payload",
+          "operator": "matchesShape",
+          "expected": {
+            "data": {
+              "messageId": "golden-rtc-send-v1"
+            }
+          }
+        },
+        {
+          "kind": "assert",
+          "commandId": "golden-assert-length-v1",
+          "source": "messages",
+          "operator": "length",
+          "expected": 1
         }
       ],
       "metadata": {
@@ -653,6 +695,24 @@
             "expect": {
               "outcome": "ack"
             }
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "assert-operator-unknown",
+      "expectedErrors": [
+        "Expected one of"
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "recipeId": "assert-operator-unknown",
+        "commands": [
+          {
+            "kind": "assert",
+            "commandId": "assert-unknown-operator",
+            "source": "state.messages.length",
+            "operator": "matchesShapeExact"
           }
         ]
       }

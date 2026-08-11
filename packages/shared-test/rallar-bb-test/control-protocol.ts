@@ -571,7 +571,21 @@ function validateAssertCommand(command: Record<string, unknown>): ControlCommand
         command,
         'operator',
         'assert',
-        ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'],
+        [
+            'equals',
+            'notEquals',
+            'contains',
+            'exists',
+            'gte',
+            'lte',
+            'gt',
+            'lt',
+            'between',
+            'length',
+            'matches',
+            'matchesShape',
+            'matchesShapeComplete',
+        ],
     );
 }
 

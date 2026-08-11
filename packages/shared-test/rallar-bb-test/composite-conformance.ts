@@ -24,6 +24,7 @@ export type RallarBlackBoxCompositeConformanceCaseId =
     | 'cancel-during-loop'
     | 'wait-absence-hold'
     | 'wait-absence-violated'
+    | 'assert-shape-complete-violated'
     | 'negative-no-peer';
 
 export type RallarBlackBoxCompositeConformanceProviderId =
@@ -207,6 +208,17 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES:
             liveSafe: true,
         },
         {
+            caseId: 'assert-shape-complete-violated',
+            title: 'Assert Shape Complete Violated Control',
+            intent: 'Prove matchesShapeComplete rejects an unexpected array element with a failed assert.',
+            expectedStatus: 'failed',
+            requiredCommandKinds: ['configure', 'rtc.connect', 'rtc.send', 'wait', 'assert'],
+            requiredCompositeKinds: [],
+            requiredEventTopics: ['rallar.conformance.message'],
+            expectedFailureCodes: ['RALLAR_BLACK_BOX_ASSERT_FAILED'],
+            liveSafe: true,
+        },
+        {
             caseId: 'negative-no-peer',
             title: 'No-peer Negative Case',
             intent: 'Prove delivery failure is reported separately from local composite orchestration.',
@@ -233,6 +245,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS:
                 'cancel-during-loop',
                 'wait-absence-hold',
                 'wait-absence-violated',
+                'assert-shape-complete-violated',
                 'negative-no-peer',
             ],
             capabilityDifferences: [
@@ -251,6 +264,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS:
                 'cancel-during-loop',
                 'wait-absence-hold',
                 'wait-absence-violated',
+                'assert-shape-complete-violated',
                 'negative-no-peer',
             ],
             requires: {
@@ -287,6 +301,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS:
                 'cancel-during-loop',
                 'wait-absence-hold',
                 'wait-absence-violated',
+                'assert-shape-complete-violated',
                 'negative-no-peer',
             ],
             requires: {

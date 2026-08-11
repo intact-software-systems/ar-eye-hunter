@@ -18,13 +18,18 @@ transport permutation:
   targets the topic that was just delivered and must fail with
   `RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED` carrying the offending redacted
   event.
+- `assert-shape-complete-violated`: the shape-operator broken control — a
+  delivered frame carries an unexpected array element and the
+  `matchesShapeComplete` assert must fail with
+  `RALLAR_BLACK_BOX_ASSERT_FAILED`.
 - `negative-no-peer`: no-peer send failure separated from local composite
   orchestration.
 
 Case recipes are built in
-`conformance/create-rallar-black-box-composite-conformance-recipe.ts` (absence cases in
-`wait/wait-absence-conformance-recipes.ts`) from the shared command fixtures
-in `conformance/composite-conformance-command-fixtures.ts`.
+`conformance/create-rallar-black-box-composite-conformance-recipe.ts`
+(absence cases in `wait/wait-absence-conformance-recipes.ts`, assert shape
+cases in `assert/assert-shape-conformance-recipes.ts`) from the shared
+command fixtures in `conformance/composite-conformance-command-fixtures.ts`.
 
 Provider rows are:
 

@@ -24,6 +24,9 @@ import {
     waitAbsenceHoldRecipe,
     waitAbsenceViolatedRecipe,
 } from '../wait/wait-absence-conformance-recipes.ts';
+import {
+    assertShapeCompleteViolatedRecipe,
+} from '../assert/assert-shape-conformance-recipes.ts';
 
 export function createRallarBlackBoxCompositeConformanceRecipe(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
@@ -42,6 +45,8 @@ export function createRallarBlackBoxCompositeConformanceRecipe(
             return waitAbsenceHoldRecipe(options);
         case 'wait-absence-violated':
             return waitAbsenceViolatedRecipe(options);
+        case 'assert-shape-complete-violated':
+            return assertShapeCompleteViolatedRecipe(options);
         case 'negative-no-peer':
             return negativeNoPeerRecipe(options);
     }
@@ -257,6 +262,50 @@ function waitAssertRecipe(
                 operator: 'equals',
                 expected: 'wait-assert-evidence',
                 metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-message'),
+            },
+            {
+                kind: 'assert',
+                commandId: 'wait-assert-check-gt',
+                source: 'state.messages.length',
+                operator: 'gt',
+                expected: 0,
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-gt'),
+            },
+            {
+                kind: 'assert',
+                commandId: 'wait-assert-check-between',
+                source: 'state.messages.length',
+                operator: 'between',
+                expected: [1, 50],
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-between'),
+            },
+            {
+                kind: 'assert',
+                commandId: 'wait-assert-check-marker-length',
+                source: 'messages.0.payload.data.marker',
+                operator: 'length',
+                expected: 'wait-assert-evidence'.length,
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-marker-length'),
+            },
+            {
+                kind: 'assert',
+                commandId: 'wait-assert-check-topic-pattern',
+                source: 'messages.0.payload.data.topic',
+                operator: 'matches',
+                expected: '^rallar\\.conformance\\.',
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-topic-pattern'),
+            },
+            {
+                kind: 'assert',
+                commandId: 'wait-assert-check-shape',
+                source: 'messages.0.payload',
+                operator: 'matchesShape',
+                expected: {
+                    data: {
+                        marker: 'wait-assert-evidence',
+                    },
+                },
+                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-shape'),
             },
             statsCommand('wait-assert-stats', 'wait-assert-evidence'),
             closeCommand('wait-assert-close', 'wait-assert-evidence'),

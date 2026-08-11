@@ -14,7 +14,7 @@ Status: in progress. Implements the decision items of issue
 |---|---|---|
 | D0 fail-closed `rtc.send.expect` + http result redaction | in review | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
 | D1 `wait` absence mode | in review | [#181](https://github.com/intact-software-systems/ar-eye-hunter/pull/181) |
-| D2 assert operator extension | not started | — |
+| D2 assert operator extension | in review | `codex/bb-test-d2-assert-operator-extension` |
 | D3 `loop` until-success polling | not started | — |
 | D4 capability advertisement + preflight gating | not started | — |
 | D5 parity and conformance deepening | not started | — |

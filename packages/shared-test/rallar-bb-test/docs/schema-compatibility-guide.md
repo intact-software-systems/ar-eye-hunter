@@ -243,3 +243,49 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.t
 npx vitest run packages/tests/shared-test/rallar-bb-test-wait-absence.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
 ```
+
+```text
+Title: assert gains gt, lt, between, length, matches, and JSON shape operators
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D2
+
+Change type:
+- Compatible optional addition (widened operator enum, fail-closed on old agents)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (assert operator enum)
+- validateRallarBlackBoxTestCommand assert operator list
+
+Old shape:
+assert supported equals, notEquals, contains, exists, gte, lte with
+JSON.stringify equality as the only comparison primitive.
+
+New shape:
+The operator enum adds gt, lt, between ([low, high] inclusive), length
+(arrays/strings), matches (regular-expression source), matchesShape
+(json-compare compatible), and matchesShapeComplete (compatible-complete;
+arrays must be complete, so unexpected array elements fail). New numeric
+operators follow runner-comparator parity and coerce with Number(). The
+historical six operators keep their exact semantics and quirks.
+
+Migration:
+No change for existing recipes. Recipes using the new operators dispatched to
+agents built before this change fail closed at operator validation —
+intended. World-fleet manifests must not adopt the new operators before the
+D4 capability gate.
+
+Golden corpus updates:
+golden-composite-wait-assert-v1 gained gt, between, matches, matchesShape,
+and length examples; new invalid case assert-operator-unknown.
+
+Prompt/documentation updates:
+New "Prompt: Extended Assert Operators" section; assert capability
+description updated; schema-and-capabilities.md documents operator
+semantics; composite-conformance matrix gained assert-shape-complete-violated.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
+```
