@@ -18,7 +18,7 @@ export type LoopIterationOutcome =
 
 export interface LoopUntilValidationIssue {
     readonly message: string;
-    readonly details?: Readonly<Record<string, unknown>>;
+    readonly details?: Readonly<Record<string, string | number | boolean | undefined>>;
 }
 
 export function validateLoopUntilCommand(
@@ -66,8 +66,7 @@ export interface RunLoopUntilFirstSuccessInput {
     readonly deadlineEpochMs?: number;
     readonly loopStartedAtEpochMs: number;
     readonly now: () => number;
-    readonly sleep: (ms: number) => Promise<void>;
-    readonly isAbortError: (error: unknown) => boolean;
+    readonly sleep: (ms: number) => Promise<'slept' | 'cancelled'>;
     readonly cancelRequested: () => boolean;
     readonly runIteration: (
         iterationIndex: number,
@@ -131,13 +130,9 @@ export async function runLoopUntilFirstSuccess(
             const boundedDelayMs = input.deadlineEpochMs === undefined
                 ? backoffDelayMs
                 : Math.max(0, Math.min(backoffDelayMs, input.deadlineEpochMs - input.now()));
-            try {
-                await input.sleep(boundedDelayMs);
-            } catch (error) {
-                if (input.isAbortError(error)) {
-                    return cancelledOutcome(input);
-                }
-                throw error;
+            const sleepOutcome = await input.sleep(boundedDelayMs);
+            if (sleepOutcome === 'cancelled') {
+                return cancelledOutcome(input);
             }
             if (input.deadlineEpochMs !== undefined && input.now() >= input.deadlineEpochMs) {
                 return input.toTimedOutOutcome();
@@ -150,7 +145,8 @@ export async function runLoopUntilFirstSuccess(
         value: input.toLoopValue(false),
         error: {
             code: RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED,
-            message: `Loop until mode exhausted ${attempts} attempt(s) without a fully passing iteration.`,
+            message: `Loop until mode exhausted ${attempts} attempt(s) ` +
+                'without a fully passing iteration.',
             details: {
                 attempts,
                 count: input.count,

@@ -973,14 +973,17 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 deadlineEpochMs,
                 loopStartedAtEpochMs,
                 now: this.now,
-                sleep: ms => this.sleep(ms, this.cancellationController.signal),
-                isAbortError,
+                sleep: ms => this.sleepForLoopUntil(ms),
                 cancelRequested: () => this.cancelRequested,
                 runIteration: (iterationIndex, scheduledAtEpochMs) =>
                     this.runLoopIteration(iterationInput(iterationIndex, scheduledAtEpochMs, true)),
                 toLoopValue,
-                toTimedOutOutcome: () =>
-                    this.loopTimedOut(command, results, deadlineEpochMs ?? this.now(), toLoopMetrics()),
+                toTimedOutOutcome: () => this.loopTimedOut(
+                    command,
+                    results,
+                    deadlineEpochMs ?? this.now(),
+                    toLoopMetrics(),
+                ),
                 toSuccessOutcome: () => this.toLoopCompletionOutcome(command, toLoopValue(false)),
             });
         }
@@ -1185,6 +1188,18 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
 
         recordIteration(false);
         return { kind: 'completed' };
+    }
+
+    private async sleepForLoopUntil(ms: number): Promise<'slept' | 'cancelled'> {
+        try {
+            await this.sleep(ms, this.cancellationController.signal);
+            return 'slept';
+        } catch (error) {
+            if (isAbortError(error)) {
+                return 'cancelled';
+            }
+            throw error;
+        }
     }
 
     private toLoopCompletionOutcome(
