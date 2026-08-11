@@ -172,11 +172,10 @@ merged class type-checks cleanly under `--strict` and under
 `--erasableSyntaxOnly`, and a namespace containing runtime values fails
 `--erasableSyntaxOnly` with TS1294. Deno 2.9.5 (`deno check`) accepts the
 type-only pattern. Every repository tsconfig and deno.json enables
-`erasableSyntaxOnly` — except `apps/rallar-black-box-control-server/deno.json`,
-whose file-sourced Deno Deploy build config rejects the option; restore it there
-once the Deploy builder accepts it. The flag keeps shared `packages/**`
-TypeScript portable across both runtimes and is an enforced compiler setting,
-not merely a design target.
+`erasableSyntaxOnly`, including `apps/rallar-black-box-control-server/deno.json`
+now that its file-sourced Deno Deploy build accepts the option. The flag keeps
+shared `packages/**` TypeScript portable across both runtimes and is an
+enforced compiler setting, not merely a design target.
 
 Do not introduce new TypeScript enums. For a type-only finite set, prefer a
 string-literal union:
