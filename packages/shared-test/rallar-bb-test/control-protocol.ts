@@ -1179,7 +1179,6 @@ export function validateRallarBlackBoxTestCommand(
                     ...base,
                     'connection',
                     'send',
-                    'expect',
                     'applicationId',
                     'workspaceId',
                     'scope',

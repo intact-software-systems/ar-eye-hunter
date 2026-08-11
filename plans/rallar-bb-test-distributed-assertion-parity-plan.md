@@ -7,12 +7,12 @@
 > intended starting instruction; the baked-in decision resolves the one choice
 > that would otherwise block mid-task.
 
-Status: proposed; not started. Implements the decision items of issue
+Status: in progress. Implements the decision items of issue
 [#176](https://github.com/intact-software-systems/ar-eye-hunter/issues/176).
 
 | Workstream | Status | Branch / PR |
 |---|---|---|
-| D0 fail-closed `rtc.send.expect` + http result redaction | not started | — |
+| D0 fail-closed `rtc.send.expect` + http result redaction | in review | `codex/bb-test-d0-fail-closed-rtc-send-expect` |
 | D1 `wait` absence mode | not started | — |
 | D2 assert operator extension | not started | — |
 | D3 `loop` until-success polling | not started | — |
@@ -119,6 +119,17 @@ entirely (`runtime.execute` directly, no `validateKeys` on that path), so the
 in-process runner adapter keeps working; only control-server-delivered
 commands fail closed. For redaction: pass `http.request` result `value`
 through the same redaction the mirrored event already gets.
+
+**D0 revalidation (2026-08-11):** the redaction gap does not exist —
+`toResult` (`runtime.ts:2476`) already passes every command result `value`
+and `error` through the redaction pipeline, with the default key substrings
+applying even before any `configure` sets redaction options, at the plan's
+own evidence base `93483f47` and on current `main`. D0 therefore proves the
+behavior with regression tests
+(`rallar-bb-test-http-result-redaction.test.ts`) and documents it instead of
+adding a duplicate redaction pass. The fail-closed `expect` half proceeds as
+written; the manual-workbench negative snippets stop emitting the vacuous
+`expect` blobs so app-generated recipes stay dispatchable.
 
 **Prompt:**
 

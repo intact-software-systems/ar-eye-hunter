@@ -153,3 +153,46 @@ Prompt/documentation updates:
 
 Verification:
 ```
+
+## Upgrade Notes
+
+```text
+Title: rtc.send.expect fails closed on the control-protocol path
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D0
+
+Change type:
+- Breaking schema change (removal of a silently ignored optional field)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (rtc.send branch)
+- validateRallarBlackBoxTestCommand rtc.send allowlist
+
+Old shape:
+rtc.send accepted an optional `expect` field. No agent runtime ever read it,
+so a control-dispatched recipe carrying it validated green while asserting
+nothing.
+
+New shape:
+rtc.send rejects `expect` at schema validation and control-protocol
+validateKeys ("rtc.send has unsupported field: expect."). The TypeScript
+field remains for the in-process black-box-runner adapter, which bypasses
+network validation and records runner-side expectations.
+
+Migration:
+Remove `expect` from distributed rtc.send commands; move authoring hints
+into `metadata`. Delivery expectations belong in `wait`/`assert` commands.
+
+Golden corpus updates:
+Added invalid recipe case `rtc-send-expect-rejected`.
+
+Prompt/documentation updates:
+rtc.send capability metadata no longer lists `expect`; capability
+description no longer mentions recorded expectations.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-rtc-send-expect-fail-closed.test.ts
+```
