@@ -588,6 +588,34 @@
                   }
                 },
                 "timeoutMs": 60000
+              },
+              {
+                "kind": "wait",
+                "commandId": "ai-wait-absent-v1",
+                "absent": true,
+                "timeoutMs": 1500,
+                "match": {
+                  "kind": "message",
+                  "topic": "room.golden.other-room",
+                  "payloadPath": "data.topic",
+                  "equals": "room.golden.leak-probe"
+                }
+              },
+              {
+                "kind": "loop",
+                "commandId": "ai-loop-until-v1",
+                "until": "first-success",
+                "count": 5,
+                "intervalMs": 100,
+                "commands": [
+                  {
+                    "kind": "assert",
+                    "commandId": "ai-loop-until-assert-v1",
+                    "source": "state.commandHistory.length",
+                    "operator": "gt",
+                    "expected": 0
+                  }
+                ]
               }
             ],
             "metadata": {

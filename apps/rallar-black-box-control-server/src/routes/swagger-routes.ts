@@ -1270,6 +1270,24 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                 },
                 additionalProperties: false,
               },
+              assertions: {
+                type: 'object',
+                required: ['absence', 'untilLoop', 'operators'],
+                description:
+                  'Assertion features this agent build evaluates: absence waits, ' +
+                  'until loops, and the advertised assert operator set. Staging ' +
+                  'preflight blocks manifests whose inline recipes need features ' +
+                  'a targeted agent does not advertise.',
+                properties: {
+                  absence: { type: 'boolean' },
+                  untilLoop: { type: 'boolean' },
+                  operators: {
+                    type: 'array',
+                    items: { type: 'string' },
+                  },
+                },
+                additionalProperties: false,
+              },
             },
             additionalProperties: false,
           },

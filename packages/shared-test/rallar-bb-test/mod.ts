@@ -40,3 +40,4 @@ export * from './conformance/create-rallar-black-box-composite-conformance-recip
 export * from './wait/wait-for-event.ts';
 export * from './assert/assert-value-operators.ts';
 export * from './loop/loop-until.ts';
+export * from './distributed/control-agent-capabilities.ts';

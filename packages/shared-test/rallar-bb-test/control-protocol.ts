@@ -11,6 +11,9 @@ import type {
     RallarBlackBoxGeoLocation,
 } from './distributed-run.ts';
 import {
+    parseControlAgentCapabilities,
+} from './distributed/control-agent-capabilities.ts';
+import {
     type RallarValidationIssue,
     type RallarValidationResult,
     formatRallarValidation,
@@ -1005,41 +1008,6 @@ function optionalString(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim().length > 0
         ? value
         : undefined;
-}
-
-const CRDT_TRANSPORTS = [
-    'local-only',
-    'ws',
-    'rtc',
-    'ws-then-rtc',
-    'rtc-with-ws-fallback',
-] as const;
-
-function parseControlAgentCapabilities(value: unknown): RallarBlackBoxControlAgentIdentity['capabilities'] {
-    if (!isRecord(value)) {
-        return undefined;
-    }
-    const crdt = isRecord(value.crdt) ? value.crdt : undefined;
-    if (!crdt || typeof crdt.supported !== 'boolean') {
-        return undefined;
-    }
-
-    const transports = Array.isArray(crdt.transports)
-        ? crdt.transports.filter((transport): transport is typeof CRDT_TRANSPORTS[number] =>
-            typeof transport === 'string' &&
-            CRDT_TRANSPORTS.includes(transport as typeof CRDT_TRANSPORTS[number])
-        )
-        : undefined;
-    return {
-        crdt: {
-            supported: crdt.supported,
-            transports,
-            runtimeSurface: optionalString(crdt.runtimeSurface),
-            apiBaseUrlConfigured: typeof crdt.apiBaseUrlConfigured === 'boolean'
-                ? crdt.apiBaseUrlConfigured
-                : undefined,
-        },
-    };
 }
 
 function parseControlAgentIdentity(value: unknown): RallarBlackBoxControlAgentIdentity | undefined {

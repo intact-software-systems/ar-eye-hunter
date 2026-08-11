@@ -174,9 +174,32 @@ server and operator SPA. It returns `targetResolution` with:
 - resolved `targetAgentIds`
 - derived `roleAssignments`
 - expected/actual participant counts
-- stale/offline/wrong-group/missing-identity blocker totals
+- stale/offline/wrong-group/missing-identity/assertion-capability blocker
+  totals
 - blocking agent IDs and reasons
 - role, region, and provider counts
+
+### Assertion Capability Gate
+
+Agents advertise an `assertions` block in
+`RallarBlackBoxControlAgentCapabilities` beside the established `crdt` block:
+`absence` (wait `absent: true`), `untilLoop` (loop `until: 'first-success'`),
+and `operators` (the assert operator set the build evaluates). The block is
+populated from the runtime feature set by
+`toControlAgentCapabilities(...)` in
+`distributed/control-agent-capabilities.ts` and survives the
+register-envelope parse.
+
+Staging preflight scans every inline manifest recipe (including nested
+`loop`/`parallel`/`recipe.load`/`recipe.run` children) with
+`collectDistributedAssertionFeatures(...)`. A targeted agent that does not
+advertise a required feature becomes a `missing-assertion-capability`
+blocker with a named reason listing exactly what is missing, so staging
+fails before dispatch instead of the run failing agent-side at
+`validateKeys`. Hetzner fleets rebuild from the checkout on rollout and
+always advertise the current feature set; world-fleet agents are the
+population this gate protects — checked-in world-fleet manifests may adopt
+absence waits, until loops, and extended operators only behind this gate.
 
 For `roleAssignmentPolicy.mode === "ordered-targets"`, target IDs are sorted by
 `agentId` before roles are derived. For principal multicast, the first resolved
