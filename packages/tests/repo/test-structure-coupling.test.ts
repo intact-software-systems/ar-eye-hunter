@@ -358,6 +358,124 @@ describe('test structure-coupling review', () => {
     expect(changed.stdout).not.toContain('registry entry is stale');
   });
 
+  it('traverses mixed TypeScript test callbacks, imports, wrappers, paths, and source arrays', () => {
+    const fixture = createGitFixture({
+      'apps/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/example/src/other.ts': 'export const otherApi = true;\n',
+      'packages/tests/example/syntax-aware.test.ts': [
+        "import { readFileSync as readSync } from 'node:fs';",
+        "import readAsync from 'node:fs/promises';",
+        "import * as path from 'node:path';",
+        '',
+        'const sourcePaths = [',
+        "  path.join(repoRoot, 'apps', 'example', 'src', 'public.ts'),",
+        "  path.resolve(repoRoot, 'packages', 'example', 'src', 'other.ts'),",
+        '] as const;',
+        '',
+        'function readSource(filePath: string): string {',
+        "  return readSync(filePath, 'utf8');",
+        '}',
+        '',
+        "describe('syntax-aware traversal', function () {",
+        "  test('finds wrapper reads in loops', async function () {",
+        '    for (const filePath of sourcePaths) {',
+        '      const source = readSource(filePath);',
+        "      expect(source).toContain('Api');",
+        '    }',
+        "    await readAsync(sourcePaths[0], 'utf8');",
+        '  });',
+        '});',
+      ].join('\n'),
+    });
+
+    const result = runChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout.match(/production-source-read/g)).toHaveLength(2);
+    expect(result.stdout).toContain('symbol-assertion');
+  });
+
+  it('does not label JSON parsing of source content as AST inspection', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.json': '{"publicApi":true}\n',
+      'packages/tests/example/json-source.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.json', 'utf8');",
+        'const parsed = JSON.parse(source);',
+        'expect(parsed.publicApi).toBe(true);',
+      ].join('\n'),
+    });
+
+    const result = runChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('production-source-read');
+    expect(result.stdout).not.toContain('ast-inspection');
+  });
+
+  it('reports real source-coupled ratchet and control-boundary tests', () => {
+    const ratchet = runRepoChecker([
+      '--files',
+      'packages/tests/repo/api-v1-group-state-route-style-ratchet.test.ts',
+    ]);
+    const controlBoundary = runRepoChecker([
+      '--files',
+      'packages/tests/rallar-black-box/control-protocol-boundary.test.ts',
+    ]);
+
+    expect(ratchet.status, ratchet.stdout).toBe(0);
+    expect(ratchet.stdout).toContain('production-source-read');
+    expect(ratchet.stdout).toContain('line-count');
+    expect(ratchet.stdout).toContain('ast-inspection');
+    expect(controlBoundary.status, controlBoundary.stdout).toBe(0);
+    expect(controlBoundary.stdout).toContain('production-source-read');
+    expect(controlBoundary.stdout).toContain('symbol-assertion');
+  }, 20_000);
+
+  it('reports renamed removals and unchanged-source copies with range-safe evidence', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/original-structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+        "expect(source).toContain('removedOnRename');",
+      ].join('\n'),
+    });
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    runGit(fixture.root, [
+      'mv',
+      'packages/tests/example/original-structure.test.ts',
+      'packages/tests/example/renamed-structure.test.ts',
+    ]);
+    writeFileSync(
+      path.join(fixture.root, 'packages/tests/example/renamed-structure.test.ts'),
+      [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    );
+    writeFileSync(
+      path.join(fixture.root, 'packages/tests/example/copied-structure.test.ts'),
+      [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+        "expect(source).toContain('removedOnRename');",
+      ].join('\n'),
+    );
+    const head = commitFixture(fixture.root, 'rename and copy structural tests');
+
+    const result = runChecker(fixture, ['--changed', base, head]);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('change=renamed');
+    expect(result.stdout).toContain('change=deleted');
+    expect(result.stdout).toContain('origin=copy');
+    expect(result.stdout).not.toContain('deleted-or-replaced-semantic-coverage');
+  });
+
   it('reports an explicit changed-file selection without scanning unrelated tests', () => {
     const fixture = createGitFixture({
       'packages/example/src/public.ts': 'export const publicApi = true;\n',
@@ -421,6 +539,17 @@ function runChecker(
 ): { readonly status: number | null; readonly stdout: string } {
   const result = spawnSync(process.execPath, [checkerPath, ...args], {
     cwd: fixture.root,
+    encoding: 'utf8',
+  });
+  return { status: result.status, stdout: `${result.stdout}${result.stderr}` };
+}
+
+function runRepoChecker(args: readonly string[]): {
+  readonly status: number | null;
+  readonly stdout: string;
+} {
+  const result = spawnSync(process.execPath, [checkerPath, ...args], {
+    cwd: repoRoot,
     encoding: 'utf8',
   });
   return { status: result.status, stdout: `${result.stdout}${result.stderr}` };

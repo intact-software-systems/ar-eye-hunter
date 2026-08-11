@@ -32,6 +32,16 @@ candidate. The checker rejects duplicate, stale, or incomplete registrations,
 while unregistered candidates remain advisory until they are reviewed
 individually.
 
+Candidate IDs are intentionally location-specific so every occurrence receives
+its own review and an edited assertion cannot silently inherit another
+assertion's exception. In a changed range, the checker compares a rename or
+modification's old and new occurrences by kind and normalized syntax detail:
+unmatched old occurrences are neutral `change=deleted` evidence, never a
+semantic replacement. Copies report `origin=copy`. A file move can therefore
+require an explicit registry update after its new candidate IDs are reviewed;
+range matching is reporting evidence only and never transfers approval to a
+moved or changed test.
+
 ```test-structure-coupling-registry-v1
 {
   "version": 1,

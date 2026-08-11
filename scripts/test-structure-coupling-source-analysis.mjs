@@ -1,0 +1,271 @@
+import { createHash } from 'node:crypto';
+
+import {
+  calleeName,
+  containsReadCall,
+  isAstParserCall,
+  isFunctionExpression,
+  isProductionPath,
+  isReadCall,
+  memberPropertyName,
+  readTestSourceDataflow,
+  usesSource,
+  walkSyntaxTree,
+} from './test-structure-coupling-source-dataflow.mjs';
+
+export function scanSources(sources) {
+  return sources
+    .flatMap(({ file, source }) => scanTestSource(file, source))
+    .toSorted(compareCandidates);
+}
+
+function scanTestSource(file, source) {
+  try {
+    const dataflow = readTestSourceDataflow(source);
+    return dataflow.blocks.flatMap((block) =>
+      scanBlock({ file, source, block, context: dataflow.context }),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function scanBlock({ file, source, block, context }) {
+  const candidates = [];
+  const sourceValues = new Set();
+  const dynamicPaths = new Set(context.paths);
+  walkSyntaxTree(block, (node, parent) => {
+    recordDynamicPath({ node, context, dynamicPaths });
+    if (node.type !== 'CallExpression') {
+      return;
+    }
+    const callEvidence = { file, source, node, parent, context, sourceValues, dynamicPaths };
+    candidates.push(...readSourceFlowCandidates(callEvidence));
+    candidates.push(...readStructureCandidates(callEvidence));
+    candidates.push(...readAssertionCandidates(callEvidence));
+  });
+  return candidates;
+}
+
+function recordDynamicPath({ node, context, dynamicPaths }) {
+  if (
+    node.type === 'ForOfStatement' &&
+    node.left.type === 'VariableDeclaration' &&
+    node.left.declarations[0]?.id.type === 'Identifier' &&
+    isProductionPath(node.right, dynamicPaths, context.arrays)
+  ) {
+    dynamicPaths.add(node.left.declarations[0].id.name);
+  }
+  if (
+    node.type === 'CallExpression' &&
+    node.callee.type === 'MemberExpression' &&
+    ['map', 'flatMap', 'forEach'].includes(memberPropertyName(node.callee)) &&
+    isProductionPath(node.callee.object, dynamicPaths, context.arrays)
+  ) {
+    const callback = node.arguments.find(isFunctionExpression);
+    const parameter = callback?.params[0];
+    if (parameter?.type === 'Identifier') {
+      dynamicPaths.add(parameter.name);
+    }
+  }
+}
+
+function readSourceFlowCandidates(evidence) {
+  const { node, parent, context, sourceValues, dynamicPaths } = evidence;
+  const candidates = [];
+  const callee = calleeName(node.callee);
+  const firstArgument = node.arguments[0];
+  if (
+    isReadCall(callee, context) &&
+    firstArgument &&
+    isProductionPath(firstArgument, dynamicPaths, context.arrays)
+  ) {
+    candidates.push(
+      createCandidate({
+        ...evidence,
+        location: node.callee,
+        kind: 'production-source-read',
+        reason: 'reads production source text',
+      }),
+    );
+    recordSourceValue(parent, sourceValues);
+  }
+  if (
+    isAstParserCall(callee, context) &&
+    node.arguments.some(
+      (argument) => usesSource(argument, sourceValues) || containsReadCall(argument, context),
+    )
+  ) {
+    candidates.push(
+      createCandidate({
+        ...evidence,
+        location: node.callee,
+        kind: 'ast-inspection',
+        reason: 'inspects a production source AST or parser model',
+      }),
+    );
+    recordSourceValue(parent, sourceValues);
+  }
+  return candidates;
+}
+
+function recordSourceValue(parent, sourceValues) {
+  if (parent?.type === 'VariableDeclarator' && parent.id.type === 'Identifier') {
+    sourceValues.add(parent.id.name);
+  }
+}
+
+function readStructureCandidates(evidence) {
+  const { node, context, sourceValues, dynamicPaths } = evidence;
+  const candidates = [];
+  const callee = calleeName(node.callee);
+  const firstArgument = node.arguments[0];
+  if (
+    isTreeCall(callee) &&
+    firstArgument &&
+    isProductionPath(firstArgument, dynamicPaths, context.arrays)
+  ) {
+    candidates.push(
+      createCandidate({
+        ...evidence,
+        location: node.callee,
+        kind: 'exact-file-tree',
+        reason: 'pins a production file tree or source inventory',
+      }),
+    );
+  }
+  const derivedFromSource = node.arguments.some(
+    (argument) => usesSource(argument, sourceValues) || containsReadCall(argument, context),
+  );
+  if ((isLineCountCall(callee) && derivedFromSource) || isSourceSplitLength(node, sourceValues)) {
+    candidates.push(
+      createCandidate({
+        ...evidence,
+        location: node.callee,
+        kind: 'line-count',
+        reason: 'pins a production source line count',
+      }),
+    );
+  }
+  return candidates;
+}
+
+function readAssertionCandidates(evidence) {
+  const { source, node, sourceValues } = evidence;
+  const candidates = [];
+  const callee = calleeName(node.callee);
+  if (isAssertionCall(callee) && usesSource(node.callee, sourceValues)) {
+    candidates.push(
+      createCandidate({
+        ...evidence,
+        location: node.callee,
+        kind: 'symbol-assertion',
+        reason: 'pins a production symbol or source-text fragment',
+      }),
+    );
+    const text = source.slice(node.start, node.end);
+    if (hasCompatibilityVocabulary(text)) {
+      candidates.push(
+        createCandidate({
+          ...evidence,
+          location: node.callee,
+          kind: 'migration-or-compatibility-topology',
+          reason: 'pins migration or compatibility implementation topology',
+        }),
+      );
+    }
+  }
+  if (isOrderAssertion(callee) && usesSource(node.callee, sourceValues)) {
+    candidates.push(
+      createCandidate({
+        ...evidence,
+        location: node.callee,
+        kind: 'call-or-import-order',
+        reason: 'pins production call or import order',
+      }),
+    );
+  }
+  if (isHashOrSnapshot(callee) && usesSource(node, sourceValues)) {
+    candidates.push(
+      createCandidate({
+        ...evidence,
+        location: node.callee,
+        kind: 'source-hash-or-snapshot',
+        reason: 'pins a production source hash or snapshot',
+      }),
+    );
+  }
+  return candidates;
+}
+
+function isTreeCall(name) {
+  return /(?:readdir(?:Sync)?|glob|ls-tree|find)$/u.test(name);
+}
+
+function isLineCountCall(name) {
+  return /(?:physicalLineCount|lineCount|countLines)$/u.test(name);
+}
+
+function isAssertionCall(name) {
+  return /(?:toContain|toMatch|toEqual|toStrictEqual|includes)$/u.test(name);
+}
+
+function isOrderAssertion(name) {
+  return /(?:toBeLessThan|toBeGreaterThan)$/u.test(name);
+}
+
+function isHashOrSnapshot(name) {
+  return /(?:createHash|digest|toMatchSnapshot|toMatchInlineSnapshot)$/u.test(name);
+}
+
+function hasCompatibilityVocabulary(text) {
+  return /(?:migration|compat(?:ibility)?|legacy|deprecated|fallback|shim|bridge|rollback)/iu.test(
+    text,
+  );
+}
+
+function isSourceSplitLength(node, sourceValues) {
+  if (calleeName(node.callee) !== 'expect') {
+    return false;
+  }
+  const counted = node.arguments[0];
+  if (counted?.type !== 'MemberExpression' || memberPropertyName(counted) !== 'length') {
+    return false;
+  }
+  const split = counted.object;
+  return (
+    split?.type === 'CallExpression' &&
+    memberPropertyName(split.callee) === 'split' &&
+    usesSource(split.callee.object, sourceValues)
+  );
+}
+
+function createCandidate({ file, source, location, kind, reason }) {
+  const line = location.loc.start.line;
+  const column = location.loc.start.column + 1;
+  const detail = source.slice(location.start, location.end).replaceAll(/\s+/gu, ' ').trim();
+  const semanticKey = `${kind}\0${detail}`;
+  const id = createHash('sha256')
+    .update(`${file}\0${line}\0${column}\0${semanticKey}`)
+    .digest('hex')
+    .slice(0, 16);
+  return {
+    id: `test-structure-coupling-${id}`,
+    path: file,
+    line,
+    column,
+    kind,
+    reason,
+    semanticKey,
+  };
+}
+
+export function isTestPath(file) {
+  return /(?:^|\/)(?:tests?|__tests__)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/u.test(file);
+}
+
+export function compareCandidates(left, right) {
+  const leftKey = `${left.path}:${left.line}:${left.column}:${left.kind}:${left.id}`;
+  const rightKey = `${right.path}:${right.line}:${right.column}:${right.kind}:${right.id}`;
+  return leftKey.localeCompare(rightKey);
+}
