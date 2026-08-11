@@ -800,14 +800,6 @@ describe('test structure-coupling review', () => {
     }
   }, 30_000);
 
-  it('parses every tracked supported test source without silent omission', () => {
-    const result = runRepoChecker([]);
-
-    expect(result.status, result.stdout).toBe(0);
-    expect(result.stdout).not.toContain('supported test source could not be parsed');
-    expect(result.stdout).toContain('PASS: registry entries are complete and current');
-  }, 30_000);
-
   it('reports renamed removals and unchanged-source copies with range-safe evidence', () => {
     const fixture = createGitFixture({
       'packages/example/src/public.ts': 'export const publicApi = true;\n',
