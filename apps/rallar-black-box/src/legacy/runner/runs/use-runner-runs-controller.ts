@@ -422,7 +422,8 @@ export function useRunnerRunsController({
     const handleDistributedArtifactFiles = async (
         event: ChangeEvent<HTMLInputElement>,
     ): Promise<void> => {
-        const selectedFiles = Array.from(event.currentTarget.files ?? []);
+        const fileInput = event.currentTarget;
+        const selectedFiles = Array.from(fileInput.files ?? []);
         if (selectedFiles.length === 0) {
             return;
         }
@@ -475,7 +476,7 @@ export function useRunnerRunsController({
             setDistributedError(runnerFriendlyErrorMessage(error));
         } finally {
             setDistributedBusy(undefined);
-            event.currentTarget.value = '';
+            fileInput.value = '';
         }
     };
 
