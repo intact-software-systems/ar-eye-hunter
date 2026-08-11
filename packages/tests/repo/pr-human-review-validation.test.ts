@@ -94,7 +94,7 @@ describe('PR human review record validator', () => {
     const contradictoryResult = runValidator(contradictoryVisibleEvidence);
 
     expect(contradictoryResult.status).toBe(1);
-    expect(contradictoryResult.stdout).toContain('visible narrative evidence');
+    expect(contradictoryResult.stdout).toContain('visible review');
 
     const standardNarrative = review().narrative;
     const injectedReview = review({
@@ -127,8 +127,36 @@ describe('PR human review record validator', () => {
 
     expect(metadataOnlyResult.status).toBe(1);
     expect(metadataOnlyResult.stdout).toContain(
-      'initial visible narrative evidence productionOwnerToResultTrace is required',
+      'initial visible review productionOwnerToResultTrace is required',
     );
+  });
+
+  it('binds the visible final legacy count and rejects duplicated ordered review sections', () => {
+    const finalReview = review({
+      stage: 'final',
+      legacy: { candidateCount: 1, items: [retainedItemExample()] },
+    });
+    const mismatchedCount = createFixture({
+      draft: false,
+      body: recordBody({ initialReview: review(), finalReview }).replace(
+        '- Legacy candidate count: 1',
+        '- Legacy candidate count: 2',
+      ),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+    const mismatchResult = runValidator(mismatchedCount);
+
+    expect(mismatchResult.status).toBe(1);
+    expect(mismatchResult.stdout).toContain('legacyCandidateCount');
+
+    const duplicatedSection = createFixture({
+      body: `${recordBody({ initialReview: review() })}\n### Initial independent review`,
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+    const duplicateResult = runValidator(duplicatedSection);
+
+    expect(duplicateResult.status).toBe(1);
+    expect(duplicateResult.stdout).toContain('exactly one ### Initial independent review section');
   });
 
   it('rejects kind-mismatched and nested-code exemptions after path normalization', () => {
@@ -406,8 +434,11 @@ describe('PR human review record validator', () => {
       changedPaths: ['scripts/new-check.mjs'],
       registry: registryEntry(olderApproval),
       reviews: [trustedReview(retainedItem, olderApproval)],
-      pathsAfterApproval: {
-        [olderApproval.approvedProductionSha]: ['apps/example/new-production.ts'],
+      approvalHistory: {
+        [olderApproval.approvedProductionSha]: {
+          isAncestor: true,
+          changedPaths: ['apps/example/new-production.ts'],
+        },
       },
     });
     const olderApprovalResult = runValidator(olderApprovalFixture);
@@ -452,6 +483,119 @@ describe('PR human review record validator', () => {
     expect(result.stdout).toContain('trusted GitHub review is not an approved human reviewer');
   });
 
+  it('requires every retained approval to bind the same complete sorted ledger', () => {
+    const firstItem = retainedItemExample();
+    const secondItem = {
+      id: 'production-legacy-second',
+      path: 'apps/example/second-compat.ts',
+      symbol: 'secondCompatibilityEntry',
+      disposition: 'retained-pending-human-approval',
+    };
+    const items = [secondItem, firstItem];
+    const firstApproval = retainedApproval({ id: firstItem.id });
+    const secondApproval = {
+      ...retainedApproval({ id: secondItem.id }),
+      path: secondItem.path,
+      symbol: secondItem.symbol,
+    };
+    const ledgerHash = retainedLedgerHash({ items });
+    firstApproval.ledgerSha256 = ledgerHash;
+    secondApproval.ledgerSha256 = ledgerHash;
+    const body = recordBody({
+      initialReview: review({ legacy: { candidateCount: 2, items } }),
+      finalReview: review({ stage: 'final', legacy: { candidateCount: 2, items } }),
+      retainedLegacy: [firstApproval, secondApproval],
+    });
+    const fixture = createFixture({
+      draft: false,
+      body,
+      changedPaths: ['scripts/new-check.mjs'],
+      registry: `${registryEntry(firstApproval)}\n${registryEntry(secondApproval)}`,
+      reviews: [trustedReview(items, firstApproval)],
+    });
+
+    const validResult = runValidator(fixture);
+    expect(validResult.status, validResult.stdout).toBe(0);
+
+    const fragmented = createFixture({
+      draft: false,
+      body: recordBody({
+        initialReview: review({ legacy: { candidateCount: 2, items } }),
+        finalReview: review({ stage: 'final', legacy: { candidateCount: 2, items } }),
+        retainedLegacy: [
+          firstApproval,
+          { ...secondApproval, ledgerSha256: retainedLedgerHash({ items: [secondItem] }) },
+        ],
+      }),
+      changedPaths: ['scripts/new-check.mjs'],
+      registry: `${registryEntry(firstApproval)}\n${registryEntry(secondApproval)}`,
+      reviews: [trustedReview(items, firstApproval)],
+    });
+
+    const fragmentedResult = runValidator(fragmented);
+    expect(fragmentedResult.status).toBe(1);
+    expect(fragmentedResult.stdout).toContain('ledger hash does not match the final ledger');
+  });
+
+  it.each([
+    {
+      name: 'an unauthorized repository association',
+      review: { author_association: 'CONTRIBUTOR' },
+      prAuthorLogin: 'pull-request-author',
+      expected: 'repository-authorized reviewer',
+    },
+    {
+      name: 'the pull request author',
+      review: {},
+      prAuthorLogin: 'named-human-reviewer',
+      expected: 'must not be the pull request author',
+    },
+  ])(
+    'rejects $name as retained legacy approver',
+    ({ review: reviewPatch, prAuthorLogin, expected }) => {
+      const retainedItem = retainedItemExample();
+      const approval = approvalForItems([retainedItem]);
+      const fixture = retainedFixture({
+        approval,
+        items: [retainedItem],
+        reviews: [{ ...trustedReview([retainedItem], approval), ...reviewPatch }],
+        prAuthorLogin,
+      });
+
+      const result = runValidator(fixture);
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain(expected);
+    },
+  );
+
+  it.each([
+    { state: 'CHANGES_REQUESTED', label: 'later changes request' },
+    { state: 'DISMISSED', label: 'later dismissal' },
+    { state: 'APPROVED', label: 'later superseding approval' },
+  ])('rejects an approved review superseded by $label', ({ state }) => {
+    const retainedItem = retainedItemExample();
+    const approval = approvalForItems([retainedItem]);
+    const fixture = retainedFixture({
+      approval,
+      items: [retainedItem],
+      reviews: [
+        trustedReview([retainedItem], approval),
+        {
+          ...trustedReview([retainedItem], approval),
+          id: 2,
+          state,
+          submitted_at: '2026-08-11T00:01:00Z',
+        },
+      ],
+    });
+
+    const result = runValidator(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('latest effective substantive review');
+  });
+
   it('allows only a registry-evidence commit after an approved production candidate', () => {
     const fixture = createFixture({ body: '', changedPaths: [] });
     const mergeBaseSha = createGitCommit(fixture, 'base', { 'README.md': 'base\n' });
@@ -493,6 +637,7 @@ describe('PR human review record validator', () => {
         pull_request: {
           body,
           draft: false,
+          user: { login: 'pull-request-author' },
           base: { sha: mergeBaseSha },
           head: { sha: candidateHeadSha },
         },
@@ -503,6 +648,35 @@ describe('PR human review record validator', () => {
 
     expect(result.status, result.stdout).toBe(0);
   });
+
+  it('rejects a divergent post-approval history even when its diff lists only registry evidence', () => {
+    const retainedItem = retainedItemExample();
+    const approval = retainedApproval({
+      id: retainedItem.id,
+      approvedProductionSha: 'f'.repeat(40),
+    });
+    approval.ledgerSha256 = retainedLedgerHash({ items: [retainedItem] });
+    const fixture = retainedFixture({
+      approval,
+      items: [retainedItem],
+      reviews: [trustedReview([retainedItem], approval)],
+    });
+    writeFixture(
+      fixture,
+      'approval-history.json',
+      JSON.stringify({
+        [approval.approvedProductionSha]: {
+          isAncestor: false,
+          changedPaths: ['docs/production-legacy-exceptions.md'],
+        },
+      }),
+    );
+
+    const result = runValidator(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('post-approval path evidence is missing');
+  });
 });
 
 interface CreateFixtureInput {
@@ -511,7 +685,10 @@ interface CreateFixtureInput {
   readonly draft?: boolean;
   readonly registry?: string;
   readonly reviews?: readonly (Record<string, unknown> | readonly Record<string, unknown>[])[];
-  readonly pathsAfterApproval?: Readonly<Record<string, readonly string[]>>;
+  readonly approvalHistory?: Readonly<
+    Record<string, { readonly isAncestor: boolean; readonly changedPaths: readonly string[] }>
+  >;
+  readonly prAuthorLogin?: string;
 }
 
 function createFixture(input: CreateFixtureInput): string {
@@ -528,14 +705,15 @@ function createFixture(input: CreateFixtureInput): string {
   writeFixture(
     fixtureRoot,
     'input.json',
-    JSON.stringify({ mergeBaseSha: baseSha, headSha, draft: input.draft ?? true }),
+    JSON.stringify({
+      mergeBaseSha: baseSha,
+      headSha,
+      draft: input.draft ?? true,
+      prAuthorLogin: input.prAuthorLogin ?? 'pull-request-author',
+    }),
   );
   writeFixture(fixtureRoot, 'reviews.json', JSON.stringify(input.reviews ?? []));
-  writeFixture(
-    fixtureRoot,
-    'paths-after-approval.json',
-    JSON.stringify(input.pathsAfterApproval ?? {}),
-  );
+  writeFixture(fixtureRoot, 'approval-history.json', JSON.stringify(input.approvalHistory ?? {}));
   return fixtureRoot;
 }
 
@@ -544,6 +722,7 @@ function runValidator(fixtureRoot: string) {
     readonly mergeBaseSha: string;
     readonly headSha: string;
     readonly draft: boolean;
+    readonly prAuthorLogin: string;
   };
   return spawnSync(
     process.execPath,
@@ -557,14 +736,16 @@ function runValidator(fixtureRoot: string) {
       'registry.md',
       '--reviews',
       'reviews.json',
-      '--paths-after-approval',
-      'paths-after-approval.json',
+      '--approval-history',
+      'approval-history.json',
       '--merge-base',
       input.mergeBaseSha,
       '--head',
       input.headSha,
       '--draft',
       String(input.draft),
+      '--pr-author',
+      input.prAuthorLogin,
     ],
     { cwd: fixtureRoot, encoding: 'utf8' },
   );
@@ -692,7 +873,7 @@ function retainedApproval(input: { readonly id: string; readonly approvedProduct
 }
 
 function trustedReview(
-  item: { readonly id: string },
+  item: { readonly id: string } | readonly { readonly id: string }[],
   approval: ReturnType<typeof retainedApproval>,
 ): Record<string, unknown> {
   return {
@@ -701,13 +882,55 @@ function trustedReview(
     commit_id: approval.approvedProductionSha,
     submitted_at: approval.approvalDate,
     user: { type: 'User', login: approval.reviewerLogin },
+    author_association: 'MEMBER',
     body: [
       'PR-HUMAN-REVIEW-LEGACY-APPROVAL v1',
       `production-sha: ${approval.approvedProductionSha}`,
       `ledger-sha256: ${approval.ledgerSha256}`,
-      `legacy-ids: ${item.id}`,
+      `legacy-ids: ${(Array.isArray(item) ? item : [item])
+        .map((ledgerItem) => ledgerItem.id)
+        .sort()
+        .join(',')}`,
     ].join('\n'),
   };
+}
+
+function retainedItemExample() {
+  return {
+    id: 'production-legacy-example',
+    path: 'apps/example/compat.ts',
+    symbol: 'compatibilityEntry',
+    disposition: 'retained-pending-human-approval',
+  };
+}
+
+function approvalForItems(items: readonly ReturnType<typeof retainedItemExample>[]) {
+  const approval = retainedApproval({ id: items[0].id });
+  approval.ledgerSha256 = retainedLedgerHash({ item: items[0], approval });
+  return approval;
+}
+
+function retainedFixture(input: {
+  readonly approval: ReturnType<typeof approvalForItems>;
+  readonly items: readonly ReturnType<typeof retainedItemExample>[];
+  readonly reviews: readonly Record<string, unknown>[];
+  readonly prAuthorLogin?: string;
+}): string {
+  return createFixture({
+    draft: false,
+    body: recordBody({
+      initialReview: review({ legacy: { candidateCount: input.items.length, items: input.items } }),
+      finalReview: review({
+        stage: 'final',
+        legacy: { candidateCount: input.items.length, items: input.items },
+      }),
+      retainedLegacy: [input.approval],
+    }),
+    changedPaths: ['scripts/new-check.mjs'],
+    registry: registryEntry(input.approval),
+    reviews: input.reviews,
+    prAuthorLogin: input.prAuthorLogin,
+  });
 }
 
 function registryEntry(input: ReturnType<typeof retainedApproval>): string {
@@ -716,17 +939,18 @@ function registryEntry(input: ReturnType<typeof retainedApproval>): string {
     '',
     `### ${input.id}`,
     '',
-    '- Repository-relative path and symbol: apps/example/compat.ts#compatibilityEntry',
-    '- Purpose: Retain a documented compatibility entry.',
-    '- Canonical implementation owner: apps/example/canonical.ts',
-    '- Consumer or operational dependency: Existing documented client.',
-    '- Why removal is unsafe now: The client migration is not complete.',
-    '- Minimization already performed: Delegates directly to the canonical entry.',
-    '- Approval date and human reviewer: 2026-08-11T00:00:00Z — named-human-reviewer',
+    `- Repository-relative path and symbol: ${input.path}#${input.symbol}`,
+    `- Purpose: ${input.purpose}`,
+    `- Canonical implementation owner: ${input.canonicalOwner}`,
+    `- Consumer or operational dependency: ${input.consumerDependency}`,
+    `- Why removal is unsafe now: ${input.unsafeRemovalReason}`,
+    `- Minimization already performed: ${input.minimization}`,
+    `- Approval date and human reviewer: ${input.approvalDate} — ${input.reviewerLogin}`,
     `- Approved production candidate SHA: ${input.approvedProductionSha}`,
-    '- Compatibility tests: packages/tests/example/compatibility.test.ts',
-    '- Named owner: Example team',
-    '- Review or removal condition: Remove after the documented client migrates.',
+    `- Compatibility tests: ${input.compatibilityTests}`,
+    `- Named owner: ${input.owner}`,
+    `- Review or removal condition: ${input.removalCondition}`,
+    `- GitHub PR review ID: ${input.reviewId}`,
     '',
   ].join('\n');
 }
@@ -755,37 +979,47 @@ function requiredNarrative(record?: {
   readonly initialReview?: Review | null;
   readonly finalReview?: Review | null;
 }): string {
-  const labels = [
+  return [
     '## PR Human Review Record v1',
     '### PR classification',
     '### Initial independent review',
-    'Production owner-to-result trace:',
-    'Cognitive-indirection findings:',
-    'Complete review findings and resolution/status:',
-    'Tests rewritten or removed:',
-    'Production was not compromised for tests:',
-    'Behavior and judgment not proven by automation:',
-    'Legacy candidate count:',
-    'Legacy ledger and dispositions:',
+    ...visibleReview(record?.initialReview, 'initial'),
+    '### Milestone review',
+    '- No new ownership, control-flow, or legacy family appeared.',
     '### Complete code and legacy review',
-  ];
-  return [
-    ...labels,
-    ...visibleNarrative('initial', record?.initialReview?.narrative),
-    ...visibleNarrative('final', record?.finalReview?.narrative),
+    ...visibleReview(record?.finalReview, 'final'),
   ].join('\n');
 }
 
-function visibleNarrative(
-  stage: 'initial' | 'final',
-  narrative: Review['narrative'] | undefined,
-): string[] {
-  if (!narrative) {
+function visibleReview(review: Review | null | undefined, stage: 'initial' | 'final'): string[] {
+  if (!review) {
     return [];
   }
-  return Object.entries(narrative).flatMap(([key, value]) => [
-    `<!-- pr-human-review:${stage}:${key}:start -->`,
-    value,
-    `<!-- pr-human-review:${stage}:${key}:end -->`,
-  ]);
+  const ownerTraceLabel =
+    stage === 'initial'
+      ? 'Production owner-to-result trace'
+      : 'Changed production owner-to-result trace, including decisions, effects, failures, callbacks, compatibility branches, and tests';
+  const cognitiveLabel =
+    stage === 'initial'
+      ? 'Cognitive-indirection findings'
+      : 'Cognitive-indirection findings and resolution';
+  const testsLabel =
+    stage === 'initial'
+      ? 'Tests rewritten or removed'
+      : 'Tests rewritten or removed, with independent behavior retained';
+  return [
+    `- Reviewer and independence (separate agent or human): ${review.reviewer} — ${review.independence}`,
+    `- Exact merge base SHA: ${review.mergeBaseSha}`,
+    `- Exact candidate head SHA: ${review.headSha}`,
+    `- ${ownerTraceLabel}: ${review.narrative.productionOwnerToResultTrace}`,
+    `- ${cognitiveLabel}: ${review.narrative.cognitiveIndirectionFindings}`,
+    `- Complete review findings and resolution/status (correctness, safety, contracts, and other human-review findings): ${review.narrative.completeFindings}`,
+    `- ${testsLabel}: ${review.narrative.testsRewrittenOrRemoved}`,
+    `- Production was not compromised for tests: ${review.narrative.productionNotCompromisedForTests}`,
+    `- Behavior and judgment not proven by automation: ${review.narrative.automationGaps}`,
+    `- Legacy candidate count: ${review.legacy.candidateCount}`,
+    `- Critical findings unresolved: ${review.unresolvedFindings.critical}`,
+    `- Important findings unresolved: ${review.unresolvedFindings.important}`,
+    `- Verdict: ${review.verdict}`,
+  ];
 }

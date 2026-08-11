@@ -20,7 +20,16 @@ function readValidatorInput(args) {
   if (options.event) {
     return readGitHubEventInput(options);
   }
-  const required = ['body', 'changed-paths', 'registry', 'reviews', 'merge-base', 'head', 'draft'];
+  const required = [
+    'body',
+    'changed-paths',
+    'registry',
+    'reviews',
+    'merge-base',
+    'head',
+    'draft',
+    'pr-author',
+  ];
   const missing = required.filter((name) => options[name] === undefined);
   if (missing.length > 0) {
     failInput(`missing required options: ${missing.join(', ')}`);
@@ -33,7 +42,8 @@ function readValidatorInput(args) {
     mergeBaseSha: options['merge-base'],
     headSha: options.head,
     draft: parseBoolean(options.draft),
-    pathsAfterApproval: readJsonOrEmpty(options['paths-after-approval']),
+    prAuthorLogin: options['pr-author'],
+    approvalHistory: readJsonOrEmpty(options['approval-history']),
   };
 }
 
@@ -53,12 +63,15 @@ function readGitHubEventInput(options) {
     .split('\n')
     .filter(Boolean);
   const approvalShas = readApprovalShas(pullRequest.body);
-  const pathsAfterApproval = Object.fromEntries(
+  const approvalHistory = Object.fromEntries(
     approvalShas.map((approvedProductionSha) => [
       approvedProductionSha,
-      runGit(['diff', '--name-only', `${approvedProductionSha}...${headSha}`])
-        .split('\n')
-        .filter(Boolean),
+      {
+        isAncestor: runGitSuccess(['merge-base', '--is-ancestor', approvedProductionSha, headSha]),
+        changedPaths: runGit(['diff', '--name-only', `${approvedProductionSha}..${headSha}`])
+          .split('\n')
+          .filter(Boolean),
+      },
     ]),
   );
   return {
@@ -69,7 +82,8 @@ function readGitHubEventInput(options) {
     mergeBaseSha,
     headSha,
     draft: pullRequest.draft,
-    pathsAfterApproval,
+    prAuthorLogin: pullRequest.user?.login,
+    approvalHistory,
   };
 }
 
@@ -136,6 +150,15 @@ function runGit(args) {
     return execFileSync('git', args, { encoding: 'utf8' }).trim();
   } catch {
     failInput(`could not read Git evidence: git ${args.join(' ')}`);
+  }
+}
+
+function runGitSuccess(args) {
+  try {
+    execFileSync('git', args, { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
   }
 }
 

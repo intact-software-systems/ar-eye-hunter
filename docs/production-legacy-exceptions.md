@@ -26,6 +26,7 @@ Each retained entry includes:
   structure;
 - Named owner; and
 - Review or removal condition.
+- GitHub PR review ID.
 
 An entry is valid only for its recorded location, purpose, minimization,
 condition, and approved production candidate SHA. A production change
@@ -55,5 +56,6 @@ No approved retained production legacy is recorded yet.
 - Compatibility tests:
 - Named owner:
 - Review or removal condition:
+- GitHub PR review ID:
 - PR Human Review Record v1 link:
 ```

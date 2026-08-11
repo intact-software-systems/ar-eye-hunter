@@ -26,9 +26,10 @@ an `initialReview`, an optional `finalReview`, and `retainedLegacy`. Each review
 contains its reviewer and `separate-agent-or-human` independence declaration,
 the exact computed merge base and head SHA, verdict, unresolved Critical and
 Important counts, the six narrative evidence fields, and a legacy candidate
-count plus ledger. Every visible narrative block must exactly match its
-stage-specific metadata value; every ledger item has an ID, path, symbol, and
-one valid disposition.
+count plus ledger. The stable labeled fields in the visible Initial, Milestone,
+and Complete review sections appear exactly once, in that order, and bind
+directly to metadata values; every ledger item has an ID, path, symbol, and one
+valid disposition.
 
 Run the deterministic, read-only check locally with explicit evidence files:
 
@@ -40,7 +41,8 @@ npm run check:pr-human-review -- \
   --reviews path/to/trusted-github-reviews.json \
   --merge-base <40-character-merge-base-sha> \
   --head <40-character-head-sha> \
-  --draft true
+  --draft true \
+  --pr-author <pull-request-author-login>
 ```
 
 In GitHub Actions, trusted base-branch code runs under `pull_request_target`.
@@ -142,9 +144,11 @@ review or removal condition; and exact candidate head SHA.
 
 Silence, an issue, an earlier plan approval, agent judgment, or automation is
 not approval. Only an explicit human GitHub approval for the exact production
-SHA and ledger hash can retain the item. The record references the immutable
-review ID, human login, submitted date, production SHA, and ledger SHA-256;
-candidate text alone is never approval. Record it in the durable
+SHA and whole-ledger hash can retain the item. The record and durable registry
+reference the immutable review ID, human login, submitted date, and production
+SHA. Candidate text alone is never approval. A repository-authorized reviewer
+(`OWNER`, `MEMBER`, or `COLLABORATOR`) who is not the PR author must have the
+latest effective substantive GitHub review, which must be `APPROVED`. Record it in the durable
 [production legacy exception registry](./production-legacy-exceptions.md).
 
 The approved production SHA may precede the current candidate head only when

@@ -112,6 +112,7 @@ describe('PR human review record contract', () => {
       'Compatibility tests',
       'Named owner',
       'Review or removal condition',
+      'GitHub PR review ID',
       'No automated score or agent may approve retained production legacy',
     ]);
   });

@@ -8,14 +8,6 @@ const validDispositions = new Set([
   'resolved',
   'retained-pending-human-approval',
 ]);
-const narrativeKeys = [
-  'productionOwnerToResultTrace',
-  'cognitiveIndirectionFindings',
-  'testsRewrittenOrRemoved',
-  'productionNotCompromisedForTests',
-  'automationGaps',
-  'completeFindings',
-];
 const exemptionPaths = {
   'plan-only': [/^docs\/superpowers\/plans\/.+\.md$/u, /^plans\/.+\.md$/u],
   'documentation-only': [/^docs\/(?!superpowers\/plans\/).+\.md$/u],
@@ -38,10 +30,11 @@ export function validateReviewRecord(input) {
   if (record.scope !== 'code-changing') {
     return errors;
   }
+  const visibleSections = readVisibleSections(visibleBody, errors);
   const initialReview = validateReview({
     review: record.initialReview,
     stage: 'initial',
-    body: visibleBody,
+    visibleSections,
     errors,
   });
   if (input.draft) {
@@ -51,7 +44,7 @@ export function validateReviewRecord(input) {
   const finalReview = validateReview({
     review: record.finalReview,
     stage: 'final',
-    body: visibleBody,
+    visibleSections,
     errors,
   });
   validateFreshReview({ review: finalReview, stage: 'final', input, errors });
@@ -76,8 +69,6 @@ function readRecord(body, errors) {
     }
     return {
       record,
-      // The machine-readable fence is evidence, not human-visible narrative.
-      // Never let marker-like text embedded in JSON certify the review prose.
       visibleBody: body.replace(recordFence, ''),
     };
   } catch {
@@ -130,7 +121,7 @@ function validateExemption(record, changedPaths, errors) {
   }
 }
 
-function validateReview({ review, stage, body, errors }) {
+function validateReview({ review, stage, visibleSections, errors }) {
   if (!isPlainRecord(review)) {
     errors.push(`${stage} review metadata is required`);
     return undefined;
@@ -149,7 +140,7 @@ function validateReview({ review, stage, body, errors }) {
     errors.push(`${stage} review verdict must be pass or changes-requested`);
   }
   validateFindings(review.unresolvedFindings, stage, errors);
-  validateVisibleNarrative({ narrative: review.narrative, stage, body, errors });
+  validateVisibleReview({ review, stage, visibleSections, errors });
   validateLegacyLedger(review.legacy, stage, errors);
   return review;
 }
@@ -178,30 +169,119 @@ function validateFindings(findings, stage, errors) {
   }
 }
 
-function validateVisibleNarrative({ narrative, stage, body, errors }) {
-  if (!isPlainRecord(narrative)) {
+function readVisibleSections(body, errors) {
+  const headings = [
+    '### Initial independent review',
+    '### Milestone review',
+    '### Complete code and legacy review',
+  ];
+  const positions = headings.map((heading) => {
+    const matches = [...body.matchAll(new RegExp(`^${escapeRegExp(heading)}$`, 'gmu'))];
+    if (matches.length !== 1 || matches[0].index === undefined) {
+      errors.push(`visible PR record must contain exactly one ${heading} section`);
+      return undefined;
+    }
+    return matches[0].index;
+  });
+  if (positions.some((position) => position === undefined)) {
+    return {};
+  }
+  if (!(positions[0] < positions[1] && positions[1] < positions[2])) {
+    errors.push('visible PR review sections must be ordered initial, milestone, final');
+    return {};
+  }
+  return {
+    initial: body.slice(positions[0], positions[1]),
+    final: body.slice(positions[2]),
+  };
+}
+
+function validateVisibleReview({ review, stage, visibleSections, errors }) {
+  if (!isPlainRecord(review.narrative)) {
     errors.push(`${stage} review narrative evidence is required`);
     return;
   }
-  for (const key of narrativeKeys) {
-    validateText(narrative[key], `${stage} review ${key}`, errors);
-    const visible = readVisibleNarrative(body, stage, key);
-    validateText(visible, `${stage} visible narrative evidence ${key}`, errors);
-    if (normalize(visible) !== normalize(narrative[key])) {
-      errors.push(`${stage} visible narrative evidence contradicts metadata: ${key}`);
+  for (const [label, expected, name] of visibleFields(review, stage)) {
+    validateText(expected, `${stage} review ${name}`, errors);
+    const visible = readVisibleField(visibleSections[stage], label);
+    validateText(visible, `${stage} visible review ${name}`, errors);
+    if (normalize(visible) !== normalize(String(expected))) {
+      errors.push(`${stage} visible review contradicts metadata: ${name}`);
     }
   }
 }
 
-function readVisibleNarrative(body, stage, key) {
-  const start = `<!-- pr-human-review:${stage}:${key}:start -->`;
-  const end = `<!-- pr-human-review:${stage}:${key}:end -->`;
-  const firstStart = body.indexOf(start);
-  const firstEnd = body.indexOf(end, firstStart + start.length);
-  if (firstStart < 0 || firstEnd < 0 || body.indexOf(start, firstStart + 1) >= 0) {
+function visibleFields(review, stage) {
+  const labels =
+    stage === 'initial'
+      ? {
+          ownerTrace: 'Production owner-to-result trace',
+          cognitive: 'Cognitive-indirection findings',
+          tests: 'Tests rewritten or removed',
+        }
+      : {
+          ownerTrace:
+            'Changed production owner-to-result trace, including decisions, effects, failures, ' +
+            'callbacks, compatibility branches, and tests',
+          cognitive: 'Cognitive-indirection findings and resolution',
+          tests: 'Tests rewritten or removed, with independent behavior retained',
+        };
+  return [
+    [
+      'Reviewer and independence (separate agent or human)',
+      `${review.reviewer} — ${review.independence}`,
+      'reviewer',
+    ],
+    ['Exact merge base SHA', review.mergeBaseSha, 'mergeBaseSha'],
+    ['Exact candidate head SHA', review.headSha, 'headSha'],
+    [
+      labels.ownerTrace,
+      review.narrative.productionOwnerToResultTrace,
+      'productionOwnerToResultTrace',
+    ],
+    [
+      labels.cognitive,
+      review.narrative.cognitiveIndirectionFindings,
+      'cognitiveIndirectionFindings',
+    ],
+    [
+      'Complete review findings and resolution/status ' +
+        '(correctness, safety, contracts, and other human-review findings)',
+      review.narrative.completeFindings,
+      'completeFindings',
+    ],
+    [labels.tests, review.narrative.testsRewrittenOrRemoved, 'testsRewrittenOrRemoved'],
+    [
+      'Production was not compromised for tests',
+      review.narrative.productionNotCompromisedForTests,
+      'productionNotCompromisedForTests',
+    ],
+    [
+      'Behavior and judgment not proven by automation',
+      review.narrative.automationGaps,
+      'automationGaps',
+    ],
+    ['Legacy candidate count', String(review.legacy?.candidateCount), 'legacyCandidateCount'],
+    [
+      'Critical findings unresolved',
+      String(review.unresolvedFindings?.critical),
+      'criticalFindings',
+    ],
+    [
+      'Important findings unresolved',
+      String(review.unresolvedFindings?.important),
+      'importantFindings',
+    ],
+    ['Verdict', review.verdict, 'verdict'],
+  ];
+}
+
+function readVisibleField(section, label) {
+  if (typeof section !== 'string') {
     return undefined;
   }
-  return body.slice(firstStart + start.length, firstEnd).trim();
+  const matches = [...section.matchAll(new RegExp(`^- ${escapeRegExp(label)}:\\s*(.+)$`, 'gmu'))];
+  return matches.length === 1 ? matches[0][1] : undefined;
 }
 
 function validateLegacyLedger(legacy, stage, errors) {
@@ -294,6 +374,10 @@ function isPlaceholder(value) {
 
 function normalize(value) {
   return typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
 }
 
 export function isExactSha(value) {

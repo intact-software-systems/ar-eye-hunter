@@ -121,6 +121,7 @@ item has exactly one disposition: `removed`, `minimized-boundary`, or
 - Review or removal condition:
 - Exact candidate head SHA:
 - Explicit human approver and approval date:
+- GitHub PR review ID:
 
 Silence, an issue, an earlier plan approval, agent judgment, or automation is
 not approval. A production change invalidates the final review and any
@@ -167,24 +168,9 @@ retained legacy.
 }
 ```
 
-For each review, add the exact text from the metadata as visible evidence:
-
-```markdown
-<!-- pr-human-review:initial:productionOwnerToResultTrace:start -->
-<!-- pr-human-review:initial:productionOwnerToResultTrace:end -->
-<!-- pr-human-review:initial:cognitiveIndirectionFindings:start -->
-<!-- pr-human-review:initial:cognitiveIndirectionFindings:end -->
-<!-- pr-human-review:initial:testsRewrittenOrRemoved:start -->
-<!-- pr-human-review:initial:testsRewrittenOrRemoved:end -->
-<!-- pr-human-review:initial:productionNotCompromisedForTests:start -->
-<!-- pr-human-review:initial:productionNotCompromisedForTests:end -->
-<!-- pr-human-review:initial:automationGaps:start -->
-<!-- pr-human-review:initial:automationGaps:end -->
-<!-- pr-human-review:initial:completeFindings:start -->
-<!-- pr-human-review:initial:completeFindings:end -->
-```
-
-Repeat the same six blocks with `final` after the complete review. For retained
-legacy, metadata must reference a trusted human GitHub review ID, login,
-submitted date, approved production SHA, and ledger SHA-256. A later registry
-recording commit is allowed only when it changes no production path.
+The visible Initial, Milestone, and Complete review sections above are the
+human record. Fill each stable labeled field once with the exact matching
+metadata value; do not add copied marker blocks. For retained legacy, metadata
+must reference a trusted human GitHub review ID, login, submitted date,
+approved production SHA, and whole-ledger SHA-256. A later registry recording
+commit is allowed only when it changes no production path.
