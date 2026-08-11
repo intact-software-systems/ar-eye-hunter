@@ -1,194 +1,364 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { createGroupSnapshot } from '../../packages/tests/shared-graph/helpers.ts';
 
-type Mode = 'retain' | 'cleanup';
+import {
+  rtcBaselineIssue,
+  type RtcBaselineJson,
+  type RtcBaselineSampleDto,
+  type RtcBaselineSampleIdentityDto,
+} from './rtc-baseline/rtc-baseline-contracts.ts';
+import {
+  parseRtcBaselineBoundedInteger,
+  parseRtcBaselineOneTokenOptions,
+} from './rtc-baseline/rtc-baseline-cli-options.ts';
+import { validateRtcBaselineId } from './rtc-baseline/rtc-baseline-validation.ts';
 
-type Args = Readonly<{
-    groups: number;
-    sessions: number;
-    runs: number;
-    mode: Mode;
-    out: string;
-}>;
+export type RtcTopologyInactiveChurnMode = 'retain' | 'cleanup';
+interface RtcTopologyInactiveChurnInput {
+  readonly groups: number;
+  readonly sessionsPerGroup: number;
+  readonly runs: number;
+  readonly mode: RtcTopologyInactiveChurnMode;
+}
+interface RtcTopologyInactiveChurnAcceptedArguments {
+  readonly mode: 'accepted';
+  readonly input: RtcTopologyInactiveChurnInput;
+  readonly intendedPhase: 'warmup' | 'retained';
+  readonly outerOrdinal: number;
+  readonly sampleIds: readonly string[];
+}
+export interface RtcTopologyInactiveChurnResult {
+  readonly mode: RtcTopologyInactiveChurnMode;
+  readonly groupCount: number;
+  readonly sessionsPerGroup: number;
+  readonly sessionIdsPerGroup: readonly string[];
+  readonly activeUpdateDurationMs: number;
+  readonly inactivePhaseDurationMs: number;
+  readonly finalTopologySnapshotCount: number;
+  readonly topologyRemovalRequestCount: number;
+  readonly topologyRemovedCount: number;
+  readonly topologyRemoveMissCount: number;
+}
 
-type BenchResult = Readonly<{
-    run: number;
-    mode: Mode;
-    groupCount: number;
-    sessionsPerGroup: number;
-    activeUpdateDurationMs: number;
-    inactivePhaseDurationMs: number;
-    finalTopologySnapshotCount: number;
-    topologyRemovalRequestCount: number;
-    topologyRemovedCount: number;
-    topologyRemoveMissCount: number;
-}>;
+const acceptedNames = `capture baseline-id workload case-id input-key intended-phase outer-ordinal
+sample-ids rtc-groups rtc-inner-runs rtc-mode rtc-sessions-per-group`.split(/\s+/);
 
-const args = parseArgs();
-const results: BenchResult[] = [];
+export function parseRtcTopologyInactiveChurnArguments(arguments_: readonly string[]) {
+  const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  const parsed = parseRtcBaselineOneTokenOptions(
+    arguments_,
+    accepted ? acceptedNames : ['groups', 'sessions', 'runs', 'mode', 'out'],
+  );
+  if (!parsed.ok) {
+    return parsed;
+  }
+  return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
+}
 
-for (let run = 1; run <= args.runs; run++) {
-    const service = new RallarRtcTopologyService({
-        now: () => 1_000 + run,
-    });
-    const groups = Array.from(
-        { length: args.groups },
-        (_unused, index) =>
-            createGroupSnapshot(
-                `room-${String(index + 1).padStart(5, '0')}`,
-                args.sessions,
-            ),
+export function runRtcTopologyInactiveChurn(
+  groups: number,
+  sessionsPerGroup: number,
+  mode: RtcTopologyInactiveChurnMode,
+): RtcTopologyInactiveChurnResult {
+  const service = new RallarRtcTopologyService({ now: () => 1_000 });
+  const sessionIdsPerGroup = Array.from(
+    { length: sessionsPerGroup },
+    (_session, sessionIndex) => `session-${String(sessionIndex).padStart(3, '0')}`,
+  );
+  const snapshots = Array.from({ length: groups }, (_value, index) => {
+    const groupId = `room-${String(index + 1).padStart(5, '0')}`;
+    return createGroupSnapshot(groupId, sessionIdsPerGroup);
+  });
+  const activeStartedAt = performance.now();
+  for (const snapshot of snapshots) {
+    service.updateGroupTopology(snapshot);
+  }
+  const activeUpdateDurationMs = performance.now() - activeStartedAt;
+  const inactiveStartedAt = performance.now();
+  if (mode === 'cleanup') {
+    for (const snapshot of snapshots) {
+      service.removeGroupTopology(createInactiveGroupSnapshot(snapshot));
+    }
+  } else {
+    for (const snapshot of snapshots) {
+      createInactiveGroupSnapshot(snapshot);
+    }
+  }
+  const inactivePhaseDurationMs = performance.now() - inactiveStartedAt;
+  const metrics = service.readMetrics();
+  return {
+    mode,
+    groupCount: groups,
+    sessionsPerGroup,
+    sessionIdsPerGroup,
+    activeUpdateDurationMs,
+    inactivePhaseDurationMs,
+    finalTopologySnapshotCount: metrics.topologySnapshotCount,
+    topologyRemovalRequestCount: metrics.topologyRemovalRequestCount,
+    topologyRemovedCount: metrics.topologyRemovedCount,
+    topologyRemoveMissCount: metrics.topologyRemoveMissCount,
+  };
+}
+
+export async function runRtcTopologyInactiveChurnAcceptedSamples(input: {
+  readonly worker: RtcTopologyInactiveChurnAcceptedArguments;
+  readonly run: () => Promise<RtcTopologyInactiveChurnResult> | RtcTopologyInactiveChurnResult;
+}): Promise<RtcBaselineSampleDto[]> {
+  const samples: RtcBaselineSampleDto[] = [];
+  let failureId: string | undefined;
+  for (let index = 0; index < input.worker.sampleIds.length; index += 1) {
+    const identity = createIdentity(input.worker, index);
+    if (failureId !== undefined) {
+      samples.push(
+        createSample(identity, null, [
+          rtcBaselineIssue('$.rawEvidence', 'causal-not-run', failureId),
+        ]),
+      );
+      continue;
+    }
+    const result = await input.run();
+    const issues = validateResult(input.worker.input, result);
+    if (issues.length > 0) {
+      failureId = identity.sampleId;
+    }
+    samples.push(createSample(identity, result, issues));
+  }
+  return samples;
+}
+
+function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
+  const groups = parseRtcBaselineBoundedInteger(options.groups ?? '10000', 'groups', 1, 10000);
+  const sessions = parseRtcBaselineBoundedInteger(options.sessions ?? '5', 'sessions', 1, 100);
+  const runs = parseRtcBaselineBoundedInteger(options.runs ?? '3', 'runs', 1, 3);
+  const mode = options.mode ?? 'cleanup';
+  const out = options.out ?? `tmp/perf/results/rtc-topology-inactive-churn-${mode}.json`;
+  const issues = [
+    ...(!groups.ok ? groups.issues : []),
+    ...(!sessions.ok ? sessions.issues : []),
+    ...(!runs.ok ? runs.issues : []),
+  ];
+  if (mode !== 'retain' && mode !== 'cleanup') {
+    issues.push(rtcBaselineIssue('$.mode', 'unexpected-worker-input', 'Invalid mode.'));
+  }
+  if (!isDiagnosticOutput(out)) {
+    issues.push(
+      rtcBaselineIssue('$.out', 'invalid-diagnostic-output', 'Expected tmp/perf/results/.'),
     );
+  }
+  return issues.length > 0
+    ? { ok: false as const, issues }
+    : {
+        ok: true as const,
+        value: {
+          mode: 'diagnostic' as const,
+          input: {
+            groups: groups.ok ? groups.value : 1,
+            sessionsPerGroup: sessions.ok ? sessions.value : 1,
+            runs: runs.ok ? runs.value : 1,
+            mode: mode as RtcTopologyInactiveChurnMode,
+          },
+          out,
+        },
+      };
+}
 
-    const activeStartedAt = performance.now();
-    for (const group of groups) {
-        service.updateGroupTopology(group);
+function parseAcceptedArguments(options: Readonly<Record<string, string>>) {
+  const outer = parseRtcBaselineBoundedInteger(
+    options['outer-ordinal'] ?? '',
+    'outer-ordinal',
+    1,
+    999,
+  );
+  const issues = [...(!outer.ok ? outer.issues : [])];
+  issues.push(...validateRtcBaselineId(options['baseline-id'] ?? ''));
+  const mode = options['rtc-mode'];
+  if (mode !== 'retain' && mode !== 'cleanup') {
+    issues.push(rtcBaselineIssue('$.rtc-mode', 'unexpected-worker-input', 'Invalid mode.'));
+  }
+  const inputMode: RtcTopologyInactiveChurnMode = mode === 'retain' ? 'retain' : 'cleanup';
+  const expected = {
+    capture: 'worker',
+    workload: 'RTC-B03',
+    'case-id': 'topology-inactive-churn',
+    'input-key': `mode-${inputMode}`,
+    'rtc-groups': '10000',
+    'rtc-inner-runs': '3',
+    'rtc-mode': inputMode,
+    'rtc-sessions-per-group': '5',
+  };
+  for (const [name, value] of Object.entries(expected)) {
+    if (options[name] !== value) {
+      issues.push(rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`));
     }
-    const activeUpdateDurationMs = performance.now() - activeStartedAt;
+  }
+  const phase = options['intended-phase'];
+  if (phase !== 'warmup' && phase !== 'retained') {
+    issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
+  }
+  const ordinal = outer.ok ? outer.value : 0;
+  const sampleIds = (options['sample-ids'] ?? '').split(',');
+  const expectedIds = createExpectedSampleIds(
+    inputMode,
+    phase === 'warmup' ? phase : 'retained',
+    ordinal,
+  );
+  if (JSON.stringify(sampleIds) !== JSON.stringify(expectedIds)) {
+    issues.push(rtcBaselineIssue('$.sample-ids', 'unexpected-worker-input', 'Invalid sample IDs.'));
+  }
+  return issues.length > 0
+    ? { ok: false as const, issues }
+    : {
+        ok: true as const,
+        value: {
+          mode: 'accepted' as const,
+          input: { groups: 10000, sessionsPerGroup: 5, runs: 3, mode: inputMode },
+          intendedPhase: phase as 'warmup' | 'retained',
+          outerOrdinal: ordinal,
+          sampleIds,
+        },
+      };
+}
 
-    const inactiveStartedAt = performance.now();
-    if (args.mode === 'cleanup') {
-        for (const group of groups) {
-            service.removeGroupTopology(
-                createInactiveGroupSnapshot(group, 'archived'),
-            );
-        }
-    } else {
-        for (const group of groups) {
-            createInactiveGroupSnapshot(group, 'archived');
-        }
-    }
-    const inactivePhaseDurationMs = performance.now() - inactiveStartedAt;
-    const metrics = service.readMetrics();
+function createExpectedSampleIds(
+  mode: RtcTopologyInactiveChurnMode,
+  phase: 'warmup' | 'retained',
+  outerOrdinal: number,
+): string[] {
+  const prefix =
+    `rtc-b03-topology-inactive-churn-mode-${mode}-${phase}-` +
+    String(outerOrdinal).padStart(3, '0');
+  return Array.from(
+    { length: 3 },
+    (_value, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`,
+  );
+}
 
-    results.push({
-        run,
-        mode: args.mode,
-        groupCount: args.groups,
-        sessionsPerGroup: args.sessions,
-        activeUpdateDurationMs,
-        inactivePhaseDurationMs,
-        finalTopologySnapshotCount: metrics.topologySnapshotCount,
-        topologyRemovalRequestCount: metrics.topologyRemovalRequestCount,
-        topologyRemovedCount: metrics.topologyRemovedCount,
-        topologyRemoveMissCount: metrics.topologyRemoveMissCount,
+function createIdentity(
+  worker: RtcTopologyInactiveChurnAcceptedArguments,
+  index: number,
+): RtcBaselineSampleIdentityDto {
+  return {
+    sampleId: worker.sampleIds[index],
+    workloadId: 'RTC-B03',
+    caseId: 'topology-inactive-churn',
+    inputKey: `mode-${worker.input.mode}`,
+    intendedPhase: worker.intendedPhase,
+    outerOrdinal: worker.outerOrdinal,
+    innerOrdinal: index + 1,
+  };
+}
+
+function createSample(
+  identity: RtcBaselineSampleIdentityDto,
+  result: RtcTopologyInactiveChurnResult | null,
+  issues: RtcBaselineSampleDto['issues'],
+): RtcBaselineSampleDto {
+  return {
+    schema: 'rallar.rtc-baseline.sample.v1',
+    identity,
+    outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+    evidenceClass: 'synthetic-path',
+    metrics:
+      result === null
+        ? []
+        : [
+            { metric: 'activeUpdateDurationMs', unit: 'ms', value: result.activeUpdateDurationMs },
+            {
+              metric: 'inactivePhaseDurationMs',
+              unit: 'ms',
+              value: result.inactivePhaseDurationMs,
+            },
+          ],
+    rawEvidence: result === null ? null : createRawEvidence(result),
+    rawReferences: [],
+    issues,
+    runtimeObservation: null,
+  };
+}
+
+function createRawEvidence(result: RtcTopologyInactiveChurnResult): RtcBaselineJson {
+  return { ...result, sessionIdsPerGroup: [...result.sessionIdsPerGroup] };
+}
+
+function validateResult(
+  input: RtcTopologyInactiveChurnInput,
+  result: RtcTopologyInactiveChurnResult,
+) {
+  const expectedFinalCount = input.mode === 'retain' ? input.groups : 0;
+  const expectedRemovalCount = input.mode === 'retain' ? 0 : input.groups;
+  return result.mode === input.mode &&
+    result.groupCount === input.groups &&
+    result.sessionsPerGroup === input.sessionsPerGroup &&
+    JSON.stringify(result.sessionIdsPerGroup) ===
+      JSON.stringify(['session-000', 'session-001', 'session-002', 'session-003', 'session-004']) &&
+    result.finalTopologySnapshotCount === expectedFinalCount &&
+    result.topologyRemovalRequestCount === expectedRemovalCount &&
+    result.topologyRemovedCount === expectedRemovalCount &&
+    result.topologyRemoveMissCount === 0
+    ? []
+    : [rtcBaselineIssue('$.rawEvidence', 'inactive-churn-mismatch', 'Unexpected state lifetime.')];
+}
+
+function createInactiveGroupSnapshot(snapshot: GroupSnapshot): GroupSnapshot {
+  const archived = { ...snapshot.group.updated, atEpochMs: 2 };
+  return {
+    ...snapshot,
+    group: {
+      ...snapshot.group,
+      status: 'archived',
+      snapshotVersion: snapshot.group.snapshotVersion + 1,
+      updated: archived,
+      archived,
+      deleted: null,
+    },
+    activeSessions: [],
+    onlineMemberCount: 0,
+  };
+}
+
+function isDiagnosticOutput(out: string): boolean {
+  return (
+    out.startsWith('tmp/perf/results/') &&
+    !out.includes('\\') &&
+    out.split('/').every((component) => component !== '' && component !== '.' && component !== '..')
+  );
+}
+
+async function main(): Promise<void> {
+  const parsed = parseRtcTopologyInactiveChurnArguments(Deno.args);
+  if (!parsed.ok) {
+    throw new Error(JSON.stringify(parsed.issues));
+  }
+  if (parsed.value.mode === 'accepted') {
+    const samples = await runRtcTopologyInactiveChurnAcceptedSamples({
+      worker: parsed.value,
+      run: () =>
+        runRtcTopologyInactiveChurn(
+          parsed.value.input.groups,
+          parsed.value.input.sessionsPerGroup,
+          parsed.value.input.mode,
+        ),
     });
+    console.log(JSON.stringify(samples));
+    return;
+  }
+  const results = Array.from({ length: parsed.value.input.runs }, (_value, index) => ({
+    run: index + 1,
+    ...runRtcTopologyInactiveChurn(
+      parsed.value.input.groups,
+      parsed.value.input.sessionsPerGroup,
+      parsed.value.input.mode,
+    ),
+  }));
+  await Deno.writeTextFile(
+    parsed.value.out,
+    `${JSON.stringify({ input: parsed.value.input, results }, null, 2)}\n`,
+    { createNew: true },
+  );
+  console.log(`Wrote ${parsed.value.out}`);
 }
 
-await Deno.writeTextFile(
-    args.out,
-    JSON.stringify({
-        createdAt: new Date().toISOString(),
-        input: args,
-        results,
-    }, null, 2),
-);
-
-console.log(`Wrote ${args.out}`);
-
-function parseArgs(): Args {
-    const mode = readArg('--mode') ?? 'cleanup';
-    if (mode !== 'retain' && mode !== 'cleanup') {
-        throw new Error(`Unsupported --mode=${mode}`);
-    }
-
-    return {
-        groups: Number(readArg('--groups') ?? '10000'),
-        sessions: Number(readArg('--sessions') ?? '5'),
-        runs: Number(readArg('--runs') ?? '3'),
-        mode,
-        out: readArg('--out') ??
-            `tmp/perf/results/rtc-topology-inactive-churn-${mode}.json`,
-    };
-}
-
-function readArg(name: string): string | undefined {
-    return Deno.args.find((arg) => arg.startsWith(`${name}=`))
-        ?.slice(name.length + 1);
-}
-
-function createGroupSnapshot(groupId: string, sessionCount: number): GroupSnapshot {
-    const applicationId = 'app-1';
-    const workspaceId = 'workspace-1';
-    const sessionIds = Array.from(
-        { length: sessionCount },
-        (_unused, index) => `${groupId}-session-${index + 1}`,
-    );
-
-    return {
-        group: {
-            applicationId,
-            workspaceId,
-            groupId,
-            displayName: groupId,
-            kind: 'room',
-            status: 'active',
-            joinMode: 'open',
-            metadata: {},
-            snapshotVersion: 1,
-            metadataVersion: 0,
-            rosterVersion: 1,
-            presenceVersion: 0,
-            created: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-        },
-        members: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            principalId: sessionId,
-            role: 'member',
-            status: 'active',
-            joined: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-            updated: {
-                atEpochMs: 1,
-                byPrincipalId: 'owner',
-            },
-        })),
-        activeSessions: sessionIds.map((sessionId) => ({
-            applicationId,
-            workspaceId,
-            groupId,
-            sessionId,
-            principalId: sessionId,
-            connectedAtEpochMs: 1,
-            lastHeartbeatAtEpochMs: 1,
-            expiresAtEpochMs: 60_000,
-        })),
-        memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
-    };
-}
-
-function createInactiveGroupSnapshot(
-    snapshot: GroupSnapshot,
-    status: 'archived' | 'deleted',
-): GroupSnapshot {
-    const audit = {
-        atEpochMs: 2,
-        byPrincipalId: 'owner',
-    };
-
-    return {
-        ...snapshot,
-        group: {
-            ...snapshot.group,
-            status,
-            snapshotVersion: snapshot.group.snapshotVersion + 1,
-            updated: audit,
-            archived: status === 'archived' ? audit : snapshot.group.archived,
-            deleted: status === 'deleted' ? audit : snapshot.group.deleted,
-        },
-        activeSessions: [],
-        onlineMemberCount: 0,
-    };
+if (import.meta.main) {
+  await main();
 }
