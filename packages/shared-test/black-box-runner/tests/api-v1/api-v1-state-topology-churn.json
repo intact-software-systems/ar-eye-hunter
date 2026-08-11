@@ -416,6 +416,11 @@
                       "requestId": "presence-primary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{primaryClientId}"
+                    },
+                    "outputs": {
+                      "primarySharedGroupRevision": "body.causalRevision.groupRevision",
+                      "primarySharedPresenceRevision": "body.causalRevision.presenceRevision",
+                      "primarySharedOnlineMemberCount": "body.onlineMemberCount"
                     }
                   },
                   "expect": {
@@ -638,6 +643,11 @@
                       "requestId": "presence-secondary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{secondaryClientId}"
+                    },
+                    "outputs": {
+                      "secondarySharedGroupRevision": "body.causalRevision.groupRevision",
+                      "secondarySharedPresenceRevision": "body.causalRevision.presenceRevision",
+                      "secondarySharedOnlineMemberCount": "body.onlineMemberCount"
                     }
                   },
                   "expect": {
@@ -860,6 +870,11 @@
                       "requestId": "presence-tertiary-{loop.iteration}-{sharedGroupId}-{runId}",
                       "generationId": "generation-{runId}",
                       "principalId": "{tertiaryClientId}"
+                    },
+                    "outputs": {
+                      "tertiarySharedGroupRevision": "body.causalRevision.groupRevision",
+                      "tertiarySharedPresenceRevision": "body.causalRevision.presenceRevision",
+                      "tertiarySharedOnlineMemberCount": "body.onlineMemberCount"
                     }
                   },
                   "expect": {
@@ -1020,17 +1035,90 @@
           "presenceRevision": {
             "if": {
               "condition": {
-                "equals": [
-                  { "path": "outputs.latestChurnObservation.onlineMemberCount" },
-                  13
-                ]
+                "equals": [{ "path": "outputs.latestChurnObservation.onlineMemberCount" }, 13]
               },
               "then": { "path": "outputs.latestChurnObservation.presenceRevision" },
               "else": {
-                "add": [
-                  { "path": "outputs.latestChurnObservation.presenceRevision" },
-                  1
+                "add": [{ "path": "outputs.latestChurnObservation.presenceRevision" }, 1]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "deriveLatestSharedObservation",
+      "type": "set",
+      "output": "latestSharedObservation",
+      "transform": {
+        "value": {
+          "groupRevision": {
+            "max": [
+              { "path": "outputs.primarySharedGroupRevision" },
+              { "path": "outputs.secondarySharedGroupRevision" },
+              { "path": "outputs.tertiarySharedGroupRevision" }
+            ]
+          },
+          "presenceRevision": {
+            "max": [
+              { "path": "outputs.primarySharedPresenceRevision" },
+              { "path": "outputs.secondarySharedPresenceRevision" },
+              { "path": "outputs.tertiarySharedPresenceRevision" }
+            ]
+          },
+          "onlineMemberCount": {
+            "if": {
+              "condition": {
+                "equals": [
+                  { "path": "outputs.primarySharedPresenceRevision" },
+                  {
+                    "max": [
+                      { "path": "outputs.primarySharedPresenceRevision" },
+                      { "path": "outputs.secondarySharedPresenceRevision" },
+                      { "path": "outputs.tertiarySharedPresenceRevision" }
+                    ]
+                  }
                 ]
+              },
+              "then": { "path": "outputs.primarySharedOnlineMemberCount" },
+              "else": {
+                "if": {
+                  "condition": {
+                    "equals": [
+                      { "path": "outputs.secondarySharedPresenceRevision" },
+                      {
+                        "max": [
+                          { "path": "outputs.primarySharedPresenceRevision" },
+                          { "path": "outputs.secondarySharedPresenceRevision" },
+                          { "path": "outputs.tertiarySharedPresenceRevision" }
+                        ]
+                      }
+                    ]
+                  },
+                  "then": { "path": "outputs.secondarySharedOnlineMemberCount" },
+                  "else": { "path": "outputs.tertiarySharedOnlineMemberCount" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "deriveSharedReadFloor",
+      "type": "set",
+      "output": "sharedReadFloor",
+      "transform": {
+        "value": {
+          "groupRevision": { "path": "outputs.latestSharedObservation.groupRevision" },
+          "presenceRevision": {
+            "if": {
+              "condition": {
+                "equals": [{ "path": "outputs.latestSharedObservation.onlineMemberCount" }, 13]
+              },
+              "then": { "path": "outputs.latestSharedObservation.presenceRevision" },
+              "else": {
+                "add": [{ "path": "outputs.latestSharedObservation.presenceRevision" }, 1]
               }
             }
           }
@@ -1043,10 +1131,17 @@
       "connection": "apiTertiary",
       "request": {
         "method": "GET",
-        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{sharedGroupId}?minGroupRevision={sharedReadFloor.groupRevision}&minPresenceRevision={sharedReadFloor.presenceRevision}",
         "headers": {
           "Authorization": "{ownerAuthHeader}",
           "x-client-id": "{ownerClientId}"
+        },
+        "retry": {
+          "maxAttempts": 6,
+          "backoffMs": 250,
+          "backoffMultiplier": 2,
+          "onStatus": [409],
+          "onException": false
         },
         "outputs": {
           "sharedFinalRevision": "body.stateRevision"

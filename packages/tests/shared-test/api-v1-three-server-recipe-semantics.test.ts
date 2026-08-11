@@ -321,6 +321,101 @@ describe('API-v1 three-server recipe semantics', () => {
         },
       },
     });
+    const allSteps = flattenRecipeSteps(recipe.steps as Array<Record<string, unknown>>);
+    for (const [connectStepName, outputPrefix] of [
+      ['connectPrimaryClientToShared{loop.iteration}', 'primaryShared'],
+      ['connectSecondaryClientToShared{loop.iteration}', 'secondaryShared'],
+      ['connectTertiaryClientToShared{loop.iteration}', 'tertiaryShared'],
+    ] as const) {
+      expect(
+        allSteps.find((step) => step.name === connectStepName),
+        connectStepName,
+      ).toMatchObject({
+        request: {
+          outputs: {
+            [`${outputPrefix}GroupRevision`]: 'body.causalRevision.groupRevision',
+            [`${outputPrefix}PresenceRevision`]: 'body.causalRevision.presenceRevision',
+            [`${outputPrefix}OnlineMemberCount`]: 'body.onlineMemberCount',
+          },
+        },
+      });
+    }
+    const latestSharedObservation = (recipe.steps as Array<Record<string, unknown>>).find(
+      (step) => step.name === 'deriveLatestSharedObservation',
+    );
+    expect(latestSharedObservation).toMatchObject({
+      type: 'set',
+      output: 'latestSharedObservation',
+      transform: {
+        value: {
+          groupRevision: { max: expect.any(Array) },
+          presenceRevision: { max: expect.any(Array) },
+          onlineMemberCount: {
+            if: {
+              condition: { equals: expect.any(Array) },
+              then: { path: 'outputs.primarySharedOnlineMemberCount' },
+              else: {
+                if: {
+                  condition: { equals: expect.any(Array) },
+                  then: { path: 'outputs.secondarySharedOnlineMemberCount' },
+                  else: { path: 'outputs.tertiarySharedOnlineMemberCount' },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const sharedFloor = (recipe.steps as Array<Record<string, unknown>>).find(
+      (step) => step.name === 'deriveSharedReadFloor',
+    );
+    expect(sharedFloor).toMatchObject({
+      type: 'set',
+      output: 'sharedReadFloor',
+      transform: {
+        value: {
+          groupRevision: {
+            path: 'outputs.latestSharedObservation.groupRevision',
+          },
+          presenceRevision: {
+            if: {
+              condition: {
+                equals: [{ path: 'outputs.latestSharedObservation.onlineMemberCount' }, 13],
+              },
+              then: { path: 'outputs.latestSharedObservation.presenceRevision' },
+              else: {
+                add: [{ path: 'outputs.latestSharedObservation.presenceRevision' }, 1],
+              },
+            },
+          },
+        },
+      },
+    });
+    const sharedRead = (recipe.steps as Array<Record<string, unknown>>).find(
+      (step) => step.name === 'readSharedGroupThroughTertiary',
+    );
+    expect(sharedRead).toMatchObject({
+      connection: 'apiTertiary',
+      request: {
+        path: expect.stringContaining(
+          'minGroupRevision={sharedReadFloor.groupRevision}&minPresenceRevision={sharedReadFloor.presenceRevision}',
+        ),
+        retry: {
+          maxAttempts: 6,
+          backoffMs: 250,
+          backoffMultiplier: 2,
+          onStatus: [409],
+          onException: false,
+        },
+      },
+      expect: {
+        status: 200,
+        body: {
+          memberCount: 13,
+          onlineMemberCount: 13,
+        },
+      },
+    });
     expect(JSON.stringify(recipe)).toContain('disconnect');
     expect(JSON.stringify(recipe)).toContain('topology/reconfigure');
   });
