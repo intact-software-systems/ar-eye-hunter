@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -20,8 +18,6 @@ import {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
-
-const repoRoot = resolve(import.meta.dirname, '../../..');
 
 describe('Recipe Console explicit window model', () => {
     it('resets synchronously to the exact first range when its fingerprint changes', () => {
@@ -448,24 +444,7 @@ describe('ExplicitWindowControls', () => {
                 .not.toContain('No items');
         });
 
-    it('uses logical coarse targets with compact and reduced-motion containment', () => {
-        const css = readFileSync(resolve(
-            repoRoot,
-            'apps/rallar-black-box/src/recipe-console/ui/ExplicitWindowControls.module.css',
-        ), 'utf8');
-
-        expect(css).toContain('min-inline-size: 44px');
-        expect(css).toContain('min-block-size: 44px');
-        expect(css).toContain('padding-inline:');
-        expect(css).toMatch(
-            /@media \(min-width: 720px\) and \(max-height: 520px\)/,
-        );
-        expect(css).toMatch(
-            /@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none !important/,
-        );
-        expect(css).not.toMatch(/(?:margin|padding|inset)-(?:left|right):/);
     });
-});
 
 describe('explicit window focus recovery', () => {
     let container: HTMLDivElement;

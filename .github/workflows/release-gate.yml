@@ -68,9 +68,26 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve immutable changed-review range
+        id: changed_review_range
+        if: ${{ inputs.changed_repo_style_base != '' }}
+        run: >-
+          node scripts/resolve-changed-review-range.mjs
+          "${{ inputs.changed_repo_style_base }}" HEAD | tee -a "$GITHUB_OUTPUT"
+
       - name: Check changed repository style
         if: ${{ inputs.changed_repo_style_base != '' }}
-        run: npm run check:repo-style:changed -- "${{ inputs.changed_repo_style_base }}" HEAD
+        run: >-
+          node scripts/check-changed-repo-style.mjs
+          "${{ steps.changed_review_range.outputs.base }}"
+          "${{ steps.changed_review_range.outputs.head }}"
+
+      - name: Check changed test structure coupling
+        if: ${{ inputs.changed_repo_style_base != '' }}
+        run: >-
+          node scripts/check-test-structure-coupling.mjs --changed
+          "${{ steps.changed_review_range.outputs.base }}"
+          "${{ steps.changed_review_range.outputs.head }}"
 
       - name: Type-check TypeScript 7 workspaces
         run: npm run typecheck

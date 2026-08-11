@@ -18,7 +18,10 @@ import { TestResourceInbox, TestResourceInboxResults } from './auth/auth-app-inb
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
-const NOW_EPOCH_MS = 1_800_000_000_000;
+// Anchor the seed clock to the real processing clock. The AppInbox stamps and
+// captures messages at Date.now(), so a fixed far-future base would make seeded
+// connect/heartbeat timestamps read as future-dated relative to processing.
+const NOW_EPOCH_MS = Date.now();
 const SCOPE: StateScope = { applicationId: 'ar-eye-hunter', workspaceId: 'default' };
 
 export interface AuthorisedWsCloseFacts {

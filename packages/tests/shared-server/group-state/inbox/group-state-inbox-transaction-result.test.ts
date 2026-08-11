@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
-
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -13,16 +11,6 @@ import {
   createGroupStateTransactionBoundaryHarness,
 } from './group-state-transaction-boundary-fixture.ts';
 
-const targetIdentityPath =
-  'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target-identity.ts';
-const targetWritePath =
-  'packages/shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-const targetWriteTestPath =
-  'packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts';
-const predecessorTargetIdentityPath =
-  'packages/shared-server/rallar-system/group-state/mutation/orchestration/resolve-group-mutation-target.ts';
-const predecessorWritePath =
-  'packages/shared-server/rallar-system/group-state/mutation/write/write-group-state-mutation.ts';
 const EXPECTED_CREATE_GROUP_DURABLE_JSON =
   '{"status":"created","result":{"right":{"snapshot":' +
   '{"stateRevision":1,"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
@@ -220,42 +208,7 @@ describe('group-state AppInbox transaction result boundary', () => {
     });
   });
 
-  it('requires the Task 10 target-identity owner path', () => {
-    expect(existsSync(targetIdentityPath), targetIdentityPath).toBe(true);
-  });
-
-  it('requires the Task 10 principal identity resolver name', () => {
-    expect(readTargetSource(targetIdentityPath)).toContain('resolveGroupMutationTargetPrincipalId');
-  });
-
-  it('requires the Task 10 session identity resolver name', () => {
-    expect(readTargetSource(targetIdentityPath)).toContain('resolveGroupMutationTargetSessionId');
-  });
-
-  it('removes the predecessor target-identity resolver path', () => {
-    expect(existsSync(predecessorTargetIdentityPath), predecessorTargetIdentityPath).toBe(false);
-  });
-
-  it('requires the Task 10 mutation-write owner path', () => {
-    expect(existsSync(targetWritePath), targetWritePath).toBe(true);
-  });
-
-  it('requires the Task 10 behavior-named mutation-write test path', () => {
-    expect(existsSync(targetWriteTestPath), targetWriteTestPath).toBe(true);
-  });
-
-  it('removes the predecessor mutation-write path', () => {
-    expect(existsSync(predecessorWritePath), predecessorWritePath).toBe(false);
-  });
-
-  it('retains the Task 10 writeGroupMutation primary symbol', () => {
-    expect(readTargetSource(targetWritePath)).toContain('writeGroupMutation');
-  });
 });
-
-function readTargetSource(path: string): string {
-  return existsSync(path) ? readFileSync(path, 'utf8') : '';
-}
 
 interface CommittedSnapshotFixture {
   readonly actions: string[];

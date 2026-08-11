@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createTimedGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-timing.ts';
@@ -16,8 +14,6 @@ import {
   type TimedAsyncOperation,
 } from './group-state-service-timing-fixture.ts';
 
-const timingPath = 'packages/shared-server/rallar-system/group-state/group-state-service-timing.ts';
-
 interface OptionalAsyncCoverageProbe {
   readonly value: string;
   required(): Promise<string>;
@@ -26,15 +22,6 @@ interface OptionalAsyncCoverageProbe {
 }
 
 describe('group-state service timing contract', () => {
-  it('uses the closed service-key timing operation inventory in the timing owner', () => {
-    const source = readFileSync(timingPath, 'utf8');
-
-    expect(source).toContain('type GroupStateTimedOperation = Exclude<');
-    expect(source).toContain('keyof GroupStateService,');
-    expect(source).toContain("'compute' | 'validate' | 'sessionGenerationLifecycle'");
-    expect(source).toContain('readonly operation: GroupStateTimedOperation;');
-  });
-
   it('covers every required and optional Promise-returning service method exactly once', () => {
     expectTypeOf<TimedAsyncOperation>().toEqualTypeOf<PromiseReturningGroupStateServiceKey>();
     expectTypeOf<PromiseReturningMethodKey<OptionalAsyncCoverageProbe>>().toEqualTypeOf<

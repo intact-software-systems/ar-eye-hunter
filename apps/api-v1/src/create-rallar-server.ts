@@ -42,6 +42,9 @@ import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer
 import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';
 import { createApiAdminMutationGateway } from './services/create-api-admin-mutation-gateway.ts';
 import { readConfiguredCrdtPolicies } from './services/create-api-mutation-inbox-factories.ts';
+import {
+  createRallarAdminRouteInitializers,
+} from './create-rallar-admin-route-initializers.ts';
 import * as configRoutes from './routes/config-route.ts';
 import * as wsRoutes from './routes/ws-routes.ts';
 import * as iceRoutes from './routes/ice-route.ts';
@@ -50,9 +53,6 @@ import * as graphTopologyRoutes from './routes/graph-topology-routes.ts';
 import {
   createStateSnapshotReadRouteRegistrars,
 } from './routes/create-state-snapshot-read-route-registrars.ts';
-import * as crdtAdminRoutes from './routes/crdt-admin-routes.ts';
-import * as adminOperationsRoutes from './routes/admin-operations-routes.ts';
-import * as adminSupportRoutes from './routes/admin-support-routes.ts';
 import * as swaggerRoutes from './routes/swagger-routes.ts';
 import {
   initWsLifecycle as initSharedWsLifecycle,
@@ -215,7 +215,7 @@ export function createRallarServer(
     throw new Error('Admin database mutations require AppInbox services');
   }
 
-  const adminOperations = new AdminOperationsService({
+  const adminOperations: AdminOperationsService = new AdminOperationsService({
     now,
     serverId: myServerId,
     statsReader: new PSqlAdminOperationsStatsReader(sql as unknown as PSqlSql, {
@@ -238,7 +238,7 @@ export function createRallarServer(
     }),
     timing,
   });
-  const adminSupport = new AdminSupportService({
+  const adminSupport: AdminSupportService = new AdminSupportService({
     now,
     serverId: myServerId,
     reader: new PSqlAdminSupportReader(sql as unknown as PSqlSql),
@@ -373,24 +373,21 @@ export function createRallarServer(
             topologyManagement,
             adminClientIds,
           }),
-        (app) =>
-          crdtAdminRoutes.init(app, {
+        ...createRallarAdminRouteInitializers({
+          crdt: {
             repository: crdtLogRepository,
             mutations: middleware.appCrdtInboxService,
             audit: options.crdtAuditSink,
             adminClientIds,
-          }),
-        (app) =>
-          adminOperationsRoutes.init(app, {
-            adminClientIds,
-            operations: adminOperations,
-            now,
-          }),
-        (app) =>
-          adminSupportRoutes.init(app, {
-            adminClientIds,
-            support: adminSupport,
-          }),
+          },
+          catchUpSnapshots: {
+            readGroupSnapshot: (ref) => middleware.groupsRepository.readSnapshot(ref),
+            readClientSnapshot: (ref) => middleware.clientsRepository.readSnapshot(ref),
+            nowEpochMs: now,
+          },
+          operations: { adminClientIds, operations: adminOperations, now },
+          support: { adminClientIds, support: adminSupport },
+        }),
         swaggerRoutes.init,
       ],
     },

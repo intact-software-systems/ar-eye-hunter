@@ -214,3 +214,8 @@ Refresh a baseline when Rallar or Rallar Server behavior intentionally changes:
 
 The matrix is a runner validation catalog. It should not add new Rallar facade
 commands; recipes still use HTTP, WS, RTC, ASSERT, and SET steps.
+
+API-v1 category entries also carry an explicit `tier` label (1 = black-box API,
+2 = SQL-evidence convergence proof); the tier convention and the coordinator-owned
+tier-3 profile are documented in `tests/README.md` and enforced by
+`packages/tests/shared-test/recipe-matrix.test.ts`.

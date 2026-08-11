@@ -1,8 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RetentionConfirmDialog } from
     '../../../apps/rallar-black-box/src/recipe-console/history/RetentionConfirmDialog.tsx';
@@ -165,22 +163,6 @@ describe('RetentionConfirmDialog', () => {
         expect(container.textContent).toContain('Preview is stale; preview again.');
         expect(container.textContent).toContain('control-delete-exact');
         expect(button('Delete previewed runs').disabled).toBe(true);
-    });
-
-    it('disables dialog motion under reduced motion and contains mobile overflow', () => {
-        const css = readFileSync(resolve(
-            process.cwd(),
-            'apps/rallar-black-box/src/recipe-console/history/RetentionConfirmDialog.module.css',
-        ), 'utf8');
-        expect(css).toContain('@media (prefers-reduced-motion: reduce)');
-        expect(css).toMatch(/animation:\s*none/);
-        expect(css).toMatch(/max-height:\s*calc\(100dvh/);
-        expect(css).toMatch(/\.dialog\s*\{[\s\S]*overflow:\s*hidden/);
-        expect(css).toMatch(
-            /\.candidateScroller\s*\{[\s\S]*max-height:[\s\S]*overflow:\s*auto/,
-        );
-        expect(css).toMatch(/\.candidateScroller:focus-visible/);
-        expect(css).toContain('min-height: 44px');
     });
 
     function button(text: string): HTMLButtonElement {

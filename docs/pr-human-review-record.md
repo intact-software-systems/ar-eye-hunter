@@ -1,0 +1,217 @@
+# PR Human Review Record v1
+
+This is the repository contract for the human-review record in a pull request.
+It applies the authoritative
+[repo code standard](../.agents/skills/rallar-code-writing/references/repo-code-style.md)
+and the [human review guide](./repo-human-style-guide.md); it does not define a
+second coding standard.
+
+Production code is the primary design artifact; tests are secondary evidence.
+Automation validates evidence and freshness; it does not approve semantic
+quality or retained legacy.
+
+Use [the pull request template](../.github/PULL_REQUEST_TEMPLATE.md) as the
+record. Its labels are intentionally stable so `check:pr-human-review` can
+validate presence and freshness without judging the code or approving legacy.
+
+## Validator metadata and command
+
+The pull request body ends with one `pr-human-review-record-v1` JSON fence.
+It is evidence metadata for the surrounding narrative, not a second review
+record. Fill every required string with concrete evidence; `TODO`, `TBD`,
+`not applicable`, and placeholder text are invalid evidence.
+
+The metadata contains `version: 1`, `scope`, an optional explicit exemption,
+an `initialReview`, a `milestoneReview`, an optional `finalReview`, and
+`retainedLegacy`. The initial review uses `status: complete`; pending or exempt
+template states are not valid code-changing review evidence. Each review
+contains its reviewer and `separate-agent-or-human` independence declaration,
+the exact computed merge base and head SHA, verdict, unresolved Critical and
+Important counts, the six narrative evidence fields, and a legacy candidate
+count plus ledger. The stable labeled fields in the visible Initial, Milestone,
+and Complete review sections appear exactly once, in that order, and bind
+directly to metadata values; every ledger item has an ID, path, symbol, and one
+valid disposition.
+
+`milestoneReview.classification` is either `none`, with an empty `entries`
+array, or `reviewed`, with one ordered entry for each reviewed milestone. Each
+entry binds the new ownership, control-flow, or legacy family and all normal
+review evidence to one visible `#### Milestone review entry` block.
+
+Run the deterministic, read-only check locally with explicit evidence files:
+
+```sh
+npm run check:pr-human-review -- \
+  --body path/to/pull-request-body.md \
+  --changed-paths path/to/changed-paths.txt \
+  --registry docs/production-legacy-exceptions.md \
+  --reviews path/to/trusted-github-reviews.json \
+  --merge-base <40-character-merge-base-sha> \
+  --head <40-character-head-sha> \
+  --draft true \
+  --pr-author <pull-request-author-login>
+```
+
+In GitHub Actions, trusted base-branch code runs under `pull_request_target`.
+It fetches candidate Git objects and registry text only as data, computes the
+actual Git merge base, and reads GitHub review evidence through a read-only API.
+It never checks out or executes PR-head code. The validator checks evidence
+completeness, exact-SHA freshness, kind-specific exemptions, ledger and registry
+agreement, and trusted human GitHub approval evidence. It does not approve
+semantic quality, an independent reviewer, or retained legacy.
+
+The introducing pull request cannot use this new trusted workflow to certify
+itself: `pull_request_target` deliberately runs the base branch workflow. Its
+bootstrap review is an independent human/agent review recorded outside this
+automation. After merge, later pull requests use the trusted validator.
+
+## Scope and exemptions
+
+Plan-, documentation-, and agent-guidance-only pull requests may use the
+explicit exemption only when no production, test, script, workflow, package
+metadata, or runtime files changed. The record names the exemption and the
+changed-path evidence. A mixed pull request is code-changing and requires the
+reviews below.
+
+No production, test, script, workflow, package metadata, or runtime files
+changed is required for an exemption.
+
+## Required review records
+
+Every record identifies a separate agent or human reviewer, the exact merge
+base SHA, the exact candidate head SHA, unresolved Critical and Important
+counts, and a verdict. Every applicable record includes a `Complete review
+findings and resolution/status` field covering correctness, safety, contracts,
+and other human-review findings. Each applicable review record includes a
+`Legacy candidate count` beside its ledger so automation can check that every
+identified candidate received a disposition. An implementation agent may supply
+context but never self-certifies as the independent reviewer.
+
+### Initial review
+
+An initial review is required before a code-changing draft pull request is
+created. It reviews the requirements, exact merge base and candidate head,
+and diff. It records:
+
+- a production owner-to-result trace for the changed behavior;
+- cognitive-indirection findings across vocabulary, ownership, files,
+  abstractions, dataflow, decisions, callbacks, effects, failures,
+  compatibility, and legacy;
+- tests rewritten or removed, plus confirmation production was not compromised
+  for tests;
+- behavior and judgment not proven by automation;
+- complete review findings and resolution/status, plus the legacy candidate
+  count and one disposition for every identified item; and
+- reviewer, findings, unresolved counts, exact SHAs, and verdict.
+
+### Milestone review
+
+A milestone review is required when a new ownership, control-flow, or legacy
+family appears. It uses the same fields as the initial review and explains the
+new family. It does not replace the final review. Its complete findings status
+and legacy candidate count cover the newly introduced family as well as the
+current candidate tree.
+
+### Final review
+
+A final review is required before the pull request is ready for merge. The
+separate agent or human reviewer freezes the candidate base and head, traces
+every changed production path from entry owner to result, and reviews the
+initial legacy baseline, automated candidates, changed files, and actual
+production call paths for unnamed legacy. Its complete findings status records
+the resolution of every correctness, safety, contract, and other human-review
+finding; its legacy candidate count matches the final ledger.
+
+Completed work requires zero unresolved Critical or Important findings. A
+production change invalidates the final review and any retained-legacy approval;
+repeat the complete code and legacy review against the new exact candidate
+head SHA.
+
+## Legacy ledger and human approval
+
+### Changed production legacy candidate report
+
+Run the warning-oriented changed-diff report before each initial, milestone, and
+final review:
+
+```sh
+npm run review:legacy -- <merge-base> <candidate-head>
+```
+
+It inspects changed runtime production files under `apps/**` and `packages/**`,
+plus deployed operational support under `scripts/deploy/**` and
+`scripts/github-actions/**`. It excludes tests, documentation, and governance
+tooling. It reports stable candidate IDs for legacy vocabulary, compatibility
+exports, predecessor modes, parallel old/new paths, and duplicate adapter or
+route targets. A candidate is review evidence, not a finding that the path is
+wrong: vocabulary and diff patterns cannot decide legitimacy.
+
+A clean report does not prove that no production legacy exists. The reviewer
+still traces the actual changed production call paths. Copy every reported ID,
+path, symbol, and exactly one disposition into the final legacy ledger. To
+check a prepared metadata record against the report, run:
+
+```sh
+npm run review:legacy -- <merge-base> <candidate-head> \
+  --review-record path/to/pull-request-body.md \
+  --registry docs/production-legacy-exceptions.md
+```
+
+Candidate presence remains warning/report evidence. A supplied ledger must have
+the exact candidate-ID set for the reviewed stage: no stale, extra, duplicate,
+or missing items, and its count must equal both its items and the report.
+Classify an actual legacy item as `legacy` and give it one of the four mandatory
+dispositions. Classify a heuristic false positive as `not-legacy` and provide a
+concrete, non-placeholder rationale. A retained final item must include complete
+`retainedLegacy` approval metadata and appear in the durable registry. This
+command validates their shape, but not semantic quality or whether the cited
+GitHub review is a trusted human approval; those remain the PR record validator
+and human's responsibility.
+
+Every legacy item in the active plan's affected production surface has exactly
+one disposition:
+
+- `removed`;
+- `minimized-boundary`: a thin, explicitly named compatibility boundary that
+  delegates to the canonical implementation and contains no duplicate business
+  logic;
+- `resolved`; or
+- `retained-pending-human-approval`.
+
+The record names the relevant legacy baseline and automated candidate report,
+but a clean report is not proof that no legacy exists. The final reviewer traces
+the production call path.
+
+For each proposed retained item, present the human with its exact path and
+symbol; purpose and current consumer or operational dependency; why removal is
+unsafe now; minimization already performed; canonical implementation owner;
+tests protecting compatibility rather than internal structure; named owner;
+review or removal condition; and exact candidate head SHA.
+
+The final visible `Legacy ledger and dispositions` field is the canonical,
+sorted human approval ledger. Retained items enrich the normal ID, path,
+symbol, and disposition with purpose, consumer dependency, unsafe-removal
+reason, minimization, canonical owner, compatibility tests, named owner,
+review/removal condition, and approved production SHA. The trusted approval's
+whole-ledger SHA-256 is calculated from exactly that visible projection; there
+is no second unbound retained-details block.
+
+Silence, an issue, an earlier plan approval, agent judgment, or automation is
+not approval. Only an explicit human GitHub approval for the exact production
+SHA and whole-ledger hash can retain the item. The record and durable registry
+reference the immutable review ID, human login, submitted date, and production
+SHA. Candidate text alone is never approval. A repository-authorized reviewer
+(`OWNER`, `MEMBER`, or `COLLABORATOR`) who is not the PR author must have the
+latest effective substantive GitHub review, which must be `APPROVED`. Record it in the durable
+[production legacy exception registry](./production-legacy-exceptions.md).
+
+The approved production SHA may precede the current candidate head only when
+the later Git diff contains registry evidence and no production path. Any later
+production or corrective change invalidates code review and retained-legacy
+approval and requires a new complete review.
+
+## Automation boundary
+
+The validator verifies required narrative sections, exact-SHA freshness,
+dispositions, unresolved counts, and registry references. It never approves
+semantic quality or a retained item. Human approval remains a human decision.

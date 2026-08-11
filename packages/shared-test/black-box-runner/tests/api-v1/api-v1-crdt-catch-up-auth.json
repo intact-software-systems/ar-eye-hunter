@@ -1,0 +1,289 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "default-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "api-v1-bb-crdt-room-{runId}"
+    },
+    "groupName": {
+      "env": "RALLAR_BB_GROUP_NAME",
+      "default": "API v1 black-box CRDT room {runId}"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "intruderUsername": {
+      "env": "RALLAR_BB_CRDT_INTRUDER_USERNAME",
+      "default": "crdt-nonmember-{runId}"
+    },
+    "intruderPassword": {
+      "env": "RALLAR_BB_CRDT_INTRUDER_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAlice",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createRoom",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "create-{groupId}-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [201, 409],
+        "bodyAnyOf": [
+          { "group": { "groupId": "{groupId}" } },
+          { "error": "string" }
+        ]
+      }
+    },
+    {
+      "name": "registerIntruder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "{intruderUsername}",
+          "password": "{intruderPassword}",
+          "displayName": "CRDT non-member {runId}"
+        }
+      },
+      "expect": {
+        "statusCode": [201, 409]
+      }
+    },
+    {
+      "name": "loginIntruder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{intruderUsername}",
+          "password": "{intruderPassword}"
+        },
+        "outputs": {
+          "intruderClientId": "body.clientId",
+          "intruderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveIntruderAuthHeader",
+      "type": "set",
+      "output": "intruderAuthHeader",
+      "secret": true,
+      "redactAs": "intruderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.intruderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rejectRoomCatchUpForNonMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/catch-up",
+        "headers": {
+          "Authorization": "{intruderAuthHeader}",
+          "x-client-id": "{intruderClientId}"
+        },
+        "body": {
+          "requestId": "catchup-room-nonmember-{runId}",
+          "document": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "scope": "room",
+            "documentType": "black-box-map",
+            "documentId": "room-doc-{runId}",
+            "roomRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "ok": false,
+          "error": "Forbidden: CRDT catch-up authorization required."
+        }
+      }
+    },
+    {
+      "name": "rejectPrincipalCatchUpForNonOwner",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/catch-up",
+        "headers": {
+          "Authorization": "{intruderAuthHeader}",
+          "x-client-id": "{intruderClientId}"
+        },
+        "body": {
+          "requestId": "catchup-principal-nonowner-{runId}",
+          "document": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "scope": "principal",
+            "documentType": "black-box-map",
+            "documentId": "principal-doc-{runId}",
+            "principalId": "{aliceClientId}"
+          }
+        }
+      },
+      "expect": {
+        "status": 403,
+        "body": {
+          "ok": false,
+          "error": "Forbidden: CRDT catch-up authorization required."
+        }
+      }
+    },
+    {
+      "name": "rejectUnauthenticatedCatchUp",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/crdt/catch-up",
+        "body": {
+          "requestId": "catchup-unauthenticated-{runId}",
+          "document": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "scope": "room",
+            "documentType": "black-box-map",
+            "documentId": "room-doc-{runId}",
+            "roomRef": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          }
+        }
+      },
+      "expect": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized: Missing bearer token"
+        }
+      }
+    }
+  ]
+}

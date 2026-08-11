@@ -317,17 +317,13 @@ async function collectSourceFiles(current) {
 
 export function isProductionCodeFile(file) {
   const normalized = file.replace(/\\/gu, '/').toLowerCase();
-  const parts = normalized.split('/');
   if (!checkedExtensions.has(path.extname(normalized))) {
     return false;
   }
-  if (
-    parts.some(
-      (part) => part && (nonProductionPathParts.has(part) || generatedPathPartPattern.test(part)),
-    )
-  ) {
+  if (isNonProductionPath(normalized)) {
     return false;
   }
+  const parts = normalized.split('/');
   const base = parts[parts.length - 1];
   if (isTestRunnerConfigFile(base)) {
     return false;
@@ -341,6 +337,13 @@ export function isProductionCodeFile(file) {
   }
   return !/[\w-]+\.(?:test|spec|mock|fixture|stories)\.(?:d\.[cm]?ts|[cm]ts|tsx|jsx|js)$/u.test(
     base,
+  );
+}
+
+export function isNonProductionPath(file) {
+  const parts = file.replace(/\\/gu, '/').toLowerCase().split('/');
+  return parts.some(
+    (part) => part && (nonProductionPathParts.has(part) || generatedPathPartPattern.test(part)),
   );
 }
 

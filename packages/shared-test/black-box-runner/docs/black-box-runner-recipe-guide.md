@@ -219,7 +219,7 @@ Use HTTP steps for REST API calls and ordinary fetch-compatible network checks.
 
 Common fields:
 
-- `type`: `http` or `http.request`
+- `type`: `http`, `http.request`, or `http.poll-until`
 - `connection`: optional connection name from `connections`
 - `request.method`: HTTP method, defaulting to `GET`
 - `request.path` or `request.url`: endpoint path or absolute URL
@@ -230,9 +230,23 @@ Common fields:
 - `expect.status`: expected HTTP status
 - `expect.statusCode`: expected HTTP status or accepted status array
 - `expect.statusCodes`: accepted status array
+- `expect.headers`: expected response headers by name (case-insensitive), with
+  exact values or the usual type tokens (`string`, `integer`, `any`, `a|b`);
+  only the runner's allow-listed observability headers are observable
+  (`Cache-Control`, `Rallar-Group-Revision`, `Rallar-Presence-Revision`,
+  `Rallar-State-Revision`, `Rallar-State-Source`), so expecting any other name
+  fails
 - `expect.body`: expected response JSON
 - `expect.bodyAnyOf`: accepted response body shapes
-- `expect.comparison`: comparison mode
+- `expect.maxDurationMs`: fail the step when its measured `durationMs` exceeds
+  the bound; a bound never masks the step's own failure, and it also applies to
+  WS steps. Use it for smoke bounds only — do not put latency SLOs into
+  convergence gates
+- `expect.comparison`: comparison mode (`compatible` default, `compatible-structure`,
+  `compatible-complete`, `exact-structure`, `exact`); `compatible-complete` keeps
+  extra object keys tolerated but rejects unexpected array elements, closing the
+  vacuous-assertion gap where `compatible` matches an empty expected array
+  against anything
 - `output`: optional output name for the step result
 - `outputPath`: optional path inside the result to store under `output`
 - `outputs`: optional map of output names to result paths
@@ -275,6 +289,52 @@ Accepted status arrays are useful for idempotent operations:
 }
 ```
 
+An `http.poll-until` step repeats the same request until its own `expect`
+passes, with exponential backoff between attempts. `request.poll` reuses the
+retry field names and adds one duration bound:
+
+- `poll.maxAttempts`: attempt bound, default `10`
+- `poll.maxDurationMs`: elapsed-time bound, default `15000`
+- `poll.backoffMs`: initial backoff, default `100`
+- `poll.backoffMultiplier`: exponential factor, default `2`
+
+Success is the step's own `expect` passing. Exhausting either bound fails the
+step with the last attempt's result plus `pollAttempts`, `pollExhausted`, and
+`pollElapsedMs` report fields. A connection error counts as a failed attempt
+and polling continues within the bounds. `request.retry` still applies inside
+each individual attempt (transport retry), so keep it minimal on polled steps.
+Use `http.poll-until` for read-your-writes and convergence reads instead of
+hand-unrolled `nonBlockingFailure` poll rounds when the poll is one HTTP
+request; rounds that fan out over `parallel` groups stay explicit.
+
+```json
+{
+  "name": "pollGroupConverged",
+  "type": "http.poll-until",
+  "connection": "api",
+  "request": {
+    "method": "GET",
+    "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+    "headers": {
+      "Authorization": "{ownerAuthHeader}",
+      "x-client-id": "{ownerClientId}"
+    },
+    "poll": {
+      "maxAttempts": 8,
+      "maxDurationMs": 10000,
+      "backoffMs": 100,
+      "backoffMultiplier": 2
+    }
+  },
+  "expect": {
+    "status": 200,
+    "body": {
+      "onlineMemberCount": 13
+    }
+  }
+}
+```
+
 ### WS
 
 Use WS steps for raw WebSocket lifecycle and message assertions.
@@ -293,11 +353,21 @@ Common fields:
 - `request.send`, `request.message`, or `request.body`: outbound payload
 - `expect.message`: one expected inbound message
 - `expect.messages`: multiple expected inbound messages
+- `expect.absent`: one partial matcher that must NOT match any buffered message
 - `expect.close`: expected close event
-- `expect.withinMs`: wait timeout
+- `expect.withinMs`: wait timeout, or the full absence window for `expect.absent`
 - `expect.consume`: remove a matched message or close event from the store
 - `expect.ordered`: require expected messages in order
 - `output`, `outputPath`, `outputs`: extract values from the WS step result
+
+An `expect.absent` wait always waits the full `expect.withinMs` window, then
+scans the whole message buffer for the connection: the step fails with the
+offending frame if any message received since the socket opened matches, and
+passes otherwise. Use it for negative delivery contracts such as cross-scope
+isolation ("a session in application B must never receive a frame targeted at
+application A's group"). Pair it with a positive same-scope expectation on the
+same socket first, so a silent dead socket cannot make the absence pass
+vacuously. `expect.absent` applies to `ws.wait` only, not to `ws.send`.
 
 WS steps are transport-level. Do not add Rallar-specific commands such as
 `rallar.messages.ws.send` to the runner core. Express that behavior as a normal
@@ -335,12 +405,20 @@ Common fields:
 - `expect.connection`: target connection for message expectations
 - `expect.message`: expected message or diagnostic event
 - `expect.messages`: multiple expected messages or diagnostic events
+- `expect.absent`: one partial matcher that must NOT match any buffered message
 - `expect.diagnostic`: one expected provider diagnostic event
 - `expect.diagnostics`: multiple expected provider diagnostic events
 - `expect.health`: expected provider health/diagnostic snapshot
 - `expect.close`: expected close event
-- `expect.withinMs`: wait timeout
+- `expect.withinMs`: wait timeout, or the full absence window for `expect.absent`
 - `output`, `outputPath`, `outputs`: extract values from the RTC step result
+
+RTC `expect.absent` has the same semantics as the WS operator: wait the full
+window, then fail with the offending frame when any buffered message matches.
+It is dispatched by the shared client-factory providers (`rallar-signaling`,
+`rallar-memory`, `rallar-browser`, custom `createRtcProviderFromClientFactory`
+providers) and by `rallar-stub`; the `rallar-remote-browser` RTC wait does not
+support it yet.
 
 Provider-specific fields are allowed inside provider-owned objects such as
 `rallar`, `browser`, `control`, or `signaling`. The runner should pass those
@@ -391,12 +469,43 @@ Common fields:
 - `request.actual` or `actual`: actual value
 - `expect.expected`, `expect.expect`, or `expect.body`: expected value
 - `expect.anyOf`: accepted expected values
-- `expect.comparison`: comparison mode
+- `expect.comparators`: value comparators over paths inside the resolved actual
+- `expect.comparison`: comparison mode (`compatible` default, `compatible-structure`,
+  `compatible-complete`, `exact-structure`, `exact`); `compatible-complete` keeps
+  extra object keys tolerated but rejects unexpected array elements, closing the
+  vacuous-assertion gap where `compatible` matches an empty expected array
+  against anything
 - `expect.ignoreJsonKeys`: keys to ignore
 - `expect.ignoreJsonPaths`: paths to ignore
 
 ASSERT steps are useful after a previous step stored a result in `outputs` or
 when a recipe needs to compare two observed payloads.
+
+`expect.comparators` is a list of `{path, ...comparator}` entries evaluated
+against the resolved actual; every failing entry is reported, never just the
+first. Numeric comparators are `gt`, `gte`, `lt`, `lte`, and
+`between: [low, high]` (inclusive); `length` requires an array or string of the
+exact length; string comparators are `contains` and `matches` (a regular
+expression source). Comparator bounds resolve placeholders, so a captured floor
+like `{floorRevision}` works. An ASSERT step may use comparators alone —
+without `expect.body` — or combine them with a body comparison; a path that
+does not resolve is a failure, which is what makes a comparator-based check
+non-vacuous.
+
+```json
+{
+  "name": "assertConvergedStats",
+  "type": "assert",
+  "actual": "{groupStats}",
+  "expect": {
+    "comparators": [
+      { "path": "stats.memberCount", "gte": 1, "lte": 100 },
+      { "path": "activeSessions", "length": 1 },
+      { "path": "receipt.causalRevision.groupRevision", "gte": "{floorRevision}" }
+    ]
+  }
+}
+```
 
 ### SET
 

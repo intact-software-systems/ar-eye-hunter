@@ -12,6 +12,7 @@ export type JsonArray = JsonValue[];
 export interface CompareConfig {
     compareValues: boolean;
     compareExact: boolean;
+    compareArraysComplete: boolean;
     ignoreJsonKeys: string[];
     ignoreJsonPaths: string[];
 }
@@ -265,6 +266,17 @@ function isCompatibleArrays(
         }
     }
 
+    if (config.compareArraysComplete && !config.compareExact) {
+        const actualNotFound = actualToCompare.filter(a => a !== undefined);
+        if (actualNotFound.length > 0) {
+            return toNotCompatible(expected, actual, 'Json array has unexpected elements', {
+                expectedFound: expectedFound.filter(a => a !== undefined),
+                expectedNotFound: expectedNotFound.filter(a => a !== undefined),
+                actualNotFound,
+            });
+        }
+    }
+
     if (config.compareValues) {
         return expectedFound.length === expected.length
             ? toCompatible()
@@ -296,43 +308,59 @@ export function compareJson(expected: JsonValue, actual: JsonValue, config: Comp
 export const COMPARISON = {
     COMPATIBLE_STRUCTURE: 'compatible-structure',
     COMPATIBLE: 'compatible',
+    COMPATIBLE_COMPLETE: 'compatible-complete',
     EXACT_STRUCTURE: 'exact-structure',
     EXACT: 'exact',
 } as const;
 
 export type Comparison = typeof COMPARISON[keyof typeof COMPARISON];
 
+const COMPARE_FLAGS_BY_COMPARISON: Record<
+    Comparison,
+    Pick<CompareConfig, 'compareValues' | 'compareExact' | 'compareArraysComplete'>
+> = {
+    [COMPARISON.COMPATIBLE_STRUCTURE]: {
+        compareValues: false,
+        compareExact: false,
+        compareArraysComplete: false,
+    },
+    [COMPARISON.COMPATIBLE]: {
+        compareValues: true,
+        compareExact: false,
+        compareArraysComplete: false,
+    },
+    [COMPARISON.COMPATIBLE_COMPLETE]: {
+        compareValues: true,
+        compareExact: false,
+        compareArraysComplete: true,
+    },
+    [COMPARISON.EXACT_STRUCTURE]: {
+        compareValues: false,
+        compareExact: true,
+        compareArraysComplete: false,
+    },
+    [COMPARISON.EXACT]: {
+        compareValues: true,
+        compareExact: true,
+        compareArraysComplete: false,
+    },
+};
+
 export function toConfig(
     comparison: Comparison | string,
     ignoreJsonKeys: string[] = [],
     ignoreJsonPaths: string[] = [],
 ): CompareConfig {
-    switch (comparison.toLowerCase()) {
-        case COMPARISON.COMPATIBLE_STRUCTURE:
-            return toConfigDto(false, false, ignoreJsonKeys, ignoreJsonPaths);
-        case COMPARISON.COMPATIBLE:
-            return toConfigDto(true, false, ignoreJsonKeys, ignoreJsonPaths);
-        case COMPARISON.EXACT_STRUCTURE:
-            return toConfigDto(false, true, ignoreJsonKeys, ignoreJsonPaths);
-        case COMPARISON.EXACT:
-            return toConfigDto(true, true, ignoreJsonKeys, ignoreJsonPaths);
-        default:
-            throw {
-                error: 'Comparison unsupported: ' + comparison.toLowerCase(),
-                comparisons: COMPARISON,
-            };
+    const compareFlags = COMPARE_FLAGS_BY_COMPARISON[comparison.toLowerCase() as Comparison];
+    if (compareFlags === undefined) {
+        throw {
+            error: 'Comparison unsupported: ' + comparison.toLowerCase(),
+            comparisons: COMPARISON,
+        };
     }
-}
 
-function toConfigDto(
-    compareValues: boolean,
-    compareExact: boolean,
-    ignoreJsonKeys: string[],
-    ignoreJsonPaths: string[],
-): CompareConfig {
     return {
-        compareValues,
-        compareExact,
+        ...compareFlags,
         ignoreJsonKeys,
         ignoreJsonPaths,
     };

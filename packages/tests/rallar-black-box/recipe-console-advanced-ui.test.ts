@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -22,7 +20,6 @@ import type {
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
     .IS_REACT_ACT_ENVIRONMENT = true;
 
-const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../..');
 const ADVANCED_ROOT = 'apps/rallar-black-box/src/recipe-console/advanced';
 const ACTIVE_WORK_PATH =
     'apps/rallar-black-box/src/recipe-console/app/RecipeConsoleActiveWork.tsx';
@@ -409,47 +406,7 @@ describe('Recipe Console Advanced workspace', () => {
         expect(container.textContent).toBe('Execute owner');
     });
 
-    it('keeps Advanced locally styled, side-effect free, and bounded', () => {
-        const activeWork = source(ACTIVE_WORK_PATH);
-        const workspace = source(WORKSPACE_PATH);
-        const contract = source(`${ADVANCED_ROOT}/advanced-workspace-contract.ts`);
-        const advancedFiles = readdirSync(resolve(REPOSITORY_ROOT, ADVANCED_ROOT), {
-            recursive: true,
-            encoding: 'utf8',
-        }).filter(file => /\.(?:ts|tsx|css)$/.test(file));
-        const advancedSource = advancedFiles
-            .map(file => source(`${ADVANCED_ROOT}/${file}`))
-            .join('\n');
-
-        expect(activeWork).toContain(
-            "const AdvancedWorkspace = lazy(() => import('../advanced/AdvancedWorkspace.tsx'));",
-        );
-        expect(activeWork).not.toMatch(
-            /import\s*\{[^}]*AdvancedWorkspace[^}]*\}\s*from|AdvancedPreview/,
-        );
-        expect(workspace).not.toMatch(
-            /AdvancedWorkspace|AdvancedPreview|(?:from\s+|import\()['"][^'"]*\/advanced\//,
-        );
-        expect(activeWork).not.toMatch(/\bhidden\b|display\s*:\s*none|<Activity\b/);
-        expect(advancedSource).not.toMatch(
-            /(?:from\s+|import\()['"][^'"]*legacy\/|\bfetch\s*\(|\bset(?:Timeout|Interval)\s*\(|(?:registry|Registry)|control-query|ControlConnectionProvider|use-control-workspace|\.\.\/\.\.\/styles\.css/,
-        );
-        expect(advancedSource).not.toMatch(/:global|(^|[}\n])\s*(html|body)\s*[{,]/m);
-        expect(source(`${ADVANCED_ROOT}/AdvancedWorkspace.tsx`))
-            .toContain("import styles from './AdvancedWorkspace.module.css';");
-        const propBody = contract.match(
-            /export type AdvancedWorkspaceProps = Readonly<\{([\s\S]*?)\}>;/,
-        )?.[1] ?? '';
-        expect([...propBody.matchAll(/^    (\w+):/gm)].map(match => match[1]))
-            .toEqual(['sourceSearch', 'selection', 'urlIssues', 'urlState']);
-        expect(lines(ACTIVE_WORK_PATH)).toBeLessThanOrEqual(100);
-        expect(lines(WORKSPACE_PATH)).toBeLessThanOrEqual(220);
-        expect(lines(`${ADVANCED_ROOT}/AdvancedWorkspace.tsx`))
-            .toBeLessThanOrEqual(80);
-        expect(lines(`${ADVANCED_ROOT}/advanced-workspace-model.ts`))
-            .toBeLessThanOrEqual(260);
     });
-});
 
 async function renderAdvanced(
     root: Root,
@@ -508,14 +465,6 @@ function contextRow(container: HTMLElement, field: string): HTMLElement {
     );
     expect(row).not.toBeNull();
     return row!;
-}
-
-function source(path: string): string {
-    return readFileSync(resolve(REPOSITORY_ROOT, path), 'utf8');
-}
-
-function lines(path: string): number {
-    return source(path).trimEnd().split(/\r?\n/).length;
 }
 
 function utf8Bytes(value: string): number {

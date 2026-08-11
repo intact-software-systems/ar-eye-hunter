@@ -366,7 +366,8 @@ async function seedConnectedSession(
   runtimeRepository: FakeRuntimeStateRepository,
   expiresAtEpochMs: number,
 ): Promise<void> {
-  await createClientStatePhaseTestDriver(runtimeRepository, () => 2_000).connectSession(
+  const now = Math.max(2_000, expiresAtEpochMs - 1_000);
+  await createClientStatePhaseTestDriver(runtimeRepository, () => now).connectSession(
     SCOPE,
     'alice',
     'alice-browser',

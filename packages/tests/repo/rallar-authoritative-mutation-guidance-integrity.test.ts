@@ -154,13 +154,11 @@ describe('authoritative mutation guidance integrity', () => {
     expect(testCommands).toContain('npm run test:repo-governance');
     expectAll(packageJson.scripts?.['test:repo-governance'] ?? '', [
       'packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts',
-      'packages/tests/repo/rallar-group-state-owner-integrity.test.ts',
       'packages/tests/repo/rallar-skill-app-examples-integrity.test.ts',
       'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts',
       'packages/tests/repo/repo-code-style-authority-integrity.test.ts',
       'packages/tests/repo/repo-code-style-checker-integrity.test.ts',
       'packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts',
-      'packages/tests/repo/repo-style-structural-lineage-provenance.test.ts',
       'packages/tests/repo/repo-style-check.test.ts',
       'packages/tests/repo/repo-style-layout-rules.test.ts',
       'packages/tests/repo/repo-style-changed-check.test.ts',

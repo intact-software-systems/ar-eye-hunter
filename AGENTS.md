@@ -5,6 +5,8 @@ the repo-local Codex plugin under `.agents/skills/**`.
 
 ## Primary Code Goal
 
+> “The goal is not minimum syntax. The goal is minimum cognitive indirection.”
+
 Code is written first for human developers. Correctness, safety, security,
 compatibility, and required performance are non-negotiable. Within those
 constraints, human understandability is the governing design criterion:
@@ -14,6 +16,13 @@ failures, and call paths a human can locate and follow most directly.
 Every coding and architecture rule is interpreted through this principle. A
 mechanically compliant change is not successful when it makes the code harder
 for a human to understand, review, debug, or modify.
+
+Avoid cognitive indirection: semantic hops through vocabulary, ownership,
+files, abstractions, dataflow, decisions, callbacks, side effects, failures,
+tests, compatibility layers, or legacy paths. Keep a hop only when it exposes a
+real domain, lifecycle, policy, translation, compatibility, protocol, or
+side-effect boundary. The authoritative code standard defines the production,
+test, and legacy-closure rules that follow from this principle.
 
 These human-understandability rules govern all human-authored code, including
 source, scripts, tests, examples, configuration code, and support tooling. A

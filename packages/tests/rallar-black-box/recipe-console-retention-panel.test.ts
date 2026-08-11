@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -240,13 +239,6 @@ describe('RetentionPanel', () => {
             expect(rendered?.textContent).toBe(unsafeId);
             expect(rendered?.getAttribute('dir')).toBe('ltr');
 
-            const css = readFileSync(
-                'apps/rallar-black-box/src/recipe-console/ui/ExactIdentifier.module.css',
-                'utf8',
-            );
-            expect(css).toMatch(/white-space:\s*break-spaces/);
-            expect(css).toMatch(/unicode-bidi:\s*isolate-override/);
-            expect(css).toMatch(/direction:\s*ltr/);
         });
 
     it('has no destructive action for an empty plan or disabled zero cap', async () => {
@@ -357,42 +349,4 @@ describe('RetentionPanel', () => {
             expect(text).toContain('deleted/control/two');
         });
 
-    it('keeps the component source and public props token-free', () => {
-        const componentSource = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/history/RetentionPanel.tsx',
-            'utf8',
-        );
-        const consequenceSource = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/history/RetentionConsequenceViews.tsx',
-            'utf8',
-        );
-        expect(componentSource).toMatch(/import type[\s\S]*use-retention-cleanup/);
-        expect(componentSource).toMatch(/controller:\s*RetentionCleanupController/);
-        expect(componentSource).toMatch(
-            /onRequestConfirm\(returnFocus:\s*HTMLButtonElement\):\s*void/,
-        );
-        expect(consequenceSource).toMatch(/itemKey=\{candidate => candidate\.key\}/);
-        const owners = `${componentSource}\n${consequenceSource}`;
-        expect(owners).not.toMatch(/planToken|rawToken|authorization/i);
-        expect(owners).not.toMatch(/localStorage|sessionStorage|console\.|fetch\s*\(/);
-        expect(owners).not.toMatch(/href=|new URL|encodeURI/);
     });
-
-    it('keeps the flat responsive ledger and every action or summary at 44px',
-        () => {
-            const css = readFileSync(
-                'apps/rallar-black-box/src/recipe-console/history/RetentionPanel.module.css',
-                'utf8',
-            );
-            expect(css.split('\n').length).toBeLessThanOrEqual(300);
-            expect(css).toMatch(
-                /\.actions button\s*\{[\s\S]*?min-height:\s*44px/,
-            );
-            expect(css).toMatch(
-                /\.disclosure summary,[\s\S]*?\.totalDisclosure summary\s*\{[\s\S]*?display:\s*list-item;[\s\S]*?min-height:\s*44px/,
-            );
-            expect(css).toContain('overflow-wrap: anywhere');
-            expect(css).toMatch(/@media \(max-width:\s*560px\)/);
-            expect(css).not.toMatch(/box-shadow|:hover|position:\s*fixed/);
-        });
-});

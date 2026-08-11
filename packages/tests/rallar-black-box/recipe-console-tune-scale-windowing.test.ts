@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,7 +40,6 @@ import {
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 const RUN_COUNT = 5_000;
-const repoRoot = resolve(import.meta.dirname, '../../..');
 
 describe('Recipe Console Tune scale windowing', () => {
     it('indexes 5,000 paired runs linearly and derives only two requested performances', () => {
@@ -202,25 +199,7 @@ describe('Recipe Console Tune scale windowing', () => {
             );
         });
 
-    it('uses searchable bounded listboxes only on Tune pressure selectors', () => {
-        const sources = [
-            'apps/rallar-black-box/src/recipe-console/tune/TuneSourceSelection.tsx',
-            'apps/rallar-black-box/src/recipe-console/tune/TuneCandidate.tsx',
-            'apps/rallar-black-box/src/recipe-console/tune/TuneWorkspace.tsx',
-        ].map(path => readFileSync(resolve(repoRoot, path), 'utf8'));
-
-        expect(sources.join('\n')).not.toMatch(/<select\b/u);
-        expect(sources[0]).toMatch(/TuneRunPicker/u);
-        expect(sources[1]).toMatch(/TuneKnobPicker/u);
-        expect(sources[0].match(/createTuneRunPickerModel\(selection\)/gu))
-            .toHaveLength(1);
-        expect(sources[0].match(/model=\{runPicker\}/gu)).toHaveLength(2);
-        expect(sources[1]).toMatch(
-            /tuneCandidateFingerprint\(\s*source,\s*index\.revisionKey/gu,
-        );
-        expect(sources[2]).not.toMatch(/tuneCandidateFingerprint/u);
     });
-});
 
 describe('Recipe Console Tune pressure UI', () => {
     let container: HTMLDivElement;

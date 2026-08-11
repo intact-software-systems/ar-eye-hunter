@@ -7,7 +7,10 @@
       "recipe": "examples/rtc-rallar-memory-delivery-semantics.json",
       "category": "generic-runner-semantics",
       "mode": "run",
-      "profiles": ["quick", "deterministic"],
+      "profiles": [
+        "quick",
+        "deterministic"
+      ],
       "expectedExitCode": 0,
       "artifactName": "memory-delivery",
       "description": "Deterministic in-memory direct and broadcast delivery smoke."
@@ -17,7 +20,10 @@
       "recipe": "examples/rtc-rallar-memory-routing-failures.json",
       "category": "generic-runner-semantics",
       "mode": "run",
-      "profiles": ["deterministic", "failure-diagnostics"],
+      "profiles": [
+        "deterministic",
+        "failure-diagnostics"
+      ],
       "expectedExitCode": 1,
       "artifactName": "memory-routing-failures",
       "description": "Intentional no-recipient and closed-target failures for report diagnostics."
@@ -27,7 +33,10 @@
       "recipe": "examples/rtc-rallar-memory-same-connection-soak.json",
       "category": "generic-runner-semantics",
       "mode": "run",
-      "profiles": ["deterministic", "soak"],
+      "profiles": [
+        "deterministic",
+        "soak"
+      ],
       "expectedExitCode": 0,
       "artifactName": "memory-same-connection-soak",
       "description": "Deterministic same-connection RTC soak with setup once, repeated send/wait loops, and cleanup once."
@@ -37,7 +46,10 @@
       "recipe": "examples/rtc-rallar-memory-seeded-traffic.json",
       "category": "generic-runner-semantics",
       "mode": "run",
-      "profiles": ["deterministic", "traffic"],
+      "profiles": [
+        "deterministic",
+        "traffic"
+      ],
       "expectedExitCode": 0,
       "artifactName": "memory-seeded-traffic",
       "description": "Deterministic seeded traffic plan that expands weighted RTC operations into a replayable concrete plan."
@@ -47,7 +59,10 @@
       "recipe": "examples/rtc-rallar-memory-inline-loop-pacing.json",
       "category": "generic-runner-semantics",
       "mode": "run",
-      "profiles": ["deterministic", "traffic"],
+      "profiles": [
+        "deterministic",
+        "traffic"
+      ],
       "expectedExitCode": 0,
       "artifactName": "memory-inline-loop-pacing",
       "description": "Deterministic inline loop recipe that sends RTC frames at a configured realtime rate."
@@ -57,7 +72,10 @@
       "recipe": "examples/rallar-crdt-diagnostics.json",
       "category": "rallar-crdt",
       "mode": "run",
-      "profiles": ["quick", "deterministic"],
+      "profiles": [
+        "quick",
+        "deterministic"
+      ],
       "expectedExitCode": 0,
       "artifactName": "crdt-diagnostics",
       "description": "Deterministic CRDT envelope, duplicate-delivery, dependency-repair, and debug-replay diagnostic recipe."
@@ -67,7 +85,10 @@
       "recipe": "examples/rallar-crdt-corruption-recovery.json",
       "category": "rallar-crdt",
       "mode": "run",
-      "profiles": ["quick", "deterministic"],
+      "profiles": [
+        "quick",
+        "deterministic"
+      ],
       "expectedExitCode": 0,
       "artifactName": "crdt-corruption-recovery",
       "description": "Deterministic CRDT corrupt snapshot quarantine, debug integrity, and backup-restore diagnostic recipe."
@@ -77,7 +98,11 @@
       "recipe": "examples/rallar-crdt-browser-ws-convergence.json",
       "category": "rallar-crdt",
       "mode": "run",
-      "profiles": ["browser-live", "live", "live-crdt"],
+      "profiles": [
+        "browser-live",
+        "live",
+        "live-crdt"
+      ],
       "expectedExitCode": 0,
       "artifactName": "crdt-browser-ws-convergence-live",
       "requires": {
@@ -104,7 +129,11 @@
       "recipe": "examples/rallar-crdt-browser-rtc-with-ws-fallback.json",
       "category": "rallar-crdt",
       "mode": "run",
-      "profiles": ["browser-live", "live", "live-crdt"],
+      "profiles": [
+        "browser-live",
+        "live",
+        "live-crdt"
+      ],
       "expectedExitCode": 0,
       "artifactName": "crdt-browser-rtc-with-ws-fallback-live",
       "requires": {
@@ -131,7 +160,11 @@
       "recipe": "examples/rallar-crdt-browser-durable-late-join-catchup.json",
       "category": "rallar-crdt",
       "mode": "run",
-      "profiles": ["browser-live", "live", "live-crdt"],
+      "profiles": [
+        "browser-live",
+        "live",
+        "live-crdt"
+      ],
       "expectedExitCode": 0,
       "artifactName": "crdt-browser-durable-late-join-catchup-live",
       "requires": {
@@ -158,7 +191,11 @@
       "recipe": "examples/rallar-crdt-browser-local-persistence-reopen.json",
       "category": "rallar-crdt",
       "mode": "run",
-      "profiles": ["browser-live", "live", "live-crdt"],
+      "profiles": [
+        "browser-live",
+        "live",
+        "live-crdt"
+      ],
       "expectedExitCode": 0,
       "artifactName": "crdt-browser-local-persistence-reopen-live",
       "requires": {
@@ -183,7 +220,10 @@
       "recipe": "examples/rallar-crdt-admin-http-integrity.json",
       "category": "rallar-crdt",
       "mode": "run",
-      "profiles": ["live", "live-crdt"],
+      "profiles": [
+        "live",
+        "live-crdt"
+      ],
       "expectedExitCode": 0,
       "artifactName": "crdt-admin-http-integrity-live",
       "requires": {
@@ -207,7 +247,10 @@
       "recipe": "examples/rtc-rallar-memory-parallel-groups.json",
       "category": "generic-runner-semantics",
       "mode": "run",
-      "profiles": ["deterministic", "parallel"],
+      "profiles": [
+        "deterministic",
+        "parallel"
+      ],
       "expectedExitCode": 0,
       "artifactName": "memory-parallel-groups",
       "description": "Deterministic bounded parallel RTC groups covering direct and broadcast delivery."
@@ -217,7 +260,10 @@
       "recipe": "examples/rtc-rallar-browser-connect.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["quick", "dry"],
+      "profiles": [
+        "quick",
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-connect-dry",
       "description": "Dry-run browser-backed connect/close recipe expansion."
@@ -227,7 +273,10 @@
       "recipe": "examples/rtc-rallar-browser-connect.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live"],
+      "profiles": [
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-connect-live",
       "requires": {
@@ -254,7 +303,10 @@
       "recipe": "examples/rtc-rallar-browser-realtime.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["quick", "dry"],
+      "profiles": [
+        "quick",
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-realtime-dry",
       "description": "Dry-run realtime RTC recipe expansion."
@@ -264,7 +316,10 @@
       "recipe": "examples/rtc-rallar-browser-realtime.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live"],
+      "profiles": [
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-realtime-live",
       "requires": {
@@ -291,7 +346,10 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["quick", "dry"],
+      "profiles": [
+        "quick",
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-messages-rtc-dry",
       "description": "Dry-run app-level messages.rtc recipe expansion."
@@ -301,7 +359,10 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live"],
+      "profiles": [
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-messages-rtc-live",
       "requires": {
@@ -328,7 +389,11 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-same-connection-soak.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["live-soak", "browser-live", "live"],
+      "profiles": [
+        "live-soak",
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-messages-rtc-same-connection-soak-live",
       "requires": {
@@ -355,7 +420,11 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-seeded-traffic.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["live-traffic", "browser-live", "live"],
+      "profiles": [
+        "live-traffic",
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-messages-rtc-seeded-traffic-live",
       "requires": {
@@ -382,7 +451,11 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-parallel-groups.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["live-parallel", "browser-live", "live"],
+      "profiles": [
+        "live-parallel",
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-messages-rtc-parallel-groups-live",
       "requires": {
@@ -409,7 +482,9 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-multicast.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["dry"],
+      "profiles": [
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-messages-rtc-multicast-dry",
       "description": "Dry-run app-level messages.rtc multicast recipe expansion."
@@ -419,7 +494,10 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-multicast.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live"],
+      "profiles": [
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-messages-rtc-multicast-live",
       "requires": {
@@ -448,7 +526,10 @@
       "recipe": "examples/rtc-rallar-browser-provider-mode-parity.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["quick", "dry"],
+      "profiles": [
+        "quick",
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-provider-mode-parity-dry",
       "description": "Dry-run local browser provider-mode parity recipe."
@@ -458,7 +539,11 @@
       "recipe": "examples/rtc-rallar-browser-provider-mode-parity.json",
       "category": "rallar-remote-browser",
       "mode": "dry-run",
-      "profiles": ["quick", "dry", "remote-dry"],
+      "profiles": [
+        "quick",
+        "dry",
+        "remote-dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "remote-provider-mode-parity-dry",
       "env": {
@@ -471,7 +556,10 @@
       "recipe": "examples/rtc-rallar-browser-provider-mode-parity.json",
       "category": "rallar-remote-browser",
       "mode": "run",
-      "profiles": ["remote-live", "live"],
+      "profiles": [
+        "remote-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "remote-provider-mode-parity-live",
       "env": {
@@ -507,7 +595,11 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-same-connection-soak.json",
       "category": "rallar-remote-browser",
       "mode": "run",
-      "profiles": ["live-soak", "remote-live", "live"],
+      "profiles": [
+        "live-soak",
+        "remote-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "remote-messages-rtc-same-connection-soak-live",
       "env": {
@@ -543,7 +635,11 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-seeded-traffic.json",
       "category": "rallar-remote-browser",
       "mode": "run",
-      "profiles": ["live-traffic", "remote-live", "live"],
+      "profiles": [
+        "live-traffic",
+        "remote-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "remote-messages-rtc-seeded-traffic-live",
       "env": {
@@ -579,7 +675,11 @@
       "recipe": "examples/rtc-rallar-browser-messages-rtc-parallel-groups.json",
       "category": "rallar-remote-browser",
       "mode": "run",
-      "profiles": ["live-parallel", "remote-live", "live"],
+      "profiles": [
+        "live-parallel",
+        "remote-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "remote-messages-rtc-parallel-groups-live",
       "env": {
@@ -615,7 +715,9 @@
       "recipe": "examples/rtc-rallar-browser-scoped-workspaces.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["dry"],
+      "profiles": [
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-scoped-workspaces-dry",
       "description": "Dry-run scoped-workspace delivery recipe expansion."
@@ -625,7 +727,10 @@
       "recipe": "examples/rtc-rallar-browser-scoped-workspaces.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live"],
+      "profiles": [
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-scoped-workspaces-live",
       "requires": {
@@ -654,7 +759,9 @@
       "recipe": "examples/rtc-rallar-browser-not-yet-in-sync.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["dry"],
+      "profiles": [
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-not-yet-in-sync-dry",
       "description": "Dry-run stale-state NACK recipe expansion."
@@ -664,7 +771,10 @@
       "recipe": "examples/rtc-rallar-browser-not-yet-in-sync.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live"],
+      "profiles": [
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-not-yet-in-sync-live",
       "requires": {
@@ -691,7 +801,9 @@
       "recipe": "examples/rtc-rallar-browser-readiness-diagnostics.json",
       "category": "rallar-browser",
       "mode": "dry-run",
-      "profiles": ["dry"],
+      "profiles": [
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-readiness-diagnostics-dry",
       "description": "Dry-run readiness diagnostics recipe expansion."
@@ -701,7 +813,10 @@
       "recipe": "examples/rtc-rallar-browser-readiness-diagnostics.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live"],
+      "profiles": [
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "browser-readiness-diagnostics-live",
       "requires": {
@@ -726,7 +841,11 @@
       "recipe": "examples/rtc-rallar-browser-timeout-diagnostics.json",
       "category": "rallar-browser",
       "mode": "run",
-      "profiles": ["browser-live", "live", "failure-diagnostics"],
+      "profiles": [
+        "browser-live",
+        "live",
+        "failure-diagnostics"
+      ],
       "expectedExitCode": 1,
       "artifactName": "browser-timeout-diagnostics-live",
       "requires": {
@@ -751,7 +870,10 @@
       "recipe": "examples/rallar-server-register-login.json",
       "category": "rallar-server",
       "mode": "run",
-      "profiles": ["rallar-server-live", "live"],
+      "profiles": [
+        "rallar-server-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "rallar-server-register-login-live",
       "requires": {
@@ -770,7 +892,10 @@
       "recipe": "examples/rallar-server-auth-group-ws-smoke.json",
       "category": "rallar-server",
       "mode": "run",
-      "profiles": ["rallar-server-live", "live"],
+      "profiles": [
+        "rallar-server-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "rallar-server-auth-group-ws-smoke-live",
       "requires": {
@@ -789,7 +914,10 @@
       "recipe": "examples/rallar-server-negative-auth.json",
       "category": "rallar-server",
       "mode": "run",
-      "profiles": ["rallar-server-live", "live"],
+      "profiles": [
+        "rallar-server-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "rallar-server-negative-auth-live",
       "requires": {
@@ -808,7 +936,11 @@
       "recipe": "examples/rallar-server-ws-rtc-payload-parity.json",
       "category": "mixed-rallar-server-browser",
       "mode": "run",
-      "profiles": ["rallar-server-live", "browser-live", "live"],
+      "profiles": [
+        "rallar-server-live",
+        "browser-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "rallar-server-ws-rtc-payload-parity-live",
       "requires": {
@@ -835,7 +967,11 @@
       "recipe": "tests/api-v1/api-v1-auth-session.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 2,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-auth-session",
       "requires": {
@@ -854,7 +990,11 @@
       "recipe": "tests/api-v1/api-v1-group-presence.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-presence",
       "requires": {
@@ -873,7 +1013,11 @@
       "recipe": "tests/api-v1/api-v1-client-state.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-client-state",
       "requires": {
@@ -892,7 +1036,11 @@
       "recipe": "tests/api-v1/api-v1-websocket-topic-routing.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-websocket-topic-routing",
       "requires": {
@@ -911,15 +1059,32 @@
       "recipe": "tests/api-v1/api-v1-state-read-convergence.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box-cluster"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-state-read-convergence",
       "requires": {
-        "livePreflight": { "timeoutMs": 10000 },
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
         "httpServices": [
-          { "name": "Rallar API primary", "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
-          { "name": "Rallar API secondary", "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
-          { "name": "Rallar API tertiary", "env": "RALLAR_API_BASE_URL_TERTIARY", "default": "http://127.0.0.1:18082" }
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
         ]
       },
       "description": "Three-server REST point-read convergence with scalar and causal floor/header evidence."
@@ -929,7 +1094,10 @@
       "recipe": "tests/api-v1/api-v1-rtc-topology-convergence.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box-cluster"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-rtc-topology-convergence",
       "requires": {
@@ -961,7 +1129,10 @@
       "recipe": "tests/api-v1/api-v1-state-topology-churn.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box-cluster"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-state-topology-churn",
       "requires": {
@@ -993,7 +1164,10 @@
       "recipe": "tests/api-v1/api-v1-state-write-convergence.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box-cluster"],
+      "tier": 2,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-state-write-convergence",
       "requires": {
@@ -1025,7 +1199,11 @@
       "recipe": "tests/api-v1/api-v1-crdt-app-inbox.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box-cluster", "api-v1-black-box-crdt"],
+      "tier": 2,
+      "profiles": [
+        "api-v1-black-box-cluster",
+        "api-v1-black-box-crdt"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-crdt-app-inbox",
       "requires": {
@@ -1057,7 +1235,10 @@
       "recipe": "tests/api-v1/api-v1-state-medium-scale-churn.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box-medium-scale"],
+      "tier": 2,
+      "profiles": [
+        "api-v1-black-box-medium-scale"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-state-medium-scale-churn",
       "requires": {
@@ -1086,7 +1267,11 @@
       "recipe": "tests/api-v1/api-v1-group-formation-burst-small.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-formation-burst-small",
       "requires": {
@@ -1105,7 +1290,11 @@
       "recipe": "tests/api-v1/api-v1-group-formation-burst-medium.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-formation-burst-medium",
       "requires": {
@@ -1124,7 +1313,10 @@
       "recipe": "tests/api-v1/api-v1-group-formation-burst-large.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box-formation-large"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-formation-large"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-formation-burst-large",
       "requires": {
@@ -1153,7 +1345,11 @@
       "recipe": "tests/api-v1/api-v1-scope-isolation.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-scope-isolation",
       "requires": {
@@ -1172,7 +1368,11 @@
       "recipe": "tests/api-v1/api-v1-openapi-topology-auth.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-openapi-topology-auth",
       "requires": {
@@ -1191,7 +1391,11 @@
       "recipe": "tests/api-v1/api-v1-admin-operations.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 2,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-admin-operations",
       "requires": {
@@ -1210,7 +1414,11 @@
       "recipe": "tests/api-v1/api-v1-admin-support.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-admin-support",
       "requires": {
@@ -1229,7 +1437,10 @@
       "recipe": "tests/api-v1/api-v1-black-box-control-auth.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-black-box-control-auth",
       "requires": {
@@ -1248,7 +1459,10 @@
       "recipe": "tests/api-v1/api-v1-ice-config.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-ice-config",
       "requires": {
@@ -1267,7 +1481,11 @@
       "recipe": "tests/api-v1/api-v1-spa-statistics.json",
       "category": "api-v1-black-box",
       "mode": "run",
-      "profiles": ["api-v1-black-box", "api-v1-black-box-recipes"],
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-spa-statistics",
       "requires": {
@@ -1282,11 +1500,151 @@
       "description": "No-browser API-v1 SPA statistics missing-auth denial, non-member group denial, scoped success reads, and OpenAPI contract coverage."
     },
     {
+      "id": "api-v1-crdt-catch-up-auth",
+      "recipe": "tests/api-v1/api-v1-crdt-catch-up-auth.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-crdt-catch-up-auth",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 durable CRDT catch-up authorization: non-member room denial, non-owner principal denial, and unauthenticated denial."
+    },
+    {
+      "id": "api-v1-presence-lease-bound",
+      "recipe": "tests/api-v1/api-v1-presence-lease-bound.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-presence-lease-bound",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 presence lease bounding: group and client sessions reject far-future connect/heartbeat timestamps while normal connects still succeed."
+    },
+    {
+      "id": "api-v1-cross-application-ws-isolation",
+      "recipe": "tests/api-v1/api-v1-cross-application-ws-isolation.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-cross-application-ws-isolation",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 cross-application WS isolation: the same groupId in two applications delivers group frames only inside each scope, proven with positive same-scope controls and expect.absent negative waits."
+    },
+    {
+      "id": "api-v1-read-your-writes-presence",
+      "recipe": "tests/api-v1/api-v1-read-your-writes-presence.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-read-your-writes-presence",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 read-your-writes: after a presence connect, an http.poll-until floor read must show the session in activeSessions under compatible-complete, not merely satisfy the causal floor."
+    },
+    {
+      "id": "api-v1-cross-principal-client-state-isolation",
+      "recipe": "tests/api-v1/api-v1-cross-principal-client-state-isolation.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-cross-principal-client-state-isolation",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 cross-principal isolation: two principals in the same workspace without a shared group prove own client-state.snapshot delivery, then expect.absent proves neither socket ever receives a frame targeted at the other principal (requires damped group formation)."
+    },
+    {
+      "id": "api-v1-member-stats-negative-shape",
+      "recipe": "tests/api-v1/api-v1-member-stats-negative-shape.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-member-stats-negative-shape",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 negative shape: group stats return the owner block to the owner (path-resolution positive control) and omit it for a plain member, asserted via the missing-observation sentinel."
+    },
+    {
       "id": "rallar-signaling-two-peer-chat-dry",
       "recipe": "examples/rtc-rallar-two-peer-chat.json",
       "category": "rallar-signaling",
       "mode": "dry-run",
-      "profiles": ["dry"],
+      "profiles": [
+        "dry"
+      ],
       "expectedExitCode": 0,
       "artifactName": "rallar-signaling-two-peer-chat-dry",
       "description": "Dry-run signaling-only two-peer chat recipe expansion."
@@ -1296,11 +1654,16 @@
       "recipe": "examples/rtc-rallar-two-peer-chat.json",
       "category": "rallar-signaling",
       "mode": "run",
-      "profiles": ["signaling-live", "live"],
+      "profiles": [
+        "signaling-live",
+        "live"
+      ],
       "expectedExitCode": 0,
       "artifactName": "rallar-signaling-two-peer-chat-live",
       "requires": {
-        "env": ["RALLAR_SIGNALING_URL"]
+        "env": [
+          "RALLAR_SIGNALING_URL"
+        ]
       },
       "description": "Live signaling-only provider check. Requires a signaling server URL."
     }
