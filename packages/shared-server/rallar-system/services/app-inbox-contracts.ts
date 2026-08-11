@@ -70,12 +70,19 @@ export class AppInboxIdempotencyConflictError extends Error {
     readonly code = 'app-inbox-idempotency-conflict';
     readonly status = 409;
 
+    readonly resourceId: string;
+    readonly existingCommandHash: string;
+    readonly receivedCommandHash: string;
+
     constructor(
-        readonly resourceId: string,
-        readonly existingCommandHash: string,
-        readonly receivedCommandHash: string,
+        resourceId: string,
+        existingCommandHash: string,
+        receivedCommandHash: string,
     ) {
         super(`App inbox idempotency conflict for resource ${resourceId}`);
+        this.resourceId = resourceId;
+        this.existingCommandHash = existingCommandHash;
+        this.receivedCommandHash = receivedCommandHash;
         this.name = 'AppInboxIdempotencyConflictError';
     }
 }
@@ -84,8 +91,11 @@ export class AppInboxReservationConflictError extends Error {
     readonly code = 'app-inbox-reservation-conflict';
     readonly status = 409;
 
-    constructor(readonly key: Key) {
+    readonly key: Key;
+
+    constructor(key: Key) {
         super(`App inbox reservation changed before completion: ${JSON.stringify(key)}`);
+        this.key = key;
         this.name = 'AppInboxReservationConflictError';
     }
 }

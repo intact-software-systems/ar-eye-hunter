@@ -670,7 +670,11 @@ type FakeSupportReaderOptions = Readonly<{
 class FakeSupportReader {
   readonly calls: unknown[] = [];
 
-  constructor(private readonly options: FakeSupportReaderOptions = {}) {}
+  private readonly options: FakeSupportReaderOptions;
+
+  constructor(options: FakeSupportReaderOptions = {}) {
+    this.options = options;
+  }
 
   async readQueueEntry(
     key: Key,

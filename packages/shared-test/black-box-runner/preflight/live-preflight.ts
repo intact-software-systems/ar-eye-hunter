@@ -137,12 +137,17 @@ const VOCABULARY: readonly BlackBoxRunnerLivePreflightCheckKind[] = [
 ]
 
 class LivePreflightCheckError extends Error {
+    readonly code: string;
+    readonly details: JsonRecord;
+
     constructor(
-        readonly code: string,
+        code: string,
         message: string,
-        readonly details: JsonRecord = {},
+        details: JsonRecord = {},
     ) {
         super(message)
+        this.code = code;
+        this.details = details;
     }
 }
 

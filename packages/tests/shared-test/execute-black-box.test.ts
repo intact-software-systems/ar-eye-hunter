@@ -660,7 +660,10 @@ describe('executeBlackBox', () => {
             onclose: ((event: unknown) => void) | undefined;
             onerror: ((event: unknown) => void) | undefined;
 
-            constructor(public readonly url: string) {
+            public readonly url: string;
+
+            constructor(url: string) {
+                this.url = url;
                 setTimeout(() => {
                     this.readyState = FakeWebSocket.OPEN;
                     this.onopen?.({

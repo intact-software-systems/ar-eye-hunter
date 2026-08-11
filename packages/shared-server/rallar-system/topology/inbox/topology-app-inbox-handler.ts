@@ -47,7 +47,11 @@ interface TopologyReconfigureInboxResult {
 type TopologyAppInboxResult = TopologyConfigInboxResult | TopologyReconfigureInboxResult;
 
 export class TopologyAppInboxHandler {
-  constructor(private readonly dependencies: TopologyAppInboxHandlerDependencies) {}
+  private readonly dependencies: TopologyAppInboxHandlerDependencies;
+
+  constructor(dependencies: TopologyAppInboxHandlerDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async createAuthenticatedEnqueue<V>(
     enqueue: AppInboxEnqueueInput<V>,

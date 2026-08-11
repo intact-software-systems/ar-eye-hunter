@@ -30,7 +30,11 @@ export interface RtcRttAppInboxHandlerDependencies {
 }
 
 export class RtcRttAppInboxHandler {
-  constructor(private readonly dependencies: RtcRttAppInboxHandlerDependencies) {}
+  private readonly dependencies: RtcRttAppInboxHandlerDependencies;
+
+  constructor(dependencies: RtcRttAppInboxHandlerDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async createEnqueue(
     input: CreateRtcRttAppInboxEnqueueInput,

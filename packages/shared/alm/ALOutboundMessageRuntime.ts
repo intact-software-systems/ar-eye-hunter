@@ -236,9 +236,12 @@ export class ALOutboundMessageRuntime<TPrepared> {
     private runningEffectDrain = false;
     private disposed = false;
 
+    private readonly input: ALOutboundMessageRuntimeInput<TPrepared>;
+
     constructor(
-        private readonly input: ALOutboundMessageRuntimeInput<TPrepared>,
+        input: ALOutboundMessageRuntimeInput<TPrepared>,
     ) {
+        this.input = input;
         this.admissionStore = input.stores?.admissionStore ?? createALOutboundAdmissionStore({
             kind: 'memory',
             namespace: 'al-outbound-runtime',

@@ -32,7 +32,11 @@ type ResultRow = Readonly<{
 }>;
 
 export class PSqlAdminSupportReader implements AdminSupportReader {
-  constructor(private readonly sql: PSqlSql) {}
+  private readonly sql: PSqlSql;
+
+  constructor(sql: PSqlSql) {
+    this.sql = sql;
+  }
 
   async readQueueEntry(
     key: Key,

@@ -37,11 +37,19 @@ type Observation = {
 export class PSqlAdmissionMutationCollector {
     private readonly observations = new Map<string, Observation>();
 
+    private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    private readonly namespace: string;
+    private readonly nowEpochMs: () => number;
+
     constructor(
-        private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        private readonly namespace: string,
-        private readonly nowEpochMs: () => number = () => Date.now(),
-    ) {}
+        repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+        namespace: string,
+        nowEpochMs: () => number = () => Date.now(),
+    ) {
+        this.repository = repository;
+        this.namespace = namespace;
+        this.nowEpochMs = nowEpochMs;
+    }
 
     async get<V>(key: string): Promise<V | undefined> {
         return (await this.observe(key)).value as V | undefined;

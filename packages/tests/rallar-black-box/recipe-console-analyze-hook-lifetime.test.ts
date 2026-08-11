@@ -715,10 +715,15 @@ class ControllableWorker {
     readonly terminate = vi.fn();
     readonly #listeners = new Map<string, Set<EventListener>>();
 
+    readonly url: string | URL;
+    readonly options?: WorkerOptions;
+
     constructor(
-        readonly url: string | URL,
-        readonly options?: WorkerOptions,
+        url: string | URL,
+        options?: WorkerOptions,
     ) {
+        this.url = url;
+        this.options = options;
         ControllableWorker.instances.push(this);
     }
 

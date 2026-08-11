@@ -23,7 +23,11 @@ export interface AuthInboxHandlerDependencies {
 }
 
 export class AuthInboxHandler {
-  constructor(private readonly dependencies: AuthInboxHandlerDependencies) {}
+  private readonly dependencies: AuthInboxHandlerDependencies;
+
+  constructor(dependencies: AuthInboxHandlerDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async processAuthMutation(
     commandCandidate: unknown,

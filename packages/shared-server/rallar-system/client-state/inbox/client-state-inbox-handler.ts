@@ -70,7 +70,11 @@ interface WriteMissingSessionDisconnectInput {
 type AuthorisedWsClientMutationResult = ClientStateWritten | InactiveAuthorisedWsSession;
 
 export class ClientStateInboxHandler {
-  constructor(private readonly dependencies: ClientStateInboxHandlerDependencies) {}
+  private readonly dependencies: ClientStateInboxHandlerDependencies;
+
+  constructor(dependencies: ClientStateInboxHandlerDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async processCommand(
     context: AppInboxMessageContext,

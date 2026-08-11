@@ -69,10 +69,15 @@ function nowMs(): number {
 }
 
 export class SWBucket {
+    public readonly from: number;
+    public readonly to: number;
+
     constructor(
-        public readonly from: number,
-        public readonly to: number,
+        from: number,
+        to: number,
     ) {
+        this.from = from;
+        this.to = to;
     }
 
     isInBucket(val: number): boolean {
@@ -81,20 +86,34 @@ export class SWBucket {
 }
 
 export class SWStatus {
+    public readonly counter: AtomicLong;
+    public readonly createdTs: number;
+
     constructor(
-        public readonly counter: AtomicLong,
-        public readonly createdTs: number,
+        counter: AtomicLong,
+        createdTs: number,
     ) {
+        this.counter = counter;
+        this.createdTs = createdTs;
     }
 }
 
 export class SlidingWindowCounter {
+    public readonly windowMs: number;
+    public readonly bucketMs: number;
+    public readonly counterByBucket: Map<SWBucket, SWStatus>;
+    public readonly createdTs: number;
+
     constructor(
-        public readonly windowMs: number,
-        public readonly bucketMs: number,
-        public readonly counterByBucket: Map<SWBucket, SWStatus>,
-        public readonly createdTs: number,
+        windowMs: number,
+        bucketMs: number,
+        counterByBucket: Map<SWBucket, SWStatus>,
+        createdTs: number,
     ) {
+        this.windowMs = windowMs;
+        this.bucketMs = bucketMs;
+        this.counterByBucket = counterByBucket;
+        this.createdTs = createdTs;
     }
 
     static init(windowMs: number, bucketMs: number): SlidingWindowCounter {
@@ -263,25 +282,45 @@ export enum CircuitBreakerState {
 }
 
 export class CircuitBreakerPolicy {
+    public readonly maxConsecutiveFailures: number;
+    public readonly resetTimeout: Temporal.Duration;
+    public readonly halfOpenTimeout: Temporal.Duration;
+    public readonly slidingWindow: Temporal.Duration;
+
     constructor(
-        public readonly maxConsecutiveFailures: number,
-        public readonly resetTimeout: Temporal.Duration,
-        public readonly halfOpenTimeout: Temporal.Duration,
-        public readonly slidingWindow: Temporal.Duration,
+        maxConsecutiveFailures: number,
+        resetTimeout: Temporal.Duration,
+        halfOpenTimeout: Temporal.Duration,
+        slidingWindow: Temporal.Duration,
     ) {
+        this.maxConsecutiveFailures = maxConsecutiveFailures;
+        this.resetTimeout = resetTimeout;
+        this.halfOpenTimeout = halfOpenTimeout;
+        this.slidingWindow = slidingWindow;
     }
 }
 
 export class CircuitBreaker {
     private static readonly RESET_VALUE = Number.MAX_SAFE_INTEGER;
 
+    public readonly state: AtomicReference<CircuitBreakerState>;
+    public readonly slidingWindow: SlidingWindowCounter;
+    public readonly timestampOpen: AtomicLong;
+    public readonly timestampHalfOpen: AtomicLong;
+    public readonly policy: CircuitBreakerPolicy;
+
     constructor(
-        public readonly state: AtomicReference<CircuitBreakerState>,
-        public readonly slidingWindow: SlidingWindowCounter,
-        public readonly timestampOpen: AtomicLong,
-        public readonly timestampHalfOpen: AtomicLong,
-        public readonly policy: CircuitBreakerPolicy,
+        state: AtomicReference<CircuitBreakerState>,
+        slidingWindow: SlidingWindowCounter,
+        timestampOpen: AtomicLong,
+        timestampHalfOpen: AtomicLong,
+        policy: CircuitBreakerPolicy,
     ) {
+        this.state = state;
+        this.slidingWindow = slidingWindow;
+        this.timestampOpen = timestampOpen;
+        this.timestampHalfOpen = timestampHalfOpen;
+        this.policy = policy;
     }
 
     static create(policy: CircuitBreakerPolicy): CircuitBreaker {
@@ -437,31 +476,56 @@ export class CircuitBreaker {
 }
 
 export class RateAdjusterStatus {
+    public readonly rate: number;
+    public readonly currentNumSuccesses: number;
+
     constructor(
-        public readonly rate: number,
-        public readonly currentNumSuccesses: number,
+        rate: number,
+        currentNumSuccesses: number,
     ) {
+        this.rate = rate;
+        this.currentNumSuccesses = currentNumSuccesses;
     }
 }
 
 export class RateAdjusterPolicy {
+    public readonly initialRate: number;
+    public readonly maxRate: number;
+    public readonly concurrencyIncreaseStep: number;
+    public readonly concurrencyReduceStep: number;
+    public readonly minConsecutiveSuccesses: number;
+    public readonly adjustWindowMs: number;
+
     constructor(
-        public readonly initialRate: number,
-        public readonly maxRate: number,
-        public readonly concurrencyIncreaseStep: number,
-        public readonly concurrencyReduceStep: number,
-        public readonly minConsecutiveSuccesses: number,
-        public readonly adjustWindowMs: number,
+        initialRate: number,
+        maxRate: number,
+        concurrencyIncreaseStep: number,
+        concurrencyReduceStep: number,
+        minConsecutiveSuccesses: number,
+        adjustWindowMs: number,
     ) {
+        this.initialRate = initialRate;
+        this.maxRate = maxRate;
+        this.concurrencyIncreaseStep = concurrencyIncreaseStep;
+        this.concurrencyReduceStep = concurrencyReduceStep;
+        this.minConsecutiveSuccesses = minConsecutiveSuccesses;
+        this.adjustWindowMs = adjustWindowMs;
     }
 }
 
 export class RateAdjuster {
+    public readonly status: AtomicReference<RateAdjusterStatus>;
+    public readonly slidingWindow: SlidingWindowCounter;
+    public readonly policy: RateAdjusterPolicy;
+
     constructor(
-        public readonly status: AtomicReference<RateAdjusterStatus>,
-        public readonly slidingWindow: SlidingWindowCounter,
-        public readonly policy: RateAdjusterPolicy,
+        status: AtomicReference<RateAdjusterStatus>,
+        slidingWindow: SlidingWindowCounter,
+        policy: RateAdjusterPolicy,
     ) {
+        this.status = status;
+        this.slidingWindow = slidingWindow;
+        this.policy = policy;
     }
 
     static toPolicy(
@@ -532,18 +596,28 @@ export class RateAdjuster {
 }
 
 export class RateLimiterPolicy {
+    public readonly timebasedFilterMs: number;
+    public readonly maxNumberToAllow: number;
+
     constructor(
-        public readonly timebasedFilterMs: number,
-        public readonly maxNumberToAllow: number,
+        timebasedFilterMs: number,
+        maxNumberToAllow: number,
     ) {
+        this.timebasedFilterMs = timebasedFilterMs;
+        this.maxNumberToAllow = maxNumberToAllow;
     }
 }
 
 export class RateLimiter {
+    public readonly slidingWindow: SlidingWindowCounter;
+    public readonly policy: RateLimiterPolicy;
+
     constructor(
-        public readonly slidingWindow: SlidingWindowCounter,
-        public readonly policy: RateLimiterPolicy,
+        slidingWindow: SlidingWindowCounter,
+        policy: RateLimiterPolicy,
     ) {
+        this.slidingWindow = slidingWindow;
+        this.policy = policy;
     }
 
     static init(timebasedFilterMs: number, maxNumberToAllow: number): RateLimiter {

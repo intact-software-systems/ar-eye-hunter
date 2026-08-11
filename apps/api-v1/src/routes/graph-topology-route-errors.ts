@@ -4,8 +4,11 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/services/AppI
 export class TopologyAppInboxFailureError extends Error {
   readonly status: number;
 
-  constructor(readonly failure: AppInboxFailure) {
+  readonly failure: AppInboxFailure;
+
+  constructor(failure: AppInboxFailure) {
     super(failure.message);
+    this.failure = failure;
     this.name = 'TopologyAppInboxFailureError';
     this.status = failure.status;
   }

@@ -93,8 +93,11 @@ export class RtcTopologyPublicationCollisionError extends Error {
   readonly code = 'rtc-topology-publication-collision';
   readonly status = 409;
 
-  constructor(readonly storageKey: string) {
+  readonly storageKey: string;
+
+  constructor(storageKey: string) {
     super(`RTC topology immutable publication collision: ${storageKey}`);
+    this.storageKey = storageKey;
     this.name = 'RtcTopologyPublicationCollisionError';
   }
 }

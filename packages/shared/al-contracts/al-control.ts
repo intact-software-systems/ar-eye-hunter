@@ -501,9 +501,12 @@ export class PersistentALControlTracker implements ALControlTracker {
     private readonly readyPromise: Promise<void>;
     private hydrated = false;
 
+    private readonly persistence: PersistenceProvider<string, PersistedALControlValue>;
+
     constructor(
-        private readonly persistence: PersistenceProvider<string, PersistedALControlValue>,
+        persistence: PersistenceProvider<string, PersistedALControlValue>,
     ) {
+        this.persistence = persistence;
         this.readyPromise = this.hydrate();
     }
 

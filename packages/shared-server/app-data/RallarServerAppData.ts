@@ -75,14 +75,21 @@ const DEFAULT_NAMESPACE = 'app';
 const DEFAULT_MAX_CONFLICT_RETRIES = 5;
 
 export class RallarServerAppDataConflictError extends Error {
+    readonly operation: string;
+    readonly key: string;
+    readonly maxAttempts: number;
+
     constructor(
-        readonly operation: string,
-        readonly key: string,
-        readonly maxAttempts: number,
+        operation: string,
+        key: string,
+        maxAttempts: number,
     ) {
         super(
             `Rallar server app data ${operation} conflicted for key ${key} after ${maxAttempts} attempts.`,
         );
+        this.operation = operation;
+        this.key = key;
+        this.maxAttempts = maxAttempts;
         this.name = 'RallarServerAppDataConflictError';
     }
 }
@@ -94,10 +101,15 @@ export function isRallarServerAppDataConflictError(
 }
 
 export class RallarServerAppDataFacade {
+    private readonly manager: RepositoryManager;
+    private readonly repository?: AppDataRepositoryLike;
+
     constructor(
-        private readonly manager: RepositoryManager,
-        private readonly repository?: AppDataRepositoryLike,
+        manager: RepositoryManager,
+        repository?: AppDataRepositoryLike,
     ) {
+        this.manager = manager;
+        this.repository = repository;
     }
 
     define<V>(
@@ -168,13 +180,24 @@ export class RallarServerAppDataStore<V> {
     private readonly cache = new Map<string, CachedAppDataValue<V>>();
     private hydrated = false;
 
+    private readonly repository: AppDataRepositoryLike;
+    public readonly name: string;
+    private readonly options: NormalizedAppDataStoreOptions<V>;
+    public readonly optionsKey: string;
+    public readonly repositoryId: string;
+
     constructor(
-        private readonly repository: AppDataRepositoryLike,
-        public readonly name: string,
-        private readonly options: NormalizedAppDataStoreOptions<V>,
-        public readonly optionsKey: string,
-        public readonly repositoryId: string,
+        repository: AppDataRepositoryLike,
+        name: string,
+        options: NormalizedAppDataStoreOptions<V>,
+        optionsKey: string,
+        repositoryId: string,
     ) {
+        this.repository = repository;
+        this.name = name;
+        this.options = options;
+        this.optionsKey = optionsKey;
+        this.repositoryId = repositoryId;
     }
 
     get namespace(): string {

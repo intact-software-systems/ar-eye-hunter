@@ -12,7 +12,11 @@ type CountRow = Readonly<{
 }>;
 
 export class PSqlAdminOperationsPruner implements AdminOperationsPruner {
-  constructor(private readonly sql: PSqlSql) {}
+  private readonly sql: PSqlSql;
+
+  constructor(sql: PSqlSql) {
+    this.sql = sql;
+  }
 
   async countExpired(
     category: AdminPruneExpiredCategory,

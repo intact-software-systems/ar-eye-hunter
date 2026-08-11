@@ -37,11 +37,14 @@ export type ClientMutationIdempotencyRecord = Readonly<{
 export class ClientStateRepositoryInvariantCorruptionError extends Error {
   readonly code = 'client-state-repository-invariant-corruption';
 
+  readonly storageKey: string;
+
   constructor(
-    readonly storageKey: string,
+    storageKey: string,
     message: string,
   ) {
     super(`${message}: ${storageKey}`);
+    this.storageKey = storageKey;
     this.name = 'ClientStateRepositoryInvariantCorruptionError';
   }
 }

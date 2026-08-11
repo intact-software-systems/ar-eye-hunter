@@ -120,16 +120,23 @@ class AppGroupInboxService extends AppInboxService {
   private topologyManagementService?: GroupTopologyManagementService;
   private rtcRttDependencies?: RtcRttAppInboxDependencies;
 
+  public override readonly inbox: InboxQueueReader;
+  public override readonly resourceInbox: ResourceInboxRepository;
+  public override readonly resourceInboxResults: ResourceInboxResultsRepository;
+  public readonly groupStateService: GroupStateService;
+  public override readonly serviceId: string;
+  private readonly wakeQueue?: () => void;
+
   constructor(
-    public override readonly inbox: InboxQueueReader,
-    public override readonly resourceInbox: ResourceInboxRepository,
-    public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+    inbox: InboxQueueReader,
+    resourceInbox: ResourceInboxRepository,
+    resourceInboxResults: ResourceInboxResultsRepository,
     database: PSqlSql,
-    public readonly groupStateService: GroupStateService,
-    public override readonly serviceId: string,
+    groupStateService: GroupStateService,
+    serviceId: string,
     timing?: RallarTimingSink,
     options?: AppInboxServiceOptions,
-    private readonly wakeQueue?: () => void,
+    wakeQueue?: () => void,
     formationMetrics?: GroupFormationGroupMutationSink,
   ) {
     super(
@@ -143,6 +150,12 @@ class AppGroupInboxService extends AppInboxService {
       options,
       wakeQueue,
     );
+    this.inbox = inbox;
+    this.resourceInbox = resourceInbox;
+    this.resourceInboxResults = resourceInboxResults;
+    this.groupStateService = groupStateService;
+    this.serviceId = serviceId;
+    this.wakeQueue = wakeQueue;
     this.groupStateInboxHandler = new GroupStateInboxHandler({
       mutationService: this.groupStateService,
       sessionGenerationLifecycle: this.groupStateService.sessionGenerationLifecycle,

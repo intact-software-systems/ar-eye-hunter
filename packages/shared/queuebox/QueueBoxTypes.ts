@@ -83,13 +83,18 @@ export type ResourceInboxFinalizationSelection = Readonly<{
 export class ResourceInboxLostReservationError extends Error {
     readonly code = 'resource-inbox-lost-reservation';
 
+    readonly key: Key;
+    readonly expectedAttempts: number;
+
     constructor(
-        readonly key: Key,
-        readonly expectedAttempts: number,
+        key: Key,
+        expectedAttempts: number,
     ) {
         super(
             `Resource inbox reservation was lost before release: ${JSON.stringify(key)}`,
         );
+        this.key = key;
+        this.expectedAttempts = expectedAttempts;
         this.name = 'ResourceInboxLostReservationError';
     }
 }

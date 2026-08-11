@@ -137,9 +137,12 @@ export class RallarRtcTopologyService {
     private readonly pendingRttUpdateDueAtByOverlayId = new Map<string, number>();
     private readonly metrics = emptyTopologyMetrics();
 
+    private readonly options: RallarRtcTopologyServiceOptions;
+
     constructor(
-        private readonly options: RallarRtcTopologyServiceOptions = {},
+        options: RallarRtcTopologyServiceOptions = {},
     ) {
+        this.options = options;
     }
 
     readMetrics(): RallarRtcTopologyMetrics {

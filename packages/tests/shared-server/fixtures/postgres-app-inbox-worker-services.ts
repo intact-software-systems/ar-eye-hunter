@@ -145,12 +145,17 @@ function createPostgresAppInboxWorkerInbox(
 class TopologyReadBarrierRuntimeStateRepository extends PSqlRuntimeStateRepository {
   private consumed = false;
 
+  private readonly beforeRead: (primitive: TopologyReadBarrierPrimitive) => Promise<void>;
+  private readonly trace: Pick<PostgresAppInboxWorkerTrace, 'barrierWaitCount'>;
+
   constructor(
     sql: PSqlSql,
-    private readonly beforeRead: (primitive: TopologyReadBarrierPrimitive) => Promise<void>,
-    private readonly trace: Pick<PostgresAppInboxWorkerTrace, 'barrierWaitCount'>,
+    beforeRead: (primitive: TopologyReadBarrierPrimitive) => Promise<void>,
+    trace: Pick<PostgresAppInboxWorkerTrace, 'barrierWaitCount'>,
   ) {
     super(sql);
+    this.beforeRead = beforeRead;
+    this.trace = trace;
   }
 
   override async readRuntimeStateBatch(

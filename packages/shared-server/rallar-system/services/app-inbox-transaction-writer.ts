@@ -52,15 +52,25 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     AppInboxHandlerFinalization
   >();
 
+  private readonly options: Readonly<{
+      database: PSqlSql;
+      serviceId: string;
+      timing?: RallarTimingSink;
+      nowEpochMs: () => number;
+      toTimingDetails: (context: AppInboxMessageContext) => RallarTimingDetails;
+    }>;
+
   constructor(
-    private readonly options: Readonly<{
+    options: Readonly<{
       database: PSqlSql;
       serviceId: string;
       timing?: RallarTimingSink;
       nowEpochMs: () => number;
       toTimingDetails: (context: AppInboxMessageContext) => RallarTimingDetails;
     }>,
-  ) {}
+  ) {
+    this.options = options;
+  }
 
   begin(context: AppInboxMessageContext): void {
     this.finalizationByContext.set(context, { state: 'pending' });

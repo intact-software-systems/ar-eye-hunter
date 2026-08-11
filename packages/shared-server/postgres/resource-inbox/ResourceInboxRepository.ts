@@ -32,8 +32,11 @@ export class ResourceInboxInvariantCorruptionError extends Error {
     readonly code = 'resource-inbox-invariant-corruption';
     readonly status = 409;
 
-    constructor(readonly key: Key, message: string) {
+    readonly key: Key;
+
+    constructor(key: Key, message: string) {
         super(`${message}: ${key.contextId}/${key.topicId}/${key.resourceId}`);
+        this.key = key;
         this.name = 'ResourceInboxInvariantCorruptionError';
     }
 }
@@ -41,7 +44,10 @@ export class ResourceInboxInvariantCorruptionError extends Error {
 export class ResourceInboxRepository {
     static readonly MAX_ROWS_TO_RETURN = 50;
 
-    constructor(private readonly sql: PSqlSql) {
+    private readonly sql: PSqlSql;
+
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
     }
 
     /**

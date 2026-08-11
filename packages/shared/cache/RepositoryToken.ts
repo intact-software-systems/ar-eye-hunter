@@ -3,10 +3,15 @@ export interface DisposableRepository {
 }
 
 export class RepositoryToken<R> {
+    public readonly id: string;
+    public readonly create: () => R;
+
     public constructor(
-        public readonly id: string,
-        public readonly create: () => R,
+        id: string,
+        create: () => R,
     ) {
+        this.id = id;
+        this.create = create;
         if (!id) {
             throw new Error('RepositoryToken id is required');
         }

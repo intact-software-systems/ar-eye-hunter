@@ -230,10 +230,16 @@ export class ProceduralArenaAudio {
     private activeVoices = 0;
     private lastDroneAtMs = 0;
 
+    private settings: ArenaAudioSettings;
+    private readonly maxVoices: number;
+
     constructor(
-        private settings: ArenaAudioSettings = createDefaultArenaAudioSettings(),
-        private readonly maxVoices = 10,
-    ) {}
+        settings: ArenaAudioSettings = createDefaultArenaAudioSettings(),
+        maxVoices = 10,
+    ) {
+        this.settings = settings;
+        this.maxVoices = maxVoices;
+    }
 
     updateSettings(settings: ArenaAudioSettings): void {
         this.settings = normalizeArenaAudioSettings(settings);

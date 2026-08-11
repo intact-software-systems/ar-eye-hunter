@@ -34,7 +34,10 @@ export class RealEngineAdminPruneFixture {
   readonly appAdmin: ReturnType<typeof createApiAdminInboxService>;
   wakeCount = 0;
 
-  private constructor(sql: PGliteSql, private readonly now: number) {
+  private readonly now: number;
+
+  private constructor(sql: PGliteSql, now: number) {
+    this.now = now;
     const repository = new ResourceInboxRepository(sql);
     const queue = new PSqlQueueBox(repository);
     const inbox = new InboxQueueReader(queue);

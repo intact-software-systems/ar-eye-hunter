@@ -20,10 +20,13 @@ export class InboxQueueReader {
 
     private readonly reader: QueueMessageReader;
 
+    public readonly inbox: QueueBoxResourceEntryRepository;
+
     constructor(
-        public readonly inbox: QueueBoxResourceEntryRepository,
+        inbox: QueueBoxResourceEntryRepository,
         dequeueOptions: DequeueResourceEntryOptions = {},
     ) {
+        this.inbox = inbox;
         this.reader = createQueueMessageReader({
             repository: inbox,
             enqueueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,

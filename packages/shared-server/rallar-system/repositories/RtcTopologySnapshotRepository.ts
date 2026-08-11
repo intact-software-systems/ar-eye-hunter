@@ -62,10 +62,13 @@ export type RtcTopologySnapshotConditionalResult =
     | Readonly<{ status: 'conflict' }>;
 
 export class RtcTopologySnapshotRepository extends RuntimeStateJsonStore {
+    readonly runtimeRepository: RuntimeStateRepositoryLike;
+
     constructor(
-        readonly runtimeRepository: RuntimeStateRepositoryLike,
+        runtimeRepository: RuntimeStateRepositoryLike,
     ) {
         super(runtimeRepository);
+        this.runtimeRepository = runtimeRepository;
     }
 
     async findSnapshotEntry(

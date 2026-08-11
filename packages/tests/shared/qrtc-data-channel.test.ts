@@ -825,7 +825,10 @@ class FakeRTCDataChannel {
     onerror: (() => void | Promise<void>) | null = null;
     onbufferedamountlow: (() => void | Promise<void>) | null = null;
 
-    constructor(public readonly label: string) {
+    public readonly label: string;
+
+    constructor(label: string) {
+        this.label = label;
     }
 
     send(data: string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>): void {

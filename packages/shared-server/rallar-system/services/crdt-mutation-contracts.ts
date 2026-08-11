@@ -284,8 +284,11 @@ export class CrdtMutationConflictError extends Error {
   readonly code = 'crdt-mutation-write-conflict';
   readonly status = 503;
 
-  constructor(readonly documentKey: string) {
+  readonly documentKey: string;
+
+  constructor(documentKey: string) {
     super(`CRDT document predecessor changed: ${documentKey}`);
+    this.documentKey = documentKey;
     this.name = 'CrdtMutationConflictError';
   }
 }

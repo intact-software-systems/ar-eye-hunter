@@ -168,7 +168,10 @@ class TestJsonWebSocketClient {
 
     private resolvePendingConnect: (() => void) | undefined;
 
-    constructor(private readonly options: TestJsonWebSocketClientOptions = {}) {
+    private readonly options: TestJsonWebSocketClientOptions;
+
+    constructor(options: TestJsonWebSocketClientOptions = {}) {
+        this.options = options;
     }
 
     connect(options: WebSocketConnectOptions = {}): Promise<void> {

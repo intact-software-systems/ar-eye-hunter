@@ -42,9 +42,12 @@ export class WebRtcHeartbeatService {
     private messageCallbackId: string | undefined;
     private versionCounter = 1;
 
+    public readonly input: WebRtcHeartbeatServiceInputDto;
+
     constructor(
-        public readonly input: WebRtcHeartbeatServiceInputDto
+        input: WebRtcHeartbeatServiceInputDto
     ) {
+        this.input = input;
         this.status = {
             pingInterval: undefined,
             missedPings: 0,

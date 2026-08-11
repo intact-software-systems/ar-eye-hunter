@@ -95,8 +95,24 @@ export class AdminPruneExpiredWork {
   private readonly pageSize: number;
   private readonly now: () => number;
 
+  private readonly options: Readonly<{
+      database: PSqlSql;
+      repository: AdminPruneExpiredRepository;
+      serviceId: string;
+      pageSize: number;
+      now?: () => number;
+      readAuthority(
+        input: Readonly<{
+          requestedBy: string;
+          requestedSessionId: string;
+          nowEpochMs: number;
+        }>,
+      ): Promise<Readonly<{ allowed: boolean; code: string }>>;
+      wakeQueue?: () => void;
+    }>;
+
   constructor(
-    private readonly options: Readonly<{
+    options: Readonly<{
       database: PSqlSql;
       repository: AdminPruneExpiredRepository;
       serviceId: string;
@@ -112,6 +128,7 @@ export class AdminPruneExpiredWork {
       wakeQueue?: () => void;
     }>,
   ) {
+    this.options = options;
     this.pageSize = requirePageSize(options.pageSize);
     this.now = options.now ?? (() => Date.now());
   }

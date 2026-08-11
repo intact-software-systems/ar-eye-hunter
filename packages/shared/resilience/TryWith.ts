@@ -53,20 +53,26 @@ export class RetryableConflictError extends Error {
 }
 
 export class TryWithExhaustedError extends Error {
+    public readonly context: TryWithRetryContext;
+
     constructor(
         message: string,
-        public readonly context: TryWithRetryContext,
+        context: TryWithRetryContext,
         options?: ErrorOptions,
     ) {
         super(message, options);
+        this.context = context;
         this.name = 'TryWithExhaustedError';
     }
 }
 
 export class TryWithPolicy {
+    private readonly options: TryWithPolicyOptions;
+
     private constructor(
-        private readonly options: TryWithPolicyOptions,
+        options: TryWithPolicyOptions,
     ) {
+        this.options = options;
     }
 
     static defaults(): TryWithPolicy {

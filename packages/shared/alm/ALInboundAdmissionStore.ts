@@ -432,13 +432,24 @@ export function createALInboundAdmissionStore(
 }
 
 class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
+    private readonly namespace: string;
+    private readonly orderingTrackTtlMs: number;
+    private readonly supersedenceTrackTtlMs: number;
+    private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
+    private readonly backend: ALInboundAdmissionBackend;
+
     constructor(
-        private readonly namespace: string,
-        private readonly orderingTrackTtlMs: number,
-        private readonly supersedenceTrackTtlMs: number,
-        private readonly retention: NormalizedALRuntimeStoreRetentionConfig,
-        private readonly backend: ALInboundAdmissionBackend,
+        namespace: string,
+        orderingTrackTtlMs: number,
+        supersedenceTrackTtlMs: number,
+        retention: NormalizedALRuntimeStoreRetentionConfig,
+        backend: ALInboundAdmissionBackend,
     ) {
+        this.namespace = namespace;
+        this.orderingTrackTtlMs = orderingTrackTtlMs;
+        this.supersedenceTrackTtlMs = supersedenceTrackTtlMs;
+        this.retention = retention;
+        this.backend = backend;
     }
 
     async ready(): Promise<void> {
@@ -1227,9 +1238,12 @@ class ProviderBackedALInboundAdmissionStore implements ALInboundAdmissionStore {
 }
 
 class InMemoryAdmissionBackend implements ALInboundAdmissionBackend {
+    private readonly state: ALInboundAdmissionMemoryState;
+
     constructor(
-        private readonly state: ALInboundAdmissionMemoryState,
+        state: ALInboundAdmissionMemoryState,
     ) {
+        this.state = state;
     }
 
     async ready(): Promise<void> {
@@ -1307,10 +1321,15 @@ class InMemoryAdmissionBackend implements ALInboundAdmissionBackend {
 class IndexedDbAdmissionBackend implements ALInboundAdmissionBackend {
     private dbPromise?: Promise<IDBDatabase>;
 
+    private readonly dbName: string;
+    private readonly storeName: string;
+
     constructor(
-        private readonly dbName: string,
-        private readonly storeName: string,
+        dbName: string,
+        storeName: string,
     ) {
+        this.dbName = dbName;
+        this.storeName = storeName;
     }
 
     async ready(): Promise<void> {
@@ -1443,10 +1462,15 @@ class IndexedDbAdmissionBackend implements ALInboundAdmissionBackend {
 }
 
 class PersistenceProviderAdmissionBackend implements ALInboundAdmissionBackend {
+    private readonly provider: PersistenceProvider<string, unknown>;
+    private readonly coordinationKey: string;
+
     constructor(
-        private readonly provider: PersistenceProvider<string, unknown>,
-        private readonly coordinationKey: string,
+        provider: PersistenceProvider<string, unknown>,
+        coordinationKey: string,
     ) {
+        this.provider = provider;
+        this.coordinationKey = coordinationKey;
     }
 
     async ready(): Promise<void> {

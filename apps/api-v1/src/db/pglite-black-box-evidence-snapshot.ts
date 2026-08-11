@@ -112,7 +112,11 @@ export async function createPGliteBlackBoxSnapshotPublisher(
 }
 
 class SnapshotControlDirectory {
-  constructor(private readonly root: string) {}
+  private readonly root: string;
+
+  constructor(root: string) {
+    this.root = root;
+  }
 
   requests(): string {
     return `${this.root}/${REQUESTS_DIRECTORY}`;

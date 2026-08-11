@@ -35,10 +35,13 @@ export class ObservableLoanedRepository<K, V>
     private readonly changeListeners = new Set<ObservableKeyedValueListener<K, V>>();
     private observerQueue: Promise<void> = Promise.resolve();
 
+    private readonly refresher: LoanedRepositoryRefresh<K, V>;
+
     public constructor(
-        private readonly refresher: LoanedRepositoryRefresh<K, V>,
+        refresher: LoanedRepositoryRefresh<K, V>,
         options: ObservableLoanedRepositoryOptions<K, V> = {},
     ) {
+        this.refresher = refresher;
         if (!refresher) {
             throw new Error('refresher is required');
         }

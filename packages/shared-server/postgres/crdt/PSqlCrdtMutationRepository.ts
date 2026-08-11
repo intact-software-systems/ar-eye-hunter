@@ -35,14 +35,24 @@ export type CrdtMutationAuthorityDecision = Readonly<{
 }>;
 
 export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
+  private readonly sql: PSqlSql;
+  private readonly authorize: (
+      command: CrdtMutationCommand,
+    ) => Promise<boolean | CrdtMutationAuthorityDecision>;
+  private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
+
   constructor(
-    private readonly sql: PSqlSql,
-    private readonly authorize: (
+    sql: PSqlSql,
+    authorize: (
       command: CrdtMutationCommand,
     ) => Promise<boolean | CrdtMutationAuthorityDecision> = () =>
       Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
-    private readonly policies: readonly RallarCrdtDocumentTypePolicy[] = [],
-  ) {}
+    policies: readonly RallarCrdtDocumentTypePolicy[] = [],
+  ) {
+    this.sql = sql;
+    this.authorize = authorize;
+    this.policies = policies;
+  }
 
   async readMutation(command: CrdtMutationCommand): Promise<CrdtMutationRead> {
     const beforeRows = await readDocument(this.sql, command.documentKey);

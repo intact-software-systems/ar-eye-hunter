@@ -51,9 +51,13 @@ interface ClientRestSnapshotReadContext {
 
 class ClientRestSnapshotReadSelectorOwner
   implements ClientRestSnapshotReadSelector {
+  private readonly dependencies: ClientRestSnapshotReadSelectorDependencies;
+
   public constructor(
-    private readonly dependencies: ClientRestSnapshotReadSelectorDependencies,
-  ) {}
+    dependencies: ClientRestSnapshotReadSelectorDependencies,
+  ) {
+    this.dependencies = dependencies;
+  }
 
   public async read(
     ref: ClientPrincipalRef,

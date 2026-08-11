@@ -46,7 +46,11 @@ type GroupStateTestMaintenanceCommand =
   ReturnType<typeof toExpiryCommand> | ReturnType<typeof toSessionCleanupCommand>;
 
 export class GroupStateTestMutationExecutor {
-  constructor(private readonly dependencies: GroupStateTestMutationExecutorDependencies) {}
+  private readonly dependencies: GroupStateTestMutationExecutorDependencies;
+
+  constructor(dependencies: GroupStateTestMutationExecutorDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async executeAuthenticated(
     descriptor: GroupMutationDescriptor,

@@ -145,10 +145,15 @@ export class QRtcDataChannel {
     private readonly openWaiters: RtcDataChannelOpenWaiter[] = [];
     private readonly counters = emptyCounters();
 
+    public readonly peerConnection: QRtcPeerConnection;
+    public readonly input: RtcDataChannelInputDto;
+
     constructor(
-        public readonly peerConnection: QRtcPeerConnection,
-        public readonly input: RtcDataChannelInputDto
+        peerConnection: QRtcPeerConnection,
+        input: RtcDataChannelInputDto
     ) {
+        this.peerConnection = peerConnection;
+        this.input = input;
         this.status = {
             state: RtcSessionState.Idle,
             role: RtcRole.None,

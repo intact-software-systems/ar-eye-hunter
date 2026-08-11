@@ -40,9 +40,12 @@ export type FindOrLoadGroupStateSnapshotOptions = Readonly<{
 }>;
 
 export class GroupStateSnapshotNotFoundError extends Error {
-  constructor(readonly ref: GroupRef) {
+  readonly ref: GroupRef;
+
+  constructor(ref: GroupRef) {
     const identity = [ref.applicationId, ref.workspaceId ?? '', ref.groupId].join('/');
     super(`Group snapshot not found for ${identity}`);
+    this.ref = ref;
     this.name = 'GroupStateSnapshotNotFoundError';
   }
 }
@@ -50,7 +53,10 @@ export class GroupStateSnapshotNotFoundError extends Error {
 export class GroupStateSnapshotReadThroughCache {
   private readonly snapshots: ObservableLoanedRepository<string, GroupSnapshot>;
 
-  constructor(private readonly options: GroupStateSnapshotReadThroughCacheOptions) {
+  private readonly options: GroupStateSnapshotReadThroughCacheOptions;
+
+  constructor(options: GroupStateSnapshotReadThroughCacheOptions) {
+    this.options = options;
     this.snapshots = new ObservableLoanedRepository<string, GroupSnapshot>(
       async (key) => {
         const ref = toGroupRef(key);

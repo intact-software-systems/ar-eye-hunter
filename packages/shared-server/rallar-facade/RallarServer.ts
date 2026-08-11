@@ -59,13 +59,16 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
     readonly system: RallarServerSystemFacade<TRuntime>;
     readonly data: RallarServerDataFacade;
 
+    readonly runtime: TRuntime;
+
     constructor(
-        readonly runtime: TRuntime,
+        runtime: TRuntime,
         repositories: RepositoryManager = defaultRepositoryManager,
         wsOptions: RallarServerWsFacadeOptions = {},
         systemInstallers: RallarServerSystemInstallers<TRuntime> = {},
         appDataRepository?: AppDataRepositoryLike,
     ) {
+        this.runtime = runtime;
         const wsTopicsFacade = new RallarServerWsFacade(
             runtime.wsQBoxServerService,
             {
@@ -108,11 +111,18 @@ export class RallarServerSystemFacade<
     private defaultTopicsInstalled = false;
     private lifecycleInstalled = false;
 
+    private readonly runtime: TRuntime;
+    private readonly ws: RallarServerWsFacade;
+    private readonly installers: RallarServerSystemInstallers<TRuntime>;
+
     constructor(
-        private readonly runtime: TRuntime,
-        private readonly ws: RallarServerWsFacade,
-        private readonly installers: RallarServerSystemInstallers<TRuntime>,
+        runtime: TRuntime,
+        ws: RallarServerWsFacade,
+        installers: RallarServerSystemInstallers<TRuntime>,
     ) {
+        this.runtime = runtime;
+        this.ws = ws;
+        this.installers = installers;
     }
 
     useDefaultMiddlewareTopics(): this {
@@ -138,7 +148,10 @@ export class RallarServerSystemFacade<
 }
 
 export class RallarServerWebSocketFacade {
-    constructor(private readonly topics: RallarServerWsFacade) {
+    private readonly topics: RallarServerWsFacade;
+
+    constructor(topics: RallarServerWsFacade) {
+        this.topics = topics;
     }
 
     install(): this {
@@ -181,10 +194,13 @@ export class RallarServerWebSocketFacade {
 export class RallarServerDataFacade {
     private readonly appData: RallarServerAppDataFacade;
 
+    readonly repositories: RepositoryManager;
+
     constructor(
-        readonly repositories: RepositoryManager,
+        repositories: RepositoryManager,
         appDataRepository?: AppDataRepositoryLike,
     ) {
+        this.repositories = repositories;
         this.appData = new RallarServerAppDataFacade(
             repositories,
             appDataRepository,

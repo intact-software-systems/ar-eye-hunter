@@ -60,7 +60,10 @@ export class SpaStatisticsService {
     private readonly topGroupsLimit: number;
     private readonly snapshotScanLimit: number;
 
-    public constructor(private readonly options: SpaStatisticsServiceOptions) {
+    private readonly options: SpaStatisticsServiceOptions;
+
+    public constructor(options: SpaStatisticsServiceOptions) {
+        this.options = options;
         this.now = options.now ?? (() => Date.now());
         this.recentEventLimit = options.recentEventLimit ??
             DEFAULT_RECENT_EVENT_LIMIT;

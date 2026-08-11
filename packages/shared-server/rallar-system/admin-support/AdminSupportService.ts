@@ -115,7 +115,11 @@ export type AdminSupportServiceOptions = Readonly<{
 }>;
 
 export class AdminSupportService {
-  constructor(private readonly options: AdminSupportServiceOptions) {}
+  private readonly options: AdminSupportServiceOptions;
+
+  constructor(options: AdminSupportServiceOptions) {
+    this.options = options;
+  }
 
   async explainClient(
     input: AdminSupportWriteInput<AdminSupportExplainClientRequest>,

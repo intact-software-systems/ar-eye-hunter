@@ -29,11 +29,14 @@ import {
 type FindSessionById = (sessionId: string) => Promise<PersistedAuthSession | undefined>;
 
 export class AuthTicketPersistence extends RuntimeStateJsonStore {
+  private readonly findSessionById: FindSessionById;
+
   constructor(
     repository: RuntimeStateRepositoryLike,
-    private readonly findSessionById: FindSessionById,
+    findSessionById: FindSessionById,
   ) {
     super(repository);
+    this.findSessionById = findSessionById;
   }
 
   async putWebSocketTicket(ticket: IssuedWebSocketTicket): Promise<void> {

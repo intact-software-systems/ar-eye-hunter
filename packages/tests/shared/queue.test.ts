@@ -150,9 +150,12 @@ describe('enqueue and dequeue', () => {
 
 
         class TestData {
+            readonly name: string;
+
             constructor(
-                readonly name: string,
+                name: string,
             ) {
+                this.name = name;
             }
         }
 

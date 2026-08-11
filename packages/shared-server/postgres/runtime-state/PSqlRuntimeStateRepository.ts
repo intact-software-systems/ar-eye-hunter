@@ -64,10 +64,13 @@ export class PSqlRuntimeStateRepository
     implements RuntimeStateOptimisticTransactionalRepositoryLike {
     private readonly sqlState: RuntimeStateSqlState;
 
+    public readonly sql: PSqlSql;
+
     constructor(
-        public readonly sql: PSqlSql,
+        sql: PSqlSql,
         sqlState?: RuntimeStateSqlState,
     ) {
+        this.sql = sql;
         this.sqlState = sqlState ?? {
             kind: 'root',
             sql,

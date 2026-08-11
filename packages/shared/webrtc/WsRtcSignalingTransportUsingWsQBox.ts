@@ -11,11 +11,18 @@ export class WsRtcSignalingTransportUsingWsQBox implements QRtcSignalingTranspor
 
     private readonly id: string = 'signaling-ws-' + crypto.randomUUID().toString();
 
+    public readonly qbox: WsQueueBoxClientService;
+    public readonly typeId: string;
+    private readonly wakeOutbox?: () => void;
+
     constructor(
-        public readonly qbox: WsQueueBoxClientService,
-        public readonly typeId: string,
-        private readonly wakeOutbox?: () => void,
+        qbox: WsQueueBoxClientService,
+        typeId: string,
+        wakeOutbox?: () => void,
     ) {
+        this.qbox = qbox;
+        this.typeId = typeId;
+        this.wakeOutbox = wakeOutbox;
     }
 
     connect(input: QRtcSignalingTransportInputDto): Promise<void> {

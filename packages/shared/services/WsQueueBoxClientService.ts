@@ -121,15 +121,26 @@ export class WsQueueBoxClientService {
         exhausted: false,
     };
 
+    public readonly inbox: QueueBoxResourceEntryRepository;
+    public readonly outbox: QueueBoxResourceEntryRepository;
+    public readonly socket: JsonWebSocketClient;
+    public readonly input: WsQueueBoxClientServiceInputDto;
+    private readonly options: WsQueueBoxClientServiceOptions;
+
     constructor(
-        public readonly inbox: QueueBoxResourceEntryRepository,
-        public readonly outbox: QueueBoxResourceEntryRepository,
-        public readonly socket: JsonWebSocketClient,
-        public readonly input: WsQueueBoxClientServiceInputDto,
-        private readonly options: WsQueueBoxClientServiceOptions = {
+        inbox: QueueBoxResourceEntryRepository,
+        outbox: QueueBoxResourceEntryRepository,
+        socket: JsonWebSocketClient,
+        input: WsQueueBoxClientServiceInputDto,
+        options: WsQueueBoxClientServiceOptions = {
             reconnect: DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
         },
     ) {
+        this.inbox = inbox;
+        this.outbox = outbox;
+        this.socket = socket;
+        this.input = input;
+        this.options = options;
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {
                 stores: this.options.outboundStores,

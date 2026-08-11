@@ -68,7 +68,11 @@ class BrowserRallarWsController implements RallarWsController {
     private readonly wsLifecycleListeners =
         new Set<RallarWsLifecycleSubscription>();
 
-    constructor(private readonly options: CreateRallarWsControllerOptions) {}
+    private readonly options: CreateRallarWsControllerOptions;
+
+    constructor(options: CreateRallarWsControllerOptions) {
+        this.options = options;
+    }
 
     readonly facade: RallarWsFacade = {
         status: (): RallarWsStatus => this.toWsStatus(),

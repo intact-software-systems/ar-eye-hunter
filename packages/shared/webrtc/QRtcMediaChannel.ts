@@ -31,10 +31,15 @@ export class QRtcMediaChannel {
 
     private subscribed: boolean = false;
 
+    public readonly peerConnection: QRtcPeerConnection;
+    public readonly input: RtcMediaChannelInputDto;
+
     constructor(
-        public readonly peerConnection: QRtcPeerConnection,
-        public readonly input: RtcMediaChannelInputDto,
+        peerConnection: QRtcPeerConnection,
+        input: RtcMediaChannelInputDto,
     ) {
+        this.peerConnection = peerConnection;
+        this.input = input;
         this.status = this.toInitialStatus();
     }
 

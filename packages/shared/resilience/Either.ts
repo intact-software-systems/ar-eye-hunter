@@ -6,12 +6,17 @@
 // - Map.Entry -> readonly [K, V] tuples
 
 export class Either<L, R> {
+    public readonly left?: L;
+    public readonly right?: R;
+
     // Matches the Java public fields (Optional<L> left, Optional<R> right)
     // In TS we represent "empty" as undefined.
     constructor(
-        public readonly left?: L,
-        public readonly right?: R,
+        left?: L,
+        right?: R,
     ) {
+        this.left = left;
+        this.right = right;
         // Enforce the Java invariant:
         // - both cannot be undefined
         // - both cannot be defined
@@ -95,18 +100,28 @@ export class Either<L, R> {
 // ------------------------------------------
 
 export class FoldComputedDto<K, L, R> {
+    public readonly leftByKey: Map<K, L>;
+    public readonly rightByKey: Map<K, R>;
+
     constructor(
-        public readonly leftByKey: Map<K, L>,
-        public readonly rightByKey: Map<K, R>,
+        leftByKey: Map<K, L>,
+        rightByKey: Map<K, R>,
     ) {
+        this.leftByKey = leftByKey;
+        this.rightByKey = rightByKey;
     }
 }
 
 export class FoldListComputedDto<K, L, R> {
+    public readonly leftsByKey: Map<K, L[]>;
+    public readonly rightsByKey: Map<K, R[]>;
+
     constructor(
-        public readonly leftsByKey: Map<K, L[]>,
-        public readonly rightsByKey: Map<K, R[]>,
+        leftsByKey: Map<K, L[]>,
+        rightsByKey: Map<K, R[]>,
     ) {
+        this.leftsByKey = leftsByKey;
+        this.rightsByKey = rightsByKey;
     }
 }
 

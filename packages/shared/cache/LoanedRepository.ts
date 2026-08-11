@@ -14,10 +14,15 @@ export interface CachedRepositoryOptions<V> {
 export class LoanedRepository<K, V> implements PullKeyedValues<K, V> {
     private readonly entries = new Map<K, LoanedValue<V>>();
 
+    private readonly refresher: CachedRepositoryRefresh<K, V>;
+    private readonly options: CachedRepositoryOptions<V>;
+
     public constructor(
-        private readonly refresher: CachedRepositoryRefresh<K, V>,
-        private readonly options: CachedRepositoryOptions<V> = {},
+        refresher: CachedRepositoryRefresh<K, V>,
+        options: CachedRepositoryOptions<V> = {},
     ) {
+        this.refresher = refresher;
+        this.options = options;
         if (!refresher) {
             throw new Error('refresher is required');
         }

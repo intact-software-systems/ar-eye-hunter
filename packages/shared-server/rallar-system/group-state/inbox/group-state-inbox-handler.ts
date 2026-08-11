@@ -50,7 +50,11 @@ interface CommitGroupStateMutationInput {
 }
 
 export class GroupStateInboxHandler {
-  constructor(private readonly dependencies: GroupStateInboxHandlerDependencies) {}
+  private readonly dependencies: GroupStateInboxHandlerDependencies;
+
+  constructor(dependencies: GroupStateInboxHandlerDependencies) {
+    this.dependencies = dependencies;
+  }
 
   async processGroupStateMutation(
     context: AppInboxMessageContext,

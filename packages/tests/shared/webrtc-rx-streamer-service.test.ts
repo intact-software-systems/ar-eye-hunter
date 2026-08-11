@@ -23,7 +23,10 @@ vi.mock('@shared/services/WebRtcHeartbeatService.ts', () => {
         });
         public readonly stop = vi.fn();
 
-        constructor(public readonly input: unknown) {
+        public readonly input: unknown;
+
+        constructor(input: unknown) {
+            this.input = input;
             mockState.heartbeats.push(this);
         }
     }

@@ -75,13 +75,18 @@ export type ResourceInboxRetryExhaustionRecovery = Readonly<{
 export class ResourceInboxFinalizedByHandlerError extends Error {
     readonly code = 'resource-inbox-finalized-by-handler';
 
+    readonly entry: ResourceEntry;
+    readonly handlerError: Error;
+
     constructor(
-        readonly entry: ResourceEntry,
-        readonly handlerError: Error,
+        entry: ResourceEntry,
+        handlerError: Error,
     ) {
         super('Resource inbox entry was finalized by its handler', {
             cause: handlerError,
         });
+        this.entry = entry;
+        this.handlerError = handlerError;
         this.name = 'ResourceInboxFinalizedByHandlerError';
     }
 }
@@ -102,14 +107,27 @@ export class ResilienceDto {
     // Duration.ofMinutes(15)
     static readonly RATE_ADJUST_WINDOW_MS = 15 * 60 * 1000;
 
+    public readonly circuitBreaker: CircuitBreaker;
+    public readonly checkReserveTimeouts: InstanceType<typeof ResilienceDto.StatusChecker>;
+    public readonly checkFairness: InstanceType<typeof ResilienceDto.StatusChecker>;
+    public readonly checkFinalization: InstanceType<typeof ResilienceDto.StatusChecker>;
+    public readonly rateAdjuster: RateAdjuster;
+    public readonly retryPolicy: ResourceInboxRetryPolicy;
+
     constructor(
-        public readonly circuitBreaker: CircuitBreaker,
-        public readonly checkReserveTimeouts: InstanceType<typeof ResilienceDto.StatusChecker>,
-        public readonly checkFairness: InstanceType<typeof ResilienceDto.StatusChecker>,
-        public readonly checkFinalization: InstanceType<typeof ResilienceDto.StatusChecker>,
-        public readonly rateAdjuster: RateAdjuster,
-        public readonly retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+        circuitBreaker: CircuitBreaker,
+        checkReserveTimeouts: InstanceType<typeof ResilienceDto.StatusChecker>,
+        checkFairness: InstanceType<typeof ResilienceDto.StatusChecker>,
+        checkFinalization: InstanceType<typeof ResilienceDto.StatusChecker>,
+        rateAdjuster: RateAdjuster,
+        retryPolicy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     ) {
+        this.circuitBreaker = circuitBreaker;
+        this.checkReserveTimeouts = checkReserveTimeouts;
+        this.checkFairness = checkFairness;
+        this.checkFinalization = checkFinalization;
+        this.rateAdjuster = rateAdjuster;
+        this.retryPolicy = retryPolicy;
     }
 
     toWorkAdvertisementOptions(): ResourceInboxWorkAdvertisementOptions {
@@ -148,10 +166,15 @@ export class ResilienceDto {
     // Java record StatusChecker
     // -------------------------
     static StatusChecker = class StatusChecker {
+        public readonly isEntryRateLimiter: RateLimiter;
+        public readonly lockEntryRateLimiter: RateLimiter;
+
         constructor(
-            public readonly isEntryRateLimiter: RateLimiter,
-            public readonly lockEntryRateLimiter: RateLimiter,
+            isEntryRateLimiter: RateLimiter,
+            lockEntryRateLimiter: RateLimiter,
         ) {
+            this.isEntryRateLimiter = isEntryRateLimiter;
+            this.lockEntryRateLimiter = lockEntryRateLimiter;
         }
 
         static toReserveEntryTimeoutChecker(): InstanceType<typeof ResilienceDto.StatusChecker> {

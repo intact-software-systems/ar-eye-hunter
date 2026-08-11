@@ -800,7 +800,10 @@ class FakeBroadcastChannel {
 
     public onmessage: ((event: MessageEvent) => void) | null = null;
 
-    public constructor(public readonly name: string) {
+    public readonly name: string;
+
+    public constructor(name: string) {
+        this.name = name;
         const channels = FakeBroadcastChannel.channels.get(name) ?? new Set();
         channels.add(this);
         FakeBroadcastChannel.channels.set(name, channels);
@@ -1064,10 +1067,15 @@ class FakeCrdtTransportEndpoint {
         rtc: new Set<FakeCrdtTransportListener>(),
     };
 
+    private readonly id: string;
+    private readonly network: FakeCrdtTransportNetwork;
+
     public constructor(
-        private readonly id: string,
-        private readonly network: FakeCrdtTransportNetwork,
+        id: string,
+        network: FakeCrdtTransportNetwork,
     ) {
+        this.id = id;
+        this.network = network;
         this.transport = {
             ws: this.createLane('ws'),
             rtc: this.createLane('rtc'),

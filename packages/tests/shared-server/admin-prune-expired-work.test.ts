@@ -270,7 +270,11 @@ class MemoryPruneRepository implements AdminPruneExpiredRepository {
   lastExcludedResourceId: string | null = null;
   loseReservation = false;
 
-  constructor(private readonly rowIds: readonly string[]) {}
+  private readonly rowIds: readonly string[];
+
+  constructor(rowIds: readonly string[]) {
+    this.rowIds = rowIds;
+  }
 
   readPage(input: { pageSize: number; excludedResourceId: string | null }) {
     this.lastExcludedResourceId = input.excludedResourceId;

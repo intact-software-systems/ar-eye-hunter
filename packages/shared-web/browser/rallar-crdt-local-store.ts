@@ -163,7 +163,11 @@ export async function createRallarCrdtLocalStore(
 }
 
 class DataBackedRallarCrdtLocalStore implements RallarCrdtLocalStore {
-    public constructor(private readonly stores: StoreBundle) {}
+    private readonly stores: StoreBundle;
+
+    public constructor(stores: StoreBundle) {
+        this.stores = stores;
+    }
 
     public async loadDocument<
         TValue = unknown,

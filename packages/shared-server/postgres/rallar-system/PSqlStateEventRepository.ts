@@ -54,13 +54,19 @@ export class GroupStateEventCollisionError extends Error {
     readonly code = 'group-state-event-collision';
     readonly status = 409;
 
+    readonly event: Pick<
+            GroupEvent,
+            'applicationId' | 'workspaceId' | 'groupId' | 'eventId'
+        >;
+
     constructor(
-        readonly event: Pick<
+        event: Pick<
             GroupEvent,
             'applicationId' | 'workspaceId' | 'groupId' | 'eventId'
         >,
     ) {
         super(`Group state event already exists: ${event.eventId}`);
+        this.event = event;
         this.name = 'GroupStateEventCollisionError';
     }
 }
@@ -69,19 +75,29 @@ export class ClientStateEventCollisionError extends Error {
     readonly code = 'client-state-event-collision';
     readonly status = 409;
 
+    readonly event: Pick<
+            ClientEvent,
+            'applicationId' | 'workspaceId' | 'principalId' | 'eventId'
+        >;
+
     constructor(
-        readonly event: Pick<
+        event: Pick<
             ClientEvent,
             'applicationId' | 'workspaceId' | 'principalId' | 'eventId'
         >,
     ) {
         super(`Client state event already exists with divergent content: ${event.eventId}`);
+        this.event = event;
         this.name = 'ClientStateEventCollisionError';
     }
 }
 
 export class PSqlClientStateEventRepository implements ClientStateEventStore {
-    constructor(private readonly sql: PSqlSql) {}
+    private readonly sql: PSqlSql;
+
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
+    }
 
     async appendClientEvent(event: ClientEvent): Promise<void> {
         assertCompleteClientEvent(event, event);
@@ -289,7 +305,11 @@ export class PSqlClientStateEventRepository implements ClientStateEventStore {
 }
 
 export class PSqlGroupStateEventRepository implements GroupStateEventStore {
-    constructor(private readonly sql: PSqlSql) {}
+    private readonly sql: PSqlSql;
+
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
+    }
 
     async appendGroupEvent(event: GroupEvent): Promise<void> {
         assertCompleteGroupEvent(event, event);

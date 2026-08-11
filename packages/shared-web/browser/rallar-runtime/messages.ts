@@ -107,9 +107,13 @@ class BrowserRallarMessagesController implements RallarMessagesController {
     private readonly registeredRtcMessageTypes = new Set<string>();
     private stopWsInbox: RallarUnsubscribe | undefined;
 
+    private readonly options: CreateRallarMessagesControllerOptions;
+
     constructor(
-        private readonly options: CreateRallarMessagesControllerOptions,
-    ) {}
+        options: CreateRallarMessagesControllerOptions,
+    ) {
+        this.options = options;
+    }
 
     readonly operations: CreateRallarMessagesFacadeOptions = {
         rtc: {

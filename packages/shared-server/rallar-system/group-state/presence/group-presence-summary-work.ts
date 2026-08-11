@@ -104,7 +104,10 @@ export class GroupPresenceSummaryWork {
   private readonly now: () => number;
   private readonly coalescedTopologyWorkService: CoalescedAppOutboxWorkService | null;
 
-  constructor(private readonly options: GroupPresenceSummaryWorkOptions) {
+  private readonly options: GroupPresenceSummaryWorkOptions;
+
+  constructor(options: GroupPresenceSummaryWorkOptions) {
+    this.options = options;
     this.now = options.now ?? (() => Date.now());
     this.coalescedTopologyWorkService =
       options.topologyIntent.damping === 'damped'

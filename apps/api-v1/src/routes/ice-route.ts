@@ -13,11 +13,16 @@ const ICE_MODES = ['metered', 'local'] as const;
 export type IceMode = typeof ICE_MODES[number];
 
 class MeteredIceFetchError extends Error {
+  public readonly status: number;
+  public readonly body: string;
+
   public constructor(
-    public readonly status: number,
-    public readonly body: string,
+    status: number,
+    body: string,
   ) {
     super(`Metered ice fetch failed: ${status} ${body}`);
+    this.status = status;
+    this.body = body;
   }
 }
 

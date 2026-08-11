@@ -10,8 +10,11 @@ import {
 } from './state-snapshot-revision.ts';
 
 export class GroupStateSnapshotIncomparableError extends Error {
-  constructor(readonly groupRef: GroupRef) {
+  readonly groupRef: GroupRef;
+
+  constructor(groupRef: GroupRef) {
     super('Group snapshot causal tuple is incomparable');
+    this.groupRef = groupRef;
     this.name = 'GroupStateSnapshotIncomparableError';
   }
 }

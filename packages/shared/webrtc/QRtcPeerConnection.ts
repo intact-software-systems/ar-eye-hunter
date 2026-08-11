@@ -140,10 +140,15 @@ export class QRtcPeerConnection {
     private iceGatheringStateChangeListener: ((event: Event) => void) | undefined;
     private diagnostics: QRtcPeerConnectionDiagnosticCounters = createInitialDiagnostics();
 
+    public readonly signaler: QRtcSignalingSender;
+    public readonly input: QRtcPeerConnectionInputDto;
+
     constructor(
-        public readonly signaler: QRtcSignalingSender,
-        public readonly input: QRtcPeerConnectionInputDto
+        signaler: QRtcSignalingSender,
+        input: QRtcPeerConnectionInputDto
     ) {
+        this.signaler = signaler;
+        this.input = input;
         this.configuration = {
             iceServers: [...this.input.iceCandidates.iceServers]
         };

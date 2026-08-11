@@ -69,8 +69,11 @@ describe('Task 9 CRDT production AppInbox ingress', () => {
 class CapturingInboxReader extends InboxQueueReader {
   readonly messages: ALMessage[] = [];
 
-  constructor(private readonly fail: boolean) {
+  private readonly fail: boolean;
+
+  constructor(fail: boolean) {
     super(new InMemoryQueueBox());
+    this.fail = fail;
   }
 
   override async enqueueIfAbsent(message: ALMessage): Promise<ResourceEntry> {

@@ -10,10 +10,15 @@ export class WsRtcSignalingTransport implements QRtcSignalingTransport {
 
     private readonly id: string = 'signaling-ws-' + crypto.randomUUID().toString();
 
+    public readonly socket: JsonWebSocketClient;
+    public readonly typeId: string;
+
     constructor(
-        public readonly socket: JsonWebSocketClient,
-        public readonly typeId: string
+        socket: JsonWebSocketClient,
+        typeId: string
     ) {
+        this.socket = socket;
+        this.typeId = typeId;
     }
 
     connect(input: QRtcSignalingTransportInputDto): Promise<void> {

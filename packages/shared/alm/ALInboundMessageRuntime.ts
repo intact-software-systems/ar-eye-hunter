@@ -94,9 +94,12 @@ export class ALInboundMessageRuntime {
     private effectDrainTimer?: ReturnType<typeof setTimeout>;
     private bootstrappedEffects = false;
 
+    private readonly input: ALInboundMessageRuntimeInput;
+
     constructor(
-        private readonly input: ALInboundMessageRuntimeInput,
+        input: ALInboundMessageRuntimeInput,
     ) {
+        this.input = input;
         this.admissionStore = input.stores?.admissionStore ?? createALInboundAdmissionStore({
             kind: 'memory',
             namespace: 'al-inbound-runtime',

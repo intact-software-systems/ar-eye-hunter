@@ -104,17 +104,34 @@ export class AppInboxService {
     private readonly options: NormalizedAppInboxServiceOptions;
     private readonly optionsInput: AppInboxServiceOptions;
     protected readonly transactionWriter: AppInboxTransactionWriter;
+    public readonly inbox: InboxQueueReader;
+    public readonly resourceInbox: ResourceInboxRepository;
+    public readonly resourceInboxResults: ResourceInboxResultsRepository;
+    protected readonly database: PSqlSql;
+    public readonly serviceId: string;
+    private readonly defaultTopicId: string;
+    private readonly timing?: RallarTimingSink;
+    private readonly wakeOwningQueue?: () => void;
+
     constructor(
-        public readonly inbox: InboxQueueReader,
-        public readonly resourceInbox: ResourceInboxRepository,
-        public readonly resourceInboxResults: ResourceInboxResultsRepository,
-        protected readonly database: PSqlSql,
-        public readonly serviceId: string,
-        private readonly defaultTopicId: string = SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
-        private readonly timing?: RallarTimingSink,
+        inbox: InboxQueueReader,
+        resourceInbox: ResourceInboxRepository,
+        resourceInboxResults: ResourceInboxResultsRepository,
+        database: PSqlSql,
+        serviceId: string,
+        defaultTopicId: string = SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
+        timing?: RallarTimingSink,
         options: AppInboxServiceOptions = {},
-        private readonly wakeOwningQueue?: () => void,
+        wakeOwningQueue?: () => void,
     ) {
+        this.inbox = inbox;
+        this.resourceInbox = resourceInbox;
+        this.resourceInboxResults = resourceInboxResults;
+        this.database = database;
+        this.serviceId = serviceId;
+        this.defaultTopicId = defaultTopicId;
+        this.timing = timing;
+        this.wakeOwningQueue = wakeOwningQueue;
         this.optionsInput = options;
         this.transactionWriter = new AppInboxTransactionWriter({
             database,

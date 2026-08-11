@@ -39,7 +39,11 @@ import {
 } from './p-sql-rtc-topology-replay-maintenance.ts';
 
 export class PSqlRtcTopologyReplayRepository {
-  constructor(private readonly sql: PSqlSql) {}
+  private readonly sql: PSqlSql;
+
+  constructor(sql: PSqlSql) {
+    this.sql = sql;
+  }
 
   async initializeConsumer(
     input: RtcTopologyReplayConsumerInput,

@@ -82,11 +82,18 @@ export type CoalescedAppOutboxWorkWriteResult = Readonly<{
 }>;
 
 export class CoalescedAppOutboxWorkService {
+    private readonly outbox: OutboxQueueReader;
+    private readonly serviceId: string;
+    private readonly now: () => number;
+
     constructor(
-        private readonly outbox: OutboxQueueReader,
-        private readonly serviceId: string = 'rallar-server',
-        private readonly now: () => number = () => Date.now(),
+        outbox: OutboxQueueReader,
+        serviceId: string = 'rallar-server',
+        now: () => number = () => Date.now(),
     ) {
+        this.outbox = outbox;
+        this.serviceId = serviceId;
+        this.now = now;
     }
 
     async write(

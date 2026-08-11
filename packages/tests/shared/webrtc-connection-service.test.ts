@@ -42,10 +42,15 @@ vi.mock('@shared/webrtc/QRtcPeerConnection.ts', () => {
         public readonly isReadyToConnect = vi.fn(() => true);
         public readonly applyMediaPolicy = vi.fn();
 
+        public readonly signaler: unknown;
+        public readonly input: unknown;
+
         constructor(
-            public readonly signaler: unknown,
-            public readonly input: unknown,
+            signaler: unknown,
+            input: unknown,
         ) {
+            this.signaler = signaler;
+            this.input = input;
             mockState.peerConnections.push(this);
         }
     }
@@ -96,10 +101,15 @@ vi.mock('@shared/webrtc/QRtcDataChannel.ts', () => {
         }
             | undefined;
 
+        public readonly connection: unknown;
+        public readonly input: { dataChannelName: string };
+
         constructor(
-            public readonly connection: unknown,
-            public readonly input: { dataChannelName: string },
+            connection: unknown,
+            input: { dataChannelName: string },
         ) {
+            this.connection = connection;
+            this.input = input;
             mockState.dataChannels.push(this);
         }
     }
@@ -120,10 +130,15 @@ vi.mock('@shared/webrtc/QRtcMediaChannel.ts', () => {
             return this;
         });
 
+        public readonly connection: unknown;
+        public readonly input: unknown;
+
         constructor(
-            public readonly connection: unknown,
-            public readonly input: unknown,
+            connection: unknown,
+            input: unknown,
         ) {
+            this.connection = connection;
+            this.input = input;
             mockState.mediaChannels.push(this);
         }
     }

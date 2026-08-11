@@ -16,10 +16,14 @@ type ResultsRow = Readonly<{ ris_row_id: number | string }>;
 type AppDataRow = Readonly<{ store_name: string; data_key: string }>;
 
 export class PSqlAdminPruneExpiredRepository implements AdminPruneExpiredRepository {
+    private readonly sql: PSqlSql;
+
     constructor(
-        private readonly sql: PSqlSql,
+        sql: PSqlSql,
         _serviceId: string,
-    ) {}
+    ) {
+        this.sql = sql;
+    }
 
     async readPage(input: Parameters<AdminPruneExpiredRepository['readPage']>[0]): Promise<AdminPruneCandidatePage> {
         switch (input.category) {
