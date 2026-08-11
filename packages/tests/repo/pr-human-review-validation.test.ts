@@ -227,6 +227,111 @@ describe('PR human review record validator', () => {
     expect(ledgerResult.stdout).toContain('legacyLedger');
   });
 
+  it('keeps a 216-candidate aggregated record valid and under the GitHub body cap', () => {
+    const legacyItems = [
+      {
+        id: 'production-legacy-candidate-aaaa000000000001',
+        path: 'apps/example/compat-route.ts',
+        symbol: 'compatRoute',
+        classification: 'legacy',
+        disposition: 'resolved',
+      },
+      {
+        id: 'production-legacy-candidate-aaaa000000000002',
+        path: 'apps/example/compat-mode.ts',
+        symbol: 'compatMode',
+        classification: 'legacy',
+        disposition: 'removed',
+      },
+    ];
+    const aggregatedLegacy = {
+      candidateCount: 216,
+      items: legacyItems,
+      notLegacyAggregate: {
+        count: 214,
+        reportSha256: 'c'.repeat(64),
+        evidence: 'Workflow artifact legacy-report-final on the validating workflow run.',
+        rationale: 'Mechanical migration-sweep candidates with no predecessor implementation.',
+      },
+    };
+    const body = recordBody({
+      initialReview: review({ legacy: aggregatedLegacy }),
+      finalReview: review({ stage: 'final', legacy: aggregatedLegacy }),
+    });
+    const fixture = createFixture({
+      draft: false,
+      body,
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+
+    const result = runValidator(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(body.length).toBeLessThan(60_000);
+  });
+
+  it.each([
+    {
+      name: 'count arithmetic that does not cover the candidate count',
+      patch: { count: 2 },
+      candidateCount: 4,
+      expected: 'legacy candidate count must equal ledger items plus the aggregate',
+    },
+    {
+      name: 'a malformed whole-report digest',
+      patch: { reportSha256: 'deadbeef' },
+      candidateCount: 3,
+      expected: 'not-legacy aggregate report SHA-256 must be exact',
+    },
+    {
+      name: 'a placeholder aggregate rationale',
+      patch: { rationale: 'TBD' },
+      candidateCount: 3,
+      expected: 'not-legacy aggregate requires a concrete rationale',
+    },
+    {
+      name: 'a smuggled aggregate disposition',
+      patch: { disposition: 'resolved' },
+      candidateCount: 3,
+      expected: 'not-legacy aggregate has unsupported fields: disposition',
+    },
+  ])('rejects an aggregated ledger with $name', ({ patch, candidateCount, expected }) => {
+    const fixture = createFixture({
+      body: recordBody({
+        initialReview: review({
+          legacy: {
+            candidateCount,
+            items: [],
+            notLegacyAggregate: { ...validNotLegacyAggregate(), ...patch },
+          },
+        }),
+      }),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+
+    const result = runValidator(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(expected);
+  });
+
+  it('binds the visible aggregated ledger to the metadata aggregate', () => {
+    const body = recordBody({
+      initialReview: review({
+        legacy: { candidateCount: 3, items: [], notLegacyAggregate: validNotLegacyAggregate() },
+      }),
+    });
+    const fixture = createFixture({
+      body: body.replace('"count":3', '"count":4'),
+      changedPaths: ['scripts/new-check.mjs'],
+    });
+
+    const result = runValidator(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('initial visible review contradicts metadata: legacyLedger');
+  });
+
   it('accepts reviewed milestone entries and binds every review field to visible evidence', () => {
     const milestone = milestoneReview();
     const fixture = createFixture({
@@ -997,6 +1102,7 @@ interface Review {
     readonly candidateCount: number;
     readonly items: readonly Record<string, string>[];
     readonly candidatesInspected: string;
+    readonly notLegacyAggregate?: Readonly<Record<string, unknown>>;
   };
 }
 
@@ -1088,6 +1194,15 @@ function trustedReview(
         .sort()
         .join(',')}`,
     ].join('\n'),
+  };
+}
+
+function validNotLegacyAggregate(): Readonly<Record<string, unknown>> {
+  return {
+    count: 3,
+    reportSha256: 'c'.repeat(64),
+    evidence: 'Workflow artifact legacy-report-initial on the validating workflow run.',
+    rationale: 'Vocabulary-only candidates from a mechanical migration sweep.',
   };
 }
 
@@ -1239,9 +1354,7 @@ function visibleReview(
     `- Behavior and judgment not proven by automation: ${review.narrative.automationGaps}`,
     `- Legacy candidate count: ${review.legacy.candidateCount}`,
     `- Legacy ledger and dispositions: ${JSON.stringify(
-      stage === 'final'
-        ? enrichedLedgerForTest(review.legacy.items, retainedLegacy)
-        : [...review.legacy.items].sort((left, right) => left.id.localeCompare(right.id)),
+      visibleLedgerForTest(review, stage, retainedLegacy),
     )}`,
     ...(stage === 'final'
       ? [
@@ -1252,6 +1365,30 @@ function visibleReview(
     `- Important findings unresolved: ${review.unresolvedFindings.important}`,
     `- Verdict: ${review.verdict}`,
   ];
+}
+
+function visibleLedgerForTest(
+  review: Review,
+  stage: 'initial' | 'milestone' | 'final',
+  retainedLegacy: readonly ReturnType<typeof retainedApproval>[],
+): unknown {
+  const items =
+    stage === 'final'
+      ? enrichedLedgerForTest(review.legacy.items, retainedLegacy)
+      : [...review.legacy.items].sort((left, right) => left.id.localeCompare(right.id));
+  const aggregate = review.legacy.notLegacyAggregate;
+  if (!aggregate) {
+    return items;
+  }
+  return {
+    items,
+    notLegacyAggregate: {
+      count: aggregate.count,
+      reportSha256: aggregate.reportSha256,
+      evidence: aggregate.evidence,
+      rationale: aggregate.rationale,
+    },
+  };
 }
 
 function enrichedLedgerForTest(

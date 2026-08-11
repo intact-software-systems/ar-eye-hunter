@@ -75,6 +75,36 @@ describe('PR legacy review stage driver', () => {
     expect(result.stdout).toContain('validated 2 exact-SHA legacy candidate review stage(s)');
   });
 
+  it('validates an aggregated not-legacy stage ledger against the recomputed report', () => {
+    const fixture = createStageFixture();
+    const items = reportedItems(fixture, 'resolved');
+    const record = {
+      scope: 'code-changing',
+      initialReview: {
+        mergeBaseSha: fixture.base,
+        headSha: fixture.head,
+        legacy: {
+          candidateCount: items.length,
+          items: [],
+          notLegacyAggregate: {
+            count: items.length,
+            reportSha256: stageReportDigest(fixture),
+            evidence: 'Workflow artifact legacy-report-initial for this fixture run.',
+            rationale: 'Deliberate alternate-route alias with no predecessor implementation.',
+          },
+        },
+      },
+      milestoneReview: { classification: 'none', entries: [] },
+      finalReview: null,
+      retainedLegacy: [],
+    };
+
+    const result = runStageDriver(fixture, record, true);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('validated 1 exact-SHA legacy candidate review stage(s)');
+  });
+
   it('rejects a stage ledger that is not the exact scanner candidate set', () => {
     const fixture = createStageFixture();
     const incompleteItems = reportedItems(fixture, 'resolved').slice(1);
@@ -164,6 +194,17 @@ function reportedItems(fixture: ReturnType<typeof createStageFixture>, dispositi
         disposition,
       };
     });
+}
+
+function stageReportDigest(fixture: ReturnType<typeof createStageFixture>): string {
+  const result = spawnSync(process.execPath, [legacyReviewPath, fixture.base, fixture.head], {
+    cwd: fixture.root,
+    encoding: 'utf8',
+  });
+  expect(result.status, result.stdout).toBe(0);
+  const digestLine = result.stdout.split('\n').find((line) => line.startsWith('REPORT-SHA256: '));
+  expect(digestLine, result.stdout).toBeDefined();
+  return (digestLine ?? '').slice('REPORT-SHA256: '.length);
 }
 
 function stageReview(

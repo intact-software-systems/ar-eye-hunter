@@ -1,5 +1,10 @@
 import { retainedLedgerProjection } from './trusted-retained-legacy.mjs';
-import { validateLegacyItemShape } from './validate-legacy-item.mjs';
+import {
+  notLegacyAggregateFields,
+  resolveNotLegacyAggregateCount,
+  validateLegacyItemShape,
+  validateNotLegacyAggregateShape,
+} from './validate-legacy-item.mjs';
 
 const exactSha = /^[0-9a-f]{40}$/u;
 
@@ -218,7 +223,7 @@ function visibleFields(review, stage, retainedLegacy) {
     ['Legacy candidate count', String(review.legacy?.candidateCount), 'legacyCandidateCount'],
     [
       'Legacy ledger and dispositions',
-      JSON.stringify(visibleLegacyLedger(review.legacy.items, stage, retainedLegacy)),
+      JSON.stringify(visibleLegacyLedger(review.legacy, stage, retainedLegacy)),
       'legacyLedger',
     ],
     ...(stage === 'final'
@@ -262,7 +267,21 @@ function visibleReviewLabels(stage) {
   };
 }
 
-function visibleLegacyLedger(items, stage, retainedLegacy) {
+function visibleLegacyLedger(legacy, stage, retainedLegacy) {
+  const items = visibleLedgerItems(legacy.items, stage, retainedLegacy);
+  const aggregate = legacy.notLegacyAggregate;
+  if (!isPlainRecord(aggregate)) {
+    return items;
+  }
+  return {
+    items,
+    notLegacyAggregate: Object.fromEntries(
+      notLegacyAggregateFields.map((field) => [field, aggregate[field]]),
+    ),
+  };
+}
+
+function visibleLedgerItems(items, stage, retainedLegacy) {
   if (stage !== 'final') {
     return [...items].sort((left, right) => left.id.localeCompare(right.id));
   }
@@ -286,8 +305,17 @@ function validateLegacyLedger({ legacy, stage, retainedLegacy, errors }) {
     errors.push(`${stage} review legacy ledger is required`);
     return;
   }
-  if (!Number.isInteger(legacy.candidateCount) || legacy.candidateCount !== legacy.items.length) {
-    errors.push(`${stage} review legacy candidate count must equal ledger items`);
+  const aggregate = legacy.notLegacyAggregate ?? undefined;
+  if (aggregate !== undefined) {
+    validateNotLegacyAggregateShape({ aggregate, label: `${stage} review`, errors });
+  }
+  const expectedItemCount = legacy.items.length + resolveNotLegacyAggregateCount(aggregate);
+  if (!Number.isInteger(legacy.candidateCount) || legacy.candidateCount !== expectedItemCount) {
+    errors.push(
+      aggregate === undefined
+        ? `${stage} review legacy candidate count must equal ledger items`
+        : `${stage} review legacy candidate count must equal ledger items plus the aggregate`,
+    );
   }
   const identifiers = new Set();
   for (const item of legacy.items) {

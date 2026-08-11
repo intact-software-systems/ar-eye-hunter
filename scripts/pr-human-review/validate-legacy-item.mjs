@@ -29,6 +29,41 @@ const retainedApprovalOnlyFields = retainedApprovalFields.filter(
   (field) => !['id', 'path', 'symbol'].includes(field),
 );
 
+export const notLegacyAggregateFields = ['count', 'reportSha256', 'evidence', 'rationale'];
+
+export function resolveNotLegacyAggregateCount(aggregate) {
+  return isPlainRecord(aggregate) && Number.isInteger(aggregate.count) && aggregate.count > 0
+    ? aggregate.count
+    : 0;
+}
+
+export function validateNotLegacyAggregateShape({ aggregate, label, errors }) {
+  if (!isPlainRecord(aggregate)) {
+    errors.push(`${label} not-legacy aggregate must be a plain object`);
+    return;
+  }
+  const unsupportedFields = Object.keys(aggregate).filter(
+    (field) => !notLegacyAggregateFields.includes(field),
+  );
+  if (unsupportedFields.length > 0) {
+    errors.push(
+      `${label} not-legacy aggregate has unsupported fields: ${unsupportedFields.join(', ')}`,
+    );
+  }
+  if (!Number.isInteger(aggregate.count) || aggregate.count <= 0) {
+    errors.push(`${label} not-legacy aggregate count must be a positive integer`);
+  }
+  if (!exactHash.test(aggregate.reportSha256 ?? '')) {
+    errors.push(`${label} not-legacy aggregate report SHA-256 must be exact`);
+  }
+  if (!isEvidenceText(aggregate.evidence)) {
+    errors.push(`${label} not-legacy aggregate evidence location is required`);
+  }
+  if (!isConcreteRationale(aggregate.rationale)) {
+    errors.push(`${label} not-legacy aggregate requires a concrete rationale`);
+  }
+}
+
 export function validateLegacyItemShape(input) {
   const { item, label, errors } = input;
   const retainedApproval = input.retainedApproval;

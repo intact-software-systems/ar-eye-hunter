@@ -1,19 +1,27 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
   readReviewRecord,
   validateSuppliedEvidence,
 } from './legacy-review/validate-supplied-evidence.mjs';
-import { printReport } from './legacy-review/candidate-report.mjs';
+import {
+  computeReportSha256,
+  printReport,
+  toCanonicalReport,
+  toCanonicalReportText,
+} from './legacy-review/candidate-report.mjs';
 import { scanChangedProduction } from './legacy-review/scan-changed-production.mjs';
 
 const input = readInput(process.argv.slice(2));
 const result = input.isExempt
   ? { ...input, changedFiles: [], candidates: [], exempt: true }
-  : scanChangedProduction(input);
+  : toDigestedScan(scanChangedProduction(input));
 
+if (!input.isExempt && input.reportOut !== undefined) {
+  writeFileSync(input.reportOut, toCanonicalReportText(toCanonicalReport(result)));
+}
 printReport(result);
 const validationErrors = validateSuppliedEvidence(input, result.candidates);
 if (validationErrors.length > 0) {
@@ -25,12 +33,17 @@ if (validationErrors.length > 0) {
   console.log('PASS: supplied final review ledger disposes every reported candidate');
 }
 
+function toDigestedScan(scan) {
+  const reportText = toCanonicalReportText(toCanonicalReport(scan));
+  return { ...scan, reportSha256: computeReportSha256(reportText) };
+}
+
 function readInput(args) {
   const [baseReference, headReference, ...optionArgs] = args;
   if (!baseReference || !headReference) {
     failUsage(
       'usage: npm run review:legacy -- <base> <head> ' +
-        '[--review-record file] [--registry file] [--stage stage]',
+        '[--review-record file] [--registry file] [--stage stage] [--report-out file]',
     );
   }
   const options = readOptions(optionArgs);
@@ -47,6 +60,7 @@ function readInput(args) {
     reviewRecord: options['review-record'],
     registry: options.registry,
     stage: options.stage,
+    reportOut: options['report-out'],
     isExempt,
   };
 }
@@ -69,7 +83,8 @@ function readOptions(args) {
       failUsage('options must use --name value pairs');
     }
     const name = option.slice(2);
-    if (!['review-record', 'registry', 'stage'].includes(name) || options[name] !== undefined) {
+    const supportedOptions = ['review-record', 'registry', 'stage', 'report-out'];
+    if (!supportedOptions.includes(name) || options[name] !== undefined) {
       failUsage(`unsupported or repeated option: ${option}`);
     }
     options[name] = value;

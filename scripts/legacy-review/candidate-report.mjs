@@ -21,6 +21,32 @@ export function deduplicateAndSort(candidates) {
   );
 }
 
+export function toCanonicalReport(input) {
+  return {
+    version: 1,
+    mergeBase: input.mergeBase,
+    head: input.head,
+    candidateCount: input.candidates.length,
+    candidates: input.candidates.map((item) => ({
+      id: item.id,
+      kind: item.kind,
+      path: item.path,
+      line: item.line,
+      symbol: item.symbol,
+      reason: item.reason,
+      detail: item.detail,
+    })),
+  };
+}
+
+export function toCanonicalReportText(report) {
+  return `${JSON.stringify(report, null, 2)}\n`;
+}
+
+export function computeReportSha256(reportText) {
+  return createHash('sha256').update(reportText).digest('hex');
+}
+
 export function printReport(result) {
   console.log(`Legacy candidate review: ${result.mergeBase} -> ${result.head}`);
   console.log(
@@ -33,6 +59,7 @@ export function printReport(result) {
   );
   if (result.exempt)
     return console.log('PASS: explicit PR-review exemption skips legacy candidate scanning');
+  console.log(`REPORT-SHA256: ${result.reportSha256}`);
   if (result.candidates.length === 0)
     return console.log('PASS: no changed production legacy candidates');
   console.log(
