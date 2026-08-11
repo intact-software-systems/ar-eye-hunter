@@ -60,6 +60,19 @@ describe('PR human review record contract', () => {
     }
   });
 
+  it('uses stable finding-resolution and legacy-candidate-count fields at every applicable review stage', () => {
+    const template = readRepo(templatePath);
+    const contract = readRepo(reviewRecordPath);
+
+    expectOccurrences(template, '- Complete review findings and resolution/status', 3);
+    expectOccurrences(template, '- Legacy candidate count:', 3);
+    expectAllNormalized(contract, [
+      'Complete review findings and resolution/status',
+      'correctness, safety, contracts, and other human-review findings',
+      'Legacy candidate count',
+    ]);
+  });
+
   it('requires an exhaustive retained-legacy approval ledger and durable registry entries', () => {
     expect(existsSync(resolve(legacyRegistryPath))).toBe(true);
 
@@ -135,4 +148,8 @@ function expectAllNormalized(haystack: string, needles: readonly string[]): void
   for (const needle of needles) {
     expect(normalized, needle).toContain(needle.replace(/\s+/g, ' ').trim());
   }
+}
+
+function expectOccurrences(haystack: string, needle: string, expectedCount: number): void {
+  expect(haystack.split(needle)).toHaveLength(expectedCount + 1);
 }

@@ -29,8 +29,12 @@ changed is required for an exemption.
 
 Every record identifies a separate agent or human reviewer, the exact merge
 base SHA, the exact candidate head SHA, unresolved Critical and Important
-counts, and a verdict. An implementation agent may supply context but never
-self-certifies as the independent reviewer.
+counts, and a verdict. Every applicable record includes a `Complete review
+findings and resolution/status` field covering correctness, safety, contracts,
+and other human-review findings. Each applicable review record includes a
+`Legacy candidate count` beside its ledger so automation can check that every
+identified candidate received a disposition. An implementation agent may supply
+context but never self-certifies as the independent reviewer.
 
 ### Initial review
 
@@ -45,14 +49,17 @@ and diff. It records:
 - tests rewritten or removed, plus confirmation production was not compromised
   for tests;
 - behavior and judgment not proven by automation;
-- the legacy inventory and one disposition for every identified item; and
+- complete review findings and resolution/status, plus the legacy candidate
+  count and one disposition for every identified item; and
 - reviewer, findings, unresolved counts, exact SHAs, and verdict.
 
 ### Milestone review
 
 A milestone review is required when a new ownership, control-flow, or legacy
 family appears. It uses the same fields as the initial review and explains the
-new family. It does not replace the final review.
+new family. It does not replace the final review. Its complete findings status
+and legacy candidate count cover the newly introduced family as well as the
+current candidate tree.
 
 ### Final review
 
@@ -60,7 +67,9 @@ A final review is required before the pull request is ready for merge. The
 separate agent or human reviewer freezes the candidate base and head, traces
 every changed production path from entry owner to result, and reviews the
 initial legacy baseline, automated candidates, changed files, and actual
-production call paths for unnamed legacy.
+production call paths for unnamed legacy. Its complete findings status records
+the resolution of every correctness, safety, contract, and other human-review
+finding; its legacy candidate count matches the final ledger.
 
 Completed work requires zero unresolved Critical or Important findings. A
 production change invalidates the final review and any retained-legacy approval;
