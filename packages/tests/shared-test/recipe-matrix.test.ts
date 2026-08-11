@@ -9,6 +9,7 @@ type MatrixEntry = {
     recipe: string;
     category: string;
     mode: string;
+    tier?: number;
     profiles: string[];
     expectedExitCode: number;
     artifactName?: string;
@@ -260,6 +261,26 @@ describe('black-box runner recipe matrix', () => {
         expect(adminEntry?.requires?.env).toContain('RALLAR_CRDT_DOCUMENT_KEY');
     });
 
+    it('labels every api-v1 entry with an honest evidence tier', () => {
+        const { entries } = readMatrix();
+        const apiEntries = entries.filter(entry => entry.category === 'api-v1-black-box');
+
+        expect(apiEntries.length).toBeGreaterThan(0);
+        apiEntries.forEach(entry => {
+            const recipeText = readFileSync(path.join(runnerRoot, entry.recipe), 'utf8');
+            const usesSqlEvidence = recipeText.includes('state-write-evidence');
+
+            expect([1, 2]).toContain(entry.tier);
+            expect(entry.tier).toBe(usesSqlEvidence ? 2 : 1);
+        });
+
+        entries
+            .filter(entry => entry.category !== 'api-v1-black-box')
+            .forEach(entry => {
+                expect(entry.tier).toBeUndefined();
+            });
+    });
+
     it('defines a no-browser API-v1 black-box profile', () => {
         const { entries } = readMatrix();
         const apiEntries = entries.filter(entry => entry.profiles.includes('api-v1-black-box'));
@@ -271,12 +292,16 @@ describe('black-box runner recipe matrix', () => {
             'api-v1-black-box-control-auth',
             'api-v1-client-state',
             'api-v1-crdt-catch-up-auth',
+            'api-v1-cross-application-ws-isolation',
+            'api-v1-cross-principal-client-state-isolation',
             'api-v1-group-formation-burst-medium',
             'api-v1-group-formation-burst-small',
             'api-v1-group-presence',
             'api-v1-ice-config',
+            'api-v1-member-stats-negative-shape',
             'api-v1-openapi-topology-auth',
             'api-v1-presence-lease-bound',
+            'api-v1-read-your-writes-presence',
             'api-v1-scope-isolation',
             'api-v1-spa-statistics',
             'api-v1-websocket-topic-routing',
@@ -311,11 +336,15 @@ describe('black-box runner recipe matrix', () => {
             'api-v1-auth-session',
             'api-v1-client-state',
             'api-v1-crdt-catch-up-auth',
+            'api-v1-cross-application-ws-isolation',
+            'api-v1-cross-principal-client-state-isolation',
             'api-v1-group-formation-burst-medium',
             'api-v1-group-formation-burst-small',
             'api-v1-group-presence',
+            'api-v1-member-stats-negative-shape',
             'api-v1-openapi-topology-auth',
             'api-v1-presence-lease-bound',
+            'api-v1-read-your-writes-presence',
             'api-v1-scope-isolation',
             'api-v1-spa-statistics',
             'api-v1-websocket-topic-routing',

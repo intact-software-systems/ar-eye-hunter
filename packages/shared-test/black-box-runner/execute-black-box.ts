@@ -1,14 +1,22 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
-import { toBoundedWsWaitMessages } from './artifacts/with-bounded-artifact-report-results.ts';
 import {
-    createMissingRtcProvider,
     rememberRtcCloseEvent,
     type RtcClient,
     type RtcProvider,
     toRtcPayload,
     toRtcFailureStatus, toRtcSuccessStatus,
 } from './rtc-provider.ts';
+import {
+    toWsConnectionName,
+    toWsExpectedConnectionName,
+    toWsFailureStatus,
+    toWsSuccessStatus,
+    waitForWsClose,
+    waitForWsMessage,
+    waitForWsMessageAbsence,
+    waitForWsMessages,
+} from './ws/ws-wait-expectations.ts';
 import { createRallarStubRtcProvider } from './rallar-stub-rtc-provider.ts';
 import { createRallarWebRtcWebSocketSignalingProvider } from './rallar-webrtc-runtime.ts';
 import {createRallarInMemoryProvider} from './rallar-in-memory-runtime.ts';
@@ -25,6 +33,12 @@ import {
 } from './rallar-remote-browser-provider.ts';
 import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
 import { normalizeBlackBoxResponseHeaders } from './http/normalize-black-box-response-headers.ts';
+import { executeHttpInteraction } from './http/execute-http-interaction.ts';
+import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
+import {
+    toHttpInteractionStatus,
+    toStatus,
+} from './http/http-response-expectations.ts';
 import {
     directSafeOutputTransformSpec,
     evaluateSafeOutputTransform,
@@ -296,6 +310,26 @@ export function redactBlackBoxData<T>(value: T, redactions: Redaction[] = []): T
     }
 
     return value;
+}
+
+function createMissingRtcProvider(providerName: string): RtcProvider {
+    const missing = (interaction: any, config: any, context: any): Promise<any> => {
+        return Promise.resolve(toRtcFailureStatus(
+            config,
+            interaction,
+            'RTC provider is not configured: ' + providerName,
+            {
+                availableProviders: Object.keys(context.rtcProviders || {}),
+            },
+        ));
+    };
+
+    return {
+        connect: missing,
+        send: missing,
+        wait: missing,
+        close: missing,
+    };
 }
 
 function createRtcProviders(): Record<string, RtcProvider> {
@@ -678,124 +712,6 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function toRetryPolicy(request: any): any {
-    const retry = request?.resilience?.retry || request?.retry || {};
-
-    return {
-        maxAttempts: Number.parseInt(retry.maxAttempts || 1),
-        backoffMs: Number.parseInt(retry.backoffMs || 0),
-        backoffMultiplier: Number.parseFloat(retry.backoffMultiplier || 1),
-        onStatus: retry.onStatus || [],
-        onException: retry.onException !== false,
-    };
-}
-
-function shouldRetryStatus(response: any, retryPolicy: any): boolean {
-    return retryPolicy.onStatus
-        .map((status: any) => Number.parseInt(status))
-        .includes(response.status);
-}
-
-function toBackoffMs(retryPolicy: any, attemptNumber: number): number {
-    return retryPolicy.backoffMs * Math.pow(retryPolicy.backoffMultiplier, attemptNumber - 1);
-}
-
-async function fetchWithRetry(request: any): Promise<any> {
-    const retryPolicy = toRetryPolicy(request);
-    const maxAttempts = Number.isFinite(retryPolicy.maxAttempts) && retryPolicy.maxAttempts > 0
-        ? retryPolicy.maxAttempts
-        : 1;
-
-    let lastException: any;
-
-    for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++) {
-        try {
-            const response = await fetchDataBasic(request) as any;
-
-            response.blackBoxAttemptNumber = attemptNumber;
-            response.blackBoxMaxAttempts = maxAttempts;
-
-            if (attemptNumber < maxAttempts && shouldRetryStatus(response, retryPolicy)) {
-                const backoffMs = toBackoffMs(retryPolicy, attemptNumber);
-                if (backoffMs > 0) {
-                    await sleep(backoffMs);
-                }
-                continue;
-            }
-
-            return response;
-        } catch (e) {
-            lastException = e instanceof Error
-                ? e
-                : new Error(String(e));
-
-            lastException.blackBoxAttemptNumber = attemptNumber;
-            lastException.blackBoxMaxAttempts = maxAttempts;
-
-            if (!retryPolicy.onException || attemptNumber >= maxAttempts) {
-                throw lastException;
-            }
-
-            const backoffMs = toBackoffMs(retryPolicy, attemptNumber);
-            if (backoffMs > 0) {
-                await sleep(backoffMs);
-            }
-        }
-    }
-
-    throw lastException || new Error('Request failed without response');
-}
-
-function toBody(request: any): BodyInit | undefined {
-    if (request.form) {
-        return new URLSearchParams(request.form);
-    }
-
-    return request.body && request.method !== undefined && request.method !== 'GET'
-        ? JSON.stringify(request.body)
-        : undefined;
-}
-
-async function toJson(res: Response): Promise<any> {
-    return res.json()
-        .catch(() => {
-            return {};
-        });
-}
-
-function toStatus(
-    config: any,
-    result: string,
-    actualJson: any,
-    res: any,
-    interaction: any,
-    results: any = {},
-): any {
-    return {
-        name: config.interactionName,
-        status: FAILURE,
-        result,
-        ...toCorrelationReportFields(interaction),
-        method: interaction.request.method || 'GET',
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        attemptNumber: res.blackBoxAttemptNumber,
-        maxAttempts: res.blackBoxMaxAttempts,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: {
-            body: actualJson,
-            headers: normalizeBlackBoxResponseHeaders(res.headers),
-            statusCode: res.status,
-            statusText: res.statusText,
-        },
-        details: results,
-        ...config,
-    };
-}
-
 function toOutputReportFields(interaction: any): any {
     return {
         output: interaction.request.output,
@@ -806,124 +722,6 @@ function toOutputReportFields(interaction: any): any {
         redact: interaction.request.redact,
         redactAs: interaction.request.redactAs,
     };
-}
-
-function toSuccessStatus(config: any, actualJson: any, response: any, interaction: any): any {
-    return {
-        name: config.interactionName,
-        status: SUCCESS,
-        ...toCorrelationReportFields(interaction),
-        method: interaction.request.method,
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        attemptNumber: response.blackBoxAttemptNumber,
-        maxAttempts: response.blackBoxMaxAttempts,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: {
-            body: actualJson,
-            headers: normalizeBlackBoxResponseHeaders(response.headers),
-            statusCode: response.status,
-            statusText: response.statusText,
-        },
-        ...toOutputReportFields(interaction),
-        input: interaction.request.input,
-    };
-}
-
-function toNumberList(value: unknown): number[] {
-    if (Array.isArray(value)) {
-        return value
-            .map(item => Number.parseInt(String(item), 10))
-            .filter(item => Number.isFinite(item));
-    }
-
-    if (typeof value === 'string' && value.includes(',')) {
-        return toNumberList(value.split(','));
-    }
-
-    if (value !== undefined && value !== null) {
-        const parsed = Number.parseInt(String(value), 10);
-        return Number.isFinite(parsed)
-            ? [parsed]
-            : [];
-    }
-
-    return [];
-}
-
-function expectedHttpStatusCodes(response: any): number[] {
-    return [
-        ...toNumberList(response?.statusCode),
-        ...toNumberList(response?.status),
-        ...toNumberList(response?.statusCodes),
-        ...toNumberList(response?.allowedStatusCodes),
-    ];
-}
-
-function bodyExpectationAlternatives(response: any): any[] {
-    const alternatives = response?.bodyAnyOf ?? response?.anyBodyOf ?? response?.bodyIn;
-
-    return Array.isArray(alternatives)
-        ? alternatives
-        : [];
-}
-
-function compareExpectedBody(expectedBody: any, actualJson: any, interaction: any): any {
-    return compareJson(
-        expectedBody,
-        actualJson,
-        toConfig(
-            interaction.response?.comparison || COMPARISON.COMPATIBLE,
-            interaction.response?.ignoreJsonKeys || [],
-            interaction.response?.ignoreJsonPaths || [],
-        ),
-    );
-}
-
-function toHttpInteractionStatus(config: any, interaction: any, response: any, actualJson: any): any {
-    const expectedStatuses = expectedHttpStatusCodes(interaction.response);
-    const hasExpectedStatus = expectedStatuses.length > 0;
-
-    if (hasExpectedStatus && !expectedStatuses.includes(Number.parseInt(String(response.status), 10))) {
-        return toStatus(config, 'Expected responseCode not the same as actual responseCode', actualJson, response, interaction, {
-            expectedStatusCodes: expectedStatuses,
-        });
-    }
-
-    if (!response.ok && !hasExpectedStatus) {
-        return toStatus(config, 'Server request failed.', actualJson, response, interaction);
-    }
-
-    const bodyAlternatives = bodyExpectationAlternatives(interaction.response);
-    if (bodyAlternatives.length > 0) {
-        if (actualJson === undefined || actualJson === null) {
-            return toStatus(config, 'Server with no body in response. Expects a body.', actualJson, response, interaction);
-        }
-
-        const comparisons = bodyAlternatives.map(expectedBody => compareExpectedBody(expectedBody, actualJson, interaction));
-        const matchedIndex = comparisons.findIndex(result => result.isEqual);
-        if (matchedIndex < 0) {
-            return toStatus(config, 'Expected response not to match any accepted response body', actualJson, response, interaction, {
-                bodyAnyOf: bodyAlternatives,
-                comparisons,
-            });
-        }
-    } else if (interaction?.response?.body !== undefined) {
-        if (actualJson === undefined || actualJson === null) {
-            return toStatus(config, 'Server with no body in response. Expects a body.', actualJson, response, interaction);
-        }
-
-        const results = compareExpectedBody(interaction.response.body, actualJson, interaction);
-
-        if (!results.isEqual) {
-            return toStatus(config, 'Expected response not the same as actual response', actualJson, response, interaction, results);
-        }
-    }
-
-    return toSuccessStatus(config, actualJson, response, interaction);
 }
 
 function toInteractionName(interactionWithConfig: any): string {
@@ -1274,17 +1072,8 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
     });
 }
 
-function executeAssertInteraction(interaction: any, config: any, context: any): Promise<any> {
-    const expectedAlternatives = Array.isArray(interaction.response.anyOf)
-        ? interaction.response.anyOf
-        : [];
-    const expected = interaction.response.body !== undefined
-        ? interaction.response.body
-        : interaction.response.expect !== undefined
-            ? interaction.response.expect
-            : interaction.response.expected;
-
-    const actual = interaction.response.actual !== undefined
+function toResolvedAssertActual(interaction: any, context: any): any {
+    return interaction.response.actual !== undefined
         ? isRecord(interaction.response.actual) && interaction.response.actual.transform !== undefined
             ? evaluateScenarioTransform({
                 transform: interaction.response.actual.transform,
@@ -1297,13 +1086,56 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
                 interaction.response.missingActualValue,
             )
         : interaction.request.actual;
+}
 
-    if (expected === undefined && expectedAlternatives.length <= 0) {
+function toAssertAnyOfStatus(interaction: any, config: any, actual: any): any {
+    const expectedAlternatives = interaction.response.anyOf;
+    const comparisons = expectedAlternatives.map((expectedValue: any) => compareJson(
+        expectedValue,
+        actual,
+        toConfig(
+            interaction.response?.comparison || COMPARISON.COMPATIBLE,
+            interaction.response?.ignoreJsonKeys || [],
+            interaction.response?.ignoreJsonPaths || [],
+        ),
+    ));
+    const matchedIndex = comparisons.findIndex((result: any) => result.isEqual);
+
+    if (matchedIndex < 0) {
+        return toAssertFailureStatus(config, interaction, actual, 'Assert comparison failed', {
+            anyOf: expectedAlternatives,
+            comparisons,
+        });
+    }
+
+    return toAssertSuccessStatus(config, interaction, actual, {
+        anyOfMatchedIndex: matchedIndex,
+        comparison: comparisons[matchedIndex],
+    });
+}
+
+function executeAssertInteraction(interaction: any, config: any, context: any): Promise<any> {
+    const expectedAlternatives = Array.isArray(interaction.response.anyOf)
+        ? interaction.response.anyOf
+        : [];
+    const comparators = Array.isArray(interaction.response.comparators)
+        ? interaction.response.comparators
+        : [];
+    const expected = interaction.response.body !== undefined
+        ? interaction.response.body
+        : interaction.response.expect !== undefined
+            ? interaction.response.expect
+            : interaction.response.expected;
+
+    const actual = toResolvedAssertActual(interaction, context);
+
+    if (expected === undefined && expectedAlternatives.length <= 0 && comparators.length <= 0) {
         return Promise.resolve(toAssertFailureStatus(
             config,
             interaction,
             actual,
-            'Assert step is missing expected value. Use expect.body, expect.expect, or expect.expected.',
+            'Assert step is missing expected value. ' +
+                'Use expect.body, expect.expect, expect.expected, or expect.comparators.',
         ));
     }
 
@@ -1333,34 +1165,27 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
         ));
     }
 
-    if (expectedAlternatives.length > 0) {
-        const comparisons = expectedAlternatives.map((expectedValue: any) => compareJson(
-            expectedValue,
+    const comparatorIssues = validateAssertValueComparators(actual, comparators);
+    if (comparatorIssues.length > 0) {
+        return Promise.resolve(toAssertFailureStatus(
+            config,
+            interaction,
             actual,
-            toConfig(
-                interaction.response?.comparison || COMPARISON.COMPATIBLE,
-                interaction.response?.ignoreJsonKeys || [],
-                interaction.response?.ignoreJsonPaths || [],
-            ),
+            'Assert comparator failed',
+            {
+                comparators,
+                failures: comparatorIssues,
+            },
         ));
-        const matchedIndex = comparisons.findIndex((result: any) => result.isEqual);
+    }
 
-        if (matchedIndex < 0) {
-            return Promise.resolve(toAssertFailureStatus(
-                config,
-                interaction,
-                actual,
-                'Assert comparison failed',
-                {
-                    anyOf: expectedAlternatives,
-                    comparisons,
-                },
-            ));
-        }
+    if (expectedAlternatives.length > 0) {
+        return Promise.resolve(toAssertAnyOfStatus(interaction, config, actual));
+    }
 
+    if (expected === undefined) {
         return Promise.resolve(toAssertSuccessStatus(config, interaction, actual, {
-            anyOfMatchedIndex: matchedIndex,
-            comparison: comparisons[matchedIndex],
+            comparators,
         }));
     }
 
@@ -1700,72 +1525,6 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
     }
 }
 
-function toWsConnectionName(request: any): string {
-    return request.connection || request.name || 'default';
-}
-
-function toWsExpectedConnectionName(interaction: any): string {
-    return interaction.response?.connection
-        || interaction.response?.onConnection
-        || interaction.request?.expectConnection
-        || toWsConnectionName(interaction.request);
-}
-
-function toWsComparisonConfig(interaction: any): any {
-    return toConfig(
-        interaction.response?.comparison || COMPARISON.COMPATIBLE,
-        interaction.response?.ignoreJsonKeys || [],
-        interaction.response?.ignoreJsonPaths || [],
-    );
-}
-
-function findWsMessageIndex(
-    messages: any[],
-    expectedMessage: any,
-    interaction: any,
-    excludedIndexes: number[] = [],
-): number {
-    return messages.findIndex((message, index) => {
-        if (excludedIndexes.includes(index)) {
-            return false;
-        }
-
-        const result = compareJson(
-            expectedMessage,
-            message.data,
-            toWsComparisonConfig(interaction),
-        );
-
-        return result.isEqual;
-    });
-}
-
-function findWsMessageIndexFrom(
-    messages: any[],
-    expectedMessage: any,
-    interaction: any,
-    fromIndex = 0,
-    excludedIndexes: number[] = [],
-): number {
-    for (let index = fromIndex; index < messages.length; index++) {
-        if (excludedIndexes.includes(index)) {
-            continue;
-        }
-
-        const result = compareJson(
-            expectedMessage,
-            messages[index].data,
-            toWsComparisonConfig(interaction),
-        );
-
-        if (result.isEqual) {
-            return index;
-        }
-    }
-
-    return -1;
-}
-
 function toWsUrl(request: any): string | undefined {
     return request.url || request.path;
 }
@@ -1841,62 +1600,6 @@ function rememberWsCloseEvent(connectionName: string, closeEvent: any, context: 
     }
 
     context.wsCloseEvents[connectionName].push(closeEvent);
-}
-
-function findWsCloseEventIndex(closeEvents: any[], expectedCloseEvent: any, interaction: any): number {
-    return closeEvents.findIndex(closeEvent => {
-        const result = compareJson(
-            expectedCloseEvent,
-            closeEvent,
-            toConfig(
-                interaction.response?.comparison || COMPARISON.COMPATIBLE,
-                interaction.response?.ignoreJsonKeys || [],
-                interaction.response?.ignoreJsonPaths || [],
-            ),
-        );
-
-        return result.isEqual;
-    });
-}
-
-function toWsSuccessStatus(config: any, interaction: any, details: any = {}): any {
-    return {
-        name: config.interactionName,
-        status: SUCCESS,
-        transport: 'WS',
-        ...toCorrelationReportFields(interaction),
-        action: interaction.request.action,
-        connection: interaction.request.connection || interaction.response?.connection,
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: details,
-        ...toOutputReportFields(interaction),
-        input: interaction.request.input,
-    };
-}
-
-function toWsFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
-    return {
-        name: config.interactionName,
-        status: FAILURE,
-        result,
-        transport: 'WS',
-        ...toCorrelationReportFields(interaction),
-        action: interaction.request.action,
-        connection: interaction.request.connection || interaction.response?.connection,
-        path: interaction.request.path,
-        timeoutMs: interaction.request.timeoutMs,
-        scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-        interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-        repeatIndex: config.interaction.request.repeatIndex,
-        expected: interaction.response,
-        actual: details,
-        ...config,
-    };
 }
 
 function openWs(interaction: any, config: any, context: any): Promise<any> {
@@ -2094,189 +1797,6 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
         connection: connectionName,
         ...details,
     }));
-}
-
-function waitForWsMessage(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
-    const request = interaction.request;
-    const connectionName = toWsExpectedConnectionName(interaction);
-    const expectedMessage = interaction.response.message;
-    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
-    const startedAt = Date.now();
-    const consume = interaction.response.consume === true;
-
-    return new Promise(resolve => {
-        const interval = setInterval(() => {
-            const messages = context.wsMessages[connectionName] || [];
-            const matchIndex = findWsMessageIndex(messages, expectedMessage, interaction);
-
-            if (matchIndex >= 0) {
-                clearInterval(interval);
-                const match = messages[matchIndex];
-
-                if (consume) {
-                    messages.splice(matchIndex, 1);
-                }
-
-                resolve(toWsSuccessStatus(config, interaction, {
-                    ...details,
-                    connection: connectionName,
-                    matchedMessage: match,
-                    consumed: consume,
-                    waitedMs: Date.now() - startedAt,
-                }));
-                return;
-            }
-
-            if (Date.now() - startedAt >= timeoutMs) {
-                clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket message was not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedMessage, ...toBoundedWsWaitMessages(messages),
-                    waitedMs: Date.now() - startedAt,
-                }));
-            }
-        }, 25);
-    });
-}
-
-function waitForWsMessages(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
-    const request = interaction.request;
-    const connectionName = toWsExpectedConnectionName(interaction);
-    const expectedMessages = interaction.response.messages;
-    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
-    const startedAt = Date.now();
-    const consume = interaction.response.consume === true;
-    const ordered = interaction.response.ordered === true;
-
-    if (!Array.isArray(expectedMessages) || expectedMessages.length <= 0) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket messages must be a non-empty array', {
-            ...details,
-            connection: connectionName,
-            expectedMessages,
-        }));
-    }
-
-    return new Promise(resolve => {
-        const interval = setInterval(() => {
-            const messages = context.wsMessages[connectionName] || [];
-            const matchedMessages: any[] = [];
-            const matchedIndexes: number[] = [];
-
-            let nextOrderedSearchIndex = 0;
-
-            for (const expectedMessage of expectedMessages) {
-                const matchIndex = ordered
-                    ? findWsMessageIndexFrom(messages, expectedMessage, interaction, nextOrderedSearchIndex, matchedIndexes)
-                    : findWsMessageIndex(messages, expectedMessage, interaction, matchedIndexes);
-
-                if (matchIndex >= 0) {
-                    matchedIndexes.push(matchIndex);
-                    matchedMessages.push({
-                        expectedMessage,
-                        matchedMessage: messages[matchIndex],
-                    });
-
-                    if (ordered) {
-                        nextOrderedSearchIndex = matchIndex + 1;
-                    }
-                } else if (ordered) {
-                    break;
-                }
-            }
-
-            if (matchedMessages.length === expectedMessages.length) {
-                clearInterval(interval);
-
-                if (consume) {
-                    matchedIndexes
-                        .sort((a, b) => b - a)
-                        .forEach(index => messages.splice(index, 1));
-                }
-
-                resolve(toWsSuccessStatus(config, interaction, {
-                    ...details,
-                    connection: connectionName,
-                    matchedMessages,
-                    consumed: consume,
-                    ordered,
-                    waitedMs: Date.now() - startedAt,
-                }));
-                return;
-            }
-
-            if (Date.now() - startedAt >= timeoutMs) {
-                clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, ordered
-                    ? 'Expected WebSocket messages were not received in the expected order'
-                    : 'Expected WebSocket messages were not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedMessages,
-                    matchedMessages,
-                    missingMessages: expectedMessages.filter((expectedMessage: any) => {
-                        return matchedMessages.every(match => match.expectedMessage !== expectedMessage);
-                    }),
-                    ordered, ...toBoundedWsWaitMessages(messages),
-                    waitedMs: Date.now() - startedAt,
-                }));
-            }
-        }, 25);
-    });
-}
-
-function waitForWsClose(interaction: any, config: any, context: any, details: any = {}): Promise<any> {
-    const request = interaction.request;
-    const connectionName = toWsExpectedConnectionName(interaction);
-    const expectedClose = interaction.response.close === true
-        ? {}
-        : interaction.response.close;
-    const timeoutMs = Number.parseInt(interaction.response.withinMs || request.timeoutMs || 5000);
-    const startedAt = Date.now();
-    const consume = interaction.response.consume === true;
-
-    if (expectedClose === undefined) {
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket close expectation is missing. Use expect.close.', {
-            ...details,
-            connection: connectionName,
-        }));
-    }
-
-    return new Promise(resolve => {
-        const interval = setInterval(() => {
-            const closeEvents = context.wsCloseEvents[connectionName] || [];
-            const matchIndex = findWsCloseEventIndex(closeEvents, expectedClose, interaction);
-
-            if (matchIndex >= 0) {
-                clearInterval(interval);
-                const match = closeEvents[matchIndex];
-
-                if (consume) {
-                    closeEvents.splice(matchIndex, 1);
-                }
-
-                resolve(toWsSuccessStatus(config, interaction, {
-                    ...details,
-                    connection: connectionName,
-                    matchedCloseEvent: match,
-                    consumed: consume,
-                    waitedMs: Date.now() - startedAt,
-                }));
-                return;
-            }
-
-            if (Date.now() - startedAt >= timeoutMs) {
-                clearInterval(interval);
-                resolve(toWsFailureStatus(config, interaction, 'Expected WebSocket close event was not received', {
-                    ...details,
-                    connection: connectionName,
-                    expectedClose,
-                    closeEvents,
-                    waitedMs: Date.now() - startedAt,
-                }));
-            }
-        }, 25);
-    });
 }
 
 function toRemoteWsPayload(request: any): unknown {
@@ -2570,6 +2090,15 @@ async function waitRemoteWs(interaction: any, config: any, context: any): Promis
     const remote = toRemoteWsConfig(interaction, config, context);
     const fetchFn = remoteBrowserFetch(context);
     return waitWithRemoteWsEventSync(remote, fetchFn, context, () => {
+        if (interaction.response?.absent !== undefined) {
+            return waitForWsMessageAbsence({
+                interaction,
+                config,
+                context,
+                details: { remote },
+            });
+        }
+
         if (interaction.response?.close !== undefined) {
             return waitForWsClose(interaction, config, context, {
                 remote,
@@ -2591,7 +2120,7 @@ async function waitRemoteWs(interaction: any, config: any, context: any): Promis
         return Promise.resolve(toRemoteWsFailure(
             config,
             interaction,
-            'WebSocket wait expects expect.message, expect.messages, or expect.close',
+            'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close',
         ));
     });
 }
@@ -2671,6 +2200,10 @@ function executeWsInteraction(interaction: any, config: any, context: any): Prom
     }
 
     if (action === 'wait' || action === 'expect') {
+        if (interaction.response?.absent !== undefined) {
+            return waitForWsMessageAbsence({ interaction, config, context });
+        }
+
         if (interaction.response?.close !== undefined) {
             return waitForWsClose(interaction, config, context);
         }
@@ -2683,7 +2216,7 @@ function executeWsInteraction(interaction: any, config: any, context: any): Prom
             return waitForWsMessage(interaction, config, context);
         }
 
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket wait expects expect.message, expect.messages, or expect.close'));
+        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'));
     }
 
     if (action === 'close') {
@@ -2796,32 +2329,6 @@ function toReport(context: any, options: any, startedAtEpochMs: number, endedAtE
         rtcCloseEvents: context.rtcCloseEvents,
         rtcProviderNames: Object.keys(context.rtcProviders || {}),
     }, context.redactions);
-}
-
-function fetchDataBasic(request: any): Promise<Response> {
-    const controller = request.timeoutMs
-        ? new AbortController()
-        : undefined;
-
-    const timeout = request.timeoutMs
-        ? setTimeout(() => controller?.abort(), Number.parseInt(request.timeoutMs))
-        : undefined;
-
-    return fetch(
-        request.path,
-        {
-            method: request.method,
-            credentials: request.credentials ? request.credentials : 'omit',
-            mode: request.mode ? request.mode : 'cors',
-            headers: request.headers,
-            body: toBody(request),
-            signal: controller?.signal,
-        },
-    ).finally(() => {
-        if (timeout) {
-            clearTimeout(timeout);
-        }
-    });
 }
 
 function isDryRunExecution(interaction: any, config: any, context: any): boolean {
@@ -3069,30 +2576,7 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         return executeRemoteHttpInteraction(interaction, config, context);
     }
 
-    return fetchWithRetry(interaction.request)
-        .then(async response => {
-            const actualJson = await toJson(response);
-            return toHttpInteractionStatus(config, interaction, response, actualJson);
-        })
-        .catch(e => {
-            return {
-                name: config.interactionName,
-                exception: e?.name === 'AbortError'
-                    ? 'Request timed out after ' + interaction.request.timeoutMs + ' ms'
-                    : e?.message,
-                status: FAILURE,
-                ...toCorrelationReportFields(interaction),
-                method: interaction.request.method || 'GET',
-                path: interaction.request.path,
-                timeoutMs: interaction.request.timeoutMs,
-                attemptNumber: e.blackBoxAttemptNumber,
-                maxAttempts: e.blackBoxMaxAttempts,
-                scenarioExecutionNumber: config.interaction.request.scenarioExecutionNumber,
-                interactionExecutionNumber: config.interaction.request.interactionExecutionNumber,
-                repeatIndex: config.interaction.request.repeatIndex,
-                ...config,
-            };
-        });
+    return executeHttpInteraction(interaction, config);
 }
 
 function toParallelFailureStatus(config: any, interaction: any, result: string, details: any = {}): any {
@@ -3287,9 +2771,34 @@ function executeBlackBoxRecursive(
         })
         .then(data => {
             const endedAtEpochMs = Date.now();
-            return executeNext({ ...data, startedAtEpochMs, endedAtEpochMs,
-                durationMs: endedAtEpochMs - startedAtEpochMs });
+            return executeNext(withMaxDurationBound({ ...data, startedAtEpochMs, endedAtEpochMs,
+                durationMs: endedAtEpochMs - startedAtEpochMs }, interactionWithConfig));
         });
+}
+
+// A bound never masks the step's own failure: only a step that succeeded and
+// overran expect.maxDurationMs is flipped, keeping its original actual data.
+function withMaxDurationBound(interactionData: any, interactionWithConfig: any): any {
+    const response = toExecutableInteraction(interactionWithConfig)?.response;
+    const maxDurationMs = Number.parseInt(String(response?.maxDurationMs ?? ''), 10);
+
+    if (!Number.isFinite(maxDurationMs) || maxDurationMs <= 0) {
+        return interactionData;
+    }
+
+    if (interactionData.status !== SUCCESS || interactionData.durationMs <= maxDurationMs) {
+        return {
+            ...interactionData,
+            maxDurationMs,
+        };
+    }
+
+    return {
+        ...interactionData,
+        status: FAILURE,
+        result: 'Step duration exceeded expect.maxDurationMs',
+        maxDurationMs,
+    };
 }
 
 function closeAllWsConnections(context: any): void {

@@ -41,3 +41,27 @@ hydration without a post-restart mutation. It writes
 `api-v1-server-tertiary-restart.log`. A failed run writes a bounded failure
 artifact with safe socket topic counts, replay metrics, and stream/cursor state;
 it never writes credentials, access tokens, or WebSocket tickets.
+
+## Recipe Tiers
+
+Every `api-v1-black-box`-category matrix entry carries an explicit `tier`
+label so a convergence/durability proof is never mistaken for an API
+black-box test. The convention: name the evidence source, not the topology.
+
+- **Tier 1 — black-box API**: asserts only request/response/WS observables
+  (bodies, headers, revision floors, frames, absence windows). Most entries,
+  including all `api-v1-black-box-recipes` portability-profile rows.
+- **Tier 2 — convergence/durability proof (SQL evidence)**: additionally
+  reads persisted state through `set.state-write-evidence`
+  (`resource_inbox`/outbox/receipts). Exactly five today:
+  `api-v1-admin-operations`, `api-v1-auth-session`, `api-v1-crdt-app-inbox`,
+  `api-v1-state-medium-scale-churn`, `api-v1-state-write-convergence`.
+- **Tier 3 — coordinator proof**: coordinator-owned flows that manage server
+  processes themselves; not portable matrix recipes. Today this is the
+  `api-v1-black-box-topology-replay` profile (`topology-replay/*.mts`), which
+  is why no matrix entry carries `tier: 3`.
+
+`recipe-matrix.test.ts` keeps the labels honest: a tier-2 label requires a
+`state-write-evidence` step in the recipe and vice versa. New recipes state
+their tier when registered; the observability-routed evidence plan (W7)
+re-tiers converted recipes from 2 toward 1 as migrations land.
