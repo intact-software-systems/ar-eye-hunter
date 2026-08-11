@@ -633,20 +633,16 @@ describe('test structure-coupling review', () => {
   });
 
   it('reports real source-coupled public and control-boundary tests', () => {
-    const publicBoundary = runRepoChecker([
+    const result = runRepoChecker([
       '--files',
       'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts',
-    ]);
-    const controlBoundary = runRepoChecker([
-      '--files',
       'packages/tests/rallar-black-box/control-protocol-boundary.test.ts',
     ]);
 
-    expect(publicBoundary.status, publicBoundary.stdout).toBe(0);
-    expect(publicBoundary.stdout).toContain('exact-file-tree');
-    expect(controlBoundary.status, controlBoundary.stdout).toBe(0);
-    expect(controlBoundary.stdout).toContain('production-source-read');
-    expect(controlBoundary.stdout).toContain('symbol-assertion');
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('exact-file-tree');
+    expect(result.stdout).toContain('production-source-read');
+    expect(result.stdout).toContain('symbol-assertion');
   }, 20_000);
 
   it('parses representative real repository suites without silently skipping evidence', () => {

@@ -679,6 +679,3 @@ describe('useHistoryFilterPresets', () => {
             .toContain('browser committed');
     });
 });
-
-describe('History filter persistence ownership', () => {
-    });
