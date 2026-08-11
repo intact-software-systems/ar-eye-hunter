@@ -108,7 +108,7 @@ describe('PR human review record contract', () => {
       'Consumer or operational dependency',
       'Minimization already performed',
       'Approval date and human reviewer',
-      'Approved candidate head SHA',
+      'Approved production candidate SHA',
       'Compatibility tests',
       'Named owner',
       'Review or removal condition',

@@ -148,7 +148,7 @@ retained legacy.
   "initialReview": {
     "reviewer": "",
     "independence": "separate-agent-or-human",
-    "baseSha": "",
+    "mergeBaseSha": "",
     "headSha": "",
     "verdict": "pass",
     "unresolvedFindings": { "critical": 0, "important": 0 },
@@ -166,3 +166,25 @@ retained legacy.
   "retainedLegacy": []
 }
 ```
+
+For each review, add the exact text from the metadata as visible evidence:
+
+```markdown
+<!-- pr-human-review:initial:productionOwnerToResultTrace:start -->
+<!-- pr-human-review:initial:productionOwnerToResultTrace:end -->
+<!-- pr-human-review:initial:cognitiveIndirectionFindings:start -->
+<!-- pr-human-review:initial:cognitiveIndirectionFindings:end -->
+<!-- pr-human-review:initial:testsRewrittenOrRemoved:start -->
+<!-- pr-human-review:initial:testsRewrittenOrRemoved:end -->
+<!-- pr-human-review:initial:productionNotCompromisedForTests:start -->
+<!-- pr-human-review:initial:productionNotCompromisedForTests:end -->
+<!-- pr-human-review:initial:automationGaps:start -->
+<!-- pr-human-review:initial:automationGaps:end -->
+<!-- pr-human-review:initial:completeFindings:start -->
+<!-- pr-human-review:initial:completeFindings:end -->
+```
+
+Repeat the same six blocks with `final` after the complete review. For retained
+legacy, metadata must reference a trusted human GitHub review ID, login,
+submitted date, approved production SHA, and ledger SHA-256. A later registry
+recording commit is allowed only when it changes no production path.

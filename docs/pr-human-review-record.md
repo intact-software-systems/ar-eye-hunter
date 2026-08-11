@@ -24,9 +24,11 @@ record. Fill every required string with concrete evidence; `TODO`, `TBD`,
 The metadata contains `version: 1`, `scope`, an optional explicit exemption,
 an `initialReview`, an optional `finalReview`, and `retainedLegacy`. Each review
 contains its reviewer and `separate-agent-or-human` independence declaration,
-exact base and head SHA, verdict, unresolved Critical and Important counts,
-the six narrative evidence fields, and a legacy candidate count plus ledger.
-Every ledger item has an ID, path, symbol, and one valid disposition.
+the exact computed merge base and head SHA, verdict, unresolved Critical and
+Important counts, the six narrative evidence fields, and a legacy candidate
+count plus ledger. Every visible narrative block must exactly match its
+stage-specific metadata value; every ledger item has an ID, path, symbol, and
+one valid disposition.
 
 Run the deterministic, read-only check locally with explicit evidence files:
 
@@ -35,17 +37,24 @@ npm run check:pr-human-review -- \
   --body path/to/pull-request-body.md \
   --changed-paths path/to/changed-paths.txt \
   --registry docs/production-legacy-exceptions.md \
-  --base <40-character-base-sha> \
+  --reviews path/to/trusted-github-reviews.json \
+  --merge-base <40-character-merge-base-sha> \
   --head <40-character-head-sha> \
   --draft true
 ```
 
-In GitHub Actions, `--event "$GITHUB_EVENT_PATH"` reads the `pull_request`
-payload and derives changed paths from the exact base and head commits. The
-validator checks evidence completeness, exact-SHA freshness, path-valid
-exemptions, ledger completeness, registry IDs, and explicit human-approval
-metadata. It does not approve semantic quality, an independent reviewer, or
-retained legacy.
+In GitHub Actions, trusted base-branch code runs under `pull_request_target`.
+It fetches candidate Git objects and registry text only as data, computes the
+actual Git merge base, and reads GitHub review evidence through a read-only API.
+It never checks out or executes PR-head code. The validator checks evidence
+completeness, exact-SHA freshness, kind-specific exemptions, ledger and registry
+agreement, and trusted human GitHub approval evidence. It does not approve
+semantic quality, an independent reviewer, or retained legacy.
+
+The introducing pull request cannot use this new trusted workflow to certify
+itself: `pull_request_target` deliberately runs the base branch workflow. Its
+bootstrap review is an independent human/agent review recorded outside this
+automation. After merge, later pull requests use the trusted validator.
 
 ## Scope and exemptions
 
@@ -132,9 +141,16 @@ tests protecting compatibility rather than internal structure; named owner;
 review or removal condition; and exact candidate head SHA.
 
 Silence, an issue, an earlier plan approval, agent judgment, or automation is
-not approval. Only explicit human approval for that exact ledger and SHA can
-retain the item. Record the approval in both the pull request and the durable
+not approval. Only an explicit human GitHub approval for the exact production
+SHA and ledger hash can retain the item. The record references the immutable
+review ID, human login, submitted date, production SHA, and ledger SHA-256;
+candidate text alone is never approval. Record it in the durable
 [production legacy exception registry](./production-legacy-exceptions.md).
+
+The approved production SHA may precede the current candidate head only when
+the later Git diff contains registry evidence and no production path. Any later
+production or corrective change invalidates code review and retained-legacy
+approval and requires a new complete review.
 
 ## Automation boundary
 

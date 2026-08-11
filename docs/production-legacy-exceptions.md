@@ -21,16 +21,19 @@ Each retained entry includes:
 - Why removal is unsafe now;
 - Minimization already performed;
 - Approval date and human reviewer;
-- Approved candidate head SHA;
+- Approved production candidate SHA;
 - Compatibility tests, which protect compatibility rather than internal
   structure;
 - Named owner; and
 - Review or removal condition.
 
 An entry is valid only for its recorded location, purpose, minimization,
-condition, and approved candidate head SHA. A production change invalidates
-the approval; re-review it and obtain new explicit human approval before the
-plan completes.
+condition, and approved production candidate SHA. A production change
+invalidates the approval; re-review it and obtain new explicit human approval
+before the plan completes. The registry may be recorded in a later,
+evidence-only commit after approval. That later commit may change only this
+registry; any production path changed after the approved production SHA
+invalidates the approval.
 
 ## Approved retained production legacy
 
@@ -48,7 +51,7 @@ No approved retained production legacy is recorded yet.
 - Why removal is unsafe now:
 - Minimization already performed:
 - Approval date and human reviewer:
-- Approved candidate head SHA:
+- Approved production candidate SHA:
 - Compatibility tests:
 - Named owner:
 - Review or removal condition:
