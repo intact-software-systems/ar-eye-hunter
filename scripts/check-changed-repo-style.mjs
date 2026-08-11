@@ -27,6 +27,9 @@ const scanOptions = Object.freeze({
   constructionDetails: false,
   outputContracts: true,
   objectInterfaces: true,
+  // Phase-2 cognitive metrics stay warning-only: the changed-findings gate
+  // does not fail on them until the planned gate flip enables this option.
+  cognitiveMetrics: false,
 });
 
 async function main() {

@@ -9,6 +9,7 @@ import {
   scanPlainObjectTypeAliases,
 } from './contract-rules.mjs';
 import { scanBoundaryUnknownFindings } from './boundary-unknown-findings.mjs';
+import { isCognitiveMetricsFile, scanCognitiveMetricFindings } from './cognitive-load-rules.mjs';
 import { scanConstructionRules } from './construction-rules.mjs';
 import {
   estimateCyclomaticComplexity,
@@ -176,6 +177,9 @@ function scanFile(source, options) {
   const findings = [];
   const sourceText = { file, raw, lines: raw.split('\n') };
   addFileMeasurementFindings(findings, sourceText.lines);
+  if (options.cognitiveMetrics && isCognitiveMetricsFile(file)) {
+    findings.push(...scanCognitiveMetricFindings(sourceText));
+  }
   addRouteFindings(findings, raw);
   addContractAndFactoryFindings(findings, sourceText, options);
   findings.push(...scanBoundaryUnknownFindings(raw));

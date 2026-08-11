@@ -47,6 +47,7 @@ async function main() {
     constructionDetails: args.has('--construction-details'),
     outputContracts: args.has('--output-contracts'),
     objectInterfaces: args.has('--object-interfaces'),
+    cognitiveMetrics: args.has('--cognitive-metrics'),
   };
   const sources = await collectProductionSources(scanRoots);
   const result = scanProductionSources({
