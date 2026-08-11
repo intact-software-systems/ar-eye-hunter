@@ -168,12 +168,12 @@
       "targets": [
         {
           "path": "packages/shared-server/rallar-system/topology/config/group-topology-config.ts",
-          "blob": "45509981e74365c6b011932b067c2bb44abf177f",
+          "blob": "0e697631f6227fb0d5a4f6c8b4ac3311eee7e5d5",
           "regions": [
             {
               "symbol": "resolveGroupTopologyConfig",
-              "startLine": 127,
-              "endLine": 156,
+              "startLine": 130,
+              "endLine": 159,
               "sha256": "175fc6377b57b60ed76d03a59007ba3a096485e209a0a04dd4b9fde46b95b103",
             },
           ],

@@ -75,11 +75,11 @@ export const authShellBoundaryEvidence: readonly AuthShellBoundaryEvidence[] = [
     target: {
       path: serviceTarget,
       owner: 'AppAuthInboxService.constructor',
-      span: '71-106',
-      usageLine: 100,
+      span: '78-119',
+      usageLine: 113,
       usageText: 'this.onStateMessage<unknown>(',
-      ownerContentHash: '46dbe8f9ba5977bf0aa3859701be5fe01d35b4e0aee451ed51e69594a126c7a4',
-      fileContentHash: 'd04b3a9e8ca0eff8f838ed6b51b3b7e1b9dfddd5026135a075235391c8973b53',
+      ownerContentHash: '8965a4f9ef1bf95d6672cf6c04415383fafb433a44c58a4c5b1a55566a206c7b',
+      fileContentHash: 'c4a4d4692f2fb7bd4f22ef657c24f75764913cdaff8dac87f25bd4a13b3db117',
     },
   },
   {
@@ -96,11 +96,11 @@ export const authShellBoundaryEvidence: readonly AuthShellBoundaryEvidence[] = [
     target: {
       path: handlerTarget,
       owner: 'AuthInboxHandler.processAuthMutation',
-      span: '28-53',
-      usageLine: 29,
+      span: '32-57',
+      usageLine: 33,
       usageText: 'commandCandidate: unknown,',
       ownerContentHash: '84b0c54eb5b5dcf41ae0ce6181f2e03e6dc481012aebf9395960761f8e65e914',
-      fileContentHash: '209dd2923a5aa18123e0f2f5d0714e21d69353e1a3249e10f5ec9f5dfa0e1d0a',
+      fileContentHash: '142974673186e7f84666083b63211d6452fda223ab8b48fd087c22e192be6244',
     },
   },
 ];

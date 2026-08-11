@@ -41,8 +41,8 @@ describe('auth authoritative shell lineage inventory', () => {
         sourceUsageLine: 87,
         targetPath: serviceTarget,
         targetOwner: 'AppAuthInboxService.constructor',
-        targetSpan: '71-106',
-        targetUsageLine: 100,
+        targetSpan: '78-119',
+        targetUsageLine: 113,
       },
       {
         id: 'decoded-command-boundary',
@@ -52,8 +52,8 @@ describe('auth authoritative shell lineage inventory', () => {
         sourceUsageLine: 291,
         targetPath: handlerTarget,
         targetOwner: 'AuthInboxHandler.processAuthMutation',
-        targetSpan: '28-53',
-        targetUsageLine: 29,
+        targetSpan: '32-57',
+        targetUsageLine: 33,
       },
     ]);
     expect(() => validateAuthShellLineage()).not.toThrow();

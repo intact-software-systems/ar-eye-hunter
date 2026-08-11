@@ -158,7 +158,7 @@ export const taskFiveReviewedPredecessorFunctionSizes: readonly NamedFunctionSiz
 export const taskNineReviewedPredecessorModuleSizes = [
   {
     filePath: 'packages/shared-server/rallar-system/services/AppInboxService.ts',
-    lines: 729,
+    lines: 746,
   },
 ] as const;
 

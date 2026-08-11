@@ -28,13 +28,13 @@ export function hasLockedAppAuthInboxConstructor(source: string): boolean {
 
 function readExpectedParameters(): string {
   const parameters = [
-    'public override readonly inbox: InboxQueueReader',
-    'public override readonly resourceInbox: ResourceInboxRepository',
-    'public override readonly resourceInboxResults: ResourceInboxResultsRepository',
+    'inbox: InboxQueueReader',
+    'resourceInbox: ResourceInboxRepository',
+    'resourceInboxResults: ResourceInboxResultsRepository',
     'database: PSqlSql',
-    'public readonly authMutationService: AuthMutationService',
-    'public readonly credentialIssuer: AuthCredentialIssuer',
-    'public override readonly serviceId: string',
+    'authMutationService: AuthMutationService',
+    'credentialIssuer: AuthCredentialIssuer',
+    'serviceId: string',
     'timing?: RallarTimingSink',
     'options?: AppInboxServiceOptions',
     'wakeQueue?: () => void',

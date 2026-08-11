@@ -47,13 +47,13 @@ const compatibilityPaths = [
   'packages/shared-server/rallar-system/services/auth-state-mutations.ts',
 ] as const;
 const lockedConstructorParameters = [
-  'public override readonly inbox: InboxQueueReader',
-  'public override readonly resourceInbox: ResourceInboxRepository',
-  'public override readonly resourceInboxResults: ResourceInboxResultsRepository',
+  'inbox: InboxQueueReader',
+  'resourceInbox: ResourceInboxRepository',
+  'resourceInboxResults: ResourceInboxResultsRepository',
   'database: PSqlSql',
-  'public readonly authMutationService: AuthMutationService',
-  'public readonly credentialIssuer: AuthCredentialIssuer',
-  'public override readonly serviceId: string',
+  'authMutationService: AuthMutationService',
+  'credentialIssuer: AuthCredentialIssuer',
+  'serviceId: string',
   'timing?: RallarTimingSink',
   'options?: AppInboxServiceOptions',
   'wakeQueue?: () => void',
@@ -113,11 +113,7 @@ describe('AppAuthInboxService constructor rejection fixtures', () => {
   it.each([
     {
       label: 'renamed parameter',
-      parameters: replaceParameter(
-        lockedConstructorParameters,
-        0,
-        'public override readonly queue: InboxQueueReader',
-      ),
+      parameters: replaceParameter(lockedConstructorParameters, 0, 'queue: InboxQueueReader'),
     },
     {
       label: 'reordered parameters',
