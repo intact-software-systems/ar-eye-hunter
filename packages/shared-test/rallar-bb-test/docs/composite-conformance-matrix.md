@@ -28,7 +28,7 @@ transport permutation:
 Case recipes are built in
 `conformance/create-rallar-black-box-composite-conformance-recipe.ts`
 (absence cases in `wait/wait-absence-conformance-recipes.ts`, assert shape
-cases in `assert/assert-shape-conformance-recipes.ts`) from the shared
+cases in `assert/assert-shape-complete-violated-recipe.ts`) from the shared
 command fixtures in `conformance/composite-conformance-command-fixtures.ts`.
 
 Provider rows are:

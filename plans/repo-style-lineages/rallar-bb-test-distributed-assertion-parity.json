@@ -9,7 +9,8 @@
       },
       "targets": [
         "packages/shared-test/rallar-bb-test/wait/wait-event-match.ts",
-        "packages/shared-test/rallar-bb-test/wait/wait-for-event.ts"
+        "packages/shared-test/rallar-bb-test/wait/wait-for-event.ts",
+        "packages/shared-test/rallar-bb-test/assert/assert-value-operators.ts"
       ]
     },
     {

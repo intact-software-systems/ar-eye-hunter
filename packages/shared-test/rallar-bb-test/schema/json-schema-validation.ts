@@ -41,7 +41,9 @@ export function validateJsonSchema(schema: JsonSchema, value: unknown): JsonSche
         : { ok: false, errors };
 }
 
-export function formatJsonSchemaValidationErrors(errors: readonly JsonSchemaValidationIssue[]): string {
+export function formatJsonSchemaValidationErrors(
+    errors: readonly JsonSchemaValidationIssue[],
+): string {
     return errors.map(error => `${error.path}: ${error.message}`).join('\n');
 }
 
@@ -57,7 +59,8 @@ function validateNode(
     }
 
     if (schema.enum && !schema.enum.some(candidate => sameJsonValue(candidate, value))) {
-        errors.push({ path, message: `Expected one of ${schema.enum.map(candidate => JSON.stringify(candidate)).join(', ')}.` });
+        const enumText = schema.enum.map(candidate => JSON.stringify(candidate)).join(', ');
+        errors.push({ path, message: `Expected one of ${enumText}.` });
         return;
     }
 
@@ -72,13 +75,17 @@ function validateNode(
             .map(candidate => validationErrors(candidate, value, path).length === 0)
             .filter(Boolean).length;
         if (matches !== 1) {
-            errors.push({ path, message: `Expected value to match exactly one schema, matched ${matches}.` });
+            errors.push({
+                path,
+                message: `Expected value to match exactly one schema, matched ${matches}.`,
+            });
         }
         return;
     }
 
     if (schema.anyOf) {
-        const matches = schema.anyOf.some(candidate => validationErrors(candidate, value, path).length === 0);
+        const matches = schema.anyOf
+            .some(candidate => validationErrors(candidate, value, path).length === 0);
         if (!matches) {
             errors.push({ path, message: 'Expected value to match at least one schema.' });
         }
@@ -86,7 +93,8 @@ function validateNode(
     }
 
     if (schema.type && !matchesType(value, schema.type)) {
-        errors.push({ path, message: `Expected ${Array.isArray(schema.type) ? schema.type.join(' or ') : schema.type}.` });
+        const typeText = Array.isArray(schema.type) ? schema.type.join(' or ') : schema.type;
+        errors.push({ path, message: `Expected ${typeText}.` });
         return;
     }
 
@@ -106,7 +114,10 @@ function validateNode(
         errors.push({ path, message: `Expected number <= ${schema.maximum}.` });
     }
 
-    if (typeof schema.minItems === 'number' && Array.isArray(value) && value.length < schema.minItems) {
+    if (
+        typeof schema.minItems === 'number' && Array.isArray(value) &&
+        value.length < schema.minItems
+    ) {
         errors.push({ path, message: `Expected at least ${schema.minItems} item(s).` });
     }
 
@@ -155,18 +166,30 @@ function validateNode(
         }
 
         if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-            validateNode(schema.additionalProperties, propertyValue, childPath(path, property), errors);
+            validateNode(
+                schema.additionalProperties,
+                propertyValue,
+                childPath(path, property),
+                errors,
+            );
         }
     }
 }
 
-function validationErrors(schema: JsonSchema, value: unknown, path: string): JsonSchemaValidationIssue[] {
+function validationErrors(
+    schema: JsonSchema,
+    value: unknown,
+    path: string,
+): JsonSchemaValidationIssue[] {
     const errors: JsonSchemaValidationIssue[] = [];
     validateNode(schema, value, path, errors);
     return errors;
 }
 
-function discriminatedOneOfSchema(candidates: readonly JsonSchema[], value: unknown): JsonSchema | undefined {
+function discriminatedOneOfSchema(
+    candidates: readonly JsonSchema[],
+    value: unknown,
+): JsonSchema | undefined {
     if (!isJsonRecordValue(value)) {
         return undefined;
     }

@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-explicit-any
 import { CompareJson } from '../../json-compare/json-compare.ts';
 import type { JsonValue } from '../../json-compare/CompareJson.ts';
 
@@ -74,15 +75,17 @@ export function assertValueMatches(
                 CompareJson.compatible(expected as JsonValue, source.value as JsonValue).isEqual;
         case 'matchesShapeComplete':
             return source.exists &&
-                CompareJson.compatibleComplete(expected as JsonValue, source.value as JsonValue).isEqual;
+                CompareJson
+                    .compatibleComplete(expected as JsonValue, source.value as JsonValue)
+                    .isEqual;
     }
 }
 
 // Runner comparator parity: gt/lt/between/length/matches coerce with Number()
 // and require finite bounds, unlike the historical strictly-numeric gte/lte.
 function boundedNumberMatches(
-    value: unknown,
-    bound: unknown,
+    value: any,
+    bound: any,
     satisfies: (actual: number, bound: number) => boolean,
 ): boolean {
     const actualNumber = Number(value);
@@ -92,7 +95,7 @@ function boundedNumberMatches(
         satisfies(actualNumber, boundNumber);
 }
 
-function betweenMatches(value: unknown, expected: unknown): boolean {
+function betweenMatches(value: any, expected: any): boolean {
     const bounds = Array.isArray(expected) ? expected.map(Number) : [];
     const actualNumber = Number(value);
     if (bounds.length !== 2 || bounds.some(bound => !Number.isFinite(bound))) {
@@ -101,7 +104,7 @@ function betweenMatches(value: unknown, expected: unknown): boolean {
     return Number.isFinite(actualNumber) && actualNumber >= bounds[0] && actualNumber <= bounds[1];
 }
 
-function lengthMatches(value: unknown, expected: unknown): boolean {
+function lengthMatches(value: any, expected: any): boolean {
     const expectedLength = Number(expected);
     const actualLength = Array.isArray(value) || typeof value === 'string'
         ? value.length
@@ -109,7 +112,7 @@ function lengthMatches(value: unknown, expected: unknown): boolean {
     return actualLength !== undefined && actualLength === expectedLength;
 }
 
-function regexMatches(value: unknown, expected: unknown): boolean {
+function regexMatches(value: any, expected: any): boolean {
     if (typeof value !== 'string') {
         return false;
     }

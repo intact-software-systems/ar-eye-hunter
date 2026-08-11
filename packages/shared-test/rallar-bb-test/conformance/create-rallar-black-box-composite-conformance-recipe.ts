@@ -26,7 +26,7 @@ import {
 } from '../wait/wait-absence-conformance-recipes.ts';
 import {
     assertShapeCompleteViolatedRecipe,
-} from '../assert/assert-shape-conformance-recipes.ts';
+} from '../assert/assert-shape-complete-violated-recipe.ts';
 
 export function createRallarBlackBoxCompositeConformanceRecipe(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
@@ -285,7 +285,10 @@ function waitAssertRecipe(
                 source: 'messages.0.payload.data.marker',
                 operator: 'length',
                 expected: 'wait-assert-evidence'.length,
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-marker-length'),
+                metadata: commandMetadata(
+                    'wait-assert-evidence',
+                    'wait-assert-check-marker-length',
+                ),
             },
             {
                 kind: 'assert',
@@ -293,7 +296,10 @@ function waitAssertRecipe(
                 source: 'messages.0.payload.data.topic',
                 operator: 'matches',
                 expected: '^rallar\\.conformance\\.',
-                metadata: commandMetadata('wait-assert-evidence', 'wait-assert-check-topic-pattern'),
+                metadata: commandMetadata(
+                    'wait-assert-evidence',
+                    'wait-assert-check-topic-pattern',
+                ),
             },
             {
                 kind: 'assert',
