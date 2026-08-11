@@ -230,6 +230,12 @@ Common fields:
 - `expect.status`: expected HTTP status
 - `expect.statusCode`: expected HTTP status or accepted status array
 - `expect.statusCodes`: accepted status array
+- `expect.headers`: expected response headers by name (case-insensitive), with
+  exact values or the usual type tokens (`string`, `integer`, `any`, `a|b`);
+  only the runner's allow-listed observability headers are observable
+  (`Cache-Control`, `Rallar-Group-Revision`, `Rallar-Presence-Revision`,
+  `Rallar-State-Revision`, `Rallar-State-Source`), so expecting any other name
+  fails
 - `expect.body`: expected response JSON
 - `expect.bodyAnyOf`: accepted response body shapes
 - `expect.comparison`: comparison mode (`compatible` default, `compatible-structure`,

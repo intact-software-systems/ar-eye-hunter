@@ -15,6 +15,7 @@ interface StateReadRecipeStep {
   readonly actual?: Record<string, unknown>;
   readonly expect?: {
     readonly status?: number;
+    readonly headers?: Record<string, unknown>;
     readonly body?: Record<string, unknown>;
   };
 }
@@ -40,33 +41,39 @@ describe('API-v1 state-read convergence recipe', () => {
     const groupRead = recipe.steps.find((step) => step.name === 'readGroupFloorOnTertiary');
     const assertion = recipe.steps.find((step) => step.name === 'assertReadConvergenceEvidence');
 
-    expect(clientRead).toMatchObject({ connection: 'tertiary', expect: { status: 200 } });
-    expect(groupRead).toMatchObject({ connection: 'tertiary', expect: { status: 200 } });
+    expect(clientRead).toMatchObject({
+      connection: 'tertiary',
+      expect: {
+        status: 200,
+        headers: {
+          'Rallar-State-Revision': '{clientFloorString}',
+          'Rallar-State-Source': 'string',
+        },
+      },
+    });
+    expect(groupRead).toMatchObject({
+      connection: 'tertiary',
+      expect: {
+        status: 200,
+        headers: {
+          'Rallar-Group-Revision': '{groupFloorString}',
+          'Rallar-Presence-Revision': '{presenceFloorString}',
+          'Rallar-State-Source': 'string',
+        },
+      },
+    });
     expect(assertion?.actual).toMatchObject({
       clientRevisionBody: '{resultsByName.readClientFloorOnTertiary.0.actual.body.stateRevision}',
-      clientRevisionHeader:
-        '{resultsByName.readClientFloorOnTertiary.0.actual.headers.rallar-state-revision}',
-      clientSource:
-        '{resultsByName.readClientFloorOnTertiary.0.actual.headers.rallar-state-source}',
       groupRevisionBody:
         '{resultsByName.readGroupFloorOnTertiary.0.actual.body.causalRevision.groupRevision}',
-      groupRevisionHeader:
-        '{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-group-revision}',
       presenceRevisionBody:
         '{resultsByName.readGroupFloorOnTertiary.0.actual.body.causalRevision.presenceRevision}',
-      presenceRevisionHeader:
-        '{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-presence-revision}',
-      groupSource: '{resultsByName.readGroupFloorOnTertiary.0.actual.headers.rallar-state-source}',
     });
     expect(assertion?.expect?.body).toMatchObject({
       clientRevisionBody: '{clientFloor}',
-      clientRevisionHeader: '{clientFloorString}',
-      clientSource: 'string',
       groupRevisionBody: '{groupFloor}',
-      groupRevisionHeader: '{groupFloorString}',
       presenceRevisionBody: '{presenceFloor}',
-      presenceRevisionHeader: '{presenceFloorString}',
-      groupSource: 'string',
     });
+    expect(JSON.stringify(assertion)).not.toContain('.actual.headers.');
   });
 });

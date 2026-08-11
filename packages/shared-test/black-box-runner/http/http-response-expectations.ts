@@ -5,6 +5,34 @@ import { normalizeBlackBoxResponseHeaders } from './normalize-black-box-response
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
 
+function isRecord(value: any): value is Record<string, any> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toLowercaseHeaderNames(expectedHeaders: Record<string, any>): Record<string, any> {
+    return Object.fromEntries(
+        Object.entries(expectedHeaders)
+            .map(([name, value]) => [String(name).toLowerCase(), value]),
+    );
+}
+
+function compareExpectedHeaders(interaction: any, response: any): any | undefined {
+    const expectedHeaders = interaction.response?.headers;
+    if (!isRecord(expectedHeaders)) {
+        return undefined;
+    }
+
+    return compareJson(
+        toLowercaseHeaderNames(expectedHeaders),
+        normalizeBlackBoxResponseHeaders(response.headers),
+        toConfig(
+            interaction.response?.comparison || COMPARISON.COMPATIBLE,
+            interaction.response?.ignoreJsonKeys || [],
+            interaction.response?.ignoreJsonPaths || [],
+        ),
+    );
+}
+
 function toOutputReportFields(interaction: any): any {
     return {
         output: interaction.request.output,
@@ -163,6 +191,21 @@ export function toHttpInteractionStatus(
 
     if (!response.ok && !hasExpectedStatus) {
         return toStatus(config, 'Server request failed.', actualJson, response, interaction);
+    }
+
+    const headerComparison = compareExpectedHeaders(interaction, response);
+    if (headerComparison !== undefined && !headerComparison.isEqual) {
+        return toStatus(
+            config,
+            'Expected response headers not the same as actual response headers',
+            actualJson,
+            response,
+            interaction,
+            {
+                expectedHeaders: interaction.response.headers,
+                headerComparison,
+            },
+        );
     }
 
     const bodyAlternatives = bodyExpectationAlternatives(interaction.response);
