@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   GROUP_TOPOLOGY_CONFLICT_REASON,
   GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
-  GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
 } from '../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
 
+const APPROVED_PR_C_BASE_COMMIT = '1e5f5e55e6ff94c016bfe2cc11af92952a30e32f';
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const CANDIDATE_IDENTITY = { commit: CANDIDATE_COMMIT, tree: CANDIDATE_TREE } as const;
@@ -91,11 +91,11 @@ describe('API-v1 state-write topology regression reasons', { timeout: 30_000 }, 
       bench.parseBenchmarkOptions([
         '--regression-reason-profile=rtc-topology-durable-append',
         '--regression-reasons-file=tmp/perf/topology-reasons.json',
-      ])
+      ]),
     ).toThrow(/cannot be combined/);
-    expect(() =>
-      bench.parseBenchmarkOptions(['--regression-reason-profile=unapproved'])
-    ).toThrow(/Unsupported state-write regression reason profile/);
+    expect(() => bench.parseBenchmarkOptions(['--regression-reason-profile=unapproved'])).toThrow(
+      /Unsupported state-write regression reason profile/,
+    );
   });
 });
 
@@ -108,7 +108,7 @@ function createConflictReasonInput(): any {
   ];
   return {
     schemaVersion: GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
-    baseCommit: GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT,
+    baseCommit: APPROVED_PR_C_BASE_COMMIT,
     candidateCommit: CANDIDATE_COMMIT,
     candidateTree: CANDIDATE_TREE,
     reasons: ['uncontended', 'shared', 'hot'].flatMap((workload) =>
@@ -121,8 +121,8 @@ function conflictReasonFailures(): readonly ((input: any) => void)[] {
   return [
     (input) => (input.extra = true),
     (input) => (input.baseCommit = CANDIDATE_COMMIT),
-    (input) => (input.candidateCommit = GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT),
-    (input) => (input.candidateTree = GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT),
+    (input) => (input.candidateCommit = APPROVED_PR_C_BASE_COMMIT),
+    (input) => (input.candidateTree = APPROVED_PR_C_BASE_COMMIT),
     (input) => input.reasons.pop(),
     (input) => (input.reasons[0].metric = 'sql.unsupported'),
     (input) => (input.reasons[0].reason = 'written after measurement'),

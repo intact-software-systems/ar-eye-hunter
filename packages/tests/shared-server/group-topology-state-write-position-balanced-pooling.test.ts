@@ -10,10 +10,10 @@ import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../sc
 import { createStateWritePerformanceArtifact } from './state-write-performance-artifact-fixture.ts';
 
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
-const APPROVED_PR_B_BASE_COMMIT = 'cc98414867f22cc28f0137ef40a1887ab862f87d';
-const FORMER_PR_B_BASE_COMMIT = '0b1fa13e07f7a8e4540d389cd5e25dfa95270da4';
+const APPROVED_PR_C_BASE_COMMIT = '1e5f5e55e6ff94c016bfe2cc11af92952a30e32f';
+const FORMER_PR_B_BASE_COMMIT = 'cc98414867f22cc28f0137ef40a1887ab862f87d';
 const HISTORICAL_PR_A_BASE_COMMIT = '20020977507c3104949da07d27b95e89d3b91c96';
-const BASE_TREE = '6c071954df939b7dea9ba59aa5116fe7922a6cab';
+const BASE_TREE = '324b2108c3a6754c2e9d85a4e00c5b8b936a67ea';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const HASHES = {
   outerPooler: '1'.repeat(64),
@@ -172,14 +172,14 @@ function expectPooledSources(pooled: any, input: any, sourceKeys: readonly strin
 
 function createInput(): any {
   return {
-    expectedApprovedBaseCommit: APPROVED_PR_B_BASE_COMMIT,
+    expectedApprovedBaseCommit: APPROVED_PR_C_BASE_COMMIT,
     expectedApprovedBaseTree: BASE_TREE,
     expectedCandidateCommit: CANDIDATE_COMMIT,
     expectedCandidateTree: CANDIDATE_TREE,
     conflictReasonPath: 'tmp/perf/topology-conflict-reasons.json',
     conflictReasonText: JSON.stringify({
       schemaVersion: 'rallar.group-topology.state-write-conflict-reasons.v1',
-      baseCommit: APPROVED_PR_B_BASE_COMMIT,
+      baseCommit: APPROVED_PR_C_BASE_COMMIT,
       candidateCommit: CANDIDATE_COMMIT,
       candidateTree: CANDIDATE_TREE,
       reasons: createReasons(),
@@ -205,7 +205,7 @@ function createSource(candidate: boolean, artifactId: string, time: string): any
   const artifact = createStateWritePerformanceArtifact({
     artifactId,
     generatedAt: `2026-08-01T${time}.000Z`,
-    gitCommit: candidate ? CANDIDATE_COMMIT : APPROVED_PR_B_BASE_COMMIT,
+    gitCommit: candidate ? CANDIDATE_COMMIT : APPROVED_PR_C_BASE_COMMIT,
     measuredRuns: 9,
   });
   artifact.regressionReasons = candidate ? createReasons() : [];
@@ -316,7 +316,7 @@ function protocolFailures(): readonly [RegExp, (input: any) => void][] {
       /candidate commit must equal/,
       (input) => {
         const artifact = JSON.parse(input.sources.candidateThird.artifactText);
-        artifact.gitCommit = APPROVED_PR_B_BASE_COMMIT;
+        artifact.gitCommit = APPROVED_PR_C_BASE_COMMIT;
         input.sources.candidateThird.artifactText = JSON.stringify(artifact);
       },
     ],
