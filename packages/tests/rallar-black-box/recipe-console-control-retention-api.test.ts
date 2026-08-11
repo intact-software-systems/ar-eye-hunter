@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
@@ -726,64 +725,7 @@ describe('Recipe Console retention lazy boundary', () => {
         expect(loads).toBe(2);
     });
 
-    it('keeps feature modules out of eager value-import graphs and provider serialization', () => {
-        const managerPath = 'apps/rallar-black-box/src/control-run-manager.ts';
-        const controlApiPath =
-            'apps/rallar-black-box/src/recipe-console/control/control-api.ts';
-        const providerPath =
-            'apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-        const requestPath =
-            'apps/rallar-black-box/src/recipe-console/control/control-retention-request.ts';
-
-        for (const path of [managerPath, controlApiPath, providerPath]) {
-            const imports = moduleImports(path);
-            expect(
-                imports.filter(item =>
-                    !item.typeOnly && item.specifier.includes('control-retention')
-                ),
-                path,
-            ).toEqual([]);
-            expect(source(path), path).not.toContain('/retention/cleanup');
-        }
-        expect(dynamicImports(controlApiPath)).toEqual([
-            './control-retention-api.ts',
-            './control-fleet-api.ts',
-        ]);
-        expect(source(requestPath)).toContain(
-            "from '../../control-http-error.ts'",
-        );
-        expect(source(requestPath)).not.toContain('control-run-manager');
-
-        const provider = source(providerPath);
-        expect(provider).toContain('retention: apiSetup.api?.retention');
-        expect(provider).toMatch(/\.close\(\)/);
-        expect(provider).toContain('React StrictMode replays effects');
-        expect(provider).toContain('useLayoutEffect');
-        expect(provider).not.toMatch(
-            /planToken|dryRun|['"]Authorization['"]|\.set\(['"]Authorization/,
-        );
-        expectTypeOf<RecipeConsoleControlConnection['bootstrap']>()
-            .not.toHaveProperty('manualToken');
-        expectTypeOf<RecipeConsoleControlConnection['bootstrap']>()
-            .not.toHaveProperty('credentialPolicy');
-
-        const validation = source(
-            'apps/rallar-black-box/src/recipe-console/control/control-retention-validation.ts',
-        );
-        const relationships = validation.slice(
-            validation.indexOf('function validateLinkedConsequences'),
-            validation.indexOf('function exactRecord'),
-        );
-        expect(relationships).not.toContain('.includes(');
-        expect(relationships).not.toMatch(
-            /for\s*\([^)]*candidates[^)]*\)[\s\S]*distributedIds\.filter/,
-        );
     });
-});
-
-function source(path: string): string {
-    return readFileSync(resolve(repositoryRoot, path), 'utf8');
-}
 
 function moduleImports(path: string): Array<{
     specifier: string;

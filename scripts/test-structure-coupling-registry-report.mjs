@@ -12,27 +12,40 @@ export function readRegistry(reviewInput) {
         ? readFileSync(registryPath, 'utf8')
         : undefined;
   if (!source) {
-    return { entries: [], errors: [`registry is missing: ${registryPath}`] };
+    return { contracts: [], entries: [], errors: [`registry is missing: ${registryPath}`] };
   }
   const matches = [
     ...source.matchAll(/```test-structure-coupling-registry-v1\s*\n([\s\S]*?)\n```/gu),
   ];
   if (matches.length !== 1) {
-    return { entries: [], errors: ['registry must contain exactly one v1 metadata fence'] };
+    return {
+      contracts: [],
+      entries: [],
+      errors: ['registry must contain exactly one v1 metadata fence'],
+    };
   }
   try {
     const parsed = JSON.parse(matches[0][1]);
-    return isPlainObject(parsed) && parsed.version === 1 && Array.isArray(parsed.entries)
-      ? { entries: parsed.entries, errors: [] }
-      : { entries: [], errors: ['registry metadata must be { version: 1, entries: [] }'] };
+    return isPlainObject(parsed) &&
+      parsed.version === 1 &&
+      Array.isArray(parsed.contracts) &&
+      Array.isArray(parsed.entries)
+      ? { contracts: parsed.contracts, entries: parsed.entries, errors: [] }
+      : {
+          contracts: [],
+          entries: [],
+          errors: ['registry metadata must be { version: 1, contracts: [], entries: [] }'],
+        };
   } catch {
-    return { entries: [], errors: ['registry metadata must contain valid JSON'] };
+    return { contracts: [], entries: [], errors: ['registry metadata must contain valid JSON'] };
   }
 }
 
 export function validateRegistry(registry, candidates) {
   const errors = [...registry.errors];
   const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const contracts = validateContracts(errors, registry.contracts);
+  const linkedContracts = new Set();
   const seen = new Set();
   for (const entry of registry.entries) {
     if (!isPlainObject(entry)) {
@@ -57,16 +70,51 @@ export function validateRegistry(registry, candidates) {
         errors.push(`registry entry ${entry.id} has stale ${field}`);
       }
     }
+    if (!hasMeaningfulText(entry.contract) || !contracts.has(entry.contract)) {
+      errors.push(`registry entry ${entry.id} links unknown contract: ${entry.contract ?? ''}`);
+    } else {
+      linkedContracts.add(entry.contract);
+      if (entry.semanticCoverage !== contracts.get(entry.contract).semanticCoverage) {
+        errors.push(`registry entry ${entry.id} semanticCoverage does not match linked contract`);
+      }
+    }
     validateDisposition(errors, entry);
+  }
+  for (const contractId of contracts.keys()) {
+    if (!linkedContracts.has(contractId)) {
+      errors.push(`contract is not linked by a current candidate: ${contractId}`);
+    }
   }
   return errors.toSorted();
 }
 
+function validateContracts(errors, contractValues) {
+  const contracts = new Map();
+  for (const contract of contractValues) {
+    if (!isPlainObject(contract) || !hasMeaningfulText(contract.id)) {
+      errors.push('contract requires id');
+      continue;
+    }
+    if (contracts.has(contract.id)) {
+      errors.push(`contract has duplicate id: ${contract.id}`);
+    }
+    contracts.set(contract.id, contract);
+    if (!hasConcreteText(contract.domain) || !hasConcreteText(contract.summary)) {
+      errors.push(`contract requires a concrete domain and summary: ${contract.id}`);
+    }
+    if (!hasMeaningfulText(contract.owner)) {
+      errors.push(`contract requires owner: ${contract.id}`);
+    }
+    if (!hasSpecificSemanticCoverage(contract.semanticCoverage)) {
+      errors.push(`contract requires specific semanticCoverage: ${contract.id}`);
+    }
+  }
+  return contracts;
+}
+
 function validateDisposition(errors, entry) {
-  if (!hasMeaningfulText(entry.rationale) || !hasMeaningfulText(entry.semanticCoverage)) {
-    errors.push(
-      `registry entry ${entry.id} requires non-placeholder rationale and semanticCoverage`,
-    );
+  if (!hasConcreteText(entry.rationale) || !hasSpecificSemanticCoverage(entry.semanticCoverage)) {
+    errors.push(`registry entry ${entry.id} requires concrete rationale and semanticCoverage`);
   }
   if (!hasMeaningfulText(entry.owner)) {
     const kind =
@@ -80,8 +128,8 @@ function validateDisposition(errors, entry) {
       );
     }
   } else if (entry.disposition === 'temporary-ratchet') {
-    if (!hasMeaningfulText(entry.removalCondition)) {
-      errors.push(`temporary ratchet entry requires removalCondition: ${entry.id}`);
+    if (!hasConcreteText(entry.removalCondition)) {
+      errors.push(`temporary ratchet entry requires a concrete removalCondition: ${entry.id}`);
     }
   } else {
     errors.push(`registry entry has unsupported disposition: ${entry.id}`);
@@ -121,9 +169,12 @@ export function printReport({
   } else if (reportCandidates.length === 0) {
     console.log('WARN: no candidates reported because validation did not complete successfully.');
   } else if (unclassified.length === 0) {
+    const currentCandidateCount = reportCandidates.filter(
+      (candidate) => candidate.change !== 'deleted',
+    ).length;
     console.log(
       [
-        `PASS: all ${reportCandidates.length} current structure-coupling candidates`,
+        `PASS: all ${currentCandidateCount} current structure-coupling candidates`,
         'are individually classified',
       ].join(' '),
     );
@@ -189,6 +240,32 @@ function hasMeaningfulText(value) {
   const text = value.trim();
   return (
     text.length > 0 && !/^(?:tbd|todo|none|later|\.\.\.|-)|^\[[^\]]*\]$|^<[^>]*>$/iu.test(text)
+  );
+}
+
+function hasConcreteText(value) {
+  if (!hasMeaningfulText(value)) {
+    return false;
+  }
+  const text = value.trim();
+  const visibleWords = text
+    .replace(/\\(?:[nrtbfv0]|u\{?[0-9a-f]{1,6}\}?)/giu, ' ')
+    .replace(/[\p{Cc}\p{Cf}\p{P}\p{S}]+/gu, ' ')
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
+  if (visibleWords.join('').length < 12) {
+    return false;
+  }
+  return !/^(?:semantic coverage|runtime behavior|same file|supporting contract|source check)$/iu.test(
+    visibleWords.join(' '),
+  );
+}
+
+function hasSpecificSemanticCoverage(value) {
+  return (
+    hasConcreteText(value) &&
+    /^[^#\r\n]+\.(?:test|spec)\.[^#\r\n]+#[^#\r\n]{12,}$/u.test(value.trim())
   );
 }
 

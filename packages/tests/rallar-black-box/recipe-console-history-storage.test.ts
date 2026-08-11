@@ -2,10 +2,7 @@
 import { createElement, StrictMode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { readFileSync, readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { analyzeSourceFile } from '../helpers/source-analysis';
 import {
     HISTORY_FILTER_PRESET_LIMITS,
     createHistoryFilterPreset,
@@ -684,44 +681,4 @@ describe('useHistoryFilterPresets', () => {
 });
 
 describe('History filter persistence ownership', () => {
-    it('keeps browser localStorage access in the hook and out of pure or eager owners', () => {
-        const source = (relativePath: string): string => readFileSync(
-            resolve(
-                process.cwd(),
-                'apps/rallar-black-box/src/recipe-console',
-                relativePath,
-            ),
-            'utf8',
-        );
-
-        const references = (relativePath: string): readonly string[] => {
-            const filePath = resolve(
-                process.cwd(),
-                'apps/rallar-black-box/src/recipe-console',
-                relativePath,
-            );
-            return analyzeSourceFile(filePath).identifierNames
-                .filter((name) => name === 'localStorage');
-        };
-        expect(references('history/use-history-filter-presets.ts')).toEqual([
-            'localStorage',
-        ]);
-        const historyFiles = readdirSync(resolve(
-            process.cwd(),
-            'apps/rallar-black-box/src/recipe-console/history',
-        )).filter(name => /\.(?:ts|tsx)$/.test(name))
-            .map(name => `history/${name}`)
-            .filter(name => name !== 'history/use-history-filter-presets.ts');
-        for (const relativePath of [
-            ...historyFiles,
-            'tune/TuneWorkspace.tsx',
-            'control/ControlConnectionProvider.tsx',
-            'app/RecipeConsoleWorkspace.tsx',
-        ]) {
-            expect(references(relativePath), relativePath).toEqual([]);
-        }
-        expect(source('history/history-filter-storage.ts')).not.toMatch(
-            /names\.includes\s*\(/,
-        );
     });
-});

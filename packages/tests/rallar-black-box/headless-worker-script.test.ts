@@ -77,55 +77,6 @@ async function within<T>(
 }
 
 describe("rallar-black-box headless worker script", () => {
-  it("launches the configured Playwright browser engine", async () => {
-    const source = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
-      "utf8",
-    );
-
-    expect(source).toContain("type BrowserType");
-    expect(source).toContain("chromium,");
-    expect(source).toContain("firefox,");
-    expect(source).toContain("webkit,");
-    expect(source).toContain(
-      "satisfies Record<HeadlessWorkerBrowserEngine, BrowserType>",
-    );
-    expect(source).toContain("browserTypes[config.browserEngine].launch");
-    expect(source).toContain("engine=${config.browserEngine}");
-  });
-
-  it("logs the selected entry and per-agent URLs through the runtime logger", async () => {
-    const source = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
-      "utf8",
-    );
-
-    expect(source).toContain("entry=${config.headlessEntry}");
-    expect(source).toContain("Opening agent ${agent.agentId} url=${agent.url}");
-    expect(source).toContain("createWorkerLogger(bootstrapLogSecrets)");
-    expect(source).toContain("headless-worker-runtime.ts");
-  });
-
-  it("waits for configured worker exit modes and terminal distributed runs", async () => {
-    const script = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
-      "utf8",
-    );
-    const runtime = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/src/headless-worker-runtime.ts"),
-      "utf8",
-    );
-
-    expect(runtime).toContain(
-      '"passed",\n  "failed",\n  "cancelled",\n  "timed-out",',
-    );
-    expect(runtime).toContain("Distributed run ${input.runId} is not created yet");
-    expect(runtime).toContain("response.status === 404");
-    expect(script).toContain("await waitForWorkerExit(config, activeShutdown);");
-    expect(script).toContain("waitForHeadlessWorkerExit({");
-    expect(script).toContain("await waitForDistributedRunTerminal({");
-    expect(script).toContain("signal,");
-  });
 
   it("redacts URL secrets by known key and sensitive key pattern", async () => {
     const runtime = await readFile(
@@ -136,18 +87,6 @@ describe("rallar-black-box headless worker script", () => {
     expect(runtime).toContain("redactHeadlessWorkerLogText");
     expect(runtime).toContain("(?:token|password|secret)");
     expect(runtime).toContain("[REDACTED]");
-  });
-
-  it("keeps the runtime logger wired into worker startup and browser events", async () => {
-    const script = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
-      "utf8",
-    );
-
-    expect(script).toContain("headlessWorkerLogSecretsFromEnv(process.env)");
-    expect(script).toContain("createHeadlessWorkerLogger({");
-    expect(script).toContain("attachHeadlessWorkerPageLogging({");
-    expect(script).toContain("logHeadlessWorkerUiConfirmationFailure({");
   });
 
   it("redacts malformed credential-bearing startup configuration errors", async () => {
@@ -188,27 +127,6 @@ describe("rallar-black-box headless worker script", () => {
     expect(script).toContain('Authorization: `Bearer ${token}`');
     expect(script).toContain("fetchControlRunSnapshot(config, signal)");
     expect(script).toContain("headers: controlReadHeaders(config)");
-  });
-
-  it("creates shutdown cancellation before opening agents and wires it through registration", async () => {
-    const script = await readFile(
-      path.join(repoRoot, "apps/rallar-black-box/scripts/headless-worker.ts"),
-      "utf8",
-    );
-
-    expect(script).toContain("signal: AbortSignal;");
-    expect(script).toContain("const activeShutdown = createShutdownSignal();");
-    expect(
-      script.indexOf("const activeShutdown = createShutdownSignal();"),
-    ).toBeLessThan(
-      script.indexOf("config.agents.map"),
-    );
-    expect(script).toContain(
-      "openAgent(browser!, agent, config, activeShutdown.signal)",
-    );
-    expect(script).toContain("waitForAgentRegistration(agent, config, signal)");
-    expect(script).toContain("fetchControlRunSnapshot(config, signal)");
-    expect(script).toContain("signal: shutdownController.signal");
   });
 
   it("exits gracefully when SIGTERM interrupts agent registration", async () => {

@@ -244,9 +244,101 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).toContain('registry entry has duplicate id');
     expect(result.stdout).toContain('registry entry is stale');
     expect(result.stdout).toContain('durable boundary entry requires owner');
-    expect(result.stdout).toContain('requires non-placeholder rationale and semanticCoverage');
+    expect(result.stdout).toContain('requires concrete rationale and semanticCoverage');
     expect(result.stdout).toContain('temporary ratchet entry requires owner');
-    expect(result.stdout).toContain('temporary ratchet entry requires removalCondition');
+    expect(result.stdout).toContain('temporary ratchet entry requires a concrete removalCondition');
+  });
+
+  it('rejects escaped, control-only, and vague contract evidence', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    });
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    const evidence = ['\\n', '\n\t', 'semantic coverage'] as const;
+
+    writeRegistry(
+      fixture.root,
+      candidates.map((candidate, index) => ({
+        ...temporaryEntry(candidate),
+        contract: `invalid-contract-${index}`,
+        rationale: evidence[index % evidence.length],
+        semanticCoverage: evidence[(index + 1) % evidence.length],
+        removalCondition: evidence[(index + 2) % evidence.length],
+      })),
+      candidates.map((_, index) => ({
+        id: `invalid-contract-${index}`,
+        domain: evidence[index % evidence.length],
+        owner: 'example-owner',
+        summary: evidence[(index + 1) % evidence.length],
+        semanticCoverage: evidence[(index + 2) % evidence.length],
+      })),
+    );
+
+    const result = runChecker(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('contract requires a concrete domain and summary');
+    expect(result.stdout).toContain('contract requires specific semanticCoverage');
+    expect(result.stdout).toContain('requires concrete rationale and semanticCoverage');
+    expect(result.stdout).toContain('requires a concrete removalCondition');
+  });
+
+  it('requires every candidate to link one current human contract summary', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    });
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    writeRegistry(
+      fixture.root,
+      candidates.map((candidate) => ({
+        ...durableEntry(candidate),
+        contract: 'missing-contract',
+      })),
+      [exampleContract('orphan-contract')],
+    );
+
+    const result = runChecker(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('links unknown contract: missing-contract');
+    expect(result.stdout).toContain(
+      'contract is not linked by a current candidate: orphan-contract',
+    );
+  });
+
+  it('requires each candidate semantic assertion to match its linked contract', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    });
+    const candidates = readCandidates(runChecker(fixture).stdout);
+    writeRegistry(
+      fixture.root,
+      candidates.map((candidate) => ({
+        ...durableEntry(candidate),
+        semanticCoverage:
+          'packages/tests/example/different.test.ts#proves an unrelated behavior instead',
+      })),
+    );
+
+    const result = runChecker(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('semanticCoverage does not match linked contract');
   });
 
   it('reports changed-range candidate deletion neutrally rather than claiming a semantic replacement', () => {
@@ -306,6 +398,42 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).toContain('change=new');
     expect(result.stdout).toContain('FAIL: changed candidate lacks individual classification');
     expect(result.stdout).not.toContain('fatal: path');
+  });
+
+  it('counts only current candidates when changed evidence also includes a deletion', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/public.ts': 'export const publicApi = true;\n',
+      'packages/tests/example/structure.test.ts': [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+        "expect(source).toContain('secondaryApi');",
+      ].join('\n'),
+    });
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    writeFileSync(
+      path.join(fixture.root, 'packages/tests/example/structure.test.ts'),
+      [
+        "import { readFileSync } from 'node:fs';",
+        "const source = readFileSync('packages/example/src/public.ts', 'utf8');",
+        "expect(source).toContain('publicApi');",
+      ].join('\n'),
+    );
+    commitFixture(fixture.root, 'remove obsolete structural assertion');
+    const currentCandidates = readCandidates(runChecker(fixture).stdout);
+    writeRegistry(
+      fixture.root,
+      currentCandidates.map((candidate) => durableEntry(candidate)),
+    );
+    const head = commitFixture(fixture.root, 'classify retained boundary');
+
+    const result = runChecker(fixture, ['--changed', base, head]);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('change=deleted');
+    expect(result.stdout).toContain(
+      `PASS: all ${currentCandidates.length} current structure-coupling candidates are individually classified`,
+    );
   });
 
   it('accepts changed structural evidence only after every current occurrence is registered', () => {
@@ -504,35 +632,33 @@ describe('test structure-coupling review', () => {
     expect(result.stdout).not.toContain('ast-inspection');
   });
 
-  it('reports real source-coupled ratchet and control-boundary tests', () => {
-    const ratchet = runRepoChecker([
+  it('reports real source-coupled public and control-boundary tests', () => {
+    const publicBoundary = runRepoChecker([
       '--files',
-      'packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts',
+      'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts',
     ]);
     const controlBoundary = runRepoChecker([
       '--files',
       'packages/tests/rallar-black-box/control-protocol-boundary.test.ts',
     ]);
 
-    expect(ratchet.status, ratchet.stdout).toBe(0);
-    expect(ratchet.stdout).toContain('production-source-read');
-    expect(ratchet.stdout).toContain('line-count');
+    expect(publicBoundary.status, publicBoundary.stdout).toBe(0);
+    expect(publicBoundary.stdout).toContain('exact-file-tree');
     expect(controlBoundary.status, controlBoundary.stdout).toBe(0);
     expect(controlBoundary.stdout).toContain('production-source-read');
     expect(controlBoundary.stdout).toContain('symbol-assertion');
   }, 20_000);
 
   it('parses representative real repository suites without silently skipping evidence', () => {
-    const recipeConsolePath =
-      'packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts';
+    const publicBoundaryPath = 'packages/tests/shared-web/shared-web-browser-entrypoints.test.ts';
     const truthfulNoCandidateAllowed = [
       'packages/tests/repo/github-actions-runtime-governance.test.ts',
     ];
-    const result = runRepoChecker(['--files', recipeConsolePath, ...truthfulNoCandidateAllowed]);
+    const result = runRepoChecker(['--files', publicBoundaryPath, ...truthfulNoCandidateAllowed]);
 
     expect(result.status, result.stdout).toBe(0);
     expect(result.stdout).toMatch(
-      new RegExp(`REVIEWED ${recipeConsolePath} \\| candidates=[1-9][0-9]*`, 'u'),
+      new RegExp(`REVIEWED ${publicBoundaryPath} \\| candidates=[1-9][0-9]*`, 'u'),
     );
     for (const path of truthfulNoCandidateAllowed) {
       expect(result.stdout).toMatch(new RegExp(`REVIEWED ${path} \\| candidates=[0-9]+`, 'u'));
@@ -632,7 +758,11 @@ function createGitFixture(files: Record<string, string>): { readonly root: strin
   return { root };
 }
 
-function writeRegistry(root: string, entries: readonly Record<string, unknown>[]) {
+function writeRegistry(
+  root: string,
+  entries: readonly Record<string, unknown>[],
+  contracts: readonly Record<string, unknown>[] = entries.length > 0 ? [exampleContract()] : [],
+) {
   const registryPath = path.join(root, 'docs/test-structure-coupling-exceptions.md');
   mkdirSync(path.dirname(registryPath), { recursive: true });
   writeFileSync(
@@ -641,7 +771,7 @@ function writeRegistry(root: string, entries: readonly Record<string, unknown>[]
       '# Test structure-coupling exception registry',
       '',
       '```test-structure-coupling-registry-v1',
-      JSON.stringify({ version: 1, entries }, null, 2),
+      JSON.stringify({ version: 1, contracts, entries }, null, 2),
       '```',
       '',
     ].join('\n'),
@@ -686,22 +816,34 @@ function readCandidates(output: string): readonly TestCandidate[] {
 function durableEntry(candidate: TestCandidate): Record<string, unknown> {
   return {
     ...candidate,
+    contract: 'example-public-contract',
     disposition: 'durable-boundary',
     boundary: 'public',
     owner: 'example-owner',
     rationale: 'The named public boundary is intentionally stable.',
-    semanticCoverage: 'packages/tests/example/public-contract.test.ts',
+    semanticCoverage: 'packages/tests/example/public-contract.test.ts#exposes the public behavior',
   };
 }
 
 function temporaryEntry(candidate: TestCandidate): Record<string, unknown> {
   return {
     ...candidate,
+    contract: 'example-public-contract',
     disposition: 'temporary-ratchet',
     owner: 'example-owner',
     rationale: 'The ratchet protects a migration while semantic coverage is added.',
-    semanticCoverage: 'packages/tests/example/public-contract.test.ts',
+    semanticCoverage: 'packages/tests/example/public-contract.test.ts#exposes the public behavior',
     removalCondition: 'Remove after the named semantic contract test is complete.',
+  };
+}
+
+function exampleContract(id = 'example-public-contract'): Record<string, unknown> {
+  return {
+    id,
+    domain: 'Example package public API',
+    owner: 'example-owner',
+    summary: 'Consumers can call the public API and observe its documented result.',
+    semanticCoverage: 'packages/tests/example/public-contract.test.ts#exposes the public behavior',
   };
 }
 

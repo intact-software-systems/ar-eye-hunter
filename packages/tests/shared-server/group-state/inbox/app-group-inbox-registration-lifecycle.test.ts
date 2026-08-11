@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -13,22 +11,7 @@ import { GROUP_MUTATION_INBOX_TYPES } from '@shared-server/rallar-system/group-s
 
 import { createAuthorityHarness } from './group-state-inbox-test-runtime.ts';
 
-const servicePath = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
-
 describe('AppGroupInboxService registration lifecycle', () => {
-  it('preserves the public setter surface and identity guards', () => {
-    const source = readFileSync(servicePath, 'utf8');
-
-    expect(source).toContain('private topologyManagementService?: GroupTopologyManagementService;');
-    expect(source).toContain('private rtcRttDependencies?: RtcRttAppInboxDependencies;');
-    expect(source).toContain(
-      'setTopologyManagementService(service: GroupTopologyManagementService)',
-    );
-    expect(source).toContain(
-      'setRtcRttAppInboxDependencies(dependencies: RtcRttAppInboxDependencies)',
-    );
-  });
-
   it('keeps same-identity setter calls idempotent and distinct values rejected', async () => {
     const harness = await createAuthorityHarness(['owner']);
     const firstTopology = {} as never;
@@ -50,17 +33,6 @@ describe('AppGroupInboxService registration lifecycle', () => {
     expect(() => harness.service.setRtcRttAppInboxDependencies(secondRttDependencies)).toThrow(
       'RTC RTT AppInbox dependencies are already configured',
     );
-  });
-
-  it('requires each deferred family to register with complete dependencies', () => {
-    const source = readFileSync(servicePath, 'utf8');
-
-    expect(source).toContain('registerTopologyStateMessageHandlers(service)');
-    expect(source).toContain('registerRtcRttStateMessageHandler(dependencies)');
-    expect(source).not.toContain(
-      'requireTopologyManagementService(this.topologyManagementService)',
-    );
-    expect(source).not.toContain('this.requireRtcRttAppInboxDependencies()');
   });
 
   it('registers group callbacks first and each deferred family exactly once', async () => {

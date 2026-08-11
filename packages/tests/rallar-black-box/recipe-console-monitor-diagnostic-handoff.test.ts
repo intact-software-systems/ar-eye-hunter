@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -208,43 +207,6 @@ describe('Recipe Console Monitor diagnostic handoffs', () => {
             link instanceof HTMLAnchorElement && !link.hasAttribute('role')
         )).toBe(true);
 
-        const componentSource = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnosticHandoffs.tsx',
-            'utf8',
-        );
-        const inspectorSource = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/monitor/MonitorInspector.tsx',
-            'utf8',
-        );
-        const failureSource = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/monitor/MonitorFailureEvidence.tsx',
-            'utf8',
-        );
-        const cssSource = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnosticHandoffs.module.css',
-            'utf8',
-        );
-        const tokenSource = readFileSync(
-            'apps/rallar-black-box/src/recipe-console/design/tokens.css',
-            'utf8',
-        );
-        expect(componentSource).not.toMatch(/fetch\(|setInterval\(|setTimeout\(|useEffect|useState/);
-        expect(componentSource).not.toMatch(
-            /deriveDistributedRunMonitor|deriveDistributedRunAnalysisReport/,
-        );
-        expect(componentSource.match(/deriveAdvancedDiagnosticHandoffTargets\(/g))
-            .toHaveLength(1);
-        expect(inspectorSource).toContain('<MonitorFailureEvidence');
-        expect(failureSource).toContain('<MonitorDiagnosticHandoffs');
-        expect(cssSource).toContain('min-block-size: 44px');
-        expect(cssSource).toContain('overflow-wrap: anywhere');
-        for (const token of new Set(
-            [...cssSource.matchAll(/var\((--rc-[a-z0-9-]+)\)/g)]
-                .map(match => match[1]),
-        )) {
-            expect(tokenSource, `${token}: defined Recipe Console token`)
-                .toContain(`${token}:`);
-        }
     });
 
     function handoffLinks(): HTMLAnchorElement[] {

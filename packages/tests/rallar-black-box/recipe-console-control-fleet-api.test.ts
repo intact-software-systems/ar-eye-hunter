@@ -1,6 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES,
@@ -22,8 +20,6 @@ import {
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-const repositoryRoot = resolve(import.meta.dirname, '../../..');
 
 const BOOTSTRAP = {
     controlUrl: 'https://control.test/control',
@@ -215,29 +211,7 @@ describe('Recipe Console Fleet lazy control capability', () => {
         }
     });
 
-    it('keeps the Fleet feature out of eager control and provider import graphs', () => {
-        const controlApiPath =
-            'apps/rallar-black-box/src/recipe-console/control/control-api.ts';
-        const providerPath =
-            'apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-        const fleetApiPath =
-            'apps/rallar-black-box/src/recipe-console/control/control-fleet-api.ts';
-
-        expect(source(controlApiPath)).toContain(
-            "import('./control-fleet-api.ts')",
-        );
-        expect(source(controlApiPath)).not.toMatch(
-            /import\s*\{[^}]+\}\s*from ['"]\.\/control-fleet-api\.ts['"]/s,
-        );
-        expect(source(providerPath)).not.toMatch(
-            /from ['"]\.\/control-fleet-api\.ts['"]/,
-        );
-        expect(source(providerPath)).toContain('fleet: apiSetup.api?.fleet');
-        expect(source(fleetApiPath)).not.toMatch(
-            /rebuildFleetReports|fetchFleetReports|setInterval|setTimeout/,
-        );
     });
-});
 
 describe('Recipe Console Fleet selection authority', () => {
     it('rejects superseded, caller-aborted, and closed-context work without replacing current evidence', async () => {
@@ -394,7 +368,3 @@ describe('Recipe Console Fleet selection authority', () => {
         api.close();
     });
 });
-
-function source(path: string): string {
-    return readFileSync(resolve(repositoryRoot, path), 'utf8');
-}

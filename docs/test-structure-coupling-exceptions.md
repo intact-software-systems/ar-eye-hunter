@@ -13,15 +13,21 @@ public, security, or compatibility boundary, or when it is a temporary ratchet
 with a named owner and removal condition. Do not use this registry as a blanket
 baseline or automatic grandfathering mechanism.
 
-Each entry below identifies one currently detected candidate. `id`, `path`,
-`line`, `column`, and `kind` must match the checker report exactly. Every entry
-has a named `owner`; `rationale` explains the independent boundary or
-short-lived risk; `semanticCoverage` names the test that proves behavior rather
-than implementation shape. A `durable-boundary` entry additionally declares
-`boundary` as `public`, `security`, or `compatibility`. A `temporary-ratchet`
-entry additionally declares a non-empty `removalCondition`. Placeholder values
-such as `TODO`, `none`, `later`, `...`, `-`, or bracketed placeholders are not
-valid evidence.
+The `contracts` section states each independently meaningful domain contract
+once, in human language, and links it to an executable semantic assertion in a
+different test surface. Each candidate entry links one exact structural
+assertion to one of those contracts. Its `id`, `path`, `line`, `column`, and
+`kind` must match the checker report exactly; its rationale describes the
+candidate's narrow role in that contract. This grouping avoids hundreds of
+duplicated approval formulas without hiding any individual candidate.
+
+Every entry has a named `owner`. A `durable-boundary` entry additionally
+declares `boundary` as `public`, `security`, or `compatibility`. A
+`temporary-ratchet` entry additionally declares an assertion-specific
+`removalCondition`. Placeholder, escaped control-only, or vague values such as
+`TODO`, `none`, `later`, `...`, `-`, `semantic coverage`, or bracketed
+placeholders are not valid evidence. A contract with no current candidates is
+also invalid, so this document cannot accumulate orphan approvals.
 
 The full current candidate tree validates this registry even when the command
 reports a selected file set or a Git range. Filtered modes change the report,
@@ -47,6 +53,253 @@ moved or changed test.
 ```test-structure-coupling-registry-v1
 {
   "version": 1,
+  "contracts": [
+    {
+      "id": "postgres-outbound-admission",
+      "domain": "Postgres mutation admission security",
+      "owner": "Rallar server maintainers",
+      "summary": "Conditional mutation commits remain collector-owned and never acquire a domain advisory lock.",
+      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts#lets the inbound runtime reread and recompute after an apply-time CAS loss"
+    },
+    {
+      "id": "source-analysis-test-interface",
+      "domain": "Repository source-analysis test interface",
+      "owner": "Rallar repository maintainers",
+      "summary": "Test suites parse tracked TypeScript through one deterministic, path-aware analysis interface.",
+      "semanticCoverage": "packages/tests/helpers/source-analysis.test.ts#normalizes TypeScript and TSX module syntax without exposing parser nodes"
+    },
+    {
+      "id": "hetzner-distributed-workflow",
+      "domain": "Supported Hetzner distributed workflow",
+      "owner": "Rallar operations maintainers",
+      "summary": "Materialized manifests, rollout guards, artifact publication, and command scope remain executable and deterministic.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
+    },
+    {
+      "id": "hetzner-control-deno-runtime",
+      "domain": "Hetzner control-server Deno runtime",
+      "owner": "Rallar operations maintainers",
+      "summary": "Deployment cache warming and systemd startup use the control server owned Deno configuration.",
+      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts#forces a fresh Postgres process for backend-authoritative acceptance"
+    },
+    {
+      "id": "playwright-app-config-ownership",
+      "domain": "Application-owned Playwright configuration",
+      "owner": "Rallar browser-test maintainers",
+      "summary": "Every app suite is discoverable through its owned config, expected origin, and root command mapping.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
+    },
+    {
+      "id": "control-protocol-browser-boundary",
+      "domain": "Browser control protocol boundary",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "The browser client consumes the shared control protocol and rejects app-local protocol duplication.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
+    },
+    {
+      "id": "headless-worker-secret-boundary",
+      "domain": "Headless worker credential and control-read security",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Worker startup redacts URL credentials and authenticates control reads without exposing bearer material.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#redacts Playwright navigation messages with configured credentials"
+    },
+    {
+      "id": "legacy-alias-compatibility",
+      "domain": "Legacy runner alias compatibility",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Registered aliases resolve to one canonical visible owner and rollback route without duplicate workflows.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
+    },
+    {
+      "id": "legacy-diagnostic-context",
+      "domain": "Legacy diagnostic handoff compatibility",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Only bounded v1 diagnostic context crosses between Recipe Console and legacy views; secrets and redirects are rejected.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
+    },
+    {
+      "id": "legacy-mount-policy",
+      "domain": "Legacy route mount compatibility",
+      "owner": "Rallar Black Box maintainers",
+      "summary": "Safe legacy routes mount only inside their active view while documented stateful exceptions retain continuity.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
+    },
+    {
+      "id": "auth-server-compatibility",
+      "domain": "Auth server compatibility ledger",
+      "owner": "Rallar repository maintainers",
+      "summary": "Every retained auth compatibility consumer is named, bounded, and tied to its canonical runtime owner.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities"
+    },
+    {
+      "id": "repo-style-checker-interface",
+      "domain": "Repository style checker interface",
+      "owner": "Rallar repository maintainers",
+      "summary": "Governed rule identifiers and workflow registration remain stable for repository automation consumers.",
+      "semanticCoverage": "packages/tests/repo/repo-style-construction-check.test.ts#reports a callback that captures a service assigned after consumer construction"
+    },
+    {
+      "id": "typescript-seven-release-boundary",
+      "domain": "TypeScript 7 release boundary",
+      "owner": "Rallar repository maintainers",
+      "summary": "Release automation checks pinned TypeScript workspaces separately from Deno-owned applications.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-application.test.ts#mounts websocket and rest route installers idempotently and starts the engine"
+    },
+    {
+      "id": "app-inbox-mutation-routing",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "Authoritative state mutations enter through AppInbox-owned routes and cannot bypass their transaction boundary.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
+    },
+    {
+      "id": "auth-persistence-security",
+      "domain": "Auth persistence security",
+      "owner": "Rallar server maintainers",
+      "summary": "Ticket persistence stores canonical digests, bounds legacy reads, and excludes domain-lock escape hatches.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-service.test.ts#stores client idempotency conflict as terminal without queue retry"
+    },
+    {
+      "id": "mutation-boundary-analysis-interface",
+      "domain": "Mutation boundary analysis interface",
+      "owner": "Rallar server maintainers",
+      "summary": "The routing audit follows imports and exported capabilities through one deterministic analysis model.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
+    },
+    {
+      "id": "mutation-capability-export-interface",
+      "domain": "Mutation capability export analysis",
+      "owner": "Rallar server maintainers",
+      "summary": "Exported mutation capabilities resolve to their canonical implementation owner before routing assertions run.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
+    },
+    {
+      "id": "mutation-capability-type-interface",
+      "domain": "Mutation capability type analysis",
+      "owner": "Rallar server maintainers",
+      "summary": "Capability declarations remain distinguishable from executable authoritative mutation owners.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
+    },
+    {
+      "id": "mutation-route-owner-analysis",
+      "domain": "Authoritative mutation route ownership",
+      "owner": "Rallar server maintainers",
+      "summary": "Every authoritative route resolves to one AppInbox transaction owner without a persistence bypass.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
+    },
+    {
+      "id": "mutation-owner-boundary-traversal",
+      "domain": "Mutation owner boundary traversal",
+      "owner": "Rallar server maintainers",
+      "summary": "The audit follows public exports and injected capabilities to the canonical AppInbox mutation owner.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
+    },
+    {
+      "id": "group-mutation-construction",
+      "domain": "Group mutation construction boundary",
+      "owner": "Rallar server maintainers",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
+    },
+    {
+      "id": "group-http-mutation-contract",
+      "domain": "Group HTTP mutation contract",
+      "owner": "Rallar server maintainers",
+      "summary": "Public group HTTP actions translate into complete canonical AppInbox command shapes.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
+    },
+    {
+      "id": "mutation-registration-collections",
+      "domain": "Mutation handler registration collections",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration collections include every authoritative mutation family exactly once.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
+    },
+    {
+      "id": "mutation-registration-predicates",
+      "domain": "Mutation registration predicates",
+      "owner": "Rallar server maintainers",
+      "summary": "Registration predicates accept only authoritative messages owned by their handler family.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
+    },
+    {
+      "id": "rallar-server-public-schema",
+      "domain": "Rallar server public schema documentation",
+      "owner": "Rallar server maintainers",
+      "summary": "The public schema documents complete state, auth, topology, receipt, and compatibility contracts.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
+    },
+    {
+      "id": "api-v1-medium-scale-routing",
+      "domain": "API-v1 medium-scale recipe routing",
+      "owner": "Rallar server maintainers",
+      "summary": "Each group poll targets the API node whose clustered convergence it proves.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#requires the tertiary HTTP service for every built-in Postgres cluster recipe"
+    },
+    {
+      "id": "api-v1-recipe-fixture-interface",
+      "domain": "API-v1 recipe fixture loading",
+      "owner": "Rallar server maintainers",
+      "summary": "Shared recipe tests load executable YAML fixtures through one repository-root-aware interface.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
+    },
+    {
+      "id": "api-v1-runner-plan-interface",
+      "domain": "API-v1 runner plan interface",
+      "owner": "Rallar server maintainers",
+      "summary": "Managed Postgres commands expose three API nodes and select complete recipe plans without hidden side effects.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-black-box-run.test.ts#waits for the child startup marker before accepting config"
+    },
+    {
+      "id": "state-read-convergence-recipe",
+      "domain": "Clustered state-read convergence recipe",
+      "owner": "Rallar server maintainers",
+      "summary": "The recipe proves tertiary scalar and causal floors with source headers and run-scoped identities.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#requires the tertiary HTTP service for every built-in Postgres cluster recipe"
+    },
+    {
+      "id": "black-box-schema-public-interface",
+      "domain": "Shared black-box schema interface",
+      "owner": "Shared Test maintainers",
+      "summary": "Recipe fixtures, examples, compatibility corpus, and application RTC examples validate against the published schema.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
+    },
+    {
+      "id": "recipe-matrix-public-interface",
+      "domain": "Supported recipe matrix",
+      "owner": "Shared Test maintainers",
+      "summary": "Every example and test recipe is uniquely catalogued with explicit profile, execution mode, and compatibility.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
+    },
+    {
+      "id": "state-write-recipe-evidence",
+      "domain": "State-write recipe evidence",
+      "owner": "Shared Test maintainers",
+      "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-public-result-evidence.test.ts#requires the public client response shape without inventing outbox ids"
+    },
+    {
+      "id": "shared-web-app-import-boundary",
+      "domain": "Shared-web application import boundary",
+      "owner": "Shared Web maintainers",
+      "summary": "Reusable browser modules never import application-owned code or reverse the intended package direction.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
+    },
+    {
+      "id": "shared-web-browser-bundle-boundary",
+      "domain": "Shared-web browser bundle boundary",
+      "owner": "Shared Web maintainers",
+      "summary": "Browser entrypoints remain free of server-only dependencies when bundled for application consumers.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
+    },
+    {
+      "id": "shared-web-browser-entrypoints",
+      "domain": "Shared-web public browser entrypoints",
+      "owner": "Shared Web maintainers",
+      "summary": "Published browser entrypoints expose the intended files and remain importable by consumers.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
+    }
+  ],
   "entries": [
     {
       "id": "test-structure-coupling-af06e460242c7af9",
@@ -54,11 +307,12 @@ moved or changed test.
       "line": 10,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "postgres-outbound-admission",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/api-v1/psql-outbound-admission-backend.test.ts:10 production-source-read evidence (“const source = readFileSync(”) protects the security contract stated by “exposes conditional mutation commits without a domain-lock escape hatch”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(. Its only durable purpose is the linked Postgres mutation admission security contract.",
+      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts#lets the inbound runtime reread and recompute after an apply-time CAS loss"
     },
     {
       "id": "test-structure-coupling-de8a898075dd447f",
@@ -66,11 +320,12 @@ moved or changed test.
       "line": 14,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "postgres-outbound-admission",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/api-v1/psql-outbound-admission-backend.test.ts:14 symbol-assertion evidence (“expect(source).not.toMatch(/lockKey|pg_advisory_xact_lock/u);”) protects the security contract stated by “exposes conditional mutation commits without a domain-lock escape hatch”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts"
+      "rationale": "Required boundary assertion: expect(source).not.toMatch(/lockKey|pg_advisory_xact_lock/u);. Its only durable purpose is the linked Postgres mutation admission security contract.",
+      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts#lets the inbound runtime reread and recompute after an apply-time CAS loss"
     },
     {
       "id": "test-structure-coupling-15925316257c0552",
@@ -78,11 +333,12 @@ moved or changed test.
       "line": 15,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "postgres-outbound-admission",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/api-v1/psql-outbound-admission-backend.test.ts:15 symbol-assertion evidence (“expect(source).toContain('PSqlAdmissionMutationCollector');”) protects the security contract stated by “exposes conditional mutation commits without a domain-lock escape hatch”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts"
+      "rationale": "Required boundary assertion: expect(source).toContain('PSqlAdmissionMutationCollector');. Its only durable purpose is the linked Postgres mutation admission security contract.",
+      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts#lets the inbound runtime reread and recompute after an apply-time CAS loss"
     },
     {
       "id": "test-structure-coupling-0d9d8047b56dc26b",
@@ -90,11 +346,12 @@ moved or changed test.
       "line": 16,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "postgres-outbound-admission",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/api-v1/psql-outbound-admission-backend.test.ts:16 symbol-assertion evidence (“expect(source).toContain('collector.apply(collector.mutations())');”) protects the security contract stated by “exposes conditional mutation commits without a domain-lock escape hatch”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts"
+      "rationale": "Required boundary assertion: expect(source).toContain('collector.apply(collector.mutations())');. Its only durable purpose is the linked Postgres mutation admission security contract.",
+      "semanticCoverage": "packages/tests/api-v1/psql-admission-optimistic-retry.test.ts#lets the inbound runtime reread and recompute after an apply-time CAS loss"
     },
     {
       "id": "test-structure-coupling-4f5e883227a56d2f",
@@ -102,11 +359,12 @@ moved or changed test.
       "line": 157,
       "column": 12,
       "kind": "ast-inspection",
-      "disposition": "temporary-ratchet",
+      "contract": "source-analysis-test-interface",
+      "disposition": "durable-boundary",
+      "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "packages/tests/helpers/source-analysis.ts:157 ast-inspection evidence (“return analyzeSource(readFileSync(filePath, 'utf8'), filePath);”) is supplementary to the semantic behavior “supporting source-analysis contract” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/helpers/source-analysis.ts",
-      "removalCondition": "Replace the ast-inspection check at packages/tests/helpers/source-analysis.ts:157 with an imported, rendered, protocol-level, or runtime-observable assertion for “supporting source-analysis contract”, then delete this entry."
+      "rationale": "Repository-interface analysis: return analyzeSource(readFileSync(filePath, 'utf8'), filePath);. Its only durable purpose is the linked Repository source-analysis test interface contract.",
+      "semanticCoverage": "packages/tests/helpers/source-analysis.test.ts#normalizes TypeScript and TSX module syntax without exposing parser nodes"
     },
     {
       "id": "test-structure-coupling-067cb8f802b52e8f",
@@ -114,11 +372,12 @@ moved or changed test.
       "line": 1628,
       "column": 18,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:1628 production-source-read evidence (“await expect(readFile(denoLock, 'utf8')).resolves.toBe('clean\\n');”) protects the security contract stated by “repairs known Deno lockfile drift before the controlled rollout dirty checkout guard”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: verifies that the Deno lock remains clean after the executable workflow. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-885894411448b277",
@@ -126,11 +385,12 @@ moved or changed test.
       "line": 1759,
       "column": 26,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:1759 production-source-read evidence (“const source = await readFile(”) protects the security contract stated by “persists control-server snapshots with an atomic temp-file rename”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: const source = await readFile(. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-fa59770e78717a02",
@@ -138,11 +398,12 @@ moved or changed test.
       "line": 1878,
       "column": 13,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:1878 production-source-read evidence (“await readFile(path.join(repoRoot, 'apps/rallar-black-box/package.json'), 'utf8'),”) protects the public contract stated by “keeps Playwright packages aligned past the Node 24 browser-install hang regression”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: await readFile(path.join(repoRoot, 'apps/rallar-black-box/package.json'), 'utf8'),. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-e2a3f6d14b0ae62f",
@@ -150,11 +411,12 @@ moved or changed test.
       "line": 212,
       "column": 13,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:212 production-source-read evidence (“await readFile(”) protects the public contract stated by “preserves a parallel label that happens to equal the source room”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: await readFile(. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-6e60cf6fab59ba61",
@@ -162,11 +424,12 @@ moved or changed test.
       "line": 269,
       "column": 32,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:269 production-source-read evidence (“const sourceBefore = await readFile(sourcePath, 'utf8');”) protects the public contract stated by “materializes a deterministic isolated group throughout executable manifest data”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: const sourceBefore = await readFile(sourcePath, 'utf8');. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-e29235474ce73022",
@@ -174,11 +437,12 @@ moved or changed test.
       "line": 365,
       "column": 18,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:365 production-source-read evidence (“expect(await readFile(sourcePath, 'utf8')).toBe(sourceBefore);”) protects the public contract stated by “materializes a deterministic isolated group throughout executable manifest data”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: expect(await readFile(sourcePath, 'utf8')).toBe(sourceBefore);. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-e0b344b0fbeef139",
@@ -186,11 +450,12 @@ moved or changed test.
       "line": 454,
       "column": 13,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:454 production-source-read evidence (“await readFile(”) protects the security contract stated by “rejects an executable command scoped outside the source manifest group”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: await readFile(. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-14caa2363e36d34f",
@@ -198,11 +463,12 @@ moved or changed test.
       "line": 851,
       "column": 41,
       "kind": "production-source-read",
+      "contract": "hetzner-distributed-workflow",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/distributed-recipe-workflow.test.ts:851 production-source-read evidence (“const manifest = JSON.parse(await readFile(path.join(repoRoot, manifestPath), 'utf8'));”) protects the public contract stated by “prepares the supported commit once before running the serial manifest matrix”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      "rationale": "Contract input read: const manifest = JSON.parse(await readFile(path.join(repoRoot, manifestPath), 'utf8'));. Its only durable purpose is the linked Supported Hetzner distributed workflow contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/hetzner-distributed-manifests.test.ts#validates every checked-in manifest against schema and contract"
     },
     {
       "id": "test-structure-coupling-6092604025a1f16c",
@@ -210,11 +476,12 @@ moved or changed test.
       "line": 78,
       "column": 48,
       "kind": "production-source-read",
+      "contract": "hetzner-control-deno-runtime",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar operations maintainers",
-      "rationale": "packages/tests/hetzner/spa-env-script.test.ts:78 production-source-read evidence (“const controlConfig = JSON.parse(await readFile(controlServerConfigPath, 'utf8')) as {”) protects the public contract stated by “uses the control-server Deno config for Hetzner cache warming and systemd start”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/hetzner/spa-env-script.test.ts"
+      "rationale": "Contract input read: const controlConfig = JSON.parse(await readFile(controlServerConfigPath, 'utf8')) as {. Its only durable purpose is the linked Hetzner control-server Deno runtime contract.",
+      "semanticCoverage": "packages/tests/rallar-black-box/full-stack-api-server-mode.test.ts#forces a fresh Postgres process for backend-authoritative acceptance"
     },
     {
       "id": "test-structure-coupling-c3aa90855783dcec",
@@ -222,11 +489,12 @@ moved or changed test.
       "line": 22,
       "column": 34,
       "kind": "production-source-read",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:22 production-source-read evidence (“const relicLocalConfig = readRepoFile('apps/relic-hunters-v1/playwright.config.ts');”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Contract input read: const relicLocalConfig = readRepoFile('apps/relic-hunters-v1/playwright.config.ts');. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-9ec0523adc4e5810",
@@ -234,11 +502,12 @@ moved or changed test.
       "line": 23,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:23 symbol-assertion evidence (“expect(relicLocalConfig).toContain(\"testDir: '../../tests/playwright/relic-hunters'\");”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(relicLocalConfig).toContain(\"testDir: '../../tests/playwright/relic-hunters'\");. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-48f593bb3d22b034",
@@ -246,11 +515,12 @@ moved or changed test.
       "line": 24,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:24 symbol-assertion evidence (“expect(relicLocalConfig).toContain(\"baseURL: 'http://127.0.0.1:5175'\");”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(relicLocalConfig).toContain(\"baseURL: 'http://127.0.0.1:5175'\");. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-e40221c75fd8373f",
@@ -258,11 +528,12 @@ moved or changed test.
       "line": 25,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:25 symbol-assertion evidence (“expect(relicLocalConfig).toContain('npm --workspace relic-hunters-v1 run dev');”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(relicLocalConfig).toContain('npm --workspace relic-hunters-v1 run dev');. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-089e8b9002932419",
@@ -270,11 +541,12 @@ moved or changed test.
       "line": 27,
       "column": 35,
       "kind": "production-source-read",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:27 production-source-read evidence (“const rallarLocalConfig = readRepoFile('apps/rallar-black-box/playwright.config.ts');”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Contract input read: const rallarLocalConfig = readRepoFile('apps/rallar-black-box/playwright.config.ts');. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-bef721d8b4c0ad86",
@@ -282,11 +554,12 @@ moved or changed test.
       "line": 28,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:28 symbol-assertion evidence (“expect(rallarLocalConfig).toContain(\"testDir: '../../tests/playwright/rallar-black-box'\");”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(rallarLocalConfig).toContain(\"testDir: '../../tests/playwright/rallar-black-box'\");. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-820ed3af57b40c6a",
@@ -294,11 +567,12 @@ moved or changed test.
       "line": 29,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:29 symbol-assertion evidence (“expect(rallarLocalConfig).toContain(\"baseURL: 'http://127.0.0.1:5176'\");”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(rallarLocalConfig).toContain(\"baseURL: 'http://127.0.0.1:5176'\");. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-00e80ed5baf5dbfe",
@@ -306,11 +580,12 @@ moved or changed test.
       "line": 31,
       "column": 34,
       "kind": "production-source-read",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:31 production-source-read evidence (“const arEyeLocalConfig = readRepoFile('apps/ar-eye-hunter-v1/playwright.config.ts');”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Contract input read: const arEyeLocalConfig = readRepoFile('apps/ar-eye-hunter-v1/playwright.config.ts');. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-65db88957b9d57f1",
@@ -318,11 +593,12 @@ moved or changed test.
       "line": 32,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:32 symbol-assertion evidence (“expect(arEyeLocalConfig).toContain(\"testDir: '../../tests/playwright/ar-eye-hunter'\");”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(arEyeLocalConfig).toContain(\"testDir: '../../tests/playwright/ar-eye-hunter'\");. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-3e9ba875fe4227a3",
@@ -330,11 +606,12 @@ moved or changed test.
       "line": 33,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:33 symbol-assertion evidence (“expect(arEyeLocalConfig).toContain(\"baseURL: 'http://127.0.0.1:5186'\");”) protects the public contract stated by “keeps app tests behind app-owned configs”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(arEyeLocalConfig).toContain(\"baseURL: 'http://127.0.0.1:5186'\");. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-004ef2d4a8afd20d",
@@ -342,11 +619,12 @@ moved or changed test.
       "line": 52,
       "column": 37,
       "kind": "production-source-read",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:52 production-source-read evidence (“const recipeConsoleConfig = readRepoFile(”) protects the public contract stated by “pins the Recipe Console API origin for every Playwright web server”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Contract input read: const recipeConsoleConfig = readRepoFile(. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-b6d78b11f09b621f",
@@ -354,11 +632,12 @@ moved or changed test.
       "line": 56,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "playwright-app-config-ownership",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar browser-test maintainers",
-      "rationale": "packages/tests/playwright/playwright-config-ownership.test.ts:56 symbol-assertion evidence (“expect(recipeConsoleConfig).toContain(”) protects the public contract stated by “pins the Recipe Console API origin for every Playwright web server”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/playwright/playwright-config-ownership.test.ts"
+      "rationale": "Required boundary assertion: expect(recipeConsoleConfig).toContain(. Its only durable purpose is the linked Application-owned Playwright configuration contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/tabbed-navigation.spec.ts#imports CI artifact files through the Runs panel and renders their analysis"
     },
     {
       "id": "test-structure-coupling-a888ea7a73ff596c",
@@ -366,11 +645,12 @@ moved or changed test.
       "line": 22,
       "column": 28,
       "kind": "production-source-read",
+      "contract": "control-protocol-browser-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts:22 production-source-read evidence (“const source = readFileSync(file, 'utf8');”) protects the public contract stated by “does not import control protocol from the SPA app into the control server”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/control-run-manager.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(file, 'utf8');. Its only durable purpose is the linked Browser control protocol boundary contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
     },
     {
       "id": "test-structure-coupling-6528188e04f724f8",
@@ -378,11 +658,12 @@ moved or changed test.
       "line": 24,
       "column": 17,
       "kind": "symbol-assertion",
+      "contract": "control-protocol-browser-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts:24 symbol-assertion evidence (“expect(source, `${file} imports ${forbidden}`).not.toContain(forbidden);”) protects the public contract stated by “does not import control protocol from the SPA app into the control server”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/control-run-manager.test.ts"
+      "rationale": "Required boundary assertion: expect(source, `${file} imports ${forbidden}`).not.toContain(forbidden);. Its only durable purpose is the linked Browser control protocol boundary contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
     },
     {
       "id": "test-structure-coupling-6abc59a36f1f386c",
@@ -390,11 +671,12 @@ moved or changed test.
       "line": 30,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "control-protocol-browser-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts:30 production-source-read evidence (“const source = readFileSync('apps/rallar-black-box/src/distributed-recipes.ts', 'utf8');”) protects the public contract stated by “keeps distributed run monitor derivation in shared-test instead of the SPA app”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/control-run-manager.test.ts"
+      "rationale": "Contract input read: const source = readFileSync('apps/rallar-black-box/src/distributed-recipes.ts', 'utf8');. Its only durable purpose is the linked Browser control protocol boundary contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
     },
     {
       "id": "test-structure-coupling-34020b59d4e23865",
@@ -402,11 +684,12 @@ moved or changed test.
       "line": 32,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "control-protocol-browser-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts:32 symbol-assertion evidence (“expect(source).toContain('@shared-test/rallar-bb-test/distributed-run-monitor.ts');”) protects the public contract stated by “keeps distributed run monitor derivation in shared-test instead of the SPA app”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/control-run-manager.test.ts"
+      "rationale": "Required boundary assertion: expect(source).toContain('@shared-test/rallar-bb-test/distributed-run-monitor.ts');. Its only durable purpose is the linked Browser control protocol boundary contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
     },
     {
       "id": "test-structure-coupling-1abb2ef732f76844",
@@ -414,11 +697,12 @@ moved or changed test.
       "line": 33,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "control-protocol-browser-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts:33 symbol-assertion evidence (“expect(source).not.toContain('export function deriveDistributedRunMonitor');”) protects the public contract stated by “keeps distributed run monitor derivation in shared-test instead of the SPA app”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/control-run-manager.test.ts"
+      "rationale": "Required boundary assertion: expect(source).not.toContain('export function deriveDistributedRunMonitor');. Its only durable purpose is the linked Browser control protocol boundary contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
     },
     {
       "id": "test-structure-coupling-871c09b8c3bed348",
@@ -426,11 +710,12 @@ moved or changed test.
       "line": 34,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "control-protocol-browser-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts:34 symbol-assertion evidence (“expect(source).not.toContain('export function deriveDistributedRunAnalysisReport');”) protects the public contract stated by “keeps distributed run monitor derivation in shared-test instead of the SPA app”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/control-run-manager.test.ts"
+      "rationale": "Required boundary assertion: expect(source).not.toContain('export function deriveDistributedRunAnalysisReport');. Its only durable purpose is the linked Browser control protocol boundary contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
     },
     {
       "id": "test-structure-coupling-f295701a2edffff0",
@@ -438,107 +723,38 @@ moved or changed test.
       "line": 35,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "control-protocol-browser-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts:35 symbol-assertion evidence (“expect(source).not.toContain('export function deriveRunVerdictView');”) protects the public contract stated by “keeps distributed run monitor derivation in shared-test instead of the SPA app”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/control-run-manager.test.ts"
+      "rationale": "Required boundary assertion: expect(source).not.toContain('export function deriveRunVerdictView');. Its only durable purpose is the linked Browser control protocol boundary contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts#accepts the RTC diagnostics option on health commands"
     },
     {
-      "id": "test-structure-coupling-f64af651e1e09b65",
+      "id": "test-structure-coupling-88941c3685a98abf",
       "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 110,
+      "line": 120,
       "column": 26,
       "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:110 production-source-read evidence (“const script = await readFile(”) is supplementary to the semantic behavior “waits for configured worker exit modes and terminal distributed runs” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/headless-worker-script.test.ts:110 with an imported, rendered, protocol-level, or runtime-observable assertion for “waits for configured worker exit modes and terminal distributed runs”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-9b6d831ce7b746fc",
-      "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 114,
-      "column": 27,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:114 production-source-read evidence (“const runtime = await readFile(”) is supplementary to the semantic behavior “waits for configured worker exit modes and terminal distributed runs” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/headless-worker-script.test.ts:114 with an imported, rendered, protocol-level, or runtime-observable assertion for “waits for configured worker exit modes and terminal distributed runs”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-f0ba2d9950e02491",
-      "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 131,
-      "column": 27,
-      "kind": "production-source-read",
+      "contract": "headless-worker-secret-boundary",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:131 production-source-read evidence (“const runtime = await readFile(”) protects the security contract stated by “redacts URL secrets by known key and sensitive key pattern”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts"
+      "rationale": "Reads the worker entrypoint to verify that authenticated control snapshots use the redacting header owner.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#redacts Playwright navigation messages with configured credentials"
     },
     {
-      "id": "test-structure-coupling-975e60de9ad83063",
+      "id": "test-structure-coupling-ec15c09a6c836e1d",
       "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 142,
-      "column": 26,
+      "line": 82,
+      "column": 27,
       "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:142 production-source-read evidence (“const script = await readFile(”) is supplementary to the semantic behavior “keeps the runtime logger wired into worker startup and browser events” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/headless-worker-script.test.ts:142 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the runtime logger wired into worker startup and browser events”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-e54eadd5decb7843",
-      "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 181,
-      "column": 26,
-      "kind": "production-source-read",
+      "contract": "headless-worker-secret-boundary",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:181 production-source-read evidence (“const script = await readFile(”) protects the security contract stated by “authenticates Node-side control-server reads when a control token is configured”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts"
-    },
-    {
-      "id": "test-structure-coupling-5cdcb355f38e1538",
-      "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 194,
-      "column": 26,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:194 production-source-read evidence (“const script = await readFile(”) is supplementary to the semantic behavior “creates shutdown cancellation before opening agents and wires it through registration” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/headless-worker-script.test.ts:194 with an imported, rendered, protocol-level, or runtime-observable assertion for “creates shutdown cancellation before opening agents and wires it through registration”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-8f65c5c98070b4f1",
-      "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 81,
-      "column": 26,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:81 production-source-read evidence (“const source = await readFile(”) is supplementary to the semantic behavior “launches the configured Playwright browser engine” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/headless-worker-script.test.ts:81 with an imported, rendered, protocol-level, or runtime-observable assertion for “launches the configured Playwright browser engine”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-e60b9c152362b3cc",
-      "path": "packages/tests/rallar-black-box/headless-worker-script.test.ts",
-      "line": 98,
-      "column": 26,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/headless-worker-script.test.ts:98 production-source-read evidence (“const source = await readFile(”) is supplementary to the semantic behavior “logs the selected entry and per-agent URLs through the runtime logger” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/headless-worker-script.test.ts:98 with an imported, rendered, protocol-level, or runtime-observable assertion for “logs the selected entry and per-agent URLs through the runtime logger”, then delete this entry."
+      "rationale": "Reads the runtime redactor so credential-bearing URL keys remain covered at the worker security boundary.",
+      "semanticCoverage": "packages/tests/rallar-black-box/headless-worker-runtime.test.ts#redacts Playwright navigation messages with configured credentials"
     },
     {
       "id": "test-structure-coupling-722dccb366bf496c",
@@ -546,11 +762,12 @@ moved or changed test.
       "line": 112,
       "column": 25,
       "kind": "production-source-read",
+      "contract": "legacy-alias-compatibility",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-alias-ownership.test.ts:112 production-source-read evidence (“source: readFileSync(resolve(legacyRoot, path), 'utf8'),”) protects the compatibility contract stated by “keeps exactly one real owner for every previously duplicated workflow”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-alias-ownership.test.ts"
+      "rationale": "Contract input read: source: readFileSync(resolve(legacyRoot, path), 'utf8'),. Its only durable purpose is the linked Legacy runner alias compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-ecc3901d540c564b",
@@ -558,11 +775,12 @@ moved or changed test.
       "line": 611,
       "column": 28,
       "kind": "production-source-read",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:611 production-source-read evidence (“const experience = readFileSync(”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Contract input read: const experience = readFileSync(. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-f3cf67b02e620c55",
@@ -570,11 +788,12 @@ moved or changed test.
       "line": 615,
       "column": 23,
       "kind": "production-source-read",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:615 production-source-read evidence (“const shell = readFileSync(”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Contract input read: const shell = readFileSync(. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-745be5905c24f804",
@@ -582,11 +801,12 @@ moved or changed test.
       "line": 619,
       "column": 28,
       "kind": "production-source-read",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:619 production-source-read evidence (“const globalHook = readFileSync(”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Contract input read: const globalHook = readFileSync(. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-499a397e644ff9b5",
@@ -594,11 +814,12 @@ moved or changed test.
       "line": 623,
       "column": 28,
       "kind": "production-source-read",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:623 production-source-read evidence (“const runManager = readFileSync(”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Contract input read: const runManager = readFileSync(. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-e0ab6b553860f073",
@@ -606,11 +827,12 @@ moved or changed test.
       "line": 627,
       "column": 29,
       "kind": "production-source-read",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:627 production-source-read evidence (“const distributed = readFileSync(”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Contract input read: const distributed = readFileSync(. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-bad6620ec2c22199",
@@ -618,11 +840,12 @@ moved or changed test.
       "line": 633,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:633 migration-or-compatibility-topology evidence (“expect(experience).toContain('LegacyDiagnosticContextProvider');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Compatibility-path assertion: expect(experience).toContain('LegacyDiagnosticContextProvider');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-e136fe33f4a41481",
@@ -630,11 +853,12 @@ moved or changed test.
       "line": 633,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:633 symbol-assertion evidence (“expect(experience).toContain('LegacyDiagnosticContextProvider');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Required boundary assertion: expect(experience).toContain('LegacyDiagnosticContextProvider');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-b09ce3ab6c21a43a",
@@ -642,11 +866,12 @@ moved or changed test.
       "line": 634,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:634 symbol-assertion evidence (“expect(experience).toContain('diagnosticContext={diagnosticContext}');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Required boundary assertion: expect(experience).toContain('diagnosticContext={diagnosticContext}');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-e17c0f9d1da91c11",
@@ -654,11 +879,12 @@ moved or changed test.
       "line": 635,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:635 migration-or-compatibility-topology evidence (“expect(shell).toMatch(”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Compatibility-path assertion: expect(shell).toMatch(. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-1c349b702a67038e",
@@ -666,11 +892,12 @@ moved or changed test.
       "line": 635,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:635 symbol-assertion evidence (“expect(shell).toMatch(”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Required boundary assertion: expect(shell).toMatch(. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-f61882d686b344cf",
@@ -678,11 +905,12 @@ moved or changed test.
       "line": 638,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:638 symbol-assertion evidence (“expect(globalHook).toContain('diagnosticContextChanged');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Required boundary assertion: expect(globalHook).toContain('diagnosticContextChanged');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-3ff0a0da22c2f080",
@@ -690,11 +918,12 @@ moved or changed test.
       "line": 639,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:639 migration-or-compatibility-topology evidence (“expect(runManager).toContain('useLegacyDiagnosticContext');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Compatibility-path assertion: expect(runManager).toContain('useLegacyDiagnosticContext');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-b37bf0ab8eccb975",
@@ -702,11 +931,12 @@ moved or changed test.
       "line": 639,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:639 symbol-assertion evidence (“expect(runManager).toContain('useLegacyDiagnosticContext');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Required boundary assertion: expect(runManager).toContain('useLegacyDiagnosticContext');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-fda48bc334a5838e",
@@ -714,11 +944,12 @@ moved or changed test.
       "line": 640,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:640 symbol-assertion evidence (“expect(runManager).toContain('useLatestRequestGuard');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Required boundary assertion: expect(runManager).toContain('useLatestRequestGuard');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-5e401272858e4809",
@@ -726,11 +957,12 @@ moved or changed test.
       "line": 641,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:641 migration-or-compatibility-topology evidence (“expect(distributed).toContain('useLegacyDiagnosticContext');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Compatibility-path assertion: expect(distributed).toContain('useLegacyDiagnosticContext');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-bec994e9ed006f4e",
@@ -738,11 +970,12 @@ moved or changed test.
       "line": 641,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-diagnostic-context",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts:641 symbol-assertion evidence (“expect(distributed).toContain('useLegacyDiagnosticContext');”) protects the compatibility contract stated by “parses once at the experience root and keeps absent old links uncluttered”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-diagnostic-context.test.ts"
+      "rationale": "Required boundary assertion: expect(distributed).toContain('useLegacyDiagnosticContext');. Its only durable purpose is the linked Legacy diagnostic handoff compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#opens every registered legacy surface from its alias and contextual route"
     },
     {
       "id": "test-structure-coupling-bc9777e5a0d7a39f",
@@ -750,11 +983,12 @@ moved or changed test.
       "line": 333,
       "column": 28,
       "kind": "production-source-read",
+      "contract": "legacy-mount-policy",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts:333 production-source-read evidence (“const runsSource = readFileSync(resolve(repositoryRoot, runsPath), 'utf8');”) protects the compatibility contract stated by “keeps the lazy Runs entry out of static evidence ownership”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts"
+      "rationale": "Contract input read: const runsSource = readFileSync(resolve(repositoryRoot, runsPath), 'utf8');. Its only durable purpose is the linked Legacy route mount compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
     },
     {
       "id": "test-structure-coupling-90aa2da8484501ed",
@@ -762,11 +996,12 @@ moved or changed test.
       "line": 335,
       "column": 15,
       "kind": "production-source-read",
+      "contract": "legacy-mount-policy",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts:335 production-source-read evidence (“? readFileSync(resolve(repositoryRoot, failurePath), 'utf8')”) protects the compatibility contract stated by “keeps the lazy Runs entry out of static evidence ownership”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts"
+      "rationale": "Contract input read: ? readFileSync(resolve(repositoryRoot, failurePath), 'utf8'). Its only durable purpose is the linked Legacy route mount compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
     },
     {
       "id": "test-structure-coupling-cfd81a9781cea2d4",
@@ -774,11 +1009,12 @@ moved or changed test.
       "line": 337,
       "column": 32,
       "kind": "production-source-read",
+      "contract": "legacy-mount-policy",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts:337 production-source-read evidence (“const evidenceSource = readFileSync(”) protects the compatibility contract stated by “keeps the lazy Runs entry out of static evidence ownership”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts"
+      "rationale": "Contract input read: const evidenceSource = readFileSync(. Its only durable purpose is the linked Legacy route mount compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
     },
     {
       "id": "test-structure-coupling-daf602ff6ff3b076",
@@ -786,11 +1022,12 @@ moved or changed test.
       "line": 346,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-mount-policy",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts:346 symbol-assertion evidence (“expect.soft(runsSource, 'Runs imports the evidence leaf').toContain(”) protects the compatibility contract stated by “keeps the lazy Runs entry out of static evidence ownership”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts"
+      "rationale": "Required boundary assertion: expect.soft(runsSource, 'Runs imports the evidence leaf').toContain(. Its only durable purpose is the linked Legacy route mount compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
     },
     {
       "id": "test-structure-coupling-37e3a891d625c83e",
@@ -798,11 +1035,12 @@ moved or changed test.
       "line": 349,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-mount-policy",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts:349 symbol-assertion evidence (“expect.soft(runsSource, 'Runs keeps the public evidence export').toContain(”) protects the compatibility contract stated by “keeps the lazy Runs entry out of static evidence ownership”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts"
+      "rationale": "Required boundary assertion: expect.soft(runsSource, 'Runs keeps the public evidence export').toContain(. Its only durable purpose is the linked Legacy route mount compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
     },
     {
       "id": "test-structure-coupling-2bdb4ad3f9c29a4f",
@@ -810,11 +1048,12 @@ moved or changed test.
       "line": 352,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-mount-policy",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts:352 symbol-assertion evidence (“expect.soft(runsSource, 'Runs no longer declares the evidence leaf').not.toMatch(”) protects the compatibility contract stated by “keeps the lazy Runs entry out of static evidence ownership”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts"
+      "rationale": "Required boundary assertion: expect.soft(runsSource, 'Runs no longer declares the evidence leaf').not.toMatch(. Its only durable purpose is the linked Legacy route mount compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
     },
     {
       "id": "test-structure-coupling-6b778c32a1d0aedc",
@@ -822,1163 +1061,12 @@ moved or changed test.
       "line": 358,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "legacy-mount-policy",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts:358 symbol-assertion evidence (“expect.soft(evidenceSource, 'event evidence import').toContain(”) protects the compatibility contract stated by “keeps the lazy Runs entry out of static evidence ownership”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/rallar-black-box/legacy-mount-policy.test.ts"
-    },
-    {
-      "id": "test-structure-coupling-c151dade30ad51df",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 413,
-      "column": 28,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:413 production-source-read evidence (“const activeWork = source(ACTIVE_WORK_PATH);”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:413 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-3408a5faedcd719c",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 414,
-      "column": 27,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:414 production-source-read evidence (“const workspace = source(WORKSPACE_PATH);”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:414 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-6260afa5004181a1",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 416,
-      "column": 31,
-      "kind": "exact-file-tree",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:416 exact-file-tree evidence (“const advancedFiles = readdirSync(resolve(REPOSITORY_ROOT, ADVANCED_ROOT), {”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the exact-file-tree check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:416 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-6178071685d2fb4e",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 424,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:424 symbol-assertion evidence (“expect(activeWork).toContain(”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:424 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-8cda24f6885440c6",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 427,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:427 symbol-assertion evidence (“expect(activeWork).not.toMatch(”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:427 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-764a5623b088e598",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 430,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:430 symbol-assertion evidence (“expect(workspace).not.toMatch(”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:430 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-0ba4b3ff6cce0670",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 433,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:433 symbol-assertion evidence (“expect(activeWork).not.toMatch(/\\bhidden\\b|display\\s*:\\s*none|<Activity\\b/);”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:433 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-7e64a98948d65c27",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 445,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:445 production-source-read evidence (“expect(lines(ACTIVE_WORK_PATH)).toBeLessThanOrEqual(100);”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:445 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-d107780ae6ea84be",
-      "path": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "line": 446,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:446 production-source-read evidence (“expect(lines(WORKSPACE_PATH)).toBeLessThanOrEqual(220);”) is supplementary to the semantic behavior “keeps Advanced locally styled, side-effect free, and bounded” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-advanced-ui.test.ts:446 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps Advanced locally styled, side-effect free, and bounded”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-64155fc558fc9ead",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "line": 226,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:226 production-source-read evidence (“expect(source(controlApiPath)).toContain(”) is supplementary to the semantic behavior “keeps the Fleet feature out of eager control and provider import graphs” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:226 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Fleet feature out of eager control and provider import graphs”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-83a6540285679f8e",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "line": 229,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:229 production-source-read evidence (“expect(source(controlApiPath)).not.toMatch(”) is supplementary to the semantic behavior “keeps the Fleet feature out of eager control and provider import graphs” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:229 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Fleet feature out of eager control and provider import graphs”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-eae656bcb686b804",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "line": 232,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:232 production-source-read evidence (“expect(source(providerPath)).not.toMatch(”) is supplementary to the semantic behavior “keeps the Fleet feature out of eager control and provider import graphs” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:232 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Fleet feature out of eager control and provider import graphs”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-c5ed160aacb6712f",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "line": 235,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:235 production-source-read evidence (“expect(source(providerPath)).toContain('fleet: apiSetup.api?.fleet');”) is supplementary to the semantic behavior “keeps the Fleet feature out of eager control and provider import graphs” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:235 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Fleet feature out of eager control and provider import graphs”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-8264af46b79e8576",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "line": 236,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:236 production-source-read evidence (“expect(source(fleetApiPath)).not.toMatch(”) is supplementary to the semantic behavior “keeps the Fleet feature out of eager control and provider import graphs” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-fleet-api.test.ts:236 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Fleet feature out of eager control and provider import graphs”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-a4114f020fe4eb29",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 746,
-      "column": 20,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:746 production-source-read evidence (“expect(source(path), path).not.toContain('/retention/cleanup');”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:746 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-6a95da42d6b70095",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 752,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:752 production-source-read evidence (“expect(source(requestPath)).toContain(”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:752 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-1ec5c323e8b46db3",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 755,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:755 production-source-read evidence (“expect(source(requestPath)).not.toContain('control-run-manager');”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:755 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-7b63db43a6522e87",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 757,
-      "column": 26,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:757 production-source-read evidence (“const provider = source(providerPath);”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:757 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-c9b2ae5ee59621b4",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 758,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:758 symbol-assertion evidence (“expect(provider).toContain('retention: apiSetup.api?.retention');”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:758 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-f4e6b34d79ad4168",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 759,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:759 symbol-assertion evidence (“expect(provider).toMatch(/\\.close\\(\\)/);”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:759 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-b1b39e7253bd9f36",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 760,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:760 symbol-assertion evidence (“expect(provider).toContain('React StrictMode replays effects');”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:760 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-43970280ce96e8e1",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 761,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:761 symbol-assertion evidence (“expect(provider).toContain('useLayoutEffect');”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:761 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-16a5c6c784f5bbab",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 762,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:762 symbol-assertion evidence (“expect(provider).not.toMatch(”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:762 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-28aef9539018dc5c",
-      "path": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts",
-      "line": 770,
-      "column": 28,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:770 production-source-read evidence (“const validation = source(”) is supplementary to the semantic behavior “keeps feature modules out of eager value-import graphs and provider serialization” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts:770 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps feature modules out of eager value-import graphs and provider serialization”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-a418a352e92d9be1",
-      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "line": 131,
-      "column": 28,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:131 production-source-read evidence (“const source = readFileSync(”) is supplementary to the semantic behavior “keeps every pressure owner inside its focused audit budget” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:131 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps every pressure owner inside its focused audit budget”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-761b73e378d01af2",
-      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "line": 135,
-      "column": 13,
-      "kind": "line-count",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:135 line-count evidence (“expect(source.split('\\n').length, file).toBeLessThanOrEqual(budget);”) is supplementary to the semantic behavior “\\n” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "removalCondition": "Replace the line-count check at packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:135 with an imported, rendered, protocol-level, or runtime-observable assertion for “\\n”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-1d767a8a839cef38",
-      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "line": 140,
-      "column": 24,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:140 production-source-read evidence (“const picker = readFileSync(”) is supplementary to the semantic behavior “keeps the Execute control-run disclosure on the approved inline row” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:140 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Execute control-run disclosure on the approved inline row”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-a97525f9eba2786c",
-      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "line": 144,
-      "column": 21,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:144 production-source-read evidence (“const css = readFileSync(”) is supplementary to the semantic behavior “keeps the Execute control-run disclosure on the approved inline row” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:144 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Execute control-run disclosure on the approved inline row”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-ff2b077f89f14ad3",
-      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "line": 148,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:148 symbol-assertion evidence (“expect(picker).toContain('layout=\"inline\"');”) is supplementary to the semantic behavior “keeps the Execute control-run disclosure on the approved inline row” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:148 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Execute control-run disclosure on the approved inline row”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-7d55b94afe7c50d3",
-      "path": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "line": 156,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:156 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “keeps the Execute control-run disclosure on the approved inline row” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-execute-windowing.test.ts:156 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the Execute control-run disclosure on the approved inline row”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-05a0cf5969a3e575",
-      "path": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "line": 452,
-      "column": 21,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:452 production-source-read evidence (“const css = readFileSync(resolve(”) is supplementary to the semantic behavior “uses logical coarse targets with compact and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:452 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses logical coarse targets with compact and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-67b78e17fe756b02",
-      "path": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "line": 457,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:457 symbol-assertion evidence (“expect(css).toContain('min-inline-size: 44px');”) is supplementary to the semantic behavior “uses logical coarse targets with compact and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:457 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses logical coarse targets with compact and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-0c9c90e5734115f4",
-      "path": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "line": 458,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:458 symbol-assertion evidence (“expect(css).toContain('min-block-size: 44px');”) is supplementary to the semantic behavior “uses logical coarse targets with compact and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:458 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses logical coarse targets with compact and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-071bfc3482230a62",
-      "path": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "line": 459,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:459 symbol-assertion evidence (“expect(css).toContain('padding-inline:');”) is supplementary to the semantic behavior “uses logical coarse targets with compact and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:459 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses logical coarse targets with compact and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-9ce1a438cf30b1ac",
-      "path": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "line": 460,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:460 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “uses logical coarse targets with compact and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:460 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses logical coarse targets with compact and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-8ccaf941d5c27dcd",
-      "path": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "line": 463,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:463 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “uses logical coarse targets with compact and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:463 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses logical coarse targets with compact and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-f7c44751312f9c14",
-      "path": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "line": 466,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:466 symbol-assertion evidence (“expect(css).not.toMatch(/(?:margin|padding|inset)-(?:left|right):/);”) is supplementary to the semantic behavior “uses logical coarse targets with compact and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-explicit-window.test.ts:466 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses logical coarse targets with compact and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-3b6e505a66d08eeb",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "line": 247,
-      "column": 28,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:247 production-source-read evidence (“const filtersCss = readFileSync(”) is supplementary to the semantic behavior “keeps both presentations flat, compact, and responsive at 4/2/1 columns” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:247 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps both presentations flat, compact, and responsive at 4/2/1 columns”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-a76a9f82b2791d70",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "line": 251,
-      "column": 26,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:251 production-source-read evidence (“const savedCss = readFileSync(”) is supplementary to the semantic behavior “keeps both presentations flat, compact, and responsive at 4/2/1 columns” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:251 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps both presentations flat, compact, and responsive at 4/2/1 columns”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-88130205220366e5",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "line": 256,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:256 symbol-assertion evidence (“expect(filtersCss).toContain('repeat(4, minmax(0, 1fr))');”) is supplementary to the semantic behavior “keeps both presentations flat, compact, and responsive at 4/2/1 columns” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:256 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps both presentations flat, compact, and responsive at 4/2/1 columns”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-d18f7f4b264cf914",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "line": 257,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:257 symbol-assertion evidence (“expect(filtersCss).toContain('repeat(2, minmax(0, 1fr))');”) is supplementary to the semantic behavior “keeps both presentations flat, compact, and responsive at 4/2/1 columns” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:257 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps both presentations flat, compact, and responsive at 4/2/1 columns”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-3d753ba8d77285d7",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "line": 258,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:258 symbol-assertion evidence (“expect(filtersCss).toContain('grid-template-columns: minmax(0, 1fr)');”) is supplementary to the semantic behavior “keeps both presentations flat, compact, and responsive at 4/2/1 columns” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:258 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps both presentations flat, compact, and responsive at 4/2/1 columns”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-efc17a5864218d15",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "line": 259,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:259 symbol-assertion evidence (“expect(filtersCss).toContain('min-height: 44px');”) is supplementary to the semantic behavior “keeps both presentations flat, compact, and responsive at 4/2/1 columns” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:259 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps both presentations flat, compact, and responsive at 4/2/1 columns”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-9c57fb792f4ceeb9",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "line": 260,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:260 symbol-assertion evidence (“expect(`${filtersCss}\\n${savedCss}`).not.toMatch(/box-shadow|border-radius:\\s*(?:[7-9]|\\d{2,})px/);”) is supplementary to the semantic behavior “keeps both presentations flat, compact, and responsive at 4/2/1 columns” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-history-filter-ui.test.ts:260 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps both presentations flat, compact, and responsive at 4/2/1 columns”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-ea084f766507585d",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-storage.test.ts",
-      "line": 688,
-      "column": 58,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-storage.test.ts:688 production-source-read evidence (“const source = (relativePath: string): string => readFileSync(”) is supplementary to the semantic behavior “keeps browser localStorage access in the hook and out of pure or eager owners” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-storage.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-history-storage.test.ts:688 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps browser localStorage access in the hook and out of pure or eager owners”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-cb3ba8ab18c95901",
-      "path": "packages/tests/rallar-black-box/recipe-console-history-storage.test.ts",
-      "line": 709,
-      "column": 30,
-      "kind": "exact-file-tree",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-history-storage.test.ts:709 exact-file-tree evidence (“const historyFiles = readdirSync(resolve(”) is supplementary to the semantic behavior “keeps browser localStorage access in the hook and out of pure or eager owners” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-history-storage.test.ts",
-      "removalCondition": "Replace the exact-file-tree check at packages/tests/rallar-black-box/recipe-console-history-storage.test.ts:709 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps browser localStorage access in the hook and out of pure or eager owners”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-a0a1fd0215e4def1",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 211,
-      "column": 33,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:211 production-source-read evidence (“const componentSource = readFileSync(”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:211 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-42eec3f12d768586",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 215,
-      "column": 33,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:215 production-source-read evidence (“const inspectorSource = readFileSync(”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:215 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-15333238918edab8",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 219,
-      "column": 31,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:219 production-source-read evidence (“const failureSource = readFileSync(”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:219 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-b3e2e49ee04bb928",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 223,
-      "column": 27,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:223 production-source-read evidence (“const cssSource = readFileSync(”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:223 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-564181f1f4410182",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 227,
-      "column": 29,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:227 production-source-read evidence (“const tokenSource = readFileSync(”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:227 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-c562a0836d4dd52e",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 231,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:231 symbol-assertion evidence (“expect(componentSource).not.toMatch(/fetch\\(|setInterval\\(|setTimeout\\(|useEffect|useState/);”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:231 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-b20be1da7a2186ee",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 232,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:232 symbol-assertion evidence (“expect(componentSource).not.toMatch(”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:232 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-e019b882fe47304c",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 237,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:237 symbol-assertion evidence (“expect(inspectorSource).toContain('<MonitorFailureEvidence');”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:237 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-233395c0f0b6bc87",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 238,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:238 symbol-assertion evidence (“expect(failureSource).toContain('<MonitorDiagnosticHandoffs');”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:238 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-694a256866c8899f",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 239,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:239 symbol-assertion evidence (“expect(cssSource).toContain('min-block-size: 44px');”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:239 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-e6a9041afe75e31d",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 240,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:240 symbol-assertion evidence (“expect(cssSource).toContain('overflow-wrap: anywhere');”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:240 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-2d2851f0b267d131",
-      "path": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "line": 245,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:245 symbol-assertion evidence (“expect(tokenSource, `${token}: defined Recipe Console token`)”) is supplementary to the semantic behavior “uses bounded native semantic links without runtime or duplicate monitor ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-monitor-diagnostic-handoff.test.ts:245 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses bounded native semantic links without runtime or duplicate monitor ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-983e4bfdcb1a80af",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 171,
-      "column": 21,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:171 production-source-read evidence (“const css = readFileSync(resolve(”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:171 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-4177afa5ca72b2df",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 175,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:175 symbol-assertion evidence (“expect(css).toContain('@media (prefers-reduced-motion: reduce)');”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:175 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-cdff2f92a7c1a2d1",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 176,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:176 symbol-assertion evidence (“expect(css).toMatch(/animation:\\s*none/);”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:176 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-3e21ab7bd906d55c",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 177,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:177 symbol-assertion evidence (“expect(css).toMatch(/max-height:\\s*calc\\(100dvh/);”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:177 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-2d2017635f59f41b",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 178,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:178 symbol-assertion evidence (“expect(css).toMatch(/\\.dialog\\s*\\{[\\s\\S]*overflow:\\s*hidden/);”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:178 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-7656a8d914463f97",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 179,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:179 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:179 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-a934bafce5ce29e1",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 182,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:182 symbol-assertion evidence (“expect(css).toMatch(/\\.candidateScroller:focus-visible/);”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:182 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-bc16ef3d5eb45b54",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "line": 183,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:183 symbol-assertion evidence (“expect(css).toContain('min-height: 44px');”) is supplementary to the semantic behavior “disables dialog motion under reduced motion and contains mobile overflow” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-dialog.test.ts:183 with an imported, rendered, protocol-level, or runtime-observable assertion for “disables dialog motion under reduced motion and contains mobile overflow”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-48e1fd582a7373ad",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 243,
-      "column": 25,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:243 production-source-read evidence (“const css = readFileSync(”) is supplementary to the semantic behavior “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:243 with an imported, rendered, protocol-level, or runtime-observable assertion for “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-2fd8ec6ccd680d2e",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 247,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:247 symbol-assertion evidence (“expect(css).toMatch(/white-space:\\s*break-spaces/);”) is supplementary to the semantic behavior “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:247 with an imported, rendered, protocol-level, or runtime-observable assertion for “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-86fe601b9eaa5810",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 248,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:248 symbol-assertion evidence (“expect(css).toMatch(/unicode-bidi:\\s*isolate-override/);”) is supplementary to the semantic behavior “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:248 with an imported, rendered, protocol-level, or runtime-observable assertion for “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-9dcf9621cab0c41e",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 249,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:249 symbol-assertion evidence (“expect(css).toMatch(/direction:\\s*ltr/);”) is supplementary to the semantic behavior “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:249 with an imported, rendered, protocol-level, or runtime-observable assertion for “renders exact whitespace and bidi-bearing IDs in an isolated LTR owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-8b3ddf9a05c9297d",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 361,
-      "column": 33,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:361 production-source-read evidence (“const componentSource = readFileSync(”) is supplementary to the semantic behavior “keeps the component source and public props token-free” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:361 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the component source and public props token-free”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-47c16d1b9216a766",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 365,
-      "column": 35,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:365 production-source-read evidence (“const consequenceSource = readFileSync(”) is supplementary to the semantic behavior “keeps the component source and public props token-free” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:365 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the component source and public props token-free”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-7ed02680130b0983",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 369,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:369 symbol-assertion evidence (“expect(componentSource).toMatch(/import type[\\s\\S]*use-retention-cleanup/);”) is supplementary to the semantic behavior “keeps the component source and public props token-free” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:369 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the component source and public props token-free”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-e1534f15029697c3",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 370,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:370 symbol-assertion evidence (“expect(componentSource).toMatch(/controller:\\s*RetentionCleanupController/);”) is supplementary to the semantic behavior “keeps the component source and public props token-free” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:370 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the component source and public props token-free”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-2f28adb7a242f659",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 371,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:371 symbol-assertion evidence (“expect(componentSource).toMatch(”) is supplementary to the semantic behavior “keeps the component source and public props token-free” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:371 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the component source and public props token-free”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-75e3f1f2da2f25f2",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 374,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:374 symbol-assertion evidence (“expect(consequenceSource).toMatch(/itemKey=\\{candidate => candidate\\.key\\}/);”) is supplementary to the semantic behavior “keeps the component source and public props token-free” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:374 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the component source and public props token-free”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-edd4717f9a7aaacf",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 383,
-      "column": 25,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:383 production-source-read evidence (“const css = readFileSync(”) is supplementary to the semantic behavior “keeps the flat responsive ledger and every action or summary at 44px” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:383 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the flat responsive ledger and every action or summary at 44px”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-68b384f3a3700606",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 387,
-      "column": 13,
-      "kind": "line-count",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:387 line-count evidence (“expect(css.split('\\n').length).toBeLessThanOrEqual(300);”) is supplementary to the semantic behavior “\\n” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the line-count check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:387 with an imported, rendered, protocol-level, or runtime-observable assertion for “\\n”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-5fe3dfe1e0da5587",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 388,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:388 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “\\n” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:388 with an imported, rendered, protocol-level, or runtime-observable assertion for “\\n”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-42ce35d1ce5a9331",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 391,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:391 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “\\n” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:391 with an imported, rendered, protocol-level, or runtime-observable assertion for “\\n”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-49ffd0baef8f25d8",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 394,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:394 symbol-assertion evidence (“expect(css).toContain('overflow-wrap: anywhere');”) is supplementary to the semantic behavior “\\n” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:394 with an imported, rendered, protocol-level, or runtime-observable assertion for “\\n”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-0c8cb34048d51aeb",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 395,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:395 symbol-assertion evidence (“expect(css).toMatch(/@media \\(max-width:\\s*560px\\)/);”) is supplementary to the semantic behavior “\\n” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:395 with an imported, rendered, protocol-level, or runtime-observable assertion for “\\n”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-3a6ed43205319a9c",
-      "path": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts",
-      "line": 396,
-      "column": 13,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:396 symbol-assertion evidence (“expect(css).not.toMatch(/box-shadow|:hover|position:\\s*fixed/);”) is supplementary to the semantic behavior “\\n” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-retention-integration.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-retention-panel.test.ts:396 with an imported, rendered, protocol-level, or runtime-observable assertion for “\\n”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-6968769e3669ccf8",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 578,
-      "column": 21,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:578 production-source-read evidence (“const css = readFileSync(resolve(”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:578 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-0ff6314ca0f359c7",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 582,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:582 symbol-assertion evidence (“expect(css).toContain('min-inline-size: 44px');”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:582 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-3bf643b3b34154f6",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 583,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:583 symbol-assertion evidence (“expect(css).toContain('min-block-size: 44px');”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:583 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-2a4cd57e77937fe4",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 584,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:584 symbol-assertion evidence (“expect(css).toContain('padding-inline:');”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:584 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-b387bb6cbf4274f1",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 585,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:585 symbol-assertion evidence (“expect(css).toMatch(/unicode-bidi:\\s*isolate/);”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:585 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-70480c43bf989684",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 586,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:586 symbol-assertion evidence (“expect(css).toMatch(/\\.option\\[data-active=\"true\"\\]/);”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:586 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-7719d96ebeb825c4",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 587,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:587 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:587 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-803e7e2f38a2beba",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 590,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:590 symbol-assertion evidence (“expect(css).not.toMatch(/(?:margin|padding|inset|border)-(?:left|right):/);”) is supplementary to the semantic behavior “uses coarse logical targets, bidi isolation, and reduced-motion containment” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:590 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses coarse logical targets, bidi isolation, and reduced-motion containment”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-59d7fe437e07918f",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 594,
-      "column": 21,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:594 production-source-read evidence (“const css = readFileSync(resolve(”) is supplementary to the semantic behavior “keeps the closed selected option compact without flattening popup rows” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:594 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the closed selected option compact without flattening popup rows”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-49b650741265702a",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 609,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:609 symbol-assertion evidence (“expect(css).toMatch(”) is supplementary to the semantic behavior “keeps the closed selected option compact without flattening popup rows” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:609 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the closed selected option compact without flattening popup rows”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-649ad8ee9273a400",
-      "path": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "line": 613,
-      "column": 9,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:613 symbol-assertion evidence (“expect(css).not.toMatch(/\\.option > \\.optionBody > small\\s*\\{[^}]*display:\\s*none/u);”) is supplementary to the semantic behavior “keeps the closed selected option compact without flattening popup rows” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/rallar-black-box/recipe-console-searchable-listbox.test.ts:613 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the closed selected option compact without flattening popup rows”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-81ea6d6d9f31b473",
-      "path": "packages/tests/rallar-black-box/recipe-console-shared-test-compaction.test.ts",
-      "line": 250,
-      "column": 16,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-shared-test-compaction.test.ts:250 production-source-read evidence (“expect(readFileSync(importerPath, 'utf8')).toContain(”) is supplementary to the semantic behavior “owns bounded presentation outside the importer composition” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-shared-test-compaction.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-shared-test-compaction.test.ts:250 with an imported, rendered, protocol-level, or runtime-observable assertion for “owns bounded presentation outside the importer composition”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-aee99952012ae63d",
-      "path": "packages/tests/rallar-black-box/recipe-console-tune-scale-windowing.test.ts",
-      "line": 210,
-      "column": 23,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar Black Box maintainers",
-      "rationale": "packages/tests/rallar-black-box/recipe-console-tune-scale-windowing.test.ts:210 production-source-read evidence (“].map(path => readFileSync(resolve(repoRoot, path), 'utf8'));”) is supplementary to the semantic behavior “uses searchable bounded listboxes only on Tune pressure selectors” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/rallar-black-box/recipe-console-tune-scale-windowing.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/rallar-black-box/recipe-console-tune-scale-windowing.test.ts:210 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses searchable bounded listboxes only on Tune pressure selectors”, then delete this entry."
+      "rationale": "Required boundary assertion: expect.soft(evidenceSource, 'event evidence import').toContain(. Its only durable purpose is the linked Legacy route mount compatibility contract.",
+      "semanticCoverage": "tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts#default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions"
     },
     {
       "id": "test-structure-coupling-9f19eecfd53fd0c4",
@@ -1986,11 +1074,12 @@ moved or changed test.
       "line": 156,
       "column": 37,
       "kind": "exact-file-tree",
+      "contract": "auth-server-compatibility",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar repository maintainers",
-      "rationale": "packages/tests/repo/auth-server-compatibility-governance.test.ts:156 exact-file-tree evidence (“const compatibilityReferences = readdirSync(canonicalAuthTestRoot)”) protects the compatibility contract stated by “keeps every canonical auth test free of compatibility wrappers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts"
+      "rationale": "Published inventory assertion: const compatibilityReferences = readdirSync(canonicalAuthTestRoot). Its only durable purpose is the linked Auth server compatibility ledger contract.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities"
     },
     {
       "id": "test-structure-coupling-802f4bf52c03d28e",
@@ -1998,11 +1087,12 @@ moved or changed test.
       "line": 38,
       "column": 11,
       "kind": "production-source-read",
+      "contract": "auth-server-compatibility",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar repository maintainers",
-      "rationale": "packages/tests/repo/auth-server-compatibility-governance.test.ts:38 production-source-read evidence (“readRepositorySource(wrapper).replace(”) protects the compatibility contract stated by “rejects export kind, target, and second-hop changes”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts"
+      "rationale": "Contract input read: readRepositorySource(wrapper).replace(. Its only durable purpose is the linked Auth server compatibility ledger contract.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities"
     },
     {
       "id": "test-structure-coupling-db99ed13ba85ff13",
@@ -2010,11 +1100,12 @@ moved or changed test.
       "line": 47,
       "column": 11,
       "kind": "production-source-read",
+      "contract": "auth-server-compatibility",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar repository maintainers",
-      "rationale": "packages/tests/repo/auth-server-compatibility-governance.test.ts:47 production-source-read evidence (“readRepositorySource(wrapper).replace(”) protects the compatibility contract stated by “rejects export kind, target, and second-hop changes”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts"
+      "rationale": "Contract input read: readRepositorySource(wrapper).replace(. Its only durable purpose is the linked Auth server compatibility ledger contract.",
+      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-runtime-identity.test.ts#catches compatibility modules that do not resolve to canonical runtime identities"
     },
     {
       "id": "test-structure-coupling-4fbc3697b99a488d",
@@ -2022,11 +1113,12 @@ moved or changed test.
       "line": 93,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "repo-style-checker-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "packages/tests/repo/repo-code-style-checker-integrity.test.ts:93 production-source-read evidence (“const deno = readJson(denoConfigPath) as {”) protects the public contract stated by “keeps TypeScript formatter settings aligned with the canonical baseline”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/repo/repo-code-style-checker-integrity.test.ts"
+      "rationale": "Contract input read: const deno = readJson(denoConfigPath) as {. Its only durable purpose is the linked Repository style checker interface contract.",
+      "semanticCoverage": "packages/tests/repo/repo-style-construction-check.test.ts#reports a callback that captures a service assigned after consumer construction"
     },
     {
       "id": "test-structure-coupling-5e1fd996ecd7b73c",
@@ -2034,11 +1126,12 @@ moved or changed test.
       "line": 187,
       "column": 36,
       "kind": "production-source-read",
+      "contract": "typescript-seven-release-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar repository maintainers",
-      "rationale": "packages/tests/repo/typescript-7-boundaries.test.ts:187 production-source-read evidence (“const sharedTestManifest = readJson<PackageManifest>(”) protects the public contract stated by “keeps TypeScript and Deno checking as separate release gates”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts"
+      "rationale": "Contract input read: const sharedTestManifest = readJson<PackageManifest>(. Its only durable purpose is the linked TypeScript 7 release boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-application.test.ts#mounts websocket and rest route installers idempotently and starts the engine"
     },
     {
       "id": "test-structure-coupling-61963fb19df633bb",
@@ -2046,11 +1139,12 @@ moved or changed test.
       "line": 106,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts:106 production-source-read evidence (“const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');”) protects the security contract stated by “rejects a membership route constant swapped to the presence path”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');. Its only durable purpose is the linked Authoritative AppInbox mutation routing contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-fea17e209a2be374",
@@ -2058,11 +1152,12 @@ moved or changed test.
       "line": 121,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts:121 production-source-read evidence (“const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');”) protects the security contract stated by “rejects a remove-member route translated through the ban operation”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_MEMBERSHIP_ROUTES, 'utf8');. Its only durable purpose is the linked Authoritative AppInbox mutation routing contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-b227c3f176f70934",
@@ -2070,11 +1165,12 @@ moved or changed test.
       "line": 136,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts:136 production-source-read evidence (“const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “fails closed when a named route path uses an unknown expression”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Authoritative AppInbox mutation routing contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-7b8bdb38badaaa52",
@@ -2082,11 +1178,12 @@ moved or changed test.
       "line": 151,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts:151 production-source-read evidence (“const source = readFileSync(GROUP_COMMAND_TRANSLATOR, 'utf8');”) protects the security contract stated by “rejects a translator case routed to another operation type”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_COMMAND_TRANSLATOR, 'utf8');. Its only durable purpose is the linked Authoritative AppInbox mutation routing contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-9833177c97d5402e",
@@ -2094,11 +1191,12 @@ moved or changed test.
       "line": 38,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts:38 production-source-read evidence (“const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a wrong local presence route constant”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Authoritative AppInbox mutation routing contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-1f45a7919de747df",
@@ -2106,11 +1204,12 @@ moved or changed test.
       "line": 53,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts:53 production-source-read evidence (“const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a dead exact registration masking the live named route owner”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Authoritative AppInbox mutation routing contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-1b4734649c1d8e9f",
@@ -2118,35 +1217,12 @@ moved or changed test.
       "line": 80,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts:80 production-source-read evidence (“const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects an exact route registered only from a request-time callback”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
-    },
-    {
-      "id": "test-structure-coupling-d3827b7969d53d16",
-      "path": "packages/tests/shared-server/auth/auth-mutation-service.test.ts",
-      "line": 17,
-      "column": 21,
-      "kind": "ast-inspection",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/auth/auth-mutation-service.test.ts:17 ast-inspection evidence (“const program = parse(readFileSync('packages/shared-server/mod.ts', 'utf8'), {”) is supplementary to the semantic behavior “keeps the package root on a direct canonical service export” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/auth/auth-mutation-service.test.ts",
-      "removalCondition": "Replace the ast-inspection check at packages/tests/shared-server/auth/auth-mutation-service.test.ts:17 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the package root on a direct canonical service export”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-97975293d4469c9b",
-      "path": "packages/tests/shared-server/auth/auth-mutation-service.test.ts",
-      "line": 17,
-      "column": 27,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/auth/auth-mutation-service.test.ts:17 production-source-read evidence (“const program = parse(readFileSync('packages/shared-server/mod.ts', 'utf8'), {”) is supplementary to the semantic behavior “keeps the package root on a direct canonical service export” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/auth/auth-mutation-service.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/auth/auth-mutation-service.test.ts:17 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the package root on a direct canonical service export”, then delete this entry."
+      "rationale": "Contract input read: const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Authoritative AppInbox mutation routing contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-9f9384dd92ab517c",
@@ -2154,11 +1230,12 @@ moved or changed test.
       "line": 357,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "auth-persistence-security",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/auth/auth-persistence-security.test.ts:357 production-source-read evidence (“.map((path) => readFileSync(path, 'utf8'))”) protects the security contract stated by “removes auth and AL domain-lock escape hatches from production”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/auth/auth-persistence-security.test.ts"
+      "rationale": "Contract input read: .map((path) => readFileSync(path, 'utf8')). Its only durable purpose is the linked Auth persistence security contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-service.test.ts#stores client idempotency conflict as terminal without queue retry"
     },
     {
       "id": "test-structure-coupling-265ad4b39d6de3fb",
@@ -2166,239 +1243,12 @@ moved or changed test.
       "line": 364,
       "column": 18,
       "kind": "production-source-read",
+      "contract": "auth-persistence-security",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/auth/auth-persistence-security.test.ts:364 production-source-read evidence (“const source = readFileSync(”) protects the security contract stated by “keeps auth compute deterministic and free of credential derivation”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/auth/auth-persistence-security.test.ts"
-    },
-    {
-      "id": "test-structure-coupling-2cf2e2a70e6c5400",
-      "path": "packages/tests/shared-server/authoritative-rtc-topology-worker-phases.test.ts",
-      "line": 65,
-      "column": 12,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/authoritative-rtc-topology-worker-phases.test.ts:65 production-source-read evidence (“expect(readFileSync(path, 'utf8')).not.toMatch(”) is supplementary to the semantic behavior “keeps the deprecated fanout contract out of production topology ownership” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/authoritative-rtc-topology-worker-phases.test.ts:65 with an imported, rendered, protocol-level, or runtime-observable assertion for “keeps the deprecated fanout contract out of production topology ownership”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-550e27f86fead7e1",
-      "path": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts",
-      "line": 30,
-      "column": 20,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:30 production-source-read evidence (“const source = readFileSync(timingPath, 'utf8');”) is supplementary to the semantic behavior “uses the closed service-key timing operation inventory in the timing owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/group-state-service-timing.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:30 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses the closed service-key timing operation inventory in the timing owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-57a1a1f548de2dcf",
-      "path": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts",
-      "line": 32,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:32 symbol-assertion evidence (“expect(source).toContain('type GroupStateTimedOperation = Exclude<');”) is supplementary to the semantic behavior “uses the closed service-key timing operation inventory in the timing owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/group-state-service-timing.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:32 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses the closed service-key timing operation inventory in the timing owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-ebbb74f044a56b36",
-      "path": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts",
-      "line": 33,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:33 symbol-assertion evidence (“expect(source).toContain('keyof GroupStateService,');”) is supplementary to the semantic behavior “uses the closed service-key timing operation inventory in the timing owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/group-state-service-timing.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:33 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses the closed service-key timing operation inventory in the timing owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-9dca5a0cc25ee573",
-      "path": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts",
-      "line": 34,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:34 symbol-assertion evidence (“expect(source).toContain(\"'compute' | 'validate' | 'sessionGenerationLifecycle'\");”) is supplementary to the semantic behavior “uses the closed service-key timing operation inventory in the timing owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/group-state-service-timing.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:34 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses the closed service-key timing operation inventory in the timing owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-43de71f0d1652390",
-      "path": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts",
-      "line": 35,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:35 symbol-assertion evidence (“expect(source).toContain('readonly operation: GroupStateTimedOperation;');”) is supplementary to the semantic behavior “uses the closed service-key timing operation inventory in the timing owner” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/group-state-service-timing.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/group-state-service-timing-contract.test.ts:35 with an imported, rendered, protocol-level, or runtime-observable assertion for “uses the closed service-key timing operation inventory in the timing owner”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-fde03472062c60cb",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 20,
-      "column": 20,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:20 production-source-read evidence (“const source = readFileSync(servicePath, 'utf8');”) is supplementary to the semantic behavior “preserves the public setter surface and identity guards” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:20 with an imported, rendered, protocol-level, or runtime-observable assertion for “preserves the public setter surface and identity guards”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-e38a1666e8bbc9e7",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 22,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:22 symbol-assertion evidence (“expect(source).toContain('private topologyManagementService?: GroupTopologyManagementService;');”) is supplementary to the semantic behavior “preserves the public setter surface and identity guards” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:22 with an imported, rendered, protocol-level, or runtime-observable assertion for “preserves the public setter surface and identity guards”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-516d020c8180d023",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 23,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:23 symbol-assertion evidence (“expect(source).toContain('private rtcRttDependencies?: RtcRttAppInboxDependencies;');”) is supplementary to the semantic behavior “preserves the public setter surface and identity guards” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:23 with an imported, rendered, protocol-level, or runtime-observable assertion for “preserves the public setter surface and identity guards”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-079893d51589bac9",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 24,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:24 symbol-assertion evidence (“expect(source).toContain(”) is supplementary to the semantic behavior “preserves the public setter surface and identity guards” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:24 with an imported, rendered, protocol-level, or runtime-observable assertion for “preserves the public setter surface and identity guards”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-417604c52d0e249a",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 27,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:27 symbol-assertion evidence (“expect(source).toContain(”) is supplementary to the semantic behavior “preserves the public setter surface and identity guards” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:27 with an imported, rendered, protocol-level, or runtime-observable assertion for “preserves the public setter surface and identity guards”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-fb3ca54eac387d1a",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 56,
-      "column": 20,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:56 production-source-read evidence (“const source = readFileSync(servicePath, 'utf8');”) is supplementary to the semantic behavior “requires each deferred family to register with complete dependencies” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:56 with an imported, rendered, protocol-level, or runtime-observable assertion for “requires each deferred family to register with complete dependencies”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-8aa2c15db97c433c",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 58,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:58 symbol-assertion evidence (“expect(source).toContain('registerTopologyStateMessageHandlers(service)');”) is supplementary to the semantic behavior “requires each deferred family to register with complete dependencies” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:58 with an imported, rendered, protocol-level, or runtime-observable assertion for “requires each deferred family to register with complete dependencies”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-1213936564ec0157",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 59,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:59 symbol-assertion evidence (“expect(source).toContain('registerRtcRttStateMessageHandler(dependencies)');”) is supplementary to the semantic behavior “requires each deferred family to register with complete dependencies” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:59 with an imported, rendered, protocol-level, or runtime-observable assertion for “requires each deferred family to register with complete dependencies”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-c0998927e84a712e",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 60,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:60 symbol-assertion evidence (“expect(source).not.toContain(”) is supplementary to the semantic behavior “requires each deferred family to register with complete dependencies” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:60 with an imported, rendered, protocol-level, or runtime-observable assertion for “requires each deferred family to register with complete dependencies”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-5780cbc5b2d7b4b3",
-      "path": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts",
-      "line": 63,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:63 symbol-assertion evidence (“expect(source).not.toContain('this.requireRtcRttAppInboxDependencies()');”) is supplementary to the semantic behavior “requires each deferred family to register with complete dependencies” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-operation-matrix.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts:63 with an imported, rendered, protocol-level, or runtime-observable assertion for “requires each deferred family to register with complete dependencies”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-2748cab8df60853d",
-      "path": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts",
-      "line": 228,
-      "column": 12,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts:228 production-source-read evidence (“expect(readTargetSource(targetIdentityPath)).toContain('resolveGroupMutationTargetPrincipalId');”) is supplementary to the semantic behavior “requires the Task 10 principal identity resolver name” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts:228 with an imported, rendered, protocol-level, or runtime-observable assertion for “requires the Task 10 principal identity resolver name”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-4033c7be30aa583c",
-      "path": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts",
-      "line": 232,
-      "column": 12,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts:232 production-source-read evidence (“expect(readTargetSource(targetIdentityPath)).toContain('resolveGroupMutationTargetSessionId');”) is supplementary to the semantic behavior “requires the Task 10 session identity resolver name” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts:232 with an imported, rendered, protocol-level, or runtime-observable assertion for “requires the Task 10 session identity resolver name”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-0b62c4e8a1aaa27b",
-      "path": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts",
-      "line": 252,
-      "column": 12,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts:252 production-source-read evidence (“expect(readTargetSource(targetWritePath)).toContain('writeGroupMutation');”) is supplementary to the semantic behavior “retains the Task 10 writeGroupMutation primary symbol” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-failures.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/group-state/inbox/group-state-inbox-transaction-result.test.ts:252 with an imported, rendered, protocol-level, or runtime-observable assertion for “retains the Task 10 writeGroupMutation primary symbol”, then delete this entry."
+      "rationale": "Contract input read: const source = readFileSync(. Its only durable purpose is the linked Auth persistence security contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-service.test.ts#stores client idempotency conflict as terminal without queue retry"
     },
     {
       "id": "test-structure-coupling-f4d3cb333ab20ada",
@@ -2406,11 +1256,12 @@ moved or changed test.
       "line": 144,
       "column": 22,
       "kind": "exact-file-tree",
+      "contract": "mutation-boundary-analysis-interface",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-boundary-analysis.ts:144 exact-file-tree evidence (“const routeFiles = readdirSync('apps/api-v1/src/routes')”) protects the security contract stated by “supporting source-analysis contract”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Published inventory assertion: const routeFiles = readdirSync('apps/api-v1/src/routes'). Its only durable purpose is the linked Mutation boundary analysis interface contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-298a1cf1247b90cc",
@@ -2418,11 +1269,12 @@ moved or changed test.
       "line": 26,
       "column": 19,
       "kind": "ast-inspection",
+      "contract": "mutation-capability-export-interface",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-boundary-capability-exports.ts:26 ast-inspection evidence (“const program = parse(readFileSync(normalized, 'utf8'), {”) protects the security contract stated by “supporting source-analysis contract”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Repository-interface analysis: const program = parse(readFileSync(normalized, 'utf8'), {. Its only durable purpose is the linked Mutation capability export analysis contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-12e06bd7a1515caf",
@@ -2430,11 +1282,12 @@ moved or changed test.
       "line": 234,
       "column": 19,
       "kind": "ast-inspection",
+      "contract": "mutation-capability-type-interface",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-boundary-capability-types.ts:234 ast-inspection evidence (“const program = parse(readFileSync(resolved, 'utf8'), {”) protects the security contract stated by “supporting source-analysis contract”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Repository-interface analysis: const program = parse(readFileSync(resolved, 'utf8'), {. Its only durable purpose is the linked Mutation capability type analysis contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-fa82e2d5cae95786",
@@ -2442,11 +1295,12 @@ moved or changed test.
       "line": 15,
       "column": 21,
       "kind": "ast-inspection",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:15 ast-inspection evidence (“const program = parse(read(AUTHORISED_WS_HELPER), {”) protects the security contract stated by “uses one named readonly input object for each authorised websocket enqueue helper”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Repository-interface analysis: const program = parse(read(AUTHORISED_WS_HELPER), {. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-74df1f432f7e9a8f",
@@ -2454,11 +1308,12 @@ moved or changed test.
       "line": 15,
       "column": 27,
       "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:15 production-source-read evidence (“const program = parse(read(AUTHORISED_WS_HELPER), {”) protects the security contract stated by “uses one named readonly input object for each authorised websocket enqueue helper”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const program = parse(read(AUTHORISED_WS_HELPER), {. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-26a2619e3f022bb5",
@@ -2466,11 +1321,12 @@ moved or changed test.
       "line": 41,
       "column": 12,
       "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:41 production-source-read evidence (“expect(read(AUTHORISED_WS_HELPER)).toContain(”) protects the security contract stated by “uses one named readonly input object for each authorised websocket enqueue helper”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: expect(read(AUTHORISED_WS_HELPER)).toContain(. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-ead0fd7d9309297d",
@@ -2478,11 +1334,12 @@ moved or changed test.
       "line": 44,
       "column": 12,
       "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:44 production-source-read evidence (“expect(read(AUTHORISED_WS_HELPER)).toContain(”) protects the security contract stated by “uses one named readonly input object for each authorised websocket enqueue helper”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: expect(read(AUTHORISED_WS_HELPER)).toContain(. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-41bb14a3f6371988",
@@ -2490,11 +1347,12 @@ moved or changed test.
       "line": 50,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:50 production-source-read evidence (“const source = read(ADMIN_OPERATIONS);”) protects the security contract stated by “requires the admin mutation gateway and contains no direct-write fallback”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = read(ADMIN_OPERATIONS);. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-4b048f6cdfdd5d69",
@@ -2502,11 +1360,12 @@ moved or changed test.
       "line": 52,
       "column": 5,
       "kind": "symbol-assertion",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:52 symbol-assertion evidence (“expect(source).toContain('mutationGateway: AdminOperationsMutationGateway;');”) protects the security contract stated by “requires the admin mutation gateway and contains no direct-write fallback”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Required boundary assertion: expect(source).toContain('mutationGateway: AdminOperationsMutationGateway;');. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-94d9d2e62057fafc",
@@ -2514,11 +1373,12 @@ moved or changed test.
       "line": 53,
       "column": 5,
       "kind": "symbol-assertion",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:53 symbol-assertion evidence (“expect(source).not.toContain('mutationGateway?:');”) protects the security contract stated by “requires the admin mutation gateway and contains no direct-write fallback”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Required boundary assertion: expect(source).not.toContain('mutationGateway?:');. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-3755f294155bc847",
@@ -2526,11 +1386,12 @@ moved or changed test.
       "line": 54,
       "column": 5,
       "kind": "symbol-assertion",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:54 symbol-assertion evidence (“expect(source).not.toContain('if (this.options.mutationGateway)');”) protects the security contract stated by “requires the admin mutation gateway and contains no direct-write fallback”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Required boundary assertion: expect(source).not.toContain('if (this.options.mutationGateway)');. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-e68cd30bc4c93fff",
@@ -2538,11 +1399,12 @@ moved or changed test.
       "line": 62,
       "column": 7,
       "kind": "migration-or-compatibility-topology",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:62 migration-or-compatibility-topology evidence (“expect(source, directFallback).not.toContain(directFallback);”) protects the compatibility contract stated by “requires the admin mutation gateway and contains no direct-write fallback”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Compatibility-path assertion: expect(source, directFallback).not.toContain(directFallback);. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-293db0169596f3fd",
@@ -2550,11 +1412,12 @@ moved or changed test.
       "line": 62,
       "column": 7,
       "kind": "symbol-assertion",
+      "contract": "mutation-route-owner-analysis",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts:62 symbol-assertion evidence (“expect(source, directFallback).not.toContain(directFallback);”) protects the security contract stated by “requires the admin mutation gateway and contains no direct-write fallback”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Required boundary assertion: expect(source, directFallback).not.toContain(directFallback);. Its only durable purpose is the linked Authoritative mutation route ownership contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-84e34b15636855e6",
@@ -2562,11 +1425,12 @@ moved or changed test.
       "line": 73,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-owner-boundary-traversal",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts:73 production-source-read evidence (“const source = readFileSync(”) protects the security contract stated by “uses the canonical inventory in the original routing contract test”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(. Its only durable purpose is the linked Mutation owner boundary traversal contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-d180ce976c85204a",
@@ -2574,11 +1438,12 @@ moved or changed test.
       "line": 77,
       "column": 5,
       "kind": "symbol-assertion",
+      "contract": "mutation-owner-boundary-traversal",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts:77 symbol-assertion evidence (“expect(source).toContain(\"from './mutation-routing-inventory.ts'\");”) protects the security contract stated by “uses the canonical inventory in the original routing contract test”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Required boundary assertion: expect(source).toContain(\"from './mutation-routing-inventory.ts'\");. Its only durable purpose is the linked Mutation owner boundary traversal contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-c58f58d6c340327e",
@@ -2586,11 +1451,12 @@ moved or changed test.
       "line": 78,
       "column": 5,
       "kind": "symbol-assertion",
+      "contract": "mutation-owner-boundary-traversal",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts:78 symbol-assertion evidence (“expect(source).not.toContain('const MUTATION_ROUTE_INVENTORY');”) protects the security contract stated by “uses the canonical inventory in the original routing contract test”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Required boundary assertion: expect(source).not.toContain('const MUTATION_ROUTE_INVENTORY');. Its only durable purpose is the linked Mutation owner boundary traversal contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-042b548b08a48aab",
@@ -2598,11 +1464,12 @@ moved or changed test.
       "line": 108,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:108 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects a family call before resolved dependencies and authorization exist”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-2a7284aec9b1e383",
@@ -2610,11 +1477,12 @@ moved or changed test.
       "line": 117,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:117 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a different app passed from a family to its private owner”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-8b4a9afb05cb8a4f",
@@ -2622,11 +1490,12 @@ moved or changed test.
       "line": 126,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:126 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects reordered family-to-private-owner arguments”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-fad637d78525c610",
@@ -2634,11 +1503,12 @@ moved or changed test.
       "line": 135,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:135 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a missing family-to-private-owner argument”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-b046d0deb1646bc4",
@@ -2646,11 +1516,12 @@ moved or changed test.
       "line": 144,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:144 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects an extra family-to-private-owner argument”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-674f545af17ca390",
@@ -2658,11 +1529,12 @@ moved or changed test.
       "line": 18,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:18 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects a canonical family name rebound to a different imported family”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-1bcb566a757b25b4",
@@ -2670,11 +1542,12 @@ moved or changed test.
       "line": 35,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:35 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects an uninventoryed live private owner and route in a family”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-5f163dad42005183",
@@ -2682,11 +1555,12 @@ moved or changed test.
       "line": 48,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:48 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects a family removed from the exported root”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-c65fdd89d62c3de9",
@@ -2694,11 +1568,12 @@ moved or changed test.
       "line": 57,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:57 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects a conditional family call in the exported root”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-a3e23173670f94ee",
@@ -2706,11 +1581,12 @@ moved or changed test.
       "line": 66,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:66 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects a duplicate family call in the exported root”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-ec47d2397c9621d7",
@@ -2718,11 +1594,12 @@ moved or changed test.
       "line": 75,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:75 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects a family call after an exported-root return”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-4cf49ab336aca78f",
@@ -2730,11 +1607,12 @@ moved or changed test.
       "line": 81,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:81 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects wrong root-to-family arguments”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-9d37781ac9bd36fb",
@@ -2742,11 +1620,12 @@ moved or changed test.
       "line": 90,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:90 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects reordered root-to-family arguments”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-71fa08fee9fde3c0",
@@ -2754,11 +1633,12 @@ moved or changed test.
       "line": 99,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-mutation-construction",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts:99 production-source-read evidence (“const source = readFileSync(ROOT_ROUTES, 'utf8');”) protects the security contract stated by “rejects an extra root-to-family argument”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(ROOT_ROUTES, 'utf8');. Its only durable purpose is the linked Group mutation construction boundary contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-dfa04fc584084c08",
@@ -2766,11 +1646,12 @@ moved or changed test.
       "line": 109,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:109 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a second exact registration in the exported family registrar”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-a21189fdee14ad9b",
@@ -2778,11 +1659,12 @@ moved or changed test.
       "line": 122,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:122 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a removed private-owner call from the exported family registrar”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-d3bea6363d9e924d",
@@ -2790,11 +1672,12 @@ moved or changed test.
       "line": 135,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:135 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a conditional private-owner call in the exported family registrar”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-8353be33dd6eb56f",
@@ -2802,11 +1685,12 @@ moved or changed test.
       "line": 148,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:148 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a private-owner call after a family-registrar return”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-82ba58a8bd767596",
@@ -2814,11 +1698,12 @@ moved or changed test.
       "line": 161,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:161 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects a duplicate private-owner call in the exported family registrar”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-2bd38b2e53d0f490",
@@ -2826,11 +1711,12 @@ moved or changed test.
       "line": 172,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:172 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects an exact registration inside a literal-false owner branch”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-50ed43bd66d7d0ae",
@@ -2838,11 +1724,12 @@ moved or changed test.
       "line": 189,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:189 production-source-read evidence (“const source = readFileSync(PRESENCE_ROUTES, 'utf8');”) protects the security contract stated by “rejects an exact registration after an unconditional owner return”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(PRESENCE_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-fe91fe281f35c6f5",
@@ -2850,11 +1737,12 @@ moved or changed test.
       "line": 206,
       "column": 30,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:206 production-source-read evidence (“expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));”) protects the security contract stated by “rejects a correct handoff found only in an uninvoked nested handler function”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-5415efcebe424618",
@@ -2862,11 +1750,12 @@ moved or changed test.
       "line": 218,
       "column": 30,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:218 production-source-read evidence (“expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));”) protects the security contract stated by “rejects a correct handoff found only in a literal-false handler branch”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-fc2b83186677db6b",
@@ -2874,11 +1763,12 @@ moved or changed test.
       "line": 230,
       "column": 30,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:230 production-source-read evidence (“expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));”) protects the security contract stated by “rejects a correct handoff found only after the handler return”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: expect(mutated).not.toBe(readFileSync(MEMBERSHIP_ROUTES, 'utf8'));. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-42b8c6cbe01cc04c",
@@ -2886,11 +1776,12 @@ moved or changed test.
       "line": 238,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:238 production-source-read evidence (“const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');”) protects the security contract stated by “rejects a separately bound command declared after its submission”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-87183e0bc231c821",
@@ -2898,11 +1789,12 @@ moved or changed test.
       "line": 28,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:28 production-source-read evidence (“const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');”) protects the security contract stated by “rejects an operation overridden by a later command-object spread”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-99ce83992c10422b",
@@ -2910,11 +1802,12 @@ moved or changed test.
       "line": 42,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:42 production-source-read evidence (“const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');”) protects the security contract stated by “rejects an operation overridden by a computed command-object property”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-5b59037113ffbb08",
@@ -2922,11 +1815,12 @@ moved or changed test.
       "line": 55,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:55 production-source-read evidence (“const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');”) protects the security contract stated by “rejects duplicate direct operation properties in the command object”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(MEMBERSHIP_ROUTES, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-af4e5d78146d7966",
@@ -2934,11 +1828,12 @@ moved or changed test.
       "line": 68,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:68 production-source-read evidence (“const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');”) protects the security contract stated by “rejects an AppInbox type overridden by a later result-object spread”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-9283d0d81173e939",
@@ -2946,11 +1841,12 @@ moved or changed test.
       "line": 82,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:82 production-source-read evidence (“const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');”) protects the security contract stated by “rejects an AppInbox type overridden by a computed result-object property”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-cb2f95c190c71227",
@@ -2958,11 +1854,12 @@ moved or changed test.
       "line": 95,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "group-http-mutation-contract",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts:95 production-source-read evidence (“const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');”) protects the security contract stated by “rejects duplicate direct AppInbox type properties in the result object”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(COMMAND_TRANSLATOR, 'utf8');. Its only durable purpose is the linked Group HTTP mutation contract contract.",
+      "semanticCoverage": "packages/tests/shared-server/group-state/mutation/write-group-mutation-behavior.test.ts#materializes only authoritative state and receipt while ResourceInbox stays transaction-bound"
     },
     {
       "id": "test-structure-coupling-944da5d76ef196b1",
@@ -2970,11 +1867,12 @@ moved or changed test.
       "line": 103,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-collections",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts:103 production-source-read evidence (“const client = readFileSync(CLIENT_OWNER, 'utf8');”) protects the security contract stated by “binds direct client registrations to their live types”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const client = readFileSync(CLIENT_OWNER, 'utf8');. Its only durable purpose is the linked Mutation handler registration collections contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-78c588b97aca4fac",
@@ -2982,11 +1880,12 @@ moved or changed test.
       "line": 49,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-collections",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts:49 production-source-read evidence (“const source = readFileSync(GROUP_TYPES, 'utf8');”) protects the security contract stated by “rejects GROUP_CREATE removed from the imported live group registration collection”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_TYPES, 'utf8');. Its only durable purpose is the linked Mutation handler registration collections contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-d369671acfc79f49",
@@ -2994,11 +1893,12 @@ moved or changed test.
       "line": 61,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-collections",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts:61 production-source-read evidence (“const source = readFileSync(AUTH_OWNER, 'utf8');”) protects the security contract stated by “rejects an auth registration loop replaced with an empty iterable”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(AUTH_OWNER, 'utf8');. Its only durable purpose is the linked Mutation handler registration collections contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-0a1cd607030839cb",
@@ -3006,11 +1906,12 @@ moved or changed test.
       "line": 73,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-collections",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts:73 production-source-read evidence (“const source = readFileSync(CRDT_TYPES, 'utf8');”) protects the security contract stated by “rejects a CRDT type removed from its imported live registration collection”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(CRDT_TYPES, 'utf8');. Its only durable purpose is the linked Mutation handler registration collections contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-6dfda4a637579910",
@@ -3018,11 +1919,12 @@ moved or changed test.
       "line": 80,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "mutation-registration-collections",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts:80 production-source-read evidence (“[CRDT_OWNER, readFileSync(CRDT_OWNER, 'utf8')],”) protects the security contract stated by “rejects a CRDT type removed from its imported live registration collection”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: [CRDT_OWNER, readFileSync(CRDT_OWNER, 'utf8')],. Its only durable purpose is the linked Mutation handler registration collections contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-786f66e97640824a",
@@ -3030,11 +1932,12 @@ moved or changed test.
       "line": 92,
       "column": 19,
       "kind": "production-source-read",
+      "contract": "mutation-registration-collections",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts:92 production-source-read evidence (“const group = readFileSync(GROUP_OWNER, 'utf8');”) protects the security contract stated by “binds topology loops to their live types”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const group = readFileSync(GROUP_OWNER, 'utf8');. Its only durable purpose is the linked Mutation handler registration collections contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-a268845cf4b958c7",
@@ -3042,11 +1945,12 @@ moved or changed test.
       "line": 114,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-predicates",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts:114 production-source-read evidence (“const source = readFileSync(AUTH_OWNER, 'utf8');”) protects the security contract stated by “evaluates safe logical includes and identity map chains exactly”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(AUTH_OWNER, 'utf8');. Its only durable purpose is the linked Mutation registration predicates contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-d31a3190c19623b1",
@@ -3054,11 +1958,12 @@ moved or changed test.
       "line": 38,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-predicates",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts:38 production-source-read evidence (“const source = readFileSync(GROUP_OWNER, 'utf8');”) protects the security contract stated by “narrows the group registration array with an exact equality filter”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_OWNER, 'utf8');. Its only durable purpose is the linked Mutation registration predicates contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-dcbdd6335044f080",
@@ -3066,11 +1971,12 @@ moved or changed test.
       "line": 53,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-predicates",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts:53 production-source-read evidence (“const source = readFileSync(GROUP_OWNER, 'utf8');”) protects the security contract stated by “rejects a group registration filter that is always false”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_OWNER, 'utf8');. Its only durable purpose is the linked Mutation registration predicates contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-73308e24266bf2b3",
@@ -3078,11 +1984,12 @@ moved or changed test.
       "line": 68,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-predicates",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts:68 production-source-read evidence (“const source = readFileSync(AUTH_OWNER, 'utf8');”) protects the security contract stated by “narrows the auth registration array with an exact equality filter”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(AUTH_OWNER, 'utf8');. Its only durable purpose is the linked Mutation registration predicates contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-62a137c454ed4aa1",
@@ -3090,11 +1997,12 @@ moved or changed test.
       "line": 83,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-predicates",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts:83 production-source-read evidence (“const source = readFileSync(CRDT_OWNER, 'utf8');”) protects the security contract stated by “narrows the imported CRDT collection with an exact equality filter”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(CRDT_OWNER, 'utf8');. Its only durable purpose is the linked Mutation registration predicates contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-7ff401b49afb7583",
@@ -3102,11 +2010,12 @@ moved or changed test.
       "line": 98,
       "column": 20,
       "kind": "production-source-read",
+      "contract": "mutation-registration-predicates",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts:98 production-source-read evidence (“const source = readFileSync(GROUP_OWNER, 'utf8');”) protects the security contract stated by “fails closed for an opaque registration predicate”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(GROUP_OWNER, 'utf8');. Its only durable purpose is the linked Mutation registration predicates contract.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-transaction.test.ts#commits mutation, outbox, result, and completion in one transaction"
     },
     {
       "id": "test-structure-coupling-1909c985b7b02813",
@@ -3114,11 +2023,12 @@ moved or changed test.
       "line": 100,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:100 migration-or-compatibility-topology evidence (“expect(migration).toContain('ALTER COLUMN fk_ext_bank_id TYPE varchar(128)');”) protects the compatibility contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('ALTER COLUMN fk_ext_bank_id TYPE varchar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-6ab573e9c74b70f0",
@@ -3126,11 +2036,12 @@ moved or changed test.
       "line": 100,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:100 symbol-assertion evidence (“expect(migration).toContain('ALTER COLUMN fk_ext_bank_id TYPE varchar(128)');”) protects the public contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('ALTER COLUMN fk_ext_bank_id TYPE varchar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-e0d0d323f3bd7417",
@@ -3138,11 +2049,12 @@ moved or changed test.
       "line": 101,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:101 symbol-assertion evidence (“expect(schema).toContain('ri_resource_id String @db.VarChar(128)');”) protects the public contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(schema).toContain('ri_resource_id String @db.VarChar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-806534e5fff637d4",
@@ -3150,11 +2062,12 @@ moved or changed test.
       "line": 102,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:102 symbol-assertion evidence (“expect(schema).toContain('ris_resource_id String @db.VarChar(128)');”) protects the public contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(schema).toContain('ris_resource_id String @db.VarChar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-8bf942fa7e78fd33",
@@ -3162,11 +2075,12 @@ moved or changed test.
       "line": 107,
       "column": 27,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:107 production-source-read evidence (“const migration = readWorkspaceFile(”) protects the public contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Contract input read: const migration = readWorkspaceFile(. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-31d1b0f912dc9edd",
@@ -3174,11 +2088,12 @@ moved or changed test.
       "line": 113,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:113 migration-or-compatibility-topology evidence (“expect(migration).toContain(dropStatement);”) protects the compatibility contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain(dropStatement);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-724fc0215e346097",
@@ -3186,11 +2101,12 @@ moved or changed test.
       "line": 113,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:113 symbol-assertion evidence (“expect(migration).toContain(dropStatement);”) protects the public contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain(dropStatement);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-3c3af95e18bcbc09",
@@ -3198,11 +2114,12 @@ moved or changed test.
       "line": 114,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:114 migration-or-compatibility-topology evidence (“expect(migration).toContain(createStatement);”) protects the compatibility contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain(createStatement);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-668889e16d77bbb4",
@@ -3210,11 +2127,12 @@ moved or changed test.
       "line": 114,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:114 symbol-assertion evidence (“expect(migration).toContain(createStatement);”) protects the public contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain(createStatement);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-87008a03998f1887",
@@ -3222,11 +2140,12 @@ moved or changed test.
       "line": 115,
       "column": 9,
       "kind": "call-or-import-order",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:115 call-or-import-order evidence (“expect(migration.indexOf(dropStatement)).toBeLessThan(migration.indexOf(createStatement));”) protects the public contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Required ordering assertion: expect(migration.indexOf(dropStatement)).toBeLessThan(migration.indexOf(createStatement));. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-fd0077553bdcfcd0",
@@ -3234,11 +2153,12 @@ moved or changed test.
       "line": 116,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:116 migration-or-compatibility-topology evidence (“expect(migration).not.toContain('CONCURRENTLY');”) protects the compatibility contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).not.toContain('CONCURRENTLY');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-213bbc404664fe55",
@@ -3246,11 +2166,12 @@ moved or changed test.
       "line": 116,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:116 symbol-assertion evidence (“expect(migration).not.toContain('CONCURRENTLY');”) protects the public contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).not.toContain('CONCURRENTLY');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-76fb659b1d031dbd",
@@ -3258,11 +2179,12 @@ moved or changed test.
       "line": 117,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:117 migration-or-compatibility-topology evidence (“expect(migration).toContain('store_key COLLATE \"C\"');”) protects the compatibility contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('store_key COLLATE \"C\"');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-4f777a29bba39763",
@@ -3270,11 +2192,12 @@ moved or changed test.
       "line": 117,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:117 symbol-assertion evidence (“expect(migration).toContain('store_key COLLATE \"C\"');”) protects the public contract stated by “builds the runtime-state prefix index with retry-safe transactional DDL”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('store_key COLLATE \"C\"');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-74cc2248478d2147",
@@ -3282,11 +2205,12 @@ moved or changed test.
       "line": 125,
       "column": 27,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:125 production-source-read evidence (“const migration = readWorkspaceFile(migrationPath).replace(/\\s+/g, ' ');”) protects the public contract stated by “keeps the C-collated runtime-state prefix index represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts"
+      "rationale": "Contract input read: const migration = readWorkspaceFile(migrationPath).replace(/\\s+/g, ' ');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-c9d09fd93615c6dc",
@@ -3294,11 +2218,12 @@ moved or changed test.
       "line": 132,
       "column": 22,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:132 production-source-read evidence (“const docs = readWorkspaceFile('packages/shared-server/architecture.md')”) protects the public contract stated by “documents state snapshots and event logs in the architecture notes”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const docs = readWorkspaceFile('packages/shared-server/architecture.md'). Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-97063095574ab9fc",
@@ -3306,11 +2231,12 @@ moved or changed test.
       "line": 140,
       "column": 30,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:140 production-source-read evidence (“const architecture = readWorkspaceFile('packages/shared-server/architecture.md')”) protects the public contract stated by “documents in-process mutation lanes as conflict suppression rather than authority”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const architecture = readWorkspaceFile('packages/shared-server/architecture.md'). Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-8fa0398ecb93aa3f",
@@ -3318,11 +2244,12 @@ moved or changed test.
       "line": 142,
       "column": 30,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:142 production-source-read evidence (“const repositories = readWorkspaceFile(”) protects the public contract stated by “documents in-process mutation lanes as conflict suppression rather than authority”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const repositories = readWorkspaceFile(. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-a380ad22c63736fa",
@@ -3330,11 +2257,12 @@ moved or changed test.
       "line": 153,
       "column": 22,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:153 production-source-read evidence (“const docs = readWorkspaceFile('packages/shared-server/architecture.md');”) protects the public contract stated by “limits the current database-lock inventory to bounded resource-inbox claims”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const docs = readWorkspaceFile('packages/shared-server/architecture.md');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-cff630124dd38864",
@@ -3342,11 +2270,12 @@ moved or changed test.
       "line": 179,
       "column": 22,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:179 production-source-read evidence (“const docs = readWorkspaceFile(”) protects the public contract stated by “inventories every intentional residual database lock with explicit governance”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const docs = readWorkspaceFile(. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-c1beb9f28f0ec28c",
@@ -3354,11 +2283,12 @@ moved or changed test.
       "line": 24,
       "column": 13,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:24 symbol-assertion evidence (“expect(docs).toContain(tableName);”) protects the public contract stated by “keeps the physical storage summary aligned with runtime tables”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(docs).toContain(tableName);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-d0dfa3ee4fbc2fb4",
@@ -3366,11 +2296,12 @@ moved or changed test.
       "line": 29,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:29 production-source-read evidence (“const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');”) protects the public contract stated by “keeps CRDT tables represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-753a9f86e927ee62",
@@ -3378,11 +2309,12 @@ moved or changed test.
       "line": 36,
       "column": 13,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:36 symbol-assertion evidence (“expect(schema).toContain(`model ${modelName}`);”) protects the public contract stated by “keeps CRDT tables represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(schema).toContain(`model ${modelName}`);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-afeaa35fa74534eb",
@@ -3390,11 +2322,12 @@ moved or changed test.
       "line": 39,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:39 symbol-assertion evidence (“expect(schema).toContain('stored_update_bytes');”) protects the public contract stated by “keeps CRDT tables represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(schema).toContain('stored_update_bytes');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-270ac2793d7a71df",
@@ -3402,11 +2335,12 @@ moved or changed test.
       "line": 43,
       "column": 27,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:43 production-source-read evidence (“const migration = readWorkspaceFile(”) protects the public contract stated by “keeps CRDT update-byte counter backfill represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const migration = readWorkspaceFile(. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-4f9a1e85aa6f5f5b",
@@ -3414,11 +2348,12 @@ moved or changed test.
       "line": 47,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:47 migration-or-compatibility-topology evidence (“expect(migration).toContain('ADD COLUMN IF NOT EXISTS stored_update_bytes');”) protects the compatibility contract stated by “keeps CRDT update-byte counter backfill represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('ADD COLUMN IF NOT EXISTS stored_update_bytes');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-39c83e963d9a1b79",
@@ -3426,11 +2361,12 @@ moved or changed test.
       "line": 47,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:47 symbol-assertion evidence (“expect(migration).toContain('ADD COLUMN IF NOT EXISTS stored_update_bytes');”) protects the public contract stated by “keeps CRDT update-byte counter backfill represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('ADD COLUMN IF NOT EXISTS stored_update_bytes');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-ada087f2708e2f14",
@@ -3438,11 +2374,12 @@ moved or changed test.
       "line": 48,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:48 migration-or-compatibility-topology evidence (“expect(migration).toContain('sum(octet_length(update_envelope))');”) protects the compatibility contract stated by “keeps CRDT update-byte counter backfill represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('sum(octet_length(update_envelope))');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-53c68cdeb0d7aea4",
@@ -3450,11 +2387,12 @@ moved or changed test.
       "line": 48,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:48 symbol-assertion evidence (“expect(migration).toContain('sum(octet_length(update_envelope))');”) protects the public contract stated by “keeps CRDT update-byte counter backfill represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('sum(octet_length(update_envelope))');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-2a54e6383cd37041",
@@ -3462,11 +2400,12 @@ moved or changed test.
       "line": 52,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:52 production-source-read evidence (“const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');”) protects the public contract stated by “keeps state event tables represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-59e62629b190d306",
@@ -3474,11 +2413,12 @@ moved or changed test.
       "line": 58,
       "column": 13,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:58 symbol-assertion evidence (“expect(schema).toContain(`model ${modelName}`);”) protects the public contract stated by “keeps state event tables represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(schema).toContain(`model ${modelName}`);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-b80bfa9376224751",
@@ -3486,11 +2426,12 @@ moved or changed test.
       "line": 67,
       "column": 13,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:67 symbol-assertion evidence (“expect(schema).toContain(indexName);”) protects the public contract stated by “keeps state event tables represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(schema).toContain(indexName);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-51f4743de848b6b2",
@@ -3498,11 +2439,12 @@ moved or changed test.
       "line": 72,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:72 production-source-read evidence (“const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');”) protects the public contract stated by “keeps QueueBox dequeue indexes represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-ce58179b1bf740e7",
@@ -3510,11 +2452,12 @@ moved or changed test.
       "line": 78,
       "column": 13,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:78 symbol-assertion evidence (“expect(schema).toContain(indexName);”) protects the public contract stated by “keeps QueueBox dequeue indexes represented in the API-v1 Prisma schema”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(schema).toContain(indexName);. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-2708310fefcda2a1",
@@ -3522,11 +2465,12 @@ moved or changed test.
       "line": 83,
       "column": 27,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:83 production-source-read evidence (“const migration = readWorkspaceFile(”) protects the public contract stated by “keeps QueueBox planner statistics represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const migration = readWorkspaceFile(. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-afba8cd19f6f0c4c",
@@ -3534,11 +2478,12 @@ moved or changed test.
       "line": 87,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:87 migration-or-compatibility-topology evidence (“expect(migration).toContain('CREATE STATISTICS IF NOT EXISTS resource_inbox_type_status_stats');”) protects the compatibility contract stated by “keeps QueueBox planner statistics represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('CREATE STATISTICS IF NOT EXISTS resource_inbox_type_status_stats');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-2b514ef1fe32d913",
@@ -3546,11 +2491,12 @@ moved or changed test.
       "line": 87,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:87 symbol-assertion evidence (“expect(migration).toContain('CREATE STATISTICS IF NOT EXISTS resource_inbox_type_status_stats');”) protects the public contract stated by “keeps QueueBox planner statistics represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('CREATE STATISTICS IF NOT EXISTS resource_inbox_type_status_stats');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-4a1a659ccce252be",
@@ -3558,11 +2504,12 @@ moved or changed test.
       "line": 88,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:88 migration-or-compatibility-topology evidence (“expect(migration).toContain('ON ri_type_id, ri_status');”) protects the compatibility contract stated by “keeps QueueBox planner statistics represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('ON ri_type_id, ri_status');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-55c8ee2267c5511e",
@@ -3570,11 +2517,12 @@ moved or changed test.
       "line": 88,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:88 symbol-assertion evidence (“expect(migration).toContain('ON ri_type_id, ri_status');”) protects the public contract stated by “keeps QueueBox planner statistics represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('ON ri_type_id, ri_status');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-ee90a80195b02c30",
@@ -3582,11 +2530,12 @@ moved or changed test.
       "line": 89,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:89 migration-or-compatibility-topology evidence (“expect(migration).toContain('ANALYZE resource_inbox');”) protects the compatibility contract stated by “keeps QueueBox planner statistics represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('ANALYZE resource_inbox');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-6016c90f9134aea2",
@@ -3594,11 +2543,12 @@ moved or changed test.
       "line": 89,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:89 symbol-assertion evidence (“expect(migration).toContain('ANALYZE resource_inbox');”) protects the public contract stated by “keeps QueueBox planner statistics represented in API-v1 migrations”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('ANALYZE resource_inbox');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-75c829f2bb5e81a6",
@@ -3606,11 +2556,12 @@ moved or changed test.
       "line": 9,
       "column": 22,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:9 production-source-read evidence (“const docs = readWorkspaceFile(”) protects the public contract stated by “keeps the physical storage summary aligned with runtime tables”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const docs = readWorkspaceFile(. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-2f664d30e7065310",
@@ -3618,11 +2569,12 @@ moved or changed test.
       "line": 93,
       "column": 27,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:93 production-source-read evidence (“const migration = readWorkspaceFile(”) protects the public contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const migration = readWorkspaceFile(. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-3169a39f54b329b9",
@@ -3630,11 +2582,12 @@ moved or changed test.
       "line": 96,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:96 production-source-read evidence (“const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');”) protects the public contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Contract input read: const schema = readWorkspaceFile('apps/api-v1/prisma/schema.prisma');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-b580ccfd81e49a02",
@@ -3642,11 +2595,12 @@ moved or changed test.
       "line": 98,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:98 migration-or-compatibility-topology evidence (“expect(migration).toContain('ALTER COLUMN ri_resource_id TYPE varchar(128)');”) protects the compatibility contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('ALTER COLUMN ri_resource_id TYPE varchar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-2a70150af8ab0da7",
@@ -3654,11 +2608,12 @@ moved or changed test.
       "line": 98,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:98 symbol-assertion evidence (“expect(migration).toContain('ALTER COLUMN ri_resource_id TYPE varchar(128)');”) protects the public contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Required boundary assertion: expect(migration).toContain('ALTER COLUMN ri_resource_id TYPE varchar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-c3173edaa5db3538",
@@ -3666,11 +2621,12 @@ moved or changed test.
       "line": 99,
       "column": 9,
       "kind": "migration-or-compatibility-topology",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "compatibility",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:99 migration-or-compatibility-topology evidence (“expect(migration).toContain('ALTER COLUMN ris_resource_id TYPE varchar(128)');”) protects the compatibility contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
+      "rationale": "Compatibility-path assertion: expect(migration).toContain('ALTER COLUMN ris_resource_id TYPE varchar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-5a8571c361c2056e",
@@ -3678,47 +2634,12 @@ moved or changed test.
       "line": 99,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "rallar-server-public-schema",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/rallar-server-schema-docs.test.ts:99 symbol-assertion evidence (“expect(migration).toContain('ALTER COLUMN ris_resource_id TYPE varchar(128)');”) protects the public contract stated by “widens QueueBox keys for scoped group identifiers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/api-v1/client-and-group-state-repositories.test.ts"
-    },
-    {
-      "id": "test-structure-coupling-5291d44d32de966a",
-      "path": "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts",
-      "line": 31,
-      "column": 23,
-      "kind": "production-source-read",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts:31 production-source-read evidence (“const contracts = readFileSync(”) is supplementary to the semantic behavior “names the command map before indexing its exact operation union” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts",
-      "removalCondition": "Replace the production-source-read check at packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts:31 with an imported, rendered, protocol-level, or runtime-observable assertion for “names the command map before indexing its exact operation union”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-60be4115ae590e70",
-      "path": "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts",
-      "line": 36,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts:36 symbol-assertion evidence (“expect(contracts).toContain('type TopologyAppInboxCommandByOperation = Readonly<{');”) is supplementary to the semantic behavior “names the command map before indexing its exact operation union” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts:36 with an imported, rendered, protocol-level, or runtime-observable assertion for “names the command map before indexing its exact operation union”, then delete this entry."
-    },
-    {
-      "id": "test-structure-coupling-1557e485237b9acb",
-      "path": "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts",
-      "line": 37,
-      "column": 5,
-      "kind": "symbol-assertion",
-      "disposition": "temporary-ratchet",
-      "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts:37 symbol-assertion evidence (“expect(contracts).toContain(”) is supplementary to the semantic behavior “names the command map before indexing its exact operation union” and must not constrain a clearer production design.",
-      "semanticCoverage": "packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts",
-      "removalCondition": "Replace the symbol-assertion check at packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts:37 with an imported, rendered, protocol-level, or runtime-observable assertion for “names the command map before indexing its exact operation union”, then delete this entry."
+      "rationale": "Required boundary assertion: expect(migration).toContain('ALTER COLUMN ris_resource_id TYPE varchar(128)');. Its only durable purpose is the linked Rallar server public schema documentation contract.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-server-app-data.test.ts#stores custom data in memory and through the repository"
     },
     {
       "id": "test-structure-coupling-d1e1b5b4cf3102fd",
@@ -3726,11 +2647,12 @@ moved or changed test.
       "line": 31,
       "column": 31,
       "kind": "production-source-read",
+      "contract": "api-v1-medium-scale-routing",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-test/api-v1-medium-scale-recipe-routing.test.ts:31 production-source-read evidence (“const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {”) protects the public contract stated by “names every group poll for the API node that executes it”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-medium-scale-recipe-routing.test.ts"
+      "rationale": "Contract input read: const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {. Its only durable purpose is the linked API-v1 medium-scale recipe routing contract.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#requires the tertiary HTTP service for every built-in Postgres cluster recipe"
     },
     {
       "id": "test-structure-coupling-a267014f00d96251",
@@ -3738,11 +2660,12 @@ moved or changed test.
       "line": 26,
       "column": 21,
       "kind": "production-source-read",
+      "contract": "api-v1-recipe-fixture-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-test/api-v1-recipe-test-fixture.ts:26 production-source-read evidence (“return JSON.parse(readFileSync(path.join(runnerRoot, 'recipe-matrix.json'), 'utf8'));”) protects the public contract stated by “supporting source-analysis contract”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-recipe-test-fixture.ts"
+      "rationale": "Contract input read: return JSON.parse(readFileSync(path.join(runnerRoot, 'recipe-matrix.json'), 'utf8'));. Its only durable purpose is the linked API-v1 recipe fixture loading contract.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
       "id": "test-structure-coupling-974d50f6e89212b8",
@@ -3750,11 +2673,12 @@ moved or changed test.
       "line": 30,
       "column": 21,
       "kind": "production-source-read",
+      "contract": "api-v1-recipe-fixture-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-test/api-v1-recipe-test-fixture.ts:30 production-source-read evidence (“return JSON.parse(readFileSync(path.join(runnerRoot, relativePath), 'utf8'));”) protects the public contract stated by “supporting source-analysis contract”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-recipe-test-fixture.ts"
+      "rationale": "Contract input read: return JSON.parse(readFileSync(path.join(runnerRoot, relativePath), 'utf8'));. Its only durable purpose is the linked API-v1 recipe fixture loading contract.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
       "id": "test-structure-coupling-3c01e239d8d825ab",
@@ -3762,11 +2686,12 @@ moved or changed test.
       "line": 20,
       "column": 13,
       "kind": "production-source-read",
+      "contract": "api-v1-runner-plan-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-test/api-v1-runner-options-and-plans.test.ts:20 production-source-read evidence (“await readFile(path.join(repoRoot, 'packages/shared-test/package.json'), 'utf8'),”) protects the public contract stated by “starts three API servers for every managed Postgres cluster command”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-runner-options-and-plans.test.ts"
+      "rationale": "Contract input read: await readFile(path.join(repoRoot, 'packages/shared-test/package.json'), 'utf8'),. Its only durable purpose is the linked API-v1 runner plan interface contract.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-black-box-run.test.ts#waits for the child startup marker before accepting config"
     },
     {
       "id": "test-structure-coupling-b49789fd23ed38c2",
@@ -3774,11 +2699,12 @@ moved or changed test.
       "line": 24,
       "column": 31,
       "kind": "production-source-read",
+      "contract": "state-read-convergence-recipe",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts:24 production-source-read evidence (“const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {”) protects the public contract stated by “defines run-scoped identifiers as interpolated string values”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts"
+      "rationale": "Contract input read: const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {. Its only durable purpose is the linked Clustered state-read convergence recipe contract.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#requires the tertiary HTTP service for every built-in Postgres cluster recipe"
     },
     {
       "id": "test-structure-coupling-6f764d53470df486",
@@ -3786,11 +2712,12 @@ moved or changed test.
       "line": 36,
       "column": 31,
       "kind": "production-source-read",
+      "contract": "state-read-convergence-recipe",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Rallar server maintainers",
-      "rationale": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts:36 production-source-read evidence (“const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {”) protects the public contract stated by “proves tertiary scalar and causal floors with revision and source headers”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts"
+      "rationale": "Contract input read: const recipe = JSON.parse(readFileSync(recipePath, 'utf8')) as {. Its only durable purpose is the linked Clustered state-read convergence recipe contract.",
+      "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#requires the tertiary HTTP service for every built-in Postgres cluster recipe"
     },
     {
       "id": "test-structure-coupling-ea26782894acea2f",
@@ -3798,11 +2725,12 @@ moved or changed test.
       "line": 196,
       "column": 32,
       "kind": "exact-file-tree",
+      "contract": "black-box-schema-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/rallar-bb-test-schema.test.ts:196 exact-file-tree evidence (“for (const fileName of readdirSync(appExamplesRoot).filter(name => name.endsWith('.recipe.json'))) {”) protects the public contract stated by “validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts"
+      "rationale": "Published inventory assertion: for (const fileName of readdirSync(appExamplesRoot).filter(name => name.endsWith('.recipe.json'))) {. Its only durable purpose is the linked Shared black-box schema interface contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-e20a6d7a4bc018ce",
@@ -3810,11 +2738,12 @@ moved or changed test.
       "line": 197,
       "column": 62,
       "kind": "production-source-read",
+      "contract": "black-box-schema-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/rallar-bb-test-schema.test.ts:197 production-source-read evidence (“expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, readJsonFile(path.join(appExamplesRoot, fileName)));”) protects the public contract stated by “validates recipe fixtures, examples, flow exports, manual snippets, and run-manager presets”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts"
+      "rationale": "Contract input read: expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, readJsonFile(path.join(appExamplesRoot, fileName)));. Its only durable purpose is the linked Shared black-box schema interface contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-cdb26a53c268343a",
@@ -3822,11 +2751,12 @@ moved or changed test.
       "line": 219,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "black-box-schema-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/rallar-bb-test-schema.test.ts:219 production-source-read evidence (“const recipe = readJsonFile(”) protects the public contract stated by “keeps the app-local RTC example self-contained for headless browser agents”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts"
+      "rationale": "Contract input read: const recipe = readJsonFile(. Its only durable purpose is the linked Shared black-box schema interface contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-9a9f64b341fce695",
@@ -3834,11 +2764,12 @@ moved or changed test.
       "line": 348,
       "column": 39,
       "kind": "production-source-read",
+      "contract": "black-box-schema-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/rallar-bb-test-schema.test.ts:348 production-source-read evidence (“const blocks = jsonCodeBlocks(readFileSync(schemaCompatibilityGuidePath, 'utf8'));”) protects the public contract stated by “keeps schema compatibility guide JSON examples validating”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts"
+      "rationale": "Contract input read: const blocks = jsonCodeBlocks(readFileSync(schemaCompatibilityGuidePath, 'utf8'));. Its only durable purpose is the linked Shared black-box schema interface contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-46997be678a26e87",
@@ -3846,11 +2777,12 @@ moved or changed test.
       "line": 113,
       "column": 47,
       "kind": "production-source-read",
+      "contract": "recipe-matrix-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/recipe-matrix.test.ts:113 production-source-read evidence (“const legacyAliasFixture = JSON.parse(readFileSync(”) protects the public contract stated by “uses rallar-signaling for signaling recipe examples and keeps one legacy rallar alias fixture”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts"
+      "rationale": "Contract input read: const legacyAliasFixture = JSON.parse(readFileSync(. Its only durable purpose is the linked Supported recipe matrix contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-f54a571f6a255e2f",
@@ -3858,11 +2790,12 @@ moved or changed test.
       "line": 383,
       "column": 24,
       "kind": "production-source-read",
+      "contract": "recipe-matrix-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/recipe-matrix.test.ts:383 production-source-read evidence (“const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');”) protects the public contract stated by “advertises the API-v1 profile in recipe-matrix CLI usage”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts"
+      "rationale": "Contract input read: const source = readFileSync(path.join(runnerRoot, 'recipe-matrix.mts'), 'utf8');. Its only durable purpose is the linked Supported recipe matrix contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-23e21b30c080db3a",
@@ -3870,11 +2803,12 @@ moved or changed test.
       "line": 385,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "recipe-matrix-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/recipe-matrix.test.ts:385 symbol-assertion evidence (“expect(source).toContain('api-v1-black-box');”) protects the public contract stated by “advertises the API-v1 profile in recipe-matrix CLI usage”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts"
+      "rationale": "Required boundary assertion: expect(source).toContain('api-v1-black-box');. Its only durable purpose is the linked Supported recipe matrix contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-043da39cb34cfa87",
@@ -3882,11 +2816,12 @@ moved or changed test.
       "line": 76,
       "column": 26,
       "kind": "production-source-read",
+      "contract": "recipe-matrix-public-interface",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/recipe-matrix.test.ts:76 production-source-read evidence (“expect(() => readFileSync(path.join(runnerRoot, entry.recipe), 'utf8')).not.toThrow();”) protects the public contract stated by “points every entry at a catalog recipe file”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts"
+      "rationale": "Contract input read: expect(() => readFileSync(path.join(runnerRoot, entry.recipe), 'utf8')).not.toThrow();. Its only durable purpose is the linked Supported recipe matrix contract.",
+      "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-recipe-fixtures.test.ts#exports a stable fixture catalog for SPA and manifest generation"
     },
     {
       "id": "test-structure-coupling-7d9fa62ed4f9ff0a",
@@ -3894,11 +2829,12 @@ moved or changed test.
       "line": 127,
       "column": 17,
       "kind": "production-source-read",
+      "contract": "state-write-recipe-evidence",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/state-write-recipe-evidence.test.ts:127 production-source-read evidence (“readFileSync(path.join(recipeRoot, name), 'utf8'),”) protects the public contract stated by “observes committed socket authorization before clustered WS effects”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts"
+      "rationale": "Contract input read: readFileSync(path.join(recipeRoot, name), 'utf8'),. Its only durable purpose is the linked State-write recipe evidence contract.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-public-result-evidence.test.ts#requires the public client response shape without inventing outbox ids"
     },
     {
       "id": "test-structure-coupling-0472647408807a03",
@@ -3906,11 +2842,12 @@ moved or changed test.
       "line": 151,
       "column": 17,
       "kind": "production-source-read",
+      "contract": "state-write-recipe-evidence",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/state-write-recipe-evidence.test.ts:151 production-source-read evidence (“readFileSync(path.join(recipeRoot, name), 'utf8'),”) protects the public contract stated by “forbids literal SET values from claiming durable state-write evidence”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts"
+      "rationale": "Contract input read: readFileSync(path.join(recipeRoot, name), 'utf8'),. Its only durable purpose is the linked State-write recipe evidence contract.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-public-result-evidence.test.ts#requires the public client response shape without inventing outbox ids"
     },
     {
       "id": "test-structure-coupling-7d29c8dbac2bcb59",
@@ -3918,11 +2855,12 @@ moved or changed test.
       "line": 166,
       "column": 35,
       "kind": "production-source-read",
+      "contract": "state-write-recipe-evidence",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/state-write-recipe-evidence.test.ts:166 production-source-read evidence (“const recipe = JSON.parse(readFileSync(path.join(”) protects the public contract stated by “uses one bounded execution identity for the command and its evidence”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts"
+      "rationale": "Contract input read: const recipe = JSON.parse(readFileSync(path.join(. Its only durable purpose is the linked State-write recipe evidence contract.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-public-result-evidence.test.ts#requires the public client response shape without inventing outbox ids"
     },
     {
       "id": "test-structure-coupling-10cf089f85a7c952",
@@ -3930,11 +2868,12 @@ moved or changed test.
       "line": 28,
       "column": 35,
       "kind": "production-source-read",
+      "contract": "state-write-recipe-evidence",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/state-write-recipe-evidence.test.ts:28 production-source-read evidence (“const recipe = JSON.parse(readFileSync(path.join(”) protects the public contract stated by “selects auth ticket races by the redacted secret and exact durable digest”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts"
+      "rationale": "Contract input read: const recipe = JSON.parse(readFileSync(path.join(. Its only durable purpose is the linked State-write recipe evidence contract.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-public-result-evidence.test.ts#requires the public client response shape without inventing outbox ids"
     },
     {
       "id": "test-structure-coupling-10bbdc381d374820",
@@ -3942,11 +2881,12 @@ moved or changed test.
       "line": 42,
       "column": 35,
       "kind": "production-source-read",
+      "contract": "state-write-recipe-evidence",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Test maintainers",
-      "rationale": "packages/tests/shared-test/state-write-recipe-evidence.test.ts:42 production-source-read evidence (“const recipe = JSON.parse(readFileSync(path.join(”) protects the public contract stated by “executes the topology exact-revision assertions before every cleanup step”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts"
+      "rationale": "Contract input read: const recipe = JSON.parse(readFileSync(path.join(. Its only durable purpose is the linked State-write recipe evidence contract.",
+      "semanticCoverage": "packages/tests/shared-test/state-write-public-result-evidence.test.ts#requires the public client response shape without inventing outbox ids"
     },
     {
       "id": "test-structure-coupling-8e6210e8e2b031df",
@@ -3954,11 +2894,12 @@ moved or changed test.
       "line": 30,
       "column": 31,
       "kind": "production-source-read",
+      "contract": "shared-web-app-import-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts:30 production-source-read evidence (“const runtimeSource = readSource(”) protects the public contract stated by “keeps Relic on its runtime adapter boundary without the broad shared-web barrel”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts"
+      "rationale": "Contract input read: const runtimeSource = readSource(. Its only durable purpose is the linked Shared-web application import boundary contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-efcc056da2d350b5",
@@ -3966,11 +2907,12 @@ moved or changed test.
       "line": 40,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "shared-web-app-import-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts:40 symbol-assertion evidence (“expect(runtimeSource).toContain('export type RelicHuntersRuntimeDeps');”) protects the public contract stated by “keeps Relic on its runtime adapter boundary without the broad shared-web barrel”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts"
+      "rationale": "Required boundary assertion: expect(runtimeSource).toContain('export type RelicHuntersRuntimeDeps');. Its only durable purpose is the linked Shared-web application import boundary contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-2796354ab33d39ff",
@@ -3978,11 +2920,12 @@ moved or changed test.
       "line": 41,
       "column": 9,
       "kind": "symbol-assertion",
+      "contract": "shared-web-app-import-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-app-import-boundaries.test.ts:41 symbol-assertion evidence (“expect(runtimeSource).toContain(”) protects the public contract stated by “keeps Relic on its runtime adapter boundary without the broad shared-web barrel”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts"
+      "rationale": "Required boundary assertion: expect(runtimeSource).toContain(. Its only durable purpose is the linked Shared-web application import boundary contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-bad22f1371586556",
@@ -3990,11 +2933,12 @@ moved or changed test.
       "line": 70,
       "column": 13,
       "kind": "production-source-read",
+      "contract": "shared-web-browser-bundle-boundary",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts:70 production-source-read evidence (“readFileSync(”) protects the public contract stated by “keeps shared-web from declaring graphology directly”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-public-api-snapshots.test.ts"
+      "rationale": "Contract input read: readFileSync(. Its only durable purpose is the linked Shared-web browser bundle boundary contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-74360f596f2e2553",
@@ -4002,11 +2946,12 @@ moved or changed test.
       "line": 147,
       "column": 30,
       "kind": "exact-file-tree",
+      "contract": "shared-web-browser-entrypoints",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts:147 exact-file-tree evidence (“const runtimeFiles = readdirSync(”) protects the public contract stated by “keeps runtime controllers independent from the compatibility entrypoint”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-public-api-snapshots.test.ts"
+      "rationale": "Published inventory assertion: const runtimeFiles = readdirSync(. Its only durable purpose is the linked Shared-web public browser entrypoints contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-73afd25238ecf179",
@@ -4014,11 +2959,12 @@ moved or changed test.
       "line": 161,
       "column": 30,
       "kind": "exact-file-tree",
+      "contract": "shared-web-browser-entrypoints",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts:161 exact-file-tree evidence (“const runtimeFiles = readdirSync(”) protects the public contract stated by “keeps runtime controllers independent from the aggregate contract”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-public-api-snapshots.test.ts"
+      "rationale": "Published inventory assertion: const runtimeFiles = readdirSync(. Its only durable purpose is the linked Shared-web public browser entrypoints contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-9314da5e1a1a0db9",
@@ -4026,11 +2972,12 @@ moved or changed test.
       "line": 180,
       "column": 30,
       "kind": "exact-file-tree",
+      "contract": "shared-web-browser-entrypoints",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts:180 exact-file-tree evidence (“const runtimeFiles = readdirSync(”) protects the public contract stated by “keeps mutable state-cache access inside the state store”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-public-api-snapshots.test.ts"
+      "rationale": "Published inventory assertion: const runtimeFiles = readdirSync(. Its only durable purpose is the linked Shared-web public browser entrypoints contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-82bb89d7557001cb",
@@ -4038,11 +2985,12 @@ moved or changed test.
       "line": 199,
       "column": 30,
       "kind": "exact-file-tree",
+      "contract": "shared-web-browser-entrypoints",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts:199 exact-file-tree evidence (“const runtimeFiles = readdirSync(”) protects the public contract stated by “limits the full runtime context to the composer and port contracts”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-public-api-snapshots.test.ts"
+      "rationale": "Published inventory assertion: const runtimeFiles = readdirSync(. Its only durable purpose is the linked Shared-web public browser entrypoints contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     },
     {
       "id": "test-structure-coupling-57415c54fa249a17",
@@ -4050,11 +2998,12 @@ moved or changed test.
       "line": 228,
       "column": 30,
       "kind": "exact-file-tree",
+      "contract": "shared-web-browser-entrypoints",
       "disposition": "durable-boundary",
       "boundary": "public",
       "owner": "Shared Web maintainers",
-      "rationale": "packages/tests/shared-web/shared-web-browser-entrypoints.test.ts:228 exact-file-tree evidence (“const runtimeFiles = readdirSync(runtimeDirectory).filter((fileName) =>”) protects the public contract stated by “keeps capability controllers behind injected ports”; it may change only with that named contract, never to preserve incidental production shape.",
-      "semanticCoverage": "packages/tests/shared-web/shared-web-public-api-snapshots.test.ts"
+      "rationale": "Published inventory assertion: const runtimeFiles = readdirSync(runtimeDirectory).filter((fileName) =>. Its only durable purpose is the linked Shared-web public browser entrypoints contract.",
+      "semanticCoverage": "packages/tests/shared-web/rallar-facade-compat.test.ts#exposes the expected compatibility facade shape"
     }
   ]
 }

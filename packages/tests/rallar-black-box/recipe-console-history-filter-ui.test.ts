@@ -1,8 +1,6 @@
 // @vitest-environment happy-dom
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HistoryFilters } from
     '../../../apps/rallar-black-box/src/recipe-console/history/HistoryFilters.tsx';
@@ -237,27 +235,6 @@ describe('Recipe Console History filter presentation', () => {
         })));
 
         expect(container.querySelector('[role="status"]')?.textContent).toContain(message);
-    });
-
-    it('keeps both presentations flat, compact, and responsive at 4/2/1 columns', () => {
-        const historyDirectory = resolve(
-            process.cwd(),
-            'apps/rallar-black-box/src/recipe-console/history',
-        );
-        const filtersCss = readFileSync(
-            resolve(historyDirectory, 'HistoryFilters.module.css'),
-            'utf8',
-        );
-        const savedCss = readFileSync(
-            resolve(historyDirectory, 'HistorySavedFilters.module.css'),
-            'utf8',
-        );
-
-        expect(filtersCss).toContain('repeat(4, minmax(0, 1fr))');
-        expect(filtersCss).toContain('repeat(2, minmax(0, 1fr))');
-        expect(filtersCss).toContain('grid-template-columns: minmax(0, 1fr)');
-        expect(filtersCss).toContain('min-height: 44px');
-        expect(`${filtersCss}\n${savedCss}`).not.toMatch(/box-shadow|border-radius:\s*(?:[7-9]|\d{2,})px/);
     });
 
     async function renderFilters(input: Readonly<{

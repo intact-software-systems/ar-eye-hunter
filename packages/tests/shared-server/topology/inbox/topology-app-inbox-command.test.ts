@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
@@ -27,18 +25,6 @@ import {
 } from '@shared-server/rallar-system/services/app-inbox-command-wire.ts';
 
 describe('topology AppInbox durable command contract', () => {
-  it('names the command map before indexing its exact operation union', () => {
-    const contracts = readFileSync(
-      'packages/shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts',
-      'utf8',
-    );
-
-    expect(contracts).toContain('type TopologyAppInboxCommandByOperation = Readonly<{');
-    expect(contracts).toContain(
-      'TopologyAppInboxCommandByOperation[TopologyAppInboxCommandOperation]',
-    );
-  });
-
   it('binds every operation discriminant to exactly its request and durable payload', () => {
     type Operation = TopologyAppInboxCommand['operation'];
     type CommandRelationships = {
