@@ -380,7 +380,8 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
         buildManifestEntry({
             filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[15],
             title: 'RTC absence wait 2-agent',
-            description: 'Same-room positive control delivery followed by absence waits proving no leak-probe frame and no silent rtc send failure.',
+            description: 'Same-room positive control delivery followed by absence waits proving ' +
+                'no leak-probe frame and no silent rtc send failure.',
             distributedRunId: 'hetzner-rtc-absence-wait-2-agent',
             recipe: createHetznerRtcAbsenceWaitRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
             agentCount: 2,

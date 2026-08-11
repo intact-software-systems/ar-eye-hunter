@@ -107,12 +107,15 @@ export function recipeId(
 }
 
 export function timeoutMs(options: RallarBlackBoxCompositeConformanceRecipeOptions): number {
-    return Number.isFinite(options.timeoutMs) && options.timeoutMs !== undefined && options.timeoutMs > 0
+    return Number.isFinite(options.timeoutMs) && options.timeoutMs !== undefined &&
+            options.timeoutMs > 0
         ? Math.round(options.timeoutMs)
         : DEFAULT_TIMEOUT_MS;
 }
 
-export function scopeFields(options: RallarBlackBoxCompositeConformanceRecipeOptions): Record<string, unknown> {
+export function scopeFields(
+    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+): Record<string, unknown> {
     return {
         applicationId: options.applicationId ?? 'rallar-server',
         workspaceId: options.workspaceId ?? 'default',
@@ -134,7 +137,9 @@ function wsBaseUrl(apiBaseUrl: string): string {
     }
 }
 
-export function recipeMetadata(caseId: RallarBlackBoxCompositeConformanceCaseId): Record<string, unknown> {
+export function recipeMetadata(
+    caseId: RallarBlackBoxCompositeConformanceCaseId,
+): Record<string, unknown> {
     return {
         conformance: {
             schemaVersion: 1,

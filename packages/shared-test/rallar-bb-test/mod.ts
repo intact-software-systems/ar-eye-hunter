@@ -36,5 +36,5 @@ export * from './black-box-runner-adapter.ts';
 export * from './provider-parity.ts';
 export * from './companion-coverage.ts';
 export * from './composite-conformance.ts';
-export * from './conformance/composite-conformance-recipes.ts';
+export * from './conformance/create-rallar-black-box-composite-conformance-recipe.ts';
 export * from './wait/wait-for-event.ts';
