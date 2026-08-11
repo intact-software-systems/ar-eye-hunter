@@ -53,7 +53,11 @@ interface AppendQueryRow extends DeliveryLogRow {
 }
 
 export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryAppendPort {
-  constructor(private readonly sql: PSqlSql) {}
+  private readonly sql: PSqlSql;
+
+  constructor(sql: PSqlSql) {
+    this.sql = sql;
+  }
 
   async registerStream(
     input: RtcTopologyDeliveryStreamRegistrationInput,

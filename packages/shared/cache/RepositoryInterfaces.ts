@@ -1,12 +1,15 @@
 import type { LoanedValue, LoanedValueOptions, LoanedValueRefresh } from './LoanedValue.ts';
 import type { LatestValue, LatestValueOptions } from './LatestValue.ts';
 
-export enum ObservableValueEventType {
-    Created = 'created',
-    Updated = 'updated',
-    Refreshed = 'refreshed',
-    Deleted = 'deleted',
-}
+export const ObservableValueEventType = {
+    Created: 'created',
+    Updated: 'updated',
+    Refreshed: 'refreshed',
+    Deleted: 'deleted',
+} as const;
+
+export type ObservableValueEventType =
+    (typeof ObservableValueEventType)[keyof typeof ObservableValueEventType];
 
 export type ObservableValueEvent<T> = Readonly<{
     type: ObservableValueEventType;

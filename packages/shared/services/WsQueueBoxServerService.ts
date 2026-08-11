@@ -96,13 +96,22 @@ export class WsQueueBoxServerService {
     private readonly targetResolver: WsServerTargetResolver;
     private readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
     private readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
+    public readonly inbox: QueueBoxResourceEntryRepository;
+    public readonly outbox: QueueBoxResourceEntryRepository;
+    public readonly socket: JsonWebSocketServer;
+    public readonly name: string;
+
     constructor(
-        public readonly inbox: QueueBoxResourceEntryRepository,
-        public readonly outbox: QueueBoxResourceEntryRepository,
-        public readonly socket: JsonWebSocketServer,
-        public readonly name: string,
+        inbox: QueueBoxResourceEntryRepository,
+        outbox: QueueBoxResourceEntryRepository,
+        socket: JsonWebSocketServer,
+        name: string,
         options: WsQueueBoxServerServiceOptions = {},
     ) {
+        this.inbox = inbox;
+        this.outbox = outbox;
+        this.socket = socket;
+        this.name = name;
         this.qosProvider = options.qosProvider;
         this.targetResolver = options.targetResolver ?? {};
         this.outboundDeliveryOutcome = options.outboundDeliveryOutcome;

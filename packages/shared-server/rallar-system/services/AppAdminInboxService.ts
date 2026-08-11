@@ -81,19 +81,28 @@ type AdminPruneComputed = Readonly<{
 export class AppAdminInboxService extends AppInboxService {
   private readonly aggregateWaitPolicy: TryWithPolicy;
 
+  public override readonly inbox: InboxQueueReader;
+  public override readonly resourceInbox: ResourceInboxRepository;
+  public override readonly resourceInboxResults: ResourceInboxResultsRepository;
+  private readonly pruner: AdminOperationsPruner;
+  public override readonly serviceId: string;
+  private readonly pageSize: number;
+  private readonly readAuthority: AdminPruneAuthorityReader;
+  private readonly wakeQueue?: () => void;
+
   constructor(
-    public override readonly inbox: InboxQueueReader,
-    public override readonly resourceInbox: ResourceInboxRepository,
-    public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+    inbox: InboxQueueReader,
+    resourceInbox: ResourceInboxRepository,
+    resourceInboxResults: ResourceInboxResultsRepository,
     database: PSqlSql,
-    private readonly pruner: AdminOperationsPruner,
-    public override readonly serviceId: string,
-    private readonly pageSize: number,
+    pruner: AdminOperationsPruner,
+    serviceId: string,
+    pageSize: number,
     timing?: RallarTimingSink,
     options?: AppInboxServiceOptions,
-    private readonly readAuthority: AdminPruneAuthorityReader = () =>
+    readAuthority: AdminPruneAuthorityReader = () =>
       Promise.resolve({ allowed: false, code: 'current-authority-reader-missing' }),
-    private readonly wakeQueue?: () => void,
+    wakeQueue?: () => void,
   ) {
     super(
       inbox,
@@ -106,6 +115,14 @@ export class AppAdminInboxService extends AppInboxService {
       options,
       wakeQueue,
     );
+    this.inbox = inbox;
+    this.resourceInbox = resourceInbox;
+    this.resourceInboxResults = resourceInboxResults;
+    this.pruner = pruner;
+    this.serviceId = serviceId;
+    this.pageSize = pageSize;
+    this.readAuthority = readAuthority;
+    this.wakeQueue = wakeQueue;
     this.aggregateWaitPolicy = TryWithPolicy.defaults()
       .label('app-inbox:admin-prune-aggregate')
       .maxElapsedMsecs(options?.waitMaxElapsedMsecs ?? AppInboxService.MAX_ELAPSED_MSECS)

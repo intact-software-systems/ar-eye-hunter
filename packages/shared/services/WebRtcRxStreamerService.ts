@@ -66,12 +66,19 @@ export class WebRtcRxStreamerService {
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private rttReportingPeerIds: ReadonlySet<PeerId> | undefined;
 
+    public readonly inbox: QueueBoxResourceEntryRepository;
+    public readonly multicast: WebRtcOverlayMulticastManager;
+    public readonly input: WebRtcRxStreamerServiceInputDto;
+
     constructor(
-        public readonly inbox: QueueBoxResourceEntryRepository,
-        public readonly multicast: WebRtcOverlayMulticastManager,
-        public readonly input: WebRtcRxStreamerServiceInputDto,
+        inbox: QueueBoxResourceEntryRepository,
+        multicast: WebRtcOverlayMulticastManager,
+        input: WebRtcRxStreamerServiceInputDto,
         options: WebRtcRxStreamerServiceOptions = {},
     ) {
+        this.inbox = inbox;
+        this.multicast = multicast;
+        this.input = input;
         this.inboundRuntime = new ALInboundMessageRuntime(
             {
                 stores: options.inboundStores,

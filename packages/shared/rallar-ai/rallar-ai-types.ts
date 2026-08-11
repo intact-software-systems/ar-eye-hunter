@@ -236,12 +236,17 @@ export type RallarAiSchemaRegistryEntry = Readonly<{
 }>;
 
 export class RallarAiError extends Error {
+    readonly code: RallarAiErrorCode;
+    readonly details?: unknown;
+
     constructor(
-        readonly code: RallarAiErrorCode,
+        code: RallarAiErrorCode,
         message: string,
-        readonly details?: unknown,
+        details?: unknown,
     ) {
         super(message);
+        this.code = code;
+        this.details = details;
         this.name = 'RallarAiError';
     }
 }

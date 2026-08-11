@@ -85,11 +85,8 @@ import type {
     RallarCrdtCatchUpRequestEnvelope,
     RallarCrdtCatchUpResponseEnvelope,
 } from '@shared/crdt/mod.ts';
-import {
-    CircuitBreaker,
-    CircuitBreakerPolicy,
-    RateLimiter,
-} from '@shared/resilience/Resilience.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 export type ApiRequestOptions = Readonly<{
     signal?: AbortSignal;

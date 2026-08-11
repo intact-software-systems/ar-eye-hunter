@@ -36,11 +36,18 @@ export class WebRtcGroupService {
         ) => Promise<void>
     >();
 
+    public readonly rtcQBox: WebRtcConnectionService;
+    public readonly groupRef: GroupRef;
+    public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>;
+
     constructor(
-        public readonly rtcQBox: WebRtcConnectionService,
-        public readonly groupRef: GroupRef,
-        public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
+        rtcQBox: WebRtcConnectionService,
+        groupRef: GroupRef,
+        groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
     ) {
+        this.rtcQBox = rtcQBox;
+        this.groupRef = groupRef;
+        this.groupCache = groupCache;
         this.groupKey = toWebRtcGroupKey(groupRef);
     }
 

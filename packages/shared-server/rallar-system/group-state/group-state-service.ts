@@ -38,12 +38,19 @@ export class GroupMutationIdempotencyConflictError extends Error {
   readonly status = 409;
   readonly code = 'group-mutation-idempotency-conflict';
 
+  readonly commandId: string;
+  readonly existingCommandHash: string;
+  readonly receivedCommandHash: string;
+
   constructor(
-    readonly commandId: string,
-    readonly existingCommandHash: string,
-    readonly receivedCommandHash: string,
+    commandId: string,
+    existingCommandHash: string,
+    receivedCommandHash: string,
   ) {
     super(`Group mutation command differs for request ${commandId}`);
+    this.commandId = commandId;
+    this.existingCommandHash = existingCommandHash;
+    this.receivedCommandHash = receivedCommandHash;
     this.name = 'GroupMutationIdempotencyConflictError';
   }
 }

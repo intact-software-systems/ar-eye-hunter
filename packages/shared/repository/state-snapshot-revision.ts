@@ -19,11 +19,16 @@ export function toStateSnapshotObservation(
 }
 
 export class StateSnapshotRevisionConflictError extends Error {
+    readonly entity: 'Client' | 'Group';
+    readonly revision: number;
+
     constructor(
-        readonly entity: 'Client' | 'Group',
-        readonly revision: number,
+        entity: 'Client' | 'Group',
+        revision: number,
     ) {
         super(`${entity} snapshot revision conflict at revision ${revision}`);
+        this.entity = entity;
+        this.revision = revision;
         this.name = 'StateSnapshotRevisionConflictError';
     }
 }

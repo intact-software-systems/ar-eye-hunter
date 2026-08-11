@@ -66,9 +66,12 @@ export class PersistentALDedupStore implements ALDedupStore {
     private readonly readyPromise: Promise<void>;
     private hydrated = false;
 
+    private readonly persistence: PersistenceProvider<string, number>;
+
     constructor(
-        private readonly persistence: PersistenceProvider<string, number>,
+        persistence: PersistenceProvider<string, number>,
     ) {
+        this.persistence = persistence;
         this.readyPromise = this.hydrate();
     }
 
@@ -267,9 +270,12 @@ export type ALSupersedencePersistenceValue = PersistedALSupersedenceValue;
 export class InMemoryALOrderingStore implements ALOrderingStore {
     private readonly stateByTrackKey = new Map<string, ALOrderingTrackState>();
 
+    private readonly trackTtlMs: number;
+
     constructor(
-        private readonly trackTtlMs: number = 5 * 60_000,
+        trackTtlMs: number = 5 * 60_000,
     ) {
+        this.trackTtlMs = trackTtlMs;
     }
 
     async ready(): Promise<void> {
@@ -456,10 +462,15 @@ export class PersistentALOrderingStore implements ALOrderingStore {
     private readonly readyPromise: Promise<void>;
     private hydrated = false;
 
+    private readonly persistence: PersistenceProvider<string, PersistedALOrderingTrackState>;
+    private readonly trackTtlMs: number;
+
     constructor(
-        private readonly persistence: PersistenceProvider<string, PersistedALOrderingTrackState>,
-        private readonly trackTtlMs: number = 5 * 60_000,
+        persistence: PersistenceProvider<string, PersistedALOrderingTrackState>,
+        trackTtlMs: number = 5 * 60_000,
     ) {
+        this.persistence = persistence;
+        this.trackTtlMs = trackTtlMs;
         this.readyPromise = this.hydrate();
     }
 
@@ -695,9 +706,12 @@ export class InMemoryALSupersedenceStore implements ALSupersedenceStore {
     private readonly latestByKey = new Map<string, ALSupersedenceTrackState>();
     private readonly replacementByMsgId = new Map<string, ALSupersedenceReplacementState>();
 
+    private readonly trackTtlMs: number;
+
     constructor(
-        private readonly trackTtlMs: number = 5 * 60_000,
+        trackTtlMs: number = 5 * 60_000,
     ) {
+        this.trackTtlMs = trackTtlMs;
     }
 
     async ready(): Promise<void> {
@@ -858,10 +872,15 @@ export class PersistentALSupersedenceStore implements ALSupersedenceStore {
     private readonly readyPromise: Promise<void>;
     private hydrated = false;
 
+    private readonly persistence: PersistenceProvider<string, PersistedALSupersedenceValue>;
+    private readonly trackTtlMs: number;
+
     constructor(
-        private readonly persistence: PersistenceProvider<string, PersistedALSupersedenceValue>,
-        private readonly trackTtlMs: number = 5 * 60_000,
+        persistence: PersistenceProvider<string, PersistedALSupersedenceValue>,
+        trackTtlMs: number = 5 * 60_000,
     ) {
+        this.persistence = persistence;
+        this.trackTtlMs = trackTtlMs;
         this.readyPromise = this.hydrate();
     }
 

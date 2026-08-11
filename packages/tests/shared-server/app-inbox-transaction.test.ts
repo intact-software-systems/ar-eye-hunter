@@ -15,7 +15,7 @@ import {
     type ResourceEntry,
     toKeyAsString,
 } from '@shared/queuebox/ResourceEntry.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
@@ -964,7 +964,11 @@ class RegisteredHandlerResults {
     readonly entries = new Map<string, ResourceEntry>();
     replaceCalls = 0;
 
-    constructor(private readonly failResultWriteAfter?: number) {}
+    private readonly failResultWriteAfter?: number;
+
+    constructor(failResultWriteAfter?: number) {
+        this.failResultWriteAfter = failResultWriteAfter;
+    }
 
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
         this.replaceCalls += 1;
@@ -1081,13 +1085,19 @@ class AtomicDatabase {
 
     readonly sql: PSqlSql;
 
+    private readonly options: Readonly<{
+            failResultWrite: boolean;
+            loseReservation: boolean;
+        }>;
+
     constructor(
         entry: ResourceEntry,
-        private readonly options: Readonly<{
+        options: Readonly<{
             failResultWrite: boolean;
             loseReservation: boolean;
         }>,
     ) {
+        this.options = options;
         this.loseReservation = options.loseReservation;
         this.state = {
             mutations: new Map(),

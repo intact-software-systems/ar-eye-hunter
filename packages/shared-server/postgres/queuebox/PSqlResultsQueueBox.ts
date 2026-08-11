@@ -5,9 +5,12 @@ import {
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
 export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
+    public readonly repo: ResourceInboxResultsRepository;
+
     constructor(
-        public readonly repo: ResourceInboxResultsRepository,
+        repo: ResourceInboxResultsRepository,
     ) {
+        this.repo = repo;
     }
 
     cleanup(): void {

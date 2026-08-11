@@ -64,10 +64,13 @@ export class PSqlCrdtLogRepository<
   private readonly policies: readonly RallarCrdtDocumentTypePolicy[];
   private readonly audit?: RallarCrdtAuditSink;
 
+  private readonly sql: PSqlSql;
+
   constructor(
-    private readonly sql: PSqlSql,
+    sql: PSqlSql,
     options: PSqlCrdtLogRepositoryOptions = {},
   ) {
+    this.sql = sql;
     this.now = options.now ?? Date.now;
     this.policies = options.policies?.length
       ? options.policies

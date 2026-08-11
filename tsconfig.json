@@ -15,6 +15,7 @@
     }
   ],
   "compilerOptions": {
+    "erasableSyntaxOnly": true,
     "noEmit": true,
     "target": "ES2023",
     "module": "ESNext",

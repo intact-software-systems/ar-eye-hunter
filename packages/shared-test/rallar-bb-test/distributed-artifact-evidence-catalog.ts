@@ -306,7 +306,11 @@ function candidatePriority(left: CatalogCandidate, right: CatalogCandidate): num
 class BoundedNewestCandidates {
     readonly #heap: CatalogCandidate[] = [];
 
-    constructor(readonly limit: number) {}
+    readonly limit: number;
+
+    constructor(limit: number) {
+        this.limit = limit;
+    }
 
     get size(): number {
         return this.#heap.length;

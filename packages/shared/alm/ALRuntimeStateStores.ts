@@ -47,10 +47,13 @@ export class InMemoryALInboundRuntimeStateStore implements ALInboundRuntimeState
 export class PersistentALInboundRuntimeStateStore implements ALInboundRuntimeStateStore {
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 
+    private readonly bufferedMessageProvider: PersistenceProvider<string, ALBufferedOrderedMessageSnapshot>;
+
     constructor(
-        private readonly bufferedMessageProvider: PersistenceProvider<string, ALBufferedOrderedMessageSnapshot>,
+        bufferedMessageProvider: PersistenceProvider<string, ALBufferedOrderedMessageSnapshot>,
         retention?: ALRuntimeStoreRetentionConfig,
     ) {
+        this.bufferedMessageProvider = bufferedMessageProvider;
         this.retention = normalizeALRuntimeStoreRetention(retention);
     }
 
@@ -171,12 +174,19 @@ export class InMemoryALOutboundRuntimeStateStore implements ALOutboundRuntimeSta
 export class PersistentALOutboundRuntimeStateStore implements ALOutboundRuntimeStateStore {
     private readonly retention: NormalizedALRuntimeStoreRetentionConfig;
 
+    private readonly sentMessageProvider: PersistenceProvider<string, ALOutboundSentMessageSnapshot>;
+    private readonly pendingAckProvider: PersistenceProvider<string, ALOutboundPendingAckSnapshot>;
+    private readonly repairAttemptProvider: PersistenceProvider<string, ALOutboundRepairAttemptSnapshot>;
+
     constructor(
-        private readonly sentMessageProvider: PersistenceProvider<string, ALOutboundSentMessageSnapshot>,
-        private readonly pendingAckProvider: PersistenceProvider<string, ALOutboundPendingAckSnapshot>,
-        private readonly repairAttemptProvider: PersistenceProvider<string, ALOutboundRepairAttemptSnapshot>,
+        sentMessageProvider: PersistenceProvider<string, ALOutboundSentMessageSnapshot>,
+        pendingAckProvider: PersistenceProvider<string, ALOutboundPendingAckSnapshot>,
+        repairAttemptProvider: PersistenceProvider<string, ALOutboundRepairAttemptSnapshot>,
         retention?: ALRuntimeStoreRetentionConfig,
     ) {
+        this.sentMessageProvider = sentMessageProvider;
+        this.pendingAckProvider = pendingAckProvider;
+        this.repairAttemptProvider = repairAttemptProvider;
         this.retention = normalizeALRuntimeStoreRetention(retention);
     }
 

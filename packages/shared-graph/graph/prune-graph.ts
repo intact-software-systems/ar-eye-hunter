@@ -2,13 +2,15 @@ import { UndirectedGraph } from 'graphology';
 import { EdgeProp, GraphProp, TreeGraph, VertexId, VertexProp, VertexState } from '../graph-props.ts';
 import { CoreSelectionAlgo } from './steiner-core-algorithms.ts';
 
-export enum PruneGraphAlgo {
-    NO_GRAPH_ALGO = 'NO_GRAPH_ALGO',
-    K_BEST_LINKS = 'K_BEST_LINKS',
-    ADD_CORE_LINKS = 'ADD_CORE_LINKS',
-    ADD_CORE_LINKS_OPTIMIZED = 'ADD_CORE_LINKS_OPTIMIZED',
-    ADD_CORE_LINKS_OPTIMIZED_DEGREE_LIMITED = 'ADD_CORE_LINKS_OPTIMIZED_DEGREE_LIMITED',
-}
+export const PruneGraphAlgo = {
+    NO_GRAPH_ALGO: 'NO_GRAPH_ALGO',
+    K_BEST_LINKS: 'K_BEST_LINKS',
+    ADD_CORE_LINKS: 'ADD_CORE_LINKS',
+    ADD_CORE_LINKS_OPTIMIZED: 'ADD_CORE_LINKS_OPTIMIZED',
+    ADD_CORE_LINKS_OPTIMIZED_DEGREE_LIMITED: 'ADD_CORE_LINKS_OPTIMIZED_DEGREE_LIMITED',
+} as const;
+
+export type PruneGraphAlgo = (typeof PruneGraphAlgo)[keyof typeof PruneGraphAlgo];
 
 export type PruneGraphInputDto = {
     inputT: TreeGraph;

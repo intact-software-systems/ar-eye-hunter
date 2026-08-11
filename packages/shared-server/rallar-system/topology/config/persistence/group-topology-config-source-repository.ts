@@ -34,8 +34,11 @@ import {
 import { groupTopologyConfigSourceNamespace } from './group-topology-config-runtime-namespaces.ts';
 
 export class GroupTopologyConfigSourceRepository extends RuntimeStateJsonStore {
-  constructor(readonly runtimeRepository: RuntimeStateRepositoryLike) {
+  readonly runtimeRepository: RuntimeStateRepositoryLike;
+
+  constructor(runtimeRepository: RuntimeStateRepositoryLike) {
     super(runtimeRepository);
+    this.runtimeRepository = runtimeRepository;
   }
 
   async findGenerationSourceEntry(

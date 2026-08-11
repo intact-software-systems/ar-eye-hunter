@@ -33,30 +33,46 @@ function toExponentialBackoffSeconds(failureCounter: number, maxSeconds = 60): n
     return Math.min(secs, maxSeconds);
 }
 
-export enum Reservator {
-    FINALIZATION = 'FINALIZATION',
-    NEW = 'NEW',
-    RETRY = 'RETRY',
-    FAILED = 'FAILED',
-    FAIRNESS = 'FAIRNESS',
-    TIMEOUT = 'TIMEOUT',
-}
+export const Reservator = {
+    FINALIZATION: 'FINALIZATION',
+    NEW: 'NEW',
+    RETRY: 'RETRY',
+    FAILED: 'FAILED',
+    FAIRNESS: 'FAIRNESS',
+    TIMEOUT: 'TIMEOUT',
+} as const;
+
+export type Reservator = (typeof Reservator)[keyof typeof Reservator];
 
 export class FailureDto<K, V> {
+    public readonly key: K;
+    public readonly value: V;
+    public readonly exception: Error;
+
     constructor(
-        public readonly key: K,
-        public readonly value: V,
-        public readonly exception: Error,
+        key: K,
+        value: V,
+        exception: Error,
     ) {
+        this.key = key;
+        this.value = value;
+        this.exception = exception;
     }
 }
 
 export class SuccessDto<K, V, T> {
+    public readonly key: K;
+    public readonly value: V;
+    public readonly computedValue: T;
+
     constructor(
-        public readonly key: K,
-        public readonly value: V,
-        public readonly computedValue: T,
+        key: K,
+        value: V,
+        computedValue: T,
     ) {
+        this.key = key;
+        this.value = value;
+        this.computedValue = computedValue;
     }
 }
 

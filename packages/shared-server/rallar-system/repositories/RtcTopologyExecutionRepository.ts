@@ -44,12 +44,20 @@ export type RtcTopologyExecutionCommitResult =
     }>;
 
 export class RtcTopologyExecutionRepository {
+    readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    private readonly publicationRetentionMs: number;
+    private readonly now: () => number;
+
     constructor(
-        readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        private readonly publicationRetentionMs: number =
+        runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
+        publicationRetentionMs: number =
             DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-        private readonly now: () => number = () => Date.now(),
-    ) {}
+        now: () => number = () => Date.now(),
+    ) {
+        this.runtimeRepository = runtimeRepository;
+        this.publicationRetentionMs = publicationRetentionMs;
+        this.now = now;
+    }
 
     async findPublicationForWork(
         groupRef: GroupRef,

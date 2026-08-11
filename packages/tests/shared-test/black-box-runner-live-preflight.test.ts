@@ -17,7 +17,10 @@ class OpeningWebSocket {
     onerror: ((event: unknown) => void) | null = null;
     onclose: ((event: unknown) => void) | null = null;
 
-    constructor(readonly url: string) {
+    readonly url: string;
+
+    constructor(url: string) {
+        this.url = url;
         queueMicrotask(() => this.onopen?.({ type: 'open' }));
     }
 
@@ -31,7 +34,10 @@ class FailingWebSocket {
     onerror: ((event: unknown) => void) | null = null;
     onclose: ((event: unknown) => void) | null = null;
 
-    constructor(readonly url: string) {
+    readonly url: string;
+
+    constructor(url: string) {
+        this.url = url;
         queueMicrotask(() => this.onerror?.({ type: 'error' }));
     }
 

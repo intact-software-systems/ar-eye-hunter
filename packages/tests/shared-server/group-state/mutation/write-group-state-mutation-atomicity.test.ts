@@ -18,8 +18,11 @@ import {
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 
 class CollidingGroupEventStore extends InMemoryGroupStateEventStore {
-  constructor(private readonly runtime: ApplyingGuardedBatchRepository) {
+  private readonly runtime: ApplyingGuardedBatchRepository;
+
+  constructor(runtime: ApplyingGuardedBatchRepository) {
     super();
+    this.runtime = runtime;
   }
 
   override appendGroupEvent(event: GroupEvent): Promise<void> {

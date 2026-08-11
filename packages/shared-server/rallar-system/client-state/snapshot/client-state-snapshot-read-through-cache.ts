@@ -32,9 +32,12 @@ export type FindOrLoadClientStateSnapshotOptions = Readonly<{
 }>;
 
 export class ClientStateSnapshotNotFoundError extends Error {
-  constructor(readonly ref: ClientPrincipalRef) {
+  readonly ref: ClientPrincipalRef;
+
+  constructor(ref: ClientPrincipalRef) {
     const workspaceId = ref.workspaceId ?? '';
     super(`Client snapshot not found for ${ref.applicationId}/${workspaceId}/${ref.principalId}`);
+    this.ref = ref;
     this.name = 'ClientStateSnapshotNotFoundError';
   }
 }
@@ -42,7 +45,10 @@ export class ClientStateSnapshotNotFoundError extends Error {
 export class ClientStateSnapshotReadThroughCache {
   private readonly snapshots: ObservableLoanedRepository<string, ClientSnapshot>;
 
-  constructor(private readonly options: ClientStateSnapshotReadThroughCacheOptions) {
+  private readonly options: ClientStateSnapshotReadThroughCacheOptions;
+
+  constructor(options: ClientStateSnapshotReadThroughCacheOptions) {
+    this.options = options;
     this.snapshots = new ObservableLoanedRepository<string, ClientSnapshot>(
       async (key) => {
         const ref = toClientPrincipalRef(key);

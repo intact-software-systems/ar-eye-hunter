@@ -52,13 +52,19 @@ import { ClientStateInboxHandler } from './client-state-inbox-handler.ts';
 export class AppClientInboxService extends AppInboxService {
   private readonly handler: ClientStateInboxHandler;
 
+  public override readonly inbox: InboxQueueReader;
+  public override readonly resourceInbox: ResourceInboxRepository;
+  public override readonly resourceInboxResults: ResourceInboxResultsRepository;
+  public readonly clientStateService: ClientStateService;
+  public override readonly serviceId: string;
+
   constructor(
-    public override readonly inbox: InboxQueueReader,
-    public override readonly resourceInbox: ResourceInboxRepository,
-    public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+    inbox: InboxQueueReader,
+    resourceInbox: ResourceInboxRepository,
+    resourceInboxResults: ResourceInboxResultsRepository,
     database: PSqlSql,
-    public readonly clientStateService: ClientStateService,
-    public override readonly serviceId: string,
+    clientStateService: ClientStateService,
+    serviceId: string,
     timing?: RallarTimingSink,
     options?: AppInboxServiceOptions,
     wakeQueue?: () => void,
@@ -74,6 +80,11 @@ export class AppClientInboxService extends AppInboxService {
       options,
       wakeQueue,
     );
+    this.inbox = inbox;
+    this.resourceInbox = resourceInbox;
+    this.resourceInboxResults = resourceInboxResults;
+    this.clientStateService = clientStateService;
+    this.serviceId = serviceId;
     this.handler = new ClientStateInboxHandler({
       mutationService: clientStateService,
       sessionGenerationLifecycle: clientStateService.sessionGenerationLifecycle,

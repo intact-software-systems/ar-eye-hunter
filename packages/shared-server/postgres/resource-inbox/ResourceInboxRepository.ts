@@ -32,8 +32,11 @@ export class ResourceInboxInvariantCorruptionError extends Error {
     readonly code = 'resource-inbox-invariant-corruption';
     readonly status = 409;
 
-    constructor(readonly key: Key, message: string) {
+    readonly key: Key;
+
+    constructor(key: Key, message: string) {
         super(`${message}: ${key.contextId}/${key.topicId}/${key.resourceId}`);
+        this.key = key;
         this.name = 'ResourceInboxInvariantCorruptionError';
     }
 }
@@ -41,7 +44,10 @@ export class ResourceInboxInvariantCorruptionError extends Error {
 export class ResourceInboxRepository {
     static readonly MAX_ROWS_TO_RETURN = 50;
 
-    constructor(private readonly sql: PSqlSql) {
+    private readonly sql: PSqlSql;
+
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
     }
 
     /**
@@ -228,8 +234,10 @@ export class ResourceInboxRepository {
             expected.key.resourceId !== next.key.resourceId ||
             expected.key.contextId !== next.key.contextId ||
             expected.typeId !== next.typeId ||
-            ![EntityStatus.NEW, EntityStatus.RETRY].includes(expected.status) ||
-            ![EntityStatus.NEW, EntityStatus.RETRY].includes(next.status) ||
+            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
+                .includes(expected.status) ||
+            !([EntityStatus.NEW, EntityStatus.RETRY] as readonly EntityStatus[])
+                .includes(next.status) ||
             next.dequeueAudit.attempts !== expected.dequeueAudit.attempts ||
             !Number.isSafeInteger(expectedGeneration) ||
             expectedGeneration < 1
@@ -873,7 +881,7 @@ export class ResourceInboxRepository {
     async finishReserved(
         key: Key,
         expectedAttempts: number,
-        status: EntityStatus.COMPLETED | EntityStatus.FAILED,
+        status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
         completedAt: Date,
     ): Promise<boolean> {
         if (

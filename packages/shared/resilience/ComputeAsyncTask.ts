@@ -72,229 +72,223 @@ export function toExponentialBackoffMs(
 // Submit: compute number of tasks to create and start them
 // ------------------------------------------------------------
 
-export namespace Submit {
-    export type Executor = (runnable: AsyncRunnable) => Promise<void>;
+export type AsyncTaskExecutor = (runnable: AsyncRunnable) => Promise<void>;
 
-    export interface InputDto {
-        runnable: AsyncRunnable;
-        ongoingTasks: readonly TrackedTask[];
-        maxConcurrency: number;
-        executor?: Executor;
+export interface SubmitAsyncTasksInputDto {
+    runnable: AsyncRunnable;
+    ongoingTasks: readonly TrackedTask[];
+    maxConcurrency: number;
+    executor?: AsyncTaskExecutor;
+}
+
+export interface SubmitAsyncTasksComputedDto {
+    tasksInFlight: TrackedTask[];
+    tasksCreated: number;
+}
+
+const defaultExecutor: AsyncTaskExecutor = async (r) => {
+    // Ensure async scheduling, but do not block.
+    await Promise.resolve().then(r);
+};
+
+export function submitAsyncTasks(input: SubmitAsyncTasksInputDto): SubmitAsyncTasksComputedDto {
+    const active = filterOutFinishedTasks(input.ongoingTasks);
+    const toCreate = input.maxConcurrency - active.length;
+
+    if (toCreate <= 0) {
+        return { tasksInFlight: active, tasksCreated: 0 };
     }
 
-    export interface ComputedDto {
-        tasksInFlight: TrackedTask[];
-        tasksCreated: number;
+    const exec = input.executor ?? defaultExecutor;
+
+    const created: TrackedTask[] = [];
+    for (let i = 0; i < toCreate; i++) {
+        const p = exec(input.runnable);
+        created.push(track(p));
     }
 
-    const defaultExecutor: Executor = async (r) => {
-        // Ensure async scheduling, but do not block.
-        await Promise.resolve().then(r);
+    return {
+        tasksInFlight: active.concat(created),
+        tasksCreated: toCreate,
     };
-
-    export function submitAsyncTasks(input: InputDto): ComputedDto {
-        const active = filterOutFinishedTasks(input.ongoingTasks);
-        const toCreate = input.maxConcurrency - active.length;
-
-        if (toCreate <= 0) {
-            return { tasksInFlight: active, tasksCreated: 0 };
-        }
-
-        const exec = input.executor ?? defaultExecutor;
-
-        const created: TrackedTask[] = [];
-        for (let i = 0; i < toCreate; i++) {
-            const p = exec(input.runnable);
-            created.push(track(p));
-        }
-
-        return {
-            tasksInFlight: active.concat(created),
-            tasksCreated: toCreate,
-        };
-    }
 }
 
 // ------------------------------------------------------------
 // Loop: single task pump
 // ------------------------------------------------------------
 
-export namespace Loop {
-    export interface InputDto {
-        maxConcurrency: AsyncSupplier<number>;
-        isWork: AsyncSupplier<boolean>;
-        runnable: AsyncRunnable;
-        ongoingTasks: readonly TrackedTask[];
-        maxBackoffMs: number;
-        maxIsWorkIterations: number;
-        sleep?: SleepFn;
-        executor?: Submit.Executor;
-    }
+export interface LoopInputDto {
+    maxConcurrency: AsyncSupplier<number>;
+    isWork: AsyncSupplier<boolean>;
+    runnable: AsyncRunnable;
+    ongoingTasks: readonly TrackedTask[];
+    maxBackoffMs: number;
+    maxIsWorkIterations: number;
+    sleep?: SleepFn;
+    executor?: AsyncTaskExecutor;
+}
 
-    export interface ComputedDto {
-        tasksInFlight: TrackedTask[];
-        tasksCreatedTotal: number;
-        numIsWorkIterations: number;
-        numNoTasksCreatedIterations: number;
-    }
+export interface LoopComputedDto {
+    tasksInFlight: TrackedTask[];
+    tasksCreatedTotal: number;
+    numIsWorkIterations: number;
+    numNoTasksCreatedIterations: number;
+}
 
-    export async function runWhileWork(input: InputDto): Promise<ComputedDto> {
-        const sleep = input.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+export async function runLoopWhileWork(input: LoopInputDto): Promise<LoopComputedDto> {
+    const sleep = input.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
 
-        let numIsWorkIterations = 0;
-        let numSuccessiveNoTasksCreated = 0;
-        let tasksCreatedTotal = 0;
+    let numIsWorkIterations = 0;
+    let numSuccessiveNoTasksCreated = 0;
+    let tasksCreatedTotal = 0;
 
-        let tasksInFlight = filterOutFinishedTasks(input.ongoingTasks);
+    let tasksInFlight = filterOutFinishedTasks(input.ongoingTasks);
 
-        while (numIsWorkIterations++ < input.maxIsWorkIterations) {
-            const maxConc = await input.maxConcurrency();
+    while (numIsWorkIterations++ < input.maxIsWorkIterations) {
+        const maxConc = await input.maxConcurrency();
 
-            const allowed = isAllowedToAddTask(tasksInFlight, maxConc);
+        const allowed = isAllowedToAddTask(tasksInFlight, maxConc);
 
-            // Preserve Java logic: if allowed && isWork is false -> break, else continue
-            let isWork = true;
-            if (allowed) {
-                isWork = await input.isWork();
-                if (!isWork) break;
-            }
+        // Preserve Java logic: if allowed && isWork is false -> break, else continue
+        let isWork = true;
+        if (allowed) {
+            isWork = await input.isWork();
+            if (!isWork) break;
+        }
 
-            if (allowed) {
-                const computed = Submit.submitAsyncTasks({
-                    runnable: input.runnable,
-                    ongoingTasks: tasksInFlight,
-                    maxConcurrency: maxConc,
-                    executor: input.executor,
-                });
+        if (allowed) {
+            const computed = submitAsyncTasks({
+                runnable: input.runnable,
+                ongoingTasks: tasksInFlight,
+                maxConcurrency: maxConc,
+                executor: input.executor,
+            });
 
-                tasksInFlight = computed.tasksInFlight;
-                tasksCreatedTotal += computed.tasksCreated;
+            tasksInFlight = computed.tasksInFlight;
+            tasksCreatedTotal += computed.tasksCreated;
 
-                if (computed.tasksCreated > 0) {
-                    numSuccessiveNoTasksCreated = 0;
-                } else {
-                    numSuccessiveNoTasksCreated++;
-                    const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
-                    await sleep(backoff);
-                }
+            if (computed.tasksCreated > 0) {
+                numSuccessiveNoTasksCreated = 0;
             } else {
-                tasksInFlight = filterOutFinishedTasks(tasksInFlight);
                 numSuccessiveNoTasksCreated++;
                 const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
                 await sleep(backoff);
             }
+        } else {
+            tasksInFlight = filterOutFinishedTasks(tasksInFlight);
+            numSuccessiveNoTasksCreated++;
+            const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
+            await sleep(backoff);
         }
-
-        return {
-            tasksInFlight,
-            tasksCreatedTotal,
-            numIsWorkIterations: numIsWorkIterations - 1,
-            numNoTasksCreatedIterations: numSuccessiveNoTasksCreated,
-        };
     }
+
+    return {
+        tasksInFlight,
+        tasksCreatedTotal,
+        numIsWorkIterations: numIsWorkIterations - 1,
+        numNoTasksCreatedIterations: numSuccessiveNoTasksCreated,
+    };
 }
 
 // ------------------------------------------------------------
 // Loops: multiple task pumps in one outer loop
 // ------------------------------------------------------------
 
-export namespace Loops {
-    export interface TaskDto {
-        name: string;
-        maxConcurrency: AsyncSupplier<number>;
-        isWork: AsyncSupplier<boolean>;
-        runnable: AsyncRunnable;
-        ongoingTasks: readonly TrackedTask[];
-        executor?: Submit.Executor;
-    }
+export interface LoopsTaskDto {
+    name: string;
+    maxConcurrency: AsyncSupplier<number>;
+    isWork: AsyncSupplier<boolean>;
+    runnable: AsyncRunnable;
+    ongoingTasks: readonly TrackedTask[];
+    executor?: AsyncTaskExecutor;
+}
 
-    export interface InputDto {
-        tasks: readonly TaskDto[];
-        maxBackoffMs: number;
-        maxIsWorkIterations: number;
-        maxSuccessiveNoTasksCreated: number;
-        sleep?: SleepFn;
-    }
+export interface LoopsInputDto {
+    tasks: readonly LoopsTaskDto[];
+    maxBackoffMs: number;
+    maxIsWorkIterations: number;
+    maxSuccessiveNoTasksCreated: number;
+    sleep?: SleepFn;
+}
 
-    export interface ComputedTaskDto {
-        inputTask: TaskDto;
-        tasksInFlight: TrackedTask[];
-        tasksCreated: number;
-    }
+export interface LoopsComputedTaskDto {
+    inputTask: LoopsTaskDto;
+    tasksInFlight: TrackedTask[];
+    tasksCreated: number;
+}
 
-    export interface ComputedDto {
-        tasks: ComputedTaskDto[];
-        totalNumTasksCreated: number;
-        numIsWorkIterations: number;
-        numSuccessiveNoTasksCreated: number;
-    }
+export interface LoopsComputedDto {
+    tasks: LoopsComputedTaskDto[];
+    totalNumTasksCreated: number;
+    numIsWorkIterations: number;
+    numSuccessiveNoTasksCreated: number;
+}
 
-    export async function runWhileWork(input: InputDto): Promise<ComputedDto> {
-        const sleep = input.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComputedDto> {
+    const sleep = input.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
 
-        // initialize computed task state
-        const tasks: ComputedTaskDto[] = input.tasks.map((t) => ({
-            inputTask: t,
-            tasksInFlight: filterOutFinishedTasks(t.ongoingTasks),
-            tasksCreated: 0,
-        }));
+    // initialize computed task state
+    const tasks: LoopsComputedTaskDto[] = input.tasks.map((t) => ({
+        inputTask: t,
+        tasksInFlight: filterOutFinishedTasks(t.ongoingTasks),
+        tasksCreated: 0,
+    }));
 
-        let numIsWorkIterations = 0;
-        let numSuccessiveNoTasksCreated = 0;
-        let totalNumTasksCreated = 0;
+    let numIsWorkIterations = 0;
+    let numSuccessiveNoTasksCreated = 0;
+    let totalNumTasksCreated = 0;
 
-        while (
-            numIsWorkIterations <= input.maxIsWorkIterations &&
-            numSuccessiveNoTasksCreated <= input.maxSuccessiveNoTasksCreated
-            ) {
+    while (
+        numIsWorkIterations <= input.maxIsWorkIterations &&
+        numSuccessiveNoTasksCreated <= input.maxSuccessiveNoTasksCreated
+        ) {
 
-            numIsWorkIterations++;
+        numIsWorkIterations++;
 
-            // one "round" across all tasks
-            let createdThisRound = 0;
+        // one "round" across all tasks
+        let createdThisRound = 0;
 
-            for (const ct of tasks) {
-                const maxConc = await ct.inputTask.maxConcurrency();
-                const allowed = isAllowedToAddTask(ct.tasksInFlight, maxConc);
+        for (const ct of tasks) {
+            const maxConc = await ct.inputTask.maxConcurrency();
+            const allowed = isAllowedToAddTask(ct.tasksInFlight, maxConc);
 
-                if (allowed && (await ct.inputTask.isWork())) {
-                    const computed = Submit.submitAsyncTasks({
-                        runnable: ct.inputTask.runnable,
-                        ongoingTasks: ct.tasksInFlight,
-                        maxConcurrency: maxConc,
-                        executor: ct.inputTask.executor,
-                    });
-                    ct.tasksInFlight = computed.tasksInFlight;
-                    ct.tasksCreated = computed.tasksCreated;
-                    createdThisRound += computed.tasksCreated;
-                } else {
-                    ct.tasksInFlight = filterOutFinishedTasks(ct.tasksInFlight);
-                    ct.tasksCreated = 0;
-                }
-            }
-
-            totalNumTasksCreated += createdThisRound;
-
-            if (createdThisRound > 0) {
-                numSuccessiveNoTasksCreated = 0;
+            if (allowed && (await ct.inputTask.isWork())) {
+                const computed = submitAsyncTasks({
+                    runnable: ct.inputTask.runnable,
+                    ongoingTasks: ct.tasksInFlight,
+                    maxConcurrency: maxConc,
+                    executor: ct.inputTask.executor,
+                });
+                ct.tasksInFlight = computed.tasksInFlight;
+                ct.tasksCreated = computed.tasksCreated;
+                createdThisRound += computed.tasksCreated;
             } else {
-                numSuccessiveNoTasksCreated++;
-                if (
-                    numIsWorkIterations > input.maxIsWorkIterations ||
-                    numSuccessiveNoTasksCreated > input.maxSuccessiveNoTasksCreated
-                ) {
-                    break;
-                }
-                const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
-                await sleep(backoff);
+                ct.tasksInFlight = filterOutFinishedTasks(ct.tasksInFlight);
+                ct.tasksCreated = 0;
             }
         }
 
-        return {
-            tasks,
-            totalNumTasksCreated,
-            numIsWorkIterations,
-            numSuccessiveNoTasksCreated
-        };
+        totalNumTasksCreated += createdThisRound;
+
+        if (createdThisRound > 0) {
+            numSuccessiveNoTasksCreated = 0;
+        } else {
+            numSuccessiveNoTasksCreated++;
+            if (
+                numIsWorkIterations > input.maxIsWorkIterations ||
+                numSuccessiveNoTasksCreated > input.maxSuccessiveNoTasksCreated
+            ) {
+                break;
+            }
+            const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
+            await sleep(backoff);
+        }
     }
+
+    return {
+        tasks,
+        totalNumTasksCreated,
+        numIsWorkIterations,
+        numSuccessiveNoTasksCreated
+    };
 }

@@ -151,7 +151,11 @@ export type RelicHuntersRuntimeDeps = Readonly<{
 }>;
 
 export class RelicHuntersRuntime {
-    constructor(private readonly deps: RelicHuntersRuntimeDeps = browserRelicRuntimeDeps()) {}
+    private readonly deps: RelicHuntersRuntimeDeps;
+
+    constructor(deps: RelicHuntersRuntimeDeps = browserRelicRuntimeDeps()) {
+        this.deps = deps;
+    }
 
     restoreSession(): AuthSession | undefined {
         return this.deps.restoreSession();

@@ -32,9 +32,12 @@ import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxReposito
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
+    public readonly repo: ResourceInboxRepository;
+
     constructor(
-        public readonly repo: ResourceInboxRepository
+        repo: ResourceInboxRepository
     ) {
+        this.repo = repo;
     }
 
     cleanup(): void {

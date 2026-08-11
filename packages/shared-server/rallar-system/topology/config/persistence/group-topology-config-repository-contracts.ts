@@ -42,11 +42,14 @@ export interface GroupTopologyConfigLegacyKeyMigrationPage {
 export class GroupTopologyConfigRepositoryInvariantCorruptionError extends Error {
   readonly code = 'group-topology-config-repository-invariant-corruption';
 
+  readonly storageKey: string;
+
   constructor(
-    readonly storageKey: string,
+    storageKey: string,
     message: string,
   ) {
     super(`${message}: ${storageKey}`);
+    this.storageKey = storageKey;
     this.name = 'GroupTopologyConfigRepositoryInvariantCorruptionError';
   }
 }

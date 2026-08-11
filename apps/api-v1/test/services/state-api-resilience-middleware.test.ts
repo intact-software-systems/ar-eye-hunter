@@ -1,11 +1,8 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { Temporal } from '@js-temporal/polyfill';
-import {
-  CircuitBreaker,
-  CircuitBreakerPolicy,
-  RateLimiterPolicy,
-} from '@shared/resilience/Resilience.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { createStateApiResilienceMiddleware } from '../../src/services/state-api-resilience-middleware.ts';
 
 Deno.test('state API event-list middleware rate limits by authenticated client id', async () => {

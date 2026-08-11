@@ -50,10 +50,13 @@ export class RallarServerApplication<
     readonly system: RallarServerSystemFacade<TRuntime>;
     readonly data: RallarServerDataFacade;
 
+    readonly core: RallarServerFacadeCore<TRuntime>;
+
     constructor(
-        readonly core: RallarServerFacadeCore<TRuntime>,
+        core: RallarServerFacadeCore<TRuntime>,
         routes: CreateRallarServerApplicationOptions<TRuntime, TApp>['routes'] = {},
     ) {
+        this.core = core;
         this.ws = new RallarServerWebSocketApplicationFacade(core.ws, routes.ws);
         this.rest = new RallarServerRestApplicationFacade(routes.rest ?? []);
         this.system = core.system;
@@ -93,10 +96,16 @@ export function createRallarServerApplication<
 export class RallarServerWebSocketApplicationFacade<TApp> {
     private mounted = false;
 
+    private readonly core: RallarServerWebSocketFacadeCore;
+    private readonly routeInstaller?: RallarServerRouteInstaller<TApp>;
+
     constructor(
-        private readonly core: RallarServerWebSocketFacadeCore,
-        private readonly routeInstaller?: RallarServerRouteInstaller<TApp>,
-    ) {}
+        core: RallarServerWebSocketFacadeCore,
+        routeInstaller?: RallarServerRouteInstaller<TApp>,
+    ) {
+        this.core = core;
+        this.routeInstaller = routeInstaller;
+    }
 
     mount(app: TApp): this {
         if (this.mounted) {
@@ -146,9 +155,13 @@ export class RallarServerWebSocketApplicationFacade<TApp> {
 export class RallarServerRestApplicationFacade<TApp> {
     private mounted = false;
 
+    private readonly routeInstallers: readonly RallarServerRouteInstaller<TApp>[];
+
     constructor(
-        private readonly routeInstallers: readonly RallarServerRouteInstaller<TApp>[],
-    ) {}
+        routeInstallers: readonly RallarServerRouteInstaller<TApp>[],
+    ) {
+        this.routeInstallers = routeInstallers;
+    }
 
     mount(app: TApp): this {
         if (this.mounted) {

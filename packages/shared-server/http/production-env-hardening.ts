@@ -12,11 +12,16 @@ export type ProductionEnvHardeningErrorDetail = Readonly<{
 export class ProductionEnvHardeningError extends Error {
   public override readonly name = 'ProductionEnvHardeningError';
 
+  public readonly target: string;
+  public readonly errors: readonly ProductionEnvHardeningErrorDetail[];
+
   public constructor(
-    public readonly target: string,
-    public readonly errors: readonly ProductionEnvHardeningErrorDetail[],
+    target: string,
+    errors: readonly ProductionEnvHardeningErrorDetail[],
   ) {
     super(formatProductionEnvHardeningMessage(target, errors));
+    this.target = target;
+    this.errors = errors;
   }
 }
 

@@ -415,20 +415,16 @@ function requireAuthMutationResult<R>(result: Either<AppInboxFailure, R>): R {
 }
 
 class AuthMutationRouteError extends Error {
-    constructor(message: string, readonly status: number) {
+    readonly status: number;
+    constructor(message: string, status: number) {
         super(message);
+        this.status = status;
         this.name = 'AuthMutationRouteError';
     }
 }
 
 function toJsonResponse<T>(data: T, status = 200): Response {
-    return Response.json(
-        data,
-        {
-            status,
-            headers: { 'content-type': 'application/json' },
-        },
-    );
+    return Response.json(data, { status, headers: { 'content-type': 'application/json' } });
 }
 
 function toAuthRouteErrorResponse(

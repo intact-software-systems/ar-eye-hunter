@@ -1,4 +1,5 @@
-import { CircuitBreaker, RateLimiter } from '../resilience/Resilience.ts';
+import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
+import { RateLimiter } from '../resilience/Resilience.ts';
 
 export type LoanedValueSupplier<T> = (
     signal?: AbortSignal,
@@ -65,10 +66,15 @@ export class Command<T> {
     private cancelled = false;
     private activeAttemptController: AbortController | undefined;
 
+    private readonly supplier: LoanedValueSupplier<T>;
+    private readonly options: CommandOptions<T>;
+
     public constructor(
-        private readonly supplier: LoanedValueSupplier<T>,
-        private readonly options: CommandOptions<T> = {},
+        supplier: LoanedValueSupplier<T>,
+        options: CommandOptions<T> = {},
     ) {
+        this.supplier = supplier;
+        this.options = options;
         if (!supplier) {
             throw new Error('supplier is required');
         }

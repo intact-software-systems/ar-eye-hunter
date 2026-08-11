@@ -56,8 +56,11 @@ export type OverlayRepositoryChangeListener = (
 ) => void | Promise<void>;
 
 export class OverlayRevisionConflictError extends Error {
-    constructor(readonly overlayId: string) {
+    readonly overlayId: string;
+
+    constructor(overlayId: string) {
         super(`Overlay revision conflict: ${overlayId}`);
+        this.overlayId = overlayId;
         this.name = 'OverlayRevisionConflictError';
     }
 }

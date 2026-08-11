@@ -51,13 +51,24 @@ export class WebRtcGroupManager {
     private retainedOrder = 0;
     private readonly diagnostics = emptyGroupManagerDiagnostics();
 
+    public readonly rtcQBox: WebRtcConnectionService;
+    public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>;
+    public readonly clientCache: ReadableKeyedValues<string, AnyClientPresence>;
+    public readonly overlayCache?: ReadableKeyedValues<string, OverlayInfo>;
+    public readonly options: WebRtcGroupManagerOptions;
+
     constructor(
-        public readonly rtcQBox: WebRtcConnectionService,
-        public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
-        public readonly clientCache: ReadableKeyedValues<string, AnyClientPresence>,
-        public readonly overlayCache?: ReadableKeyedValues<string, OverlayInfo>,
-        public readonly options: WebRtcGroupManagerOptions = {},
+        rtcQBox: WebRtcConnectionService,
+        groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
+        clientCache: ReadableKeyedValues<string, AnyClientPresence>,
+        overlayCache?: ReadableKeyedValues<string, OverlayInfo>,
+        options: WebRtcGroupManagerOptions = {},
     ) {
+        this.rtcQBox = rtcQBox;
+        this.groupCache = groupCache;
+        this.clientCache = clientCache;
+        this.overlayCache = overlayCache;
+        this.options = options;
     }
 
     readDiagnostics(): WebRtcGroupManagerDiagnostics {

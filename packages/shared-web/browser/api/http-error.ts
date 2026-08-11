@@ -5,14 +5,25 @@ export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 export class ApiHttpError extends Error {
   public readonly policyError?: StateErrorResponse & Readonly<{ code: string }>;
 
+  public readonly method: ApiHttpMethod;
+  public readonly path: string;
+  public readonly status: number;
+  public readonly bodyText: string;
+  public readonly headers?: Headers;
+
   public constructor(
-    public readonly method: ApiHttpMethod,
-    public readonly path: string,
-    public readonly status: number,
-    public readonly bodyText: string,
-    public readonly headers?: Headers,
+    method: ApiHttpMethod,
+    path: string,
+    status: number,
+    bodyText: string,
+    headers?: Headers,
   ) {
     super(`API ${method} ${path} failed: ${status} ${bodyText}`);
+    this.method = method;
+    this.path = path;
+    this.status = status;
+    this.bodyText = bodyText;
+    this.headers = headers;
     this.name = 'ApiHttpError';
     this.policyError = parseApiPolicyError(bodyText);
   }

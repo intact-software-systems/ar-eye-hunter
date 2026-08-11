@@ -127,12 +127,17 @@ function executeRttMutation(input: TestExecuteRttMutationInput) {
 }
 
 class BarrierRuntimeStateRepository extends PSqlRuntimeStateRepository {
+  private readonly barrierNamespace: string;
+  private readonly barrier: () => Promise<void>;
+
   constructor(
     sql: PSqlSql,
-    private readonly barrierNamespace: string,
-    private readonly barrier: () => Promise<void>,
+    barrierNamespace: string,
+    barrier: () => Promise<void>,
   ) {
     super(sql);
+    this.barrierNamespace = barrierNamespace;
+    this.barrier = barrier;
   }
 
   override async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {

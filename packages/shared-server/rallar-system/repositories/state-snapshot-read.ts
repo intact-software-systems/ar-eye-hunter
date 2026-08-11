@@ -6,8 +6,11 @@ export class StateSnapshotReadConflictError extends Error {
     readonly status = 503;
     readonly code = 'state-snapshot-read-conflict';
 
-    constructor(readonly snapshotKey: string) {
+    readonly snapshotKey: string;
+
+    constructor(snapshotKey: string) {
         super(`State snapshot changed during ${MAX_STATE_SNAPSHOT_READ_ATTEMPTS} read attempts: ${snapshotKey}`);
+        this.snapshotKey = snapshotKey;
         this.name = 'StateSnapshotReadConflictError';
     }
 }

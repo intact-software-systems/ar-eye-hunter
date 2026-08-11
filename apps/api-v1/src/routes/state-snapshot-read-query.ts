@@ -6,11 +6,14 @@ import type {
 export class StateSnapshotReadQueryError extends Error {
   public readonly status = 400;
 
+  public readonly code: 'invalid-state-revision' | 'invalid-group-causal-revision';
+
   public constructor(
-    public readonly code: 'invalid-state-revision' | 'invalid-group-causal-revision',
+    code: 'invalid-state-revision' | 'invalid-group-causal-revision',
     message: string,
   ) {
     super(message);
+    this.code = code;
     this.name = 'StateSnapshotReadQueryError';
   }
 }

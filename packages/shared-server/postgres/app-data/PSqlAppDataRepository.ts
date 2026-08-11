@@ -22,7 +22,11 @@ type AppDataRow = Readonly<{
 }>;
 
 export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
-    constructor(private readonly sql: PSqlSql) {}
+    private readonly sql: PSqlSql;
+
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
+    }
 
     async findEntry(
         namespace: string,

@@ -69,10 +69,15 @@ function nowMs(): number {
 }
 
 export class SWBucket {
+    public readonly from: number;
+    public readonly to: number;
+
     constructor(
-        public readonly from: number,
-        public readonly to: number,
+        from: number,
+        to: number,
     ) {
+        this.from = from;
+        this.to = to;
     }
 
     isInBucket(val: number): boolean {
@@ -81,20 +86,34 @@ export class SWBucket {
 }
 
 export class SWStatus {
+    public readonly counter: AtomicLong;
+    public readonly createdTs: number;
+
     constructor(
-        public readonly counter: AtomicLong,
-        public readonly createdTs: number,
+        counter: AtomicLong,
+        createdTs: number,
     ) {
+        this.counter = counter;
+        this.createdTs = createdTs;
     }
 }
 
 export class SlidingWindowCounter {
+    public readonly windowMs: number;
+    public readonly bucketMs: number;
+    public readonly counterByBucket: Map<SWBucket, SWStatus>;
+    public readonly createdTs: number;
+
     constructor(
-        public readonly windowMs: number,
-        public readonly bucketMs: number,
-        public readonly counterByBucket: Map<SWBucket, SWStatus>,
-        public readonly createdTs: number,
+        windowMs: number,
+        bucketMs: number,
+        counterByBucket: Map<SWBucket, SWStatus>,
+        createdTs: number,
     ) {
+        this.windowMs = windowMs;
+        this.bucketMs = bucketMs;
+        this.counterByBucket = counterByBucket;
+        this.createdTs = createdTs;
     }
 
     static init(windowMs: number, bucketMs: number): SlidingWindowCounter {
@@ -256,212 +275,57 @@ export class SlidingWindowCounter {
     }
 }
 
-export enum CircuitBreakerState {
-    OPEN = 'OPEN',
-    CLOSE = 'CLOSE',
-    HALF_OPEN = 'HALF_OPEN',
-}
-
-export class CircuitBreakerPolicy {
-    constructor(
-        public readonly maxConsecutiveFailures: number,
-        public readonly resetTimeout: Temporal.Duration,
-        public readonly halfOpenTimeout: Temporal.Duration,
-        public readonly slidingWindow: Temporal.Duration,
-    ) {
-    }
-}
-
-export class CircuitBreaker {
-    private static readonly RESET_VALUE = Number.MAX_SAFE_INTEGER;
-
-    constructor(
-        public readonly state: AtomicReference<CircuitBreakerState>,
-        public readonly slidingWindow: SlidingWindowCounter,
-        public readonly timestampOpen: AtomicLong,
-        public readonly timestampHalfOpen: AtomicLong,
-        public readonly policy: CircuitBreakerPolicy,
-    ) {
-    }
-
-    static create(policy: CircuitBreakerPolicy): CircuitBreaker {
-        return new CircuitBreaker(
-            new AtomicReference<CircuitBreakerState>(CircuitBreakerState.CLOSE),
-            SlidingWindowCounter.init(
-                policy.slidingWindow.total({ unit: 'milliseconds' }),
-                Math.floor(policy.slidingWindow.total({ unit: 'milliseconds' }) / 10),
-            ),
-            new AtomicLong(CircuitBreaker.RESET_VALUE),
-            new AtomicLong(CircuitBreaker.RESET_VALUE),
-            policy,
-        );
-    }
-
-    static async tryToExecute<T>(
-        circuitBreaker: CircuitBreaker,
-        supplier: () => Promise<T>,
-        isSuccessful: (result: T) => boolean = () => true,
-    ): Promise<Either<Error, T>> {
-        try {
-            if (!circuitBreaker.allow()) {
-                return Either.ofLeft(new Error('Not allowed to execute'));
-            }
-
-            const value = await supplier();
-            if (isSuccessful(value)) {
-                circuitBreaker.success();
-            } else {
-                circuitBreaker.failure();
-            }
-
-            return Either.ofRight(value);
-        } catch (e) {
-            circuitBreaker.failure();
-            return Either.ofLeft(e instanceof Error ? e : new Error(String(e)));
-        }
-    }
-
-    static async tryToExecuteBooleanSupplier(
-        circuitBreaker: CircuitBreaker,
-        supplier: () => Promise<boolean>
-    ): Promise<boolean> {
-        try {
-            if (!circuitBreaker.allow()) {
-                return false;
-            }
-
-            const isSuccess = await supplier();
-
-            if (isSuccess) {
-                circuitBreaker.success();
-            } else {
-                circuitBreaker.failure();
-            }
-
-            return isSuccess;
-        } catch (error) {
-            circuitBreaker.failure();
-            console.error('Execution failed:', error);
-            return false;
-        }
-    }
-
-    success(): CircuitBreaker {
-        this.slidingWindow.reset();
-
-        this.timestampOpen.set(CircuitBreaker.RESET_VALUE);
-        this.timestampHalfOpen.set(CircuitBreaker.RESET_VALUE);
-        this.state.set(CircuitBreakerState.CLOSE);
-
-        return this;
-    }
-
-    failure(): CircuitBreaker {
-        return this.failureCount(1);
-    }
-
-    failureCount(count: number): CircuitBreaker {
-        this.slidingWindow.update(count);
-
-        const sumInWindow = this.slidingWindow.sumInWindow();
-        if (
-            // if sum of failures in window > maximum allowed failures in window, then trip circuit OPEN
-            sumInWindow > this.policy.maxConsecutiveFailures ||
-            // the breaker is tripped again into the OPEN state for another full resetTimeout
-            this.state.get() === CircuitBreakerState.HALF_OPEN
-        ) {
-            const previous = this.state.getAndSet(CircuitBreakerState.OPEN);
-            if (previous !== CircuitBreakerState.OPEN) {
-                // this thread set new state
-                this.timestampOpen.set(nowMs());
-                this.timestampHalfOpen.set(CircuitBreaker.RESET_VALUE);
-            }
-        }
-
-        return this;
-    }
-
-    // Mutating update of circuit breaker
-    allow(): boolean {
-        if (this.state.get() === CircuitBreakerState.OPEN) {
-            const timeSinceOpened = nowMs() - this.timestampOpen.get();
-
-            if (timeSinceOpened > this.policy.resetTimeout.total({ unit: 'milliseconds' })) {
-                const previous = this.state.getAndSet(CircuitBreakerState.HALF_OPEN);
-                if (previous === CircuitBreakerState.OPEN) {
-                    // This thread set circuit to half open and is allowed through
-                    this.timestampHalfOpen.set(nowMs());
-                    return true;
-                }
-            }
-        } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
-            // check if state has been in half open too long
-            const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
-
-            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({ unit: 'milliseconds' })) {
-                this.failureCount(1);
-            }
-        }
-
-        return this.state.get() === CircuitBreakerState.CLOSE;
-    }
-
-    // Note: Non-mutating check of circuit breaker
-    isAllowedThrough(): boolean {
-        if (this.state.get() === CircuitBreakerState.OPEN) {
-            const timeSinceOpened = nowMs() - this.timestampOpen.get();
-            if (timeSinceOpened > this.policy.resetTimeout.total({ unit: 'milliseconds' })) {
-                return true;
-            }
-        } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
-            const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
-            if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({ unit: 'milliseconds' })) {
-                return true;
-            }
-        }
-
-        return this.state.get() === CircuitBreakerState.CLOSE;
-    }
-
-    isOpen(): boolean {
-        return this.state.get() === CircuitBreakerState.OPEN;
-    }
-
-    isHalfOpen(): boolean {
-        return this.state.get() === CircuitBreakerState.HALF_OPEN;
-    }
-
-    isClosed(): boolean {
-        return this.state.get() === CircuitBreakerState.CLOSE;
-    }
-}
-
 export class RateAdjusterStatus {
+    public readonly rate: number;
+    public readonly currentNumSuccesses: number;
+
     constructor(
-        public readonly rate: number,
-        public readonly currentNumSuccesses: number,
+        rate: number,
+        currentNumSuccesses: number,
     ) {
+        this.rate = rate;
+        this.currentNumSuccesses = currentNumSuccesses;
     }
 }
 
 export class RateAdjusterPolicy {
+    public readonly initialRate: number;
+    public readonly maxRate: number;
+    public readonly concurrencyIncreaseStep: number;
+    public readonly concurrencyReduceStep: number;
+    public readonly minConsecutiveSuccesses: number;
+    public readonly adjustWindowMs: number;
+
     constructor(
-        public readonly initialRate: number,
-        public readonly maxRate: number,
-        public readonly concurrencyIncreaseStep: number,
-        public readonly concurrencyReduceStep: number,
-        public readonly minConsecutiveSuccesses: number,
-        public readonly adjustWindowMs: number,
+        initialRate: number,
+        maxRate: number,
+        concurrencyIncreaseStep: number,
+        concurrencyReduceStep: number,
+        minConsecutiveSuccesses: number,
+        adjustWindowMs: number,
     ) {
+        this.initialRate = initialRate;
+        this.maxRate = maxRate;
+        this.concurrencyIncreaseStep = concurrencyIncreaseStep;
+        this.concurrencyReduceStep = concurrencyReduceStep;
+        this.minConsecutiveSuccesses = minConsecutiveSuccesses;
+        this.adjustWindowMs = adjustWindowMs;
     }
 }
 
 export class RateAdjuster {
+    public readonly status: AtomicReference<RateAdjusterStatus>;
+    public readonly slidingWindow: SlidingWindowCounter;
+    public readonly policy: RateAdjusterPolicy;
+
     constructor(
-        public readonly status: AtomicReference<RateAdjusterStatus>,
-        public readonly slidingWindow: SlidingWindowCounter,
-        public readonly policy: RateAdjusterPolicy,
+        status: AtomicReference<RateAdjusterStatus>,
+        slidingWindow: SlidingWindowCounter,
+        policy: RateAdjusterPolicy,
     ) {
+        this.status = status;
+        this.slidingWindow = slidingWindow;
+        this.policy = policy;
     }
 
     static toPolicy(
@@ -532,18 +396,28 @@ export class RateAdjuster {
 }
 
 export class RateLimiterPolicy {
+    public readonly timebasedFilterMs: number;
+    public readonly maxNumberToAllow: number;
+
     constructor(
-        public readonly timebasedFilterMs: number,
-        public readonly maxNumberToAllow: number,
+        timebasedFilterMs: number,
+        maxNumberToAllow: number,
     ) {
+        this.timebasedFilterMs = timebasedFilterMs;
+        this.maxNumberToAllow = maxNumberToAllow;
     }
 }
 
 export class RateLimiter {
+    public readonly slidingWindow: SlidingWindowCounter;
+    public readonly policy: RateLimiterPolicy;
+
     constructor(
-        public readonly slidingWindow: SlidingWindowCounter,
-        public readonly policy: RateLimiterPolicy,
+        slidingWindow: SlidingWindowCounter,
+        policy: RateLimiterPolicy,
     ) {
+        this.slidingWindow = slidingWindow;
+        this.policy = policy;
     }
 
     static init(timebasedFilterMs: number, maxNumberToAllow: number): RateLimiter {
@@ -601,19 +475,5 @@ export function toRateLimiter(
     return RateLimiter.init(
         windowDurationMs,
         maxNumber
-    );
-}
-
-export function toCircuitBreaker(
-    maxConsecutiveFailures: number = 10,
-    duration: Temporal.Duration = Temporal.Duration.from({ seconds: 10 })
-): CircuitBreaker {
-    return CircuitBreaker.create(
-        new CircuitBreakerPolicy(
-            maxConsecutiveFailures,
-            duration,
-            duration,
-            duration
-        )
     );
 }

@@ -41,11 +41,14 @@ import { GROUPS_NAMESPACE, IDEMPOTENT_NAMESPACE } from './group-state-runtime-na
 import { validatePersistedGroup } from './validate-persisted-group.ts';
 
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
+  private readonly events: GroupStateEventStore;
+
   constructor(
     repository: RuntimeStateRepositoryLike,
-    private readonly events: GroupStateEventStore,
+    events: GroupStateEventStore,
   ) {
     super(repository);
+    this.events = events;
   }
 
   async insertIdempotentGroupMutationReceipt(

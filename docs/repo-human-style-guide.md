@@ -458,7 +458,9 @@ Narrow false positives that have completed human review are recorded in
 `scripts/repo-style-check/reviewed-dispositions.mjs`. A disposition matches only
 the exact normalized path, rule identifier, and checker-owned symbol. The
 checker produces that symbol from source structure and never parses or
-substring-matches human-readable finding messages.
+substring-matches human-readable finding messages. Findings owned by the module
+itself carry no symbol; a reviewed module-owner disposition records that absent
+symbol explicitly and still leaves every function-owned finding blocking.
 
 Dormant entries are allowed when their reviewed feature has not reached the
 branch yet. They do not suppress a similarly named finding elsewhere. Every

@@ -180,10 +180,16 @@ function createCredentialIssuer(actions: string[]): AuthCredentialIssuer {
 }
 
 class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
+  private readonly actions: string[];
+  private readonly transaction: PSqlTransactionSql;
+
   constructor(
-    private readonly actions: string[],
-    private readonly transaction: PSqlTransactionSql,
-  ) {}
+    actions: string[],
+    transaction: PSqlTransactionSql,
+  ) {
+    this.actions = actions;
+    this.transaction = transaction;
+  }
 
   async writeMutation<Result>(
     _context: AppInboxMessageContext,

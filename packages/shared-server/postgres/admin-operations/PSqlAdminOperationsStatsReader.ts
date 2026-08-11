@@ -76,10 +76,15 @@ type CrdtStorageRow = Readonly<{
 export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReader {
   private readonly clientStateStatsReader: PSqlClientStateAdminStatsReader;
 
+  private readonly sql: PSqlSql;
+  private readonly options: PSqlAdminOperationsStatsReaderOptions;
+
   constructor(
-    private readonly sql: PSqlSql,
-    private readonly options: PSqlAdminOperationsStatsReaderOptions,
+    sql: PSqlSql,
+    options: PSqlAdminOperationsStatsReaderOptions,
   ) {
+    this.sql = sql;
+    this.options = options;
     this.clientStateStatsReader = new PSqlClientStateAdminStatsReader(sql, options);
   }
   async readQueues(_input: AdminOperationsReadInput): Promise<AdminOperationsQueuesResponse> {

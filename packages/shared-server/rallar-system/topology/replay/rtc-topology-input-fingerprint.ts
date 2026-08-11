@@ -41,8 +41,11 @@ export async function computeRtcTopologyInputFingerprint(
 }
 
 export class RtcTopologyInputFingerprintRepository extends RuntimeStateJsonStore {
-  constructor(readonly runtimeRepository: RuntimeStateRepositoryLike) {
+  readonly runtimeRepository: RuntimeStateRepositoryLike;
+
+  constructor(runtimeRepository: RuntimeStateRepositoryLike) {
     super(runtimeRepository);
+    this.runtimeRepository = runtimeRepository;
   }
 
   /**

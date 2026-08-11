@@ -106,8 +106,11 @@ export class GroupPolicyDeniedError extends Error {
     public override readonly name = 'GroupPolicyDeniedError';
     public readonly status = 403;
 
-    public constructor(public readonly denial: GroupPolicyDenied) {
+    public readonly denial: GroupPolicyDenied;
+
+    public constructor(denial: GroupPolicyDenied) {
         super(`Forbidden: ${denial.message}`);
+        this.denial = denial;
     }
 }
 

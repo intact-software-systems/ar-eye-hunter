@@ -17,7 +17,10 @@ export class OutboxQueueReader {
 
     private readonly reader: QueueMessageReader;
 
-    constructor(public readonly outbox: QueueBoxResourceEntryRepository) {
+    public readonly outbox: QueueBoxResourceEntryRepository;
+
+    constructor(outbox: QueueBoxResourceEntryRepository) {
+        this.outbox = outbox;
         this.reader = createQueueMessageReader({
             repository: outbox,
             enqueueType: OutboxQueueReader.OUTBOX_ENQUEUE_TYPE,

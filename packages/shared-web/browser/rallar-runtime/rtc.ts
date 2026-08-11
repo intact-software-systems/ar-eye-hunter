@@ -95,7 +95,11 @@ class BrowserRallarRtcController implements RallarRtcController {
     private readonly rtcLifecycleListeners =
         new Set<RallarRtcLifecycleSubscription>();
 
-    constructor(private readonly options: CreateRallarRtcControllerOptions) {}
+    private readonly options: CreateRallarRtcControllerOptions;
+
+    constructor(options: CreateRallarRtcControllerOptions) {
+        this.options = options;
+    }
 
     readonly operations: CreateRallarRtcFacadeOptions = {
         status: (statusOptions) => this.toRtcStatus(statusOptions),

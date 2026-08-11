@@ -21,11 +21,14 @@ export type GroupStateAuthoritativeSnapshot = Readonly<{
 export class GroupStateRepositoryInvariantCorruptionError extends Error {
   readonly code = 'group-state-repository-invariant-corruption';
 
+  readonly storageKey: string;
+
   constructor(
-    readonly storageKey: string,
+    storageKey: string,
     message: string,
   ) {
     super(`${message}: ${storageKey}`);
+    this.storageKey = storageKey;
     this.name = 'GroupStateRepositoryInvariantCorruptionError';
   }
 }

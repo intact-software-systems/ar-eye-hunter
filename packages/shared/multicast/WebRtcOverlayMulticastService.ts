@@ -10,10 +10,15 @@ import { PeerId } from '../api/api-config.ts';
 import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts';
 
 export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
+    public readonly overlayId: string;
+    public readonly connectionService: WebRtcConnectionService;
+
     constructor(
-        public readonly overlayId: string,
-        public readonly connectionService: WebRtcConnectionService,
+        overlayId: string,
+        connectionService: WebRtcConnectionService,
     ) {
+        this.overlayId = overlayId;
+        this.connectionService = connectionService;
     }
 
     createOriginatingPlan(

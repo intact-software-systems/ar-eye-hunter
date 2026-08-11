@@ -226,10 +226,13 @@ export class RallarServerWsFacade {
     private readonly wakeOutbox?: () => void;
     private installed = false;
 
+    private readonly wsQBoxServerService: WsQueueBoxServerService;
+
     constructor(
-        private readonly wsQBoxServerService: WsQueueBoxServerService,
+        wsQBoxServerService: WsQueueBoxServerService,
         options: RallarServerWsFacadeOptions = {},
     ) {
+        this.wsQBoxServerService = wsQBoxServerService;
         this.maxPayloadBytes = options.maxPayloadBytes ??
             RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
         this.sendNacks = options.sendNacks ?? true;

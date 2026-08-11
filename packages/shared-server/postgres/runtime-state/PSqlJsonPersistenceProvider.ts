@@ -5,10 +5,16 @@ import type {
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 export class PSqlJsonPersistenceProvider<V> implements PersistenceProvider<string, V> {
+    private readonly repository: RuntimeStateRepositoryLike;
+    private readonly namespace: string;
+
     constructor(
-        private readonly repository: RuntimeStateRepositoryLike,
-        private readonly namespace: string,
-    ) {}
+        repository: RuntimeStateRepositoryLike,
+        namespace: string,
+    ) {
+        this.repository = repository;
+        this.namespace = namespace;
+    }
 
     async getItem(key: string): Promise<V | undefined> {
         const entry = await this.repository.findEntry(this.namespace, key);

@@ -40,7 +40,8 @@ import {
     ALOutboundRetryTrackingPlan,
     ALOutboundSupersedenceTrackingPlan,
 } from '../alm/ALOutboundMessageRuntime.ts';
-import { CircuitBreaker, RateLimiter, toCircuitBreaker, toRateLimiter, } from '../resilience/Resilience.ts';
+import { CircuitBreaker, toCircuitBreaker } from '../resilience/circuit-breaker.ts';
+import { RateLimiter, toRateLimiter } from '../resilience/Resilience.ts';
 import {
     isOverlayForGroupRef,
     isSameGroupRef,
@@ -67,16 +68,31 @@ export class WebRtcOverlayMulticastManager {
     private readonly qosProvider?: ALQosInputProvider;
     private disposed = false;
 
+    public readonly outbox: QueueBoxResourceEntryRepository;
+    public readonly connectionService: WebRtcConnectionService;
+    public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>;
+    public readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>;
+    public readonly multicasterFactory: WebRtcOverlayMulticasterFactory;
+    private readonly circuitBreaker: CircuitBreaker;
+    private readonly rateLimiter: RateLimiter;
+
     constructor(
-        public readonly outbox: QueueBoxResourceEntryRepository,
-        public readonly connectionService: WebRtcConnectionService,
-        public readonly groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
-        public readonly overlayCache: ReadableKeyedValues<string, OverlayInfo>,
-        public readonly multicasterFactory: WebRtcOverlayMulticasterFactory,
+        outbox: QueueBoxResourceEntryRepository,
+        connectionService: WebRtcConnectionService,
+        groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
+        overlayCache: ReadableKeyedValues<string, OverlayInfo>,
+        multicasterFactory: WebRtcOverlayMulticasterFactory,
         options: WebRtcOverlayMulticastManagerOptions = {},
-        private readonly circuitBreaker: CircuitBreaker = toCircuitBreaker(),
-        private readonly rateLimiter: RateLimiter = toRateLimiter(),
+        circuitBreaker: CircuitBreaker = toCircuitBreaker(),
+        rateLimiter: RateLimiter = toRateLimiter(),
     ) {
+        this.outbox = outbox;
+        this.connectionService = connectionService;
+        this.groupCache = groupCache;
+        this.overlayCache = overlayCache;
+        this.multicasterFactory = multicasterFactory;
+        this.circuitBreaker = circuitBreaker;
+        this.rateLimiter = rateLimiter;
         this.qosProvider = options.qosProvider;
         this.outboundRuntime = new ALOutboundMessageRuntime<ALMessage>(
             {

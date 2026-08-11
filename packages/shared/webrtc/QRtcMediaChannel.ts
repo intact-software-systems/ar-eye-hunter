@@ -1,12 +1,14 @@
 import { QRtcOnRemoteStreamCallback, QRtcOnTrackCallback, QRtcPeerConnection, } from './QRtcPeerConnection.ts';
 
-export enum MediaSessionState {
-    Idle = 'Idle',
-    Connecting = 'Connecting',
-    Open = 'Open',
-    Closed = 'Closed',
-    Failed = 'Failed',
-}
+export const MediaSessionState = {
+    Idle: 'Idle',
+    Connecting: 'Connecting',
+    Open: 'Open',
+    Closed: 'Closed',
+    Failed: 'Failed',
+} as const;
+
+export type MediaSessionState = (typeof MediaSessionState)[keyof typeof MediaSessionState];
 
 export type RtcMediaChannelInputDto = {
     readonly peerId: string;
@@ -31,10 +33,15 @@ export class QRtcMediaChannel {
 
     private subscribed: boolean = false;
 
+    public readonly peerConnection: QRtcPeerConnection;
+    public readonly input: RtcMediaChannelInputDto;
+
     constructor(
-        public readonly peerConnection: QRtcPeerConnection,
-        public readonly input: RtcMediaChannelInputDto,
+        peerConnection: QRtcPeerConnection,
+        input: RtcMediaChannelInputDto,
     ) {
+        this.peerConnection = peerConnection;
+        this.input = input;
         this.status = this.toInitialStatus();
     }
 

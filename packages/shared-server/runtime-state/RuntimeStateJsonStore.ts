@@ -27,7 +27,11 @@ export type RuntimeStateEntryRead<T> = Readonly<{
 }>;
 
 export class RuntimeStateJsonStore {
-    constructor(protected readonly repository: RuntimeStateRepositoryLike) {}
+    protected readonly repository: RuntimeStateRepositoryLike;
+
+    constructor(repository: RuntimeStateRepositoryLike) {
+        this.repository = repository;
+    }
 
     protected async putValue(
         namespace: string,

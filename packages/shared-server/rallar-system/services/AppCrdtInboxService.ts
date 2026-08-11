@@ -54,13 +54,15 @@ export class AppCrdtInboxService extends AppInboxService {
   private readonly wakeQueueEngine: (() => void) | undefined;
   private readonly resolveCurrentSession: ResolveCurrentCrdtMutationSession | undefined;
 
+  public readonly mutationService: CrdtMutationService;
+
   constructor(
-    public override readonly inbox: InboxQueueReader,
-    public override readonly resourceInbox: ResourceInboxRepository,
-    public override readonly resourceInboxResults: ResourceInboxResultsRepository,
+    inbox: InboxQueueReader,
+    resourceInbox: ResourceInboxRepository,
+    resourceInboxResults: ResourceInboxResultsRepository,
     database: PSqlSql,
-    public readonly mutationService: CrdtMutationService,
-    public override readonly serviceId: string,
+    mutationService: CrdtMutationService,
+    serviceId: string,
     timing?: RallarTimingSink,
     options?: AppInboxServiceOptions,
     effects: Readonly<{
@@ -81,6 +83,7 @@ export class AppCrdtInboxService extends AppInboxService {
       options,
       effects.wakeQueueEngine,
     );
+    this.mutationService = mutationService;
     this.audit = effects.audit;
     this.wakeQueueEngine = effects.wakeQueueEngine;
     this.resolveCurrentSession = effects.resolveCurrentSession;

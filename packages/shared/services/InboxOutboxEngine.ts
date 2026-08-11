@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import * as ComputeAsyncTask from '../resilience/ComputeAsyncTask.ts';
-import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/Resilience.ts';
+import { CircuitBreaker, CircuitBreakerPolicy } from '../resilience/circuit-breaker.ts';
 
 const NOT_SET = -1;
 
@@ -31,9 +31,9 @@ export class InboxOutboxEngine {
     private wakeAfterExecution = false;
     private successiveIdleExecutions = 0;
 
-    private tasks: Map<string, ComputeAsyncTask.Loops.TaskDto> = new Map<string, ComputeAsyncTask.Loops.TaskDto>();
+    private tasks: Map<string, ComputeAsyncTask.LoopsTaskDto> = new Map<string, ComputeAsyncTask.LoopsTaskDto>();
 
-    includeTask(id: string, task: ComputeAsyncTask.Loops.TaskDto): InboxOutboxEngine {
+    includeTask(id: string, task: ComputeAsyncTask.LoopsTaskDto): InboxOutboxEngine {
         this.tasks.set(id, task);
         return this;
     }
@@ -124,7 +124,7 @@ export class InboxOutboxEngine {
             this.circuitBreaker,
             async () => {
 
-                const computedDto = await ComputeAsyncTask.Loops.runWhileWork(
+                const computedDto = await ComputeAsyncTask.runLoopsWhileWork(
                     InboxOutboxEngine.toAsyncTaskInput([...this.tasks.values()]),
                 );
 
@@ -179,7 +179,7 @@ export class InboxOutboxEngine {
     }
 
     private static toAsyncTaskInput(
-        tasks: readonly ComputeAsyncTask.Loops.TaskDto[],
+        tasks: readonly ComputeAsyncTask.LoopsTaskDto[],
     ) {
         return {
             tasks: tasks,

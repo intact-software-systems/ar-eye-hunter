@@ -343,11 +343,18 @@ export function defineRallarDataStore<V>(
 class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
     public readonly repositoryId: string;
 
+    public readonly name: string;
+    private readonly managed: ManagedRallarDataRepository<V>;
+    private readonly closeRepository: () => Promise<boolean>;
+
     public constructor(
-        public readonly name: string,
-        private readonly managed: ManagedRallarDataRepository<V>,
-        private readonly closeRepository: () => Promise<boolean>,
+        name: string,
+        managed: ManagedRallarDataRepository<V>,
+        closeRepository: () => Promise<boolean>,
     ) {
+        this.name = name;
+        this.managed = managed;
+        this.closeRepository = closeRepository;
         this.repositoryId = managed.id;
     }
 
@@ -592,13 +599,21 @@ class RepositoryBackedRallarDataStore<V> implements RallarDataStore<V> {
 }
 
 class RallarDataPersistenceProvider<V> implements PersistenceProvider<string, V> {
+    private readonly inner: PersistenceProvider<string, unknown>;
+    private readonly options: Pick<
+            NormalizedRallarDataOptions<V>,
+            'schemaVersion' | 'migrate'
+        >;
+
     public constructor(
-        private readonly inner: PersistenceProvider<string, unknown>,
-        private readonly options: Pick<
+        inner: PersistenceProvider<string, unknown>,
+        options: Pick<
             NormalizedRallarDataOptions<V>,
             'schemaVersion' | 'migrate'
         >,
     ) {
+        this.inner = inner;
+        this.options = options;
     }
 
     public async getItem(key: string): Promise<V | undefined> {

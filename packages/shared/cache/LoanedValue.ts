@@ -21,10 +21,13 @@ export class LoanedValue<T> implements ReadableValue<T> {
     private valueStartMs = 0;
     private inFlightRefresh: Promise<T> | undefined;
 
+    private readonly refresher: LoanedValueRefresh<T>;
+
     public constructor(
-        private readonly refresher: LoanedValueRefresh<T>,
+        refresher: LoanedValueRefresh<T>,
         options: LoanedValueOptions<T> = {},
     ) {
+        this.refresher = refresher;
         if (!refresher) {
             throw new Error('refresher is required');
         }

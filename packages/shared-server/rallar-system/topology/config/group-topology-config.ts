@@ -24,8 +24,11 @@ export class GroupTopologyConfigValidationError extends Error {
   readonly status = 422;
   readonly code = 'group-topology-config-validation-failed';
 
-  constructor(readonly issues: readonly GroupTopologyValidationIssue[]) {
+  readonly issues: readonly GroupTopologyValidationIssue[];
+
+  constructor(issues: readonly GroupTopologyValidationIssue[]) {
     super('Group topology config validation failed');
+    this.issues = issues;
     this.name = 'GroupTopologyConfigValidationError';
   }
 }

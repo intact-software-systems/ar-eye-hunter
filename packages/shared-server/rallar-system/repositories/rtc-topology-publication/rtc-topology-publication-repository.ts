@@ -38,12 +38,19 @@ import {
 } from './rtc-topology-publication-repository-state.ts';
 
 export class RtcTopologyPublicationRepository extends RuntimeStateJsonStore {
+  readonly runtimeRepository: RuntimeStateRepositoryLike;
+  private readonly retentionMs: number;
+  private readonly now: () => number;
+
   constructor(
-    readonly runtimeRepository: RuntimeStateRepositoryLike,
-    private readonly retentionMs: number = DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-    private readonly now: () => number = () => Date.now(),
+    runtimeRepository: RuntimeStateRepositoryLike,
+    retentionMs: number = DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+    now: () => number = () => Date.now(),
   ) {
     super(runtimeRepository);
+    this.runtimeRepository = runtimeRepository;
+    this.retentionMs = retentionMs;
+    this.now = now;
   }
 
   async findPublication(

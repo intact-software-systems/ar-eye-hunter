@@ -219,8 +219,11 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
 }
 
 export class OrderedGroupEventStore extends InMemoryGroupStateEventStore {
-  constructor(private readonly runtime: ApplyingGuardedBatchRepository) {
+  private readonly runtime: ApplyingGuardedBatchRepository;
+
+  constructor(runtime: ApplyingGuardedBatchRepository) {
     super();
+    this.runtime = runtime;
   }
 
   override async appendGroupEvent(event: GroupEvent): Promise<void> {

@@ -96,14 +96,19 @@ export type RtcRttReceiptFamilyCleanupFailure = Readonly<{
 
 export class RtcRttReceiptFamilyCleanupError
     extends RtcTopologyRepositoryInvariantCorruptionError {
+    readonly removedCount: number;
+    readonly failures: readonly RtcRttReceiptFamilyCleanupFailure[];
+
     constructor(
-        readonly removedCount: number,
-        readonly failures: readonly RtcRttReceiptFamilyCleanupFailure[],
+        removedCount: number,
+        failures: readonly RtcRttReceiptFamilyCleanupFailure[],
     ) {
         super(
             'rtc-rtt:receipt-family-cleanup',
             `RTC RTT receipt family cleanup preserved ${failures.length} corrupt families after removing ${removedCount}`,
         );
+        this.removedCount = removedCount;
+        this.failures = failures;
         this.name = 'RtcRttReceiptFamilyCleanupError';
     }
 }
@@ -128,11 +133,16 @@ type RtcRttReceiptFamilyCleanupComputed =
     }>;
 
 export class RtcRttRepository extends RuntimeStateJsonStore {
+    readonly runtimeRepository: RuntimeStateRepositoryLike;
+    private readonly options: RtcRttRepositoryOptions;
+
     constructor(
-        readonly runtimeRepository: RuntimeStateRepositoryLike,
-        private readonly options: RtcRttRepositoryOptions = {},
+        runtimeRepository: RuntimeStateRepositoryLike,
+        options: RtcRttRepositoryOptions = {},
     ) {
         super(runtimeRepository);
+        this.runtimeRepository = runtimeRepository;
+        this.options = options;
     }
 
     async findMeasurementEntry(

@@ -1,14 +1,18 @@
 import type { UndirectedGraph } from 'graphology';
 
-export enum VertexType {
-    CLIENT = 'CLIENT',
-    CORE = 'CORE',
-}
+export const VertexType = {
+    CLIENT: 'CLIENT',
+    CORE: 'CORE',
+} as const;
 
-export enum VertexState {
-    MEMBER = 'MEMBER',
-    STEINER = 'STEINER',
-}
+export type VertexType = (typeof VertexType)[keyof typeof VertexType];
+
+export const VertexState = {
+    MEMBER: 'MEMBER',
+    STEINER: 'STEINER',
+} as const;
+
+export type VertexState = (typeof VertexState)[keyof typeof VertexState];
 
 export interface GraphProp {
     id: string;

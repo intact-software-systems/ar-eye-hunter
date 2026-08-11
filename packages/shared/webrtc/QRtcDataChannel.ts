@@ -5,19 +5,23 @@ import {
     type RtcDataChannelQueuedSend,
 } from './RtcDataChannelSendQueue.ts';
 
-enum RtcSessionState {
-    Idle = 'Idle',
-    Connecting = 'Connecting',
-    Open = 'Open',
-    Closed = 'Closed',
-    Failed = 'Failed',
-}
+const RtcSessionState = {
+    Idle: 'Idle',
+    Connecting: 'Connecting',
+    Open: 'Open',
+    Closed: 'Closed',
+    Failed: 'Failed',
+} as const;
 
-enum RtcRole {
-    None = 'None',
-    Initiator = 'Initiator',
-    Receiver = 'Receiver',
-}
+type RtcSessionState = (typeof RtcSessionState)[keyof typeof RtcSessionState];
+
+const RtcRole = {
+    None: 'None',
+    Initiator: 'Initiator',
+    Receiver: 'Receiver',
+} as const;
+
+type RtcRole = (typeof RtcRole)[keyof typeof RtcRole];
 
 export type RtcDataChannelInputDto = {
     readonly peerId: string
@@ -145,10 +149,15 @@ export class QRtcDataChannel {
     private readonly openWaiters: RtcDataChannelOpenWaiter[] = [];
     private readonly counters = emptyCounters();
 
+    public readonly peerConnection: QRtcPeerConnection;
+    public readonly input: RtcDataChannelInputDto;
+
     constructor(
-        public readonly peerConnection: QRtcPeerConnection,
-        public readonly input: RtcDataChannelInputDto
+        peerConnection: QRtcPeerConnection,
+        input: RtcDataChannelInputDto
     ) {
+        this.peerConnection = peerConnection;
+        this.input = input;
         this.status = {
             state: RtcSessionState.Idle,
             role: RtcRole.None,

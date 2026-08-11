@@ -46,7 +46,11 @@ interface GroupRestSnapshotReadContext {
 }
 
 class GroupRestSnapshotReadSelectorOwner implements GroupRestSnapshotReadSelector {
-  public constructor(private readonly dependencies: GroupRestSnapshotReadSelectorDependencies) {}
+  private readonly dependencies: GroupRestSnapshotReadSelectorDependencies;
+
+  public constructor(dependencies: GroupRestSnapshotReadSelectorDependencies) {
+    this.dependencies = dependencies;
+  }
 
   public async read(
     ref: GroupRef,

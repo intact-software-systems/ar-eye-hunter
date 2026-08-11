@@ -11,7 +11,11 @@ import {
 } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
 
 export class ResourceInboxResultsRepository {
-    constructor(private readonly sql: PSqlSql) {}
+    private readonly sql: PSqlSql;
+
+    constructor(sql: PSqlSql) {
+        this.sql = sql;
+    }
 
     /**
      * Run repository operations inside a transaction.

@@ -140,8 +140,11 @@ export class RtcTopologyExecutionConflictError extends Error {
     readonly status = 503;
     readonly code = 'rtc-topology-execution-conflict';
 
-    constructor(readonly workId: string) {
+    readonly workId: string;
+
+    constructor(workId: string) {
         super(`RTC topology predecessor changed before the queued attempt committed: ${workId}`);
+        this.workId = workId;
         this.name = 'RtcTopologyExecutionConflictError';
     }
 }

@@ -104,7 +104,10 @@ class FakePeerConnection {
     public readonly stopLocalMedia = vi.fn();
     public readonly isOpen = vi.fn(() => this.open);
 
-    constructor(private readonly open = false) {
+    private readonly open: boolean;
+
+    constructor(open = false) {
+        this.open = open;
     }
 
     async emitRemoteStream(stream: MediaStream, event: RTCTrackEvent): Promise<void> {

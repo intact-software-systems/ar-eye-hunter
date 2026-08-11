@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { toResourceInboxFairnessReservationOptions } from '@shared/queuebox/QueueBoxTypes.ts';
@@ -150,9 +150,12 @@ describe('enqueue and dequeue', () => {
 
 
         class TestData {
+            readonly name: string;
+
             constructor(
-                readonly name: string,
+                name: string,
             ) {
+                this.name = name;
             }
         }
 

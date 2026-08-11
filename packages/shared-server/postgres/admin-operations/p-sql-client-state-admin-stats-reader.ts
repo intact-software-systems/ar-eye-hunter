@@ -46,10 +46,16 @@ type ClientStateAdminScopedFacts = Readonly<{
 }>;
 
 export class PSqlClientStateAdminStatsReader {
+  private readonly sql: PSqlSql;
+  private readonly options: PSqlClientStateAdminStatsReaderOptions;
+
   constructor(
-    private readonly sql: PSqlSql,
-    private readonly options: PSqlClientStateAdminStatsReaderOptions,
-  ) {}
+    sql: PSqlSql,
+    options: PSqlClientStateAdminStatsReaderOptions,
+  ) {
+    this.sql = sql;
+    this.options = options;
+  }
 
   async countEvents(): Promise<number> {
     return toNumber(

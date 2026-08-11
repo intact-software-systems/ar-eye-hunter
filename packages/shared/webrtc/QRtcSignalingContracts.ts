@@ -1,22 +1,28 @@
 import { ALMessage } from '../al-contracts/al-contract.ts';
 
-export enum QRtcSignalingType {
-    Offer = 'Offer',
-    Answer = 'Answer',
-    IceCandidate = 'IceCandidate',
-}
+export const QRtcSignalingType = {
+    Offer: 'Offer',
+    Answer: 'Answer',
+    IceCandidate: 'IceCandidate',
+} as const;
 
-export enum QRtcSignalingChannel {
-    RtcSignal = 'RtcSignal',
-}
+export type QRtcSignalingType = (typeof QRtcSignalingType)[keyof typeof QRtcSignalingType];
 
-export enum QRtcSignalingMsgType {
-    Signal = 'Signal',
-}
+export const QRtcSignalingChannel = {
+    RtcSignal: 'RtcSignal',
+} as const;
+
+export type QRtcSignalingChannel = (typeof QRtcSignalingChannel)[keyof typeof QRtcSignalingChannel];
+
+export const QRtcSignalingMsgType = {
+    Signal: 'Signal',
+} as const;
+
+export type QRtcSignalingMsgType = (typeof QRtcSignalingMsgType)[keyof typeof QRtcSignalingMsgType];
 
 export type QRtcSignalingMessage = {
-    channel: QRtcSignalingChannel.RtcSignal;
-    type: QRtcSignalingMsgType.Signal;
+    channel: typeof QRtcSignalingChannel.RtcSignal;
+    type: typeof QRtcSignalingMsgType.Signal;
     fromId: string;
     toId: string;
     sessionId: string;

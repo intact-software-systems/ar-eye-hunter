@@ -10,10 +10,16 @@ import { PSqlAdmissionMutationCollector } from './PSqlAdmissionMutationCollector
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
 
 export class PSqlOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
+    private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    private readonly namespace: string;
+
     constructor(
-        private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        private readonly namespace: string,
-    ) {}
+        repository: RuntimeStateOptimisticTransactionalRepositoryLike,
+        namespace: string,
+    ) {
+        this.repository = repository;
+        this.namespace = namespace;
+    }
 
     async ready(): Promise<void> {}
 

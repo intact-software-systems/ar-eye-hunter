@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "65ea436835b0c7d586f83901c681b06d83d83ec5",
+      "source": {
+        "path": "packages/shared/resilience/Resilience.ts",
+        "blob": "02ebd9cdecd4b7f9dc699759c19612964bbfc392"
+      },
+      "targets": ["packages/shared/resilience/circuit-breaker.ts"]
+    }
+  ]
+}

@@ -1,6 +1,32 @@
 import path from 'node:path';
 
 export const reviewedDispositions = Object.freeze([
+  // erasableSyntaxOnly migration: converting parameter properties to explicit
+  // fields duplicates each `unknown`-typed parameter annotation into a field
+  // declaration (+1 textual occurrence per file, no new unknown values). These
+  // four module-owner entries accept exactly that; remove them when the
+  // affected classes gain precise persisted-value types or the boundary rule
+  // moves to the metric-based checker.
+  Object.freeze({
+    path: 'packages/shared-web/browser/rallar-data.ts',
+    rule: 'boundary.unknown',
+    symbol: undefined,
+  }),
+  Object.freeze({
+    path: 'packages/shared/alm/ALInboundAdmissionStore.ts',
+    rule: 'boundary.unknown',
+    symbol: undefined,
+  }),
+  Object.freeze({
+    path: 'packages/shared/alm/ALOutboundAdmissionStore.ts',
+    rule: 'boundary.unknown',
+    symbol: undefined,
+  }),
+  Object.freeze({
+    path: 'packages/shared/rallar-ai/rallar-ai-types.ts',
+    rule: 'boundary.unknown',
+    symbol: undefined,
+  }),
   Object.freeze({
     path: 'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
     rule: 'boundary.unknown',

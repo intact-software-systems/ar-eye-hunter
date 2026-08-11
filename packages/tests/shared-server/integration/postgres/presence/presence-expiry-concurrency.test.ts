@@ -1349,12 +1349,17 @@ function createPostgresGroupRuntime(
 }
 
 class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
+  private readonly barrier: PrincipalReadBarrier;
+  private readonly applicationId?: string;
+
   constructor(
     sql: PSqlSql,
-    private readonly barrier: PrincipalReadBarrier,
-    private readonly applicationId?: string,
+    barrier: PrincipalReadBarrier,
+    applicationId?: string,
   ) {
     super(sql);
+    this.barrier = barrier;
+    this.applicationId = applicationId;
   }
 
   override async findEntry(
@@ -1380,13 +1385,20 @@ class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {
 
 class BarrierGroupPSqlRuntimeStateRepository
   extends PSqlRuntimeStateRepository {
+  private readonly barrier: GroupPresenceReadBarrier;
+  private readonly barrierNamespace: string;
+  private readonly applicationId?: string;
+
   constructor(
     sql: PSqlSql,
-    private readonly barrier: GroupPresenceReadBarrier,
-    private readonly barrierNamespace = "group-state:sessions",
-    private readonly applicationId?: string,
+    barrier: GroupPresenceReadBarrier,
+    barrierNamespace = "group-state:sessions",
+    applicationId?: string,
   ) {
     super(sql);
+    this.barrier = barrier;
+    this.barrierNamespace = barrierNamespace;
+    this.applicationId = applicationId;
   }
 
   override async findEntry(
@@ -1415,7 +1427,10 @@ class PrincipalReadBarrier {
   private readonly ready: Promise<void>;
   private release!: () => void;
 
-  constructor(private readonly participants: number) {
+  private readonly participants: number;
+
+  constructor(participants: number) {
+    this.participants = participants;
     this.ready = new Promise<void>((resolve) => {
       this.release = resolve;
     });

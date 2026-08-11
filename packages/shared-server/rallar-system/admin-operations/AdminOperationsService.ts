@@ -91,7 +91,11 @@ export type AdminRealtimeWsStatus = Readonly<{
 }>;
 
 export class AdminOperationsService {
-  constructor(private readonly options: AdminOperationsServiceOptions) {}
+  private readonly options: AdminOperationsServiceOptions;
+
+  constructor(options: AdminOperationsServiceOptions) {
+    this.options = options;
+  }
 
   async readOverview(input: AdminOperationsReadInput): Promise<AdminOperationsOverviewResponse> {
     const [queues, state, crdt, system] = await Promise.all([

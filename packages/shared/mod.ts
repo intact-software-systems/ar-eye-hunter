@@ -42,6 +42,7 @@ export * from './resilience/ComputeAsyncTask.ts';
 export * from './resilience/Either.ts';
 export * from './resilience/PartitionRange.ts';
 export * from './resilience/Resilience.ts';
+export * from './resilience/circuit-breaker.ts';
 export * from './resilience/TryWith.ts';
 
 export * from './websocket/JsonWebSocketClient.ts';

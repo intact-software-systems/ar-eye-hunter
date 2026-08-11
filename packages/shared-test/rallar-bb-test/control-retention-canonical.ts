@@ -12,11 +12,16 @@ export type ControlRetentionPlanLimit = keyof typeof CONTROL_RETENTION_PLAN_LIMI
 export class ControlRetentionPlanLimitError extends Error {
     override readonly name = 'ControlRetentionPlanLimitError';
 
+    readonly limit: ControlRetentionPlanLimit;
+    readonly maximum: number;
+
     constructor(
-        readonly limit: ControlRetentionPlanLimit,
-        readonly maximum: number,
+        limit: ControlRetentionPlanLimit,
+        maximum: number,
     ) {
         super(`Control retention plan exceeded the ${limit} bound of ${maximum}.`);
+        this.limit = limit;
+        this.maximum = maximum;
     }
 }
 

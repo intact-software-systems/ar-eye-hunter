@@ -73,12 +73,15 @@ export class AppInboxCommandIdentityError extends Error {
   readonly code = 'app-inbox-malformed-command';
   readonly status = 400;
 
-  constructor(readonly operationSource: 'corrupt' | 'unavailable') {
+  readonly operationSource: 'corrupt' | 'unavailable';
+
+  constructor(operationSource: 'corrupt' | 'unavailable') {
     super(
       operationSource === 'corrupt'
         ? 'App inbox command identity is corrupt'
         : 'App inbox command identity is unavailable',
     );
+    this.operationSource = operationSource;
     this.name = 'AppInboxCommandIdentityError';
   }
 }

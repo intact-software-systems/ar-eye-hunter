@@ -788,7 +788,10 @@ class FakeWebSocket {
 
   private readonly listeners = new Map<string, Array<(event: unknown) => void | Promise<void>>>();
 
-  constructor(public readonly url: string) {
+  public readonly url: string;
+
+  constructor(url: string) {
+    this.url = url;
     FakeWebSocket.instances.push(this);
   }
 

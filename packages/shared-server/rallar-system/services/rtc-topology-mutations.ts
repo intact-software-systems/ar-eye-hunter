@@ -393,8 +393,11 @@ export class RtcRttMutationIdempotencyConflictError extends Error {
     readonly status = 409;
     readonly code = 'rtc-rtt-idempotency-conflict';
 
-    constructor(readonly receiptId: string) {
+    readonly receiptId: string;
+
+    constructor(receiptId: string) {
         super(`RTC RTT receipt ${receiptId} was already claimed by another command`);
+        this.receiptId = receiptId;
         this.name = 'RtcRttMutationIdempotencyConflictError';
     }
 }

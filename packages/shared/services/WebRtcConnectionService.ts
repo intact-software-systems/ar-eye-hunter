@@ -201,23 +201,33 @@ export type WebRtcInboundPeerCreationDecision =
 }>;
 
 class WebRtcPeerLaneOpenFailure extends Error {
+    public readonly status: Exclude<WebRtcPeerLaneOpenStatus, 'open'>;
+    public readonly peerId: PeerId;
+    public readonly laneId: string;
+
     constructor(
-        public readonly status: Exclude<WebRtcPeerLaneOpenStatus, 'open'>,
-        public readonly peerId: PeerId,
-        public readonly laneId: string,
+        status: Exclude<WebRtcPeerLaneOpenStatus, 'open'>,
+        peerId: PeerId,
+        laneId: string,
         message: string,
         options?: ErrorOptions,
     ) {
         super(message, options);
+        this.status = status;
+        this.peerId = peerId;
+        this.laneId = laneId;
         this.name = 'WebRtcPeerLaneOpenFailure';
     }
 }
 
 class WebRtcPeerConnectionAttemptExhaustedError extends Error {
+    public readonly event: WebRtcPeerConnectionAttemptExhaustedEvent;
+
     constructor(
-        public readonly event: WebRtcPeerConnectionAttemptExhaustedEvent,
+        event: WebRtcPeerConnectionAttemptExhaustedEvent,
     ) {
         super(RTC_CONNECT_ATTEMPT_BUDGET_EXHAUSTED_REASON);
+        this.event = event;
         this.name = 'WebRtcPeerConnectionAttemptExhaustedError';
     }
 }
@@ -261,10 +271,15 @@ export class WebRtcConnectionService {
     private readonly tentativePeerIds = new Set<PeerId>();
     private inboundPeerCreationPolicy: WebRtcInboundPeerCreationPolicy | undefined;
 
+    public readonly signaler: QRtcSignalingTransport;
+    public readonly input: WebRtcQueueBoxClientServiceInputDto;
+
     constructor(
-        public readonly signaler: QRtcSignalingTransport,
-        public readonly input: WebRtcQueueBoxClientServiceInputDto
+        signaler: QRtcSignalingTransport,
+        input: WebRtcQueueBoxClientServiceInputDto
     ) {
+        this.signaler = signaler;
+        this.input = input;
     }
 
     setInboundPeerCreationPolicy(

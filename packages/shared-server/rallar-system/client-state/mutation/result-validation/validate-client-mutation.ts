@@ -20,12 +20,19 @@ export class ClientMutationIdempotencyConflictError extends Error {
   readonly code = 'client-mutation-idempotency-conflict';
   readonly status = 409;
 
+  readonly commandId: string;
+  readonly existingCommandHash: string;
+  readonly receivedCommandHash: string;
+
   constructor(
-    readonly commandId: string,
-    readonly existingCommandHash: string,
-    readonly receivedCommandHash: string,
+    commandId: string,
+    existingCommandHash: string,
+    receivedCommandHash: string,
   ) {
     super(`Client mutation command differs for request ${commandId}`);
+    this.commandId = commandId;
+    this.existingCommandHash = existingCommandHash;
+    this.receivedCommandHash = receivedCommandHash;
     this.name = 'ClientMutationIdempotencyConflictError';
   }
 }

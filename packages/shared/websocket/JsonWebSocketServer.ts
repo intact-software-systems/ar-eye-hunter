@@ -19,12 +19,22 @@ export type EncodedJsonWebSocketMessage = Readonly<{
 }>;
 
 export class ConnectionContext {
+  public readonly id: string;
+  public readonly socket: WebSocket;
+  public readonly generationId: string;
+  public readonly generationStartedAtEpochMs: number;
+
   constructor(
-    public readonly id: string,
-    public readonly socket: WebSocket,
-    public readonly generationId: string = crypto.randomUUID(),
-    public readonly generationStartedAtEpochMs: number = Date.now(),
-  ) {}
+    id: string,
+    socket: WebSocket,
+    generationId: string = crypto.randomUUID(),
+    generationStartedAtEpochMs: number = Date.now(),
+  ) {
+    this.id = id;
+    this.socket = socket;
+    this.generationId = generationId;
+    this.generationStartedAtEpochMs = generationStartedAtEpochMs;
+  }
 
   get isOpen(): boolean {
     return this.socket.readyState === WebSocket.OPEN;

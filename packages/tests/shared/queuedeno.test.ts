@@ -4,7 +4,7 @@ import { SuccessDto } from '@shared/queuebox/DequeueController.ts';
 import { DequeueResourceEntryController, ResilienceDto, } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
 class TestData {
     public readonly name: string;

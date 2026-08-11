@@ -84,8 +84,11 @@ function asDurable(service: AppInboxService): DurableAppInbox {
 }
 
 class FailingQueueBox extends InMemoryQueueBox {
-  constructor(private readonly failure: Error) {
+  private readonly failure: Error;
+
+  constructor(failure: Error) {
     super(new Map());
+    this.failure = failure;
   }
 
   override enqueueIfAbsent(): Promise<ResourceEntry> {
