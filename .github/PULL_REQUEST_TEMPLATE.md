@@ -1,102 +1,65 @@
 # Pull request
 
-## PR Human Review Record v1
+## PR Human Review Record v2
 
-Use this record for every pull request. It preserves the evidence that an
-independent reviewer examined the exact candidate tree; it is not an automated
-approval form.
+This is one evidence record for the adaptive plan. Automation verifies its shape and
+freshness; a separate agent or human owns the architectural and semantic judgment.
 
 Production code is the primary design artifact; tests are secondary evidence.
-Automation validates evidence and freshness; it does not approve semantic
-quality or retained legacy.
+Automation validates evidence and freshness; it does not approve semantic quality or
+retained legacy.
 
 ### PR classification
 
 - Review scope: `code-changing` | `exempt`
-- Explicit exemption, if any: `none` | `plan-only` | `documentation-only` |
-  `agent-guidance-only`
-- Exemption evidence:
+- Explicit exemption: `none` | `plan-only` | `documentation-only` | `agent-guidance-only`
+- Exemption changed paths:
 
-Plan-, documentation-, and agent-guidance-only pull requests may use the
-explicit exemption only when no production, test, script, workflow, package
-metadata, or runtime files changed. An exemption does not permit a mixed PR to
-skip review.
+Plan-, documentation-, and agent-guidance-only pull requests may use the explicit
+exemption only when no production, test, script, workflow, package metadata, or
+runtime files changed. A mixed pull request is code-changing.
 
-No production, test, script, workflow, package metadata, or runtime files
-changed is required for an exemption.
+### Initial architecture review
 
-### Change intent and scope
-
-- Requirements and independently stated behavior:
-- Exact merge base SHA:
-- Exact candidate head SHA:
-- Default-branch revalidation outcome:
-- Active-plan legacy baseline and changed affected surface:
-
-### Initial independent review
-
-An Initial independent review is required before a code-changing draft pull
-request is created. Record `not yet required` only for an explicit exemption.
-
-- Record status: `required` | `complete` | `exempt`
+- Record status: `complete`
 - Reviewer and independence (separate agent or human):
-- Exact merge base SHA:
-- Exact candidate head SHA:
-- Production owner-to-result trace:
-- Cognitive-indirection findings:
-- Complete review findings and resolution/status (correctness, safety, contracts, and other human-review findings):
-- Tests rewritten or removed:
-- Production was not compromised for tests:
+- Reviewed adaptive-plan digest:
+- Goal:
+- Acceptance criteria:
+- Capability-tree hypothesis:
+- Canonical owners and entries:
+- First two slices:
+- Complete review findings and resolution/status:
 - Behavior and judgment not proven by automation:
 - Legacy candidate count:
 - Legacy ledger and dispositions:
 - Critical findings unresolved: `0`
 - Important findings unresolved: `0`
-- Verdict: `pass` | `changes-requested` | `exempt`
+- Verdict: `pass` | `changes-requested`
 
-### Milestone review
+The initial verdict preserves immutable stage history and may be `changes-requested` while
+the pull request remains a draft. Adaptive-plan checkpoints gate implementation progress;
+only the final review must pass with zero unresolved Critical or Important findings.
 
-Add one entry for every milestone where a new ownership, control-flow, or
-legacy family appears. Use `not applicable` only when no such family appeared.
+### Current checkpoint review
 
-- Milestone classification: `none` | `reviewed`
+- Current adaptive-plan digest:
 
-When the classification is `reviewed`, add the exact heading
-`#### Milestone review entry` immediately before the fields below. Copy the
-complete heading-and-fields block for each additional reviewed milestone. When
-the classification is `none`, leave the metadata `entries` array empty and do
-not add that heading.
+### Complete code, structure, tests, and legacy review
 
 - Reviewer and independence (separate agent or human):
-- Exact merge base SHA:
-- Exact candidate head SHA:
-- New ownership, control-flow, or legacy family:
-- Production owner-to-result trace:
-- Cognitive-indirection findings:
-- Complete review findings and resolution/status (correctness, safety, contracts, and other human-review findings):
-- Tests rewritten or removed:
-- Production was not compromised for tests:
-- Behavior and judgment not proven by automation:
-- Legacy candidate count:
-- Legacy ledger and dispositions:
-- Critical findings unresolved: `0`
-- Important findings unresolved: `0`
-- Verdict: `pass` | `changes-requested` | `not-applicable`
-
-### Complete code and legacy review
-
-Complete code and legacy review is required before the pull request is ready
-for merge. It must match the current candidate head SHA and follow every
-changed production path from entry owner to result.
-
-- Reviewer and independence (separate agent or human):
-- Exact merge base SHA:
-- Exact candidate head SHA:
-- Changed production owner-to-result trace, including decisions, effects, failures, callbacks, compatibility branches, and tests:
-- Cognitive-indirection findings and resolution:
-- Complete review findings and resolution/status (correctness, safety, contracts, and other human-review findings):
-- Tests rewritten or removed, with independent behavior retained:
-- Production was not compromised for tests:
+- Build-affecting tree digest:
+- Plan goal:
+- Acceptance criteria:
+- Current structural decision:
+- Declared outcomes:
+- Owner-to-result paths:
+- Navigation evidence:
+- Test evidence:
+- Compatibility evidence:
+- Proportional validation:
+- Legacy closure:
+- Complete review findings and resolution/status:
 - Behavior and judgment not proven by automation:
 - Legacy candidates inspected (baseline, automated report, changed files, and production call paths):
 - Legacy candidate count:
@@ -105,89 +68,64 @@ changed production path from entry owner to result.
 - Important findings unresolved: `0`
 - Verdict: `pass` | `changes-requested`
 
-Completed work requires zero unresolved Critical or Important findings.
+Completed work requires zero unresolved Critical or Important findings. An unrelated
+documentation-only commit does not invalidate a review whose build-affecting tree digest,
+plan goal, acceptance criteria, and structural decision remain current.
 
 ### Human approval for retained legacy
 
-List every `retained-pending-human-approval` item. Every confirmed affected
-legacy item uses `classification: legacy` and exactly one disposition:
-`removed`, `minimized-boundary`, `resolved`, or
-`retained-pending-human-approval`. A heuristic candidate that is not legacy uses
-`classification: not-legacy` with a concrete rationale; it is not a legacy
-exception or an implicit disposition.
+Every legacy-classified item uses `removed`, `minimized-boundary`, `resolved`, or
+`retained-pending-human-approval`. Every heuristic false positive uses
+`classification: not-legacy` with a concrete rationale. The legacy candidate set must be
+exact: stale, extra, duplicate, and missing candidates fail validation.
 
-When per-item `not-legacy` rows would push the pull request body over the
-GitHub body size cap, a stage ledger may record its not-legacy candidates in
-aggregate instead: a `notLegacyAggregate` object beside `items` holding the
-aggregated candidate count, the whole-report SHA-256 (the `REPORT-SHA256`
-line from `npm run review:legacy`, reproducible byte-exactly with
-`--report-out`), the location where the full report is preserved (a workflow
-artifact or a committed evidence file), and one concrete rationale. Every
-legacy-classified item keeps its own ledger row; the aggregate never carries
-a disposition or approval. `Legacy candidate count` equals the per-item rows
-plus the aggregate count, and the stage check recomputes the report and
-rejects an aggregate whose digest or count does not match.
+For a report too large to itemize, `notLegacyAggregate` binds the exact candidate report
+with `count`, the `REPORT-SHA256`, an artifact or committed evidence path, and a concrete
+rationale. Every legacy item remains itemized.
 
-The final review's `Legacy ledger and dispositions` field is the one bound,
-human-readable retained ledger. `Legacy exception ID` is the projection's `id`.
-Each retained item also presents the exact path and symbol, purpose, consumer
-or operational dependency, unsafe-removal
-reason, minimization, canonical owner, compatibility tests, named owner,
-review/removal condition, and approved production SHA. The validator hashes
-that exact canonical projection. Record trusted GitHub approval provenance in
-the `retainedLegacy` metadata and durable registry; do not duplicate the
-approval details in another unbound visible block.
-
-Silence, an issue, an earlier plan approval, agent judgment, or automation is
-not approval. A production change invalidates the final review and any
-retained-legacy approval. Record the approved item in
-[`docs/production-legacy-exceptions.md`](../docs/production-legacy-exceptions.md)
-before completion.
+Retained legacy requires the exact path and symbol, purpose, consumer dependency,
+unsafe-removal reason, minimization, canonical owner, compatibility tests, named owner,
+removal condition, approved production SHA, trusted human GitHub approval, and durable
+registry entry. Silence, an issue, an earlier plan approval, agent judgment, or automation
+is not approval.
 
 ### Validation and publication
 
-- Passed commands and exact current-head workflow evidence:
+- Passed commands and current workflow evidence:
 - Failed or skipped commands and reason:
 - Follow-up issues: none | links:
 
 ### Validator metadata
 
-Replace every value in this JSON fence with the exact evidence recorded above.
-The check rejects placeholder text and does not approve semantic quality or
-retained legacy.
+Replace every placeholder with concrete evidence. `checkpointReview` contains only the
+current adaptive-plan digest.
 
-```pr-human-review-record-v1
+```pr-human-review-record-v2
 {
-  "version": 1,
+  "version": 2,
   "scope": "code-changing",
   "exemption": null,
+  "plan": { "path": "" },
   "initialReview": {
     "status": "complete",
     "reviewer": "",
     "independence": "separate-agent-or-human",
+    "adaptivePlanDigest": "",
     "mergeBaseSha": "",
     "headSha": "",
-    "verdict": "pass",
+    "goal": "",
+    "acceptanceCriteria": [],
+    "capabilityTreeHypothesis": "",
+    "canonicalOwnerEntries": [],
+    "firstSlices": [],
+    "completeFindings": "",
+    "automationGaps": "",
     "unresolvedFindings": { "critical": 0, "important": 0 },
-    "narrative": {
-      "productionOwnerToResultTrace": "",
-      "cognitiveIndirectionFindings": "",
-      "testsRewrittenOrRemoved": "",
-      "productionNotCompromisedForTests": "",
-      "automationGaps": "",
-      "completeFindings": ""
-    },
-    "legacy": { "candidateCount": 0, "items": [], "candidatesInspected": "" }
+    "verdict": "pass",
+    "legacy": { "candidateCount": 0, "items": [] }
   },
-  "milestoneReview": { "classification": "none", "entries": [] },
+  "checkpointReview": { "adaptivePlanDigest": "" },
   "finalReview": null,
   "retainedLegacy": []
 }
 ```
-
-The visible Initial, Milestone, and Complete review sections above are the
-human record. Fill each stable labeled field once with the exact matching
-metadata value; do not add copied marker blocks. For retained legacy, metadata
-must reference a trusted human GitHub review ID, login, submitted date,
-approved production SHA, and whole-ledger SHA-256. A later registry recording
-commit is allowed only when it changes no production path.

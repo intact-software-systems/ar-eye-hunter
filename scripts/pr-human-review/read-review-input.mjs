@@ -1,21 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
-import { isExactSha, validateReviewRecord } from './pr-human-review/validate-record.mjs';
+import { computeBuildAffectingTreeDigest, readCurrentPlanContext } from './review-freshness.mjs';
+import { isExactSha, readReviewRecordV2 } from './validate-record.mjs';
 
-const input = readValidatorInput(process.argv.slice(2));
-const errors = validateReviewRecord(input);
-
-if (errors.length > 0) {
-  for (const error of errors) {
-    console.log(`FAIL: ${error}`);
-  }
-  process.exitCode = 1;
-} else {
-  console.log('PASS: PR human review record evidence is current and complete');
-}
-
-function readValidatorInput(args) {
+export function readValidatorInput(args) {
   const options = readOptions(args);
   if (options.event) {
     return readGitHubEventInput(options);
@@ -29,21 +18,45 @@ function readValidatorInput(args) {
     'head',
     'draft',
     'pr-author',
+    'plan',
   ];
   const missing = required.filter((name) => options[name] === undefined);
   if (missing.length > 0) {
     failInput(`missing required options: ${missing.join(', ')}`);
   }
+  const body = readFileSync(options.body, 'utf8');
+  const record = tryReadReviewRecord(body);
+  if (record?.plan?.path !== undefined && record.plan.path !== options.plan) {
+    failInput('review adaptive plan path must match the supplied plan evidence');
+  }
+  const headSha = options.head;
+  const repoRoot = options['repo-root'] ?? process.cwd();
+  const currentPlan = readCurrentPlanContext({
+    path: options.plan,
+    source: readFileSync(options.plan, 'utf8'),
+  });
   return {
-    body: readFileSync(options.body, 'utf8'),
+    body,
     changedPaths: readLines(options['changed-paths']),
     registry: readFileSync(options.registry, 'utf8'),
     trustedReviews: readTrustedReviews(options.reviews),
     mergeBaseSha: options['merge-base'],
-    headSha: options.head,
+    headSha,
     draft: parseBoolean(options.draft),
     prAuthorLogin: options['pr-author'],
     approvalHistory: readJsonOrEmpty(options['approval-history']),
+    currentPlan,
+    currentBuildTreeDigest: computeBuildAffectingTreeDigest({ repoRoot, headSha }),
+    reviewedBuildTreeDigestBySha: readReviewedBuildTreeDigestBySha({
+      repoRoot,
+      record,
+      currentHeadSha: headSha,
+    }),
+    reviewedPlanContextBySha: readReviewedPlanContextBySha({
+      repoRoot,
+      record,
+      currentHeadSha: headSha,
+    }),
   };
 }
 
@@ -63,6 +76,13 @@ function readGitHubEventInput(options) {
     .split('\n')
     .filter(Boolean);
   const approvalShas = readApprovalShas(pullRequest.body);
+  const record = tryReadReviewRecord(pullRequest.body);
+  const currentPlan = record?.plan?.path
+    ? readCurrentPlanContext({
+        path: record.plan.path,
+        source: readCandidateFile(headSha, record.plan.path),
+      })
+    : undefined;
   const approvalHistory = Object.fromEntries(
     approvalShas.map((approvedProductionSha) => [
       approvedProductionSha,
@@ -84,22 +104,93 @@ function readGitHubEventInput(options) {
     draft: pullRequest.draft,
     prAuthorLogin: pullRequest.user?.login,
     approvalHistory,
+    currentPlan,
+    currentBuildTreeDigest: computeBuildAffectingTreeDigest({
+      repoRoot: process.cwd(),
+      headSha,
+    }),
+    reviewedBuildTreeDigestBySha: readReviewedBuildTreeDigestBySha({
+      repoRoot: process.cwd(),
+      record,
+      currentHeadSha: headSha,
+    }),
+    reviewedPlanContextBySha: readReviewedPlanContextBySha({
+      repoRoot: process.cwd(),
+      record,
+      currentHeadSha: headSha,
+    }),
   };
 }
 
 function readApprovalShas(body) {
-  const match = body.match(/```pr-human-review-record-v1\s*\n([\s\S]*?)\n```/u);
-  if (!match) {
+  const record = tryReadReviewRecord(body);
+  if (!record) {
     return [];
+  }
+  return Array.isArray(record.retainedLegacy)
+    ? record.retainedLegacy.map((item) => item?.approvedProductionSha).filter(isExactSha)
+    : [];
+}
+
+function tryReadReviewRecord(body) {
+  try {
+    return readReviewRecordV2(body);
+  } catch {
+    return undefined;
+  }
+}
+
+function readCandidateFile(headSha, repositoryPath) {
+  if (!isSafePlanPath(repositoryPath)) {
+    failInput('review plan path must be a safe plans/*.md repository path');
+  }
+  return runGit(['show', `${headSha}:${repositoryPath}`]);
+}
+
+function readReviewedPlanContextBySha({ repoRoot, record, currentHeadSha }) {
+  const reviewedHeadSha = record?.initialReview?.headSha;
+  const planPath = record?.plan?.path;
+  if (
+    !isExactSha(reviewedHeadSha) ||
+    !isSafePlanPath(planPath) ||
+    !runGitSuccessAt(repoRoot, ['merge-base', '--is-ancestor', reviewedHeadSha, currentHeadSha])
+  ) {
+    return {};
   }
   try {
-    const record = JSON.parse(match[1]);
-    return Array.isArray(record?.retainedLegacy)
-      ? record.retainedLegacy.map((item) => item?.approvedProductionSha).filter(isExactSha)
-      : [];
+    return {
+      [reviewedHeadSha]: readCurrentPlanContext({
+        path: planPath,
+        source: runGitAt(repoRoot, ['show', `${reviewedHeadSha}:${planPath}`]),
+      }),
+    };
   } catch {
-    return [];
+    return {};
   }
+}
+
+function readReviewedBuildTreeDigestBySha({ repoRoot, record, currentHeadSha }) {
+  const reviewedHeadSha = record?.finalReview?.headSha;
+  if (!isExactSha(reviewedHeadSha)) {
+    return {};
+  }
+  if (
+    !runGitSuccessAt(repoRoot, ['merge-base', '--is-ancestor', reviewedHeadSha, currentHeadSha])
+  ) {
+    return {};
+  }
+  return {
+    [reviewedHeadSha]: computeBuildAffectingTreeDigest({ repoRoot, headSha: reviewedHeadSha }),
+  };
+}
+
+function isSafePlanPath(repositoryPath) {
+  return (
+    typeof repositoryPath === 'string' &&
+    /^plans\/[a-zA-Z0-9][a-zA-Z0-9._/-]*\.md$/u.test(repositoryPath) &&
+    !repositoryPath.includes('..') &&
+    !repositoryPath.includes('//')
+  );
 }
 
 function readOptions(args) {
@@ -146,16 +237,24 @@ function readTrustedReviews(filePath) {
 }
 
 function runGit(args) {
+  return runGitAt(process.cwd(), args);
+}
+
+function runGitAt(repoRoot, args) {
   try {
-    return execFileSync('git', args, { encoding: 'utf8' }).trim();
+    return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim();
   } catch {
     failInput(`could not read Git evidence: git ${args.join(' ')}`);
   }
 }
 
 function runGitSuccess(args) {
+  return runGitSuccessAt(process.cwd(), args);
+}
+
+function runGitSuccessAt(repoRoot, args) {
   try {
-    execFileSync('git', args, { stdio: 'ignore' });
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'ignore' });
     return true;
   } catch {
     return false;

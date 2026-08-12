@@ -52,9 +52,9 @@ jobs:
           gh api --paginate --slurp
           repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews
           > "$RUNNER_TEMP/pull-request-reviews.json"
-      - name: Validate PR Human Review Record v1
+      - name: Validate PR Human Review Record v2
         run: >-
-          node scripts/check-pr-human-review.mjs --event "$GITHUB_EVENT_PATH"
+          node scripts/pr-human-review.mjs --event "$GITHUB_EVENT_PATH"
           --registry "$RUNNER_TEMP/production-legacy-exceptions.md"
           --reviews "$RUNNER_TEMP/pull-request-reviews.json"
       - name: Validate candidate ledger against changed production paths

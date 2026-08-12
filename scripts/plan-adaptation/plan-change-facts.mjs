@@ -121,12 +121,42 @@ export function computeUndeclaredChangedPaths(changes, record, planPath = '') {
       }
     }
   }
+  for (const predecessorPath of validPredecessorPaths(changes, record)) {
+    allowedPaths.add(predecessorPath);
+  }
   return allChangedPaths(changes).filter((changedPath) => {
     if (allowedPaths.has(changedPath)) {
       return false;
     }
     return !allowedRoots.filter(Boolean).some((root) => isWithin(changedPath, root));
   });
+}
+
+function validPredecessorPaths(changes, record) {
+  const capabilities = record.capabilities ?? [];
+  return (record.structuralDispositions ?? [])
+    .filter((disposition) => {
+      if (
+        disposition?.kind !== 'predecessor-path' ||
+        !['move', 'consolidate'].includes(disposition.disposition) ||
+        typeof disposition.path !== 'string' ||
+        typeof disposition.destination !== 'string' ||
+        typeof disposition.owner !== 'string' ||
+        disposition.owner.trim() === '' ||
+        typeof disposition.rationale !== 'string' ||
+        disposition.rationale.trim() === ''
+      ) {
+        return false;
+      }
+      const isChangedPredecessor = changes.some(
+        (change) =>
+          (change.status.startsWith('D') && change.path === disposition.path) ||
+          (change.status.startsWith('R') && change.oldPath === disposition.path),
+      );
+      const destinationOwners = toDeclaredCapabilityOwners(disposition.destination, capabilities);
+      return isChangedPredecessor && destinationOwners.includes(disposition.owner);
+    })
+    .map((disposition) => disposition.path);
 }
 
 export function computeCheckpointTriggers(input) {

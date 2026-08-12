@@ -4,7 +4,7 @@ This registry records the explicit human approvals that let a retained
 production-legacy item survive an active plan. It is not a baseline of all
 existing legacy and it never makes unreviewed legacy acceptable.
 
-The active plan and its PR Human Review Record v1 own the full affected-surface
+The active plan and its PR Human Review Record v2 own the full affected-surface
 ledger. Add an entry here only after a human explicitly approves retention for
 the exact candidate tree. No automated score or agent may approve retained
 production legacy.
@@ -57,5 +57,5 @@ No approved retained production legacy is recorded yet.
 - Named owner:
 - Review or removal condition:
 - GitHub PR review ID:
-- PR Human Review Record v1 link:
+- PR Human Review Record v2 link:
 ```

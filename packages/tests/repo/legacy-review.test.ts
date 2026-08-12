@@ -251,6 +251,23 @@ describe('changed production legacy review', () => {
     );
   });
 
+  it('rejects the removed milestone review stage', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/legacy-route.ts': 'export const legacyRoute = () => 200;\n',
+    });
+    writeReviewRecord(fixture.root, reportedItems(fixture, 'resolved'));
+
+    const result = runLegacyReview(fixture, [
+      '--review-record',
+      'review.json',
+      '--stage',
+      'milestone',
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('--stage must be initial or final');
+  });
+
   it('rejects stale, extra, and duplicate final ledger IDs instead of accepting a subset match', () => {
     const fixture = createGitFixture({
       'packages/example/src/legacy-route.ts': 'export const legacyRoute = () => 200;\n',

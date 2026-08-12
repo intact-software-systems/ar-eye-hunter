@@ -59,13 +59,13 @@ Actions, and the existing PR-review/governance scripts.
 The implementation must close, not duplicate, these affected existing
 controls:
 
-| Existing owner and entry/call path                                                                                                                                                                                                                                                                                                                                                                            | Purpose                                                                                                 | Initial disposition | Exit criterion                                                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/repo-style-check.mjs` → `scripts/repo-style-check/layout-rules.mjs#scanRepositoryLayout` / `layoutRuleIds`; `scripts/check-changed-repo-style.mjs` changed-finding comparison                                                                                                                                                                                                                        | Directory density, feature-prefix clustering, file-size/style facts, and changed-surface enforcement    | `keep`              | Repo style remains the single fact implementation; repository structure consumes an intentionally exported contract and adds no parallel metric implementation.                                                             |
-| `package.json#scripts.test:repo-governance` → flat `packages/tests/repo/*.test.ts` arguments                                                                                                                                                                                                                                                                                                                  | Repository contract tests                                                                               | `migrate`           | New capabilities have mirrored test subtrees and exact focused commands; the aggregate governance command includes them without source-text coupling.                                                                       |
-| `AGENTS.md` Start Here / Validation; `.agents/skills/publishing-plan-progress/SKILL.md`; `.agents/skills/rallar-code-writing/SKILL.md`; `.agents/skills/rallar-testing/SKILL.md` → `.agents/skills/rallar-testing/references/test-commands.md`                                                                                                                                                                | Startup issue search, exact-SHA, unconditional full-suite, and overlapping plan-execution rules         | `minimize`          | The new behavior skills own adaptation/structure; general guidance routes to them and publication owns publication only.                                                                                                    |
-| `.github/PULL_REQUEST_TEMPLATE.md` and `docs/pr-human-review-record.md`; `.github/workflows/pr-human-review-record.yml#jobs.validate` → `scripts/check-pr-human-review.mjs` → `scripts/pr-human-review/validate-record.mjs`, `validate-review-evidence.mjs`, and `trusted-retained-legacy.mjs`; `scripts/check-pr-human-review-legacy-stages.mjs` → `scripts/review-legacy.mjs` and `scripts/legacy-review/*` | PR Human Review Record v1 initial, repeated milestone, final, trusted-review, and legacy-stage evidence | `remove`            | v2 replaces the v1 template, contract, validator entry, workflow label, and stage integration directly; reusable legacy candidate scanning remains only behind the v2 owner, with no permanent v1 validator or dual record. |
-| `.github/workflows/branch-release-gate.yml#jobs.release-gate`; `.github/workflows/hetzner-supported-distributed-manifests.yml#jobs.preflight/prepare/run` on `push: main`; `AGENTS.md` completion-gate text                                                                                                                                                                                                   | Broad and distributed completion validation                                                             | `migrate`           | Governance runs first, broad evidence is content-sensitive, and Hetzner is selected only by distributed risk or explicit plan acceptance.                                                                                   |
+| Existing owner and entry/call path                                                                                                                                                                                                                                                                                                                                                                      | Purpose                                                                                                 | Initial disposition | Exit criterion                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/repo-style-check.mjs` → `scripts/repo-style-check/layout-rules.mjs#scanRepositoryLayout` / `layoutRuleIds`; `scripts/check-changed-repo-style.mjs` changed-finding comparison                                                                                                                                                                                                                  | Directory density, feature-prefix clustering, file-size/style facts, and changed-surface enforcement    | `keep`              | Repo style remains the single fact implementation; repository structure consumes an intentionally exported contract and adds no parallel metric implementation.                                                             |
+| `package.json#scripts.test:repo-governance` → flat `packages/tests/repo/*.test.ts` arguments                                                                                                                                                                                                                                                                                                            | Repository contract tests                                                                               | `migrate`           | New capabilities have mirrored test subtrees and exact focused commands; the aggregate governance command includes them without source-text coupling.                                                                       |
+| `AGENTS.md` Start Here / Validation; `.agents/skills/publishing-plan-progress/SKILL.md`; `.agents/skills/rallar-code-writing/SKILL.md`; `.agents/skills/rallar-testing/SKILL.md` → `.agents/skills/rallar-testing/references/test-commands.md`                                                                                                                                                          | Startup issue search, exact-SHA, unconditional full-suite, and overlapping plan-execution rules         | `minimize`          | The new behavior skills own adaptation/structure; general guidance routes to them and publication owns publication only.                                                                                                    |
+| `.github/PULL_REQUEST_TEMPLATE.md` and `docs/pr-human-review-record.md`; `.github/workflows/pr-human-review-record.yml#jobs.validate` → `scripts/pr-human-review.mjs` → `scripts/pr-human-review/validate-record.mjs`, `validate-review-evidence.mjs`, and `trusted-retained-legacy.mjs`; `scripts/check-pr-human-review-legacy-stages.mjs` → `scripts/review-legacy.mjs` and `scripts/legacy-review/*` | PR Human Review Record v1 initial, repeated milestone, final, trusted-review, and legacy-stage evidence | `remove`            | v2 replaces the v1 template, contract, validator entry, workflow label, and stage integration directly; reusable legacy candidate scanning remains only behind the v2 owner, with no permanent v1 validator or dual record. |
+| `.github/workflows/branch-release-gate.yml#jobs.release-gate`; `.github/workflows/hetzner-supported-distributed-manifests.yml#jobs.preflight/prepare/run` on `push: main`; `AGENTS.md` completion-gate text                                                                                                                                                                                             | Broad and distributed completion validation                                                             | `migrate`           | Governance runs first, broad evidence is content-sensitive, and Hetzner is selected only by distributed risk or explicit plan acceptance.                                                                                   |
 
 Every changed or discovered predecessor path receives `remove`, `minimize`,
 `migrate`, or `propose-retention` before completion. `propose-retention`
@@ -402,37 +402,39 @@ parallel allowlist, workflow registry, or permissive undeclared-path exception.
 the human-navigable `general-agent-guidance` tests to match the publication
 skill, create a placeholder routing skill, or keep the invalid ownership model.
 
-## Current two-slice horizon
+## Completed PR-review cutover
 
 ### Task 12: PR Human Review Record v2 direct cutover
 
 **Planned owner:** `scripts/pr-human-review/`
 
-**Planned canonical entry:** `scripts/check-pr-human-review.mjs`
+**Canonical entry:** `scripts/pr-human-review.mjs`
 
 **Planned mirrored tests:** `packages/tests/repo/pr-human-review/`
 
-- [ ] Replace the visible template, durable contract, metadata parser, evidence
+- [x] Replace the visible template, durable contract, metadata parser, evidence
       validator, legacy-stage integration, and workflow label with Review Record
       v2 in one cutover. Retain no v1 parser or permanent transition validator.
-- [ ] Make the initial review cover goal, acceptance criteria, capability-tree
+- [x] Make the initial review cover goal, acceptance criteria, capability-tree
       hypothesis, canonical owner/entry, and the first two slices. Replace
       repeated milestone narratives with one checkpoint record bound to the
       current adaptive-plan digest.
-- [ ] Bind final freshness to the build-affecting tree digest plus plan goal,
+- [x] Bind final freshness to the build-affecting tree digest plus plan goal,
       acceptance criteria, and current structural decision. Unrelated
       documentation changes must not invalidate a valid final review.
-- [ ] Require the final fresh reviewer to verify declared outcomes, every
+- [x] Require the final fresh reviewer to verify declared outcomes, every
       owner-to-result path, navigation, tests, compatibility, proportional
       validation, and complete legacy closure. Preserve trusted retained-legacy
       approval and exact candidate-ledger validation.
-- [ ] Move focused v2 tests into the mirrored owner, update legacy integration
+- [x] Move focused v2 tests into the mirrored owner, update legacy integration
       tests directly, and prove v1 rejection plus existing-open-PR migration on
       the next synchronization. The introducing PR records the bootstrap
       exception because its base workflow cannot run candidate v2 code.
 
 **Legacy impact:** Delete v1 behavior and labels directly. Preserve only the
 trusted retained-legacy and candidate-report behaviors that remain part of v2.
+
+## Current one-slice horizon
 
 ### Task 13: Fast Governance Gate
 
@@ -576,33 +578,33 @@ are selected at the preceding checkpoint.
     {
       "owner": "PR human review",
       "root": "scripts/pr-human-review",
-      "entry": "scripts/check-pr-human-review.mjs",
+      "entry": "scripts/pr-human-review.mjs",
       "testRoot": "packages/tests/repo/pr-human-review",
       "focusedCommand": "npm run test:pr-human-review",
       "navigationMap": "scripts/pr-human-review/README.md",
       "factContracts": [
         "scripts/check-pr-human-review-legacy-stages.mjs",
+        "scripts/legacy-review/candidate-report.mjs",
         "scripts/legacy-review/validate-supplied-evidence.mjs",
-        "packages/tests/repo/pr-human-review-record-contract.test.ts",
-        "packages/tests/repo/pr-human-review-validation.test.ts",
-        "packages/tests/repo/legacy-review-stage-driver.test.ts"
+        "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "scripts/plan-adaptation/plan-change-facts.mjs",
+        "scripts/review-legacy.mjs",
+        "packages/tests/repo/legacy-review.test.ts"
       ],
       "contractPaths": [
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".github/workflows/pr-human-review-record.yml",
+        "docs/README.md",
         "docs/pr-human-review-record.md",
-        "docs/production-legacy-exceptions.md"
+        "docs/production-legacy-exceptions.md",
+        "docs/repo-human-style-guide.md"
       ],
       "controlFlowFamilies": [
         "review input and evidence decoding",
         "initial checkpoint and final freshness validation",
         "trusted retained-legacy approval",
         "legacy candidate-stage integration"
-      ],
-      "activation": {
-        "state": "planned",
-        "slice": "pr-human-review-record-v2"
-      }
+      ]
     },
     {
       "owner": "governance gate",
@@ -634,7 +636,8 @@ are selected at the preceding checkpoint.
     "intendedHypothesis": "A plan-adaptation capability owns rolling decisions while a separate repository-structure capability supplies structural facts.",
     "invalidatedAssumptions": [
       "A prose-only repository-structure skill can reliably make fresh agents reproduce exact owner-to-result navigation evidence; the frozen provenance run made a sound structural judgment but recovered only two of six required repository facts.",
-      "Every guidance capability is a skill owner with a mirrored skill-named test root. Activating Task 9 proved that AGENTS.md is a distinct routing owner whose general-agent-guidance tests must not be disguised as publishing-plan-progress ownership."
+      "Every guidance capability is a skill owner with a mirrored skill-named test root. Activating Task 9 proved that AGENTS.md is a distinct routing owner whose general-agent-guidance tests must not be disguised as publishing-plan-progress ownership.",
+      "The planned PR-review command name check-pr-human-review was a valid executable name but not an exact thin sibling of scripts/pr-human-review; direct cutover required scripts/pr-human-review.mjs and no compatibility wrapper."
     ],
     "freshInitialReview": {
       "status": "complete",
@@ -646,7 +649,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "51143c9e9356f73bb8e978bc503e317d4d6cfc95ee44f41f6ef0d82390c99c73",
+    "affectedCodeDigest": "82f232e88811079f690a9e18ce0892452eda3cab9e04e9a781d4b5ef5893f800",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -657,12 +660,11 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The corrective guidance-router slice now represents AGENTS.md as its own exact owner, includes router facts and cold navigation without authored-code rules, preserves skill declarations as a separate backward-compatible union, and passes independent review plus the 8.82-second aggregate governance path.",
-    "learning": "Activation-time validation was valuable: it exposed that a repository router is not a skill even when it delegates to skills. The newly advanced default branch reorganizes RTC benchmark ownership and changes generic package metadata, but does not alter the governance owners, contracts, acceptance criteria, or validation paths in this horizon; compatibility review found no plan delta.",
-    "structure": "Activate PR Human Review v2 as one mixed code/template/documentation/workflow capability with exact non-code contracts and legacy integration facts. Pair it with a separate Governance Gate owner that orchestrates canonical checks before broad CI. Keep content-sensitive evidence reuse inactive until both review and early-gate contracts are stable.",
-    "decision": "continue",
+    "outcome": "PR Human Review Record v2 now directly replaces v1 through one exact thin command entry, one visible and metadata contract, content-sensitive initial/checkpoint/final validation, preserved trusted retained-legacy and candidate-report evidence, mirrored focused tests, and synchronized-PR workflow enforcement.",
+    "learning": "The planned check-pr-human-review entry was not an exact sibling of its capability root; the direct cutover moved it to scripts/pr-human-review.mjs without a wrapper. Review also showed that build freshness needs explicit repository contracts plus ordinary-documentation exclusion, initial review needs planned horizon owners while final review needs active owners, and removed v1 predecessors need structured fail-closed dispositions rather than unresolved undeclared paths.",
+    "structure": "Keep PR human review as one mixed code, template, documentation, workflow, and legacy-integration owner at scripts/pr-human-review with exact non-code contracts and explicit cross-owner plan/legacy facts. Keep Governance Gate separate and activate only fast-governance-gate next.",
+    "decision": "amend",
     "nextSlices": [
-      "pr-human-review-record-v2",
       "fast-governance-gate"
     ]
   },
@@ -678,6 +680,38 @@ are selected at the preceding checkpoint.
       "target": "scripts/plan-adaptation/adaptive-plan-record.mjs capability declaration policy",
       "disposition": "split",
       "rationale": "Task 10 exposed capability declaration shape, planned topology, and exact contract ownership as one independent policy seam. adaptive-plan-capabilities.mjs now owns that policy while adaptive-plan-record.mjs retains record parsing, digests, and non-capability fields."
+    },
+    {
+      "kind": "predecessor-path",
+      "path": "scripts/check-pr-human-review.mjs",
+      "disposition": "move",
+      "destination": "scripts/pr-human-review.mjs",
+      "owner": "PR human review",
+      "rationale": "Review Record v2 directly replaces the v1 command with the canonical exact thin sibling entry and retains no compatibility wrapper."
+    },
+    {
+      "kind": "predecessor-path",
+      "path": "packages/tests/repo/pr-human-review-record-contract.test.ts",
+      "disposition": "consolidate",
+      "destination": "packages/tests/repo/pr-human-review/review-record-contract.test.ts",
+      "owner": "PR human review",
+      "rationale": "The v1 flat contract test moved into the declared mirrored PR-review test owner for the direct v2 cutover."
+    },
+    {
+      "kind": "predecessor-path",
+      "path": "packages/tests/repo/pr-human-review-validation.test.ts",
+      "disposition": "consolidate",
+      "destination": "packages/tests/repo/pr-human-review/review-record-v2.test.ts",
+      "owner": "PR human review",
+      "rationale": "The v1 flat validator tests were replaced by semantic v2 tests inside the declared mirrored owner."
+    },
+    {
+      "kind": "predecessor-path",
+      "path": "packages/tests/repo/legacy-review-stage-driver.test.ts",
+      "disposition": "consolidate",
+      "destination": "packages/tests/repo/pr-human-review/legacy-review-stage-integration.test.ts",
+      "owner": "PR human review",
+      "rationale": "Exact legacy-stage coverage now lives with the PR-review capability while preserving direct integration with the legacy scanner."
     }
   ],
   "freshStructuralReview": {
@@ -833,6 +867,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "The corrective guidance-router slice now represents AGENTS.md as its own exact owner, includes router facts and cold navigation without authored-code rules, preserves skill declarations as a separate backward-compatible union, and passes independent review plus the 8.82-second aggregate governance path."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "amend",
+      "summary": "PR Human Review Record v2 now directly replaces v1 through one exact thin command entry, one visible and metadata contract, content-sensitive initial/checkpoint/final validation, preserved trusted retained-legacy and candidate-report evidence, mirrored focused tests, and synchronized-PR workflow enforcement."
     }
   ]
 }

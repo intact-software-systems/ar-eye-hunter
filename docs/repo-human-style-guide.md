@@ -9,8 +9,8 @@ reviewing a change. This guide supplies the review sequence and checker usage; i
 does not define a second version of the rules.
 
 Record independent pull-request reviews in the
-[PR Human Review Record v1](./pr-human-review-record.md). That record captures
-exact-SHA review evidence and retained-legacy approval; this guide remains the
+[PR Human Review Record v2](./pr-human-review-record.md). That record captures
+content-sensitive review evidence and retained-legacy approval; this guide remains the
 authoritative human review sequence.
 
 Code is written first for human developers. Correctness, safety, security,

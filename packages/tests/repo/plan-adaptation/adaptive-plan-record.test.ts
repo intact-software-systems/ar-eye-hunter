@@ -68,6 +68,15 @@ describe('adaptive plan record', () => {
         disposition: 'keep',
         rationale: 'Unknown kinds cannot become waivers.',
       },
+      {
+        kind: 'predecessor-path',
+        path: '../outside',
+        disposition: 'keep',
+        destination: '',
+        owner: '',
+        rationale: '',
+        target: 'scripts/current.mjs',
+      },
     ];
     record.freshStructuralReview = { status: 'failed', failures: 'ownership' };
     record.coldNavigationEvidence = { status: 'failed' };
@@ -95,6 +104,12 @@ describe('adaptive plan record', () => {
         'record.structuralDispositions[0].disposition must be keep, split, move, or consolidate',
         'record.structuralDispositions[0].rationale must be a non-empty string',
         'record.structuralDispositions[1].kind must be ownership-contract or current-fact',
+        'record.structuralDispositions[2].path must be a safe repository-relative path',
+        'record.structuralDispositions[2].disposition must be move or consolidate',
+        'record.structuralDispositions[2].destination must be a safe repository-relative path',
+        'record.structuralDispositions[2].owner must be a non-empty string',
+        'record.structuralDispositions[2].rationale must be a non-empty string',
+        'record.structuralDispositions[2] predecessor-path contains unsupported fields: target',
         'record.freshStructuralReview.failures must be an array',
         'record.coldNavigationEvidence.summary must be a non-empty string',
         'record.coldNavigationEvidence.probes must be a non-empty array',

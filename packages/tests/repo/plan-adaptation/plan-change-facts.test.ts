@@ -212,6 +212,72 @@ describe('canonical content facts', () => {
 });
 
 describe('qualification and checkpoint facts', () => {
+  it('accepts exact deleted and moved predecessor files with structured owner destinations', () => {
+    const fixture = createRepository();
+    writeFixture(
+      fixture.root,
+      'packages/tests/repo/pr-human-review-validation.test.ts',
+      'export {};\n',
+    );
+    writeFixture(
+      fixture.root,
+      'scripts/check-pr-human-review.mjs',
+      'export const review = true;\n',
+    );
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'v1 review files']);
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    runGit(fixture.root, ['rm', 'packages/tests/repo/pr-human-review-validation.test.ts']);
+    runGit(fixture.root, [
+      'mv',
+      'scripts/check-pr-human-review.mjs',
+      'scripts/pr-human-review.mjs',
+    ]);
+    const changes = readChangedPaths(fixture.root, base);
+    const record = predecessorRecord([
+      predecessorDisposition({
+        path: 'packages/tests/repo/pr-human-review-validation.test.ts',
+        destination: 'scripts/pr-human-review.mjs',
+      }),
+      predecessorDisposition({
+        path: 'scripts/check-pr-human-review.mjs',
+        destination: 'scripts/pr-human-review.mjs',
+      }),
+    ]);
+
+    expect(computeUndeclaredChangedPaths(changes, record)).toEqual([]);
+  });
+
+  it('does not let predecessor dispositions hide current, arbitrary, or non-migration paths', () => {
+    const fixture = createRepository();
+    writeFixture(fixture.root, 'scripts/check-pr-human-review.mjs', 'export {};\n');
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'v1 review entry']);
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    runGit(fixture.root, [
+      'mv',
+      'scripts/check-pr-human-review.mjs',
+      'scripts/pr-human-review.mjs',
+    ]);
+    writeFixture(fixture.root, 'packages/unowned/new.ts', 'export {};\n');
+    const changes = readChangedPaths(fixture.root, base);
+    const record = predecessorRecord([
+      predecessorDisposition({
+        path: 'scripts/pr-human-review.mjs',
+        destination: 'scripts/pr-human-review.mjs',
+      }),
+      predecessorDisposition({
+        path: 'packages/unowned/new.ts',
+        destination: 'scripts/pr-human-review.mjs',
+      }),
+      { ...predecessorDisposition(), disposition: 'keep' },
+    ]);
+
+    expect(computeUndeclaredChangedPaths(changes, record)).toEqual(
+      expect.arrayContaining(['scripts/check-pr-human-review.mjs', 'packages/unowned/new.ts']),
+    );
+  });
+
   it('discovers untracked files and reports both paths of an undeclared rename', () => {
     const fixture = createRepository();
     writeFixture(fixture.root, 'packages/untracked/src/new.ts', 'export const fresh = true;\n');
@@ -530,6 +596,33 @@ describe('qualification and checkpoint facts', () => {
     );
   });
 });
+
+function predecessorRecord(structuralDispositions: ReadonlyArray<Record<string, unknown>>) {
+  return {
+    capabilities: [
+      {
+        owner: 'PR human review',
+        root: 'scripts/pr-human-review',
+        entry: 'scripts/pr-human-review.mjs',
+        testRoot: 'packages/tests/repo/pr-human-review',
+      },
+    ],
+    structuralDispositions,
+  };
+}
+
+function predecessorDisposition(
+  input: { readonly path?: string; readonly destination?: string } = {},
+) {
+  return {
+    kind: 'predecessor-path',
+    path: input.path ?? 'scripts/check-pr-human-review.mjs',
+    disposition: 'move',
+    destination: input.destination ?? 'scripts/pr-human-review.mjs',
+    owner: 'PR human review',
+    rationale: 'Review Record v2 directly replaces the v1 path under its canonical owner.',
+  };
+}
 
 function createRepository() {
   const root = mkdtempSync(path.join(tmpdir(), 'plan-adaptation-facts-'));

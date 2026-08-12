@@ -89,8 +89,8 @@ function readOptions(args) {
     }
     options[name] = value;
   }
-  if (options.stage && !['initial', 'milestone', 'final'].includes(options.stage)) {
-    failUsage('--stage must be initial, milestone, or final');
+  if (options.stage && !['initial', 'final'].includes(options.stage)) {
+    failUsage('--stage must be initial or final');
   }
   return options;
 }

@@ -71,7 +71,7 @@ export function printReport(result) {
       `CANDIDATE ${item.id} | ${item.path}:${item.line} | ${item.symbol} | ${item.reason}`,
     );
   console.log(
-    'WARN: copy every candidate into the final PR Human Review Record v1 ledger ' +
+    'WARN: copy every candidate into the final PR Human Review Record v2 ledger ' +
       'with exactly one disposition.',
   );
 }

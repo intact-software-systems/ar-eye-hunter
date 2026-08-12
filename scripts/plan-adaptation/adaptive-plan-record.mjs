@@ -107,6 +107,10 @@ function validateStructuralDispositions(issues, dispositions) {
       issues.push(`${name} must be an object`);
       continue;
     }
+    if (disposition.kind === 'predecessor-path') {
+      validatePredecessorPathDisposition(issues, disposition, name);
+      continue;
+    }
     if (!['ownership-contract', 'current-fact'].includes(disposition.kind)) {
       issues.push(`${name}.kind must be ownership-contract or current-fact`);
       continue;
@@ -134,6 +138,36 @@ function validateStructuralDispositions(issues, dispositions) {
         issues.push(`${name}.affectedCodeDigest must be a SHA-256 digest`);
       }
     }
+  }
+}
+
+function validatePredecessorPathDisposition(issues, disposition, name) {
+  if (!isSafeRepositoryPath(disposition.path)) {
+    issues.push(`${name}.path must be a safe repository-relative path`);
+  }
+  if (!['move', 'consolidate'].includes(disposition.disposition)) {
+    issues.push(`${name}.disposition must be move or consolidate`);
+  }
+  if (!isSafeRepositoryPath(disposition.destination)) {
+    issues.push(`${name}.destination must be a safe repository-relative path`);
+  }
+  requireText(issues, disposition.owner, `${name}.owner`);
+  requireText(issues, disposition.rationale, `${name}.rationale`);
+  const supportedFields = new Set([
+    'kind',
+    'path',
+    'disposition',
+    'destination',
+    'owner',
+    'rationale',
+  ]);
+  const unsupportedFields = Object.keys(disposition)
+    .filter((field) => !supportedFields.has(field))
+    .sort();
+  if (unsupportedFields.length > 0) {
+    issues.push(
+      `${name} predecessor-path contains unsupported fields: ${unsupportedFields.join(', ')}`,
+    );
   }
 }
 
