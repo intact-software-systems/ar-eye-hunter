@@ -8,6 +8,11 @@ import type {
     RallarBlackBoxDistributedTargetResolution,
     RallarBlackBoxDistributedTargetPolicy,
 } from './distributed-run.ts';
+import {
+    collectDistributedAssertionFeatures,
+    validateAgentAssertionCapability,
+    type DistributedAssertionFeatures,
+} from './distributed/control-agent-capabilities.ts';
 import { RALLAR_BLACK_BOX_COMMAND_CAPABILITIES } from './schema.ts';
 import {
     flattenRallarBlackBoxCompositeResults,
@@ -176,6 +181,7 @@ export type DistributedRecipeTargetStatus =
     | 'different-group'
     | 'missing-identity'
     | 'missing-crdt-runtime'
+    | 'missing-assertion-capability'
     | 'missing-crdt-transport';
 
 export type DistributedRecipeTargetRow = Readonly<{
@@ -781,15 +787,19 @@ export function distributedRecipeTargetRows(input: Readonly<{
     const requiredCrdtTransports = uniqueValues(
         (input.requiredRecipes ?? []).flatMap(distributedRecipeCrdtTransports),
     );
+    const requiredAssertionFeatures = collectDistributedAssertionFeatures(
+        input.requiredRecipes ?? [],
+    );
     const rows = agents.map(agent =>
-        distributedRecipeTargetRow(
+        distributedRecipeTargetRow({
             agent,
-            input.group,
+            group: input.group,
             nowEpochMs,
             staleAfterMs,
             requiresCrdtRuntime,
             requiredCrdtTransports,
-        )
+            requiredAssertionFeatures,
+        })
     );
     const duplicateIdentityCounts = new Map<string, number>();
 
@@ -2517,14 +2527,21 @@ export function deriveDistributedRunWarningRegressionReport(input: Readonly<{
     };
 }
 
+interface DistributedRecipeTargetRowInput {
+    readonly agent: ControlAgentSnapshot;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly nowEpochMs: number;
+    readonly staleAfterMs: number;
+    readonly requiresCrdtRuntime: boolean;
+    readonly requiredCrdtTransports: readonly RallarBlackBoxTestCrdtTransport[];
+    readonly requiredAssertionFeatures: DistributedAssertionFeatures;
+}
+
 function distributedRecipeTargetRow(
-    agent: ControlAgentSnapshot,
-    group: RallarBlackBoxDistributedGroupRef,
-    nowEpochMs: number,
-    staleAfterMs: number,
-    requiresCrdtRuntime: boolean,
-    requiredCrdtTransports: readonly RallarBlackBoxTestCrdtTransport[],
+    input: DistributedRecipeTargetRowInput,
 ): DistributedRecipeTargetRow {
+    const { agent, group, nowEpochMs, staleAfterMs, requiresCrdtRuntime, requiredCrdtTransports } =
+        input;
     const identity = agent.identity;
     const crdt = identity?.capabilities?.crdt;
     const crdtTransports = crdt?.transports ?? [];
@@ -2601,6 +2618,19 @@ function distributedRecipeTargetRow(
             status: 'missing-crdt-transport',
             targetable: false,
             reason: `Agent CRDT runtime does not report ${missingCrdtTransport} transport support.`,
+        };
+    }
+
+    const unmetAssertionReason = validateAgentAssertionCapability(
+        input.requiredAssertionFeatures,
+        identity?.capabilities,
+    );
+    if (unmetAssertionReason) {
+        return {
+            ...base,
+            status: 'missing-assertion-capability',
+            targetable: false,
+            reason: unmetAssertionReason,
         };
     }
 

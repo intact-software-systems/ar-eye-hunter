@@ -336,3 +336,47 @@ npx vitest run packages/tests/shared-test/rallar-bb-test-loop-until.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
 ```
+
+```text
+Title: agents advertise assertion capabilities; staging gates on them
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D4
+
+Change type:
+- Compatible optional addition (identity metadata + staging preflight)
+
+Affected schemas:
+- RallarBlackBoxControlAgentCapabilities (new optional assertions block)
+- Distributed target resolution (new missing-assertion-capability blocker)
+- Control-server OpenAPI ControlAgentIdentity capabilities schema
+
+Old shape:
+Agent capability advertisement covered only the crdt block. Manifests using
+D1-D3 features dispatched to old agents failed agent-side at validateKeys.
+
+New shape:
+Agents advertise assertions { absence, untilLoop, operators } populated from
+the build's runtime feature set. resolveDistributedRunTargets and the
+operator target rows scan inline recipes for absence waits, until loops, and
+extended assert operators; a targeted agent that does not advertise a
+required feature becomes a missing-assertion-capability blocker with a
+named reason, failing staging instead of the run.
+
+Migration:
+No manifest changes required. World-fleet manifests may adopt the D1-D3
+features once their fleets advertise the block; Hetzner rollouts advertise
+it automatically after rebuild.
+
+Golden corpus updates:
+The golden distributed manifest's inline recipe gained an absence wait and
+an until loop so manifest examples exercise the gated features.
+
+Prompt/documentation updates:
+distributed-run-contract.md documents the assertions block and the staging
+gate; control-server OpenAPI describes the assertions capability schema.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-assertion-capability-gate.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+```

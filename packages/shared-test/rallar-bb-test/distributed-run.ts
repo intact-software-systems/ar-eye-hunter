@@ -1,7 +1,13 @@
 import type {
+    RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCrdtTransport,
     RallarBlackBoxTestRecipe,
 } from './types.ts';
+import {
+    collectDistributedAssertionFeatures,
+    validateAgentAssertionCapability,
+    type DistributedAssertionFeatures,
+} from './distributed/control-agent-capabilities.ts';
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES = [
     'draft',
@@ -114,6 +120,13 @@ export type RallarBlackBoxControlAgentIdentity = Readonly<{
 
 export type RallarBlackBoxControlAgentCapabilities = Readonly<{
     crdt?: RallarBlackBoxControlAgentCrdtCapability;
+    assertions?: RallarBlackBoxControlAgentAssertionsCapability;
+}>;
+
+export type RallarBlackBoxControlAgentAssertionsCapability = Readonly<{
+    absence: boolean;
+    untilLoop: boolean;
+    operators: readonly RallarBlackBoxTestAssertOperator[];
 }>;
 
 export type RallarBlackBoxControlAgentCrdtCapability = Readonly<{
@@ -250,6 +263,7 @@ export type RallarBlackBoxDistributedTargetBlockerStatus =
     | 'offline-agent'
     | 'stale-agent'
     | 'different-group'
+    | 'missing-assertion-capability'
     | 'agent-without-identity';
 
 export type RallarBlackBoxDistributedTargetBlocker = Readonly<{
@@ -276,6 +290,7 @@ export type RallarBlackBoxDistributedTargetResolution = Readonly<{
         staleAgents: number;
         offlineAgents: number;
         wrongGroupAgents: number;
+        assertionCapabilityBlockedAgents?: number;
         agentsWithoutIdentity: number;
         roleCounts: Readonly<Record<string, number>>;
         regions: Readonly<Record<string, number>>;
@@ -641,9 +656,20 @@ export function resolveDistributedRunTargets(input: Readonly<{
     const blockers: RallarBlackBoxDistributedTargetBlocker[] = [];
     const targetableAgentIds: string[] = [];
     const targetableById = new Set<string>();
+    const assertionFeatures = collectDistributedAssertionFeatures(
+        input.manifest.recipes
+            .map(selection => selection.recipe)
+            .filter((recipe): recipe is RallarBlackBoxTestRecipe => recipe !== undefined),
+    );
 
     for (const agent of input.agents) {
-        const blocker = distributedTargetBlocker(agent, input.manifest.group, nowEpochMs, staleAfterMs);
+        const blocker = distributedTargetBlocker({
+            agent,
+            group: input.manifest.group,
+            nowEpochMs,
+            staleAfterMs,
+            assertionFeatures,
+        });
         if (blocker) {
             blockers.push(blocker);
             continue;
@@ -686,6 +712,8 @@ export function resolveDistributedRunTargets(input: Readonly<{
             staleAgents: blockers.filter(blocker => blocker.status === 'stale-agent').length,
             offlineAgents: blockers.filter(blocker => blocker.status === 'offline-agent').length,
             wrongGroupAgents: blockers.filter(blocker => blocker.status === 'different-group').length,
+            assertionCapabilityBlockedAgents: blockers
+                .filter(blocker => blocker.status === 'missing-assertion-capability').length,
             agentsWithoutIdentity: blockers.filter(blocker => blocker.status === 'agent-without-identity').length,
             roleCounts,
             regions: countBy(selectedAgents.map(agent => agent.identity?.region).filter(isString)),
@@ -694,12 +722,18 @@ export function resolveDistributedRunTargets(input: Readonly<{
     };
 }
 
+interface DistributedTargetBlockerInput {
+    readonly agent: RallarBlackBoxControlAgentCandidate;
+    readonly group: RallarBlackBoxDistributedGroupRef;
+    readonly nowEpochMs: number;
+    readonly staleAfterMs: number;
+    readonly assertionFeatures: DistributedAssertionFeatures;
+}
+
 function distributedTargetBlocker(
-    agent: RallarBlackBoxControlAgentCandidate,
-    group: RallarBlackBoxDistributedGroupRef,
-    nowEpochMs: number,
-    staleAfterMs: number,
+    input: DistributedTargetBlockerInput,
 ): RallarBlackBoxDistributedTargetBlocker | undefined {
+    const agent = input.agent;
     if (!agent.identity) {
         return {
             agentId: agent.agentId,
@@ -707,7 +741,7 @@ function distributedTargetBlocker(
             reason: 'Control agent has not reported Rallar identity metadata.',
         };
     }
-    if (!identityMatchesGroup(agent.identity, group)) {
+    if (!identityMatchesGroup(agent.identity, input.group)) {
         return {
             agentId: agent.agentId,
             status: 'different-group',
@@ -723,11 +757,23 @@ function distributedTargetBlocker(
             identity: agent.identity,
         };
     }
-    if (agentIsStale(agent, nowEpochMs, staleAfterMs)) {
+    if (agentIsStale(agent, input.nowEpochMs, input.staleAfterMs)) {
         return {
             agentId: agent.agentId,
             status: 'stale-agent',
             reason: 'Control agent heartbeat is stale.',
+            identity: agent.identity,
+        };
+    }
+    const unmetAssertionReason = validateAgentAssertionCapability(
+        input.assertionFeatures,
+        agent.identity.capabilities,
+    );
+    if (unmetAssertionReason) {
+        return {
+            agentId: agent.agentId,
+            status: 'missing-assertion-capability',
+            reason: unmetAssertionReason,
             identity: agent.identity,
         };
     }

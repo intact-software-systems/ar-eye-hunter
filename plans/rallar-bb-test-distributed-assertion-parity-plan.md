@@ -16,7 +16,7 @@ Status: in progress. Implements the decision items of issue
 | D1 `wait` absence mode | in review | [#181](https://github.com/intact-software-systems/ar-eye-hunter/pull/181) |
 | D2 assert operator extension | in review | [#182](https://github.com/intact-software-systems/ar-eye-hunter/pull/182) |
 | D3 `loop` until-success polling | in review | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
-| D4 capability advertisement + preflight gating | not started | — |
+| D4 capability advertisement + preflight gating | in review | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
 | D5 parity and conformance deepening | not started | — |
 | D6 coordinator-evaluated group assertions | not started | — |
 

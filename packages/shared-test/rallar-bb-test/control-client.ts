@@ -11,6 +11,7 @@ import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxGeoLocation,
 } from './distributed-run.ts';
+import { toControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
 import { redactRallarBlackBoxValue } from './redaction.ts';
 import {
     type ControlClientEnvelope,
@@ -168,30 +169,6 @@ function firstString(...values: readonly unknown[]): string | undefined {
     return undefined;
 }
 
-const CONTROL_AGENT_CRDT_TRANSPORTS = [
-    'local-only',
-    'ws',
-    'rtc',
-    'ws-then-rtc',
-    'rtc-with-ws-fallback',
-] as const;
-
-function hasCrdtRuntimeHints(config: RallarBlackBoxTestState['currentConfig']): boolean {
-    const rallar = asRecord(config?.rallar);
-    return Boolean(
-        rallar.crdt === true ||
-            typeof rallar.crdtTransport === 'string' ||
-            rallar.crdtRuntime === true,
-    );
-}
-
-function isCrdtCapableProvider(providerMode: string | undefined): boolean {
-    return providerMode === 'browser-rallar' ||
-        providerMode === 'rallar-browser' ||
-        providerMode === 'rallar-remote-browser' ||
-        providerMode === 'mixed';
-}
-
 function toControlAgentIdentity(
     state: RallarBlackBoxTestState,
     agentId: string,
@@ -214,7 +191,6 @@ function toControlAgentIdentity(
     const sessionId = firstString(rallar.sessionId, config.sessionId);
     const providerMode = firstString(control.providerMode, defaults.providerMode, rallar.providerMode);
     const apiBaseUrl = firstString(config.apiBaseUrl, rallar.apiBaseUrl, defaults.apiBaseUrl);
-    const crdtSupported = isCrdtCapableProvider(providerMode) || hasCrdtRuntimeHints(config);
     const identity: RallarBlackBoxControlAgentIdentity = {
         principalId,
         clientId: firstString(rallar.clientId, principalId),
@@ -242,14 +218,11 @@ function toControlAgentIdentity(
         os: firstString(fleet.os, browser.os),
         tags: stringArray(fleet.tags),
         location: geoLocation(fleet.location),
-        capabilities: {
-            crdt: {
-                supported: crdtSupported,
-                transports: crdtSupported ? CONTROL_AGENT_CRDT_TRANSPORTS : [],
-                runtimeSurface: providerMode,
-                apiBaseUrlConfigured: Boolean(apiBaseUrl),
-            },
-        },
+        capabilities: toControlAgentCapabilities({
+            config,
+            providerMode,
+            apiBaseUrl,
+        }),
         updatedAtEpochMs: Date.now(),
     };
 
