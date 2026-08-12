@@ -5,11 +5,14 @@ This registry records approved persistent exceptions to the authoritative
 It starts empty. Do not register all existing legacy files above the size
 thresholds retroactively.
 
-Add an entry only when a TypeScript file above 800 physical lines or a function
-above 60 physical lines is materially touched and remains above its threshold.
-Materially touched means behavior, contracts, control flow, state, lifecycle,
-structure, or responsibility changed. Import-only, formatting-only, typo, and
-path-only changes do not trigger registration.
+Add an entry only when a materially touched TypeScript file remains at or above
+cognitive load 330, remains above the 1,200-line navigation backstop after the
+data-literal discount, or a materially touched function remains above 60
+physical lines. Materially touched means behavior, contracts, control flow,
+state, lifecycle, structure, or responsibility changed. Import-only,
+formatting-only, typo, and path-only changes do not trigger registration.
+Declarative data files need no entry: the checker subtracts behavior-free
+object and array literal lines before applying the backstop.
 
 An exception records a deliberate human decision that keeping cohesive code
 together is easier to understand than the available separation. It does not
@@ -35,16 +38,6 @@ cohesive algorithm.
 
 ## Approved exceptions
 
-- Repository-relative path: `apps/rallar-black-box/src/hetzner-distributed-manifests.ts`
-  - Exception category: static lookup data
-  - Why cohesion is clearer: the file is the single ordered catalog for the
-    generated Hetzner manifest suite. Keeping its manifest inventory, shared
-    construction rules, and generation metadata together makes ordering and
-    cross-manifest lifecycle invariants directly reviewable.
-  - Approval date and reviewer: 2026-08-09, task requester
-  - Review or removal condition: split the catalog when it exceeds 1,200
-    physical lines or when a new independently generated manifest suite is
-    added.
 - Repository-relative path:
   `packages/shared-test/rallar-bb-test/browser-adapter.ts`
   - Exception category: parser or state-transition table

@@ -3557,6 +3557,7 @@
         "npm:js-yaml@^5.2.1",
         "npm:postgres@^3.4.9",
         "npm:prettier@^3.9.5",
+        "npm:ts-morph@28",
         "npm:tsx@^4.23.1",
         "npm:typescript@7.0.2",
         "npm:vite@^8.1.5",

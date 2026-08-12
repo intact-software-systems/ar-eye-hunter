@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { analyzeCognitiveMetrics } from '../../../scripts/repo-style-check/cognitive-load-rules.mjs';
+import { computeDataLiteralLineCount } from '../../../scripts/repo-style-check/data-literal-discount.mjs';
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/repo-style-check.mjs');
@@ -120,6 +121,37 @@ describe('cognitive metric rules', () => {
     expect(output).not.toContain('File exports 17 runtime values');
   });
 
+  it('counts only behavior-free literal lines in the data-literal discount', () => {
+    const dataOnly = [
+      'export const table = [',
+      "  'row-0',",
+      '',
+      '  // grouped rows',
+      "  'row-1',",
+      '];',
+    ].join('\n');
+    expect(computeDataLiteralLineCount('table.ts', dataOnly)).toBe(3);
+
+    const withCall = ['export const table = [', '  createRow(0),', "  'row-1',", '];'].join('\n');
+    expect(computeDataLiteralLineCount('with-call.ts', withCall)).toBe(0);
+
+    const twoLineLiteral = "export const pair = ['left',\n'right'];";
+    expect(computeDataLiteralLineCount('pair.ts', twoLineLiteral)).toBe(0);
+  });
+
+  it('applies the navigation backstop after the data-literal discount', () => {
+    const fixtureRoot = createFixture({
+      'giant-table.ts': dataLiteralSource(1400),
+      'giant-code.ts': plainStatementsSource(1250),
+    });
+
+    const output = runChecker(fixtureRoot);
+
+    expect(output).not.toContain('giant-table.ts');
+    expect(output).toContain('[file.length]');
+    expect(output).toContain('File length 1250 > 1200 navigation backstop');
+  });
+
   it('measures TypeScript production sources only, not .mjs or declaration files', () => {
     const fixtureRoot = createFixture({
       'dense-script.mjs': plainScriptDecisionSource(120),
@@ -169,6 +201,18 @@ function valueExportSource(valueCount: number): string {
     { length: valueCount },
     (_, index) => `export const surfaceValue${index} = ${index};`,
   ).join('\n');
+}
+
+function dataLiteralSource(rowCount: number): string {
+  return [
+    'export const navigationTable = [',
+    ...Array.from({ length: rowCount }, (_, index) => `  'navigation-row-${index}',`),
+    '];',
+  ].join('\n');
+}
+
+function plainStatementsSource(lineCount: number): string {
+  return Array.from({ length: lineCount }, (_, index) => `const value${index} = true;`).join('\n');
 }
 
 function createFixture(files: Readonly<Record<string, string>>): string {

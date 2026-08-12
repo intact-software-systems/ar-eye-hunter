@@ -11,6 +11,7 @@ import {
 import { scanBoundaryUnknownFindings } from './boundary-unknown-findings.mjs';
 import { isCognitiveMetricsFile, scanCognitiveMetricFindings } from './cognitive-load-rules.mjs';
 import { scanConstructionRules } from './construction-rules.mjs';
+import { computeDataLiteralLineCount } from './data-literal-discount.mjs';
 import {
   estimateCyclomaticComplexity,
   extractRouteHandlerRanges,
@@ -83,7 +84,7 @@ const testRunnerConfigExtensions = new Set([
   'cjsx',
 ]);
 const limits = {
-  fileLineCount: 400,
+  fileLineCount: 1200,
   lineWidth: 100,
   handlerLineCount: 30,
   handlerComplexity: 8,
@@ -176,7 +177,7 @@ function scanFile(source, options) {
   const { file, raw } = source;
   const findings = [];
   const sourceText = { file, raw, lines: raw.split('\n') };
-  addFileMeasurementFindings(findings, sourceText.lines);
+  addFileMeasurementFindings(findings, sourceText);
   if (options.cognitiveMetrics && isCognitiveMetricsFile(file)) {
     findings.push(...scanCognitiveMetricFindings(sourceText));
   }
@@ -194,13 +195,16 @@ function isAmbientDeclarationFile(file) {
   return /\.d\.[cm]?ts$/u.test(file.toLowerCase());
 }
 
-function addFileMeasurementFindings(findings, lines) {
-  if (lines.length > limits.fileLineCount) {
+function addFileMeasurementFindings(findings, sourceText) {
+  const { lines } = sourceText;
+  const navigationLength = resolveNavigationFileLength(sourceText);
+  if (navigationLength > limits.fileLineCount) {
     findings.push(
       finding(
         'file.length',
-        `File length ${lines.length} > ${limits.fileLineCount}; prefer a cohesive ` +
-          'domain split. Route modules normally split by read/write/admin responsibility.',
+        `File length ${navigationLength} > ${limits.fileLineCount} navigation backstop ` +
+          `after the data-literal discount (${lines.length} physical lines). Split along ` +
+          'real ownership; density review is owned by the cognitive-load tiers.',
       ),
     );
   }
@@ -222,6 +226,14 @@ function addFileMeasurementFindings(findings, lines) {
       finding('line.width', `... and ${longLines.length - 8} additional over-long lines.`),
     );
   }
+}
+
+function resolveNavigationFileLength(sourceText) {
+  const physicalLineCount = sourceText.lines.length;
+  if (physicalLineCount <= limits.fileLineCount || !isCognitiveMetricsFile(sourceText.file)) {
+    return physicalLineCount;
+  }
+  return physicalLineCount - computeDataLiteralLineCount(sourceText.file, sourceText.raw);
 }
 
 function addRouteFindings(findings, raw) {
