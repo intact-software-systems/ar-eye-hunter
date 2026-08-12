@@ -259,6 +259,47 @@ checkpoint judgment.
 registry, placeholder files, permissive missing-file exception, or parallel
 scope allowlist.
 
+## Current horizon
+
+The canonical lifecycle can now reserve a future guidance owner without
+placeholder files or temporary undeclared scope. This horizon activates only
+the repository-structure behavior skill. General guidance simplification stays
+inactive until fresh-agent evaluation proves the new skill can turn structural
+facts into human-navigable decisions.
+
+### Task 7: Organizing repository structure skill and evaluations
+
+**Planned skill owner:**
+`.agents/skills/organizing-repository-structure/SKILL.md`
+
+**Planned versioned evaluation owner:**
+`.agents/evaluations/organizing-repository-structure/v1/`
+
+- [ ] Turn the existing no-skill flat-versus-singleton, near-limit module, and
+      plan-dependent navigation baselines into versioned pressure scenarios and
+      a machine-readable rubric/result contract.
+- [ ] Author one concise skill that owns structural judgment: recover the
+      capability owner and owner-to-result path, consume deterministic
+      repository-structure facts, choose `keep`, `split`, `move`, or
+      `consolidate`, and verify the result with a cold-navigation probe. It must
+      not prescribe a folder taxonomy or convert metrics into automatic splits.
+- [ ] Add focused deterministic contract tests under
+      `packages/tests/repo/organizing-repository-structure/` for skill
+      discovery, checker/disposition/cold-probe routing, scenario/rubric
+      coverage, and the boundary between structural facts and agent judgment.
+- [ ] Reuse the canonical evaluation-result validator API; add no second result
+      validator. Extend its CLI only when needed to select the structure suite
+      explicitly while preserving the existing adaptive-suite command.
+- [ ] Run the structure pressure scenarios with a fresh agent and refine only
+      observed loopholes until every critical result complies. Activate the
+      planned capability by removing its activation metadata, refresh facts,
+      pass full structure validation, then complete only this slice.
+
+**Legacy impact:** Do not duplicate repository metrics, plan adaptation,
+publication, or testing catalogs. The skill points agents to the canonical
+checker and style facts, while human structural judgment remains visible in the
+adaptive record.
+
 ## Checkpoint-activated outcomes
 
 These outcomes are fixed; their exact file placement and concrete slice pairing
@@ -341,6 +382,23 @@ are selected at the preceding checkpoint.
       "contractPaths": [
         "packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts"
       ]
+    },
+    {
+      "kind": "guidance",
+      "owner": "repository structure guidance",
+      "skillRoot": ".agents/skills/organizing-repository-structure",
+      "skillEntry": ".agents/skills/organizing-repository-structure/SKILL.md",
+      "contractTestRoot": "packages/tests/repo/organizing-repository-structure",
+      "focusedCommand": "npm run test:organizing-repository-structure",
+      "evaluationRoot": ".agents/evaluations/organizing-repository-structure/v1",
+      "contractPaths": [
+        ".agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs",
+        "packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts"
+      ],
+      "activation": {
+        "state": "planned",
+        "slice": "organizing-repository-structure-skill-and-evaluations"
+      }
     }
   ],
   "architecture": {
@@ -354,12 +412,10 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [
-    "planned-capability-declaration-lifecycle"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "1d65338cabf15bf03e98fe6992675c5069849b7213f3b46ccb94ca51be2fae4d",
+    "affectedCodeDigest": "21bea79fe795f65e17d411b7bd26dd9681f9089acdd2b6f4758c470db5e24d86",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -369,11 +425,13 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Guidance capabilities now have an honest declaration shape, and the adaptive-plan execution skill, versioned evaluations, canonical result validator, focused tests, and plugin discovery contract are complete. All three critical fresh-agent scenarios pass all 23 required rubric dimensions, focused/read-only checks pass, and an independent behavior-horizon review has no open Critical or Important findings.",
-    "learning": "A capability must be declared before its implementation files exist so the next slice starts with truthful ownership and affected scope. Requiring every declaration to resolve immediately forces temporary scope-growth and makes the control loop discover the intended owner only after work has already begun.",
-    "structure": "Extend the existing canonical capability declaration with a backward-compatible active state and an explicit planned state bound to one current-horizon slice. Planned declarations reserve their owner and affected paths while deferring repository-existence checks; activation is required before slice completion, and no planned declaration may survive outside its horizon or through plan close-out.",
-    "decision": "amend",
-    "nextSlices": []
+    "outcome": "The planned-capability lifecycle is complete and independently reviewed: planned owners reserve their scope without placeholder files, are disjoint from active and other planned topology roots, preserve active rename lineage, and must activate before completion or close-out. A separate CI regression correction also restored the adaptive evaluation validator to the repository input-contract standard without changing its API or results.",
+    "learning": "Future behavior guidance must have an explicit planned owner before authoring begins, while planned exemptions must never suppress an active owner's structural evidence. The GitHub correction also showed that the local WORKTREE repo-style collector skips dot-prefixed guidance code even though immutable CI scans it, so the later Governance Gate must provide surface parity and direct skill-root style checks remain required meanwhile.",
+    "structure": "Declare one planned repository-structure guidance capability with its exact skill, evaluation, mirrored test, plugin discovery, and canonical evaluation-validator contract paths. Activate only its skill/evaluation slice; keep general guidance simplification inactive until fresh-agent results prove this behavior owner, and retain WORKTREE versus immutable-tree parity as an acceptance obligation for the later Governance Gate.",
+    "decision": "continue",
+    "nextSlices": [
+      "organizing-repository-structure-skill-and-evaluations"
+    ]
   },
   "structuralDispositions": [
     {
@@ -506,6 +564,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "amend",
       "summary": "Guidance capabilities now have an honest declaration shape, and the adaptive-plan execution skill, versioned evaluations, canonical result validator, focused tests, and plugin discovery contract are complete. All three critical fresh-agent scenarios pass all 23 required rubric dimensions, focused/read-only checks pass, and an independent behavior-horizon review has no open Critical or Important findings."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "The planned-capability lifecycle is complete and independently reviewed: planned owners reserve their scope without placeholder files, are disjoint from active and other planned topology roots, preserve active rename lineage, and must activate before completion or close-out. A separate CI regression correction also restored the adaptive evaluation validator to the repository input-contract standard without changing its API or results."
     }
   ]
 }
