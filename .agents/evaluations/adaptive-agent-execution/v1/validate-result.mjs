@@ -5,6 +5,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const evaluationRoot = path.dirname(fileURLToPath(import.meta.url));
+const suiteDefinitions = {
+  'adaptive-agent-execution': {
+    evaluationRoot,
+    passLabel: 'adaptive agent evaluation result',
+  },
+  'organizing-repository-structure': {
+    evaluationRoot: path.resolve(evaluationRoot, '../../organizing-repository-structure/v1'),
+    passLabel: 'organizing repository structure evaluation result',
+  },
+};
 
 export function validateEvaluationResult(input) {
   const issues = [];
@@ -298,18 +308,19 @@ function isRecord(value) {
 }
 
 function runCli() {
-  const resultPath = process.argv[2];
-  if (typeof resultPath !== 'string' || process.argv.length !== 3) {
-    console.log('FAIL: expected one evaluation result JSON path');
+  const cliInput = readCliInput(process.argv.slice(2));
+  if (cliInput.issue !== undefined) {
+    console.log(`FAIL: ${cliInput.issue}`);
     process.exitCode = 1;
     return;
   }
   try {
+    const suiteDefinition = suiteDefinitions[cliInput.suite];
     const input = {
       repoRoot: process.cwd(),
-      suite: readJson(path.join(evaluationRoot, 'scenarios.json')),
-      rubric: readJson(path.join(evaluationRoot, 'rubric.json')),
-      result: readJson(path.resolve(resultPath)),
+      suite: readJson(path.join(suiteDefinition.evaluationRoot, 'scenarios.json')),
+      rubric: readJson(path.join(suiteDefinition.evaluationRoot, 'rubric.json')),
+      result: readJson(path.resolve(cliInput.resultPath)),
     };
     const issues = validateEvaluationResult(input);
     if (issues.length > 0) {
@@ -319,11 +330,26 @@ function runCli() {
       process.exitCode = 1;
       return;
     }
-    console.log(`PASS: adaptive agent evaluation result ${resultPath}`);
+    console.log(`PASS: ${suiteDefinition.passLabel} ${cliInput.resultPath}`);
   } catch (error) {
     console.log(`FAIL: ${toError(error).message}`);
     process.exitCode = 1;
   }
+}
+
+function readCliInput(args) {
+  if (args.length === 1) {
+    return { suite: 'adaptive-agent-execution', resultPath: args[0] };
+  }
+  if (args.length !== 3 || args[0] !== '--suite') {
+    return { issue: 'expected one evaluation result JSON path or --suite <suite> <path>' };
+  }
+  if (!Object.hasOwn(suiteDefinitions, args[1])) {
+    return {
+      issue: 'suite must be adaptive-agent-execution or organizing-repository-structure',
+    };
+  }
+  return { suite: args[1], resultPath: args[2] };
 }
 
 function readJson(filePath) {

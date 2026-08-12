@@ -7,6 +7,7 @@ const skillsRoot = path.join(repoRoot, '.agents/skills');
 const expectedSkills = [
   'adaptive-plan-execution',
   'building-rallar-apps',
+  'organizing-repository-structure',
   'performance-analysis',
   'rallar-ai',
   'rallar-code-writing',

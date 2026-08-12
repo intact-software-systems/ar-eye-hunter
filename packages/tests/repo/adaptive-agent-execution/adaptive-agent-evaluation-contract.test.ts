@@ -10,31 +10,18 @@ const adaptiveScenarioIds = [
   'markdown-only-synchronization',
   'ci-failure-classification',
 ] as const;
-const allScenarioIds = [
-  ...adaptiveScenarioIds,
-  'near-limit-module-pressure',
-  'flat-versus-singleton-folders',
-  'repository-depends-on-plan',
-] as const;
-
 describe('adaptive agent execution evaluation contract', () => {
-  it('owns six versioned pressure scenarios with adaptive and structure coverage', () => {
+  it('owns three versioned adaptive pressure scenarios', () => {
     const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
 
     expect(suite.schemaVersion).toBe('adaptive-agent-execution-scenarios-v1');
     expect(suite.suiteId).toBe('adaptive-agent-execution-v1');
     expect(suite.scenarios.map((scenario) => scenario.id).sort()).toEqual(
-      [...allScenarioIds].sort(),
+      [...adaptiveScenarioIds].sort(),
     );
     expect(
       suite.scenarios.filter((scenario) => scenario.primarySkill === 'adaptive-plan-execution'),
     ).toHaveLength(3);
-    expect(
-      suite.scenarios.filter(
-        (scenario) => scenario.primarySkill === 'organizing-repository-structure',
-      ),
-    ).toHaveLength(3);
-
     for (const scenario of suite.scenarios) {
       expect(scenario.critical, scenario.id).toBe(true);
       expect(scenario.pressures.length, scenario.id).toBeGreaterThanOrEqual(3);

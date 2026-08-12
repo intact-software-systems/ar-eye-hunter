@@ -86,6 +86,7 @@
     "check:plan-adaptation": "node scripts/plan-adaptation.mjs check",
     "test:plan-adaptation": "vitest run packages/tests/repo/plan-adaptation",
     "test:adaptive-plan-execution": "vitest run packages/tests/repo/adaptive-agent-execution",
+    "test:organizing-repository-structure": "vitest run packages/tests/repo/organizing-repository-structure",
     "check:adaptive-agent-evaluation": "node .agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs",
     "check:repo-structure": "node scripts/repo-structure-check.mjs",
     "test:repo-structure": "vitest run packages/tests/repo/repo-structure-check",

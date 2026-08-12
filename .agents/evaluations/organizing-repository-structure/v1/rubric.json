@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "organizing-repository-structure-rubric-v1",
+  "suiteId": "organizing-repository-structure-v1",
+  "criticalPolicy": "Every required dimension for every critical scenario must pass.",
+  "nonGoals": [
+    "Score general architecture eloquence or writing style.",
+    "Require a particular folder taxonomy.",
+    "Convert a size, density, prefix, or depth fact into an automatic split.",
+    "Treat raw model output as repository guidance or copy it into a skill."
+  ],
+  "authority": {
+    "automatedFacts": [
+      "directory density",
+      "feature-prefix clustering",
+      "file size and cognitive-load findings",
+      "semantic directory depth",
+      "singleton and redundant-chain findings",
+      "capability declaration and cold-navigation evidence validity",
+      "affected-code digest and computed structural triggers"
+    ],
+    "agentJudgments": [
+      "capability and responsibility ownership",
+      "keep, split, move, or consolidate disposition",
+      "separation-of-concerns and single-responsibility rationale",
+      "checkpoint decision and next slices",
+      "validation scope"
+    ]
+  },
+  "dimensions": [
+    {
+      "id": "structure.owner-navigation",
+      "pass": "Recovers the capability owner, canonical entry, owner-to-result and failure paths, and mirrored tests from repository artifacts without using the tactical plan as a map."
+    },
+    {
+      "id": "structure.singleton-tradeoff",
+      "pass": "Rejects automatic flattening and meaningless singleton nesting, grounding placement in a real domain, lifecycle, policy, translation, compatibility, protocol, runtime, side-effect, or ownership boundary."
+    },
+    {
+      "id": "structure.durable-repository-truth",
+      "pass": "Makes code, entries, tests, focused commands, and required navigation maps sufficient for cold navigation while treating the active plan as tactical evidence."
+    },
+    {
+      "id": "structure.disposition-judgment",
+      "pass": "Chooses keep, split, move, or consolidate for current facts from separation of concerns, single responsibility, dependency direction, compatibility, and human navigation."
+    },
+    {
+      "id": "structure.metric-boundary",
+      "pass": "Uses size, density, prefix, cognitive-load, and depth findings as review facts rather than automatic split or folder instructions."
+    },
+    {
+      "id": "structure.cold-navigation-proof",
+      "pass": "Requires a fresh plan-free probe to locate exact owner, entry, result and failure paths, mirrored tests, and focused command or map before accepting the structure."
+    },
+    {
+      "id": "adaptive.structural-reflection",
+      "pass": "Checkpoints structural triggers or navigation degradation, consolidates before further feature work when needed, and stops for human direction if the post-consolidation fresh probe fails."
+    },
+    {
+      "id": "boundary.fact-versus-judgment",
+      "pass": "Runs the canonical repository structure and style fact owners, leaves computed facts to automation, and visibly owns the architectural disposition and validation judgments."
+    }
+  ],
+  "resultContract": {
+    "schemaVersion": "adaptive-agent-execution-result-v1",
+    "requiredRunFields": [
+      "schemaVersion",
+      "runId",
+      "suiteId",
+      "primarySkill",
+      "skillVariant",
+      "model",
+      "startedAt",
+      "completedAt",
+      "scenarioResults",
+      "summary"
+    ],
+    "skillVariants": ["no-skill", "with-skill"],
+    "verdicts": ["pass", "fail"],
+    "requiredScenarioFields": [
+      "scenarioId",
+      "verdict",
+      "dimensionResults",
+      "criticalFailures",
+      "rawOutputArtifact"
+    ],
+    "requiredDimensionFields": ["dimensionId", "verdict", "evidence", "reason"],
+    "summaryFields": ["criticalPassed", "criticalTotal", "passed", "total"]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "organizing-repository-structure-scenarios-v1",
+  "suiteId": "organizing-repository-structure-v1",
+  "scenarios": [
+    {
+      "id": "near-limit-module-pressure",
+      "title": "Pressure to create many near-limit modules",
+      "critical": true,
+      "primarySkill": "organizing-repository-structure",
+      "pressures": ["deadline", "metric-compliance", "sunk-cost"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. A large capability has been split into eight flat modules of 390-399 lines so every file remains just below a review warning. The tests pass, four hours have been spent on the split, and the lead wants it merged today because the numeric limit is green. The modules share lifecycle state, several filenames use generic roles, and no canonical entry is obvious. State whether you keep, split, move, or consolidate the structure, how you recover the capability owner and owner-to-result path from repository truth, which canonical structural facts you run, what changes in the active horizon, and the cold-navigation evidence required before completion. Separate the automated facts from your structural judgment and do not choose a folder taxonomy mechanically.",
+      "requiredDimensions": [
+        "structure.owner-navigation",
+        "structure.disposition-judgment",
+        "structure.metric-boundary",
+        "structure.cold-navigation-proof",
+        "adaptive.structural-reflection",
+        "boundary.fact-versus-judgment"
+      ]
+    },
+    {
+      "id": "flat-versus-singleton-folders",
+      "title": "A flat folder is compared with meaningless singleton folders",
+      "critical": true,
+      "primarySkill": "organizing-repository-structure",
+      "pressures": ["aesthetic-pressure", "authority", "schedule"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. Twelve related authored-code files are flat. A senior reviewer demands six one-code-file subfolders because nested trees look more organized, while another reviewer demands that all twelve remain flat forever. The deadline is tomorrow and both proposals preserve passing tests. Inspect ownership, entries, callers, lifecycle and side-effect boundaries, tests, and public paths; then choose keep, split, move, or consolidate for each relevant fact. State how tests mirror the result, which canonical structural facts support but do not choose the decision, what checkpoint trigger applies, and the fresh cold-navigation proof that makes the repository easier for a human to navigate rather than merely deeper or flatter.",
+      "requiredDimensions": [
+        "structure.owner-navigation",
+        "structure.singleton-tradeoff",
+        "structure.disposition-judgment",
+        "structure.cold-navigation-proof",
+        "adaptive.structural-reflection",
+        "boundary.fact-versus-judgment"
+      ]
+    },
+    {
+      "id": "repository-depends-on-plan",
+      "title": "A repository can be understood only through its implementation plan",
+      "critical": true,
+      "primarySkill": "organizing-repository-structure",
+      "pressures": ["completion-pressure", "sunk-cost", "passing-tests"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. All acceptance tests pass and the ten-step implementation plan explains every module, but a fresh developer cannot locate the canonical entry, lifecycle decision owner, exit path, or matching tests without reading that plan. The team has already spent a week documenting the plan and wants to close it now because behavior is green. State the repository changes and fresh cold-navigation proof required before closure, whether a consolidation slice replaces a feature slice, what happens if the fresh probe still fails, which plan evidence is tactical versus durable repository truth, and which exact automated facts versus human judgments justify completion or stop.",
+      "requiredDimensions": [
+        "structure.owner-navigation",
+        "structure.durable-repository-truth",
+        "structure.disposition-judgment",
+        "structure.cold-navigation-proof",
+        "adaptive.structural-reflection",
+        "boundary.fact-versus-judgment"
+      ]
+    }
+  ]
+}

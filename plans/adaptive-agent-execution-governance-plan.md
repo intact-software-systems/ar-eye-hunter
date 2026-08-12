@@ -275,22 +275,22 @@ facts into human-navigable decisions.
 **Planned versioned evaluation owner:**
 `.agents/evaluations/organizing-repository-structure/v1/`
 
-- [ ] Turn the existing no-skill flat-versus-singleton, near-limit module, and
+- [x] Turn the existing no-skill flat-versus-singleton, near-limit module, and
       plan-dependent navigation baselines into versioned pressure scenarios and
       a machine-readable rubric/result contract.
-- [ ] Author one concise skill that owns structural judgment: recover the
+- [x] Author one concise skill that owns structural judgment: recover the
       capability owner and owner-to-result path, consume deterministic
       repository-structure facts, choose `keep`, `split`, `move`, or
       `consolidate`, and verify the result with a cold-navigation probe. It must
       not prescribe a folder taxonomy or convert metrics into automatic splits.
-- [ ] Add focused deterministic contract tests under
+- [x] Add focused deterministic contract tests under
       `packages/tests/repo/organizing-repository-structure/` for skill
       discovery, checker/disposition/cold-probe routing, scenario/rubric
       coverage, and the boundary between structural facts and agent judgment.
-- [ ] Reuse the canonical evaluation-result validator API; add no second result
+- [x] Reuse the canonical evaluation-result validator API; add no second result
       validator. Extend its CLI only when needed to select the structure suite
       explicitly while preserving the existing adaptive-suite command.
-- [ ] Run the structure pressure scenarios with a fresh agent and refine only
+- [x] Run the structure pressure scenarios with a fresh agent and refine only
       observed loopholes until every critical result complies. Activate the
       planned capability by removing its activation metadata, refresh facts,
       pass full structure validation, then complete only this slice.
@@ -394,11 +394,7 @@ are selected at the preceding checkpoint.
       "contractPaths": [
         ".agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs",
         "packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts"
-      ],
-      "activation": {
-        "state": "planned",
-        "slice": "organizing-repository-structure-skill-and-evaluations"
-      }
+      ]
     }
   ],
   "architecture": {
@@ -412,10 +408,12 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "organizing-repository-structure-skill-and-evaluations"
+  ],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "21bea79fe795f65e17d411b7bd26dd9681f9089acdd2b6f4758c470db5e24d86",
+    "affectedCodeDigest": "ebc932556c8df8205fe9da5db7ffb02a6f1444a2ce70556c591cb8351a80032a",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -429,9 +427,7 @@ are selected at the preceding checkpoint.
     "learning": "Future behavior guidance must have an explicit planned owner before authoring begins, while planned exemptions must never suppress an active owner's structural evidence. The GitHub correction also showed that the local WORKTREE repo-style collector skips dot-prefixed guidance code even though immutable CI scans it, so the later Governance Gate must provide surface parity and direct skill-root style checks remain required meanwhile.",
     "structure": "Declare one planned repository-structure guidance capability with its exact skill, evaluation, mirrored test, plugin discovery, and canonical evaluation-validator contract paths. Activate only its skill/evaluation slice; keep general guidance simplification inactive until fresh-agent results prove this behavior owner, and retain WORKTREE versus immutable-tree parity as an acceptance obligation for the later Governance Gate.",
     "decision": "continue",
-    "nextSlices": [
-      "organizing-repository-structure-skill-and-evaluations"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {

@@ -4,7 +4,6 @@
   "criticalPolicy": "Every required dimension for every critical scenario must pass.",
   "nonGoals": [
     "Score general architecture eloquence or writing style.",
-    "Require a particular folder taxonomy or mechanically chosen structural disposition.",
     "Treat raw model output as repository guidance or copy it into a skill."
   ],
   "authority": {
@@ -23,7 +22,6 @@
       "structure",
       "decision",
       "next slices",
-      "structural disposition",
       "validation scope"
     ]
   },
@@ -63,22 +61,6 @@
     {
       "id": "adaptive.ci-classification",
       "pass": "Classifies each failure as regression, infrastructure/flaky, obsolete coupled test, or invalid plan assumption before editing, and only the invalid assumption automatically amends the plan."
-    },
-    {
-      "id": "structure.owner-navigation",
-      "pass": "Recovers capability ownership, canonical entry, owner-to-result path, and mirrored tests from repository artifacts rather than the tactical plan."
-    },
-    {
-      "id": "structure.singleton-tradeoff",
-      "pass": "Rejects both automatic flattening and meaningless singleton nesting, using a real domain, lifecycle, public, runtime, or ownership boundary as the decision basis."
-    },
-    {
-      "id": "structure.durable-repository-truth",
-      "pass": "Makes code, entries, tests, and required navigation maps sufficient for cold navigation and treats the active plan as tactical evidence."
-    },
-    {
-      "id": "structure.disposition-judgment",
-      "pass": "Chooses keep, split, move, or consolidate from current structural facts without treating density, size, prefix, or depth findings as automatic folder instructions."
     },
     {
       "id": "boundary.fact-versus-judgment",
