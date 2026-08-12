@@ -14,8 +14,12 @@ permissions:
   contents: read
 
 jobs:
+  governance-gate:
+    name: Governance Gate
+    uses: ./.github/workflows/governance-gate.yml
   release-gate:
     name: Release Gate
+    needs: governance-gate
     uses: ./.github/workflows/release-gate.yml
     with:
       changed_repo_style_base: origin/main

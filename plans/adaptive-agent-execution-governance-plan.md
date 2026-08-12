@@ -434,7 +434,7 @@ skill, create a placeholder routing skill, or keep the invalid ownership model.
 **Legacy impact:** Delete v1 behavior and labels directly. Preserve only the
 trusted retained-legacy and candidate-report behaviors that remain part of v2.
 
-## Current one-slice horizon
+## Completed fast-governance horizon
 
 ### Task 13: Fast Governance Gate
 
@@ -444,15 +444,15 @@ trusted retained-legacy and candidate-report behaviors that remain part of v2.
 
 **Planned mirrored tests:** `packages/tests/repo/governance-gate/`
 
-- [ ] Add one fast local command and GitHub workflow that run adaptive-plan,
+- [x] Add one fast local command and GitHub workflow that run adaptive-plan,
       repository-structure, Review Record v2, and their focused deterministic
       contract checks before the expensive Branch Release Gate.
-- [ ] Make the branch workflow depend on the Governance Gate without copying
+- [x] Make the branch workflow depend on the Governance Gate without copying
       check logic into YAML or weakening the existing broad release workflow.
-- [ ] Fail closed on missing package commands, stale plan facts, structure
+- [x] Fail closed on missing package commands, stale plan facts, structure
       findings, v1 review contracts, and focused test failure. Emit concise
       phase-specific failures suitable for CI triage.
-- [ ] Keep the local governance path below ten seconds and target less than two
+- [x] Keep the local governance path below ten seconds and target less than two
       minutes in GitHub. Document exact command ownership and add deterministic
       workflow/command contract tests.
 
@@ -624,11 +624,7 @@ are selected at the preceding checkpoint.
         "local phase orchestration",
         "focused contract validation",
         "GitHub early-gate integration"
-      ],
-      "activation": {
-        "state": "planned",
-        "slice": "fast-governance-gate"
-      }
+      ]
     }
   ],
   "architecture": {
@@ -646,10 +642,12 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "fast-governance-gate"
+  ],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "82f232e88811079f690a9e18ce0892452eda3cab9e04e9a781d4b5ef5893f800",
+    "affectedCodeDigest": "f77fdd416d7008ba88b78ee6079e624151f11073c13c7d0be368a6b5cddc95a9",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -664,9 +662,7 @@ are selected at the preceding checkpoint.
     "learning": "The planned check-pr-human-review entry was not an exact sibling of its capability root; the direct cutover moved it to scripts/pr-human-review.mjs without a wrapper. Review also showed that build freshness needs explicit repository contracts plus ordinary-documentation exclusion, initial review needs planned horizon owners while final review needs active owners, and removed v1 predecessors need structured fail-closed dispositions rather than unresolved undeclared paths.",
     "structure": "Keep PR human review as one mixed code, template, documentation, workflow, and legacy-integration owner at scripts/pr-human-review with exact non-code contracts and explicit cross-owner plan/legacy facts. Keep Governance Gate separate and activate only fast-governance-gate next.",
     "decision": "amend",
-    "nextSlices": [
-      "fast-governance-gate"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
