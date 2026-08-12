@@ -50,6 +50,19 @@ environment variables, HTTP services, Playwright, and control-server needs.
 Provider differences are recorded as capability differences on each row so
 artifacts can distinguish real capability gaps from accidental regressions.
 
+## Assertion Outcome Parity
+
+`conformance/assertion-outcome-parity.ts` proves the two dialects agree on
+assertion verdicts, not just step statuses: shared fixtures are evaluated by
+the black-box-runner engines (`expect.comparators`, `compatible-complete`,
+`expect.absent`, `http.poll-until`) and by the `rallar-bb-test` runtime
+(extended `assert` operators, `matchesShapeComplete`, `wait absent: true`,
+`loop until: 'first-success'`), and every row must agree with the expected
+pass/fail verdict. A semantics divergence between the dialects fails
+`rallar-bb-test-assertion-outcome-parity.test.ts` by contract. The
+step-presence/status comparison in `provider-parity.ts` remains the
+transport-level companion.
+
 ## Reports
 
 Use `toRallarBlackBoxCompositeConformanceReport(...)` to build an artifact

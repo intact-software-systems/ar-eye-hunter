@@ -32,3 +32,20 @@ Do not propose broad refactors from one run. If the operation report itself is
 missing, use the named failing GitHub step and request a same-ref rerun. Do not
 describe absent distributed artifacts as missing evidence when
 `recipeStarted` is false.
+
+## Assertion parity failure codes
+
+- `RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED` — an absence wait found a matching
+  event after holding its full window. Category `assertion-absence`; minimal
+  fix area `absence wait window or leaked traffic source`. Read the offending
+  redacted event in the command result before changing recipe scope.
+- `RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED` — an until loop ran out of
+  count/duration/deadline bounds without a fully passing attempt. Category
+  `convergence-polling`; minimal fix area `convergence polling bounds or
+  backend convergence`. The error details carry the attempt count and the
+  last failing child result.
+- `missing-assertion-capability` staging blockers — a targeted agent does not
+  advertise a required assertion feature. Category `capability-gating`;
+  minimal fix area `agent assertion capability rollout`. Roll the fleet
+  forward (Hetzner: rerun `08-rollout-controller.sh` + worker restart) or
+  remove the gated feature from the manifest.

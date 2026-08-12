@@ -7,17 +7,24 @@
 > intended starting instruction; the baked-in decision resolves the one choice
 > that would otherwise block mid-task.
 
-Status: in progress. Implements the decision items of issue
+Status: D0-D5 merged to `main` (owner-approved admin squash merges of #182,
+#187, #190, #192 on 2026-08-12; #180/#181 merged via the stack root).
+Remaining before completion: the approved Hetzner dispatch of
+`16-rtc-absence-wait-2-agent` (D1), **Run Hetzner Supported Distributed
+Manifests** green on the resulting default-branch commit, and a decision on
+the unmandated D6. The stack's structural-lineage manifest was retired with
+the final merge (all extractions are now main baseline). Implements the decision
+items of issue
 [#176](https://github.com/intact-software-systems/ar-eye-hunter/issues/176).
 
 | Workstream | Status | Branch / PR |
 |---|---|---|
-| D0 fail-closed `rtc.send.expect` + http result redaction | in review | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
-| D1 `wait` absence mode | in review | [#181](https://github.com/intact-software-systems/ar-eye-hunter/pull/181) |
-| D2 assert operator extension | in review | [#182](https://github.com/intact-software-systems/ar-eye-hunter/pull/182) |
-| D3 `loop` until-success polling | in review | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
-| D4 capability advertisement + preflight gating | in review | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
-| D5 parity and conformance deepening | not started | — |
+| D0 fail-closed `rtc.send.expect` + http result redaction | merged | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
+| D1 `wait` absence mode | merged | [#181](https://github.com/intact-software-systems/ar-eye-hunter/pull/181) |
+| D2 assert operator extension | merged | [#182](https://github.com/intact-software-systems/ar-eye-hunter/pull/182) |
+| D3 `loop` until-success polling | merged | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
+| D4 capability advertisement + preflight gating | merged | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
+| D5 parity and conformance deepening | merged | [#192](https://github.com/intact-software-systems/ar-eye-hunter/pull/192) |
 | D6 coordinator-evaluated group assertions | not started | — |
 
 Plan evidence base: authored 2026-08-11 after the W1–W8 assertion-coverage
