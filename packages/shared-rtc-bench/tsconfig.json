@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "lib": ["ES2023", "DOM"],
+    "strict": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vitest/globals", "@types/deno"],
+    "paths": {
+      "@shared-graph/*": ["../../packages/shared-graph/*"],
+      "@shared-server/*": ["../../packages/shared-server/*"],
+      "@shared-web/*": ["../../packages/shared-web/*"],
+      "@shared/*": ["../../packages/shared/*"]
+    }
+  },
+  "include": ["**/*.ts", "../../types/**/*.d.ts"]
+}

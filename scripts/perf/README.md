@@ -43,41 +43,31 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 
 ## Scripts
 
-| File | Purpose |
-| --- | --- |
-| `runtime-validation-bench.ts` | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
-| `summarize-runtime-results.mjs` | Node helper that summarizes harness JSON into per-case duration and memory deltas. |
-| `api-v1-state-write-concurrency-bench.ts` | Direct PostgreSQL API-v1 state-write benchmark for uncontended, shared-group, and hot-group concurrency. |
-| `compare-api-v1-state-write-results.mjs` | Validates state-write artifacts and enforces the relative performance and correctness gate. |
-| `seed-perf-db.sql` | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows. |
-| `explain-perf-db.sql` | EXPLAIN ANALYZE script for the seeded Postgres fixture. |
-| `seed-perf-db-sparse-queue.sql` | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection. |
-| `client-list-fanout-bench.ts` | Client snapshot fanout/pagination workload. |
-| `group-list-fanout-bench.ts` | Group snapshot fanout/pagination workload. |
-| `state-sync/state-sync-resolve-member-scan-bench.ts` | State-sync member resolution scan workload. |
-| `state-sync-send-fanout-bench.ts` | State-sync send fanout workload. |
-| `rtc-room-graph-no-rtt-bench.ts` | No-RTT room graph construction workload. |
-| `rtc-room-graph-rtt-bench.ts` | RTT-backed room graph construction workload. |
-| `rtc-topology-star-bench.ts` | Star topology rebuild workload. |
-| `rtc-topology-tree-no-rtt-bench.ts` | No-RTT tree topology rebuild workload. |
-| `rtc-topology-mesh-no-rtt-bench.ts` | No-RTT mesh topology rebuild workload. |
-| `rtc-topology-rtt-traffic-metrics.ts` | WS/topic-level RTT burst probe for topology queue coalescing, flushes, graph builds, and publishes. |
-| `rtc-topology-inactive-churn-bench.ts` | Topology snapshot lifetime workload comparing retained inactive overlays with inactive-overlay cleanup. |
-| `rtc-topology/delivery-log-bench.ts` | PostgreSQL publisher-stream append, contention, duplicate-race, and rollback workload. |
-| `rtc-topology/replay-drain-operation-counts.ts` | Deterministic caught-up, bounded-page, delivery-outcome, and gap-hydration operation counts for the production replay service. |
-| `rtc-rtt-group-scan-bench.ts` | RTT/group lookup scan workload. |
-| `rtc-multicast-serialization-bench.ts` | Multicast transport serialization fanout workload. |
-| `rtc-ice-candidate-queue-bench.ts` | ICE candidate queue flush workload. |
-| `rtc-peer-listener-cleanup-bench.ts` | Peer connection listener/handler cleanup workload. |
-| `rtc-data-channel-replace-key-bench.ts` | DataChannel replace-by-key queue coalescing workload. |
-| `rtc-data-channel-close-retention-bench.ts` | DataChannel terminal close queue-retention workload. |
-| `rtc-data-channel-error-reference-bench.ts` | DataChannel native error reference/handler-retention workload. |
-| `rtc-data-channel-browser-soak.mjs` | Playwright/Chromium DataChannel close/reconnect soak. |
-| `rtc-peer-connection-diagnostics-burst.ts` | Synthetic QRtcPeerConnection burst probe for queued ICE candidates, offer collisions, reconnect timers, ICE restarts, and diagnostic counter validation. |
-| `webrtc-group-cache-fallback-bench.ts` | `WebRtcGroupService` fallback lookup cache workload. |
-| `webrtc-group-manager-state-bench.ts` | `WebRtcGroupManager.state()` online peer set workload. |
-| `webrtc-group-manager-peer-owners-bench.ts` | `WebRtcGroupManager.peerOwners()` ownership-map workload. |
-| `webrtc-heartbeat-callback-churn-bench.ts` | Heartbeat callback registration/removal churn workload. |
+| File                                                 | Purpose                                                                                                                                                                           |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtime-validation-bench.ts`                        | Deno benchmark harness for event parsing, runtime prefix reads, cache retention, rate limiter cleanup, state-sync recipient resolution, WebSocket serialization, and cache churn. |
+| `summarize-runtime-results.mjs`                      | Node helper that summarizes harness JSON into per-case duration and memory deltas.                                                                                                |
+| `api-v1-state-write-concurrency-bench.ts`            | Direct PostgreSQL API-v1 state-write benchmark for uncontended, shared-group, and hot-group concurrency.                                                                          |
+| `compare-api-v1-state-write-results.mjs`             | Validates state-write artifacts and enforces the relative performance and correctness gate.                                                                                       |
+| `seed-perf-db.sql`                                   | Synthetic Postgres fixture for runtime state, app data, state events, queue rows, and CRDT rows.                                                                                  |
+| `explain-perf-db.sql`                                | EXPLAIN ANALYZE script for the seeded Postgres fixture.                                                                                                                           |
+| `seed-perf-db-sparse-queue.sql`                      | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
+| `client-list-fanout-bench.ts`                        | Client snapshot fanout/pagination workload.                                                                                                                                       |
+| `group-list-fanout-bench.ts`                         | Group snapshot fanout/pagination workload.                                                                                                                                        |
+| `state-sync/state-sync-resolve-member-scan-bench.ts` | State-sync member resolution scan workload.                                                                                                                                       |
+| `state-sync-send-fanout-bench.ts`                    | State-sync send fanout workload.                                                                                                                                                  |
+
+## RTC/WebRTC benchmark package
+
+All RTC/WebRTC performance executables, their owning tests, exact commands,
+inputs, measured production symbols, timing boundaries, validation, output
+classes, and accepted/diagnostic status are catalogued in
+[`packages/shared-rtc-bench/README.md`](../../packages/shared-rtc-bench/README.md).
+Use the private `@ar-eye-hunter/shared-rtc-bench` workspace for package checks.
+The root commands `perf:rtc-baseline`, `perf:rtc-topology:delivery-log`, and
+`perf:rtc-topology:replay-drain` retain their existing CLI grammar and now enter
+that package directly. RTC production implementations remain authoritative;
+the benchmark package measures them and does not reimplement RTC behavior.
 
 ## Prerequisites
 
@@ -221,24 +211,6 @@ Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
 at least three measured runs, and concurrency 10.
 
-## RTC Topology Delivery Log
-
-Apply the current migrations, then run the fixed PostgreSQL workload:
-
-```sh
-DATABASE_URL=postgres://app:app@localhost:5432/appdb \
-  npm run perf:rtc-topology:delivery-log -- \
-  --label=candidate \
-  --out=tmp/perf/rtc-topology-delivery-log-candidate.json
-```
-
-The workload constants are intentionally code-owned: 300 appends at concurrency
-10 for both one-stream contention and three-stream independent publication, 30
-forced duplicate-publication races, and 100 surrounding-transaction rollbacks.
-Every result records throughput, p50/p95/p99, transaction retries, durable row
-and HEAD counts, per-stream HEADs, and contiguous-sequence verification. Output
-belongs under `tmp/perf/` and is not committed.
-
 ## Focused Runtime Harness
 
 Run the full focused harness with three measured runs:
@@ -288,113 +260,6 @@ deno run \
   --runs=3 \
   --out=tmp/perf/results/events-runs3.json
 ```
-
-## WebRTC Signaling Diagnostics
-
-Run a repeatable synthetic peer-connection burst:
-
-```sh
-deno run \
-  --config apps/api-v1/deno.json \
-  --allow-read \
-  --allow-write \
-  scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-  --peers=500 \
-  --ice-candidates=5 \
-  --offer-collisions=3 \
-  --runs=3 \
-  --out=tmp/perf/results/rtc-peer-connection-diagnostics-burst-runs3.json
-```
-
-Expected counter shape for that input:
-
-- `queuedIceCandidateCount` and `flushedIceCandidateCount`: `peers * ice-candidates`
-- `offerCollisionCount` and `ignoredOfferCollisionCount`: `peers * offer-collisions`
-- `reconnectAttemptCount`, `reconnectTimerAlreadyActiveCount`,
-  `reconnectExhaustedCount`, and `iceRestartCount`: `peers`
-- `pendingIceCandidateQueueLength`: `0`
-
-Use this harness to validate that reconnect/renegotiation storm counters remain
-stable before wiring the counters into broader browser or full-stack traffic
-tests.
-
-Run the memory-mode three-browser live matrix and persist compact RTC
-diagnostic artifacts:
-
-```sh
-RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR=tmp/perf/results \
-  npm run test:rallar:full-stack:memory:live-rtc-3
-```
-
-That command writes files such as:
-
-- `tmp/perf/results/live-rtc-diagnostics-realtime-*.json`
-- `tmp/perf/results/live-rtc-diagnostics-messages-rtc-*.json`
-- `tmp/perf/results/live-rtc-three-browser-run-summary-*.json`
-
-For browser or full-stack runs, capture the same counters through the public RTC
-facade:
-
-```ts
-const diagnostics = await rallar.rtc.diagnostics();
-console.log(JSON.stringify({
-  generatedAtEpochMs: diagnostics.generatedAtEpochMs,
-  peerCount: diagnostics.peerCount,
-  peers: diagnostics.peers.map((peer) => ({
-    peerId: peer.peerId,
-    connectionState: peer.connection.connectionState,
-    candidatePairRtt: peer.selectedCandidatePair?.currentRoundTripTime,
-    usesRelay: peer.usesRelay,
-    connectionDiagnostics: peer.connectionDiagnostics,
-  })),
-}));
-```
-
-Useful live signals:
-
-- `reconnectAttemptCount`, `reconnectTimerAlreadyActiveCount`, and
-  `reconnectExhaustedCount` for reconnect storms.
-- `disconnectTimerScheduledCount`, `disconnectTimerAlreadyActiveCount`,
-  `disconnectTimerClearedCount`, and `disconnectTimerFiredCount` for network
-  flap timer coalescing.
-- `offerCollisionCount`, `ignoredOfferCollisionCount`, and
-  `politeOfferRollbackCount` for offer glare.
-- `queuedIceCandidateCount`, `flushedIceCandidateCount`, and
-  `pendingIceCandidateQueueLength` for ICE queue pressure.
-- `outboundSignalingErrorCount` and `inboundSignalingErrorCount` for signaling
-  failures.
-
-## RTC Topology Lifetime
-
-Compare retained versus cleaned inactive room topology snapshots:
-
-```sh
-deno run \
-  --config apps/api-v1/deno.json \
-  --allow-read \
-  --allow-write \
-  scripts/perf/rtc-topology-inactive-churn-bench.ts \
-  --groups=10000 \
-  --sessions=5 \
-  --runs=3 \
-  --mode=retain \
-  --out=tmp/perf/results/rtc-topology-inactive-churn-retain-runs3.json
-
-deno run \
-  --config apps/api-v1/deno.json \
-  --allow-read \
-  --allow-write \
-  scripts/perf/rtc-topology-inactive-churn-bench.ts \
-  --groups=10000 \
-  --sessions=5 \
-  --runs=3 \
-  --mode=cleanup \
-  --out=tmp/perf/results/rtc-topology-inactive-churn-cleanup-runs3.json
-```
-
-The key signal is `finalTopologySnapshotCount`: retain mode models the old
-lifetime shape, while cleanup mode should end at `0` after archived/deleted
-room snapshots.
 
 ## CPU Profiling
 

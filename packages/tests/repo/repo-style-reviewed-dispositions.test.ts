@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
-  it('freezes exactly the seven approved path, rule, and symbol triples', () => {
+  it('freezes exactly the six approved path, rule, and symbol triples', () => {
     expect(Object.isFrozen(reviewedDispositions)).toBe(true);
     expect(reviewedDispositions).toEqual([
       {
@@ -42,24 +42,19 @@ describe('reviewed repository style dispositions', () => {
         symbol: undefined,
       },
       {
-        path: 'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
+        path: 'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
         rule: 'boundary.unknown',
         symbol: 'normalizeRtcBaselineJson',
       },
       {
-        path: 'scripts/perf/rtc-baseline',
-        rule: 'layout.directory-density',
-        symbol: 'rtc-baseline',
-      },
-      {
-        path: 'scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts',
+        path: 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
         rule: 'layout.primary-export-name',
         symbol: 'parseRtcBaselineCommand',
       },
     ]);
   });
 
-  it('passes only the three reviewed RTC baseline findings', () => {
+  it('passes only the two reviewed RTC baseline findings', () => {
     const fixture = createReviewedFixture();
     writeReviewedSources(fixture);
 
@@ -70,10 +65,9 @@ describe('reviewed repository style dispositions', () => {
   });
 
   it('emits checker-owned symbols for every reviewed key', () => {
-    const directory = path.join(repoRoot, 'scripts/perf/rtc-baseline');
     const findings = scanProductionSources({
       repoRoot,
-      sources: reviewedSources(directory),
+      sources: reviewedSources(repoRoot),
       options: {
         layoutOnly: false,
         layoutDetails: true,
@@ -96,12 +90,7 @@ describe('reviewed repository style dispositions', () => {
     );
     expect(findingKeys.filter(({ ruleId }) => ruleId !== 'boundary.unknown')).toEqual([
       {
-        path: 'scripts/perf/rtc-baseline',
-        ruleId: 'layout.directory-density',
-        symbol: 'rtc-baseline',
-      },
-      {
-        path: 'scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts',
+        path: 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
         ruleId: 'layout.primary-export-name',
         symbol: 'parseRtcBaselineCommand',
       },
@@ -127,19 +116,19 @@ describe('reviewed repository style dispositions', () => {
   it.each([
     {
       label: 'path',
-      file: 'scripts/perf/other-baseline/rtc-baseline-decoding.ts',
+      file: 'packages/shared-rtc-bench/other-baseline/rtc-baseline-decoding.ts',
       source: decodingSource('normalizeRtcBaselineJson'),
       ruleId: 'boundary.unknown',
     },
     {
       label: 'rule',
-      file: 'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
+      file: 'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
       source: 'export function normalizeRtcBaselineJson(value: string): string { return value; }\n',
       ruleId: 'layout.primary-export-name',
     },
     {
       label: 'symbol',
-      file: 'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
+      file: 'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
       source: decodingSource('normalizeOtherRtcBaselineJson'),
       ruleId: 'boundary.unknown',
     },
@@ -159,7 +148,7 @@ describe('reviewed repository style dispositions', () => {
     writeReviewedSources(fixture);
     appendFixture(
       fixture,
-      'scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts',
+      'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
       `\nconst undispositionedFinding = '${'x'.repeat(110)}';\n`,
     );
 
@@ -175,7 +164,7 @@ describe('reviewed repository style dispositions', () => {
     writeReviewedSources(fixture);
     appendFixture(
       fixture,
-      'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
+      'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
       '\nexport function decodeOther(value: unknown): string { return String(value); }\n',
     );
 
@@ -204,29 +193,25 @@ describe('reviewed repository style dispositions', () => {
 });
 
 function createReviewedFixture(): string {
-  const files = Object.fromEntries(
-    Array.from({ length: 19 }, (_, index) => [
-      `scripts/perf/rtc-baseline/fixture${index}-entry.ts`,
-      '',
-    ]),
-  );
-  const fixture = createGitFixture(files);
+  const fixture = createGitFixture({ 'README.md': 'fixture\n' });
   commitAll(fixture, 'base');
   return fixture;
 }
 
-function reviewedSources(directory: string) {
+function reviewedSources(root: string) {
   return [
-    ...Array.from({ length: 19 }, (_, index) => ({
-      file: path.join(directory, `fixture${index}-entry.ts`),
-      raw: '',
-    })),
     {
-      file: path.join(directory, 'rtc-baseline-decoding.ts'),
+      file: path.join(
+        root,
+        'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
+      ),
       raw: decodingSource('normalizeRtcBaselineJson'),
     },
     {
-      file: path.join(directory, 'rtc-baseline-cli-grammar.ts'),
+      file: path.join(
+        root,
+        'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
+      ),
       raw: 'export function parseRtcBaselineCommand(value: string): string { return value; }\n',
     },
   ];
@@ -235,12 +220,12 @@ function reviewedSources(directory: string) {
 function writeReviewedSources(fixture: string): void {
   writeFixture(
     fixture,
-    'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
+    'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
     decodingSource('normalizeRtcBaselineJson'),
   );
   writeFixture(
     fixture,
-    'scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts',
+    'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
     'export function parseRtcBaselineCommand(value: string): string { return value; }\n',
   );
 }

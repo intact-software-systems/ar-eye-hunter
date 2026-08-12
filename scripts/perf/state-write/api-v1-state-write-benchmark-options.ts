@@ -3,7 +3,7 @@ import { normalize } from 'node:path';
 import {
   GROUP_FORMATION_DAMPING_REGRESSION_REASON_PROFILE,
   RTC_TOPOLOGY_REGRESSION_REASON_PROFILE,
-} from '../rtc-topology/state-write-reasons.ts';
+} from './api-v1-state-write-regression-reasons.ts';
 
 export const STATE_WRITE_REQUIRED_CONCURRENCY = 10;
 
