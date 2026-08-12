@@ -5,6 +5,10 @@ RTC implementations remain authoritative; this package measures them and does
 not reimplement RTC behavior. Ontology metadata remains a separate,
 operationally inert binding track.
 
+Task 4A move provenance that Git cannot identify as a rename is recorded in
+`plans/repo-style-lineages/shared-rtc-bench-task-4a.json`; Git-detected renames
+remain direct diff evidence and are intentionally absent from that manifest.
+
 ## Executable catalog
 
 | Program class              | Capability                   | Command entry                                                            | Root/package command                                          | Inputs                                                                                 | Production symbol measured                                                    | Setup owner                                                       | Timing boundary                                                              | Validation owner                                                             | Output/artifact class                                         | Owning test                                                                     | Status                                    |
