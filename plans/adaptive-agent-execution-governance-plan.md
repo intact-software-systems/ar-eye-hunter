@@ -198,7 +198,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "6da644caf68cfe769e4b85d1bb536f4146e213086fbfe95fa975efd087391e18",
+    "affectedCodeDigest": "8bd39030c5208e47b74d1fe27ed05a8c831a9c1de95b9fc75a4f32ad142ba7a0",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -208,9 +208,9 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Slice 1 fix round 1 closes qualification bypasses, confines repository paths, symlink roots, and Git revisions, binds drafts to their source record, makes multi-file lifecycle changes transactional, strengthens checkpoint/schema rules, and derives digest modes and rename tuples from Git facts.",
-    "learning": "A read-only governance entry must validate absence and malformed states; write safety needs confinement at every path component plus one rollback-owned transaction across plan, draft, and registry effects.",
-    "structure": "The capability remains cohesive: record validation owns canonical schema and safe declarations, Git facts own revision validation and modes, policy owns recovery decisions, and lifecycle delegates only its real multi-file atomicity boundary to file-transaction.mjs.",
+    "outcome": "Slice 1 fix round 2 removes partial-state transaction rollback paths, makes post-commit backup cleanup unambiguous, and confines registry discovery before repository-controlled reads or writes.",
+    "learning": "Rollback must distinguish targets actually backed up and replacements actually installed; deleting the entire intended target set can destroy untouched originals when setup fails midway.",
+    "structure": "file-transaction.mjs remains the single injected filesystem side-effect boundary, while active-plan-registry.mjs now owns one shared confined resolver for the plans root and generated registry path.",
     "decision": "continue",
     "nextSlices": [
       "slice-2-repository-structure"
@@ -247,6 +247,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "Slice 1 fix round 1 closes qualification bypasses, confines repository paths, symlink roots, and Git revisions, binds drafts to their source record, makes multi-file lifecycle changes transactional, strengthens checkpoint/schema rules, and derives digest modes and rename tuples from Git facts."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "Slice 1 fix round 2 removes partial-state transaction rollback paths, makes post-commit backup cleanup unambiguous, and confines registry discovery before repository-controlled reads or writes."
     }
   ]
 }

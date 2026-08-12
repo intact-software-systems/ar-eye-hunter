@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -240,6 +241,37 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(existsSync(outputPath)).toBe(false);
   });
 
+  it('rejects symlinked plans and registry paths before reading repository records', () => {
+    const plansRootFixture = createLifecycleRepository();
+    const outsidePlansRoot = `${plansRootFixture.root}-outside-plans`;
+    fixtureRoots.push(outsidePlansRoot);
+    renameSync(path.join(plansRootFixture.root, 'plans'), outsidePlansRoot);
+    writeFixture(outsidePlansRoot, 'malformed-plan.md', '```plan-adaptation-v1\n{broken}\n```\n');
+    symlinkSync(outsidePlansRoot, path.join(plansRootFixture.root, 'plans'));
+
+    const plansRootResult = runCli(plansRootFixture.root, [
+      'check',
+      '--base',
+      plansRootFixture.base,
+    ]);
+    expect(plansRootResult.status).toBe(1);
+    expect(plansRootResult.stdout).toContain('plans directory must remain inside the repository');
+    expect(plansRootResult.stdout).not.toContain('invalid JSON');
+
+    const registryFixture = createLifecycleRepository();
+    const common = ['--plan', registryFixture.planPath, '--base', registryFixture.base];
+    expect(runCli(registryFixture.root, ['init', ...common]).status).toBe(0);
+    const registryPath = path.join(registryFixture.root, 'plans/README.md');
+    const outsideRegistry = `${registryFixture.root}-outside-registry.md`;
+    fixtureRoots.push(outsideRegistry);
+    renameSync(registryPath, outsideRegistry);
+    symlinkSync(outsideRegistry, registryPath);
+
+    const registryResult = runCli(registryFixture.root, ['check', ...common]);
+    expect(registryResult.status).toBe(1);
+    expect(registryResult.stdout).toContain('active plan registry must be a regular file');
+  });
+
   it('rejects apply when the source plan record changed after prepare', () => {
     const fixture = createLifecycleRepository();
     const common = ['--plan', fixture.planPath, '--base', fixture.base];
@@ -278,7 +310,7 @@ describe('plan adaptation CLI lifecycle', () => {
     const result = runCli(fixture.root, ['apply', ...common]);
 
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('transaction target must be a regular file');
+    expect(result.stdout).toContain('active plan registry must be a regular file');
     expect(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8')).toBe(planBefore);
     expect(existsSync(draftPath)).toBe(true);
   });

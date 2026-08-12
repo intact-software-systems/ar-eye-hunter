@@ -11,6 +11,8 @@ import { hasConsolidationDecision, validateCheckpoint } from './adaptive-plan-po
 import {
   readAdaptivePlans,
   readActivePlans,
+  resolveActivePlanRegistryPath,
+  resolvePlansRoot,
   toActivePlanRegistry,
 } from './active-plan-registry.mjs';
 import { writeFileTransaction } from './file-transaction.mjs';
@@ -127,7 +129,7 @@ export function checkAdaptivePlans(input) {
       issues.push(`${activePlan.planPath} computed facts are stale`);
     }
   }
-  const registryPath = path.join(input.repoRoot, 'plans/README.md');
+  const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
   const expectedRegistry = toActivePlanRegistry(activePlans);
   if (!existsSync(registryPath) || readFileSync(registryPath, 'utf8') !== expectedRegistry) {
     issues.push('plans/README.md is not the generated active-plan registry');
@@ -142,7 +144,7 @@ export function closeAdaptivePlan(input) {
   validateRecordAndCheckpoint(plan.record);
   validateFinalEvidence(input, plan.record);
   const activePlans = readActivePlans(input.repoRoot);
-  const registryPath = path.join(input.repoRoot, 'plans/README.md');
+  const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
   const currentRegistry = readFileSync(registryPath, 'utf8');
   if (
     currentRegistry !== toActivePlanRegistry(activePlans) ||
@@ -185,7 +187,7 @@ function writePlanAndRegistry(transaction) {
         content: replaceAdaptivePlanRecord(markdown, record, input.planPath),
       },
       {
-        path: path.join(input.repoRoot, 'plans/README.md'),
+        path: resolveActivePlanRegistryPath(input.repoRoot),
         content: toActivePlanRegistry(activePlans),
       },
     ],
@@ -284,10 +286,7 @@ function resolveTacticalPlanPath(repoRoot, planPath) {
   ) {
     throw new Error('plan path must identify a direct plans/*.md tactical plan');
   }
-  const plansRoot = path.join(realpathSync(repoRoot), 'plans');
-  if (realpathSync(path.join(repoRoot, 'plans')) !== plansRoot) {
-    throw new Error('plans directory must remain inside the repository');
-  }
+  const plansRoot = resolvePlansRoot(repoRoot);
   const absolutePath = path.join(plansRoot, path.basename(planPath));
   if (existsSync(absolutePath)) {
     const stat = lstatSync(absolutePath);

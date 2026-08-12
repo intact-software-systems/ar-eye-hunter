@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
 import { parseAdaptivePlanRecord } from './adaptive-plan-record.mjs';
@@ -6,7 +6,7 @@ import { parseAdaptivePlanRecord } from './adaptive-plan-record.mjs';
 const columns = ['Plan', 'Capability owner', 'Status', 'Checkpoint decision', 'Next slice'];
 
 export function readAdaptivePlans(repoRoot) {
-  const plansRoot = path.join(repoRoot, 'plans');
+  const plansRoot = resolvePlansRoot(repoRoot);
   return readdirSync(plansRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'README.md')
     .flatMap((entry) => {
@@ -23,6 +23,27 @@ export function readAdaptivePlans(repoRoot) {
         Buffer.from(String(right.record.planId)),
       ),
     );
+}
+
+export function resolvePlansRoot(repoRoot) {
+  const repositoryRoot = realpathSync(repoRoot);
+  const plansRoot = path.join(repositoryRoot, 'plans');
+  const stat = lstatSync(plansRoot);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(plansRoot) !== plansRoot) {
+    throw new Error('plans directory must remain inside the repository');
+  }
+  return plansRoot;
+}
+
+export function resolveActivePlanRegistryPath(repoRoot) {
+  const registryPath = path.join(resolvePlansRoot(repoRoot), 'README.md');
+  if (existsSync(registryPath)) {
+    const stat = lstatSync(registryPath);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error('active plan registry must be a regular file');
+    }
+  }
+  return registryPath;
 }
 
 export function readActivePlans(repoRoot) {

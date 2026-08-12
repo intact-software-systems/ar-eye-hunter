@@ -1,7 +1,15 @@
 import { existsSync, lstatSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-export function writeFileTransaction(input) {
+const fileOperations = {
+  exists: existsSync,
+  inspect: lstatSync,
+  write: writeFileSync,
+  rename: renameSync,
+  remove: rmSync,
+};
+
+export function writeFileTransaction(input, operations = fileOperations) {
   const replacements = input.replacements ?? [];
   const removals = input.removals ?? [];
   const targets = [...replacements.map((entry) => entry.path), ...removals];
@@ -9,70 +17,89 @@ export function writeFileTransaction(input) {
     throw new Error('file transaction targets must be unique');
   }
   for (const target of targets) {
-    validateTarget(target, removals.includes(target));
+    validateTarget(target, removals.includes(target), operations);
   }
 
   const staged = [];
   try {
     for (const entry of replacements) {
       const temporaryPath = `${entry.path}.plan-adaptation-${randomUUID()}.tmp`;
-      writeFileSync(temporaryPath, entry.content, { flag: 'wx' });
+      operations.write(temporaryPath, entry.content, { flag: 'wx' });
       staged.push({ ...entry, temporaryPath });
     }
   } catch (error) {
-    cleanupPaths(staged.map((entry) => entry.temporaryPath));
+    cleanupPaths(
+      staged.map((entry) => entry.temporaryPath),
+      operations,
+    );
     throw error;
   }
   const backups = [];
+  const installed = [];
 
   try {
     for (const target of targets) {
-      if (!existsSync(target)) {
+      if (!operations.exists(target)) {
         continue;
       }
       const backupPath = `${target}.plan-adaptation-${randomUUID()}.backup`;
-      renameSync(target, backupPath);
+      operations.rename(target, backupPath);
       backups.push({ target, backupPath });
     }
     for (const entry of staged) {
-      renameSync(entry.temporaryPath, entry.path);
+      operations.rename(entry.temporaryPath, entry.path);
+      installed.push(entry.path);
     }
   } catch (error) {
-    rollbackTargets(targets, backups);
-    cleanupPaths(staged.map((entry) => entry.temporaryPath));
+    rollbackTargets(installed, backups, operations);
+    cleanupPaths(
+      staged.map((entry) => entry.temporaryPath),
+      operations,
+    );
     throw error;
   }
 
-  cleanupPaths(backups.map((entry) => entry.backupPath));
+  cleanupPaths(
+    backups.map((entry) => entry.backupPath),
+    operations,
+    true,
+  );
 }
 
-function validateTarget(target, mustExist) {
-  if (!existsSync(target)) {
+function validateTarget(target, mustExist, operations) {
+  if (!operations.exists(target)) {
     if (mustExist) {
       throw new Error(`transaction removal target does not exist: ${target}`);
     }
     return;
   }
-  const stat = lstatSync(target);
+  const stat = operations.inspect(target);
   if (!stat.isFile() || stat.isSymbolicLink()) {
     throw new Error(`transaction target must be a regular file: ${target}`);
   }
 }
 
-function rollbackTargets(targets, backups) {
-  for (const target of [...targets].reverse()) {
-    if (existsSync(target)) {
-      rmSync(target, { force: true });
+function rollbackTargets(installed, backups, operations) {
+  for (const target of [...installed].reverse()) {
+    if (operations.exists(target)) {
+      operations.remove(target, { force: true });
     }
-    const backup = backups.find((entry) => entry.target === target);
-    if (backup && existsSync(backup.backupPath)) {
-      renameSync(backup.backupPath, target);
+  }
+  for (const backup of [...backups].reverse()) {
+    if (operations.exists(backup.backupPath)) {
+      operations.rename(backup.backupPath, backup.target);
     }
   }
 }
 
-function cleanupPaths(paths) {
+function cleanupPaths(paths, operations, bestEffort = false) {
   for (const cleanupPath of paths) {
-    rmSync(cleanupPath, { force: true });
+    try {
+      operations.remove(cleanupPath, { force: true });
+    } catch (error) {
+      if (!bestEffort) {
+        throw error;
+      }
+    }
   }
 }
