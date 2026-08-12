@@ -4,9 +4,10 @@ import path from 'node:path';
 
 const exceptionRegistryPath = 'docs/repo-structure-exceptions.json';
 const authorizedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+const substantiveReviewStates = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED']);
 const exactShaPattern = /^[a-f0-9]{40}$/u;
 
-export function readStructureExceptions(repoRoot, evidenceInput) {
+export function readStructureExceptions(repoRoot, dependencies = {}) {
   const absolutePath = resolveRegistryPath(repoRoot);
   if (absolutePath === undefined) {
     return { exceptions: [], issues: [] };
@@ -26,21 +27,21 @@ export function readStructureExceptions(repoRoot, evidenceInput) {
       issues: [`${exceptionRegistryPath} must contain version 2 and an exceptions array`],
     };
   }
-  const resolvedEvidenceInput = !isRecord(evidenceInput?.trustedEvidence)
-    ? (evidenceInput ?? {})
-    : typeof evidenceInput?.repository === 'string' &&
-        typeof evidenceInput?.candidateHead === 'string'
-      ? evidenceInput
-      : { ...evidenceInput, ...readRepositoryExceptionContext(repoRoot) };
+  if (registry.exceptions.length === 0) {
+    return { exceptions: [], issues: [] };
+  }
+  const repositoryContext = readRepositoryExceptionContext(repoRoot);
+  const reviewLookup = dependencies.reviewLookup ?? readAuthenticatedGitHubReview;
   const exceptions = [];
   const issues = [];
   for (const [index, exception] of registry.exceptions.entries()) {
     const name = `${exceptionRegistryPath} exceptions[${index}]`;
-    const exceptionIssues = validateException({
+    const exceptionIssues = validateRegisteredException({
+      repoRoot,
+      repositoryContext,
+      reviewLookup,
       exception,
       name,
-      evidenceInput: resolvedEvidenceInput,
-      repoRoot,
     });
     issues.push(...exceptionIssues);
     if (exceptionIssues.length === 0) {
@@ -48,6 +49,37 @@ export function readStructureExceptions(repoRoot, evidenceInput) {
     }
   }
   return { exceptions, issues };
+}
+
+function validateRegisteredException(input) {
+  const { repoRoot, repositoryContext, reviewLookup, exception, name } = input;
+  const issues = validateExceptionFields(exception, name);
+  if (issues.length > 0) {
+    return issues;
+  }
+  let evidence;
+  try {
+    evidence = reviewLookup({
+      repoRoot,
+      repository: repositoryContext.repository,
+      pullNumber: exception.approval.pullNumber,
+      reviewId: exception.approval.reviewId,
+    });
+  } catch (error) {
+    const reason =
+      error?.code === 'MALFORMED_GITHUB_REVIEW'
+        ? 'authenticated GitHub review lookup returned malformed evidence'
+        : 'authenticated GitHub review lookup failed';
+    return [`${name} ${reason}`];
+  }
+  if (!isReviewEvidence(evidence)) {
+    return [`${name} authenticated GitHub review lookup returned malformed evidence`];
+  }
+  issues.push(...validateTrustedReview({ exception, name, repositoryContext, evidence }));
+  if (isConfinedRepoPath(exception.target) && !candidatePathsAreClean(repoRoot, exception.target)) {
+    issues.push(`${name} trusted GitHub review does not cover dirty candidate paths`);
+  }
+  return issues;
 }
 
 export function readRepositoryExceptionContext(repoRoot) {
@@ -68,8 +100,7 @@ export function readRepositoryExceptionContext(repoRoot) {
   return { repository, candidateHead };
 }
 
-function validateException(input) {
-  const { exception, name, evidenceInput, repoRoot } = input;
+function validateExceptionFields(exception, name) {
   const issues = [];
   if (exception?.ruleId !== 'topology.singleton-subtree') {
     issues.push(`${name}.ruleId must be topology.singleton-subtree`);
@@ -84,47 +115,31 @@ function validateException(input) {
   }
   const approval = exception?.approval;
   if (
+    !Number.isInteger(approval?.pullNumber) ||
+    approval.pullNumber <= 0 ||
     !Number.isInteger(approval?.reviewId) ||
+    approval.reviewId <= 0 ||
     typeof approval.reviewerLogin !== 'string' ||
     approval.reviewerLogin.trim() === '' ||
     typeof approval.approvedAt !== 'string' ||
     !Number.isFinite(Date.parse(approval.approvedAt))
   ) {
     issues.push(
-      `${name}.approval must record a GitHub review ID, named reviewer login, and approval time`,
+      `${name}.approval must record positive pull/review IDs, named reviewer login, and ` +
+        'approval time',
     );
-    return issues;
-  }
-  issues.push(...validateTrustedEvidence(exception, name, evidenceInput));
-  if (
-    isRecord(evidenceInput?.trustedEvidence) &&
-    isConfinedRepoPath(exception?.target) &&
-    !candidatePathsAreClean(repoRoot, exception.target)
-  ) {
-    issues.push(`${name} trusted GitHub review does not cover dirty candidate paths`);
   }
   return issues;
 }
 
-function validateTrustedEvidence(exception, name, input) {
-  if (!isRecord(input?.trustedEvidence)) {
-    return [`${name} trusted GitHub review evidence is required`];
-  }
-  const evidence = input.trustedEvidence;
+function validateTrustedReview(input) {
+  const { exception, name, repositoryContext, evidence } = input;
   const issues = [];
+  const review = evidence.review;
   if (
-    evidence.version !== 2 ||
-    evidence.repository !== input.repository ||
-    evidence.candidateHead !== input.candidateHead ||
-    !exactShaPattern.test(evidence.candidateHead ?? '') ||
-    !Array.isArray(evidence.reviews)
+    review.id !== exception.approval.reviewId ||
+    !evidence.reviews.some((candidate) => candidate.id === review.id)
   ) {
-    return [`${name} trusted evidence does not match this repository and candidate head`];
-  }
-  const review = evidence.reviews.find(
-    (candidate) => candidate?.id === exception.approval.reviewId,
-  );
-  if (!isRecord(review)) {
     return [`${name} trusted GitHub review ID is missing`];
   }
   if (review.state !== 'APPROVED') {
@@ -140,22 +155,22 @@ function validateTrustedEvidence(exception, name, input) {
   const superseded = evidence.reviews.some(
     (candidate) =>
       candidate?.user?.login === review.user?.login &&
-      ['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(candidate?.state) &&
+      substantiveReviewStates.has(candidate?.state) &&
       compareReviews(candidate, review) > 0,
   );
   if (superseded) {
     issues.push(`${name} trusted GitHub approval is superseded`);
   }
   if (
-    review.commit_id !== input.candidateHead ||
+    review.commit_id !== repositoryContext.candidateHead ||
     review.submitted_at !== exception.approval.approvedAt
   ) {
     issues.push(`${name} trusted GitHub review does not match candidate head or approval time`);
   }
   const expectedBody = [
     'REPOSITORY-STRUCTURE-EXCEPTION v2',
-    `repository: ${input.repository}`,
-    `candidate-head: ${input.candidateHead}`,
+    `repository: ${repositoryContext.repository}`,
+    `candidate-head: ${repositoryContext.candidateHead}`,
     `rule: ${exception.ruleId}`,
     `target: ${exception.target}`,
   ].join('\n');
@@ -163,6 +178,90 @@ function validateTrustedEvidence(exception, name, input) {
     issues.push(`${name} trusted GitHub review does not bind the exact rule and target`);
   }
   return issues;
+}
+
+function readAuthenticatedGitHubReview(input) {
+  const reviewEndpoint =
+    `repos/${input.repository}/pulls/${input.pullNumber}/reviews/` + input.reviewId;
+  const reviewsEndpoint = `repos/${input.repository}/pulls/${input.pullNumber}/reviews`;
+  const review = readGitHubApiJson(input.repoRoot, ['api', '--method', 'GET', reviewEndpoint]);
+  const pages = readGitHubApiJson(input.repoRoot, [
+    'api',
+    '--method',
+    'GET',
+    '--paginate',
+    '--slurp',
+    reviewsEndpoint,
+  ]);
+  if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) {
+    throw toMalformedGitHubReviewError();
+  }
+  const evidence = { review, reviews: pages.flat() };
+  if (!isReviewEvidence(evidence)) {
+    throw toMalformedGitHubReviewError();
+  }
+  return evidence;
+}
+
+function readGitHubApiJson(repoRoot, args) {
+  let raw;
+  try {
+    raw = execFileSync('gh', args, { cwd: repoRoot, encoding: 'utf8' });
+  } catch {
+    throw new Error('authenticated GitHub API call failed');
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw toMalformedGitHubReviewError();
+  }
+}
+
+function toMalformedGitHubReviewError() {
+  return Object.assign(new Error('authenticated GitHub API returned malformed review JSON'), {
+    code: 'MALFORMED_GITHUB_REVIEW',
+  });
+}
+
+function isReviewEvidence(evidence) {
+  return (
+    isRecord(evidence) &&
+    isNamedGitHubReview(evidence.review) &&
+    Array.isArray(evidence.reviews) &&
+    evidence.reviews.every(isGitHubReviewListEntry)
+  );
+}
+
+function isNamedGitHubReview(review) {
+  return (
+    isGitHubReviewListEntry(review) &&
+    exactShaPattern.test(review.commit_id ?? '') &&
+    typeof review.author_association === 'string' &&
+    typeof review.body === 'string' &&
+    review.user?.type === 'User' &&
+    typeof review.user.login === 'string' &&
+    review.user.login !== '' &&
+    typeof review.submitted_at === 'string' &&
+    Number.isFinite(Date.parse(review.submitted_at))
+  );
+}
+
+function isGitHubReviewListEntry(review) {
+  if (
+    isRecord(review) &&
+    Number.isInteger(review.id) &&
+    review.id > 0 &&
+    typeof review.state === 'string'
+  ) {
+    return (
+      !substantiveReviewStates.has(review.state) ||
+      (typeof review.user?.login === 'string' &&
+        review.user.login !== '' &&
+        typeof review.submitted_at === 'string' &&
+        Number.isFinite(Date.parse(review.submitted_at)))
+    );
+  }
+  return false;
 }
 
 function compareReviews(left, right) {

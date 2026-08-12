@@ -110,17 +110,21 @@ export function writePlanRecord(root: string, record: FixtureRecord): void {
 
 export function runChecker(
   fixture: { readonly root: string; readonly base: string },
-  options: boolean | { readonly evidencePath?: string } = true,
+  options:
+    | boolean
+    | {
+        readonly environment?: Readonly<Record<string, string | undefined>>;
+        readonly extraArgs?: readonly string[];
+      } = true,
 ) {
   const includeBase = typeof options === 'boolean' ? options : true;
-  const evidencePath = typeof options === 'boolean' ? undefined : options.evidencePath;
-  const args = [
-    ...(includeBase ? ['--base', fixture.base] : []),
-    ...(evidencePath ? ['--trusted-exception-reviews', evidencePath] : []),
-  ];
+  const environment = typeof options === 'boolean' ? undefined : options.environment;
+  const extraArgs = typeof options === 'boolean' ? [] : (options.extraArgs ?? []);
+  const args = [...(includeBase ? ['--base', fixture.base] : []), ...extraArgs];
   return spawnSync(process.execPath, [entryPath, ...args], {
     cwd: fixture.root,
     encoding: 'utf8',
+    env: { ...process.env, ...environment },
   });
 }
 

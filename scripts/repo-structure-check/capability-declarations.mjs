@@ -201,24 +201,34 @@ function validateSourceReference(reference) {
     return;
   }
   const source = reference.input.readFile(reference.sourcePath);
+  const extension = path.posix.extname(reference.sourcePath).toLowerCase();
+  if (!supportedSymbolExtensions.has(extension)) {
+    reference.issues.push(
+      `${reference.prefix} symbol evidence for ${reference.sourcePath} uses unsupported ` +
+        `language ${extension || '(none)'}`,
+    );
+    return;
+  }
+  const evidence =
+    typeof source === 'string'
+      ? readTopLevelSymbolEvidence(reference.sourcePath, source)
+      : { status: 'resolved', symbols: new Set() };
+  if (evidence.status === 'malformed-shell') {
+    reference.issues.push(
+      `${reference.prefix} symbol evidence for ${reference.sourcePath} is unresolvable because ` +
+        'shell scope is malformed or unbalanced',
+    );
+    return;
+  }
   if (
     typeof reference.symbol !== 'string' ||
     reference.symbol.trim() === '' ||
-    typeof source !== 'string' ||
-    !hasNavigableTopLevelSymbol(reference.sourcePath, source, reference.symbol)
+    !evidence.symbols.has(reference.symbol)
   ) {
-    const extension = path.posix.extname(reference.sourcePath).toLowerCase();
-    if (!supportedSymbolExtensions.has(extension)) {
-      reference.issues.push(
-        `${reference.prefix} symbol evidence for ${reference.sourcePath} uses unsupported ` +
-          `language ${extension || '(none)'}`,
-      );
-    } else {
-      reference.issues.push(
-        `${reference.prefix} symbol ${reference.symbol} is not a navigable top-level owner in ` +
-          reference.sourcePath,
-      );
-    }
+    reference.issues.push(
+      `${reference.prefix} symbol ${reference.symbol} is not a navigable top-level owner in ` +
+        reference.sourcePath,
+    );
   }
 }
 
@@ -235,23 +245,20 @@ const supportedSymbolExtensions = new Set([
   '.tsx',
 ]);
 
-function hasNavigableTopLevelSymbol(file, source, symbol) {
+function readTopLevelSymbolEvidence(file, source) {
   const extension = path.posix.extname(file).toLowerCase();
   if (extension === '.py') {
-    return pythonTopLevelSymbols(source).has(symbol);
+    return { status: 'resolved', symbols: pythonTopLevelSymbols(source) };
   }
   if (extension === '.sh') {
-    return shellTopLevelSymbols(source).has(symbol);
-  }
-  if (!supportedSymbolExtensions.has(extension)) {
-    return false;
+    return shellTopLevelSymbolEvidence(source);
   }
   try {
     const plugins = file.endsWith('x') ? ['typescript', 'jsx'] : ['typescript'];
     const program = parse(source, { sourceType: 'module', plugins }).program;
-    return collectTopLevelJavaScriptNames(program.body).has(symbol);
+    return { status: 'resolved', symbols: collectTopLevelJavaScriptNames(program.body) };
   } catch {
-    return false;
+    return { status: 'resolved', symbols: new Set() };
   }
 }
 
@@ -299,16 +306,87 @@ function pythonTopLevelSymbols(source) {
   return names;
 }
 
-function shellTopLevelSymbols(source) {
+function shellTopLevelSymbolEvidence(source) {
   const names = new Set();
+  const scope = {
+    braceDepth: 0,
+    pendingFunctionBody: false,
+    quote: null,
+    escaped: false,
+  };
   for (const line of source.split(/\r?\n/u)) {
-    const match = /^(?:function\s+)?([A-Za-z_]\w*)\s*\(\)\s*\{/u.exec(line);
-    const assignment = /^([A-Za-z_]\w*)=/u.exec(line);
-    if (match !== null || assignment !== null) {
-      names.add((match ?? assignment)[1]);
+    if (!collectShellTopLevelDeclaration(line, scope, names) || !advanceShellScope(line, scope)) {
+      return { status: 'malformed-shell', symbols: new Set() };
     }
   }
-  return names;
+  return scope.braceDepth === 0 && scope.quote === null && !scope.pendingFunctionBody
+    ? { status: 'resolved', symbols: names }
+    : { status: 'malformed-shell', symbols: new Set() };
+}
+
+function collectShellTopLevelDeclaration(line, scope, names) {
+  if (scope.quote !== null || scope.braceDepth !== 0) {
+    return true;
+  }
+  const trimmed = line.trimStart();
+  if (scope.pendingFunctionBody) {
+    if (trimmed === '' || trimmed.startsWith('#')) {
+      return true;
+    }
+    scope.pendingFunctionBody = false;
+    return trimmed.startsWith('{');
+  }
+  const declaration =
+    /^(?:function\s+([A-Za-z_]\w*)\s*(?:\(\s*\))?|([A-Za-z_]\w*)\s*\(\s*\))\s*(.*)$/u.exec(trimmed);
+  if (declaration === null) {
+    const assignment = /^(?:export\s+|readonly\s+)?([A-Za-z_]\w*)=/u.exec(trimmed);
+    if (assignment !== null) {
+      names.add(assignment[1]);
+    }
+    return true;
+  }
+  names.add(declaration[1] ?? declaration[2]);
+  const remainder = declaration[3].trimStart();
+  scope.pendingFunctionBody = remainder === '';
+  return remainder === '' || remainder.startsWith('{');
+}
+
+function advanceShellScope(line, scope) {
+  for (const character of line) {
+    if (scope.escaped) {
+      scope.escaped = false;
+      continue;
+    }
+    if (scope.quote === "'") {
+      if (character === "'") {
+        scope.quote = null;
+      }
+      continue;
+    }
+    if (scope.quote === '"') {
+      if (character === '\\') {
+        scope.escaped = true;
+      } else if (character === '"') {
+        scope.quote = null;
+      }
+      continue;
+    }
+    if (character === '\\') {
+      scope.escaped = true;
+    } else if (character === "'" || character === '"') {
+      scope.quote = character;
+    } else if (character === '#') {
+      break;
+    } else if (character === '{') {
+      scope.braceDepth += 1;
+    } else if (character === '}') {
+      scope.braceDepth -= 1;
+      if (scope.braceDepth < 0) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 function hasFileUnder(files, root) {

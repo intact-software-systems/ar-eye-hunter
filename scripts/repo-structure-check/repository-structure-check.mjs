@@ -33,9 +33,7 @@ export function checkRepositoryStructure(input) {
   );
   const targetDirectories = toCodeDirectories(repository.targetFiles);
   const baseDirectories = toCodeDirectories(repository.baseFiles);
-  const exceptionRegistry = readStructureExceptions(input.repoRoot, {
-    trustedEvidence: input.trustedExceptionEvidence,
-  });
+  const exceptionRegistry = readStructureExceptions(input.repoRoot);
   const findings = [
     ...exceptionRegistry.issues.map((message) => ({
       target: 'docs/repo-structure-exceptions.json',

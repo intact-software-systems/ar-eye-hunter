@@ -211,7 +211,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "f5142ed4777a207d1189ed6aa8d4e9c776e2725019e7fbb591759516065e7f87",
+    "affectedCodeDigest": "0cb9e2b9c49f1abfa1390d67f29ecc7c32ac88e950041b7511248fd60bdf3513",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -221,9 +221,9 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Slice 2 fix round 1 binds exceptions and dispositions to exact current evidence, fails closed on unsafe repository paths, strengthens capability reality, and requires one schema-valid active plan diff base.",
-    "learning": "Review URLs and reusable target strings are not evidence: singleton exceptions require runner-supplied GitHub review facts for the exact clean candidate, while current-fact dispositions require exact identity, magnitude, and affected-code digest.",
-    "structure": "scripts/repo-structure-check remains the sole topology and declaration owner; trusted exception reviews enter through the thin CLI, and repo-style remains the sole density, prefix-clustering, and file-size fact owner.",
+    "outcome": "Slice 2 fix round 2 removes caller-selected exception evidence, verifies registered approvals through authenticated gh API lookup, scopes shell navigation evidence, and excludes generated/tool nodes before filesystem inspection.",
+    "learning": "Trusted review input must be derived from the repository and registry rather than a caller path; fail-closed inspection must distinguish authored scope from explicit exclusions before touching filesystem metadata.",
+    "structure": "scripts/repo-structure-check keeps one exception-verification boundary with injectable pure lookup tests and production gh API access only for nonempty registries; capability declarations retain a bounded shell scope scanner without a parser dependency.",
     "decision": "continue",
     "nextSlices": []
   },
@@ -274,6 +274,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "Slice 2 fix round 1 binds exceptions and dispositions to exact current evidence, fails closed on unsafe repository paths, strengthens capability reality, and requires one schema-valid active plan diff base."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "Slice 2 fix round 2 removes caller-selected exception evidence, verifies registered approvals through authenticated gh API lookup, scopes shell navigation evidence, and excludes generated/tool nodes before filesystem inspection."
     }
   ]
 }

@@ -1,4 +1,13 @@
-import { chmodSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -60,6 +69,24 @@ describe('repository structure command safety', () => {
     expect(missingBaseResult.stderr).toContain('record.facts.diffBase must be a non-empty string');
   });
 
+  it('skips excluded symlink nodes before authored-path inspection', () => {
+    const fixture = createRepositoryFixture();
+    const outsideFile = path.join(fixture.root, 'outside-generated.ts');
+    const outsideDirectory = path.join(fixture.root, 'outside-generated-directory');
+    writeFileSync(outsideFile, 'export const outside = true;\n');
+    mkdirSync(outsideDirectory);
+    writeFileSync(path.join(outsideDirectory, 'module.ts'), 'export const outside = true;\n');
+    for (const excludedDirectory of ['node_modules', 'dist', '.cache']) {
+      symlinkSync(outsideDirectory, path.join(fixture.root, `apps/example/${excludedDirectory}`));
+    }
+    symlinkSync(outsideFile, path.join(fixture.root, 'apps/example/vite.config.ts'));
+    symlinkSync(outsideFile, path.join(fixture.root, 'apps/example/value.generated.ts'));
+
+    const result = runChecker(fixture);
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+  });
+
   it('fails closed on authored symlinks and unreadable directories without following them', () => {
     const fixture = createRepositoryFixture();
     const outsideFile = path.join(fixture.root, 'outside.ts');
@@ -96,8 +123,16 @@ describe('repository structure command safety', () => {
     );
   });
 
-  it('trusts only GitHub review evidence bound to the exact singleton and candidate', () => {
+  it('uses authenticated gh API review lookup only for a nonempty exception registry', () => {
     const fixture = createRepositoryFixture();
+    const fakeGitHub = createFakeGitHub(fixture.root);
+
+    const noRegistryResult = runChecker(fixture, {
+      environment: fakeGitHub.environment,
+    });
+    expect(noRegistryResult.status, noRegistryResult.stderr).toBe(0);
+    expect(existsSync(fakeGitHub.logPath)).toBe(false);
+
     writeFixture(
       fixture.root,
       'apps/approved-singleton/entry.ts',
@@ -116,6 +151,7 @@ describe('repository structure command safety', () => {
               owner: 'Repository maintainers',
               reviewOrRemovalCondition: 'Review when the public integration gains another module.',
               approval: {
+                pullNumber: 42,
                 reviewId: 100,
                 reviewerLogin: 'fixture-human',
                 approvedAt: '2026-08-12T10:00:00Z',
@@ -134,58 +170,63 @@ describe('repository structure command safety', () => {
     ]);
     runGit(fixture.root, ['commit', '--quiet', '-m', 'candidate singleton']);
     const candidateHead = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
-    const validEvidence = trustedExceptionEvidence(candidateHead);
-    const invalidCases = [
-      { label: 'missing trusted input', evidence: undefined },
-      { label: 'missing review ID', evidence: { ...validEvidence, reviews: [] } },
-      {
-        label: 'mismatched repository',
-        evidence: { ...validEvidence, repository: 'forged/repository' },
-      },
-      {
-        label: 'mismatched reviewer',
-        evidence: withReview(validEvidence, { user: { type: 'User', login: 'other-human' } }),
-      },
-      {
-        label: 'mismatched head',
-        evidence: withReview(
-          { ...validEvidence, candidateHead: 'f'.repeat(40) },
-          { commit_id: 'f'.repeat(40) },
-        ),
-      },
-      {
-        label: 'mismatched target',
-        evidence: withReview(validEvidence, {
-          body: validReviewBody(candidateHead).replace(
-            'target: apps/approved-singleton',
-            'target: apps/other-singleton',
-          ),
-        }),
-      },
-      {
-        label: 'unapproved state',
-        evidence: withReview(validEvidence, { state: 'CHANGES_REQUESTED' }),
-      },
-    ];
-    for (const invalidCase of invalidCases) {
-      const evidencePath = invalidCase.evidence
-        ? writeTrustedEvidence(fixture.root, invalidCase.evidence)
-        : undefined;
-      const result = runChecker(fixture, { evidencePath });
-      expect(result.status, `${invalidCase.label}\n${result.stdout}\n${result.stderr}`).not.toBe(0);
-      expect(result.stdout).toContain('apps/approved-singleton [topology.singleton-subtree]');
-    }
+    const review = trustedReview(candidateHead);
+    const environment = {
+      ...fakeGitHub.environment,
+      FAKE_GH_REVIEW: JSON.stringify(review),
+    };
 
-    const evidencePath = writeTrustedEvidence(fixture.root, validEvidence);
-    const result = runChecker(fixture, { evidencePath });
+    const callerEvidenceResult = runChecker(fixture, {
+      environment,
+      extraArgs: ['--trusted-exception-reviews', 'caller-selected.json'],
+    });
+    expect(callerEvidenceResult.status).toBe(2);
+    expect(callerEvidenceResult.stderr).toContain(
+      'usage: node scripts/repo-structure-check.mjs [--base <git-ref>]',
+    );
+    expect(existsSync(fakeGitHub.logPath)).toBe(false);
+
+    const failedLookup = runChecker(fixture, {
+      environment: { ...environment, FAKE_GH_MODE: 'fail' },
+    });
+    expect(failedLookup.status).toBe(1);
+    expect(failedLookup.stdout).toContain('authenticated GitHub review lookup failed');
+
+    const malformedLookup = runChecker(fixture, {
+      environment: { ...environment, FAKE_GH_MODE: 'malformed' },
+    });
+    expect(malformedLookup.status).toBe(1);
+    expect(malformedLookup.stdout).toContain(
+      'authenticated GitHub review lookup returned malformed evidence',
+    );
+
+    const result = runChecker(fixture, { environment });
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+    const calls = readFileSync(fakeGitHub.logPath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(calls.at(-2)).toEqual([
+      'api',
+      '--method',
+      'GET',
+      'repos/example/repository/pulls/42/reviews/100',
+    ]);
+    expect(calls.at(-1)).toEqual([
+      'api',
+      '--method',
+      'GET',
+      '--paginate',
+      '--slurp',
+      'repos/example/repository/pulls/42/reviews',
+    ]);
 
     writeFixture(
       fixture.root,
       'apps/approved-singleton/entry.ts',
       'export const approvedValue = false;\n',
     );
-    const dirtyCandidateResult = runChecker(fixture, { evidencePath });
+    const dirtyCandidateResult = runChecker(fixture, { environment });
     expect(
       dirtyCandidateResult.status,
       `${dirtyCandidateResult.stdout}\n${dirtyCandidateResult.stderr}`,
@@ -249,22 +290,15 @@ describe('repository structure command safety', () => {
   });
 });
 
-function trustedExceptionEvidence(candidateHead: string): TrustedEvidenceFixture {
+function trustedReview(candidateHead: string): Record<string, unknown> {
   return {
-    version: 2,
-    repository: 'example/repository',
-    candidateHead,
-    reviews: [
-      {
-        id: 100,
-        state: 'APPROVED',
-        commit_id: candidateHead,
-        submitted_at: '2026-08-12T10:00:00Z',
-        user: { type: 'User', login: 'fixture-human' },
-        author_association: 'MEMBER',
-        body: validReviewBody(candidateHead),
-      },
-    ],
+    id: 100,
+    state: 'APPROVED',
+    commit_id: candidateHead,
+    submitted_at: '2026-08-12T10:00:00Z',
+    user: { type: 'User', login: 'fixture-human' },
+    author_association: 'MEMBER',
+    body: validReviewBody(candidateHead),
   };
 }
 
@@ -278,19 +312,32 @@ function validReviewBody(candidateHead: string): string {
   ].join('\n');
 }
 
-function withReview(
-  evidence: TrustedEvidenceFixture,
-  reviewPatch: Record<string, unknown>,
-): TrustedEvidenceFixture {
-  return { ...evidence, reviews: [{ ...evidence.reviews[0], ...reviewPatch }] };
+function createFakeGitHub(root: string) {
+  const binPath = path.join(root, 'fake-bin');
+  const logPath = path.join(root, 'fake-gh-calls.jsonl');
+  mkdirSync(binPath);
+  const executablePath = path.join(binPath, 'gh');
+  writeFileSync(
+    executablePath,
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.FAKE_GH_LOG, JSON.stringify(args) + '\\n');
+if (process.env.FAKE_GH_MODE === 'fail') process.exit(1);
+if (process.env.FAKE_GH_MODE === 'malformed') {
+  process.stdout.write('{broken');
+  process.exit(0);
 }
-
-type TrustedEvidenceFixture = Record<string, unknown> & {
-  readonly reviews: readonly Record<string, unknown>[];
-};
-
-function writeTrustedEvidence(root: string, evidence: Record<string, unknown>): string {
-  const file = path.join(root, 'trusted-exception-reviews.json');
-  writeFileSync(file, JSON.stringify(evidence));
-  return file;
+const review = JSON.parse(process.env.FAKE_GH_REVIEW);
+process.stdout.write(JSON.stringify(args.at(-1).endsWith('/reviews/100') ? review : [[review]]));
+`,
+  );
+  chmodSync(executablePath, 0o755);
+  return {
+    logPath,
+    environment: {
+      PATH: `${binPath}:${process.env.PATH}`,
+      FAKE_GH_LOG: logPath,
+    },
+  };
 }

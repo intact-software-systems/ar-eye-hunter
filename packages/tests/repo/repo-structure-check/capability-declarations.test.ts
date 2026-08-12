@@ -321,7 +321,7 @@ describe('repository capability declarations', () => {
           return 'def python_owner():\n    def nested_python():\n        pass\n';
         }
         if (file === 'scripts/shell/module.sh') {
-          return 'shell_owner() { :; }\n  nested_shell() { :; }\n';
+          return 'shell_owner() {\nnested_shell() { :; }\n}\n';
         }
         return '';
       },
@@ -364,6 +364,97 @@ describe('repository capability declarations', () => {
     );
     expect(issues).toContain(
       'cold-navigation probe symbol nested_shell is not a navigable top-level owner in scripts/shell/module.sh',
+    );
+  });
+
+  it('resolves shell symbols only at balanced top-level function and brace scope', () => {
+    const shellCapability = capability({
+      owner: 'shell capability',
+      root: 'scripts/shell',
+      entry: 'scripts/shell.sh',
+    });
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [shellCapability],
+      authoredFiles: [
+        ...fixtureFiles(),
+        'scripts/shell.sh',
+        'scripts/shell/module.sh',
+        'scripts/shell/malformed.sh',
+      ],
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: (file: string) => {
+        if (file === 'scripts/shell/module.sh') {
+          return [
+            'TOP_LEVEL=value',
+            'top_level() {',
+            '{',
+            'BRACED_LOCAL=value',
+            '}',
+            'FUNCTION_LOCAL=value',
+            'nested_function() { :; }',
+            '}',
+            'one_line() { ONE_LINE_LOCAL=value; }',
+            'multi_line()',
+            '{',
+            'MULTI_LINE_LOCAL=value',
+            '}',
+          ].join('\n');
+        }
+        if (file === 'scripts/shell/malformed.sh') {
+          return 'broken_function() {\nUNBALANCED_LOCAL=value\n';
+        }
+        return '';
+      },
+      coldNavigationEvidence: {
+        status: 'passed',
+        summary: 'The probes distinguish shell top-level owners from nested declarations.',
+        probes: [
+          ...[
+            'TOP_LEVEL',
+            'top_level',
+            'one_line',
+            'multi_line',
+            'BRACED_LOCAL',
+            'FUNCTION_LOCAL',
+            'nested_function',
+            'ONE_LINE_LOCAL',
+            'MULTI_LINE_LOCAL',
+          ].map((symbol) => ({
+            capabilityOwner: 'shell capability',
+            path: 'scripts/shell/module.sh',
+            symbol,
+          })),
+          {
+            capabilityOwner: 'shell capability',
+            path: 'scripts/shell/malformed.sh',
+            symbol: 'broken_function',
+          },
+        ],
+      },
+    });
+
+    for (const symbol of ['TOP_LEVEL', 'top_level', 'one_line', 'multi_line']) {
+      expect(issues).not.toContain(
+        `cold-navigation probe symbol ${symbol} is not a navigable top-level owner in ` +
+          'scripts/shell/module.sh',
+      );
+    }
+    for (const symbol of [
+      'BRACED_LOCAL',
+      'FUNCTION_LOCAL',
+      'nested_function',
+      'ONE_LINE_LOCAL',
+      'MULTI_LINE_LOCAL',
+    ]) {
+      expect(issues).toContain(
+        `cold-navigation probe symbol ${symbol} is not a navigable top-level owner in ` +
+          'scripts/shell/module.sh',
+      );
+    }
+    expect(issues).toContain(
+      'cold-navigation probe symbol evidence for scripts/shell/malformed.sh is unresolvable ' +
+        'because shell scope is malformed or unbalanced',
     );
   });
 

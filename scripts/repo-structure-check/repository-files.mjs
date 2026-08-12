@@ -88,21 +88,14 @@ export function isAuthoredCodePath(file) {
   if (!authoredCodeRoots.includes(parts[0])) {
     return false;
   }
-  if (parts.some((part) => generatedDirectoryExclusions.includes(part))) {
-    return false;
-  }
-  if (parts.some((part) => generatedPathPartPattern.test(part))) {
+  if (isExcludedAuthoredNode(normalized)) {
     return false;
   }
   const base = parts.at(-1) ?? '';
   if (!authoredCodeExtensions.has(path.extname(base).toLowerCase())) {
     return false;
   }
-  if (generatedFilePattern.test(base.toLowerCase())) {
-    return false;
-  }
-  const stem = base.replace(/(?:\.d)?\.[cm]?(?:t|j)sx?$/u, '');
-  return !toolMandatedFileExclusions.includes(stem);
+  return true;
 }
 
 export function isProductionAuthoredCodePath(file) {
@@ -226,12 +219,12 @@ function collectFiles(current, repoRoot) {
   return entries.flatMap((entry) => {
     const absolutePath = path.join(current, entry.name);
     const relativePath = toRelativePath(repoRoot, absolutePath);
+    if (isExcludedAuthoredNode(relativePath)) {
+      return [];
+    }
     const stat = readAuthoredPathStat(absolutePath, relativePath);
     if (stat.isDirectory()) {
-      return generatedDirectoryExclusions.includes(entry.name) ||
-        generatedPathPartPattern.test(entry.name)
-        ? []
-        : collectFiles(absolutePath, repoRoot);
+      return collectFiles(absolutePath, repoRoot);
     }
     if (!stat.isFile()) {
       throw new Error(`authored code path ${relativePath} must be a regular file or directory`);
@@ -241,6 +234,35 @@ function collectFiles(current, repoRoot) {
     }
     return [relativePath];
   });
+}
+
+function isExcludedAuthoredNode(relativePath) {
+  if (!isSafeRepositoryRelativeName(relativePath)) {
+    return false;
+  }
+  const parts = relativePath.split('/');
+  if (
+    parts.some(
+      (part) => generatedDirectoryExclusions.includes(part) || generatedPathPartPattern.test(part),
+    )
+  ) {
+    return true;
+  }
+  const base = parts.at(-1) ?? '';
+  if (generatedFilePattern.test(base.toLowerCase())) {
+    return true;
+  }
+  const stem = base.replace(/(?:\.d)?\.[cm]?(?:t|j)sx?$/u, '');
+  return toolMandatedFileExclusions.includes(stem);
+}
+
+function isSafeRepositoryRelativeName(value) {
+  return (
+    value !== '' &&
+    value === value.replaceAll('\\', '/') &&
+    !path.posix.isAbsolute(value) &&
+    value.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
+  );
 }
 
 function readAuthoredPathStat(absolutePath, relativePath) {
