@@ -829,6 +829,7 @@
           "npm:graphology@0.26.0"
         ]
       },
+      "npm:@ar-eye-hunter/shared-rtc-bench@0.1.0": {},
       "npm:@ar-eye-hunter/shared-server@0.1.0": {},
       "npm:@ar-eye-hunter/shared-test@0.1.0": {},
       "npm:@ar-eye-hunter/shared-web@0.1.0": {
