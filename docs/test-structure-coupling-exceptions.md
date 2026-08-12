@@ -33,28 +33,29 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 118 entries were reviewed by independently meaningful behavior,
+The current 122 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
-| Group | Entries | Why structural evidence remains |
-| --- | ---: | --- |
-| Source-analysis interface | 1 | One parser owner supplies normalized, path-aware analysis to repository tests. |
-| Hetzner workflow and Deno runtime | 9 | Executed operations are compared with their emitted artifacts, manifests, and deployed config. |
-| Browser control protocol | 7 | Two approved assertions protect server import direction and shared-test monitor ownership. |
-| Auth compatibility | 3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges. |
-| Repository style and release interfaces | 2 | Automation consumes stable rule and release-gate mappings. |
-| AppInbox transport routing | 7 | Concrete route mutations must fail before they bypass the canonical transaction owner. |
-| Mutation-analysis implementation interface | 3 | The audit must follow new files, re-exports, and type declarations fail-closed. |
-| Mutation route and owner traversal | 13 | Route, export, helper, and capability evasions must still resolve to AppInbox. |
-| Group mutation construction | 14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected. |
-| Group HTTP mutation shapes | 17 | Malformed commands, results, registrations, translators, and unreachable handoffs must be rejected. |
-| Mutation registration collections and predicates | 12 | Live handler families and exact predicates must remain complete and authoritative. |
-| API-v1 recipe loading and routing | 4 | Checked-in recipes and runner plans are executable public test interfaces. |
-| State-read convergence recipes | 2 | Parsed fixtures carry run-scoped identity and tertiary causal evidence. |
-| Black-box schema and recipe matrix | 10 | Published fixtures, examples, compatibility corpus, evidence tiers, and catalog promises are validated directly. |
-| State-write recipe evidence | 5 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity. |
-| Shared-web package boundaries | 9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction. |
+| Group                                            | Entries | Why structural evidence remains                                                                                  |
+| ------------------------------------------------ | ------: | ---------------------------------------------------------------------------------------------------------------- |
+| Source-analysis interface                        |       1 | One parser owner supplies normalized, path-aware analysis to repository tests.                                   |
+| Hetzner workflow and Deno runtime                |       9 | Executed operations are compared with their emitted artifacts, manifests, and deployed config.                   |
+| Browser control protocol                         |       7 | Two approved assertions protect server import direction and shared-test monitor ownership.                       |
+| Auth compatibility                               |       3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges.                         |
+| Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
+| AppInbox transport routing                       |       7 | Concrete route mutations must fail before they bypass the canonical transaction owner.                           |
+| Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
+| Mutation route and owner traversal               |      13 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
+| Group mutation construction                      |      14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected.                             |
+| Group HTTP mutation shapes                       |      17 | Malformed commands, results, registrations, translators, and unreachable handoffs must be rejected.              |
+| Mutation registration collections and predicates |      12 | Live handler families and exact predicates must remain complete and authoritative.                               |
+| API-v1 recipe loading and routing                |       4 | Checked-in recipes and runner plans are executable public test interfaces.                                       |
+| State-read convergence recipes                   |       2 | Parsed fixtures carry run-scoped identity and tertiary causal evidence.                                          |
+| Black-box schema and recipe matrix               |      10 | Published fixtures, examples, compatibility corpus, evidence tiers, and catalog promises are validated directly. |
+| State-write recipe evidence                      |       5 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
+| Shared-web package boundaries                    |       9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction.                         |
+| Shared RTC benchmark navigation                  |       4 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
 
 The full current candidate tree validates this registry even when the command
 reports a selected file set or a Git range. Filtered modes change the report,
@@ -824,6 +825,22 @@ moved or changed test.
       "summary": "State-write recipes bind command, durable result, and post-commit effects to one bounded execution identity. Executable assertion: “uses one bounded execution identity for the command and its evidence”.",
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence",
       "coverageRelation": "The named recipe test executes parsed public commands and assertions, then verifies the exact durable digest, revision, post-commit effect, or bounded execution identity represented by this read."
+    },
+    {
+      "id": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
+      "domain": "Shared RTC benchmark package navigation",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "The private benchmark package publishes one durable navigation row per executable and participates in root test discovery. Executable assertion: “documents each executable exactly once and discovers package tests”.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests",
+      "coverageRelation": "The architecture assertion compares the approved executable inventory with the shipped package README and independently verifies root Vitest discovery for the package test tree."
+    },
+    {
+      "id": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "domain": "Shared RTC benchmark diagnostic navigation",
+      "owner": "Shared RTC benchmark maintainers",
+      "summary": "Maintained diagnostics remain outside accepted baseline evidence while every diagnostic participates in package Deno checking. Executable assertion: “keeps diagnostics outside accepted baseline catalog and checked by Deno”.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno",
+      "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in Deno checking."
     },
     {
       "id": "typescript-seven-release-boundary",
@@ -2368,6 +2385,58 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Rewrites the remove-member translator to emit the ban operation, directly exercising the command-to-operation mismatch at the membership boundary.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a remove-member route translated through the ban operation"
+    },
+    {
+      "id": "test-structure-coupling-faeb16e6f7733c4e",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 35,
+      "column": 20,
+      "kind": "production-source-read",
+      "contract": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reads the package README that developers use to find each shipped RTC benchmark executable and requires one unambiguous row for every approved entrypoint.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
+    },
+    {
+      "id": "test-structure-coupling-0950fee7f048f987",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 50,
+      "column": 50,
+      "kind": "production-source-read",
+      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reads the accepted workload catalog so maintained diagnostics cannot silently become accepted baseline evidence producers.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
+    },
+    {
+      "id": "test-structure-coupling-a434e7b60d1fead3",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 51,
+      "column": 25,
+      "kind": "production-source-read",
+      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Reads the package command contract that owns Deno checking for every maintained diagnostic entrypoint.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
+    },
+    {
+      "id": "test-structure-coupling-08589be62a062796",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 58,
+      "column": 7,
+      "kind": "symbol-assertion",
+      "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Requires each named maintained diagnostic entrypoint to remain in the package Deno check command while remaining absent from accepted evidence.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
     }
   ]
 }

@@ -11,6 +11,9 @@
       "path": "packages/shared-server"
     },
     {
+      "path": "packages/shared-rtc-bench"
+    },
+    {
       "path": "packages/relic-hunters"
     }
   ],
@@ -23,33 +26,15 @@
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
     "types": [],
-    "lib": [
-      "ES2023",
-      "DOM",
-      "WebWorker"
-    ],
+    "lib": ["ES2023", "DOM", "WebWorker"],
     "paths": {
-      "@shared-web/*": [
-        "./packages/shared-web/*"
-      ],
-      "@shared-server/*": [
-        "./packages/shared-server/*"
-      ],
-      "@shared-graph/*": [
-        "./packages/shared-graph/*"
-      ],
-      "@shared-test/*": [
-        "./packages/shared-test/*"
-      ],
-      "@shared/*": [
-        "./packages/shared/*"
-      ],
-      "@relic-hunters/*": [
-        "./packages/relic-hunters/*"
-      ]
+      "@shared-web/*": ["./packages/shared-web/*"],
+      "@shared-server/*": ["./packages/shared-server/*"],
+      "@shared-graph/*": ["./packages/shared-graph/*"],
+      "@shared-test/*": ["./packages/shared-test/*"],
+      "@shared/*": ["./packages/shared/*"],
+      "@relic-hunters/*": ["./packages/relic-hunters/*"]
     }
   },
-  "exclude": [
-    "./packages/tests"
-  ]
+  "exclude": ["./packages/tests"]
 }

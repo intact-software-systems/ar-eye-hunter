@@ -3,7 +3,7 @@ import {
   compareStateWriteArtifacts,
   validateStateWriteArtifact,
 } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
-import { STATE_WRITE_REASONS } from '../../../scripts/perf/rtc-topology/state-write-reasons.ts';
+import { STATE_WRITE_REASONS } from '../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
 import {
   createStateWritePerformanceArtifact,
   refreshStateWritePerformanceWorkload,
