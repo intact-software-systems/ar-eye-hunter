@@ -163,9 +163,9 @@ are selected at the preceding checkpoint.
     "Changed-surface repository structure is recoverable from entries, tests, and navigation maps.",
     "PR review freshness and broad validation evidence are content-sensitive rather than commit-sensitive.",
     "Distributed validation runs only for classified risk or explicit plan acceptance.",
-    "Fresh-agent behavior evaluations pass every critical with-skill scenario."
-    ,"Each active capability has an exact owner, entry, mirrored test root, and focused command."
-    ,"The combined local adaptive-governance path remains below ten seconds and its GitHub gate remains below two minutes."
+    "Fresh-agent behavior evaluations pass every critical with-skill scenario.",
+    "Each active capability has an exact owner, entry, mirrored test root, and focused command.",
+    "The combined local adaptive-governance path remains below ten seconds and its GitHub gate remains below two minutes."
   ],
   "capabilities": [
     {
@@ -174,7 +174,7 @@ are selected at the preceding checkpoint.
       "entry": "scripts/plan-adaptation.mjs",
       "testRoot": "packages/tests/repo/plan-adaptation",
       "focusedCommand": "npm run test:plan-adaptation",
-      "navigationMap": null
+      "navigationMap": "scripts/plan-adaptation/README.md"
     },
     {
       "owner": "repository structure",
@@ -197,16 +197,24 @@ are selected at the preceding checkpoint.
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "affectedCodeDigest": null,
-    "computedTriggers": ["written-plan", "directory-creation", "public-governance-ownership"],
+    "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
+    "affectedCodeDigest": "3ce4de01ae6d3d537a08d1a3d3999f378d12b42e46dac3171d9013c821fd6a4a",
+    "computedTriggers": [
+      "folder-change",
+      "ownership-change",
+      "public-contract-change",
+      "lifecycle-change"
+    ],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Bootstrap design and active plan are being established.",
-    "learning": "Fresh baseline agents reasoned well when explicitly presented with invalidated-plan and navigation scenarios, so the primary gap is reliable triggering, evidence, and convergence rather than additional generic advice. The untouched unit baseline also has one obsolete-coupled bundle budget failure, so governance tests need independent focused commands.",
-    "structure": "Both first-horizon capability paths are fixed; only checkpoint-activated later outcomes retain deferred placement.",
+    "outcome": "Slice 1 provides the complete canonical adaptive-plan lifecycle through one thin command entry, including fresh checkpoint drafts, content-sensitive apply/check behavior, a generated format-stable registry, and final-evidence-gated close-out.",
+    "learning": "Canonical review facts need bytewise Git-path ordering, prepare must clear prior judgments, generated artifacts need deterministic repository formatting, and the rolling diff base must travel with facts so no-argument checks have no hidden environment dependency.",
+    "structure": "scripts/plan-adaptation remains one cohesive owner with a durable navigation map; its record, diff-fact, policy, registry, and lifecycle modules each expose a real responsibility and mirrored temporary-repository tests exercise the public CLI.",
     "decision": "continue",
-    "nextSlices": ["slice-1-plan-adaptation", "slice-2-repository-structure"]
+    "nextSlices": [
+      "slice-2-repository-structure"
+    ]
   },
   "structuralDispositions": [
     {
@@ -229,6 +237,11 @@ are selected at the preceding checkpoint.
     {
       "date": "2026-08-12",
       "decision": "Initial review fixed repository structure at scripts/repo-structure-check with mirrored tests and kept existing repo-style metrics canonical."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "Slice 1 provides the complete canonical adaptive-plan lifecycle through one thin command entry, including fresh checkpoint drafts, content-sensitive apply/check behavior, a generated format-stable registry, and final-evidence-gated close-out."
     }
   ]
 }

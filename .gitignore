@@ -28,5 +28,6 @@ apps/web/dist
 
 /.pnpm-store/**
 /.superpowers/
+/.plan-adaptation/
 
 .claude/worktrees/
