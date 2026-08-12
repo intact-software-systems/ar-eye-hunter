@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { parse } from '@babel/parser';
@@ -68,8 +68,8 @@ const generatedFilePattern = /(?:\.generated|\.gen|\.pb)(?:\.d)?\.[cm]?(?:t|j)sx
 export function readRepositoryFiles(repoRoot, base) {
   const mergeBase = runGit(repoRoot, ['merge-base', base, 'HEAD']).trim();
   const targetFiles = collectTargetFiles(repoRoot);
-  const baseFiles = runGit(repoRoot, ['ls-tree', '-r', '--name-only', mergeBase])
-    .split('\n')
+  const baseFiles = runGit(repoRoot, ['ls-tree', '-rz', '--name-only', mergeBase])
+    .split('\0')
     .filter((file) => isAuthoredCodePath(file));
   const changes = readChanges(repoRoot, mergeBase);
   return {
@@ -118,33 +118,55 @@ export function isProductionAuthoredCodePath(file) {
 
 function collectTargetFiles(repoRoot) {
   return authoredCodeRoots
-    .flatMap((root) => collectFiles(path.join(repoRoot, root), repoRoot))
+    .flatMap((root) => collectAuthoredRoot(path.join(repoRoot, root), repoRoot))
     .filter(isAuthoredCodePath)
     .sort(compareCodeUnits);
 }
 
+function collectAuthoredRoot(absoluteRoot, repoRoot) {
+  try {
+    lstatSync(absoluteRoot);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return [];
+    }
+    throw new Error(`authored code path ${toRelativePath(repoRoot, absoluteRoot)} is not readable`);
+  }
+  return collectFiles(absoluteRoot, repoRoot);
+}
+
 function readChanges(repoRoot, mergeBase) {
-  const trackedChanges = runGit(repoRoot, ['diff', '--name-status', '--find-renames', mergeBase])
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [status, firstPath, secondPath] = line.split('\t');
-      const kind = status[0];
-      const change =
-        kind === 'R' || kind === 'C'
-          ? { kind, source: firstPath, target: secondPath }
-          : {
-              kind,
-              source: kind === 'A' ? undefined : firstPath,
-              target: kind === 'D' ? undefined : firstPath,
-            };
-      return {
-        ...change,
-        material: isMaterialChange(repoRoot, mergeBase, change),
-      };
+  const trackedTokens = runGit(repoRoot, [
+    'diff',
+    '--name-status',
+    '-z',
+    '--find-renames',
+    mergeBase,
+    '--',
+  ])
+    .split('\0')
+    .filter(Boolean);
+  const trackedChanges = [];
+  for (let index = 0; index < trackedTokens.length;) {
+    const status = trackedTokens[index++];
+    const kind = status[0];
+    const firstPath = trackedTokens[index++];
+    const secondPath = kind === 'R' || kind === 'C' ? trackedTokens[index++] : undefined;
+    const change =
+      secondPath === undefined
+        ? {
+            kind,
+            source: kind === 'A' ? undefined : firstPath,
+            target: kind === 'D' ? undefined : firstPath,
+          }
+        : { kind, source: firstPath, target: secondPath };
+    trackedChanges.push({
+      ...change,
+      material: isMaterialChange(repoRoot, mergeBase, change),
     });
-  const untrackedChanges = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard'])
-    .split('\n')
+  }
+  const untrackedChanges = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'])
+    .split('\0')
     .filter(Boolean)
     .map((target) => ({ kind: 'A', source: undefined, target, material: true }));
   return [...trackedChanges, ...untrackedChanges].filter((change) =>
@@ -190,22 +212,48 @@ function toJavaScriptTokens(file, source) {
 }
 
 function collectFiles(current, repoRoot) {
+  const relativeDirectory = toRelativePath(repoRoot, current);
+  const directoryStat = readAuthoredPathStat(current, relativeDirectory);
+  if (!directoryStat.isDirectory() || (directoryStat.mode & 0o555) === 0) {
+    throw new Error(`authored code directory ${relativeDirectory} is not readable`);
+  }
   let entries;
   try {
     entries = readdirSync(current, { withFileTypes: true });
   } catch {
-    return [];
+    throw new Error(`authored code directory ${relativeDirectory} is not readable`);
   }
   return entries.flatMap((entry) => {
     const absolutePath = path.join(current, entry.name);
-    if (entry.isDirectory()) {
+    const relativePath = toRelativePath(repoRoot, absolutePath);
+    const stat = readAuthoredPathStat(absolutePath, relativePath);
+    if (stat.isDirectory()) {
       return generatedDirectoryExclusions.includes(entry.name) ||
         generatedPathPartPattern.test(entry.name)
         ? []
         : collectFiles(absolutePath, repoRoot);
     }
-    return entry.isFile() ? [toRelativePath(repoRoot, absolutePath)] : [];
+    if (!stat.isFile()) {
+      throw new Error(`authored code path ${relativePath} must be a regular file or directory`);
+    }
+    if ((stat.mode & 0o444) === 0) {
+      throw new Error(`authored code file ${relativePath} is not readable`);
+    }
+    return [relativePath];
   });
+}
+
+function readAuthoredPathStat(absolutePath, relativePath) {
+  let stat;
+  try {
+    stat = lstatSync(absolutePath);
+  } catch {
+    throw new Error(`authored code path ${relativePath} is not readable`);
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(`authored code path ${relativePath} must not be a symlink`);
+  }
+  return stat;
 }
 
 function readGitFile(repoRoot, revision, file) {

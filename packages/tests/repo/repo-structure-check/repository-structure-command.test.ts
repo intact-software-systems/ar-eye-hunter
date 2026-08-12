@@ -1,18 +1,14 @@
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-const repoRoot = process.cwd();
-const entryPath = path.join(repoRoot, 'scripts/repo-structure-check.mjs');
-const fixtureRoots: string[] = [];
+import {
+  cleanupRepositoryFixtures,
+  createRepositoryFixture,
+  runChecker,
+  runGit,
+  writeFixture,
+} from './repository-structure-command-fixture.ts';
 
-afterEach(() => {
-  for (const fixtureRoot of fixtureRoots.splice(0)) {
-    rmSync(fixtureRoot, { recursive: true, force: true });
-  }
-});
+afterEach(cleanupRepositoryFixtures);
 
 describe('repository structure command', () => {
   it('rejects a new authored-code subtree with one code descendant', () => {
@@ -146,6 +142,17 @@ describe('repository structure command', () => {
     expect(result.status, result.stdout).toBe(0);
   });
 
+  it('classifies path-only renames with control characters through NUL-safe Git records', () => {
+    const fixture = createRepositoryFixture({
+      'apps/legacy-feature/only\tmodule.ts': 'export const value = true;\n',
+    });
+    runGit(fixture.root, ['mv', 'apps/legacy-feature', 'apps/renamed-feature']);
+
+    const result = runChecker(fixture);
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+  });
+
   it('activates renamed singleton debt when the moved code also changes', () => {
     const fixture = createRepositoryFixture({
       'apps/legacy-feature/only-module.ts': 'export const value = true;\n',
@@ -163,44 +170,6 @@ describe('repository structure command', () => {
     expect(result.stdout).toContain('apps/renamed-feature [topology.singleton-subtree]');
   });
 
-  it('accepts a new production singleton only with an explicit human-approved exception', () => {
-    const fixture = createRepositoryFixture();
-    writeFixture(
-      fixture.root,
-      'apps/approved-singleton/entry.ts',
-      'export const approvedValue = true;\n',
-    );
-    writeFixture(
-      fixture.root,
-      'docs/repo-structure-exceptions.json',
-      `${JSON.stringify(
-        {
-          version: 1,
-          exceptions: [
-            {
-              ruleId: 'topology.singleton-subtree',
-              target: 'apps/approved-singleton',
-              owner: 'Repository maintainers',
-              reviewOrRemovalCondition: 'Review when the public integration gains another module.',
-              approval: {
-                kind: 'human',
-                approvedBy: 'Fixture Human',
-                approvedAt: '2026-08-12',
-                evidence: 'https://github.com/example/repository/pull/42#pullrequestreview-100',
-              },
-            },
-          ],
-        },
-        null,
-        2,
-      )}\n`,
-    );
-
-    const result = runChecker(fixture);
-
-    expect(result.status, result.stdout).toBe(0);
-  });
-
   it('does not apply production singleton exceptions to test topology', () => {
     const fixture = createRepositoryFixture();
     writeFixture(fixture.root, 'packages/tests/repo/approved-test/only.test.ts', 'export {};\n');
@@ -208,7 +177,7 @@ describe('repository structure command', () => {
       fixture.root,
       'docs/repo-structure-exceptions.json',
       `${JSON.stringify({
-        version: 1,
+        version: 2,
         exceptions: [
           {
             ruleId: 'topology.singleton-subtree',
@@ -216,10 +185,9 @@ describe('repository structure command', () => {
             owner: 'Repository maintainers',
             reviewOrRemovalCondition: 'Remove when a second test exists.',
             approval: {
-              kind: 'human',
-              approvedBy: 'Fixture Human',
-              approvedAt: '2026-08-12',
-              evidence: 'https://github.com/example/repository/pull/42#pullrequestreview-101',
+              reviewId: 101,
+              reviewerLogin: 'fixture-human',
+              approvedAt: '2026-08-12T10:00:00Z',
             },
           },
         ],
@@ -234,100 +202,3 @@ describe('repository structure command', () => {
     );
   });
 });
-
-function createRepositoryFixture(baseFiles: Record<string, string> = {}) {
-  const root = mkdtempSync(path.join(tmpdir(), 'repo-structure-check-'));
-  fixtureRoots.push(root);
-  runGit(root, ['init', '--quiet', '--initial-branch=main']);
-  runGit(root, ['config', 'user.name', 'Repository Structure Test']);
-  runGit(root, ['config', 'user.email', 'repo-structure@example.test']);
-  writeFixture(root, 'package.json', JSON.stringify({ scripts: fixtureScripts() }, null, 2));
-  writeFixture(root, 'apps/example/first.ts', 'export const first = true;\n');
-  writeFixture(root, 'apps/example/second.ts', 'export const second = true;\n');
-  writeFixture(root, 'scripts/example.mjs', 'export function runExample() { return true; }\n');
-  writeFixture(root, 'scripts/example/first.mjs', 'export const first = true;\n');
-  writeFixture(root, 'scripts/example/second.mjs', 'export const second = true;\n');
-  writeFixture(root, 'packages/tests/repo/example/first.test.ts', 'export {};\n');
-  writeFixture(root, 'packages/tests/repo/example/second.test.ts', 'export {};\n');
-  writeFixture(root, 'plans/fixture-plan.md', `# Fixture plan\n\n${recordBlock(createRecord())}\n`);
-  writeFixture(root, 'plans/README.md', '# Active adaptive plans\n');
-  for (const [file, content] of Object.entries(baseFiles)) {
-    writeFixture(root, file, content);
-  }
-  runGit(root, ['add', '.']);
-  runGit(root, ['commit', '--quiet', '-m', 'base']);
-  return { root, base: runGit(root, ['rev-parse', 'HEAD']).trim() };
-}
-
-function fixtureScripts() {
-  return {
-    'test:example': 'vitest run packages/tests/repo/example',
-  };
-}
-
-function createRecord(): Record<string, unknown> {
-  return {
-    version: 1,
-    planId: 'fixture-plan',
-    status: 'active',
-    goal: 'Keep repository capabilities navigable.',
-    acceptanceCriteria: ['Changed structure remains navigable.'],
-    capabilities: [
-      {
-        owner: 'example capability',
-        root: 'scripts/example',
-        entry: 'scripts/example.mjs',
-        testRoot: 'packages/tests/repo/example',
-        focusedCommand: 'npm run test:example',
-        navigationMap: null,
-        controlFlowFamilies: ['scan', 'report'],
-      },
-    ],
-    architecture: {
-      currentHypothesis: 'The fixture starts navigable.',
-      intendedHypothesis: 'The fixture remains navigable.',
-      freshInitialReview: { status: 'complete', reviewer: 'human', verdict: 'pass' },
-    },
-    completedSlicesSinceCheckpoint: [],
-    facts: {
-      diffBase: 'HEAD',
-      affectedCodeDigest: null,
-      computedTriggers: [],
-      undeclaredChangedPaths: [],
-    },
-    checkpoint: {
-      outcome: 'The fixture baseline exists.',
-      learning: 'The owner is explicit.',
-      structure: 'One capability owns the fixture.',
-      decision: 'continue',
-      nextSlices: ['fixture-slice'],
-    },
-    structuralDispositions: [],
-    structuralExceptions: [],
-    freshStructuralReview: null,
-    coldNavigationEvidence: null,
-    materialDecisions: [],
-  };
-}
-
-function recordBlock(record: Record<string, unknown>): string {
-  return `\`\`\`plan-adaptation-v1\n${JSON.stringify(record, null, 2)}\n\`\`\``;
-}
-
-function runChecker(fixture: { readonly root: string; readonly base: string }, includeBase = true) {
-  const args = includeBase ? ['--base', fixture.base] : [];
-  return spawnSync(process.execPath, [entryPath, ...args], {
-    cwd: fixture.root,
-    encoding: 'utf8',
-  });
-}
-
-function writeFixture(root: string, relativePath: string, content: string): void {
-  const filePath = path.join(root, relativePath);
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  writeFileSync(filePath, content);
-}
-
-function runGit(root: string, args: readonly string[]): string {
-  return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
-}

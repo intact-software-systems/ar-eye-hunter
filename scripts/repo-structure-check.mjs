@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'node:fs';
+
 import {
   checkRepositoryStructure,
   resolveRepositoryStructureBase,
@@ -9,7 +11,10 @@ try {
   const input = readInput(process.argv.slice(2));
   const repoRoot = process.cwd();
   const base = input.base ?? resolveRepositoryStructureBase(repoRoot);
-  const result = checkRepositoryStructure({ repoRoot, base });
+  const trustedExceptionEvidence = input.trustedExceptionReviews
+    ? JSON.parse(readFileSync(input.trustedExceptionReviews, 'utf8'))
+    : undefined;
+  const result = checkRepositoryStructure({ repoRoot, base, trustedExceptionEvidence });
   printResult(result);
   process.exitCode = result.findings.length === 0 ? 0 : 1;
 } catch (error) {
@@ -18,14 +23,31 @@ try {
 }
 
 function readInput(args) {
-  let base;
+  const input = {};
   for (let index = 0; index < args.length; index += 2) {
-    if (args[index] !== '--base' || args[index + 1] === undefined || base !== undefined) {
-      throw new Error('usage: node scripts/repo-structure-check.mjs [--base <git-ref>]');
+    const option = args[index];
+    const value = args[index + 1];
+    if (value === undefined) {
+      throw new Error(
+        'usage: node scripts/repo-structure-check.mjs [--base <git-ref>] ' +
+          '[--trusted-exception-reviews <json-file>]',
+      );
     }
-    base = args[index + 1];
+    if (option === '--base' && input.base === undefined) {
+      input.base = value;
+    } else if (
+      option === '--trusted-exception-reviews' &&
+      input.trustedExceptionReviews === undefined
+    ) {
+      input.trustedExceptionReviews = value;
+    } else {
+      throw new Error(
+        'usage: node scripts/repo-structure-check.mjs [--base <git-ref>] ' +
+          '[--trusted-exception-reviews <json-file>]',
+      );
+    }
   }
-  return { base };
+  return input;
 }
 
 function printResult(result) {

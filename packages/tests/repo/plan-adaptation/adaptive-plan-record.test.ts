@@ -50,6 +50,24 @@ describe('adaptive plan record', () => {
       undeclaredChangedPaths: ['../outside'],
     };
     record.materialDecisions = [{ date: 'today', decision: '' }];
+    record.structuralDispositions = [
+      {
+        kind: 'current-fact',
+        ruleId: '',
+        target: '../outside',
+        identity: 42,
+        magnitude: -1,
+        affectedCodeDigest: 'stale',
+        disposition: 'later',
+        rationale: '',
+      },
+      {
+        kind: 'unknown',
+        target: 'ownership contract',
+        disposition: 'keep',
+        rationale: 'Unknown kinds cannot become waivers.',
+      },
+    ];
     record.freshStructuralReview = { status: 'failed', failures: 'ownership' };
     record.coldNavigationEvidence = { status: 'failed' };
 
@@ -68,6 +86,14 @@ describe('adaptive plan record', () => {
         'record.facts.undeclaredChangedPaths must contain safe repository-relative paths',
         'record.materialDecisions[0].date must use YYYY-MM-DD',
         'record.materialDecisions[0].decision must be a non-empty string',
+        'record.structuralDispositions[0].ruleId must be a non-empty string',
+        'record.structuralDispositions[0].target must be a safe repository-relative path',
+        'record.structuralDispositions[0].identity must be null or a non-empty string',
+        'record.structuralDispositions[0].magnitude must be a non-negative integer',
+        'record.structuralDispositions[0].affectedCodeDigest must be a SHA-256 digest',
+        'record.structuralDispositions[0].disposition must be keep, split, move, or consolidate',
+        'record.structuralDispositions[0].rationale must be a non-empty string',
+        'record.structuralDispositions[1].kind must be ownership-contract or current-fact',
         'record.freshStructuralReview.failures must be an array',
         'record.coldNavigationEvidence.summary must be a non-empty string',
         'record.coldNavigationEvidence.probes must be a non-empty array',

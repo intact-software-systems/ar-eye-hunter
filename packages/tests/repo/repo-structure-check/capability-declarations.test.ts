@@ -18,6 +18,22 @@ describe('repository capability declarations', () => {
     );
   });
 
+  it('requires the canonical entry to belong to the declared owner', () => {
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability({ entry: 'scripts/other.mjs' })],
+      authoredFiles: [...fixtureFiles(), 'scripts/other.mjs'],
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: () => '',
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toContain(
+      'example capability entry scripts/other.mjs must be inside scripts/example or its exact ' +
+        'thin sibling entry',
+    );
+  });
+
   it('requires the declared test root to mirror the capability root', () => {
     const issues = validateCapabilityDeclarations({
       repoRoot: '/repo',
@@ -29,7 +45,45 @@ describe('repository capability declarations', () => {
     });
 
     expect(issues).toContain(
-      'example capability test root packages/tests/repo/not-example does not mirror scripts/example',
+      'example capability test root packages/tests/repo/not-example must use a recognized mirrored ' +
+        'test hierarchy for scripts/example',
+    );
+  });
+
+  it('rejects a same-named test root outside the owner surface mirror', () => {
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability({ testRoot: 'packages/tests/unrelated/example' })],
+      authoredFiles: [...fixtureFiles(), 'packages/tests/unrelated/example/feature.test.ts'],
+      packageScripts: {
+        'test:example': 'vitest run packages/tests/unrelated/example',
+      },
+      readFile: () => '',
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toContain(
+      'example capability test root packages/tests/unrelated/example must use a recognized ' +
+        'mirrored test hierarchy for scripts/example',
+    );
+  });
+
+  it('requires a recognized test hierarchy containing real test modules', () => {
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability({ testRoot: 'packages/not-tests/example' })],
+      authoredFiles: [...fixtureFiles(), 'packages/not-tests/example/helper.ts'],
+      packageScripts: { 'test:example': 'vitest run packages/not-tests/example' },
+      readFile: () => '',
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toContain(
+      'example capability test root packages/not-tests/example must use a recognized mirrored ' +
+        'test hierarchy for scripts/example',
+    );
+    expect(issues).toContain(
+      'example capability test root packages/not-tests/example contains no authored .test/.spec modules',
     );
   });
 
@@ -102,6 +156,30 @@ describe('repository capability declarations', () => {
     });
 
     expect(issues).toContain(
+      'example capability requires a navigation map (22 production modules, ' +
+        '2 control-flow families)',
+    );
+  });
+
+  it('includes the thin sibling canonical entry in the production-module threshold', () => {
+    const productionModules = Array.from(
+      { length: 20 },
+      (_, index) => `scripts/example/module-${index}.mjs`,
+    );
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability()],
+      authoredFiles: [
+        'scripts/example.mjs',
+        ...productionModules,
+        'packages/tests/repo/example/feature.test.ts',
+      ],
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: () => '',
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toContain(
       'example capability requires a navigation map (21 production modules, ' +
         '2 control-flow families)',
     );
@@ -118,7 +196,7 @@ describe('repository capability declarations', () => {
     });
 
     expect(issues).toContain(
-      'example capability requires a navigation map (2 production modules, ' +
+      'example capability requires a navigation map (3 production modules, ' +
         '3 control-flow families)',
     );
   });
@@ -152,7 +230,8 @@ describe('repository capability declarations', () => {
     });
 
     expect(issues).toContain(
-      'cold-navigation probe symbol missingSymbol does not resolve in scripts/example/first.mjs',
+      'cold-navigation probe symbol missingSymbol is not a navigable top-level owner in ' +
+        'scripts/example/first.mjs',
     );
     expect(issues).toContain(
       'cold-navigation probe path scripts/example/missing.mjs does not resolve to authored code',
@@ -182,8 +261,134 @@ describe('repository capability declarations', () => {
     });
 
     expect(issues).toContain(
-      'example capability navigation-map symbol missingSymbol does not resolve in ' +
+      'example capability navigation-map symbol missingSymbol is not a navigable top-level owner in ' +
         'scripts/example/first.mjs',
+    );
+  });
+
+  it('accepts only navigable top-level JavaScript or TypeScript owner symbols', () => {
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability()],
+      authoredFiles: fixtureFiles(),
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: (file: string) =>
+        file === 'scripts/example/first.mjs'
+          ? 'export function outerOwner() { function nestedOwner() {} return nestedOwner; }\n'
+          : undefined,
+      coldNavigationEvidence: {
+        status: 'passed',
+        summary: 'The probe claimed a nested local declaration as an owner.',
+        probes: [
+          {
+            capabilityOwner: 'example capability',
+            path: 'scripts/example/first.mjs',
+            symbol: 'nestedOwner',
+          },
+        ],
+      },
+    });
+
+    expect(issues).toContain(
+      'cold-navigation probe symbol nestedOwner is not a navigable top-level owner in ' +
+        'scripts/example/first.mjs',
+    );
+  });
+
+  it('validates top-level Python and shell symbols with language-aware rules', () => {
+    const capabilities = [
+      capability({
+        owner: 'python capability',
+        root: 'scripts/python',
+        entry: 'scripts/python.py',
+      }),
+      capability({ owner: 'shell capability', root: 'scripts/shell', entry: 'scripts/shell.sh' }),
+    ];
+    const authoredFiles = [
+      ...fixtureFiles(),
+      'scripts/python.py',
+      'scripts/python/module.py',
+      'scripts/shell.sh',
+      'scripts/shell/module.sh',
+    ];
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities,
+      authoredFiles,
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: (file: string) => {
+        if (file === 'scripts/python/module.py') {
+          return 'def python_owner():\n    def nested_python():\n        pass\n';
+        }
+        if (file === 'scripts/shell/module.sh') {
+          return 'shell_owner() { :; }\n  nested_shell() { :; }\n';
+        }
+        return '';
+      },
+      coldNavigationEvidence: {
+        status: 'passed',
+        summary: 'The probes name top-level and nested Python and shell symbols.',
+        probes: [
+          {
+            capabilityOwner: 'python capability',
+            path: 'scripts/python/module.py',
+            symbol: 'python_owner',
+          },
+          {
+            capabilityOwner: 'python capability',
+            path: 'scripts/python/module.py',
+            symbol: 'nested_python',
+          },
+          {
+            capabilityOwner: 'shell capability',
+            path: 'scripts/shell/module.sh',
+            symbol: 'shell_owner',
+          },
+          {
+            capabilityOwner: 'shell capability',
+            path: 'scripts/shell/module.sh',
+            symbol: 'nested_shell',
+          },
+        ],
+      },
+    });
+
+    expect(issues).not.toContain(
+      'cold-navigation probe symbol python_owner is not a navigable top-level owner in scripts/python/module.py',
+    );
+    expect(issues).not.toContain(
+      'cold-navigation probe symbol shell_owner is not a navigable top-level owner in scripts/shell/module.sh',
+    );
+    expect(issues).toContain(
+      'cold-navigation probe symbol nested_python is not a navigable top-level owner in scripts/python/module.py',
+    );
+    expect(issues).toContain(
+      'cold-navigation probe symbol nested_shell is not a navigable top-level owner in scripts/shell/module.sh',
+    );
+  });
+
+  it('fails explicitly when symbol evidence uses an unsupported authored language', () => {
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability()],
+      authoredFiles: [...fixtureFiles(), 'scripts/example/styles.css'],
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: () => '.owner { color: red; }\n',
+      coldNavigationEvidence: {
+        status: 'passed',
+        summary: 'The probe names a CSS selector as though it were a code owner.',
+        probes: [
+          {
+            capabilityOwner: 'example capability',
+            path: 'scripts/example/styles.css',
+            symbol: 'owner',
+          },
+        ],
+      },
+    });
+
+    expect(issues).toContain(
+      'cold-navigation probe symbol evidence for scripts/example/styles.css uses unsupported language .css',
     );
   });
 

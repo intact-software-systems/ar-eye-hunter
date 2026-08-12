@@ -211,7 +211,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "efbfde548abea7c69259b0b4e0e0a2891d1f90dcb85f795a3a2a36659f3df455",
+    "affectedCodeDigest": "f5142ed4777a207d1189ed6aa8d4e9c776e2725019e7fbb591759516065e7f87",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -221,14 +221,15 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Slice 2 adds a read-only repository-structure command that baselines unrelated debt, blocks changed singleton and redundant topology, validates declared navigation evidence, and requires human dispositions for structural facts.",
-    "learning": "Material change classification needs an explicit evidence boundary: unchanged parsed JavaScript or TypeScript tokens prove formatting, comment, and prose-only edits, while token changes and non-JavaScript or TypeScript edits fail closed as material.",
-    "structure": "scripts/repo-structure-check owns topology, declarations, semantic depth, exceptions, and changed-surface adoption; it consumes density, prefix-clustering, and file-size facts only through scripts/repo-style-check/structural-facts.mjs.",
+    "outcome": "Slice 2 fix round 1 binds exceptions and dispositions to exact current evidence, fails closed on unsafe repository paths, strengthens capability reality, and requires one schema-valid active plan diff base.",
+    "learning": "Review URLs and reusable target strings are not evidence: singleton exceptions require runner-supplied GitHub review facts for the exact clean candidate, while current-fact dispositions require exact identity, magnitude, and affected-code digest.",
+    "structure": "scripts/repo-structure-check remains the sole topology and declaration owner; trusted exception reviews enter through the thin CLI, and repo-style remains the sole density, prefix-clustering, and file-size fact owner.",
     "decision": "continue",
     "nextSlices": []
   },
   "structuralDispositions": [
     {
+      "kind": "ownership-contract",
       "target": "scripts/repo-style-check/layout-rules.mjs density, prefix-clustering, and file-size facts",
       "disposition": "keep",
       "rationale": "Repo style remains canonical; repository structure consumes one exported fact contract and owns only topology and disposition policy."
@@ -268,6 +269,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "Slice 2 adds a read-only repository-structure command that baselines unrelated debt, blocks changed singleton and redundant topology, validates declared navigation evidence, and requires human dispositions for structural facts."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "Slice 2 fix round 1 binds exceptions and dispositions to exact current evidence, fails closed on unsafe repository paths, strengthens capability reality, and requires one schema-valid active plan diff base."
     }
   ]
 }

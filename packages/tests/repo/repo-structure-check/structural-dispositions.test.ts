@@ -23,13 +23,19 @@ describe('repository structural dispositions', () => {
       },
     ];
 
-    const issues = validateStructuralDispositions(facts, [
-      {
-        target: 'apps/example [layout.directory-density]',
-        disposition: 'keep',
-        rationale: 'The directory is one cohesive public registry.',
-      },
-    ]);
+    const affectedCodeDigest = 'a'.repeat(64);
+    const issues = validateStructuralDispositions({
+      facts,
+      affectedCodeDigest,
+      declaredDispositions: [
+        currentFactDisposition({
+          ruleId: 'layout.directory-density',
+          target: 'apps/example',
+          magnitude: 21,
+          affectedCodeDigest,
+        }),
+      ],
+    });
 
     expect(issues).toEqual([
       'apps/example [layout.feature-prefix-cluster:room] requires an explicit ' +
@@ -37,6 +43,64 @@ describe('repository structural dispositions', () => {
       'apps/example/large.ts [file.length] requires an explicit ' +
         'keep/split/move/consolidate disposition; automation does not choose one',
       'scripts/example/adapter/internal [structure.semantic-depth] requires an explicit ' +
+        'keep/split/move/consolidate disposition; automation does not choose one',
+    ]);
+  });
+
+  it('rejects stale, changed-magnitude, and orphan current-fact dispositions', () => {
+    const affectedCodeDigest = 'b'.repeat(64);
+    const facts = [{ ruleId: 'layout.directory-density', target: 'apps/example', magnitude: 22 }];
+
+    const issues = validateStructuralDispositions({
+      facts,
+      affectedCodeDigest,
+      declaredDispositions: [
+        currentFactDisposition({
+          ruleId: 'layout.directory-density',
+          target: 'apps/example',
+          magnitude: 22,
+          affectedCodeDigest: 'a'.repeat(64),
+        }),
+        currentFactDisposition({
+          ruleId: 'layout.directory-density',
+          target: 'apps/example',
+          magnitude: 21,
+          affectedCodeDigest,
+        }),
+        currentFactDisposition({
+          ruleId: 'file.length',
+          target: 'apps/example/removed.ts',
+          magnitude: 1201,
+          affectedCodeDigest,
+        }),
+      ],
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('has stale affected-code digest'),
+        expect.stringContaining('does not match a current structural fact'),
+        expect.stringContaining('apps/example [layout.directory-density] requires an explicit'),
+      ]),
+    );
+  });
+
+  it('does not consume ownership-contract decisions as current-fact waivers', () => {
+    const issues = validateStructuralDispositions({
+      facts: [{ ruleId: 'layout.directory-density', target: 'apps/example', magnitude: 21 }],
+      affectedCodeDigest: 'c'.repeat(64),
+      declaredDispositions: [
+        {
+          kind: 'ownership-contract',
+          target: 'repo-style density, prefix, and size ownership',
+          disposition: 'keep',
+          rationale: 'Repo style remains the canonical fact owner.',
+        },
+      ],
+    });
+
+    expect(issues).toEqual([
+      'apps/example [layout.directory-density] requires an explicit ' +
         'keep/split/move/consolidate disposition; automation does not choose one',
     ]);
   });
@@ -64,3 +128,13 @@ describe('repository structural dispositions', () => {
     ]);
   });
 });
+
+function currentFactDisposition(overrides: Record<string, unknown>) {
+  return {
+    kind: 'current-fact',
+    identity: null,
+    disposition: 'keep',
+    rationale: 'The current fact is intentionally retained for this exact change.',
+    ...overrides,
+  };
+}

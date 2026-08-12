@@ -2,7 +2,12 @@ import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { isProductionAuthoredCodePath, readRepositoryFiles } from './repository-files.mjs';
-import { readActivePlans } from '../plan-adaptation/active-plan-registry.mjs';
+import { readAdaptivePlans } from '../plan-adaptation/active-plan-registry.mjs';
+import { validateAdaptivePlanRecord } from '../plan-adaptation/adaptive-plan-record.mjs';
+import {
+  computeAffectedCodeDigest,
+  readChangedPaths,
+} from '../plan-adaptation/plan-change-facts.mjs';
 import { collectRepositoryStyleFacts } from '../repo-style-check/structural-facts.mjs';
 import { validateCapabilityDeclarations } from './capability-declarations.mjs';
 import { readStructureExceptions } from './structure-exceptions.mjs';
@@ -12,43 +17,72 @@ import {
 } from './structural-dispositions.mjs';
 
 export function resolveRepositoryStructureBase(repoRoot) {
-  const activePlans = readActivePlans(repoRoot);
-  if (activePlans.length === 1 && typeof activePlans[0].record.facts?.diffBase === 'string') {
-    return activePlans[0].record.facts.diffBase;
-  }
-  return 'origin/main';
+  return readRequiredStructurePlan(repoRoot).record.facts.diffBase;
 }
 
 export function checkRepositoryStructure(input) {
+  const activePlan = readRequiredStructurePlan(input.repoRoot);
+  if (input.base !== activePlan.record.facts.diffBase) {
+    throw new Error('repository structure base must match the active plan diffBase');
+  }
   const repository = readRepositoryFiles(input.repoRoot, input.base);
+  const affectedCodeDigest = computeAffectedCodeDigest(
+    input.repoRoot,
+    input.base,
+    readChangedPaths(input.repoRoot, input.base),
+  );
   const targetDirectories = toCodeDirectories(repository.targetFiles);
   const baseDirectories = toCodeDirectories(repository.baseFiles);
-  const exceptionRegistry = readStructureExceptions(input.repoRoot);
-  const findings = exceptionRegistry.issues.map((message) => ({
-    target: 'docs/repo-structure-exceptions.json',
-    ruleId: 'exception.invalid',
+  const exceptionRegistry = readStructureExceptions(input.repoRoot, {
+    trustedEvidence: input.trustedExceptionEvidence,
+  });
+  const findings = [
+    ...exceptionRegistry.issues.map((message) => ({
+      target: 'docs/repo-structure-exceptions.json',
+      ruleId: 'exception.invalid',
+      message,
+    })),
+    ...collectCapabilityFindings(input.repoRoot, activePlan, repository.targetFiles),
+    ...collectSingletonFindings({
+      repository,
+      targetDirectories,
+      baseDirectories,
+      exceptions: exceptionRegistry.exceptions,
+    }),
+    ...collectRedundantChainFindings(targetDirectories, baseDirectories),
+    ...collectDispositionFindings({
+      repoRoot: input.repoRoot,
+      repository,
+      activePlan,
+      affectedCodeDigest,
+    }),
+  ];
+
+  return {
+    mergeBase: repository.mergeBase,
+    findings: findings.toSorted(compareFindings),
+  };
+}
+
+function collectCapabilityFindings(repoRoot, activePlan, authoredFiles) {
+  const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  return validateCapabilityDeclarations({
+    repoRoot,
+    capabilities: activePlan.record.capabilities,
+    authoredFiles,
+    packageScripts: packageJson.scripts ?? {},
+    readFile: (file) => readRepositoryText(repoRoot, file),
+    coldNavigationEvidence: activePlan.record.coldNavigationEvidence,
+  }).map((message) => ({
+    target: activePlan.planPath,
+    ruleId: 'capability.declaration',
     message,
   }));
-  const activePlans = readActivePlans(input.repoRoot);
-  const packageJson = JSON.parse(readFileSync(path.join(input.repoRoot, 'package.json'), 'utf8'));
-  for (const activePlan of activePlans) {
-    const declarationIssues = validateCapabilityDeclarations({
-      repoRoot: input.repoRoot,
-      capabilities: activePlan.record.capabilities,
-      authoredFiles: repository.targetFiles,
-      packageScripts: packageJson.scripts ?? {},
-      readFile: (file) => readRepositoryText(input.repoRoot, file),
-      coldNavigationEvidence: activePlan.record.coldNavigationEvidence,
-    });
-    findings.push(
-      ...declarationIssues.map((message) => ({
-        target: activePlan.planPath,
-        ruleId: 'capability.declaration',
-        message,
-      })),
-    );
-  }
+}
 
+function collectSingletonFindings(input) {
+  const findings = [];
+  const { repository, targetDirectories, baseDirectories, exceptions } = input;
   for (const [directory, descendants] of targetDirectories) {
     const materiallyChanged = repository.changes.some(
       (change) =>
@@ -75,17 +109,16 @@ export function checkRepositoryStructure(input) {
           `subtree has one code descendant (${descendants[0]}). ` +
           'A README does not create another code responsibility.',
       };
-      if (
-        !isApprovedException(
-          exceptionRegistry.exceptions,
-          finding,
-          isProductionAuthoredCodePath(descendants[0]),
-        )
-      ) {
+      if (!isApprovedException(exceptions, finding, isProductionAuthoredCodePath(descendants[0]))) {
         findings.push(finding);
       }
     }
   }
+  return findings;
+}
+
+function collectRedundantChainFindings(targetDirectories, baseDirectories) {
+  const findings = [];
   for (const [directory, descendants] of targetDirectories) {
     const directFiles = descendants.filter((file) => path.posix.dirname(file) === directory);
     const childDirectories = new Set(
@@ -108,28 +141,44 @@ export function checkRepositoryStructure(input) {
       });
     }
   }
+  return findings;
+}
 
-  const capabilities = activePlans.flatMap(({ record }) => record.capabilities);
+function collectDispositionFindings(input) {
+  const { repoRoot, repository, activePlan, affectedCodeDigest } = input;
+  const capabilities = activePlan.record.capabilities;
   const structuralFacts = [
-    ...readChangedRepositoryStyleFacts(input.repoRoot, repository),
+    ...readChangedRepositoryStyleFacts(repoRoot, repository),
     ...collectSemanticDepthFacts({
       capabilities,
       authoredFiles: repository.targetFiles,
     }).filter((fact) => isFactOnMateriallyChangedSurface(fact, repository.changes)),
   ];
-  const declaredDispositions = activePlans.flatMap(({ record }) => record.structuralDispositions);
-  findings.push(
-    ...validateStructuralDispositions(structuralFacts, declaredDispositions).map((message) => ({
-      target: 'plans',
-      ruleId: 'structure.disposition-required',
-      message,
-    })),
-  );
+  const declaredDispositions = activePlan.record.structuralDispositions;
+  return validateStructuralDispositions({
+    facts: structuralFacts,
+    affectedCodeDigest,
+    declaredDispositions,
+  }).map((message) => ({
+    target: 'plans',
+    ruleId: 'structure.disposition-required',
+    message,
+  }));
+}
 
-  return {
-    mergeBase: repository.mergeBase,
-    findings: findings.toSorted(compareFindings),
-  };
+function readRequiredStructurePlan(repoRoot) {
+  const plans = readAdaptivePlans(repoRoot);
+  const schemaIssues = plans.flatMap(({ planPath, record }) =>
+    validateAdaptivePlanRecord(record).map((issue) => `${planPath}: ${issue}`),
+  );
+  if (schemaIssues.length > 0) {
+    throw new Error(`invalid adaptive plan record: ${schemaIssues.join('; ')}`);
+  }
+  const activePlans = plans.filter(({ record }) => record.status === 'active');
+  if (activePlans.length !== 1) {
+    throw new Error('repository structure requires exactly one active plan');
+  }
+  return activePlans[0];
 }
 
 function readChangedRepositoryStyleFacts(repoRoot, repository) {

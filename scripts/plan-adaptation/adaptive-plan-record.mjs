@@ -132,16 +132,38 @@ function validateStructuralDispositions(issues, dispositions) {
     return;
   }
   for (const [index, disposition] of dispositions.entries()) {
+    const name = `record.structuralDispositions[${index}]`;
     if (!isRecord(disposition)) {
-      issues.push(`record.structuralDispositions[${index}] must be an object`);
+      issues.push(`${name} must be an object`);
       continue;
     }
-    requireText(issues, disposition.target, `record.structuralDispositions[${index}].target`);
-    if (!['keep', 'split', 'move', 'consolidate'].includes(disposition.disposition)) {
-      const name = `record.structuralDispositions[${index}].disposition`;
-      issues.push(`${name} must be keep, split, move, or consolidate`);
+    if (!['ownership-contract', 'current-fact'].includes(disposition.kind)) {
+      issues.push(`${name}.kind must be ownership-contract or current-fact`);
+      continue;
     }
-    requireText(issues, disposition.rationale, `record.structuralDispositions[${index}].rationale`);
+    requireText(issues, disposition.target, `${name}.target`);
+    if (!['keep', 'split', 'move', 'consolidate'].includes(disposition.disposition)) {
+      issues.push(`${name}.disposition must be keep, split, move, or consolidate`);
+    }
+    requireText(issues, disposition.rationale, `${name}.rationale`);
+    if (disposition.kind === 'current-fact') {
+      requireText(issues, disposition.ruleId, `${name}.ruleId`);
+      if (!isSafeRepositoryPath(disposition.target)) {
+        issues.push(`${name}.target must be a safe repository-relative path`);
+      }
+      if (
+        disposition.identity !== null &&
+        (typeof disposition.identity !== 'string' || disposition.identity.trim() === '')
+      ) {
+        issues.push(`${name}.identity must be null or a non-empty string`);
+      }
+      if (!Number.isInteger(disposition.magnitude) || disposition.magnitude < 0) {
+        issues.push(`${name}.magnitude must be a non-negative integer`);
+      }
+      if (!/^[a-f0-9]{64}$/u.test(disposition.affectedCodeDigest ?? '')) {
+        issues.push(`${name}.affectedCodeDigest must be a SHA-256 digest`);
+      }
+    }
   }
 }
 

@@ -87,7 +87,7 @@
     "test:plan-adaptation": "vitest run packages/tests/repo/plan-adaptation",
     "check:repo-structure": "node scripts/repo-structure-check.mjs",
     "test:repo-structure": "vitest run packages/tests/repo/repo-structure-check",
-    "test:adaptive-governance": "npm run test:plan-adaptation && npm run test:repo-structure",
+    "test:adaptive-governance": "npm run test:plan-adaptation & plan_pid=$!; npm run test:repo-structure & structure_pid=$!; status=0; wait $plan_pid || status=$?; wait $structure_pid || status=$?; exit $status",
     "check:adaptive-governance": "npm run check:plan-adaptation && npm run check:repo-structure",
     "check:repo-style": "node scripts/repo-style-check.mjs --cognitive-metrics",
     "check:repo-style:construction-details": "node scripts/repo-style-check.mjs --construction-details",
