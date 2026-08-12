@@ -157,6 +157,8 @@ export type RallarBlackBoxTestLoopCommand =
     intervalMs?: number;
     delayMs?: number;
     continueOnFailure?: boolean;
+    until?: 'first-success';
+    backoffMultiplier?: number;
     maxCommands?: number;
     thresholds?: RallarBlackBoxTestLoopThresholds;
 }>;

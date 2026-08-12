@@ -149,6 +149,22 @@ Failing asserts fail the command with `RALLAR_BLACK_BOX_ASSERT_FAILED`; the
 result value and error details carry the redacted `expected`/`actual`
 evidence. Evaluation lives in `assert/assert-value-operators.ts`.
 
+## Loop Until Polling
+
+`loop` with `until: 'first-success'` is the distributed twin of the runner's
+`http.poll-until`: every attempt runs the child commands in order and stops
+the attempt at its first failing child; the loop exits successfully on the
+first attempt in which every child succeeds. Between failed attempts the
+agent sleeps `intervalMs x backoffMultiplier^n` (optional `backoffMultiplier`
+of at least 1, default 1, flat). Exhausting `count`, `durationMs`, or the
+command deadline fails with `RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED` carrying
+the attempt count and the last failing (redacted) child result.
+`continueOnFailure` contradicts until mode and is rejected at every
+boundary; `backoffMultiplier` without `until` is rejected too. Pacing
+iteration entries record the backoff-aware schedule, so drift/jitter
+observability stays valid; configured thresholds still evaluate on success.
+Orchestration lives in `loop/loop-until.ts`.
+
 ## Validation
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.

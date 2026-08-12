@@ -17,6 +17,11 @@ import {
     RALLAR_BLACK_BOX_ASSERT_OPERATORS,
 } from './assert/assert-value-operators.ts';
 import {
+    runLoopUntilFirstSuccess,
+    validateLoopUntilCommand,
+    type LoopIterationOutcome,
+} from './loop/loop-until.ts';
+import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
     type RallarBlackBoxTestAssertResultValue,
@@ -70,6 +75,21 @@ type AssertCommandWithId = RallarBlackBoxTestAssertCommand & Readonly<{ commandI
 type RecipeRunCommandWithId = RallarBlackBoxTestRecipeRunCommand & Readonly<{ commandId: string }>;
 
 type CommandOutcome = RallarBlackBoxTestCommandOutcome;
+
+type RunLoopIterationInput = Readonly<{
+    command: LoopCommandWithId;
+    iterationIndex: number;
+    scheduledAtEpochMs: number;
+    loopStartedAtEpochMs: number;
+    deadlineEpochMs: number | undefined;
+    maxCommands: number;
+    plannedCommandCount: number;
+    stopOnChildFailure: boolean;
+    results: RallarBlackBoxTestCompositeChildResult[];
+    pacingIterations: RallarBlackBoxTestLoopPacingIteration[];
+    toLoopValue: (cancelled: boolean) => RallarBlackBoxTestLoopResultValue;
+    toLoopMetrics: () => LoopResultMetrics;
+}>;
 
 type LoopContext = Readonly<{
     loopCommandId: string;
@@ -899,6 +919,10 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
                 thresholdValidationError.details,
             );
         }
+        const untilIssues = validateLoopUntilCommand(command);
+        if (untilIssues.length > 0) {
+            return this.loopInvalid(command, untilIssues[0].message, untilIssues[0].details);
+        }
 
         const loopStartedAtEpochMs = this.now();
         const deadlineEpochMs = this.commandDeadlineEpochMs(command);
@@ -921,6 +945,49 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
         ) =>
             this.toLoopResultValue(command, results, cancelled, toLoopMetrics(thresholdFailures));
 
+        const iterationInput = (
+            iterationIndex: number,
+            scheduledAtEpochMs: number,
+            stopOnChildFailure: boolean,
+        ): RunLoopIterationInput => ({
+            command,
+            iterationIndex,
+            scheduledAtEpochMs,
+            loopStartedAtEpochMs,
+            deadlineEpochMs,
+            maxCommands,
+            plannedCommandCount,
+            stopOnChildFailure,
+            results,
+            pacingIterations,
+            toLoopValue,
+            toLoopMetrics,
+        });
+
+        if (command.until === 'first-success') {
+            return await runLoopUntilFirstSuccess({
+                command,
+                count,
+                durationMs,
+                intervalMs,
+                deadlineEpochMs,
+                loopStartedAtEpochMs,
+                now: this.now,
+                sleep: ms => this.sleepForLoopUntil(ms),
+                cancelRequested: () => this.cancelRequested,
+                runIteration: (iterationIndex, scheduledAtEpochMs) =>
+                    this.runLoopIteration(iterationInput(iterationIndex, scheduledAtEpochMs, true)),
+                toLoopValue,
+                toTimedOutOutcome: () => this.loopTimedOut(
+                    command,
+                    results,
+                    deadlineEpochMs ?? this.now(),
+                    toLoopMetrics(),
+                ),
+                toSuccessOutcome: () => this.toLoopCompletionOutcome(command, toLoopValue(false)),
+            });
+        }
+
         for (let iterationIndex = 0; iterationIndex < count; iterationIndex++) {
             if (this.cancelRequested) {
                 return {
@@ -939,115 +1006,12 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             }
 
             const scheduledAtEpochMs = loopStartedAtEpochMs + (iterationIndex * intervalMs);
-            const iterationStartedAtEpochMs = this.now();
-            const iterationResultStartIndex = results.length;
-            let recordedIteration = false;
-            const recordIteration = (cancelled: boolean): void => {
-                if (recordedIteration) {
-                    return;
-                }
-                recordedIteration = true;
-                const iterationResults = results.slice(iterationResultStartIndex);
-                const endedAtEpochMs = this.now();
-                pacingIterations.push({
-                    iteration: iterationIndex + 1,
-                    scheduledAtEpochMs,
-                    startedAtEpochMs: iterationStartedAtEpochMs,
-                    endedAtEpochMs,
-                    durationMs: Math.max(0, endedAtEpochMs - iterationStartedAtEpochMs),
-                    startDriftMs: Math.max(0, iterationStartedAtEpochMs - scheduledAtEpochMs),
-                    commandCount: iterationResults.length,
-                    passed: iterationResults.filter(result => result.result.ok).length,
-                    failed: iterationResults.filter(result => !result.result.ok).length,
-                    cancelled,
-                });
-            };
-
-            for (let commandIndex = 0; commandIndex < command.commands.length; commandIndex++) {
-                if (this.cancelRequested) {
-                    recordIteration(true);
-                    return {
-                        status: 'cancelled',
-                        value: toLoopValue(true),
-                        nextStatus: 'cancelled',
-                    };
-                }
-                if (deadlineEpochMs !== undefined && this.now() >= deadlineEpochMs) {
-                    recordIteration(false);
-                    return this.loopTimedOut(command, results, deadlineEpochMs, toLoopMetrics());
-                }
-
-                if (results.length >= maxCommands) {
-                    recordIteration(false);
-                    return this.loopLimitExceeded(command, results, {
-                        plannedCommandCount,
-                        maxCommands,
-                    }, toLoopMetrics());
-                }
-
-                const childTemplate = command.commands[commandIndex];
-                const originalCommandId = childTemplate.commandId;
-                const elapsedMs = Math.max(0, this.now() - loopStartedAtEpochMs);
-                const loopContext: LoopContext = {
-                    loopCommandId: command.commandId,
-                    index: results.length,
-                    iteration: iterationIndex + 1,
-                    elapsedMs,
-                    commandIndex,
-                };
-                const childCommand = this.toLoopChildCommand(
-                    command,
-                    childTemplate,
-                    loopContext,
-                    deadlineEpochMs,
-                );
-                const childResult = await this.executeCommand(childCommand, {
-                    bypassCache: true,
-                });
-                results.push({
-                    commandId: childResult.commandId,
-                    originalCommandId,
-                    parentCommandId: command.commandId,
-                    path: rallarBlackBoxLoopChildResultPath(
-                        RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
-                        iterationIndex + 1,
-                        commandIndex,
-                    ),
-                    sourceRecipePath: rallarBlackBoxLoopChildSourceRecipePath(
-                        RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
-                        commandIndex,
-                    ),
-                    childIndex: results.length,
-                    commandIndex,
-                    iteration: iterationIndex + 1,
-                    result: childResult,
-                });
-
-                if (this.cancelRequested || childResult.status === 'cancelled') {
-                    recordIteration(true);
-                    return {
-                        status: 'cancelled',
-                        value: toLoopValue(true),
-                        nextStatus: 'cancelled',
-                    };
-                }
-
-                if (!childResult.ok && command.continueOnFailure !== true) {
-                    recordIteration(false);
-                    return {
-                        status: 'failed',
-                        value: toLoopValue(false),
-                        error: {
-                            code: 'RALLAR_BLACK_BOX_LOOP_CHILD_FAILED',
-                            message: `Loop failed at child command ${childResult.commandId}.`,
-                            details: childResult.error,
-                        },
-                        nextStatus: 'failed',
-                    };
-                }
+            const iteration = await this.runLoopIteration(
+                iterationInput(iterationIndex, scheduledAtEpochMs, false),
+            );
+            if (iteration.kind === 'outcome') {
+                return iteration.outcome;
             }
-
-            recordIteration(false);
 
             if (iterationIndex + 1 >= count) {
                 break;
@@ -1079,7 +1043,169 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             }
         }
 
-        const value = toLoopValue(false);
+        return this.toLoopCompletionOutcome(command, toLoopValue(false));
+    }
+
+    private async runLoopIteration(input: RunLoopIterationInput): Promise<LoopIterationOutcome> {
+        const command = input.command;
+        const iterationStartedAtEpochMs = this.now();
+        const iterationResultStartIndex = input.results.length;
+        let recordedIteration = false;
+        const recordIteration = (cancelled: boolean): void => {
+            if (recordedIteration) {
+                return;
+            }
+            recordedIteration = true;
+            const iterationResults = input.results.slice(iterationResultStartIndex);
+            const endedAtEpochMs = this.now();
+            input.pacingIterations.push({
+                iteration: input.iterationIndex + 1,
+                scheduledAtEpochMs: input.scheduledAtEpochMs,
+                startedAtEpochMs: iterationStartedAtEpochMs,
+                endedAtEpochMs,
+                durationMs: Math.max(0, endedAtEpochMs - iterationStartedAtEpochMs),
+                startDriftMs: Math.max(0, iterationStartedAtEpochMs - input.scheduledAtEpochMs),
+                commandCount: iterationResults.length,
+                passed: iterationResults.filter(result => result.result.ok).length,
+                failed: iterationResults.filter(result => !result.result.ok).length,
+                cancelled,
+            });
+        };
+
+        for (let commandIndex = 0; commandIndex < command.commands.length; commandIndex++) {
+            if (this.cancelRequested) {
+                recordIteration(true);
+                return {
+                    kind: 'outcome',
+                    outcome: {
+                        status: 'cancelled',
+                        value: input.toLoopValue(true),
+                        nextStatus: 'cancelled',
+                    },
+                };
+            }
+            if (input.deadlineEpochMs !== undefined && this.now() >= input.deadlineEpochMs) {
+                recordIteration(false);
+                return {
+                    kind: 'outcome',
+                    outcome: this.loopTimedOut(
+                        command,
+                        input.results,
+                        input.deadlineEpochMs,
+                        input.toLoopMetrics(),
+                    ),
+                };
+            }
+
+            if (input.results.length >= input.maxCommands) {
+                recordIteration(false);
+                return {
+                    kind: 'outcome',
+                    outcome: this.loopLimitExceeded(command, input.results, {
+                        plannedCommandCount: input.plannedCommandCount,
+                        maxCommands: input.maxCommands,
+                    }, input.toLoopMetrics()),
+                };
+            }
+
+            const childTemplate = command.commands[commandIndex];
+            const originalCommandId = childTemplate.commandId;
+            const elapsedMs = Math.max(0, this.now() - input.loopStartedAtEpochMs);
+            const loopContext: LoopContext = {
+                loopCommandId: command.commandId,
+                index: input.results.length,
+                iteration: input.iterationIndex + 1,
+                elapsedMs,
+                commandIndex,
+            };
+            const childCommand = this.toLoopChildCommand(
+                command,
+                childTemplate,
+                loopContext,
+                input.deadlineEpochMs,
+            );
+            const childResult = await this.executeCommand(childCommand, {
+                bypassCache: true,
+            });
+            const childEntry: RallarBlackBoxTestCompositeChildResult = {
+                commandId: childResult.commandId,
+                originalCommandId,
+                parentCommandId: command.commandId,
+                path: rallarBlackBoxLoopChildResultPath(
+                    RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+                    input.iterationIndex + 1,
+                    commandIndex,
+                ),
+                sourceRecipePath: rallarBlackBoxLoopChildSourceRecipePath(
+                    RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH,
+                    commandIndex,
+                ),
+                childIndex: input.results.length,
+                commandIndex,
+                iteration: input.iterationIndex + 1,
+                result: childResult,
+            };
+            input.results.push(childEntry);
+
+            if (this.cancelRequested || childResult.status === 'cancelled') {
+                recordIteration(true);
+                return {
+                    kind: 'outcome',
+                    outcome: {
+                        status: 'cancelled',
+                        value: input.toLoopValue(true),
+                        nextStatus: 'cancelled',
+                    },
+                };
+            }
+
+            if (!childResult.ok) {
+                if (input.stopOnChildFailure) {
+                    recordIteration(false);
+                    return {
+                        kind: 'completed',
+                        failedChildResult: childEntry,
+                    };
+                }
+                if (command.continueOnFailure !== true) {
+                    recordIteration(false);
+                    return {
+                        kind: 'outcome',
+                        outcome: {
+                            status: 'failed',
+                            value: input.toLoopValue(false),
+                            error: {
+                                code: 'RALLAR_BLACK_BOX_LOOP_CHILD_FAILED',
+                                message: `Loop failed at child command ${childResult.commandId}.`,
+                                details: childResult.error,
+                            },
+                            nextStatus: 'failed',
+                        },
+                    };
+                }
+            }
+        }
+
+        recordIteration(false);
+        return { kind: 'completed' };
+    }
+
+    private async sleepForLoopUntil(ms: number): Promise<'slept' | 'cancelled'> {
+        try {
+            await this.sleep(ms, this.cancellationController.signal);
+            return 'slept';
+        } catch (error) {
+            if (isAbortError(error)) {
+                return 'cancelled';
+            }
+            throw error;
+        }
+    }
+
+    private toLoopCompletionOutcome(
+        command: LoopCommandWithId,
+        value: RallarBlackBoxTestLoopResultValue,
+    ): CommandOutcome {
         const thresholdFailures = this.evaluateLoopThresholds(command, value);
         if (thresholdFailures.length > 0) {
             return {

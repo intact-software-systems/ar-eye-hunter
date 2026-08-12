@@ -350,6 +350,34 @@ Constraints:
   redacted expected/actual details; do not add retry loops around asserts.
 ```
 
+## Prompt: Poll Until Convergence
+
+Use this for read-your-writes and convergence checks instead of hand-unrolled
+retries.
+
+```text
+Generate one Rallar black-box browser-agent recipe as JSON.
+
+Use:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+
+Goal:
+- Poll an HTTP read plus assert pair until the observed state converges.
+
+Constraints:
+- Output JSON only with schemaVersion 1.
+- Use one loop command with until: 'first-success', a bounded count or
+  durationMs, and intervalMs for the retry cadence; add backoffMultiplier
+  (>= 1) when the backend needs exponential backoff.
+- Children run in order each attempt and the attempt stops at its first
+  failing child; the loop succeeds on the first attempt where every child
+  succeeds.
+- Do not set continueOnFailure on an until loop; the validators reject the
+  contradiction.
+- Exhausted bounds fail with RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED carrying
+  the last attempt, so no extra assert after the loop is needed.
+```
+
 ## Prompt: Black-box-runner RTC Scenario
 
 Use this when you want a provider-neutral black-box-runner scenario instead of

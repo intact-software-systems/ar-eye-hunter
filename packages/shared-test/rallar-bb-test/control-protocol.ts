@@ -401,7 +401,27 @@ function validateLoopCommand(
         return result;
     }
     result = validateBooleanField(command, 'continueOnFailure', 'loop');
-    return !result.ok ? result : validateLoopThresholds(command.thresholds);
+    if (!result.ok) {
+        return result;
+    }
+    result = validateEnumField(command, 'until', 'loop', ['first-success']);
+    if (!result.ok) {
+        return result;
+    }
+    result = validatePositiveNumberField(command, 'backoffMultiplier', 'loop');
+    if (!result.ok) {
+        return result;
+    }
+    if (command.backoffMultiplier !== undefined && (command.backoffMultiplier as number) < 1) {
+        return fail('loop.backoffMultiplier must be >= 1.');
+    }
+    if (command.backoffMultiplier !== undefined && command.until === undefined) {
+        return fail('loop.backoffMultiplier requires until mode.');
+    }
+    if (command.until !== undefined && command.continueOnFailure === true) {
+        return fail('loop.continueOnFailure contradicts until mode.');
+    }
+    return validateLoopThresholds(command.thresholds);
 }
 
 function validateLoopThresholds(value: unknown): ControlCommandValidationResult {
@@ -1144,6 +1164,8 @@ export function validateRallarBlackBoxTestCommand(
                     'intervalMs',
                     'delayMs',
                     'continueOnFailure',
+                    'until',
+                    'backoffMultiplier',
                     'maxCommands',
                     'thresholds',
                 ],
