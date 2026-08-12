@@ -63,9 +63,75 @@ describe('canonical content facts', () => {
       computeAffectedCodeDigest(first.root, first.base, readChangedPaths(first.root, first.base)),
     ).not.toBe(digest);
   });
+
+  it('uses Git-reported modes instead of filesystem executable bits', () => {
+    const fixture = createRepository();
+    writeFixture(fixture.root, 'scripts/tool.mjs', 'export const tool = true;\n');
+    chmodSync(path.join(fixture.root, 'scripts/tool.mjs'), 0o755);
+    runGit(fixture.root, ['add', '.']);
+    const executableDigest = computeAffectedCodeDigest(
+      fixture.root,
+      fixture.base,
+      readChangedPaths(fixture.root, fixture.base),
+    );
+
+    runGit(fixture.root, ['config', 'core.fileMode', 'false']);
+    chmodSync(path.join(fixture.root, 'scripts/tool.mjs'), 0o644);
+
+    expect(
+      computeAffectedCodeDigest(
+        fixture.root,
+        fixture.base,
+        readChangedPaths(fixture.root, fixture.base),
+      ),
+    ).toBe(executableDigest);
+  });
+
+  it('keeps an old-path deletion tuple when production code is renamed outside code', () => {
+    const fixture = createRepository();
+    mkdirSync(path.join(fixture.root, 'notes'), { recursive: true });
+    runGit(fixture.root, ['mv', 'packages/example/src/a.ts', 'notes/a.txt']);
+
+    expect(
+      computeAffectedCodeDigest(
+        fixture.root,
+        fixture.base,
+        readChangedPaths(fixture.root, fixture.base),
+      ),
+    ).toBe('cf952557964e8fe54de27ab2551e23ede7b32f9271259dd786c5ba29b1611304');
+  });
 });
 
 describe('qualification and checkpoint facts', () => {
+  it('discovers untracked files and reports both paths of an undeclared rename', () => {
+    const fixture = createRepository();
+    writeFixture(fixture.root, 'packages/untracked/src/new.ts', 'export const fresh = true;\n');
+    mkdirSync(path.join(fixture.root, 'packages/outside/src'), { recursive: true });
+    runGit(fixture.root, ['mv', 'packages/example/src/a.ts', 'packages/outside/src/renamed.ts']);
+    const changes = readChangedPaths(fixture.root, fixture.base);
+    const record = {
+      capabilities: [
+        {
+          root: 'scripts/plan-adaptation',
+          entry: 'scripts/plan-adaptation.mjs',
+          testRoot: 'packages/tests/repo/plan-adaptation',
+        },
+      ],
+    };
+
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ status: 'A', path: 'packages/untracked/src/new.ts' }),
+      ]),
+    );
+    expect(computeUndeclaredChangedPaths(changes, record)).toEqual(
+      expect.arrayContaining([
+        'packages/example/src/a.ts',
+        'packages/outside/src/renamed.ts',
+        'packages/untracked/src/new.ts',
+      ]),
+    );
+  });
   it('qualifies every required diff shape against the actual Git diff', () => {
     const fixture = createRepository();
     writeFixture(fixture.root, 'plans/new-plan.md', '# Written plan\n');

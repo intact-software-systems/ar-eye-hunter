@@ -198,7 +198,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "3ce4de01ae6d3d537a08d1a3d3999f378d12b42e46dac3171d9013c821fd6a4a",
+    "affectedCodeDigest": "6da644caf68cfe769e4b85d1bb536f4146e213086fbfe95fa975efd087391e18",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -208,9 +208,9 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Slice 1 provides the complete canonical adaptive-plan lifecycle through one thin command entry, including fresh checkpoint drafts, content-sensitive apply/check behavior, a generated format-stable registry, and final-evidence-gated close-out.",
-    "learning": "Canonical review facts need bytewise Git-path ordering, prepare must clear prior judgments, generated artifacts need deterministic repository formatting, and the rolling diff base must travel with facts so no-argument checks have no hidden environment dependency.",
-    "structure": "scripts/plan-adaptation remains one cohesive owner with a durable navigation map; its record, diff-fact, policy, registry, and lifecycle modules each expose a real responsibility and mirrored temporary-repository tests exercise the public CLI.",
+    "outcome": "Slice 1 fix round 1 closes qualification bypasses, confines repository paths, symlink roots, and Git revisions, binds drafts to their source record, makes multi-file lifecycle changes transactional, strengthens checkpoint/schema rules, and derives digest modes and rename tuples from Git facts.",
+    "learning": "A read-only governance entry must validate absence and malformed states; write safety needs confinement at every path component plus one rollback-owned transaction across plan, draft, and registry effects.",
+    "structure": "The capability remains cohesive: record validation owns canonical schema and safe declarations, Git facts own revision validation and modes, policy owns recovery decisions, and lifecycle delegates only its real multi-file atomicity boundary to file-transaction.mjs.",
     "decision": "continue",
     "nextSlices": [
       "slice-2-repository-structure"
@@ -242,6 +242,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "Slice 1 provides the complete canonical adaptive-plan lifecycle through one thin command entry, including fresh checkpoint drafts, content-sensitive apply/check behavior, a generated format-stable registry, and final-evidence-gated close-out."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "Slice 1 fix round 1 closes qualification bypasses, confines repository paths, symlink roots, and Git revisions, binds drafts to their source record, makes multi-file lifecycle changes transactional, strengthens checkpoint/schema rules, and derives digest modes and rename tuples from Git facts."
     }
   ]
 }

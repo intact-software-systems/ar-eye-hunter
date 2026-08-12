@@ -10,6 +10,8 @@ routes them directly to `plan-adaptation-lifecycle.mjs`.
 - `adaptive-plan-policy.mjs` owns the five checkpoint judgments, two-slice horizon, and bounded
   consolidation rules.
 - `active-plan-registry.mjs` reads active records and generates `plans/README.md`.
+- `file-transaction.mjs` stages same-directory replacements and rolls back multi-file lifecycle
+  changes when any replacement fails.
 - `plan-adaptation-lifecycle.mjs` owns command side effects: plan writes, ignored drafts, read-only
   checks, final-evidence validation, and tactical-plan close-out.
 

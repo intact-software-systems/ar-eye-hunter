@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -9,18 +9,22 @@ import {
 } from './adaptive-plan-record.mjs';
 import { hasConsolidationDecision, validateCheckpoint } from './adaptive-plan-policy.mjs';
 import {
+  readAdaptivePlans,
   readActivePlans,
   toActivePlanRegistry,
-  writeActivePlanRegistry,
 } from './active-plan-registry.mjs';
-import { computePlanFacts, readChangedPaths } from './plan-change-facts.mjs';
+import { writeFileTransaction } from './file-transaction.mjs';
+import {
+  computePlanFacts,
+  computeQualificationReasons,
+  readChangedPaths,
+} from './plan-change-facts.mjs';
 
 export function initAdaptivePlan(input) {
   const plan = readPlan(input);
   validateRecordAndCheckpoint(plan.record);
   plan.record.facts = readCurrentFacts(input, plan.record);
-  writePlan(input, plan.markdown, plan.record);
-  writeActivePlanRegistry(input.repoRoot);
+  writePlanAndRegistry({ input, markdown: plan.markdown, record: plan.record });
 }
 
 export function completeAdaptivePlanSlice(input) {
@@ -31,13 +35,13 @@ export function completeAdaptivePlanSlice(input) {
   }
   plan.record.completedSlicesSinceCheckpoint.push(input.slice);
   plan.record.facts = readCurrentFacts(input, plan.record);
-  writePlan(input, plan.markdown, plan.record);
-  writeActivePlanRegistry(input.repoRoot);
+  writePlanAndRegistry({ input, markdown: plan.markdown, record: plan.record });
 }
 
 export function prepareAdaptivePlan(input) {
   const plan = readPlan(input);
   validateRecordAndCheckpoint(plan.record);
+  const sourceRecordDigest = computeAdaptivePlanRecordDigest(plan.record);
   plan.record.facts = readCurrentFacts(input, plan.record);
   plan.record.checkpoint = {
     outcome: '',
@@ -47,11 +51,18 @@ export function prepareAdaptivePlan(input) {
     nextSlices: [],
   };
   const draftPath = toDraftPath(input.repoRoot, plan.record.planId);
-  mkdirSync(path.dirname(draftPath), { recursive: true });
-  writeFileSync(
-    draftPath,
-    `${JSON.stringify({ version: 1, planPath: input.planPath, record: plan.record }, null, 2)}\n`,
-  );
+  writeFileTransaction({
+    replacements: [
+      {
+        path: draftPath,
+        content: `${JSON.stringify(
+          { version: 1, planPath: input.planPath, sourceRecordDigest, record: plan.record },
+          null,
+          2,
+        )}\n`,
+      },
+    ],
+  });
   return path.relative(input.repoRoot, draftPath);
 }
 
@@ -66,6 +77,9 @@ export function applyAdaptivePlan(input) {
   ) {
     throw new Error('draft does not identify the current adaptive plan');
   }
+  if (draft.sourceRecordDigest !== computeAdaptivePlanRecordDigest(plan.record)) {
+    throw new Error('source plan record changed after prepare; run prepare again');
+  }
   validateRecordAndCheckpoint(draft.record);
   const currentFacts = readCurrentFacts(input, draft.record);
   if (JSON.stringify(currentFacts) !== JSON.stringify(draft.record.facts)) {
@@ -73,33 +87,44 @@ export function applyAdaptivePlan(input) {
   }
   appendMaterialDecision(draft.record);
   draft.record.completedSlicesSinceCheckpoint = [];
-  writePlan(input, plan.markdown, draft.record);
-  rmSync(draftPath);
-  writeActivePlanRegistry(input.repoRoot);
+  writePlanAndRegistry({
+    input,
+    markdown: plan.markdown,
+    record: draft.record,
+    removals: [draftPath],
+  });
 }
 
 export function checkAdaptivePlans(input) {
-  const activePlans = readActivePlans(input.repoRoot);
+  const changes = readChangedPaths(input.repoRoot, input.base);
+  const qualification = computeQualificationReasons(input.repoRoot, input.base, changes);
+  const adaptivePlans = readAdaptivePlans(input.repoRoot);
+  const activePlans = adaptivePlans.filter(({ record }) => record.status === 'active');
   const issues = [];
+  for (const adaptivePlan of adaptivePlans) {
+    issues.push(...validateAdaptivePlanRecord(adaptivePlan.record));
+    issues.push(...validateCheckpoint(adaptivePlan.record.checkpoint, adaptivePlan.record));
+  }
+  if (qualification.length > 0 && activePlans.length === 0) {
+    issues.push(
+      `qualifying work requires an active plan-adaptation-v1 record: ${qualification.join(', ')}`,
+    );
+  }
   for (const activePlan of activePlans) {
-    issues.push(...validateAdaptivePlanRecord(activePlan.record));
-    issues.push(...validateCheckpoint(activePlan.record.checkpoint, activePlan.record));
+    const factBase =
+      typeof activePlan.record.facts?.diffBase === 'string'
+        ? activePlan.record.facts.diffBase
+        : input.base;
     const currentFacts = readCurrentFacts(
       {
         ...input,
         planPath: activePlan.planPath,
-        base: activePlan.record.facts.diffBase ?? input.base,
+        base: factBase,
       },
       activePlan.record,
     );
-    if (currentFacts.affectedCodeDigest !== activePlan.record.facts.affectedCodeDigest) {
-      issues.push(`${activePlan.planPath} affected-code digest is stale`);
-    }
-    if (
-      JSON.stringify(currentFacts.undeclaredChangedPaths) !==
-      JSON.stringify(activePlan.record.facts.undeclaredChangedPaths)
-    ) {
-      issues.push(`${activePlan.planPath} undeclared changed paths are stale`);
+    if (JSON.stringify(currentFacts) !== JSON.stringify(activePlan.record.facts)) {
+      issues.push(`${activePlan.planPath} computed facts are stale`);
     }
   }
   const registryPath = path.join(input.repoRoot, 'plans/README.md');
@@ -114,27 +139,58 @@ export function checkAdaptivePlans(input) {
 
 export function closeAdaptivePlan(input) {
   const plan = readPlan(input);
+  validateRecordAndCheckpoint(plan.record);
   validateFinalEvidence(input, plan.record);
-  const absolutePlanPath = path.resolve(input.repoRoot, input.planPath);
-  const plansRoot = path.resolve(input.repoRoot, 'plans');
-  if (path.dirname(absolutePlanPath) !== plansRoot) {
-    throw new Error('close may delete only a tactical plan directly under plans/');
+  const activePlans = readActivePlans(input.repoRoot);
+  const registryPath = path.join(input.repoRoot, 'plans/README.md');
+  const currentRegistry = readFileSync(registryPath, 'utf8');
+  if (
+    currentRegistry !== toActivePlanRegistry(activePlans) ||
+    !activePlans.some(
+      (entry) => entry.planPath === input.planPath && entry.record.planId === plan.record.planId,
+    )
+  ) {
+    throw new Error('close requires the plan to be the current active registry entry');
   }
-  rmSync(absolutePlanPath);
-  writeActivePlanRegistry(input.repoRoot);
+  writeFileTransaction({
+    replacements: [
+      {
+        path: registryPath,
+        content: toActivePlanRegistry(
+          activePlans.filter((entry) => entry.planPath !== input.planPath),
+        ),
+      },
+    ],
+    removals: [plan.absolutePath],
+  });
 }
 
 function readPlan(input) {
-  const absolutePath = path.join(input.repoRoot, input.planPath);
+  const absolutePath = resolveTacticalPlanPath(input.repoRoot, input.planPath);
   const markdown = readFileSync(absolutePath, 'utf8');
-  return { markdown, record: parseAdaptivePlanRecord(markdown, input.planPath) };
+  return { absolutePath, markdown, record: parseAdaptivePlanRecord(markdown, input.planPath) };
 }
 
-function writePlan(input, markdown, record) {
-  writeFileSync(
-    path.join(input.repoRoot, input.planPath),
-    replaceAdaptivePlanRecord(markdown, record, input.planPath),
-  );
+function writePlanAndRegistry(transaction) {
+  const { input, markdown, record, removals = [] } = transaction;
+  const planPath = resolveTacticalPlanPath(input.repoRoot, input.planPath);
+  const adaptivePlans = readAdaptivePlans(input.repoRoot).map((entry) => {
+    return entry.planPath === input.planPath ? { ...entry, record } : entry;
+  });
+  const activePlans = adaptivePlans.filter((entry) => entry.record.status === 'active');
+  writeFileTransaction({
+    replacements: [
+      {
+        path: planPath,
+        content: replaceAdaptivePlanRecord(markdown, record, input.planPath),
+      },
+      {
+        path: path.join(input.repoRoot, 'plans/README.md'),
+        content: toActivePlanRegistry(activePlans),
+      },
+    ],
+    removals,
+  });
 }
 
 function readCurrentFacts(input, record) {
@@ -182,7 +238,7 @@ function appendMaterialDecision(record) {
 
 function validateFinalEvidence(input, record) {
   const evidencePath = input.finalPrEvidence
-    ? path.resolve(input.repoRoot, input.finalPrEvidence)
+    ? resolveRepositoryFile(input.repoRoot, input.finalPrEvidence, 'final pull-request evidence')
     : undefined;
   if (!evidencePath || !existsSync(evidencePath)) {
     throw new Error('final pull-request evidence is missing');
@@ -207,7 +263,69 @@ function validateFinalEvidence(input, record) {
 }
 
 function toDraftPath(repoRoot, planId) {
-  return path.join(repoRoot, '.plan-adaptation', `${planId}.draft.json`);
+  if (typeof planId !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(planId)) {
+    throw new Error('record.planId must use lowercase letters, digits, and single hyphens');
+  }
+  const realRepoRoot = realpathSync(repoRoot);
+  const draftRoot = path.join(realRepoRoot, '.plan-adaptation');
+  mkdirSync(draftRoot, { recursive: true });
+  const stat = lstatSync(draftRoot);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(draftRoot) !== draftRoot) {
+    throw new Error('draft directory must remain inside the repository');
+  }
+  return path.join(draftRoot, `${planId}.draft.json`);
+}
+
+function resolveTacticalPlanPath(repoRoot, planPath) {
+  if (
+    typeof planPath !== 'string' ||
+    !/^plans\/[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u.test(planPath) ||
+    planPath === 'plans/README.md'
+  ) {
+    throw new Error('plan path must identify a direct plans/*.md tactical plan');
+  }
+  const plansRoot = path.join(realpathSync(repoRoot), 'plans');
+  if (realpathSync(path.join(repoRoot, 'plans')) !== plansRoot) {
+    throw new Error('plans directory must remain inside the repository');
+  }
+  const absolutePath = path.join(plansRoot, path.basename(planPath));
+  if (existsSync(absolutePath)) {
+    const stat = lstatSync(absolutePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error('plan path must not be a symbolic link');
+    }
+    if (!stat.isFile()) {
+      throw new Error('plan path must identify a regular file');
+    }
+  }
+  return absolutePath;
+}
+
+function resolveRepositoryFile(repoRoot, relativePath, name) {
+  if (
+    typeof relativePath !== 'string' ||
+    path.isAbsolute(relativePath) ||
+    relativePath.split('/').some((part) => part === '' || part === '.' || part === '..')
+  ) {
+    throw new Error(`${name} path must remain inside the repository`);
+  }
+  const absolutePath = path.resolve(repoRoot, relativePath);
+  const relative = path.relative(realpathSync(repoRoot), absolutePath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`${name} path must remain inside the repository`);
+  }
+  if (existsSync(absolutePath)) {
+    const stat = lstatSync(absolutePath);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`${name} path must identify a regular file`);
+    }
+    const realPath = realpathSync(absolutePath);
+    const realRelative = path.relative(realpathSync(repoRoot), realPath);
+    if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) {
+      throw new Error(`${name} path must remain inside the repository`);
+    }
+  }
+  return absolutePath;
 }
 
 function toError(value) {

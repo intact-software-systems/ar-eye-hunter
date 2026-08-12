@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -61,7 +69,8 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(runCli(fixture.root, ['check', ...common]).status).toBe(0);
     expect(snapshotTrackedFiles(fixture.root)).toEqual(beforeCheck);
 
-    const evidencePath = path.join(fixture.root, 'final-pr-evidence.json');
+    const evidenceRelativePath = 'final-pr-evidence.json';
+    const evidencePath = path.join(fixture.root, evidenceRelativePath);
     const record = parseRecord(appliedPlan);
     writeFileSync(
       evidencePath,
@@ -73,7 +82,8 @@ describe('plan adaptation CLI lifecycle', () => {
       }),
     );
     expect(
-      runCli(fixture.root, ['close', ...common, '--final-pr-evidence', evidencePath]).status,
+      runCli(fixture.root, ['close', ...common, '--final-pr-evidence', evidenceRelativePath])
+        .status,
     ).toBe(0);
     expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(false);
     expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).not.toContain(
@@ -141,6 +151,200 @@ describe('plan adaptation CLI lifecycle', () => {
 
     expect(result.status, result.stdout).toBe(0);
     expect(result.stdout).toContain('PASS: plan adaptation check');
+  });
+
+  it('requires qualifying work to have one valid active adaptive plan', () => {
+    const missing = createLifecycleRepository();
+    rmSync(path.join(missing.root, missing.planPath));
+    expect(runCli(missing.root, ['check', '--base', missing.base]).stdout).toContain(
+      'qualifying work requires an active plan-adaptation-v1 record',
+    );
+
+    const unfenced = createLifecycleRepository();
+    writeFixture(unfenced.root, unfenced.planPath, '# Unfenced implementation plan\n');
+    expect(runCli(unfenced.root, ['check', '--base', unfenced.base]).stdout).toContain(
+      'qualifying work requires an active plan-adaptation-v1 record',
+    );
+
+    const mistyped = createLifecycleRepository();
+    const mistypedMarkdown = readFileSync(path.join(mistyped.root, mistyped.planPath), 'utf8');
+    const mistypedRecord = parseRecord(mistypedMarkdown);
+    mistypedRecord.status = 'acitve';
+    writeFixture(
+      mistyped.root,
+      mistyped.planPath,
+      `# Fixture plan\n\n${recordBlock(mistypedRecord)}\n`,
+    );
+    expect(runCli(mistyped.root, ['check', '--base', mistyped.base]).stdout).toContain(
+      'record.status must be active',
+    );
+  });
+
+  it('confines plan, draft, evidence, and Git revision inputs', () => {
+    const fixture = createLifecycleRepository();
+    const outsideName = `${path.basename(fixture.root)}-outside-plan.md`;
+    const outsidePlan = path.join(path.dirname(fixture.root), outsideName);
+    fixtureRoots.push(outsidePlan);
+    writeFileSync(outsidePlan, `# Outside\n\n${recordBlock(createRecord())}\n`);
+    const outsideBefore = readFileSync(outsidePlan, 'utf8');
+    expect(
+      runCli(fixture.root, ['init', '--plan', `../${outsideName}`, '--base', fixture.base]).stdout,
+    ).toContain('plan path must identify a direct plans/*.md tactical plan');
+    expect(readFileSync(outsidePlan, 'utf8')).toBe(outsideBefore);
+
+    const symlinkPlan = path.join(fixture.root, 'plans/symlink-plan.md');
+    symlinkSync(outsidePlan, symlinkPlan);
+    expect(
+      runCli(fixture.root, ['init', '--plan', 'plans/symlink-plan.md', '--base', fixture.base])
+        .stdout,
+    ).toContain('plan path must not be a symbolic link');
+
+    const markdown = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
+    const unsafeIdRecord = parseRecord(markdown);
+    unsafeIdRecord.planId = '../outside-draft';
+    writeFixture(
+      fixture.root,
+      fixture.planPath,
+      `# Fixture plan\n\n${recordBlock(unsafeIdRecord)}\n`,
+    );
+    expect(
+      runCli(fixture.root, ['prepare', '--plan', fixture.planPath, '--base', fixture.base]).stdout,
+    ).toContain('record.planId must use lowercase letters, digits, and single hyphens');
+    expect(existsSync(path.join(fixture.root, 'outside-draft.draft.json'))).toBe(false);
+
+    const draftSymlinkFixture = createLifecycleRepository();
+    const outsideDraftRoot = `${draftSymlinkFixture.root}-outside-drafts`;
+    fixtureRoots.push(outsideDraftRoot);
+    mkdirSync(outsideDraftRoot);
+    symlinkSync(outsideDraftRoot, path.join(draftSymlinkFixture.root, '.plan-adaptation'));
+    expect(
+      runCli(draftSymlinkFixture.root, [
+        'prepare',
+        '--plan',
+        draftSymlinkFixture.planPath,
+        '--base',
+        draftSymlinkFixture.base,
+      ]).stdout,
+    ).toContain('draft directory must remain inside the repository');
+    expect(existsSync(path.join(outsideDraftRoot, 'fixture-plan.draft.json'))).toBe(false);
+
+    const outputPath = path.join(fixture.root, 'git-output.txt');
+    expect(
+      runCli(fixture.root, ['check', '--base', `--output=${outputPath}`, '--unknown', 'value'])
+        .stdout,
+    ).toContain('unknown option --unknown');
+    expect(existsSync(outputPath)).toBe(false);
+    expect(runCli(fixture.root, ['check', '--base', `--output=${outputPath}`]).stdout).toContain(
+      'Git base must not begin with an option prefix',
+    );
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it('rejects apply when the source plan record changed after prepare', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    expect(runCli(fixture.root, ['prepare', ...common]).status).toBe(0);
+    const draftPath = path.join(fixture.root, '.plan-adaptation/fixture-plan.draft.json');
+    const draft = JSON.parse(readFileSync(draftPath, 'utf8'));
+    draft.record.checkpoint = completeCheckpoint();
+    writeFileSync(draftPath, JSON.stringify(draft));
+
+    expect(runCli(fixture.root, ['complete-slice', ...common, '--slice', 'slice-one']).status).toBe(
+      0,
+    );
+    const changedPlan = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
+    const result = runCli(fixture.root, ['apply', ...common]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('source plan record changed after prepare');
+    expect(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8')).toBe(changedPlan);
+    expect(existsSync(draftPath)).toBe(true);
+  });
+
+  it('preserves plan and draft when apply cannot replace the registry', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    expect(runCli(fixture.root, ['prepare', ...common]).status).toBe(0);
+    const draftPath = path.join(fixture.root, '.plan-adaptation/fixture-plan.draft.json');
+    const draft = JSON.parse(readFileSync(draftPath, 'utf8'));
+    draft.record.checkpoint = completeCheckpoint();
+    writeFileSync(draftPath, JSON.stringify(draft));
+    const planBefore = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
+    rmSync(path.join(fixture.root, 'plans/README.md'));
+    mkdirSync(path.join(fixture.root, 'plans/README.md'));
+
+    const result = runCli(fixture.root, ['apply', ...common]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('transaction target must be a regular file');
+    expect(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8')).toBe(planBefore);
+    expect(existsSync(draftPath)).toBe(true);
+  });
+
+  it('validates the complete fact schema and preserves the plan when close cannot update registry', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    const markdown = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
+    const malformed = parseRecord(markdown);
+    malformed.facts.computedTriggers = 'folder-change';
+    writeFixture(fixture.root, fixture.planPath, `# Fixture plan\n\n${recordBlock(malformed)}\n`);
+    expect(runCli(fixture.root, ['check', ...common]).stdout).toContain(
+      'record.facts.computedTriggers must be an array',
+    );
+
+    writeFixture(fixture.root, fixture.planPath, markdown);
+    const record = parseRecord(markdown);
+    const evidenceRelativePath = 'final-pr-evidence.json';
+    const evidencePath = path.join(fixture.root, evidenceRelativePath);
+    writeFileSync(
+      evidencePath,
+      JSON.stringify({
+        version: 1,
+        planId: record.planId,
+        pullRequestUrl: 'https://github.com/example/repository/pull/1',
+        finalReview: { status: 'complete', planDigest: recordDigest(record) },
+      }),
+    );
+    const registryPath = path.join(fixture.root, 'plans/README.md');
+    const registryBefore = readFileSync(registryPath, 'utf8');
+    writeFileSync(registryPath, '# Stale active registry\n');
+    const staleRegistryResult = runCli(fixture.root, [
+      'close',
+      ...common,
+      '--final-pr-evidence',
+      evidenceRelativePath,
+    ]);
+    expect(staleRegistryResult.stdout).toContain(
+      'close requires the plan to be the current active registry entry',
+    );
+    expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(true);
+
+    writeFileSync(registryPath, registryBefore);
+    rmSync(registryPath);
+    mkdirSync(registryPath);
+    const result = runCli(fixture.root, [
+      'close',
+      ...common,
+      '--final-pr-evidence',
+      evidenceRelativePath,
+    ]);
+    expect(result.status).toBe(1);
+    expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(true);
+
+    expect(
+      runCli(fixture.root, [
+        'close',
+        '--plan',
+        'plans/README.md',
+        '--base',
+        fixture.base,
+        '--final-pr-evidence',
+        evidenceRelativePath,
+      ]).stdout,
+    ).toContain('plan path must identify a direct plans/*.md tactical plan');
   });
 });
 
@@ -221,6 +425,7 @@ function createRecord(): any {
     },
     completedSlicesSinceCheckpoint: [],
     facts: {
+      diffBase: 'HEAD',
       affectedCodeDigest: null,
       computedTriggers: ['written-plan'],
       undeclaredChangedPaths: [],
@@ -241,6 +446,16 @@ function createRecord(): any {
 
 function recordBlock(record: ReturnType<typeof createRecord>): string {
   return `\`\`\`plan-adaptation-v1\n${JSON.stringify(record, null, 2)}\n\`\`\``;
+}
+
+function completeCheckpoint() {
+  return {
+    outcome: 'The prepared result is complete.',
+    learning: 'The source record must remain current.',
+    structure: 'The lifecycle owns one atomic transaction.',
+    decision: 'continue',
+    nextSlices: ['slice-two'],
+  };
 }
 
 function writeFixture(root: string, relativePath: string, content: string): void {

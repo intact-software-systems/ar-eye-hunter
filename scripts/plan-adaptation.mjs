@@ -43,7 +43,7 @@ function readCommand(args) {
   if (!commands.has(command)) {
     throw new Error('expected command init, complete-slice, prepare, apply, check, or close');
   }
-  const options = readOptions(args.slice(1));
+  const options = readOptions(args.slice(1), allowedOptions(command));
   const activePlan = readSingleActivePlan();
   const base =
     options.base ??
@@ -78,7 +78,18 @@ function readSingleActivePlan() {
   return undefined;
 }
 
-function readOptions(args) {
+function allowedOptions(command) {
+  const allowed = new Set(['base', 'plan']);
+  if (command === 'complete-slice') {
+    allowed.add('slice');
+  }
+  if (command === 'close') {
+    allowed.add('final-pr-evidence');
+  }
+  return allowed;
+}
+
+function readOptions(args, allowed) {
   const options = {};
   for (let index = 0; index < args.length; index += 2) {
     const option = args[index];
@@ -87,6 +98,9 @@ function readOptions(args) {
       throw new Error('expected --name value options');
     }
     const name = option.slice(2);
+    if (!allowed.has(name)) {
+      throw new Error(`unknown option --${name}`);
+    }
     if (options[name] !== undefined) {
       throw new Error(`option --${name} was supplied more than once`);
     }

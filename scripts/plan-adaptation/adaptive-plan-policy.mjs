@@ -47,6 +47,17 @@ function validateContinueDecision(issues, checkpoint, record) {
   if (!Array.isArray(failures)) {
     return;
   }
+  const unrecoverableFailure =
+    record.freshStructuralReview?.status === 'failed' ||
+    failures.some(
+      (failure) =>
+        ['navigation', 'ownership'].includes(failure?.kind) && failure.recoverable === false,
+    );
+  if (unrecoverableFailure) {
+    issues.push(
+      'continue is invalid while an unrecoverable navigation or ownership failure is known',
+    );
+  }
   const deepensFailure = failures.some((failure) => {
     if (!['navigation', 'ownership'].includes(failure?.kind)) {
       return false;
@@ -61,7 +72,14 @@ function validateContinueDecision(issues, checkpoint, record) {
 function validateConsolidationDecision(issues, checkpoint, record) {
   const consolidated = hasConsolidationDecision(record);
   const coldNavigationFailed = record.coldNavigationEvidence?.status === 'failed';
+  const consolidationDecisionIndex = record.coldNavigationEvidence?.consolidationDecisionIndex;
+  const referencedConsolidation =
+    Number.isInteger(consolidationDecisionIndex) &&
+    record.materialDecisions?.[consolidationDecisionIndex]?.decision === 'consolidate';
   if (consolidated && coldNavigationFailed) {
+    if (!referencedConsolidation) {
+      issues.push('failed cold navigation must reference the prior consolidation decision');
+    }
     if (checkpoint.decision !== 'stop' || checkpoint.nextSlices?.length !== 0) {
       issues.push(
         'failed cold navigation after consolidation requires decision stop and no next slices',
@@ -75,10 +93,7 @@ function validateConsolidationDecision(issues, checkpoint, record) {
   if (consolidated) {
     issues.push('only one autonomous consolidation slice is allowed');
   }
-  if (
-    checkpoint.nextSlices?.length !== 1 ||
-    !checkpoint.nextSlices[0].toLowerCase().includes('consolidat')
-  ) {
+  if (checkpoint.nextSlices?.length !== 1) {
     issues.push('consolidate must replace the next feature slice with one consolidation slice');
   }
 }

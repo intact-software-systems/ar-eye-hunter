@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseAdaptivePlanRecord,
   replaceAdaptivePlanRecord,
+  validateAdaptivePlanRecord,
 } from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
 import { validateCheckpoint } from '../../../../scripts/plan-adaptation/adaptive-plan-policy.mjs';
 
@@ -32,6 +33,42 @@ describe('adaptive plan record', () => {
       parseAdaptivePlanRecord('```plan-adaptation-v1\n{broken}\n```', 'plans/malformed.md'),
     ).toThrow('invalid JSON');
   });
+
+  it('rejects unsafe or malformed canonical governance fields', () => {
+    const record = createRecord();
+    record.planId = '../outside';
+    record.status = 'acitve';
+    record.capabilities[0].root = '../scripts';
+    record.capabilities[0].entry = '/tmp/entry.mjs';
+    record.completedSlicesSinceCheckpoint = ['slice-one', 2];
+    record.facts = {
+      diffBase: 42,
+      affectedCodeDigest: 'not-a-digest',
+      computedTriggers: 'folder-change',
+      undeclaredChangedPaths: ['../outside'],
+    };
+    record.materialDecisions = [{ date: 'today', decision: '' }];
+    record.freshStructuralReview = { status: 'failed', failures: 'ownership' };
+    record.coldNavigationEvidence = { status: 'failed' };
+
+    expect(validateAdaptivePlanRecord(record)).toEqual(
+      expect.arrayContaining([
+        'record.planId must use lowercase letters, digits, and single hyphens',
+        'record.status must be active',
+        'record.capabilities[0].root must be a safe repository-relative path',
+        'record.capabilities[0].entry must be a safe repository-relative path',
+        'record.completedSlicesSinceCheckpoint must contain only non-empty strings',
+        'record.facts.diffBase must be a non-empty string',
+        'record.facts.affectedCodeDigest must be null or a SHA-256 digest',
+        'record.facts.computedTriggers must be an array',
+        'record.facts.undeclaredChangedPaths must contain safe repository-relative paths',
+        'record.materialDecisions[0].date must use YYYY-MM-DD',
+        'record.materialDecisions[0].decision must be a non-empty string',
+        'record.freshStructuralReview.failures must be an array',
+        'record.coldNavigationEvidence.summary must be a non-empty string',
+      ]),
+    );
+  });
 });
 
 describe('checkpoint policy', () => {
@@ -55,11 +92,12 @@ describe('checkpoint policy', () => {
   it('rejects continue only when a known navigation or ownership failure would be deepened', () => {
     const record = createRecord();
     record.freshStructuralReview = {
-      status: 'failed',
+      status: 'complete',
       failures: [
         {
           kind: 'ownership',
           summary: 'The next feature would split one lifecycle across owners.',
+          recoverable: true,
           deepenedBySlices: ['slice-2-repository-structure'],
         },
       ],
@@ -73,12 +111,31 @@ describe('checkpoint policy', () => {
     ).not.toContain('continue cannot deepen a known navigation or ownership failure');
   });
 
+  it('rejects continue for an unrecoverable ownership or navigation failure', () => {
+    const record = createRecord();
+    record.freshStructuralReview = {
+      status: 'failed',
+      failures: [
+        {
+          kind: 'navigation',
+          summary: 'No canonical entry can be located.',
+          recoverable: false,
+          deepenedBySlices: [],
+        },
+      ],
+    };
+
+    expect(validateCheckpoint(record.checkpoint, record)).toContain(
+      'continue is invalid while an unrecoverable navigation or ownership failure is known',
+    );
+  });
+
   it('allows one consolidation replacement and requires stop after its failed cold navigation', () => {
     const record = createRecord();
     const consolidation = {
       ...record.checkpoint,
       decision: 'consolidate',
-      nextSlices: ['consolidation-plan-adaptation-ownership'],
+      nextSlices: ['repair-owner'],
     };
     expect(validateCheckpoint(consolidation, record)).toEqual([]);
 
@@ -94,6 +151,7 @@ describe('checkpoint policy', () => {
     record.coldNavigationEvidence = {
       status: 'failed',
       summary: 'A fresh reader could not locate the checkpoint decision owner.',
+      consolidationDecisionIndex: 0,
     };
     expect(validateCheckpoint(record.checkpoint, record)).toContain(
       'failed cold navigation after consolidation requires decision stop and no next slices',
@@ -101,6 +159,11 @@ describe('checkpoint policy', () => {
     expect(
       validateCheckpoint({ ...record.checkpoint, decision: 'stop', nextSlices: [] }, record),
     ).toEqual([]);
+
+    record.coldNavigationEvidence.consolidationDecisionIndex = 99;
+    expect(
+      validateCheckpoint({ ...record.checkpoint, decision: 'stop', nextSlices: [] }, record),
+    ).toContain('failed cold navigation must reference the prior consolidation decision');
   });
 });
 
@@ -136,6 +199,7 @@ function createRecord(): any {
     },
     completedSlicesSinceCheckpoint: [],
     facts: {
+      diffBase: 'HEAD',
       affectedCodeDigest: null,
       computedTriggers: ['written-plan'],
       undeclaredChangedPaths: [],

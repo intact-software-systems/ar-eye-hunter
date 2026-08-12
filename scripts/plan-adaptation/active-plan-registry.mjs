@@ -1,11 +1,11 @@
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { parseAdaptivePlanRecord } from './adaptive-plan-record.mjs';
 
 const columns = ['Plan', 'Capability owner', 'Status', 'Checkpoint decision', 'Next slice'];
 
-export function readActivePlans(repoRoot) {
+export function readAdaptivePlans(repoRoot) {
   const plansRoot = path.join(repoRoot, 'plans');
   return readdirSync(plansRoot, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md') && entry.name !== 'README.md')
@@ -17,8 +17,16 @@ export function readActivePlans(repoRoot) {
       }
       return [{ planPath: relativePath, record: parseAdaptivePlanRecord(markdown, relativePath) }];
     })
-    .filter(({ record }) => record.status === 'active')
-    .sort((left, right) => left.record.planId.localeCompare(right.record.planId));
+    .sort((left, right) =>
+      Buffer.compare(
+        Buffer.from(String(left.record.planId)),
+        Buffer.from(String(right.record.planId)),
+      ),
+    );
+}
+
+export function readActivePlans(repoRoot) {
+  return readAdaptivePlans(repoRoot).filter(({ record }) => record.status === 'active');
 }
 
 export function toActivePlanRegistry(activePlans) {
@@ -54,11 +62,4 @@ function tableRow(values, widths) {
 
 function cell(value) {
   return String(value).replaceAll('|', '\\|').replaceAll('\n', ' ');
-}
-
-export function writeActivePlanRegistry(repoRoot) {
-  writeFileSync(
-    path.join(repoRoot, 'plans/README.md'),
-    toActivePlanRegistry(readActivePlans(repoRoot)),
-  );
 }

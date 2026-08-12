@@ -7,22 +7,37 @@ const modulePattern = /\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/u;
 const productionRoots = new Set(['apps', 'examples', 'packages', 'scripts']);
 
 export function readChangedPaths(repoRoot, base) {
-  const output = runGit(repoRoot, ['diff', '--name-status', '-z', '--find-renames', base, '--']);
+  validateGitBase(repoRoot, base);
+  const output = runGit(repoRoot, [
+    'diff',
+    '--raw',
+    '-z',
+    '--find-renames',
+    '--end-of-options',
+    base,
+    '--',
+  ]);
   const tokens = output.split('\0').filter(Boolean);
   const changes = [];
   for (let index = 0; index < tokens.length;) {
-    const status = tokens[index++];
+    const metadata = parseRawMetadata(tokens[index++]);
+    const status = metadata.status;
     if (status.startsWith('R') || status.startsWith('C')) {
-      changes.push({ status, oldPath: tokens[index++], path: tokens[index++] });
+      changes.push({ ...metadata, oldPath: tokens[index++], path: tokens[index++] });
     } else {
-      changes.push({ status, path: tokens[index++] });
+      changes.push({ ...metadata, path: tokens[index++] });
     }
   }
   const knownPaths = new Set(changes.map((change) => change.path));
   const untracked = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']);
   for (const untrackedPath of untracked.split('\0').filter(Boolean)) {
     if (!knownPaths.has(untrackedPath)) {
-      changes.push({ status: 'A', path: untrackedPath });
+      changes.push({
+        status: 'A',
+        oldMode: '000000',
+        newMode: readUntrackedGitMode(repoRoot, untrackedPath),
+        path: untrackedPath,
+      });
     }
   }
   return changes.sort((left, right) => left.path.localeCompare(right.path));
@@ -30,8 +45,7 @@ export function readChangedPaths(repoRoot, base) {
 
 export function computeAffectedCodeDigest(repoRoot, base, changes) {
   const tuples = changes
-    .filter((change) => isAffectedCodePath(change.path))
-    .map((change) => readContentTuple(repoRoot, change))
+    .flatMap((change) => toContentTuples(repoRoot, change))
     .sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
   const hash = createHash('sha256');
   for (const tuple of tuples) {
@@ -130,17 +144,25 @@ export function computePlanFacts(input) {
   };
 }
 
-function readContentTuple(repoRoot, change) {
+function toContentTuples(repoRoot, change) {
+  const tuples = [];
+  if (change.oldPath && isAffectedCodePath(change.oldPath)) {
+    tuples.push({ path: change.oldPath, mode: '000000', content: Buffer.alloc(0) });
+  }
+  if (!isAffectedCodePath(change.path)) {
+    return tuples;
+  }
   if (change.status.startsWith('D')) {
-    return { path: change.path, mode: '000000', content: Buffer.alloc(0) };
+    tuples.push({ path: change.path, mode: '000000', content: Buffer.alloc(0) });
+    return tuples;
   }
   const absolutePath = path.join(repoRoot, change.path);
-  const stat = lstatSync(absolutePath);
-  if (stat.isSymbolicLink()) {
-    return { path: change.path, mode: '120000', content: Buffer.from(readlinkSync(absolutePath)) };
-  }
-  const mode = stat.mode & 0o111 ? '100755' : '100644';
-  return { path: change.path, mode, content: readFileSync(absolutePath) };
+  const content =
+    change.newMode === '120000'
+      ? Buffer.from(readlinkSync(absolutePath))
+      : readFileSync(absolutePath);
+  tuples.push({ path: change.path, mode: change.newMode, content });
+  return tuples;
 }
 
 function allChangedPaths(changes) {
@@ -151,7 +173,9 @@ function allChangedPaths(changes) {
 
 function hasDirectoryCreationOrMovement(repoRoot, base, changes) {
   const basePaths = new Set(
-    runGit(repoRoot, ['ls-tree', '-r', '--name-only', base]).split('\n').filter(Boolean),
+    runGit(repoRoot, ['ls-tree', '-r', '--name-only', '--end-of-options', base])
+      .split('\n')
+      .filter(Boolean),
   );
   return changes.some((change) => {
     if (change.status.startsWith('R')) {
@@ -224,4 +248,37 @@ function isWithin(candidate, root) {
 
 function runGit(repoRoot, args) {
   return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' });
+}
+
+function parseRawMetadata(value) {
+  const match = value.match(/^:(\d{6}) (\d{6}) [0-9a-f]+ [0-9a-f]+ ([A-Z]\d*)$/u);
+  if (!match) {
+    throw new Error('Git returned malformed raw diff metadata');
+  }
+  return { oldMode: match[1], newMode: match[2], status: match[3] };
+}
+
+function readUntrackedGitMode(repoRoot, relativePath) {
+  const stat = lstatSync(path.join(repoRoot, relativePath));
+  if (stat.isSymbolicLink()) {
+    return '120000';
+  }
+  return stat.mode & 0o111 ? '100755' : '100644';
+}
+
+export function validateGitBase(repoRoot, base) {
+  if (typeof base !== 'string' || base === '') {
+    throw new Error('Git base must be a non-empty revision');
+  }
+  if (base.startsWith('-')) {
+    throw new Error('Git base must not begin with an option prefix');
+  }
+  if (/[\0\r\n]/u.test(base)) {
+    throw new Error('Git base contains forbidden control characters');
+  }
+  try {
+    runGit(repoRoot, ['rev-parse', '--verify', '--end-of-options', `${base}^{commit}`]);
+  } catch {
+    throw new Error(`Git base is not a valid commit: ${base}`);
+  }
 }
