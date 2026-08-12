@@ -9,62 +9,63 @@
 
 **Goal:** Produce reproducible, correctness-gated RTC baseline evidence for the
 frozen `RTC-B01` through `RTC-B06` workloads without changing production RTC
-behavior.
+behavior, after every RTC/WebRTC performance tool has one visible private
+workspace owner and that owner has passed a complete code and legacy review.
 
-**Architecture:** Build one feature-folder evidence boundary, then adapt
-`RTC-B01` through `RTC-B05` in six ordered commits on one branch. Treat the
-final unchanged, fully gated B01-B05 head as one measurement anchor; implement
-and measure `RTC-B06` later on a separately approved clean head so evidence from
-the two anchors remains distinct.
+**Architecture:** Preserve authoritative RTC implementations in `shared`,
+`shared-web`, and `shared-server`. Establish
+`packages/shared-rtc-bench/**` as the measurement-only owner in a three-layer
+stack: this exact design/plan layer, behavior-preserving Task 4A relocation,
+then Task 4B structural review and remediation. Resume B04 and later capture
+only after both organization layers merge and are revalidated. Keep the final
+unchanged, fully gated B01-B05 head and the later separately approved B06 head
+as distinct measurement anchors.
 
 **Tech Stack:** TypeScript, Deno, Vitest, Node.js, Playwright Chromium, Git,
 GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 ## Global Constraints
 
-- This revision is plan-only. Human approval of this exact new plan blob plus an
-  exact coordinator reservation may activate only B01-B05 instrumentation and
-  capture. B06 remains behind its separate five-path approval/activation gate;
-  B07, production changes, optimization, raw-artifact publication, and every
-  Phase 2 activity remain separately held and are not released by this blob.
+- This revision is planning and coordination only. It authorizes no package
+  creation, source/test relocation, configuration change, benchmark execution,
+  or Task 4A implementation. Activation requires human approval of this exact
+  plan blob and a matching published roadmap reservation.
 - Preserve the accepted `RTC-B01` through `RTC-B06` workloads, environments,
-  correctness gates, sample counts, reproducibility rules, and unlike-environment
-  separation. `RTC-B07` remains held.
-- Reimplement and reconcile against the then-current clean `main`; the old
-  `d68d5112797b2cf8332dfe0243cebbe545da89c9` prototype is design input only and
-  supplies no current correctness, publication, or baseline evidence.
-- The held RTC Task 1 worktrees and their feasibility spikes are read-only
-  design input. The rejected 25-path WIP supplies no implementation, test,
-  gate, or completion evidence. After this exact amended blob is published,
-  approved, and activated, restart from fresh then-current `main`, establish
-  new RED boundaries by creating all 18 Task 1 test paths while all 21
-  foundation source modules are absent, run the exact 18-test RED, and only
-  then implement the 39-path foundation. Do not cherry-pick, wholesale-copy,
-  or inherit any test, gate, or completion claim from a held RTC worktree.
-- Do not edit production RTC/realtime code. Do not optimize, perform accepted
-  baseline capture, start an unauthorized/manual service, or dispatch remote
-  work while implementing this plan's instrumentation commits. After an owning
-  instrumentation commit is frozen, only the exact named B06 memory and
-  conditional Postgres service-backed correctness gates in Sections 7 and 11
-  may start services before capture; their output is diagnostic gate evidence,
-  never accepted baseline evidence.
-- Keep every new B01-B05 TypeScript source/test and every materially touched
-  existing TypeScript harness at or below 400 physical lines. Run the exact
-  physical-line gates in the owning commit and again on the final anchor; do not
-  add a code-style exception for B01-B05.
-- Keep `scripts/perf/README.md` untouched while PR #40 owns it. Its existing
-  commands stay supported only as confined, non-overwriting diagnostics and
-  cannot produce accepted baseline evidence.
-- Preserve public exports and import paths. The feature-folder modules are
-  script-private and must not add a package or nested barrel.
+  correctness gates, sample counts, CLI grammar, identities, artifact schemas,
+  timing boundaries, output confinement, failure accounting, reproducibility
+  rules, and unlike-environment separation. `RTC-B07` remains held.
+- RTC production implementations remain authoritative. The benchmark package
+  constructs inputs and measures those implementations; it must never copy,
+  simulate as evidence, replace, or become a runtime dependency of RTC product
+  behavior.
+- Task 4/B03 is complete and published. B04, baseline capture, B06, B07,
+  production changes, optimization, raw-artifact publication, and Phase 2 stay
+  held until the organization stack reaches its explicit gates.
+- Use three review layers: PR #196 contains the design, this plan amendment, and
+  pending coordination only; a Task 4A follow-on PR performs relocation and
+  semantic parity; a Task 4B follow-on PR performs structural review and
+  remediation. Do not combine the latter two to save publication steps.
+- Do not edit production RTC/realtime or ontology implementation in Tasks 4A or
+  4B. Ontology metadata remains an operationally inert description/binding
+  track and retains its own build-time binding-resolution mechanism; package
+  catalog/navigation metadata is not ontology metadata.
+- Apply the current repository human-readability standard: visible ownership,
+  dataflow, decisions, side effects, failure paths, cognitive-load tiers,
+  responsibility review, and the post-discount navigation backstop. The old
+  blanket 400-physical-line rule and its harness-test exception are obsolete.
+- Preserve public product exports and app import paths. The benchmark package is
+  private, has no product barrel, and may be entered only by its documented
+  package/root commands.
+- Roll back Task 4A as one complete relocation unit. Never leave duplicate
+  implementations, old-path wrappers, or two accepted catalog locations.
 
 ---
 
 **Created:** 2026-08-06
 
-**Status:** Phase 1 RTC controller-protocol plan-only correction authorized for
-publication; exact revised plan-blob approval and instrumentation activation
-still required
+**Status:** Task 4A/4B organization amendment proposed in draft PR #196;
+publication, exact revised plan-blob human approval, and coordinator activation
+are still required. No source move is active.
 
 **Roadmap:**
 [Rallar Architecture Quality And RTC Program Roadmap](../../../plans/rallar-architecture-quality-and-rtc-program-roadmap.md)
@@ -80,19 +81,21 @@ and identifies at most one evidence-backed candidate for a separately approved
 structural or optimization slice.
 
 The approved Phase 1 launch envelope accepts workloads `RTC-B01` through
-`RTC-B06` and the frozen measurement rules in this plan. The later structural
-decision accepts publication of this plan-only amendment: B01-B05 use the exact
-feature-folder split in Section 10 and one ordered implementation branch, while
-B06 moves to a later inactive reservation and clean measurement head. Neither
-approval activates instrumentation or capture. Human approval of this revised
-plan's exact Git blob plus the matching roadmap update may activate only the
-B01-B05 reservation in Section 10; every other hold remains independent.
+`RTC-B06` and the frozen measurement rules in this plan. Foundation, B01, B02,
+and B03 have since merged. This amendment preserves those accepted contracts
+while adding Task 4A package ownership and Task 4B complete review before B04.
+Approval of the design alone does not activate either task. Human approval must
+name this plan's exact Git blob; the matching roadmap update must then activate
+only Task 4A's exact reservation. Task 4B requires its own follow-on review
+layer after Task 4A merge/parity evidence, and every later hold remains
+independent.
 
 The accepted envelope does **not** authorize:
 
-- any source or test change until the revised exact-blob gate above passes;
-- changes under `packages/**` or `apps/**` outside the exact B01-B05 and later
-  B06 test reservations in Section 10;
+- any Task 4A source, test, package, or configuration change until the revised
+  exact-blob gate above passes;
+- changes under `packages/**`, `scripts/**`, or root configuration outside the
+  exact Task 4A reservation in Section 10;
 - an ontology implementation, readability refactor, or RTC optimization;
 - a remote Hetzner run (`RTC-B07`), which needs a separate explicit decision;
 - a performance threshold that can override a correctness failure; or
@@ -112,14 +115,15 @@ The baseline separates four kinds of work:
    tests, and artifact envelopes.
 2. **Baseline capture:** executing the accepted workloads on an exact clean Git
    tree without changing production behavior.
-3. **Structural refactoring:** behavior-neutral movement or readability work in
-   a separate child plan and pull request.
+3. **Structural refactoring:** Task 4A behavior-neutral movement followed by
+   Task 4B readability/legacy remediation in distinct pull requests.
 4. **Optimization:** a measured behavior or algorithm change in another child
    plan and pull request, with paired before/after evidence.
 
-The first two are the only RTC activities proposed for Phase 1. The latter two
-remain unauthorized until the baseline selects a candidate and the human
-approves its exact plan.
+Instrumentation, Task 4A, and Task 4B are the only RTC activities proposed
+before B04. Task 4A and Task 4B are organization prerequisites, not baseline or
+optimization evidence. Optimization remains unauthorized until the baseline
+selects a candidate and the human approves its exact plan.
 
 Each result carries one of these evidence labels:
 
@@ -140,20 +144,25 @@ not be generalized beyond its manifest, hosts, network, provider, and commit.
 This is a read-only map for hypothesis ownership, not a declaration that any
 path is slow.
 
-| Capability                         | Candidate production paths                                                                                                                                                                        | Current proof level                                             |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Signaling, ICE, reconnect          | `packages/shared/webrtc/QRtcPeerConnection.ts` and connection-service helpers                                                                                                                     | Existing tests and synthetic harnesses only                     |
-| Data-channel flow and lifecycle    | `packages/shared/webrtc/QRtcDataChannel.ts`, `packages/shared/webrtc/RtcDataChannelSendQueue.ts`                                                                                                  | Synthetic Rallar coverage; separate raw native-browser coverage |
-| Overlay multicast                  | `packages/shared/multicast/WebRtcOverlayMulticastService.ts` and related multicast services                                                                                                       | In-process serialization/fan-out coverage                       |
-| Group/cache/heartbeat coordination | `packages/shared/services/WebRtcGroupManager.ts`, `WebRtcGroupService.ts`, `WebRtcConnectionService.ts`, `WebRtcHeartbeatService.ts`, and their repositories                                      | Synthetic cache/lifecycle coverage                              |
-| Authoritative topology and RTT     | `packages/shared-server/rallar-system/services/{rallar-rtc-topology-service,group-topology-management-service}.ts`, `repositories/RtcRttRepository.ts`, and `rallar-system/rtc-topology/inbox/**` | Focused correctness and synthetic metrics                       |
-| Browser-facing RTC/realtime        | `packages/shared-web/browser/{rtc-engine,rallar-rtc-facade,rallar-realtime-facade}.ts` and `packages/shared-web/browser/rallar-runtime/{rtc,realtime}.ts`                                         | Facade tests and full-stack browser matrix                      |
-| API and cluster transport          | `apps/api-v1/src/services/rtc-topology-config.ts`, `apps/api-v1/src/db/api-v1-rtc-topology-cluster-transport.ts`, and topology routes                                                             | API/unit and full-stack correctness                             |
-| Product and operator consumers     | AR Eye Hunter, Relic Hunters, Rallar Game, and the Rallar black-box control/headless surfaces                                                                                                     | Consumer and black-box coverage varies                          |
+| Capability                         | Candidate production paths                                                                                                                                                                                                                 | Current proof level                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| Signaling, ICE, reconnect          | `packages/shared/webrtc/QRtcPeerConnection.ts` and connection-service helpers                                                                                                                                                              | Existing tests and synthetic harnesses only                     |
+| Data-channel flow and lifecycle    | `packages/shared/webrtc/QRtcDataChannel.ts`, `packages/shared/webrtc/RtcDataChannelSendQueue.ts`                                                                                                                                           | Synthetic Rallar coverage; separate raw native-browser coverage |
+| Overlay multicast                  | `packages/shared/multicast/WebRtcOverlayMulticastService.ts` and related multicast services                                                                                                                                                | In-process serialization/fan-out coverage                       |
+| Group/cache/heartbeat coordination | `packages/shared/services/WebRtcGroupManager.ts`, `WebRtcGroupService.ts`, `WebRtcConnectionService.ts`, `WebRtcHeartbeatService.ts`, and their repositories                                                                               | Synthetic cache/lifecycle coverage                              |
+| Authoritative topology and RTT     | `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`, `rallar-system/topology/group-topology-management-service.ts`, `rallar-system/repositories/RtcRttRepository.ts`, and `rallar-system/rtc-topology/inbox/**` | Focused correctness and synthetic metrics                       |
+| Browser-facing RTC/realtime        | `packages/shared-web/browser/{rtc-engine,rallar-rtc-facade,rallar-realtime-facade}.ts` and `packages/shared-web/browser/rallar-runtime/{rtc,realtime}.ts`                                                                                  | Facade tests and full-stack browser matrix                      |
+| API and cluster transport          | `apps/api-v1/src/services/rtc-topology-config.ts`, `apps/api-v1/src/db/api-v1-rtc-topology-cluster-transport.ts`, and topology routes                                                                                                      | API/unit and full-stack correctness                             |
+| Product and operator consumers     | AR Eye Hunter, Relic Hunters, Rallar Game, and the Rallar black-box control/headless surfaces                                                                                                                                              | Consumer and black-box coverage varies                          |
 
 Authoritative RTC/topology mutations continue to use their existing AppInbox,
 transaction, retry, convergence, and ownership rules. Baseline work may observe
 those paths but may not bypass, weaken, or relocate them.
+
+After Task 4A, `packages/shared-rtc-bench/**` is the private measurement owner
+and human navigation entry. It is not another production layer: `shared`,
+`shared-web`, and `shared-server` remain the measured authority; apps and
+product packages may not import the benchmark package.
 
 ### Source-proven hypotheses
 
@@ -172,9 +181,10 @@ measurement; they are not bottleneck or optimization claims.
 
 ## 4. Existing Harness Coverage
 
-Read `scripts/perf/README.md` and the exact harness before every run. Existing
-scripts are retained as focused validation tools; their presence is not a
-baseline result.
+Before Task 4A, read `scripts/perf/README.md` and the exact current harness.
+After Task 4A, read `packages/shared-rtc-bench/README.md`; the scripts README
+contains one cross-navigation link instead of an RTC executable inventory.
+Tool presence is never a baseline result.
 
 | Coverage group                        | Existing harnesses                                                                                                                                                      | What they can show                                                                                                    | What they cannot show                                                                                                                                                                                                        |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -202,9 +212,11 @@ Current gaps that Phase 1 instrumentation must close before result comparison:
 The three historical probes
 `scripts/perf/rtc-room-graph-no-rtt-bench.ts`,
 `scripts/perf/rtc-rtt-group-scan-bench.ts`, and
-`scripts/perf/rtc-topology-rtt-traffic-metrics.ts` remain unreserved
-characterization only. They are not accepted workloads, are excluded from the
-reserved-file Deno gate, and must not be edited or repaired by this plan.
+`scripts/perf/rtc-topology-rtt-traffic-metrics.ts` are now in the Task 4A
+reservation as maintained-diagnostic candidates. They are not accepted
+workloads and cannot emit accepted evidence. Task 4A moves, checks, and
+smoke-tests them; Task 4B traces their current relevance and gives each exactly
+one legacy disposition.
 Phase 1 adds a direct queue-drain case and a current persisted-RTT filtering
 case before either source hypothesis may be ranked.
 
@@ -618,149 +630,22 @@ npx vitest run \
 ### Measurement-instrumentation gate
 
 ```bash
-npx vitest run \
-  packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-  packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-  packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-  packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-  packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-  packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-  packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-  packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-  packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-  packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-  packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-  packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-  packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-  packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-  packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-  packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-  packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-  packages/tests/repo/rtc-performance-baseline-cli.test.ts
-
-deno check --config apps/api-v1/deno.json \
-  scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-  scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-  scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-  scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-  scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-  scripts/perf/rtc-ice-candidate-queue-bench.ts \
-  scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-  scripts/perf/rtc-data-channel-replace-key-bench.ts \
-  scripts/perf/rtc-data-channel-close-retention-bench.ts \
-  scripts/perf/rtc-data-channel-error-reference-bench.ts \
-  scripts/perf/rtc-topology-star-bench.ts \
-  scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-  scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-  scripts/perf/rtc-room-graph-rtt-bench.ts \
-  scripts/perf/rtc-topology-inactive-churn-bench.ts \
-  scripts/perf/rtc-multicast-serialization-bench.ts \
-  scripts/perf/webrtc-group-cache-fallback-bench.ts \
-  scripts/perf/webrtc-group-manager-state-bench.ts \
-  scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-  scripts/perf/webrtc-heartbeat-callback-churn-bench.ts
-
-node --check scripts/perf/rtc-data-channel-browser-soak.mjs
+npm --workspace @ar-eye-hunter/shared-rtc-bench run test
+npm --workspace @ar-eye-hunter/shared-rtc-bench run typecheck
+npm --workspace @ar-eye-hunter/shared-rtc-bench run check:deno
+npm run check:repo-style -- --root packages/shared-rtc-bench
+npm run check:repo-style:changed -- origin/main
+node --check packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs
+git diff --check
 ```
 
-The Deno command is an exact reserved-file gate. Do not replace it with a glob,
-and do not add the three unreserved historical probes named in Section 4.
-
-### B01-B05 exact physical-line gate
-
-```bash
-set -e
-for RTC_TYPESCRIPT_FILE in \
-  scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-  scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-  scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-  scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-  scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-  packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-  packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-  packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-  packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-  packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-  packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-  packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-  packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-  packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-  packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-  packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-  packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-  packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-  packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-  packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-  packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-  packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-  packages/tests/repo/rtc-performance-baseline-cli.test.ts \
-  scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-  scripts/perf/rtc-ice-candidate-queue-bench.ts \
-  scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-  scripts/perf/rtc-data-channel-replace-key-bench.ts \
-  scripts/perf/rtc-data-channel-close-retention-bench.ts \
-  scripts/perf/rtc-data-channel-error-reference-bench.ts \
-  scripts/perf/rtc-topology-star-bench.ts \
-  scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-  scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-  scripts/perf/rtc-room-graph-rtt-bench.ts \
-  scripts/perf/rtc-topology-inactive-churn-bench.ts \
-  scripts/perf/rtc-multicast-serialization-bench.ts \
-  scripts/perf/webrtc-group-cache-fallback-bench.ts \
-  scripts/perf/webrtc-group-manager-state-bench.ts \
-  scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-  scripts/perf/webrtc-heartbeat-callback-churn-bench.ts
-do
-  RTC_PHYSICAL_LINES="$(wc -l < "${RTC_TYPESCRIPT_FILE}")"
-  if [ "${RTC_PHYSICAL_LINES}" -gt 400 ]; then
-    echo "${RTC_TYPESCRIPT_FILE}: ${RTC_PHYSICAL_LINES} physical lines exceeds 400" >&2
-    exit 1
-  fi
-done
-```
-
-This gate is blocking even when the warning-only style checker is clean. It
-prevents recurrence of the old oversized envelope, contract test, diagnostics
-runtime, or a newly enlarged accepted harness.
+The package `test` and `check:deno` scripts own exact package-local discovery;
+their definitions and expected coverage are locked in Section 10. A clean
+warning-only style report is evidence, not a substitute for Task 4B's human
+trace. Review every file in the current repository cognitive-load tiers,
+runtime-export responsibility threshold, function/decision rules, and the
+post-discount physical navigation backstop. Do not restore the obsolete blanket
+400-line gate or preserve 397-400-line shapes merely to satisfy history.
 
 ### Later B06 local full-stack gates — inactive
 
@@ -1031,13 +916,377 @@ program. The valid outcome may be “no optimization justified yet.”
 
 ### Current plan-only reservation
 
-The current amendment may edit and publish only this plan. The write sets below
-remain inactive until the new exact plan blob receives separate human approval
-and the roadmap coordinator activates them.
+Draft PR #196 may edit and publish only:
 
-### B01-B05 instrumentation reservation — inactive
+- `docs/superpowers/specs/2026-08-12-shared-rtc-bench-organization-design.md`;
+- this plan;
+- `plans/rallar-architecture-quality-and-rtc-program-roadmap.md`; and
+- its GitHub draft-PR coordination record.
 
-After activation, reserve exactly:
+The specification needs no content change in this amendment. The write sets
+below remain proposed and inactive until the new exact plan blob receives
+separate human approval and the roadmap coordinator activates Task 4A.
+
+### Task 4A package-ownership reservation — proposed, inactive
+
+Task 4A reserves creation and all content under
+`packages/shared-rtc-bench/**`, limited to the exact parity-checkpoint inventory
+below. Folder placement follows capability ownership; no package-wide
+`helpers`, `utils`, `types`, or `fixtures` folder is permitted.
+
+#### Exact package configuration and navigation inventory
+
+- `packages/shared-rtc-bench/README.md`;
+- `packages/shared-rtc-bench/package.json`;
+- `packages/shared-rtc-bench/tsconfig.json`; and
+- `packages/shared-rtc-bench/deno.json`.
+
+The package is private and named `@ar-eye-hunter/shared-rtc-bench`. Its scripts
+are exactly:
+
+- `typecheck`: `tsc -p tsconfig.json --noEmit`;
+- `test`: `vitest run --config ../../vitest.config.ts "$PWD/tests"`;
+- `check:deno`: one explicit `deno check --config deno.json` command listing
+  every `.ts` executable/source path in the inventory below; and
+- `check`: `npm run typecheck && npm run test && npm run check:deno`.
+
+The exact `check:deno` entry list is:
+
+```bash
+deno check --config deno.json \
+  baseline/command/rtc-baseline-cli.ts \
+  workloads/signaling/rtc-peer-connection-diagnostics-burst.ts \
+  workloads/signaling/rtc-ice-candidate-queue-bench.ts \
+  workloads/signaling/rtc-peer-listener-cleanup-bench.ts \
+  workloads/data-channel/rtc-data-channel-replace-key-bench.ts \
+  workloads/data-channel/rtc-data-channel-drain-bench.ts \
+  workloads/data-channel/rtc-data-channel-close-retention-bench.ts \
+  workloads/data-channel/rtc-data-channel-error-reference-bench.ts \
+  workloads/topology/rtc-topology-star-bench.ts \
+  workloads/topology/rtc-topology-tree-no-rtt-bench.ts \
+  workloads/topology/rtc-topology-mesh-no-rtt-bench.ts \
+  workloads/topology/rtc-room-graph-rtt-bench.ts \
+  workloads/topology/rtc-topology-inactive-churn-bench.ts \
+  workloads/topology/rtc-rtt-repository-filter-bench.ts \
+  workloads/multicast/rtc-multicast-serialization-bench.ts \
+  workloads/group-coordination/webrtc-group-cache-fallback-bench.ts \
+  workloads/group-coordination/webrtc-group-manager-state-bench.ts \
+  workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts \
+  workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts \
+  topology-delivery/delivery-log-bench.ts \
+  topology-replay/replay-drain-operation-counts.ts \
+  diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts \
+  diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts \
+  diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts
+```
+
+Support modules are reachable from these explicit roots; `tsconfig.json`
+typechecks the complete package including tests. The Node browser lifecycle
+entry receives the separate `node --check` gate.
+
+`README.md` is the durable executable catalog. Each row records program class,
+capability, command entry, root/package command, inputs, exact production symbol
+measured, setup owner, timing boundary, validation owner, output/artifact class,
+owning test, and accepted/diagnostic status.
+
+#### Exact accepted-baseline inventory
+
+- `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts`;
+- `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts`;
+- `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-validation.ts`;
+- `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-decoding.ts`;
+- `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-validation.ts`;
+- `packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-catalog.ts`;
+- `packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts`;
+- `packages/shared-rtc-bench/baseline/acceptance/rtc-baseline-evidence-acceptance.ts`;
+- `packages/shared-rtc-bench/baseline/acceptance/rtc-baseline-failure-accounting.ts`;
+- `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-evidence-layout.ts`;
+- `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-evidence-store.ts`;
+- `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-finalized-evidence.ts`;
+- `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-finalized-reader.ts`;
+- `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-statistics.ts`;
+- `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-adapters.ts`;
+- `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-runtime.ts`;
+- `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-runtime-observation.ts`;
+- `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-envelope.ts`;
+- `packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-options.ts`;
+- `packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts`; and
+- `packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts`.
+
+#### Exact accepted-workload inventory
+
+- signaling:
+  - `packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts`;
+  - `packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-runtime.ts`;
+  - `packages/shared-rtc-bench/workloads/signaling/rtc-ice-candidate-queue-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/signaling/rtc-peer-listener-cleanup-bench.ts`;
+- data channel:
+  - `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-replace-key-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-drain-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-close-retention-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-error-reference-bench.ts`;
+- topology and RTT:
+  - `packages/shared-rtc-bench/workloads/topology/rtc-topology-star-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/topology/rtc-topology-tree-no-rtt-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/topology/rtc-topology-mesh-no-rtt-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/topology/rtc-room-graph-rtt-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/topology/rtc-topology-inactive-churn-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/topology/rtc-rtt-repository-filter-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/topology/create-deterministic-rtc-topology-group-snapshot.ts`;
+  - `packages/shared-rtc-bench/workloads/topology/synthetic-rtc-rtt-runtime-state-repository.ts`;
+- multicast:
+  - `packages/shared-rtc-bench/workloads/multicast/rtc-multicast-serialization-bench.ts`;
+- group coordination:
+  - `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-cache-fallback-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-state-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts`;
+  - `packages/shared-rtc-bench/workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts`; and
+- native browser lifecycle:
+  - `packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs`.
+
+The two topology setup modules replace imports from
+`packages/tests/shared-graph/helpers.ts` and
+`packages/tests/shared-server/fake-runtime-state-repository.ts`. They construct
+only deterministic benchmark inputs/adapters; topology and RTT behavior remains
+the production implementation.
+
+#### Exact standalone and maintained-diagnostic inventory
+
+- topology delivery:
+  - `packages/shared-rtc-bench/topology-delivery/delivery-log-bench.ts`;
+  - `packages/shared-rtc-bench/topology-delivery/delivery-log-benchmark-contracts.ts`;
+  - `packages/shared-rtc-bench/topology-delivery/run-rtc-topology-delivery-log-workloads.ts`;
+- topology replay:
+  - `packages/shared-rtc-bench/topology-replay/replay-drain-operation-counts.ts`;
+- maintained no-RTT room-graph diagnostic:
+  - `packages/shared-rtc-bench/diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts`;
+- maintained RTT group-scan diagnostic:
+  - `packages/shared-rtc-bench/diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts`; and
+- maintained RTT traffic diagnostic:
+  - `packages/shared-rtc-bench/diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts`;
+  - `packages/shared-rtc-bench/diagnostics/rtt-traffic/configure-rtc-rtt-traffic-cache-repositories.ts`.
+
+The RTT traffic cache composition module replaces the import from
+`packages/tests/cache-repository-config.ts` with explicit production repository
+configuration. Diagnostics remain unable to create accepted baseline evidence.
+
+#### Exact Task 4A test inventory
+
+- architecture:
+  - `packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts`;
+  - `packages/shared-rtc-bench/tests/architecture/rtc-benchmark-executable-inventory.test.ts`;
+  - `packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts`;
+- baseline contracts:
+  - `packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-artifact-validation.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-contract.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-decoding.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/contracts/rtc-performance-baseline-validation.test.ts`;
+- baseline catalog:
+  - `packages/shared-rtc-bench/tests/baseline/catalog/rtc-performance-baseline-workload-catalog.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/catalog/rtc-performance-baseline-workload-manifest.test.ts`;
+- baseline acceptance:
+  - `packages/shared-rtc-bench/tests/baseline/acceptance/rtc-performance-baseline-evidence-acceptance.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/acceptance/rtc-performance-baseline-evidence-failure.test.ts`;
+- baseline evidence:
+  - `packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-statistics.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-evidence-store.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalization.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/evidence/rtc-performance-baseline-finalized-reader.test.ts`;
+- baseline runtime:
+  - `packages/shared-rtc-bench/tests/baseline/runtime/rtc-performance-baseline-envelope.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/runtime/rtc-performance-baseline-deno-adapters.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/runtime/rtc-performance-baseline-deno-runtime.test.ts`;
+- baseline command:
+  - `packages/shared-rtc-bench/tests/baseline/command/rtc-performance-baseline-cli-grammar.test.ts`;
+  - `packages/shared-rtc-bench/tests/baseline/command/rtc-performance-baseline-cli.test.ts`;
+- accepted workload parity checkpoint:
+  - `packages/shared-rtc-bench/tests/workloads/rtc-performance-baseline-harnesses.test.ts`;
+  - `packages/shared-rtc-bench/tests/workloads/multicast/rtc-multicast-serialization-bench.test.ts`;
+  - `packages/shared-rtc-bench/tests/workloads/group-coordination/webrtc-group-coordination-benches.test.ts`;
+  - `packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts`;
+- standalone programs:
+  - `packages/shared-rtc-bench/tests/topology-delivery/rtc-topology-delivery-log-performance-harness.test.ts`;
+  - `packages/shared-rtc-bench/tests/topology-replay/rtc-topology-replay-drain-performance-harness.test.ts`; and
+- maintained diagnostics:
+  - `packages/shared-rtc-bench/tests/diagnostics/room-graph/rtc-room-graph-no-rtt-diagnostic.test.ts`;
+  - `packages/shared-rtc-bench/tests/diagnostics/rtt-group-scan/rtc-rtt-group-scan-diagnostic.test.ts`;
+  - `packages/shared-rtc-bench/tests/diagnostics/rtt-traffic/rtc-topology-rtt-traffic-diagnostic.test.ts`.
+
+Write the three architecture tests before relocation. First run them against
+the package skeleton and record the expected failures naming the old executable
+locations, prohibited test imports, missing README rows, and undiscovered
+package tests. After relocation the same tests must prove: no RTC/WebRTC
+performance executable remains under `scripts/**`; imports stay within the
+approved boundary; product packages/apps never import `shared-rtc-bench`; every
+executable has one README row and an owning semantic/smoke test; only catalogued
+workloads emit accepted evidence; and every maintained diagnostic is checked.
+
+#### Exact current-to-target source disposition
+
+Every current RTC/WebRTC source has one final Task 4A disposition:
+
+| Current path                                                           | Task 4A target                                                                                                      |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts`          | `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-decoding.ts`                                    |
+| `scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts`        | `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-artifact-validation.ts`                                  |
+| `scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts`                | `packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts`                                            |
+| `scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts`                | `packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-options.ts`                                            |
+| `scripts/perf/rtc-baseline/rtc-baseline-cli.ts`                        | `packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts`                                                    |
+| `scripts/perf/rtc-baseline/rtc-baseline-contracts.ts`                  | `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-contracts.ts`                                            |
+| `scripts/perf/rtc-baseline/rtc-baseline-decoding.ts`                   | `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts`                                             |
+| `scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts`              | `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-adapters.ts`                                          |
+| `scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts`               | `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-runtime.ts`                                           |
+| `scripts/perf/rtc-baseline/rtc-baseline-envelope.ts`                   | `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-envelope.ts`                                               |
+| `scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts`        | `packages/shared-rtc-bench/baseline/acceptance/rtc-baseline-evidence-acceptance.ts`                                 |
+| `scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts`            | `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-evidence-layout.ts`                                       |
+| `scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts`             | `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-evidence-store.ts`                                        |
+| `scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts`         | `packages/shared-rtc-bench/baseline/acceptance/rtc-baseline-failure-accounting.ts`                                  |
+| `scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts`         | `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-finalized-evidence.ts`                                    |
+| `scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts`           | `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-finalized-reader.ts`                                      |
+| `scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts`        | `packages/shared-rtc-bench/baseline/runtime/rtc-baseline-runtime-observation.ts`                                    |
+| `scripts/perf/rtc-baseline/rtc-baseline-statistics.ts`                 | `packages/shared-rtc-bench/baseline/evidence/rtc-baseline-statistics.ts`                                            |
+| `scripts/perf/rtc-baseline/rtc-baseline-validation.ts`                 | `packages/shared-rtc-bench/baseline/contracts/rtc-baseline-validation.ts`                                           |
+| `scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts`           | `packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-catalog.ts`                                       |
+| `scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts`          | `packages/shared-rtc-bench/baseline/catalog/rtc-baseline-workload-manifest.ts`                                      |
+| `scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts`            | `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-drain-bench.ts`                                  |
+| `scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts` | `packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-runtime.ts`                          |
+| `scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts`         | `packages/shared-rtc-bench/workloads/topology/rtc-rtt-repository-filter-bench.ts`                                   |
+| `scripts/perf/rtc-data-channel-browser-soak.mjs`                       | `packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs`                           |
+| `scripts/perf/rtc-data-channel-close-retention-bench.ts`               | `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-close-retention-bench.ts`                        |
+| `scripts/perf/rtc-data-channel-error-reference-bench.ts`               | `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-error-reference-bench.ts`                        |
+| `scripts/perf/rtc-data-channel-replace-key-bench.ts`                   | `packages/shared-rtc-bench/workloads/data-channel/rtc-data-channel-replace-key-bench.ts`                            |
+| `scripts/perf/rtc-ice-candidate-queue-bench.ts`                        | `packages/shared-rtc-bench/workloads/signaling/rtc-ice-candidate-queue-bench.ts`                                    |
+| `scripts/perf/rtc-multicast-serialization-bench.ts`                    | `packages/shared-rtc-bench/workloads/multicast/rtc-multicast-serialization-bench.ts`                                |
+| `scripts/perf/rtc-peer-connection-diagnostics-burst.ts`                | `packages/shared-rtc-bench/workloads/signaling/rtc-peer-connection-diagnostics-burst.ts`                            |
+| `scripts/perf/rtc-peer-listener-cleanup-bench.ts`                      | `packages/shared-rtc-bench/workloads/signaling/rtc-peer-listener-cleanup-bench.ts`                                  |
+| `scripts/perf/rtc-room-graph-no-rtt-bench.ts`                          | `packages/shared-rtc-bench/diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts`                                   |
+| `scripts/perf/rtc-room-graph-rtt-bench.ts`                             | `packages/shared-rtc-bench/workloads/topology/rtc-room-graph-rtt-bench.ts`                                          |
+| `scripts/perf/rtc-rtt-group-scan-bench.ts`                             | `packages/shared-rtc-bench/diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts`                                  |
+| `scripts/perf/rtc-topology-inactive-churn-bench.ts`                    | `packages/shared-rtc-bench/workloads/topology/rtc-topology-inactive-churn-bench.ts`                                 |
+| `scripts/perf/rtc-topology-mesh-no-rtt-bench.ts`                       | `packages/shared-rtc-bench/workloads/topology/rtc-topology-mesh-no-rtt-bench.ts`                                    |
+| `scripts/perf/rtc-topology-rtt-traffic-metrics.ts`                     | `packages/shared-rtc-bench/diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts`                             |
+| `scripts/perf/rtc-topology-star-bench.ts`                              | `packages/shared-rtc-bench/workloads/topology/rtc-topology-star-bench.ts`                                           |
+| `scripts/perf/rtc-topology-tree-no-rtt-bench.ts`                       | `packages/shared-rtc-bench/workloads/topology/rtc-topology-tree-no-rtt-bench.ts`                                    |
+| `scripts/perf/rtc-topology/delivery-log-bench.ts`                      | `packages/shared-rtc-bench/topology-delivery/delivery-log-bench.ts`                                                 |
+| `scripts/perf/rtc-topology/delivery-log-benchmark-contracts.ts`        | `packages/shared-rtc-bench/topology-delivery/delivery-log-benchmark-contracts.ts`                                   |
+| `scripts/perf/rtc-topology/replay-drain-operation-counts.ts`           | `packages/shared-rtc-bench/topology-replay/replay-drain-operation-counts.ts`                                        |
+| `scripts/perf/rtc-topology/run-rtc-topology-delivery-log-workloads.ts` | `packages/shared-rtc-bench/topology-delivery/run-rtc-topology-delivery-log-workloads.ts`                            |
+| `scripts/perf/rtc-topology/state-write-reasons.ts`                     | `scripts/perf/state-write/api-v1-state-write-regression-reasons.ts` (general state-write owner; not package source) |
+| `scripts/perf/webrtc-group-cache-fallback-bench.ts`                    | `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-cache-fallback-bench.ts`                       |
+| `scripts/perf/webrtc-group-manager-peer-owners-bench.ts`               | `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts`                  |
+| `scripts/perf/webrtc-group-manager-state-bench.ts`                     | `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-state-bench.ts`                        |
+| `scripts/perf/webrtc-heartbeat-callback-churn-bench.ts`                | `packages/shared-rtc-bench/workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts`                   |
+
+Move all 18 `packages/tests/repo/rtc-performance-baseline-*.test.ts` files to
+their exact baseline/workload test targets above. Move
+`packages/tests/shared-server/rtc-topology-delivery-log-performance-harness.test.ts`
+and
+`packages/tests/shared-server/rtc-topology-replay-drain-performance-harness.test.ts`
+to their exact standalone targets. Update
+`packages/tests/shared-server/state-write-performance-harness.test.ts` to import
+the state-write-owned reason module; this test remains with its state-write
+owner and does not move into the RTC package. Delete every old implementation
+and owning RTC benchmark test after the move; no compatibility wrapper remains.
+
+#### Exact repository integration reservation
+
+Task 4A may also modify exactly:
+
+- `package.json` and `package-lock.json` for workspace commands/dependency lock;
+- `tsconfig.json` for the package project reference and exact alias/config
+  participation required by the package;
+- `vitest.config.ts` to discover both existing
+  `packages/tests/**/*.test.ts` and
+  `packages/shared-rtc-bench/tests/**/*.test.ts`;
+- `deno.json` to include the package in repository formatting/lint navigation;
+- `scripts/perf/README.md` to replace RTC executable rows and examples with one
+  package navigation section plus the unchanged general-performance content;
+- `scripts/perf/api-v1-state-write-concurrency-bench.ts`;
+- `scripts/perf/state-write/api-v1-state-write-benchmark-options.ts`;
+- `packages/tests/shared-server/state-write-performance-harness.test.ts`;
+- `scripts/repo-style-check/reviewed-dispositions.mjs` and
+  `packages/tests/repo/repo-style-reviewed-dispositions.test.ts` to remove or
+  relocate obsolete path-specific dispositions without granting a new blanket
+  waiver;
+- `plans/repo-style-lineages/shared-rtc-bench-task-4a.json` to record exact
+  source blobs and one-to-one move targets for changed-style lineage; and
+- this plan and the cross-program roadmap for exact progress/publication
+  evidence only.
+
+Root commands become:
+
+- `perf:rtc-baseline`: `deno run -A --config packages/shared-rtc-bench/deno.json packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts`;
+- `perf:rtc-topology:delivery-log`: `deno run -A --config packages/shared-rtc-bench/deno.json packages/shared-rtc-bench/topology-delivery/delivery-log-bench.ts`;
+- `perf:rtc-topology:replay-drain`: `deno run -A --config packages/shared-rtc-bench/deno.json packages/shared-rtc-bench/topology-replay/replay-drain-operation-counts.ts`.
+
+The accepted catalog replaces every old `scripts/perf/rtc*` or
+`scripts/perf/webrtc*` `sourcePaths`/worker prefix with its exact package target
+above. Every accepted B01-B04 TypeScript workload uses
+`packages/shared-rtc-bench/deno.json` as `configPaths`; B05 uses the verified
+existing `apps/rallar-black-box/playwright.config.ts`, replacing the current
+nonexistent root `playwright.config.ts`. This corrects path-valued provenance
+only; it does not activate or execute B04/B05. Source/config hashes intentionally
+change with their paths, so artifacts from before and after Task 4A may not be
+pooled.
+
+#### Dependency and direction gate
+
+Human-authored package source/tests may directly import only package-local
+owners, `packages/shared/**`, `packages/shared-web/**`,
+`packages/shared-server/**`, Node/Deno platform modules, and approved external
+libraries already required by the workload. Direct imports from `scripts/**`,
+`packages/tests/**`, `packages/shared-test/**`, `apps/**`,
+`packages/shared-graph/**`, or any other repository package fail Task 4A.
+Conversely, `packages/shared/**`, `packages/shared-web/**`,
+`packages/shared-server/**`, every other product package, and every app must
+have zero imports of `shared-rtc-bench`.
+
+#### Post-Task-4A responsibility and interface map
+
+| Owner                            | Exact package surface                                                                           | Responsibility and stable interface                                                                                                                                                                                           |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Package navigation/configuration | `README.md`, `package.json`, `tsconfig.json`, `deno.json`                                       | Private workspace identity, exact executable map, local test/type/Deno commands, approved dependency resolution, and no product export.                                                                                       |
+| Baseline contracts               | `baseline/contracts/**`                                                                         | Persisted DTOs, structural decoding, pure semantic validation, artifact decoding/validation; no I/O, process execution, workload policy, or RTC implementation.                                                               |
+| Baseline catalog                 | `baseline/catalog/**`                                                                           | Literal B01-B06 cases, source/config provenance, runtime prefixes, attempts, evidence classes, and manifest/sample derivation; no measured behavior.                                                                          |
+| Baseline acceptance              | `baseline/acceptance/**`                                                                        | Accepted workload/external ingestion, locator/producer precedence, first failure, and complete causal remainder; no finalization or workload-specific validation.                                                             |
+| Baseline evidence                | `baseline/evidence/**`                                                                          | Confined layout/store, statistics, finalization, checksums, repeat/paired reads, and complete accounting; no command or product behavior.                                                                                     |
+| Baseline runtime                 | `baseline/runtime/**`                                                                           | Deno adapters, observation, application composition, and envelope delegation; effects start only through command invocation.                                                                                                  |
+| Baseline command                 | `baseline/command/**`                                                                           | Exact CLI grammar, dispatch, stdout/stderr/exit mapping, and runtime entry; workload matrices remain in catalog/workloads.                                                                                                    |
+| Accepted workload capabilities   | `workloads/{signaling,data-channel,topology,multicast,group-coordination,browser-lifecycle}/**` | Frozen inputs, deterministic setup, exact production operation/timing, workload validation, raw projection, accepted worker and diagnostic entry. Setup modules construct inputs only.                                        |
+| Topology delivery                | `topology-delivery/**`                                                                          | Independent PostgreSQL delivery-log command, fixed workload, contract, validation, output, and tests; diagnostic only unless separately catalogued.                                                                           |
+| Topology replay                  | `topology-replay/**`                                                                            | Independent production replay-service operation-count command, validation, output, and tests; diagnostic only unless separately catalogued.                                                                                   |
+| Maintained diagnostics           | `diagnostics/{room-graph,rtt-group-scan,rtt-traffic}/**`                                        | Explicitly non-accepted current probes, checked and smoke-tested until Task 4B gives each a final disposition.                                                                                                                |
+| Architecture and semantic tests  | `tests/**`                                                                                      | Dependency direction, executable/navigation inventory, accepted/diagnostic isolation, exact contracts, capability behavior, failures, cleanup, and smoke ownership. Tests mirror capabilities and own no production fixtures. |
+
+The historical interface table below remains authoritative for the detailed
+DTO/command/evidence semantics; this map changes their location and visible
+ownership, not their frozen public tooling behavior.
+
+### Task 4B review/remediation reservation — proposed, inactive
+
+Task 4B may modify only the exact Task 4A package inventory and its README/tests,
+plus this plan and roadmap for evidence. It creates exactly three capability
+tests:
+
+- `packages/shared-rtc-bench/tests/workloads/signaling/rtc-signaling-benchmark-lifecycle.test.ts`;
+- `packages/shared-rtc-bench/tests/workloads/data-channel/rtc-data-channel-benchmark-lifecycle.test.ts`; and
+- `packages/shared-rtc-bench/tests/workloads/topology/rtc-topology-benchmark-lifecycle.test.ts`.
+
+It then deletes
+`packages/shared-rtc-bench/tests/workloads/rtc-performance-baseline-harnesses.test.ts`.
+The existing multicast, group-coordination, and browser-lifecycle tests already
+form separate capabilities. No other new file is authorized by this blob. If a
+Critical/Important correction genuinely requires another owner, stop, record
+the finding and proposed exact path, amend this plan, and obtain the required
+approval rather than hiding an unplanned split.
+
+### Historical B01-B05 instrumentation reservation — completed
+
+The following reservation is retained only as publication history. Foundation,
+B01, B02, and B03 used it; it grants no current write authority. The organization
+reservations above supersede its path layout before B04 resumes.
+
+Historically reserved:
 
 - this baseline plan for its durable progress record;
 - the 24 feature-folder TypeScript files:
@@ -1112,12 +1361,18 @@ This is exactly 59 implementation paths: 24 feature-folder TypeScript files,
 Node browser-soak entrypoint. The plan itself is the separate durable progress
 record and is not part of that implementation-path count.
 
-`scripts/perf/README.md` is not reserved; PR #40 continues to own it. The three
-historical probes named in Section 4 are not reserved. No production path,
+At that time `scripts/perf/README.md` and the three historical probes were not
+reserved. No production path,
 package barrel, public snapshot, root script, dependency file, B06 path, or
 other test path is part of the B01-B05 reservation.
 
-### B01-B05 responsibility and interface map
+### Historical B01-B05 responsibility and interface map
+
+This table records the stable contracts already implemented by Tasks 1-4. Its
+historical paths map one-to-one to the Task 4A inventory; Task 4A changes
+location and imports, not the listed behavior. Task 4B may change internal
+responsibility only after recording parity and must preserve every stable
+interface/evidence contract named here.
 
 | Owner                     | Exact files                                                                | Responsibility and stable interface                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1206,26 +1461,12 @@ B06 requires a separate human activation and is limited exactly to:
 - `tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts`;
 - `packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts`;
 - `tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts`;
-- `packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts`;
-- `docs/repo-code-style-exceptions.md`.
+- `packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts`.
 
-The only proposed code-style exception is one registry entry with these locked
-fields:
-
-- repository-relative path:
-  `tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts`;
-- symbol: `test.describe("full-stack live three-browser RTC matrix")`;
-- exception category: `structured test scenario`;
-- cohesion rationale: the existing three-browser lifecycle, sender/receiver
-  scenario matrix, reconnect cleanup, and shared artifact teardown are reviewed
-  as one ordered scenario whose separation would hide ownership and cleanup;
-- approval record: the exact later B06 human activation record supplies the date
-  and reviewer, and absence of that record blocks the entry; and
-- owner/removal condition: RTC baseline work owns the entry; review and remove it
-  before the spec's next material post-Phase-1 change.
-
-This entry suppresses no warning, changes no threshold, and grants no
-repository-wide waiver. The existing
+No code-style exception is proposed. Review the matrix under the current
+human-readability, cognitive-load, responsibility, function/decision, and
+post-discount navigation standards. The former 400-line rule and structured
+test exception are obsolete. The existing
 `packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts` stays
 untouched unless a separate human approval changes coverage semantics. B06 gets
 its own later clean measurement head and fresh gates; it does not append to or
@@ -1260,17 +1501,24 @@ exactly:
 - `scripts/repo-style-check/layout-rules.mjs`; and
 - `packages/tests/repo/repo-style-layout-rules.test.ts`.
 
-| Other track                                          | Path overlap                                                                                                                          | Phase 1 rule                                                                                                                                                                                                                                                                                      |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ontology Task 1 — merged through PR #89              | The exact 17 published paths above, including the two checker paths; none overlaps this RTC plan's proposed reservation.              | Treat the resulting `f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41` main tree as read-only current-base context. This RTC amendment neither reopens nor edits ontology work, and any future overlap still requires its own new approval and reservation.                                               |
-| Auth PR A — merged and externally verified           | PR A's exact auth cohort is already on `main`; it is read-only context for this plan, not a proposed or active competing reservation. | Reconcile the RTC branch against the resulting verified auth tree. This RTC plan does not activate or deactivate human-program work; the cross-program roadmap owns its current status. Service-backed B06 serializes with any externally active auth child and waits for its stable, exact tree. |
-| Separately activated future auth or RTC/RTT children | State-write, session, topology, WebRTC, multicast, or shared integration paths may intersect measured call paths.                     | Only an independently approved/activated future child may overlap. Serialize service-backed B06/B07 with it; evidence captured before its change is historical and affected workloads must be rerun on the exact post-change tree.                                                                |
+| Other track                                             | Path overlap                                                                                                                                                                                                                                                                                                           | Phase 1 rule                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Ontology Task 1 — merged through PR #89                 | The exact 17 published paths above, including the two checker paths; none overlaps this RTC plan's proposed reservation.                                                                                                                                                                                               | Treat the resulting `f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41` main tree as read-only current-base context. This RTC amendment neither reopens nor edits ontology work, and any future overlap still requires its own new approval and reservation.                                                                                                                                                                            |
+| Ontology Task 4 — pending browser direct-lane extension | Reserves `packages/shared-web/browser/rallar-browser-realtime-ontology.ts`, `packages/shared-web/browser/rallar-browser-realtime-ontology-bindings.ts`, and `packages/tests/shared-web/rallar-browser-realtime-ontology.test.ts`. Task 4A reads the same production lane/config owners but writes none of these paths. | Serialize only if both reservations are active against incompatible shared-web source truth. RTC production remains authoritative; `shared-rtc-bench` measures it. Package README/catalog rows are navigation and measurement provenance, not ontology metadata. Reuse the ontology plan's build-time binding resolution; do not add ontology files, binding registries, or a second metadata system to the benchmark package. |
+| Auth PR A — merged and externally verified              | PR A's exact auth cohort is already on `main`; it is read-only context for this plan, not a proposed or active competing reservation.                                                                                                                                                                                  | Reconcile the RTC branch against the resulting verified auth tree. This RTC plan does not activate or deactivate human-program work; the cross-program roadmap owns its current status. Service-backed B06 serializes with any externally active auth child and waits for its stable, exact tree.                                                                                                                              |
+| Separately activated future auth or RTC/RTT children    | State-write, session, topology, WebRTC, multicast, or shared integration paths may intersect measured call paths.                                                                                                                                                                                                      | Only an independently approved/activated future child may overlap. Serialize service-backed B06/B07 with it; evidence captured before its change is historical and affected workloads must be rerun on the exact post-change tree.                                                                                                                                                                                             |
 
 The human-traceability coordinator owns its plans. RTC agents report a required
 human-plan correction or conflict to that coordinator and do not edit those
 plans.
 
 ## 11. Phase 1 Execution Tasks
+
+Tasks 0-4 below retain their original script/test paths and command transcripts
+as historical publication evidence. They are completed and must not be rerun as
+current instructions. In particular, their 400-line checks and combined-test
+inventory are obsolete after this amendment. Task 4A is the first proposed
+inactive task; Tasks 5-12 use only the post-organization paths.
 
 Treat every `bash` fence in this section as a standalone script body executed
 by a fresh `bash -euo pipefail`; no shell option, working directory, or
@@ -1282,6 +1530,10 @@ evaluating it, and never let a failed prerequisite, scope check, local gate,
 commit, push, or exact named workflow fall through.
 
 ### Task 0: Activate from the approved exact plan blob
+
+**State:** completed historical B01-B05 activation. The new Task 4A activation
+requires the exact amended blob and reservation described above; do not reuse
+this old activation command.
 
 **Files:** No file changes.
 
@@ -1337,6 +1589,9 @@ commit, push, or exact named workflow fall through.
 source edit.
 
 ### Task 1: Foundation commit — manifest, acceptance, evidence, and Deno application boundaries
+
+**State:** completed and published through PR #150, merge
+`f43c1881e684fd2a423b0993c4389d969c264311`.
 
 **Files:**
 
@@ -2052,6 +2307,9 @@ benchmark has run.
 
 ### Task 2: B01 commit — signaling, ICE, and listener lifecycle
 
+**State:** completed and published through PR #162, merge
+`e921c46058d9db91c8c7707868593a523c4e75e0`.
+
 **Files:**
 
 - Create: `scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts`
@@ -2180,6 +2438,9 @@ not baseline measurements.
 
 ### Task 3: B02 commit — data-channel pressure and lifecycle
 
+**State:** completed and published through PR #169, merge
+`33fa104d2cbf347eab1d02a54107c01f064aad00`.
+
 **Files:**
 
 - Create: `scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts`
@@ -2305,6 +2566,9 @@ send, byte, and interval evidence required by Section 8.
 
 ### Task 4: B03 commit — topology, RTT, and inactive-state characterization
 
+**State:** completed and published; the exact evidence is recorded at this
+task's exit.
+
 **Files:**
 
 - Create: `scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts`
@@ -2320,7 +2584,7 @@ matrix and explicit `FakeRuntimeStateRepository`/clock dependencies. It returns
 raw target and foreign pair identities plus repository counts; it never writes
 authoritative state.
 
-- [ ] **Step 1: Add RED B03 tests and run them**
+- [x] **Step 1: Add RED B03 tests and run them**
 
   Cover all session/global-row sizes, exact deterministic IDs/RTT values/version
   order, graph invariants, room-only repository results, unchanged repository
@@ -2358,7 +2622,7 @@ authoritative state.
   Expected: FAIL because current-repository filtering and the accepted B03
   matrices are absent.
 
-- [ ] **Step 2: Implement B03 and run focused GREEN checks**
+- [x] **Step 2: Implement B03 and run focused GREEN checks**
 
   ```bash
   npx vitest run packages/tests/repo/rtc-performance-baseline-harnesses.test.ts -t "RTC-B03"
@@ -2415,7 +2679,7 @@ authoritative state.
   git diff --check
   ```
 
-- [ ] **Step 3: Commit and publish B03**
+- [x] **Step 3: Commit and publish B03**
 
   ```bash
   test -z "$(git diff --cached --name-only)"
@@ -2445,632 +2709,569 @@ authoritative state.
 
   Update the draft PR with the exact B03 SHA and focused results.
 
-**Exit:** ordered commit 4/6 is published; historical probes remain untouched.
+**Completion record:** completed and published through
+[PR #193](https://github.com/intact-software-systems/ar-eye-hunter/pull/193).
+The exact reviewed feature head was
+`e7c62c00a4356d17f5d8febfcea3305edafd43d9` on merge base
+`2b8babf68b1167ce798f4907d2e61b790a87a70c`; Branch Release Gate
+[run 31543466797](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31543466797)
+succeeded. It merged as
+`39ad65b499c4bf944acfe48446ad1c334d97d37d`, tree
+`f11d95321e7bbd241d816f303f888945352160d7`. The resulting-main
+**Run Hetzner Supported Distributed Manifests**
+[run 31570814746](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31570814746)
+succeeded on that exact merge commit. Focused B03 was 1 file/9 tests; the exact
+18 foundation files were 18 files/257 tests; focused topology/runtime state was
+4 files/210 tests; configured Deno check, Prettier, changed-style, and diff
+checks passed; `npm run test:unit` passed 756 files (2 skipped), 6,872 tests (3
+skipped); `npm run test:ci` passed; `npm run build` passed; and the independent
+exact-head review had no unresolved Critical/Important finding. Issue
+[#189](https://github.com/intact-software-systems/ar-eye-hunter/issues/189)
+records the resolved historical length decision. No benchmark ran and no
+performance result was claimed.
+
+**Exit:** original ordered B03 instrumentation is merged and verified. Its
+source paths now enter the proposed Task 4A relocation; its measurement and
+evidence semantics remain frozen.
+
+### Task 4A: Establish package ownership
+
+**State:** proposed and inactive. Human approval must name the exact amended
+plan blob and the roadmap must publish the matching Task 4A reservation before
+any step below changes a file.
+
+**Purpose:** relocate every RTC/WebRTC performance tool and owning test into the
+private `packages/shared-rtc-bench/**` capability tree while preserving behavior
+and proving the new dependency direction. This task performs no structural
+cleanup beyond package ownership, test-dependency removal, explicit setup, and
+path/config integration required for the move.
+
+**Files:** exactly the Task 4A source, test, deletion, creation, and repository
+integration inventory in Section 10. No production or ontology file is in the
+write set.
+
+**Prerequisites:** PR #196 is merged; its resulting-main workflow is green; the
+exact plan blob is human-approved; the roadmap activates only Task 4A; B03's
+published evidence above is still reachable; and current `origin/main` has a
+recorded compatibility review. Main movement triggers the smallest documented
+path/contract delta, not an automatic rebase or redesign.
+
+- [ ] **Step 1: Prove the exact base, reservation, and clean branch**
+
+  Fetch current refs. Verify the approved plan blob from `origin/main`, the
+  exact human record, the roadmap activation, the complete Section 10 source
+  inventory, and a clean new `codex/shared-rtc-bench-task-4a` branch. Search
+  current issues before editing. Record any main delta's effect on package
+  ownership, production imports, ontology Task 4's three reserved paths, and
+  frozen benchmark contracts. Stop on a material contract conflict.
+
+- [ ] **Step 2: Establish architecture RED before relocation**
+
+  Create only the package skeleton/configuration, README executable-row schema,
+  and the three architecture tests named in Section 10; update only
+  `vitest.config.ts` outside the package so those tests are discoverable. Do not
+  copy source or change any other integration path yet. Run:
+
+  ```bash
+  npx vitest run --config vitest.config.ts \
+    packages/shared-rtc-bench/tests/architecture/rtc-benchmark-package-boundaries.test.ts \
+    packages/shared-rtc-bench/tests/architecture/rtc-benchmark-executable-inventory.test.ts \
+    packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts
+  ```
+
+  Expected RED: failures enumerate the current `scripts/perf/rtc*` and
+  `scripts/perf/webrtc*` implementations, prohibited test imports, and missing
+  target entries/tests. Root Vitest must discover and execute all three tests;
+  a no-tests result is an invalid RED. Unexpected passes or unrelated failures
+  mean the boundary is not proven; fix the tests, not the repository behavior.
+
+- [ ] **Step 3: Perform the one-to-one relocation and setup replacement**
+
+  Move every source through the Section 10 current-to-target table and every
+  owning test to the exact mirrored target. Add only the three narrowly named
+  benchmark setup modules. Replace:
+
+  - five topology workload imports of the shared-graph test helper with
+    `create-deterministic-rtc-topology-group-snapshot.ts`;
+  - the RTT repository workload's test fake with
+    `synthetic-rtc-rtt-runtime-state-repository.ts`; and
+  - the RTT traffic diagnostic's test cache helper with
+    `configure-rtc-rtt-traffic-cache-repositories.ts`.
+
+  Each setup owner consumes production contracts/configuration and constructs
+  inputs only. The measured graph, topology, repository filter, cache/topic, and
+  RTC operations stay production calls. Move the general state-write reason
+  policy to `scripts/perf/state-write/api-v1-state-write-regression-reasons.ts`
+  and update its exact three consumers. Delete old implementations/tests only
+  after imports point at the new owner. Create no wrapper or compatibility
+  entrypoint.
+
+- [ ] **Step 4: Update path-valued contracts and repository participation**
+
+  Update the accepted workload catalog's worker prefixes, `sourcePaths`, and
+  `configPaths` one-for-one. Preserve every workload/case/input key,
+  configuration descriptor/default, warmup/retained count, command token,
+  sample identity, cohort, schema, validation, and failure path. Change B05's
+  invalid root config provenance to the verified existing
+  `apps/rallar-black-box/playwright.config.ts`; do not execute or otherwise
+  modify B05.
+
+  Apply the exact package/root commands, `package-lock.json`, TypeScript project
+  participation, package-local Deno config, root Deno navigation, explicit
+  Vitest discovery, style-lineage manifest, path-disposition cleanup, and
+  scripts README cross-navigation in Section 10. README rows must cover every
+  executable and distinguish accepted baseline, standalone benchmark, and
+  maintained diagnostic.
+
+- [ ] **Step 5: Prove semantic parity and architecture GREEN**
+
+  Run the three architecture tests first; expected: all pass and enumerate zero
+  old executable/workload implementation, prohibited dependency, reverse
+  product import, undocumented executable, unowned test, unchecked diagnostic,
+  or diagnostic accepted-evidence route. Then run:
+
+  ```bash
+  npm --workspace @ar-eye-hunter/shared-rtc-bench run test
+  npm --workspace @ar-eye-hunter/shared-rtc-bench run typecheck
+  npm --workspace @ar-eye-hunter/shared-rtc-bench run check:deno
+  node --check packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs
+  npm run check:repo-style -- --root packages/shared-rtc-bench
+  npm run check:repo-style:changed -- origin/main
+  git diff --check
+  ```
+
+  Parity evidence must compare pre-move and post-move catalog projections,
+  frozen case/input/config matrices, sample/attempt/failure/causal-remainder
+  identities, CLI normalization and exit mapping, schemas, source/config path
+  replacements, timing start/stop placement, output confinement/create-new
+  behavior, and graph/RTT/repository/data-channel/signaling/multicast/group/
+  delivery/replay invariants. Path strings and their source/config hashes are
+  expected to differ; behavior is not. Run only deterministic tests/smokes—no
+  baseline capture or performance comparison.
+
+- [ ] **Step 6: Run repository completion gates and independent parity review**
+
+  Run, on the final uncommitted tree:
+
+  ```bash
+  npm run test:unit
+  npm run test:ci
+  npm run build
+  ```
+
+  An independent read-only reviewer must trace the move table, dependency
+  direction, exact measured production calls, timing boundaries, validation,
+  output/cleanup/failure behavior, and tests. Correct and re-run invalidated
+  gates for every Critical or Important parity finding. Record all lower
+  findings without silently broadening Task 4B.
+
+- [ ] **Step 7: Publish only the Task 4A parity layer**
+
+  Commit the exact reservation on `codex/shared-rtc-bench-task-4a`, push, and
+  open a draft follow-on PR whose parent is merged PR #196. Record commit/tree,
+  approved plan blob, base compatibility, source-move inventory, old-path
+  deletions, semantic-parity evidence, skipped benchmark capture, and issues.
+  Require Branch Release Gate success on the exact final head. Merge only after
+  review; record the resulting-main commit/tree and successful **Run Hetzner
+  Supported Distributed Manifests** run. Task 4B remains a separate follow-on
+  PR.
+
+**Rollback point:** before merge, revert the whole Task 4A commit series. After
+merge, use a separately reviewed revert of package creation, every move, catalog
+path update, test move, command/config integration, state-write policy move, and
+README navigation as one unit. Never restore only old entrypoints or keep both
+trees.
+
+**Exit:** one private package owns every RTC/WebRTC performance program and its
+tests; all parity/architecture/repository/publication gates are green at exact
+recorded SHAs; no product or ontology behavior changed; Task 4B and B04 remain
+held.
+
+### Task 4B: Complete Code and Legacy Review
+
+**State:** proposed and inactive until Task 4A is merged and revalidated.
+
+**Purpose:** review the organized package as one capability, remediate genuine
+ownership/readability/legacy findings, and independently re-review the exact
+corrected head. A clean move, formatter, test suite, or warning checker cannot
+satisfy this milestone.
+
+**Files:** exact Task 4B reservation in Section 10. Modify existing package
+owners; create the three named capability tests; delete the combined workload
+test. No production, app, ontology, scripts, root-config, or other package path
+is authorized.
+
+**Prerequisites:** Task 4A's feature and resulting-main workflow evidence is
+complete; its exact package inventory is on current `main`; parity still passes;
+and a fresh compatibility review finds no material default-branch invalidation.
+
+#### Complete initial legacy baseline
+
+Review starts with every candidate below; newly discovered in-scope candidates
+are appended before correction. At exit each row has exactly one final
+disposition: `canonical`, `refactored`, `deleted-superseded`, or
+`retained-pending-human-approval` followed by exact human approval.
+
+| ID              | Candidate                                                                                                                | Required review decision                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RTC-LEGACY-01` | Accepted framework historically hidden in `scripts/perf/rtc-baseline/**`                                                 | Verify Task 4A package owners are canonical or record the exact remediation.                                                                                                     |
+| `RTC-LEGACY-02` | Accepted executables historically scattered at `scripts/perf/**` root                                                    | Verify every executable has one capability owner/README row or delete a superseded duplicate.                                                                                    |
+| `RTC-LEGACY-03` | Topology/repository/traffic setup formerly imported from `packages/tests/**`                                             | Verify benchmark-owned setup constructs inputs only and no copied production behavior remains.                                                                                   |
+| `RTC-LEGACY-04` | Thirteen repeated accepted-worker/diagnostic shells                                                                      | Identify the real accepted-worker protocol boundary; centralize only common identity/failure/output mechanics and leave workload policy/measurement/validation visible.          |
+| `RTC-LEGACY-05` | Baseline contract, artifact, acceptance, finalization, reader, and runtime modules shaped around the former 400-line cap | Review coherent ownership, exported responsibility count, cognitive load, dataflow, and failures under the current standard; refactor only on real boundaries.                   |
+| `RTC-LEGACY-06` | Combined 824-line benchmark harness test                                                                                 | Replace with the exact signaling, data-channel, and topology capability tests in Section 10; preserve all semantic/adversarial assertions and remove inventory-only duplication. |
+| `RTC-LEGACY-07` | No-RTT room-graph historical diagnostic                                                                                  | Trace current production relevance and choose canonical or deleted-superseded.                                                                                                   |
+| `RTC-LEGACY-08` | RTT group-scan historical diagnostic                                                                                     | Trace current production relevance and choose canonical or deleted-superseded.                                                                                                   |
+| `RTC-LEGACY-09` | RTT traffic historical diagnostic                                                                                        | Trace current publication/cache behavior and choose canonical or deleted-superseded; simulated or disconnected behavior cannot remain evidence.                                  |
+| `RTC-LEGACY-10` | General state-write regression policy formerly under RTC topology                                                        | Verify the Task 4A state-write ownership is canonical and that the RTC package has no import back to it.                                                                         |
+| `RTC-LEGACY-11` | RTC executable catalog historically duplicated in `scripts/perf/README.md`                                               | Verify one package navigation map is canonical and the scripts README has only cross-navigation.                                                                                 |
+| `RTC-LEGACY-12` | Topology delivery and replay programs outside the accepted baseline lifecycle                                            | Verify their independent command/contract/output/test ownership and remove duplicated worker or artifact shells only when semantics truly match.                                 |
+
+- [ ] **Step 1: Trace every executable end to end**
+
+  For every README executable row, record: command entry and CLI grammar;
+  deterministic setup owner; exact measured production package/symbol; timing
+  start/stop; validation and first-failure owner; output path/schema/confinement;
+  cleanup on success, validation failure, thrown error, write failure, and
+  partial setup; owning tests; direct dependencies; program class; and legacy
+  candidate/disposition. Trace the actual call path from command to result—do
+  not infer it from names or catalog metadata.
+
+- [ ] **Step 2: Review structure and human navigation**
+
+  Review package/README navigation, mixed responsibilities, large contract and
+  evidence modules, duplicated accepted-worker/diagnostic and topology worker
+  shells, hidden setup/globals, timing contamination, simulated/copied product
+  behavior, mutation/cleanup/failure paths, obsolete inventory assertions,
+  duplicate/superseded tools, and all three former historical diagnostics.
+  Apply the current repository cognitive-load, runtime-export, function,
+  decision-depth, type-ownership, and post-discount navigation standards. Never
+  use 400 physical lines as an acceptance or split criterion.
+
+- [ ] **Step 3: Separate the combined benchmark test by capability**
+
+  Create the exact signaling, data-channel, and topology tests from Section 10.
+  Move—not weaken or duplicate—every current B01/B02/B03 happy-path,
+  adversarial-validation, exact-identity, failure, remainder, timing-boundary,
+  and inventory assertion to its owning capability. Keep cross-capability
+  protocol assertions with the baseline acceptance owner. Delete the combined
+  test and prove no semantic assertion disappeared by reviewing the old/new
+  assertion inventory and focused failures.
+
+- [ ] **Step 4: Correct all Critical and Important findings**
+
+  Correct each finding within existing exact owners. Preserve frozen inputs,
+  identities, grammar, timing, schemas, validation, output confinement, and
+  failure accounting. If a correction cannot preserve one, stop for a specific
+  human plan decision. Run the owning focused test after each correction and
+  the package test/typecheck/Deno/style/diff gates after each correction batch.
+
+- [ ] **Step 5: Finalize the legacy ledger and human retention records**
+
+  Give every baseline/discovered candidate exactly one disposition with file,
+  symbol/executable, evidence, rationale, tests, and removal/review trigger.
+  `retained-pending-human-approval` is not an exit disposition until an OWNER
+  record names the exact item and exact Task 4B head using:
+
+  ```text
+  Human approval: retain shared-rtc-bench legacy item <ID> at Task 4B head <full SHA>; rationale: <specific reason>; review/removal trigger: <specific trigger>.
+  ```
+
+  Absent that exact approval, refactor or delete the item. Never use one blanket
+  approval for multiple candidates.
+
+- [ ] **Step 6: Independently re-review every correction**
+
+  A reviewer independent of implementation repeats every executable trace and
+  verifies every Critical/Important finding against the exact corrected head.
+  Exit requires zero unresolved Critical and zero unresolved Important finding,
+  a complete legacy ledger, exact approval for each retained item, and no new
+  unclassified candidate. Re-open and correct any failed re-review.
+
+- [ ] **Step 7: Run final gates and publish the separate review layer**
+
+  Run the Section 7 package gates and, on the final uncommitted tree,
+  `npm run test:unit`, `npm run test:ci`, and `npm run build`. Publish a draft
+  Task 4B PR based on merged Task 4A, with exact head/tree, full review trace,
+  finding/correction/re-review ledger, legacy dispositions, approvals, and gate
+  output. Require exact-head Branch Release Gate success, merge, resulting-main
+  compatibility review, and exact resulting-main **Run Hetzner Supported
+  Distributed Manifests** success.
+
+**Rollback point:** revert Task 4B corrections as their reviewable commits while
+leaving the Task 4A package/parity checkpoint intact. If a revert restores an
+Important/Critical or retained-legacy condition, the review milestone becomes
+incomplete until corrected and re-reviewed.
+
+**Exit:** every executable is human-traceable, the combined test is separated,
+the complete legacy ledger has one final disposition per item, every retained
+item has exact human approval, zero Critical/Important finding remains after
+independent re-review, and all local/remote publication gates pass. Only then
+may Task 5/B04 be revalidated for activation.
 
 ### Task 5: B04 commit — multicast and group coordination
 
+**State:** held. Revalidate and activate only after Task 4B is merged, its
+resulting-main workflow is green, and the current main compatibility review
+preserves the frozen B04 contract.
+
 **Files:**
 
-- Modify: `scripts/perf/rtc-multicast-serialization-bench.ts`
-- Modify: `scripts/perf/webrtc-group-cache-fallback-bench.ts`
-- Modify: `scripts/perf/webrtc-group-manager-state-bench.ts`
-- Modify: `scripts/perf/webrtc-group-manager-peer-owners-bench.ts`
-- Modify: `scripts/perf/webrtc-heartbeat-callback-churn-bench.ts`
-- Modify: `packages/tests/repo/rtc-performance-baseline-harnesses.test.ts`
+- Modify:
+  `packages/shared-rtc-bench/workloads/multicast/rtc-multicast-serialization-bench.ts`
+- Modify:
+  `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-cache-fallback-bench.ts`
+- Modify:
+  `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-state-bench.ts`
+- Modify:
+  `packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts`
+- Modify:
+  `packages/shared-rtc-bench/workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts`
+- Modify:
+  `packages/shared-rtc-bench/tests/workloads/multicast/rtc-multicast-serialization-bench.test.ts`
+- Modify:
+  `packages/shared-rtc-bench/tests/workloads/group-coordination/webrtc-group-coordination-benches.test.ts`
 
-**Interfaces:** These harnesses consume the frozen B04 matrices from the shared
-contracts and return raw transport-message, serialization, byte, lookup,
-ownership, and callback evidence. They do not move production behavior into a
-benchmark abstraction.
+**Interfaces:** These package-owned workloads consume the frozen B04 catalog
+matrices and return raw transport-message, serialization, byte, lookup,
+ownership, and callback evidence. They invoke authoritative
+`packages/shared/**` behavior directly and do not move or copy production
+behavior into a benchmark abstraction.
 
-- [ ] **Step 1: Add RED B04 tests and run them**
+- [ ] **Step 1: Add focused RED B04 acceptance tests**
 
-  Cover every peer/payload cross product and fixed group/cache/heartbeat input,
-  exact raw counters, byte identity, bounded values, full sample identities,
-  diagnostic create-new behavior, and failure persistence.
+  Extend the two capability tests to cover every peer/payload cross product and
+  fixed group/cache/heartbeat input, exact counters and byte identity, bounded
+  values, full sample identities, diagnostic create-new behavior, accepted
+  worker grammar, failure persistence, and causal remainder. Run:
 
   ```bash
-  npx vitest run packages/tests/repo/rtc-performance-baseline-harnesses.test.ts -t "RTC-B04"
-
-  npx vitest run \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts
+  npx vitest run --config vitest.config.ts \
+    packages/shared-rtc-bench/tests/workloads/multicast/rtc-multicast-serialization-bench.test.ts \
+    packages/shared-rtc-bench/tests/workloads/group-coordination/webrtc-group-coordination-benches.test.ts
   ```
 
-  Expected: FAIL because the existing scripts do not emit the accepted B04
-  envelope or reject workload weakening.
+  Expected: fail only because B04 accepted-envelope behavior is absent; existing
+  Task 4A diagnostic semantics remain green.
 
-- [ ] **Step 2: Implement B04 and run focused GREEN checks**
+- [ ] **Step 2: Implement B04 through the existing package protocol**
+
+  Add accepted-worker integration without changing the frozen diagnostic
+  inputs, measured production operations, timing boundaries, validation,
+  output confinement, or evidence schema. Keep workload matrices and validation
+  with their capability owners; use only the Task 4B-reviewed shared worker
+  protocol boundary.
+
+- [ ] **Step 3: Run focused and package GREEN gates**
 
   ```bash
-  npx vitest run packages/tests/repo/rtc-performance-baseline-harnesses.test.ts -t "RTC-B04"
-
-  npx vitest run \
+  npx vitest run --config vitest.config.ts \
+    packages/shared-rtc-bench/tests/workloads/multicast/rtc-multicast-serialization-bench.test.ts \
+    packages/shared-rtc-bench/tests/workloads/group-coordination/webrtc-group-coordination-benches.test.ts \
     packages/tests/shared/webrtc-group-manager.test.ts \
     packages/tests/shared/webrtc-group-service.test.ts \
     packages/tests/shared/webrtc-heartbeat.test.ts \
     packages/tests/shared/webrtc-overlay-services.test.ts \
     packages/tests/shared/multicast-policy-integration.test.ts
 
-  deno check --config apps/api-v1/deno.json \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts
-
-  set -e
-  for RTC_TYPESCRIPT_FILE in \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts
-  do
-    RTC_PHYSICAL_LINES="$(wc -l < "${RTC_TYPESCRIPT_FILE}")"
-    test "${RTC_PHYSICAL_LINES}" -le 400
-  done
-
+  npm --workspace @ar-eye-hunter/shared-rtc-bench run check
+  npm run check:repo-style -- --root packages/shared-rtc-bench
+  npm run check:repo-style:changed -- origin/main
   git diff --check
   ```
 
-- [ ] **Step 3: Commit and publish B04**
+  Expected: all exit 0; architecture tests still prove the package boundary and
+  production dependency direction.
 
-  ```bash
-  test -z "$(git diff --cached --name-only)"
-  RTC_B04_EXPECTED_PATHS="$(printf '%s\n' \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts | sort)"
-  git add \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts
-  test "$(git status --porcelain=v1 --untracked-files=all | cut -c4- | sort -u)" = "${RTC_B04_EXPECTED_PATHS}"
-  test "$(git diff --cached --name-only | sort)" = "${RTC_B04_EXPECTED_PATHS}"
-  git diff --cached --check
-  git commit -m "perf(rtc): add B04 coordination baseline instrumentation"
-  test -z "$(git status --porcelain)"
-  git push
-  ```
+- [ ] **Step 4: Complete repository gates, review, and publication**
 
-  Update the draft PR with the exact B04 SHA and focused results.
+  Run `npm run test:unit`, `npm run test:ci`, and `npm run build` on the
+  final uncommitted tree. Independently review both command-to-result traces and
+  correct/re-review every Critical or Important finding. Commit only the seven
+  listed paths on a fresh B04 branch, push, update/open its draft PR, require
+  Branch Release Gate success on the exact head, merge after review, and record
+  the resulting-main commit/tree and successful **Run Hetzner Supported
+  Distributed Manifests** run.
 
-**Exit:** ordered commit 5/6 is published; production multicast/group code is
-unchanged.
+**Rollback point:** revert the B04 accepted-worker/test commit while preserving
+the reviewed Task 4A/4B package and diagnostic behavior.
+
+**Exit:** B04 instrumentation is published from the reviewed package; production
+multicast/group code is unchanged and no performance result is claimed.
 
 ### Task 6: B05 commit — native Chromium data-channel lifecycle
 
+**State:** held until Task 5/B04 is published and the B01-B05 branch order is
+re-established from the reviewed package.
+
 **Files:**
 
-- Modify: `scripts/perf/rtc-data-channel-browser-soak.mjs`
-- Modify: `packages/tests/repo/rtc-performance-baseline-harnesses.test.ts`
+- Modify:
+  `packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs`
+- Modify:
+  `packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts`
 
 **Interfaces:** Diagnostic mode preserves `--iterations` and `--out`. The Node
 entrypoint's `--capture=raw-evidence` mode requires the validated baseline ID
 and explicit confined per-outer raw-output path, reads the immutable manifest,
-and permits no process-count override. It launches each outer attempt as its
-own fresh Chromium process and writes exactly one staged raw file whose filename
+and permits no process-count override. It launches each outer attempt as a
+fresh Chromium process and writes exactly one staged raw file whose filename
 encodes workload `RTC-B05`, case `browser-data-channel-lifecycle`, input
-`iterations-25`, intended phase, and outer ordinal. A primary has one discarded
-plus five retained outer files; a validated repeat has one plus ten. The Deno
-`record-browser` grammar requires those same five locator fields, the Node
-producer status, and the staged path; acceptance resolves the locator before
-read/decode/reconciliation failure, owns exact sample/failure/not-run writes,
-and cannot accept otherwise-valid raw JSON from a nonzero producer.
+`iterations-25`, intended phase, and outer ordinal. A primary has one
+discarded plus five retained outer files; a validated repeat has one plus ten.
+The Deno `record-browser` grammar requires the same locator, producer status,
+and staged path; acceptance resolves identity before read/decode/reconciliation,
+owns exact sample/failure/not-run writes, and rejects otherwise valid raw JSON
+from a nonzero producer.
 
-- [ ] **Step 1: Add RED B05 tests and run them**
+- [ ] **Step 1: Add semantic RED without launching Chromium**
 
-  Cover argument bounds, accepted workload immutability, primary 1+5 and repeat
-  1+10 process identities derived only from the immutable manifest, 25 unique
-  iteration identities per process, per-iteration timings, final
-  closure/error/heap invariants, one exact confined create-new staged filename
-  per outer attempt containing all five locator fields, complete
-  `record-browser` grammar/manifest/payload identity equality, create-new
-  diagnostics, nonzero producer-status precedence, and failed-process plus
-  causally not-run remainder retention.
+  Cover bounds, accepted workload immutability, primary/repeat process
+  identities, 25 unique iteration identities per process, per-iteration timing,
+  closure/error/heap invariants, exact confined create-new filenames, complete
+  bridge/manifest/payload identity equality, producer-status precedence, and
+  failed-process/causal-remainder accounting. Use injected spawn/browser fakes.
 
   ```bash
-  npx vitest run packages/tests/repo/rtc-performance-baseline-harnesses.test.ts -t "RTC-B05"
-
-  npx vitest run \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts
+  npx vitest run --config vitest.config.ts \
+    packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts
   ```
 
-  Expected: FAIL because the browser soak lacks raw process/sample evidence,
-  per-iteration durations, and the accepted `record-browser` bridge.
+  Expected: fail only on missing B05 accepted raw-evidence/bridge behavior.
 
-- [ ] **Step 2: Implement B05 and run GREEN non-capture checks**
+- [ ] **Step 2: Implement B05 and run non-capture GREEN gates**
 
-  Do not launch Chromium in this instrumentation task. Use injected/spawn fakes
-  in the semantic tests and reserve native execution for Task 9.
+  Preserve the Task 4A diagnostic, measured native operation, path confinement,
+  and verified `apps/rallar-black-box/playwright.config.ts` provenance. Do not
+  launch Chromium; native execution remains Task 9.
 
   ```bash
-  npx vitest run packages/tests/repo/rtc-performance-baseline-harnesses.test.ts -t "RTC-B05"
-
-  node --check scripts/perf/rtc-data-channel-browser-soak.mjs
-  test "$(wc -l < packages/tests/repo/rtc-performance-baseline-harnesses.test.ts)" -le 400
+  npx vitest run --config vitest.config.ts \
+    packages/shared-rtc-bench/tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts
+  node --check packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs
+  npm --workspace @ar-eye-hunter/shared-rtc-bench run check
+  npm run check:repo-style -- --root packages/shared-rtc-bench
+  npm run check:repo-style:changed -- origin/main
   git diff --check
   ```
 
-- [ ] **Step 3: Commit and publish B05**
+- [ ] **Step 3: Complete repository gates, review, and publication**
 
-  ```bash
-  test -z "$(git diff --cached --name-only)"
-  RTC_B05_EXPECTED_PATHS="$(printf '%s\n' \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    scripts/perf/rtc-data-channel-browser-soak.mjs | sort)"
-  git add \
-    scripts/perf/rtc-data-channel-browser-soak.mjs \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts
-  test "$(git status --porcelain=v1 --untracked-files=all | cut -c4- | sort -u)" = "${RTC_B05_EXPECTED_PATHS}"
-  test "$(git diff --cached --name-only | sort)" = "${RTC_B05_EXPECTED_PATHS}"
-  git diff --cached --check
-  git commit -m "perf(rtc): add B05 native browser baseline instrumentation"
-  test -z "$(git status --porcelain)"
-  git push
-  ```
+  Run `npm run test:unit`, `npm run test:ci`, and `npm run build` on the
+  final uncommitted tree. Independently review the Node command, raw staging,
+  Deno bridge, validation, cleanup, and failure trace. Correct/re-review every
+  Critical or Important finding. Commit only the two listed paths, push the B05
+  branch/PR, require Branch Release Gate success on the exact head, merge after
+  review, and record the resulting-main commit/tree and successful **Run Hetzner
+  Supported Distributed Manifests** run.
 
-  Update the draft PR with the exact B05 SHA and non-capture validation.
+**Rollback point:** revert the B05 raw-evidence/bridge commit while preserving
+the Task 4A/4B package and existing diagnostic mode.
 
-**Exit:** ordered commit 6/6 is the candidate B01-B05 instrumentation head; it
-is not a measurement anchor until Task 7 passes unchanged.
+**Exit:** B05 instrumentation is published; it is not a measurement anchor until
+Task 7 passes unchanged and no native measurement has yet run.
 
 ### Task 7: Gate and freeze the B01-B05 measurement anchor
 
-**Files:** No changes after the final gate begins.
+**State:** held until Tasks 4A, 4B, 5, and 6 are merged and each required
+resulting-main workflow is green.
 
-- [ ] **Step 1: Verify exact scope and formatting**
+**Files:** no file changes and no artifact publication.
+
+**Prerequisites:** current `origin/main` contains the exact approved plan,
+reviewed package organization, complete Task 4B review record, and published
+B01-B05 instrumentation. Record each merge/feature SHA and verify ancestry.
+Any later change to a package source, package config, accepted catalog,
+production symbol on a measured call path, root runtime command, or relevant
+dependency invalidates the gate and requires a new candidate anchor.
+
+- [ ] **Step 1: Reconcile and pin the clean candidate**
 
   ```bash
   git fetch origin main
-  export RTC_B01_B05_BASE="$(git merge-base origin/main HEAD)"
-  export RTC_B01_B05_HEAD="$(git rev-parse HEAD)"
-  export RTC_B01_B05_TREE="$(git rev-parse HEAD^{tree})"
-  export RTC_B01_B05_ANCHOR="${RTC_B01_B05_HEAD}"
-  export RTC_B01_B05_ANCHOR_TREE="${RTC_B01_B05_TREE}"
-  RTC_B01_B05_EXPECTED_PATHS="$(printf '%s\n' \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-    scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-    scripts/perf/rtc-data-channel-browser-soak.mjs \
-    scripts/perf/rtc-data-channel-close-retention-bench.ts \
-    scripts/perf/rtc-data-channel-error-reference-bench.ts \
-    scripts/perf/rtc-data-channel-replace-key-bench.ts \
-    scripts/perf/rtc-ice-candidate-queue-bench.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-    scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-    scripts/perf/rtc-room-graph-rtt-bench.ts \
-    scripts/perf/rtc-topology-inactive-churn-bench.ts \
-    scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-    scripts/perf/rtc-topology-star-bench.ts \
-    scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts | sort)"
+  git switch --detach origin/main
   test -z "$(git status --porcelain)"
-  test "$(git diff --name-only "${RTC_B01_B05_BASE}" HEAD | sort)" = "${RTC_B01_B05_EXPECTED_PATHS}"
-  test "$(git rev-list --count "${RTC_B01_B05_BASE}"..HEAD)" -eq 6
-  test "$(git log --reverse --format=%s "${RTC_B01_B05_BASE}"..HEAD)" = "$(printf '%s\n' \
-    'perf(rtc): add baseline evidence foundation' \
-    'perf(rtc): add B01 signaling baseline instrumentation' \
-    'perf(rtc): add B02 data-channel baseline instrumentation' \
-    'perf(rtc): add B03 topology baseline instrumentation' \
-    'perf(rtc): add B04 coordination baseline instrumentation' \
-    'perf(rtc): add B05 native browser baseline instrumentation')"
-  npx prettier --check \
-    docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-    scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-    scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-    scripts/perf/rtc-ice-candidate-queue-bench.ts \
-    scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-    scripts/perf/rtc-data-channel-replace-key-bench.ts \
-    scripts/perf/rtc-data-channel-close-retention-bench.ts \
-    scripts/perf/rtc-data-channel-error-reference-bench.ts \
-    scripts/perf/rtc-topology-star-bench.ts \
-    scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-    scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-    scripts/perf/rtc-room-graph-rtt-bench.ts \
-    scripts/perf/rtc-topology-inactive-churn-bench.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts \
-    scripts/perf/rtc-data-channel-browser-soak.mjs
-
-  set -e
-  for RTC_TYPESCRIPT_FILE in \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-    scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-    scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-    scripts/perf/rtc-ice-candidate-queue-bench.ts \
-    scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-    scripts/perf/rtc-data-channel-replace-key-bench.ts \
-    scripts/perf/rtc-data-channel-close-retention-bench.ts \
-    scripts/perf/rtc-data-channel-error-reference-bench.ts \
-    scripts/perf/rtc-topology-star-bench.ts \
-    scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-    scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-    scripts/perf/rtc-room-graph-rtt-bench.ts \
-    scripts/perf/rtc-topology-inactive-churn-bench.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts
-  do
-    RTC_PHYSICAL_LINES="$(wc -l < "${RTC_TYPESCRIPT_FILE}")"
-    test "${RTC_PHYSICAL_LINES}" -le 400
-  done
-
-  git diff --check "${RTC_B01_B05_BASE}" HEAD
-  npm run check:repo-style:changed -- "${RTC_B01_B05_BASE}"
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  test -z "$(git status --porcelain)"
-  printf 'export RTC_B01_B05_BASE=%q\n' "${RTC_B01_B05_BASE}"
-  printf 'export RTC_B01_B05_HEAD=%q\n' "${RTC_B01_B05_HEAD}"
-  printf 'export RTC_B01_B05_TREE=%q\n' "${RTC_B01_B05_TREE}"
-  printf 'export RTC_B01_B05_ANCHOR=%q\n' "${RTC_B01_B05_ANCHOR}"
-  printf 'export RTC_B01_B05_ANCHOR_TREE=%q\n' "${RTC_B01_B05_ANCHOR_TREE}"
+  RTC_B01_B05_ANCHOR_HEAD="$(git rev-parse HEAD)"
+  RTC_B01_B05_ANCHOR_TREE="$(git rev-parse HEAD^{tree})"
+  RTC_B01_B05_PLAN_BLOB="$(git rev-parse HEAD:docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md)"
+  test -n "${RTC_B01_B05_ANCHOR_HEAD}"
+  test -n "${RTC_B01_B05_ANCHOR_TREE}"
+  test -n "${RTC_B01_B05_PLAN_BLOB}"
   ```
 
-  Export the recorded `RTC_B01_B05_HEAD` and `RTC_B01_B05_TREE` into each later
-  Task 7 shell. The exact equality above must contain every and only active
-  B01-B05 implementation path. Any
-  formatter change invalidates earlier results: commit it into the owning slice,
-  preserve the six-commit order, and restart Task 7.
+  Verify the Task 4A, Task 4B, B04, and B05 resulting-main commits are ancestors
+  of this head and their exact required workflows succeeded. Record a current
+  compatibility review for production/source changes since each merge. Stop if
+  a frozen input, identity, grammar, timing boundary, validation rule, schema,
+  output rule, failure rule, or package dependency direction changed.
 
-- [ ] **Step 2: Run the exact instrumentation and correctness gates**
+- [ ] **Step 2: Run exact package and production correctness gates**
 
   ```bash
-  : "${RTC_B01_B05_HEAD:?export the immutable Task 7 Step 1 head SHA}"
-  : "${RTC_B01_B05_TREE:?export the immutable Task 7 Step 1 tree SHA}"
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  test -z "$(git status --porcelain)"
+  npm --workspace @ar-eye-hunter/shared-rtc-bench run check
+  node --check packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs
 
-  deno check --config apps/api-v1/deno.json \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-    scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-    scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-    scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-    scripts/perf/rtc-ice-candidate-queue-bench.ts \
-    scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-    scripts/perf/rtc-data-channel-replace-key-bench.ts \
-    scripts/perf/rtc-data-channel-close-retention-bench.ts \
-    scripts/perf/rtc-data-channel-error-reference-bench.ts \
-    scripts/perf/rtc-topology-star-bench.ts \
-    scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-    scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-    scripts/perf/rtc-room-graph-rtt-bench.ts \
-    scripts/perf/rtc-topology-inactive-churn-bench.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts
-
-  npx vitest run \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts
-
-  node --check scripts/perf/rtc-data-channel-browser-soak.mjs
-
-  npx vitest run \
-    packages/tests/shared/qrtc-peer-connection.test.ts \
+  npx vitest run --config vitest.config.ts \
     packages/tests/shared/qrtc-data-channel.test.ts \
     packages/tests/shared/rtc-data-channel-send-queue.test.ts \
-    packages/tests/shared/webrtc-connection-service.test.ts \
+    packages/tests/shared/qrtc-peer-connection.test.ts \
     packages/tests/shared/webrtc-group-manager.test.ts \
     packages/tests/shared/webrtc-group-service.test.ts \
     packages/tests/shared/webrtc-heartbeat.test.ts \
-    packages/tests/shared/rtc-rtt-reporting-policy.test.ts \
     packages/tests/shared/webrtc-overlay-services.test.ts \
     packages/tests/shared/multicast-policy-integration.test.ts \
-    packages/tests/shared/websocket-webrtc.test.ts
-
-  npx vitest run \
-    packages/tests/shared-graph/group-topology-create-services.test.ts \
-    packages/tests/shared-graph/group-topology-validation.test.ts \
     packages/tests/shared-server/rallar-rtc-topology-service.test.ts \
-    packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts \
-    packages/tests/shared-server/rtc-topology-mutations.test.ts \
-    packages/tests/shared-server/rtc-topology-outbox-work.test.ts \
-    packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts \
-    packages/tests/shared-server/rtc-topology-stale-publication.test.ts \
-    packages/tests/shared-server/rtc-topology-ws-outbox-entry.test.ts
+    packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts
 
-  npx tsc -p packages/shared/tsconfig.json --noEmit
-  npx tsc -p packages/shared-web/tsconfig.json --noEmit
-  npx tsc -p packages/shared-server/tsconfig.json --noEmit
-  cd apps/api-v1
-  deno task check
-  cd ../..
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
+  npm run check:repo-style -- --root packages/shared-rtc-bench
+  npm run check:repo-style:changed -- origin/main
+  git diff --check
   test -z "$(git status --porcelain)"
   ```
 
-- [ ] **Step 3: Run full local publication gates on the unchanged head**
+  Expected: all exit 0. The package tests must include architecture, baseline,
+  every accepted workload, standalone delivery/replay, and maintained
+  diagnostics. No benchmark, browser process, service, or remote workflow is
+  started by this step.
+
+- [ ] **Step 3: Run final repository gates on the unchanged candidate**
 
   ```bash
-  : "${RTC_B01_B05_HEAD:?export the immutable Task 7 Step 1 head SHA}"
-  : "${RTC_B01_B05_TREE:?export the immutable Task 7 Step 1 tree SHA}"
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  test -z "$(git status --porcelain)"
-  npm run test:repo-governance
   npm run test:unit
   npm run test:ci
   npm run build
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
+  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_ANCHOR_HEAD}"
+  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_ANCHOR_TREE}"
   test -z "$(git status --porcelain)"
   ```
 
-  Record exact pass/fail/skipped status. Any content change restarts every
-  command in Task 7.
+  Record exact results and every configured skip. Independently review the
+  complete command/catalog-to-production trace and the frozen evidence
+  lifecycle at this exact head. Zero Critical/Important finding may remain.
 
-- [ ] **Step 4: Publish and require Branch Release Gate on this exact head**
+- [ ] **Step 4: Freeze the anchor record without changing the tree**
 
-  ```bash
-  : "${RTC_B01_B05_HEAD:?export the immutable Task 7 Step 1 head SHA}"
-  : "${RTC_B01_B05_TREE:?export the immutable Task 7 Step 1 tree SHA}"
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  test -z "$(git status --porcelain)"
-  git push
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  set +e
-  gh pr checks --watch --fail-fast=false
-  RTC_B01_B05_PR_CHECKS_STATUS="$?"
-  set -e
-  : "${RTC_B01_B05_BRANCH_GATE_RUN:?export the exact successful Branch Release Gate run ID}"
-  : "${RTC_B01_B05_BRANCH_GATE_ATTEMPT:?export the exact successful run attempt}"
-  : "${RTC_B01_B05_BRANCH_GATE_JOB:?export the exact successful Release Gate job ID}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B01_B05_HEAD}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B01_B05_BRANCH_GATE_JOB}" --jq .run_id)" = "${RTC_B01_B05_BRANCH_GATE_RUN}"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B01_B05_BRANCH_GATE_JOB}" --jq .conclusion)" = "success"
-  echo "overall PR checks exit: ${RTC_B01_B05_PR_CHECKS_STATUS} (record every non-Branch-Release failure separately)"
-  test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  test -z "$(git status --porcelain)"
-  ```
+  Record the exact head, tree, plan blob, package lock hash, Deno/runtime/browser
+  versions, package test results, repository gates, review record, and required
+  resulting-main workflow URL. Verify the catalog source/config paths all exist,
+  every hash input is confined to the repository, B05 names
+  `apps/rallar-black-box/playwright.config.ts`, and no old RTC benchmark
+  implementation exists under `scripts/**`.
 
-  Update the draft PR with the exact head/tree, six-commit map, all local
-  results, and the exact Branch Release Gate run, attempt, job, verified head
-  SHA, and conclusion. Ignore feature-branch provider deployment failures when
-  they are not part of Branch Release Gate.
+**Rollback point:** there is no Task 7 code to revert. A failed or stale gate
+invalidates the candidate record; repair through the owning earlier task and
+repeat Task 7 on a new exact head/tree.
 
-**Exit:** the unchanged final head is the B01-B05 measurement anchor. No later
-B06 commit or artifact may redefine it.
+**Exit:** one immutable, clean, published B01-B05 measurement anchor is fully
+gated and traceable. It authorizes only the capture tasks already defined below;
+it is not itself a performance result or optimization authorization.
 
 ### Task 8: Capture B01-B04 on the E1 anchor
+
+**Organization prerequisite:** use only the exact clean Task 7 anchor after
+Tasks 4A and 4B have merged and been revalidated. All catalog source/config
+paths must resolve under the reviewed package before initialization; a moved or
+changed anchor returns to Task 7.
 
 **Files:** Create only ignored `tmp/perf/rtc-baseline/**` evidence.
 
@@ -3104,11 +3305,11 @@ B06 commit or artifact may redefine it.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e1-local'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e1-local"
   deno run \
-    --config apps/api-v1/deno.json \
+    --config packages/shared-rtc-bench/deno.json \
     --allow-read \
     --allow-write=tmp/perf/rtc-baseline \
     --allow-run=git,node,npm,deno,uname,sysctl \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
+    packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts \
     initialize \
     --baseline-id="${RTC_BASELINE_ID}" \
     --workloads=RTC-B01,RTC-B02,RTC-B03,RTC-B04
@@ -3129,13 +3330,13 @@ B06 commit or artifact may redefine it.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e1-local'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e1-local"
   set +e
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B01
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B01
   RTC_B01_CAPTURE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B02
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B02
   RTC_B02_CAPTURE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B03
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B03
   RTC_B03_CAPTURE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B04
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B04
   RTC_B04_CAPTURE_STATUS="$?"
   set -e
   printf 'export RTC_B01_CAPTURE_STATUS=%q\n' "${RTC_B01_CAPTURE_STATUS}"
@@ -3161,9 +3362,9 @@ B06 commit or artifact may redefine it.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e1-local'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e1-local"
   set +e
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
   RTC_E1_FINALIZE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
   RTC_E1_VALIDATE_STATUS="$?"
   set -e
 
@@ -3191,21 +3392,21 @@ B06 commit or artifact may redefine it.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e1-local'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e1-local"
   set +e
-  RTC_E1_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
+  RTC_E1_REPEAT_WORKLOADS="$(deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
   RTC_E1_REPEAT_REQUIRED_STATUS="$?"
   set -e
 
   if [ "${RTC_E1_REPEAT_REQUIRED_STATUS}" -eq 0 ]; then
     RTC_E1_PRIMARY_ID="${RTC_BASELINE_ID}"
     RTC_BASELINE_ID="${RTC_E1_PRIMARY_ID}-repeat-01"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads="${RTC_E1_REPEAT_WORKLOADS}" --repeat-of="${RTC_E1_PRIMARY_ID}" --retained-sample-multiplier=2
+    deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads="${RTC_E1_REPEAT_WORKLOADS}" --repeat-of="${RTC_E1_PRIMARY_ID}" --retained-sample-multiplier=2
 
     RTC_E1_REPEAT_CAPTURE_STATUS=0
     for RTC_E1_REPEAT_WORKLOAD in RTC-B01 RTC-B02 RTC-B03 RTC-B04; do
       case ",${RTC_E1_REPEAT_WORKLOADS}," in
         *,"${RTC_E1_REPEAT_WORKLOAD}",*)
           set +e
-          deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload="${RTC_E1_REPEAT_WORKLOAD}"
+          deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts capture --baseline-id="${RTC_BASELINE_ID}" --workload="${RTC_E1_REPEAT_WORKLOAD}"
           RTC_E1_REPEAT_WORKLOAD_STATUS="$?"
           set -e
           if [ "${RTC_E1_REPEAT_WORKLOAD_STATUS}" -ne 0 ]; then RTC_E1_REPEAT_CAPTURE_STATUS=1; fi
@@ -3214,9 +3415,9 @@ B06 commit or artifact may redefine it.
     done
 
     set +e
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
     RTC_E1_REPEAT_FINALIZE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
     RTC_E1_REPEAT_VALIDATE_STATUS="$?"
     set -e
 
@@ -3236,6 +3437,11 @@ B06 commit or artifact may redefine it.
 evidence remains ignored and whose summary preserves every attempt.
 
 ### Task 9: Capture B05 on the distinct E2 anchor
+
+**Organization prerequisite:** use only the unchanged exact Task 7 anchor and
+the package-owned B05 entrypoint. Verify the catalog's config hash names the
+existing `apps/rallar-black-box/playwright.config.ts`; do not fall back to the
+historical nonexistent root config path.
 
 **Files:** Create only ignored `tmp/perf/rtc-baseline/**` evidence.
 
@@ -3258,18 +3464,18 @@ evidence remains ignored and whose summary preserves every attempt.
   RTC_B05_CASE_ID="browser-data-channel-lifecycle"
   RTC_B05_INPUT_KEY="iterations-25"
 
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05
 
-  RTC_B05_ATTEMPTS="$(deno run --config apps/api-v1/deno.json --allow-read scripts/perf/rtc-baseline/rtc-baseline-cli.ts list-external-attempts --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --format=tsv)"
+  RTC_B05_ATTEMPTS="$(deno run --config packages/shared-rtc-bench/deno.json --allow-read packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts list-external-attempts --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --format=tsv)"
   RTC_BROWSER_PROCESS_STATUS=0
   RTC_BROWSER_BRIDGE_STATUS=0
   while IFS=$'\t' read -r RTC_B05_LISTED_CASE RTC_B05_PHASE RTC_B05_ORDINAL RTC_B05_ENVIRONMENT; do
     test "${RTC_B05_LISTED_CASE}" = "${RTC_B05_CASE_ID}"
     RTC_BROWSER_RAW="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/staging/RTC-B05__${RTC_B05_CASE_ID}__${RTC_B05_INPUT_KEY}__${RTC_B05_PHASE}__${RTC_B05_ORDINAL}.json"
     set +e
-    node --expose-gc scripts/perf/rtc-data-channel-browser-soak.mjs --capture=raw-evidence --baseline-id="${RTC_BASELINE_ID}" --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --out="${RTC_BROWSER_RAW}"
+    node --expose-gc packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs --capture=raw-evidence --baseline-id="${RTC_BASELINE_ID}" --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --out="${RTC_BROWSER_RAW}"
     RTC_BROWSER_PROCESS_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --producer-exit-status="${RTC_BROWSER_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
+    deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --producer-exit-status="${RTC_BROWSER_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
     RTC_BROWSER_BRIDGE_STATUS="$?"
     set -e
     if [ "${RTC_BROWSER_PROCESS_STATUS}" -ne 0 ] || [ "${RTC_BROWSER_BRIDGE_STATUS}" -ne 0 ]; then
@@ -3277,9 +3483,9 @@ evidence remains ignored and whose summary preserves every attempt.
     fi
   done <<< "${RTC_B05_ATTEMPTS}"
   set +e
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
   RTC_BROWSER_FINALIZE_STATUS="$?"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
   RTC_BROWSER_VALIDATE_STATUS="$?"
   set -e
 
@@ -3311,7 +3517,7 @@ evidence remains ignored and whose summary preserves every attempt.
   printf '%s\n' "${RTC_BASELINE_ID}" | rg -x '[0-9]{8}-[0-9a-f]{12}-e2-browser'
   test "${RTC_BASELINE_ID#????????-}" = "$(git rev-parse --short=12 HEAD)-e2-browser"
   set +e
-  RTC_E2_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
+  RTC_E2_REPEAT_WORKLOADS="$(deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv)"
   RTC_E2_REPEAT_REQUIRED_STATUS="$?"
   set -e
 
@@ -3319,18 +3525,18 @@ evidence remains ignored and whose summary preserves every attempt.
     test "${RTC_E2_REPEAT_WORKLOADS}" = "RTC-B05"
     RTC_E2_PRIMARY_ID="${RTC_BASELINE_ID}"
     RTC_BASELINE_ID="${RTC_E2_PRIMARY_ID}-repeat-01"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05 --repeat-of="${RTC_E2_PRIMARY_ID}" --retained-sample-multiplier=2
+    deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B05 --repeat-of="${RTC_E2_PRIMARY_ID}" --retained-sample-multiplier=2
 
-    RTC_B05_ATTEMPTS="$(deno run --config apps/api-v1/deno.json --allow-read scripts/perf/rtc-baseline/rtc-baseline-cli.ts list-external-attempts --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --format=tsv)"
+    RTC_B05_ATTEMPTS="$(deno run --config packages/shared-rtc-bench/deno.json --allow-read packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts list-external-attempts --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --format=tsv)"
     RTC_E2_REPEAT_PROCESS_STATUS=0
     RTC_E2_REPEAT_BRIDGE_STATUS=0
     while IFS=$'\t' read -r RTC_B05_LISTED_CASE RTC_B05_PHASE RTC_B05_ORDINAL RTC_B05_ENVIRONMENT; do
       test "${RTC_B05_LISTED_CASE}" = "${RTC_B05_CASE_ID}"
       RTC_BROWSER_RAW="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/staging/RTC-B05__${RTC_B05_CASE_ID}__${RTC_B05_INPUT_KEY}__${RTC_B05_PHASE}__${RTC_B05_ORDINAL}.json"
       set +e
-      node --expose-gc scripts/perf/rtc-data-channel-browser-soak.mjs --capture=raw-evidence --baseline-id="${RTC_BASELINE_ID}" --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --out="${RTC_BROWSER_RAW}"
+      node --expose-gc packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs --capture=raw-evidence --baseline-id="${RTC_BASELINE_ID}" --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --out="${RTC_BROWSER_RAW}"
       RTC_E2_REPEAT_PROCESS_STATUS="$?"
-      deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --producer-exit-status="${RTC_E2_REPEAT_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
+      deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts record-browser --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B05 --case-id="${RTC_B05_CASE_ID}" --input-key="${RTC_B05_INPUT_KEY}" --intended-phase="${RTC_B05_PHASE}" --outer-ordinal="${RTC_B05_ORDINAL}" --producer-exit-status="${RTC_E2_REPEAT_PROCESS_STATUS}" --raw-result="${RTC_BROWSER_RAW}"
       RTC_E2_REPEAT_BRIDGE_STATUS="$?"
       set -e
       if [ "${RTC_E2_REPEAT_PROCESS_STATUS}" -ne 0 ] || [ "${RTC_E2_REPEAT_BRIDGE_STATUS}" -ne 0 ]; then
@@ -3338,9 +3544,9 @@ evidence remains ignored and whose summary preserves every attempt.
       fi
     done <<< "${RTC_B05_ATTEMPTS}"
     set +e
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
     RTC_E2_REPEAT_FINALIZE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
+    deno run --config packages/shared-rtc-bench/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
     RTC_E2_REPEAT_VALIDATE_STATUS="$?"
     set -e
 
@@ -3361,892 +3567,239 @@ even though both use the same gated B01-B05 Git anchor.
 
 ### Task 10: B06 separate activation, head, gates, and capture
 
-**Files:** Only the five inactive B06 paths in Section 10 after separate human
-activation.
+**State:** inactive. Task 10 requires a separate human exact-reservation
+approval after Tasks 4A-9; neither this amendment nor Task 7 activates it.
 
-- [ ] **Step 1: Stop for activation**
+**Files:** exactly four B06 implementation/test paths after separate approval:
 
-  Do not create a B06 branch or edit a B06 path until the exact five-path
-  reservation and proposed exception entry receive human approval and the
-  roadmap coordinator activates them.
+- `tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts`;
+- `packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts`;
+- `tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts`;
+- `packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts`.
 
-  After activation, require the immutable head/tree and Branch Release evidence
-  recorded by Task 7 as explicit operator inputs; never substitute the moving
-  feature-branch tip. Prefer current `main` when the recorded anchor is its
-  ancestor or when every exact Task 7 instrumentation path is byte-identical
-  after a squash-style publication. Fetch the PR ref only when the immutable
-  commit object is otherwise unavailable, and fetch the feature branch only for
-  the still-unmerged stacked route, so a merged-and-deleted branch remains valid:
+The existing
+`packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts` is a
+required read-only gate. The reviewed package and baseline CLI are read-only
+dependencies. There is no B06 code-style exception path: current human
+readability/review rules apply, and neither 400 physical lines nor the former
+structured-test exception is an acceptance criterion.
 
-  ```bash
-  : "${RTC_B01_B05_ANCHOR:?export the exact Task 7 green head SHA}"
-  : "${RTC_B01_B05_ANCHOR_TREE:?export the exact Task 7 green tree SHA}"
-  : "${RTC_B01_B05_BASE:?export the exact Task 7 implementation base SHA}"
-  : "${RTC_B01_B05_PR_NUMBER:?export the B01-B05 draft PR number}"
-  : "${RTC_B01_B05_BRANCH_GATE_RUN:?export the exact Task 7 Branch Release Gate run ID}"
-  : "${RTC_B01_B05_BRANCH_GATE_ATTEMPT:?export the exact Task 7 run attempt}"
-  : "${RTC_B01_B05_BRANCH_GATE_JOB:?export the exact Task 7 Release Gate job ID}"
+**Prerequisites:** Tasks 4A/4B are merged and revalidated; the exact Task 7
+B01-B05 anchor and Tasks 8/9 capture records exist; the separately approved
+four-path B06 reservation is published; current `origin/main` contains the
+reviewed package; and any active auth/service-backed work has a stable exact
+tree. B06 receives a distinct clean head and never appends evidence to the Task
+7 anchor.
 
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B01_B05_ANCHOR}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B01_B05_BRANCH_GATE_JOB}" --jq .run_id)" = "${RTC_B01_B05_BRANCH_GATE_RUN}"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B01_B05_BRANCH_GATE_JOB}" --jq .conclusion)" = "success"
+**Interfaces:** the new evidence owner converts the existing full-stack
+three-browser matrix's raw diagnostics into exact `RTC-B06` external-attempt
+and retention-cohort payloads. The matrix continues to exercise production
+facades, API/server behavior, and providers. The package CLI validates and
+records those payloads; no browser/app/product code imports
+`shared-rtc-bench`.
 
-  git fetch origin main
-  if ! git cat-file -e "${RTC_B01_B05_ANCHOR}^{commit}"; then
-    git fetch origin "pull/${RTC_B01_B05_PR_NUMBER}/head:refs/remotes/origin/rtc-b01-b05-recorded"
-  fi
-  git cat-file -e "${RTC_B01_B05_BASE}^{commit}"
-  test "$(git rev-parse "${RTC_B01_B05_ANCHOR}^{tree}")" = "${RTC_B01_B05_ANCHOR_TREE}"
-  test "$(git rev-parse "${RTC_B01_B05_ANCHOR}~6")" = "${RTC_B01_B05_BASE}"
-  test "$(git rev-list --count "${RTC_B01_B05_BASE}".."${RTC_B01_B05_ANCHOR}")" -eq 6
-  test "$(git log --reverse --format=%s "${RTC_B01_B05_BASE}".."${RTC_B01_B05_ANCHOR}")" = "$(printf '%s\n' \
-    'perf(rtc): add baseline evidence foundation' \
-    'perf(rtc): add B01 signaling baseline instrumentation' \
-    'perf(rtc): add B02 data-channel baseline instrumentation' \
-    'perf(rtc): add B03 topology baseline instrumentation' \
-    'perf(rtc): add B04 coordination baseline instrumentation' \
-    'perf(rtc): add B05 native browser baseline instrumentation')"
-  RTC_B01_B05_EXPECTED_PATHS="$(printf '%s\n' \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-    scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-    scripts/perf/rtc-data-channel-browser-soak.mjs \
-    scripts/perf/rtc-data-channel-close-retention-bench.ts \
-    scripts/perf/rtc-data-channel-error-reference-bench.ts \
-    scripts/perf/rtc-data-channel-replace-key-bench.ts \
-    scripts/perf/rtc-ice-candidate-queue-bench.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-    scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-    scripts/perf/rtc-room-graph-rtt-bench.ts \
-    scripts/perf/rtc-topology-inactive-churn-bench.ts \
-    scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-    scripts/perf/rtc-topology-star-bench.ts \
-    scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts | sort)"
-  test "$(git diff --name-only "${RTC_B01_B05_BASE}" "${RTC_B01_B05_ANCHOR}" | sort)" = "${RTC_B01_B05_EXPECTED_PATHS}"
-  RTC_B01_B05_INSTRUMENTATION_PATHS="${RTC_B01_B05_EXPECTED_PATHS}"
-  RTC_B01_B05_FOUNDATION_PATHS="$(printf '%s\n' \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts | sort)"
-  test "$(printf '%s\n' "${RTC_B01_B05_FOUNDATION_PATHS}" | wc -l | tr -d ' ')" -eq 39
-  export RTC_B01_B05_FOUNDATION_PATHS
-  printf 'export RTC_B01_B05_FOUNDATION_PATHS=%q\n' "${RTC_B01_B05_FOUNDATION_PATHS}"
-  if git merge-base --is-ancestor "${RTC_B01_B05_ANCHOR}" origin/main; then
-    git diff --quiet "${RTC_B01_B05_ANCHOR}" origin/main -- ${RTC_B01_B05_FOUNDATION_PATHS}
-    RTC_B06_BASE="origin/main"
-  elif git diff --quiet "${RTC_B01_B05_ANCHOR}" origin/main -- ${RTC_B01_B05_INSTRUMENTATION_PATHS}; then
-    git diff --quiet "${RTC_B01_B05_ANCHOR}" origin/main -- ${RTC_B01_B05_FOUNDATION_PATHS}
-    RTC_B06_BASE="origin/main"
-  else
-    git fetch origin codex/rallar-rtc-performance-baseline-phase-1
-    git cat-file -e "${RTC_B01_B05_ANCHOR}^{commit}"
-    git merge-base --is-ancestor "${RTC_B01_B05_ANCHOR}" origin/codex/rallar-rtc-performance-baseline-phase-1
-    RTC_B06_BASE="${RTC_B01_B05_ANCHOR}"
-  fi
-  RTC_B06_BASE_COMMIT="$(git rev-parse "${RTC_B06_BASE}")"
-  git switch --create codex/rallar-rtc-performance-baseline-b06 "${RTC_B06_BASE_COMMIT}"
-  if ! git merge-base --is-ancestor "${RTC_B01_B05_ANCHOR}" HEAD; then
-    git diff --quiet "${RTC_B01_B05_ANCHOR}" HEAD -- ${RTC_B01_B05_INSTRUMENTATION_PATHS}
-  fi
-  test -z "$(git status --porcelain)"
-  ```
+- [ ] **Step 1: Prove four-path activation and create the clean B06 branch**
 
-  Prefer waiting for B01-B05 source publication and branching from its verified
-  resulting `main`. The unmerged path above may create and gate a stacked draft,
-  but it is capture-ineligible until B01-B05 is merged with the exact stacked
-  base commit preserved as an ancestor of `main`. A squash/rebase publication
-  of that stacked base must not be hidden by byte-identical files: do not
-  retarget or capture from the old B06 head. Keep it as an unmeasured gated
-  draft and stop for a separately approved replacement-head plan that repeats
-  B06 commit, gates, publication, and capture from resulting `main`.
+  Fetch `origin/main`, verify the human approval and roadmap activation name
+  the exact four paths, confirm the Task 7 anchor is an ancestor, record a
+  compatibility review, and create
+  `codex/rallar-rtc-performance-baseline-b06`. The clean-base diff must be
+  empty. Stop for a new plan decision if current matrix/auth/provider contracts
+  invalidate Section 5's six B06 cases or evidence fields.
 
-- [ ] **Step 2: Use TDD for the evidence boundary**
+- [ ] **Step 2: Write RED evidence and script-gate tests**
 
-  On the Step 1 anchor-descendant or verified byte-equivalent-resulting-main B06
-  branch, first add RED tests in
-  `live-rtc-performance-evidence.test.ts` and the existing script-gate test for
-  receiver-observed peer-ready/direct/multicast/broadcast/reconnect durations,
-  default/all-scenario sample identities, 100-cycle checkpoints, CDP post-GC
-  heap, RTC diagnostic counts, settled peer/lane/timer state, failure retention,
-  exact output confinement, primary 1+5/1+3/1+3 and repeat
-  1+10/1+6/1+6 manifests, nonzero attempt- and cohort-producer-status precedence,
-  persistence of a failed cohort assertion before nonzero exit while
-  finalization still accounts it, primary retention cohorts with 0/1/2/3 heap
-  breaches, repeat cohorts at the 3/6 pass and 4/6 fail boundary, any
-  unsettled-state failure, and missing/failed/not-run/duplicate cohort members.
-  The evidence
-  module—not the dormant foundation—recomputes every B06 invariant from the raw
-  matrix artifact and emits the normalized shared
-  `RtcBaselineExternalAttemptDto` with one precomputed inner identity for the
-  full-stack execution plus event/checkpoint records nested only as supporting
-  raw evidence, not extra sample identities. After all attempts, its
-  `--capture=cohort-assertion` CLI reads the immutable accepted
-  member set, applies only the B06-owned Section 6 cohort rule, and writes the
-  create-new shared `RtcBaselineExternalCohortAssertionDto`; generic
-  `record-external-cohort` persists it without recomputing B06 policy. It accepts
-  only the explicit environment inputs
-  `RALLAR_BLACK_BOX_RTC_BASELINE_ID`,
-  `RALLAR_BLACK_BOX_RTC_EVIDENCE_RAW_OUT`,
-  `RALLAR_BLACK_BOX_RTC_EVIDENCE_PHASE` (`warmup` or `retained`), and
-  `RALLAR_BLACK_BOX_RTC_EVIDENCE_OUTER_ORDINAL` (one-based), plus the existing
-  approved mode/cycle inputs. Before the producer exits, it includes those
-  controller values and the exact Section 5 selector presence/raw-source facts,
-  normalized mode/cycle/database/ICE configuration, redacted executable argv,
-  and canonical worker projection in the staged DTO. It reads the common
-  envelope's immutable expected manifest and checks those captured facts against
-  the predeclared case, rejects an identity or mode absent from it, writes only the exact
-  create-new `artifacts/staging/rtc-b06-CASE-PHASE-ORDINAL.json` path, and accepts
-  no sample-count override or hidden default. Generic `record-external` validates
-  the staged facts and never rereads the expired producer environment.
+  In the two package-test paths, cover:
+
+  - exact workload/case/input/environment/phase/ordinal identity;
+  - E3-memory and conditional E4-pg default, all-scenarios, and retention-100
+    cases;
+  - complete sender/receiver, reconnect, diagnostics, post-GC heap, provider,
+    auth, database, and runtime facts required by Section 8;
+  - producer-status precedence and malformed/mismatched payload rejection;
+  - exact retention cohort membership and aggregate assertions;
+  - create-new raw evidence beneath `tmp/perf/rtc-baseline/**`;
+  - the existing root memory/Postgres matrix commands and required environment
+    flags; and
+  - zero source import from the benchmark package into app/browser production
+    code.
+
+  Run:
 
   ```bash
-  npx vitest run \
+  npx vitest run --config vitest.config.ts \
     packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
     packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
     packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts
   ```
 
-  Expected RED: the evidence module and new timing/retention contract do not
-  exist. Implement the smallest B06-specific normalization/recomputation module
-  and matrix changes, feed its shared DTO to the unchanged generic
-  `record-external` boundary, add exactly the approved exception registry entry,
-  then rerun the same command to GREEN. The B01-B05 foundation stays unchanged,
-  and the coverage test is run but not edited.
+  Expected RED: only the new evidence module/matrix output contract is absent.
 
-- [ ] **Step 3: Freeze the exact five-path B06 commit**
+- [ ] **Step 3: Implement the four-path B06 boundary**
 
-  Format the five authorized paths, prove the working diff is exact, and create
-  one commit before running publication gates. No later content change is
-  permitted on the measurement head:
+  Add the evidence module, integrate it with the existing ordered matrix
+  lifecycle, and update the two owning tests. Keep construction/auth/service
+  startup, scenario execution, observation, validation, raw output, and cleanup
+  visible. Do not move the matrix, loosen coverage, change product behavior,
+  duplicate the package's baseline contracts, or hide setup/cleanup behind a
+  generic helper. Output is diagnostic raw evidence until the package CLI
+  validates and records it.
 
-  ```bash
-  : "${RTC_B01_B05_ANCHOR:?export the immutable Task 7 green head SHA}"
-  : "${RTC_B01_B05_ANCHOR_TREE:?export the immutable Task 7 green tree SHA}"
-  : "${RTC_B01_B05_BASE:?export the exact Task 7 implementation base SHA}"
-  : "${RTC_B01_B05_FOUNDATION_PATHS:?export the exact 39-path Task 1 inventory from Step 1}"
-  git cat-file -e "${RTC_B01_B05_ANCHOR}^{commit}"
-  test "$(git rev-parse "${RTC_B01_B05_ANCHOR}^{tree}")" = "${RTC_B01_B05_ANCHOR_TREE}"
-  RTC_B06_BASE_COMMIT="$(git rev-parse HEAD)"
-  if ! git merge-base --is-ancestor "${RTC_B01_B05_ANCHOR}" "${RTC_B06_BASE_COMMIT}"; then
-    RTC_B01_B05_INSTRUMENTATION_PATHS="$(git diff --name-only "${RTC_B01_B05_BASE}" "${RTC_B01_B05_ANCHOR}")"
-    git diff --quiet "${RTC_B01_B05_ANCHOR}" "${RTC_B06_BASE_COMMIT}" -- ${RTC_B01_B05_INSTRUMENTATION_PATHS}
-    git diff --quiet "${RTC_B01_B05_ANCHOR}" "${RTC_B06_BASE_COMMIT}" -- ${RTC_B01_B05_FOUNDATION_PATHS}
-  fi
-
-  npx prettier --write \
-    tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts \
-    packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
-    tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts \
-    packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
-    docs/repo-code-style-exceptions.md
-
-  RTC_B06_EXPECTED_PATHS="$(printf '%s\n' \
-    docs/repo-code-style-exceptions.md \
-    packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
-    packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
-    tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts \
-    tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts | sort)"
-  git add \
-    tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts \
-    packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
-    tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts \
-    packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
-    docs/repo-code-style-exceptions.md
-  RTC_B06_STATUS_PATHS="$(git status --porcelain=v1 --untracked-files=all | cut -c4- | sort -u)"
-  test "${RTC_B06_STATUS_PATHS}" = "${RTC_B06_EXPECTED_PATHS}"
-  test "$(git diff --cached --name-only | sort)" = "${RTC_B06_EXPECTED_PATHS}"
-  git diff --cached --check
-  git commit -m "perf(rtc): add B06 full-stack baseline instrumentation"
-  test -z "$(git status --porcelain)"
-  RTC_B06_HEAD="$(git rev-parse HEAD)"
-  RTC_B06_TREE="$(git rev-parse HEAD^{tree})"
-  ```
-
-- [ ] **Step 4: Gate and publish that exact clean commit**
-
-  Run every gate after the commit, against `RTC_B06_HEAD`. The matrix spec alone
-  uses the separately approved structured-scenario entry; the new evidence
-  source/test and touched script-gate test must each remain at or below 400
-  physical lines:
+- [ ] **Step 4: Run focused and repository GREEN gates**
 
   ```bash
-  : "${RTC_B01_B05_ANCHOR:?export the immutable Task 7 green head SHA}"
-  : "${RTC_B01_B05_ANCHOR_TREE:?export the immutable Task 7 green tree SHA}"
-  : "${RTC_B01_B05_BASE:?export the exact Task 7 implementation base SHA}"
-  RTC_B06_HEAD="$(git rev-parse HEAD)"
-  RTC_B06_TREE="$(git rev-parse HEAD^{tree})"
-  RTC_B06_BASE_COMMIT="$(git rev-parse HEAD^)"
-  RTC_B06_EXPECTED_PATHS="$(printf '%s\n' \
-    docs/repo-code-style-exceptions.md \
-    packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
-    packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
-    tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts \
-    tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts | sort)"
-  test "$(git rev-parse "${RTC_B01_B05_ANCHOR}^{tree}")" = "${RTC_B01_B05_ANCHOR_TREE}"
-  test "$(git rev-parse HEAD)" = "${RTC_B06_HEAD}"
-  test -z "$(git status --porcelain)"
-  if ! git merge-base --is-ancestor "${RTC_B01_B05_ANCHOR}" "${RTC_B06_BASE_COMMIT}"; then
-    RTC_B01_B05_INSTRUMENTATION_PATHS="$(git diff --name-only "${RTC_B01_B05_BASE}" "${RTC_B01_B05_ANCHOR}")"
-    git diff --quiet "${RTC_B01_B05_ANCHOR}" "${RTC_B06_BASE_COMMIT}" -- ${RTC_B01_B05_INSTRUMENTATION_PATHS}
-  fi
-  test "$(git diff --name-only "${RTC_B06_BASE_COMMIT}" HEAD | sort)" = "${RTC_B06_EXPECTED_PATHS}"
-
-  npx prettier --check \
-    tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts \
-    packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
-    tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts \
-    packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
-    docs/repo-code-style-exceptions.md
-
-  set -e
-  for RTC_B06_TYPESCRIPT_FILE in \
-    tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts \
-    packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
-    packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts
-  do
-    RTC_B06_PHYSICAL_LINES="$(wc -l < "${RTC_B06_TYPESCRIPT_FILE}")"
-    test "${RTC_B06_PHYSICAL_LINES}" -le 400
-  done
-
-  npm run check:repo-style:changed -- "${RTC_B06_BASE_COMMIT}"
-  git diff --check "${RTC_B06_BASE_COMMIT}" HEAD
-
-  npx vitest run \
-    packages/tests/repo/rtc-performance-baseline-contract.test.ts \
-    packages/tests/repo/rtc-performance-baseline-decoding.test.ts \
-    packages/tests/repo/rtc-performance-baseline-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-artifact-validation.test.ts \
-    packages/tests/repo/rtc-performance-baseline-statistics.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-catalog.test.ts \
-    packages/tests/repo/rtc-performance-baseline-workload-manifest.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-acceptance.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-failure.test.ts \
-    packages/tests/repo/rtc-performance-baseline-evidence-store.test.ts \
-    packages/tests/repo/rtc-performance-baseline-harnesses.test.ts \
-    packages/tests/repo/rtc-performance-baseline-envelope.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalization.test.ts \
-    packages/tests/repo/rtc-performance-baseline-finalized-reader.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-adapters.test.ts \
-    packages/tests/repo/rtc-performance-baseline-deno-runtime.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli-grammar.test.ts \
-    packages/tests/repo/rtc-performance-baseline-cli.test.ts
-
-  deno check --config apps/api-v1/deno.json \
-    scripts/perf/rtc-baseline/rtc-baseline-contracts.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-decoding.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-catalog.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-workload-manifest.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-artifact-validation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-statistics.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-layout.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-store.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-failure-accounting.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-evidence-acceptance.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-evidence.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-finalized-reader.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-envelope.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-runtime-observation.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-adapters.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-deno-runtime.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-options.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts \
-    scripts/perf/rtc-baseline/rtc-data-channel-drain-bench.ts \
-    scripts/perf/rtc-baseline/rtc-rtt-repository-filter-bench.ts \
-    scripts/perf/rtc-baseline/rtc-peer-connection-diagnostics-runtime.ts \
-    scripts/perf/rtc-peer-connection-diagnostics-burst.ts \
-    scripts/perf/rtc-ice-candidate-queue-bench.ts \
-    scripts/perf/rtc-peer-listener-cleanup-bench.ts \
-    scripts/perf/rtc-data-channel-replace-key-bench.ts \
-    scripts/perf/rtc-data-channel-close-retention-bench.ts \
-    scripts/perf/rtc-data-channel-error-reference-bench.ts \
-    scripts/perf/rtc-topology-star-bench.ts \
-    scripts/perf/rtc-topology-tree-no-rtt-bench.ts \
-    scripts/perf/rtc-topology-mesh-no-rtt-bench.ts \
-    scripts/perf/rtc-room-graph-rtt-bench.ts \
-    scripts/perf/rtc-topology-inactive-churn-bench.ts \
-    scripts/perf/rtc-multicast-serialization-bench.ts \
-    scripts/perf/webrtc-group-cache-fallback-bench.ts \
-    scripts/perf/webrtc-group-manager-state-bench.ts \
-    scripts/perf/webrtc-group-manager-peer-owners-bench.ts \
-    scripts/perf/webrtc-heartbeat-callback-churn-bench.ts
-
-  node --check scripts/perf/rtc-data-channel-browser-soak.mjs
-
-  npx vitest run \
-    packages/tests/shared/qrtc-peer-connection.test.ts \
-    packages/tests/shared/qrtc-data-channel.test.ts \
-    packages/tests/shared/rtc-data-channel-send-queue.test.ts \
-    packages/tests/shared/webrtc-connection-service.test.ts \
-    packages/tests/shared/webrtc-group-manager.test.ts \
-    packages/tests/shared/webrtc-group-service.test.ts \
-    packages/tests/shared/webrtc-heartbeat.test.ts \
-    packages/tests/shared/rtc-rtt-reporting-policy.test.ts \
-    packages/tests/shared/webrtc-overlay-services.test.ts \
-    packages/tests/shared/multicast-policy-integration.test.ts \
-    packages/tests/shared/websocket-webrtc.test.ts
-
-  npx vitest run \
-    packages/tests/shared-graph/group-topology-create-services.test.ts \
-    packages/tests/shared-graph/group-topology-validation.test.ts \
-    packages/tests/shared-server/rallar-rtc-topology-service.test.ts \
-    packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts \
-    packages/tests/shared-server/rtc-topology-mutations.test.ts \
-    packages/tests/shared-server/rtc-topology-outbox-work.test.ts \
-    packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts \
-    packages/tests/shared-server/rtc-topology-stale-publication.test.ts \
-    packages/tests/shared-server/rtc-topology-ws-outbox-entry.test.ts
-
-  npx vitest run \
-    packages/tests/shared-web/rallar-realtime-facade.test.ts \
-    packages/tests/shared-web/rallar-realtime-json-lane-compat.test.ts \
-    packages/tests/shared-web/rallar-realtime-send-listen-compat.test.ts \
-    packages/tests/shared-web/rallar-rtc-facade.test.ts \
-    packages/tests/shared-web/rallar-rtc-recovery-compat.test.ts \
-    packages/tests/shared-web/rallar-rtc-wait-compat.test.ts \
-    packages/tests/shared-web/rallar-rtc-diagnostics-compat.test.ts \
-    packages/tests/shared-web/rooms/rallar-room-realtime-channel.test.ts \
-    packages/tests/shared-web/rallar-message-channel-compat.test.ts
-
-  npx vitest run \
+  npx vitest run --config vitest.config.ts \
     packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
     packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
     packages/tests/rallar-black-box/live-rtc-three-browser-coverage.test.ts \
-    packages/tests/shared-test/rallar-bb-test-rtc-stream.test.ts \
-    packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts
+    packages/tests/shared-web/rallar-rtc-facade.test.ts \
+    packages/tests/shared-web/rallar-realtime-facade.test.ts
 
-  npx playwright test --list \
-    --config apps/rallar-black-box/playwright.full-stack.config.ts \
-    tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts
-
-  npx tsc -p packages/shared/tsconfig.json --noEmit
-  npx tsc -p packages/shared-web/tsconfig.json --noEmit
-  npx tsc -p packages/shared-server/tsconfig.json --noEmit
-  cd apps/api-v1
-  deno task check
-  cd ../..
-
-  mkdir -p tmp/perf/rtc-baseline
-  RTC_B06_GATE_ROOT="$(mktemp -d "tmp/perf/rtc-baseline/diagnostic-gates-$(git rev-parse --short=12 HEAD)-XXXXXX")"
-  RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_GATE_ROOT}/default" npm run test:rallar:full-stack:memory:live-rtc-3
-  RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_GATE_ROOT}/all-scenarios" npm run test:rallar:full-stack:memory:live-rtc-3
-  RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_GATE_ROOT}/retention" npm run test:rallar:full-stack:memory:live-rtc-3
-
-  npm run test:repo-governance
+  npm --workspace @ar-eye-hunter/shared-rtc-bench run check
+  npm run check:repo-style -- \
+    --root tests/playwright/rallar-black-box \
+    --root packages/tests/rallar-black-box
+  npm run check:repo-style:changed -- origin/main
+  git diff --check
   npm run test:unit
   npm run test:ci
   npm run build
-  test "$(git rev-parse HEAD)" = "${RTC_B06_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_TREE}"
-  test -z "$(git status --porcelain)"
-  export RTC_B06_GATED_HEAD="${RTC_B06_HEAD}"
-  export RTC_B06_GATED_TREE="${RTC_B06_TREE}"
-  printf 'export RTC_B06_GATED_HEAD=%q\n' "${RTC_B06_GATED_HEAD}"
-  printf 'export RTC_B06_GATED_TREE=%q\n' "${RTC_B06_GATED_TREE}"
   ```
 
-  Re-resolve the PR base immediately before publication. Use `main` only when it
-  contains the exact B06 base commit (which Step 1 selected only after ancestry
-  or byte-identical instrumentation verification); otherwise create a stacked
-  draft PR whose base is the still-published B01-B05 branch. If neither is true,
-  stop, rebase from a valid Step 1 base, and rerun every B06 gate. This keeps the
-  reviewed B06 PR diff at exactly five paths:
+  Expected: all exit 0 with configured skips recorded. Review current
+  cognitive-load/output, function/decision, construction, cleanup, and test
+  semantics directly even if the checker reports no warning.
+
+- [ ] **Step 5: Independently review and publish exactly four paths**
+
+  Trace matrix entry through setup, production operations, validation, raw
+  output, cleanup, package ingestion, and owning tests. Correct and independently
+  re-review all Critical/Important findings. Stage exactly the four authorized
+  paths, record the staged tree and commit, push, and open/update the B06 draft
+  PR. Require Branch Release Gate success on its exact head. Merge only after
+  review; record the resulting-main commit/tree and successful **Run Hetzner
+  Supported Distributed Manifests** run. Any fifth changed path requires a
+  published, approved plan/reservation amendment.
+
+- [ ] **Step 6: Freeze the separate B06 measurement anchor**
+
+  On the exact resulting `origin/main`, rerun the package check, focused
+  B06/product tests, `npm run test:unit`, `npm run test:ci`, and
+  `npm run build`; record head/tree, runtime/provider/database/browser
+  fingerprints, package catalog/config hashes, and independent review. No
+  relevant file may change between gating and capture.
+
+- [ ] **Step 7: Initialize and capture E3-memory**
+
+  Use the package-owned CLI only:
 
   ```bash
-  : "${RTC_B01_B05_ANCHOR:?export the immutable Task 7 green head SHA}"
-  : "${RTC_B01_B05_ANCHOR_TREE:?export the immutable Task 7 green tree SHA}"
-  : "${RTC_B01_B05_BASE:?export the exact Task 7 implementation base SHA}"
-  : "${RTC_B06_GATED_HEAD:?export the exact head from the completed Step 4 gate block}"
-  : "${RTC_B06_GATED_TREE:?export the exact tree from the completed Step 4 gate block}"
-  RTC_B06_HEAD="${RTC_B06_GATED_HEAD}"
-  RTC_B06_TREE="${RTC_B06_GATED_TREE}"
-  RTC_B06_BASE_COMMIT="$(git rev-parse "${RTC_B06_HEAD}^")"
-  test "$(git rev-parse HEAD)" = "${RTC_B06_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_TREE}"
-  test "$(git rev-parse "${RTC_B01_B05_ANCHOR}^{tree}")" = "${RTC_B01_B05_ANCHOR_TREE}"
-  test -z "$(git status --porcelain)"
-  git fetch origin main
-  if git merge-base --is-ancestor "${RTC_B06_BASE_COMMIT}" origin/main; then
-    RTC_B06_PR_BASE="main"
-  else
-    git fetch origin codex/rallar-rtc-performance-baseline-phase-1
-    git merge-base --is-ancestor "${RTC_B01_B05_ANCHOR}" origin/codex/rallar-rtc-performance-baseline-phase-1
-    test "${RTC_B06_BASE_COMMIT}" = "${RTC_B01_B05_ANCHOR}"
-    RTC_B06_PR_BASE="codex/rallar-rtc-performance-baseline-phase-1"
-  fi
-  if git merge-base --is-ancestor "${RTC_B01_B05_ANCHOR}" "${RTC_B06_BASE_COMMIT}"; then
-    RTC_B06_ANCHOR_RELATION="descends from the exact gated B01-B05 anchor"
-  else
-    RTC_B01_B05_INSTRUMENTATION_PATHS="$(git diff --name-only "${RTC_B01_B05_BASE}" "${RTC_B01_B05_ANCHOR}")"
-    test -n "${RTC_B01_B05_INSTRUMENTATION_PATHS}"
-    git diff --quiet "${RTC_B01_B05_ANCHOR}" "${RTC_B06_BASE_COMMIT}" -- ${RTC_B01_B05_INSTRUMENTATION_PATHS}
-    RTC_B06_ANCHOR_RELATION="starts from resulting main with the exact B01-B05 instrumentation path contents verified byte-identical to the gated anchor"
-  fi
-  git push --set-upstream origin codex/rallar-rtc-performance-baseline-b06
-  test "$(git rev-parse HEAD)" = "${RTC_B06_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_TREE}"
-  gh pr create --draft --base "${RTC_B06_PR_BASE}" --head codex/rallar-rtc-performance-baseline-b06 --title "perf: add RTC B06 full-stack baseline instrumentation" --body "B06-only instrumentation on exact clean head ${RTC_B06_HEAD}; it ${RTC_B06_ANCHOR_RELATION}. PR base: ${RTC_B06_PR_BASE}. The diff is limited to the approved five paths; the existing coverage test is run but untouched. B07, production changes, optimization, raw-artifact publication, and Phase 2 remain held."
-  set +e
-  gh pr checks --watch --fail-fast=false
-  RTC_B06_PR_CHECKS_STATUS="$?"
-  set -e
-  : "${RTC_B06_BRANCH_GATE_RUN:?export the exact successful Branch Release Gate run ID}"
-  : "${RTC_B06_BRANCH_GATE_ATTEMPT:?export the exact successful run attempt}"
-  : "${RTC_B06_BRANCH_GATE_JOB:?export the exact successful Release Gate job ID}"
-  test "$(gh run view "${RTC_B06_BRANCH_GATE_RUN}" --attempt "${RTC_B06_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
-  test "$(gh run view "${RTC_B06_BRANCH_GATE_RUN}" --attempt "${RTC_B06_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B06_HEAD}"
-  test "$(gh run view "${RTC_B06_BRANCH_GATE_RUN}" --attempt "${RTC_B06_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_BRANCH_GATE_JOB}" --jq .run_id)" = "${RTC_B06_BRANCH_GATE_RUN}"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_BRANCH_GATE_JOB}" --jq .conclusion)" = "success"
-  echo "overall PR checks exit: ${RTC_B06_PR_CHECKS_STATUS} (record every non-Branch-Release failure separately)"
-  test "$(git rev-parse HEAD)" = "${RTC_B06_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_TREE}"
-  test -z "$(git status --porcelain)"
+  deno run \
+    --config packages/shared-rtc-bench/deno.json \
+    --allow-read \
+    --allow-write=tmp/perf/rtc-baseline \
+    --allow-run=git,node,npm,deno,uname,sysctl \
+    packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts \
+    initialize \
+    --baseline-id="${RTC_BASELINE_ID}" \
+    --workloads=RTC-B06 \
+    --conditional-environment=e4-pg \
+    --conditional-environment-decision="${RTC_B06_E4_DECISION}" \
+    --conditional-environment-reason="${RTC_B06_E4_DECISION_REASON}"
+
+  deno run \
+    --config packages/shared-rtc-bench/deno.json \
+    --allow-read \
+    packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts \
+    list-external-attempts \
+    --baseline-id="${RTC_BASELINE_ID}" \
+    --workload=RTC-B06 \
+    --format=tsv
   ```
 
-  Record the exact Branch Release Gate run, attempt, job, verified head SHA, and
-  conclusion. Do not treat an unrelated provider deployment result as this gate.
-  Capture stays blocked until the exact clean `RTC_B06_HEAD` is green.
-
-- [ ] **Step 4b: Resolve any stacked draft to an exact-five main-based PR**
-
-  Capture may start only after the B06 commit's parent is an ancestor of
-  resulting `main`. If the PR is stacked, require an ancestry-preserving B01-B05
-  merge, retarget without changing the B06 head, and require a fresh Branch
-  Release run/attempt after retarget. A squash/rebase merge fails the ancestry
-  check and follows the stop/replacement-plan rule in Step 1.
+  Consume each listed E3-memory attempt exactly once. Use
+  `npm run test:rallar:full-stack:memory:live-rtc-3` for default and
+  retention-100, adding the catalog-owned retention environment for the latter;
+  use the catalog-owned all-scenarios environment with the same root command for
+  all-scenarios. Write one unique raw file per attempt, capture the producer
+  status without aborting cleanup, and invoke:
 
   ```bash
-  : "${RTC_B01_B05_ANCHOR:?export the immutable Task 7 anchor SHA}"
-  : "${RTC_B06_GATED_HEAD:?export the exact Step 4 green B06 head SHA}"
-  : "${RTC_B06_GATED_TREE:?export the exact Step 4 green B06 tree SHA}"
-  : "${RTC_B06_BRANCH_GATE_RUN:?export the Step 4 pre-retarget Branch Release run ID}"
-  : "${RTC_B06_BRANCH_GATE_ATTEMPT:?export the Step 4 pre-retarget run attempt}"
-  test "$(git rev-parse HEAD)" = "${RTC_B06_GATED_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_GATED_TREE}"
-  test -z "$(git status --porcelain)"
-  git fetch origin main
-  RTC_B06_BASE_COMMIT="$(git rev-parse "${RTC_B06_GATED_HEAD}^")"
-  RTC_B06_PRE_RETARGET_BASE="$(gh pr view --json baseRefName --jq .baseRefName)"
-  case "${RTC_B06_PRE_RETARGET_BASE}" in
-    main)
-      RTC_B06_RETARGETED=0
-      ;;
-    codex/rallar-rtc-performance-baseline-phase-1)
-      test "${RTC_B06_BASE_COMMIT}" = "${RTC_B01_B05_ANCHOR}"
-      git merge-base --is-ancestor "${RTC_B06_BASE_COMMIT}" origin/main
-      gh pr edit --base main
-      RTC_B06_RETARGETED=1
-      ;;
-    *)
-      exit 64
-      ;;
-  esac
-  git merge-base --is-ancestor "${RTC_B06_BASE_COMMIT}" origin/main
-  test "$(gh pr view --json baseRefName --jq .baseRefName)" = "main"
-  RTC_B06_EXPECTED_PATHS="$(printf '%s\n' \
-    docs/repo-code-style-exceptions.md \
-    packages/tests/rallar-black-box/live-rtc-performance-evidence.test.ts \
-    packages/tests/rallar-black-box/live-rtc-three-browser-script-gates.test.ts \
-    tests/playwright/rallar-black-box/full-stack-live-rtc-three-browser-matrix.spec.ts \
-    tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts | sort)"
-  test "$(git diff --name-only origin/main..."${RTC_B06_GATED_HEAD}" | sort)" = "${RTC_B06_EXPECTED_PATHS}"
-  if [ "${RTC_B06_RETARGETED}" -eq 1 ]; then
-    test "$(gh run view "${RTC_B06_BRANCH_GATE_RUN}" --attempt "${RTC_B06_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
-    gh run rerun "${RTC_B06_BRANCH_GATE_RUN}"
-  fi
-  set +e
-  gh pr checks --watch --fail-fast=false
-  RTC_B06_MAIN_PR_CHECKS_STATUS="$?"
-  set -e
-  printf 'export RTC_B06_RETARGETED=%q\n' "${RTC_B06_RETARGETED}"
-  printf 'overall main-based PR checks exit: %s\n' "${RTC_B06_MAIN_PR_CHECKS_STATUS}"
+  deno run \
+    --config packages/shared-rtc-bench/deno.json \
+    --allow-read \
+    --allow-write=tmp/perf/rtc-baseline \
+    --allow-run=git,node,npm,deno,uname,sysctl \
+    packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts \
+    record-external \
+    --baseline-id="${RTC_BASELINE_ID}" \
+    --workload=RTC-B06 \
+    --case-id="${RTC_B06_CASE_ID}" \
+    --input-key="e3-memory-${RTC_B06_CASE_ID}" \
+    --intended-phase="${RTC_B06_PHASE}" \
+    --outer-ordinal="${RTC_B06_ORDINAL}" \
+    --producer-exit-status="${RTC_B06_PRODUCER_STATUS}" \
+    --raw-result="${RTC_B06_RAW}"
   ```
 
-  After the main-based checks settle, verify and export their exact identity:
+  Record the retention-100 cohort with `record-external-cohort` only after
+  every member attempt is present and its exact aggregate passes.
+
+- [ ] **Step 8: Apply the hashed E4 decision and capture when required**
+
+  The initialization record contains the normalized, hashed E4 decision/reason.
+  If the decision is `run`, use a freshly migrated PostgreSQL database and
+  `npm run test:rallar:full-stack:postgres:live-rtc-3` for default and
+  retention, and
+  `npm run test:rallar:full-stack:postgres:live-rtc-3:all` for all-scenarios.
+  Record each listed E4 attempt and cohort through the same package CLI with
+  `e4-pg-<case>` input keys. If the Section 5 database-backed selection rule
+  applies, `skip` is invalid. Never pool E3 and E4.
+
+- [ ] **Step 9: Finalize, validate, and perform required repeats**
 
   ```bash
-  : "${RTC_B06_GATED_HEAD:?export the exact Step 4 green B06 head SHA}"
-  : "${RTC_B06_GATED_TREE:?export the exact Step 4 green B06 tree SHA}"
-  : "${RTC_B06_BRANCH_GATE_RUN:?export the Step 4 pre-retarget Branch Release run ID}"
-  : "${RTC_B06_BRANCH_GATE_ATTEMPT:?export the Step 4 pre-retarget run attempt}"
-  : "${RTC_B06_RETARGETED:?export 0 or 1 from the preceding block}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_RUN:?export the successful main-based Branch Release run ID}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT:?export the successful main-based run attempt}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_JOB:?export the successful main-based Release Gate job ID}"
-  test "$(git rev-parse HEAD)" = "${RTC_B06_GATED_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_GATED_TREE}"
-  test "$(gh pr view --json baseRefName --jq .baseRefName)" = "main"
-  case "${RTC_B06_RETARGETED}" in
-    0)
-      ;;
-    1)
-      test "${RTC_B06_MAIN_BRANCH_GATE_RUN}" = "${RTC_B06_BRANCH_GATE_RUN}"
-      test "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" -gt "${RTC_B06_BRANCH_GATE_ATTEMPT}"
-      ;;
-    *)
-      exit 64
-      ;;
-  esac
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B06_GATED_HEAD}"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_MAIN_BRANCH_GATE_JOB}" --jq .run_id)" = "${RTC_B06_MAIN_BRANCH_GATE_RUN}"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_MAIN_BRANCH_GATE_JOB}" --jq .conclusion)" = "success"
-  test -z "$(git status --porcelain)"
-  printf 'export RTC_B06_MAIN_BRANCH_GATE_RUN=%q\n' "${RTC_B06_MAIN_BRANCH_GATE_RUN}"
-  printf 'export RTC_B06_MAIN_BRANCH_GATE_ATTEMPT=%q\n' "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}"
-  printf 'export RTC_B06_MAIN_BRANCH_GATE_JOB=%q\n' "${RTC_B06_MAIN_BRANCH_GATE_JOB}"
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read \
+    --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl \
+    packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts \
+    finalize --baseline-id="${RTC_BASELINE_ID}"
+
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read \
+    --allow-run=git,node,npm,deno,uname,sysctl \
+    packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts \
+    validate --baseline-id="${RTC_BASELINE_ID}"
+
+  deno run --config packages/shared-rtc-bench/deno.json --allow-read \
+    --allow-run=git,node,npm,deno,uname,sysctl \
+    packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts \
+    repeat-required --baseline-id="${RTC_BASELINE_ID}" --format=workload-csv
   ```
 
-- [ ] **Step 5: Capture B06 through the common envelope**
+  Finalization/validation must exit 0 before comparison. For every returned
+  environment workload, initialize exactly one linked repeat with
+  `--repeat-of=<primary>` and
+  `--retained-sample-multiplier=2`, recapture only its predeclared attempts,
+  finalize, and validate. A failed attempt remains failed evidence and does not
+  become permission to edit the anchor.
 
-  Initialize one complete E3 manifest before any process starts. The shell
-  function runs exactly one fresh full-stack process for an expected outer
-  identity. The later B06 module recomputes B06 semantics and writes one staged
-  shared DTO; generic `record-external` receives both that path and the producer
-  status. On failure, the bridge persists the failed identity plus every
-  remaining identity as causally `not-run`, so the controller stops starting
-  processes. After attempts, the B06-owned CLI evaluates the complete immutable
-  retention cohort and generic `record-external-cohort` persists its assertion.
-  Attempt or cohort failure is therefore recorded before the shell returns
-  nonzero, and the function still finalizes and validates the complete failed
-  manifest.
+**Rollback point:** before publication, revert the four-path B06 commit. After
+publication, a separately reviewed four-path revert removes B06 instrumentation
+but leaves the reviewed benchmark package and B01-B05 anchor intact. Captured
+artifacts remain historical to their exact immutable head and are never reused
+on a replacement head.
 
-  ```bash
-  : "${RTC_B06_GATED_HEAD:?export the exact Step 4 green B06 head SHA}"
-  : "${RTC_B06_GATED_TREE:?export the exact Step 4 green B06 tree SHA}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_RUN:?export the exact Step 4b main-based Branch Release Gate run ID}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT:?export the exact Step 4b run attempt}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_JOB:?export the exact Step 4b Release Gate job ID}"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
-  test "$(git rev-parse HEAD)" = "${RTC_B06_GATED_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_GATED_TREE}"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B06_GATED_HEAD}"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_MAIN_BRANCH_GATE_JOB}" --jq .run_id)" = "${RTC_B06_MAIN_BRANCH_GATE_RUN}"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_MAIN_BRANCH_GATE_JOB}" --jq .conclusion)" = "success"
-  test -z "$(git status --porcelain)"
-  : "${RTC_B06_E4_DECISION:?export required or not-required from the Section 5 call-path decision}"
-  : "${RTC_B06_E4_DECISION_REASON:?export the nonempty reviewed, redacted reason}"
-  case "${RTC_B06_E4_DECISION}" in
-    required|not-required)
-      ;;
-    *)
-      exit 64
-      ;;
-  esac
-  RTC_BASELINE_ID="$(date -u +%Y%m%d)-$(git rev-parse --short=12 HEAD)-e3-memory"
-
-  deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --conditional-environment=e4-pg --conditional-environment-decision="${RTC_B06_E4_DECISION}" --conditional-environment-reason="${RTC_B06_E4_DECISION_REASON}"
-
-  rtc_capture_b06_attempt() {
-    RTC_B06_CASE_ID="$1"
-    RTC_B06_PHASE="$2"
-    RTC_B06_ORDINAL="$3"
-    RTC_B06_ENVIRONMENT="$4"
-    RTC_B06_RAW="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/staging/rtc-b06-${RTC_B06_CASE_ID}-${RTC_B06_PHASE}-${RTC_B06_ORDINAL}.json"
-    RTC_B06_DIAGNOSTICS="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/diagnostics/${RTC_B06_CASE_ID}-${RTC_B06_PHASE}-${RTC_B06_ORDINAL}"
-
-    set +e
-    case "${RTC_B06_ENVIRONMENT}:${RTC_B06_CASE_ID}" in
-      e3-memory:default)
-        env -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES RALLAR_BLACK_BOX_RTC_BASELINE_ID="${RTC_BASELINE_ID}" RALLAR_BLACK_BOX_RTC_EVIDENCE_RAW_OUT="${RTC_B06_RAW}" RALLAR_BLACK_BOX_RTC_EVIDENCE_PHASE="${RTC_B06_PHASE}" RALLAR_BLACK_BOX_RTC_EVIDENCE_OUTER_ORDINAL="${RTC_B06_ORDINAL}" RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_DIAGNOSTICS}" npm run test:rallar:full-stack:memory:live-rtc-3
-        ;;
-      e3-memory:all-scenarios)
-        env -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 RALLAR_BLACK_BOX_RTC_BASELINE_ID="${RTC_BASELINE_ID}" RALLAR_BLACK_BOX_RTC_EVIDENCE_RAW_OUT="${RTC_B06_RAW}" RALLAR_BLACK_BOX_RTC_EVIDENCE_PHASE="${RTC_B06_PHASE}" RALLAR_BLACK_BOX_RTC_EVIDENCE_OUTER_ORDINAL="${RTC_B06_ORDINAL}" RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_DIAGNOSTICS}" npm run test:rallar:full-stack:memory:live-rtc-3
-        ;;
-      e3-memory:retention-100)
-        env -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 RALLAR_BLACK_BOX_RTC_BASELINE_ID="${RTC_BASELINE_ID}" RALLAR_BLACK_BOX_RTC_EVIDENCE_RAW_OUT="${RTC_B06_RAW}" RALLAR_BLACK_BOX_RTC_EVIDENCE_PHASE="${RTC_B06_PHASE}" RALLAR_BLACK_BOX_RTC_EVIDENCE_OUTER_ORDINAL="${RTC_B06_ORDINAL}" RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_DIAGNOSTICS}" npm run test:rallar:full-stack:memory:live-rtc-3
-        ;;
-      e4-pg:default)
-        env -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES DATABASE_URL=postgres://app:app@localhost:5432/appdb RALLAR_ICE_MODE=local RALLAR_BLACK_BOX_RTC_BASELINE_ID="${RTC_BASELINE_ID}" RALLAR_BLACK_BOX_RTC_EVIDENCE_RAW_OUT="${RTC_B06_RAW}" RALLAR_BLACK_BOX_RTC_EVIDENCE_PHASE="${RTC_B06_PHASE}" RALLAR_BLACK_BOX_RTC_EVIDENCE_OUTER_ORDINAL="${RTC_B06_ORDINAL}" RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_DIAGNOSTICS}" npm run test:rallar:full-stack:postgres:live-rtc-3
-        ;;
-      e4-pg:all-scenarios)
-        env -u RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK -u RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES DATABASE_URL=postgres://app:app@localhost:5432/appdb RALLAR_ICE_MODE=local RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 RALLAR_BLACK_BOX_RTC_BASELINE_ID="${RTC_BASELINE_ID}" RALLAR_BLACK_BOX_RTC_EVIDENCE_RAW_OUT="${RTC_B06_RAW}" RALLAR_BLACK_BOX_RTC_EVIDENCE_PHASE="${RTC_B06_PHASE}" RALLAR_BLACK_BOX_RTC_EVIDENCE_OUTER_ORDINAL="${RTC_B06_ORDINAL}" RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_DIAGNOSTICS}" npm run test:rallar:full-stack:postgres:live-rtc-3:all
-        ;;
-      e4-pg:retention-100)
-        env -u RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS DATABASE_URL=postgres://app:app@localhost:5432/appdb RALLAR_ICE_MODE=local RALLAR_BLACK_BOX_LIVE_RETENTION_SOAK=1 RALLAR_BLACK_BOX_LIVE_RETENTION_CYCLES=100 RALLAR_BLACK_BOX_RTC_BASELINE_ID="${RTC_BASELINE_ID}" RALLAR_BLACK_BOX_RTC_EVIDENCE_RAW_OUT="${RTC_B06_RAW}" RALLAR_BLACK_BOX_RTC_EVIDENCE_PHASE="${RTC_B06_PHASE}" RALLAR_BLACK_BOX_RTC_EVIDENCE_OUTER_ORDINAL="${RTC_B06_ORDINAL}" RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_DIAGNOSTICS}" npm run test:rallar:full-stack:postgres:live-rtc-3
-        ;;
-      *)
-        return 64
-        ;;
-    esac
-    RTC_B06_PRODUCER_STATUS="$?"
-
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-external --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --case-id="${RTC_B06_CASE_ID}" --input-key="${RTC_B06_ENVIRONMENT}-${RTC_B06_CASE_ID}" --intended-phase="${RTC_B06_PHASE}" --outer-ordinal="${RTC_B06_ORDINAL}" --producer-exit-status="${RTC_B06_PRODUCER_STATUS}" --raw-result="${RTC_B06_RAW}"
-    RTC_B06_BRIDGE_STATUS="$?"
-    set -e
-
-    if [ "${RTC_B06_PRODUCER_STATUS}" -ne 0 ] || [ "${RTC_B06_BRIDGE_STATUS}" -ne 0 ]; then
-      return 1
-    fi
-  }
-
-  rtc_capture_b06_manifest() {
-    set +e
-    RTC_B06_ATTEMPTS="$(deno run --config apps/api-v1/deno.json --allow-read scripts/perf/rtc-baseline/rtc-baseline-cli.ts list-external-attempts --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --format=tsv)"
-    RTC_B06_ATTEMPT_LIST_STATUS="$?"
-    set -e
-    RTC_B06_CAPTURE_STATUS="${RTC_B06_ATTEMPT_LIST_STATUS}"
-    if [ "${RTC_B06_CAPTURE_STATUS}" -eq 0 ]; then
-      while IFS=$'\t' read -r RTC_B06_CASE_ID RTC_B06_PHASE RTC_B06_ORDINAL RTC_B06_ENVIRONMENT; do
-        if ! rtc_capture_b06_attempt "${RTC_B06_CASE_ID}" "${RTC_B06_PHASE}" "${RTC_B06_ORDINAL}" "${RTC_B06_ENVIRONMENT}"; then
-          RTC_B06_CAPTURE_STATUS=1
-          break
-        fi
-      done <<< "${RTC_B06_ATTEMPTS}"
-    fi
-
-    set +e
-    RTC_B06_COHORT_RAW="tmp/perf/rtc-baseline/${RTC_BASELINE_ID}/artifacts/staging/rtc-b06-retention-100-cohort.json"
-    npx tsx tests/playwright/rallar-black-box/live-rtc-performance-evidence.ts --capture=cohort-assertion --baseline-id="${RTC_BASELINE_ID}" --cohort-id=retention-100 --out="${RTC_B06_COHORT_RAW}"
-    RTC_B06_COHORT_PRODUCER_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts record-external-cohort --baseline-id="${RTC_BASELINE_ID}" --workload=RTC-B06 --cohort-id=retention-100 --producer-exit-status="${RTC_B06_COHORT_PRODUCER_STATUS}" --raw-result="${RTC_B06_COHORT_RAW}"
-    RTC_B06_COHORT_BRIDGE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts finalize --baseline-id="${RTC_BASELINE_ID}"
-    RTC_B06_FINALIZE_STATUS="$?"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts validate --baseline-id="${RTC_BASELINE_ID}"
-    RTC_B06_VALIDATE_STATUS="$?"
-    set -e
-
-    if [ "${RTC_B06_CAPTURE_STATUS}" -ne 0 ] || [ "${RTC_B06_COHORT_PRODUCER_STATUS}" -ne 0 ] || [ "${RTC_B06_COHORT_BRIDGE_STATUS}" -ne 0 ] || [ "${RTC_B06_FINALIZE_STATUS}" -ne 0 ] || [ "${RTC_B06_VALIDATE_STATUS}" -ne 0 ]; then
-      return 1
-    fi
-  }
-
-  RTC_B06_E3_PRIMARY_ID="${RTC_BASELINE_ID}"
-  rtc_capture_b06_manifest
-
-  set +e
-  RTC_B06_E3_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_B06_E3_PRIMARY_ID}" --format=workload-csv)"
-  RTC_B06_E3_REPEAT_REQUIRED_STATUS="$?"
-  set -e
-  if [ "${RTC_B06_E3_REPEAT_REQUIRED_STATUS}" -eq 0 ]; then
-    test "${RTC_B06_E3_REPEAT_WORKLOADS}" = "RTC-B06"
-    RTC_BASELINE_ID="${RTC_B06_E3_PRIMARY_ID}-repeat-01"
-    deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --repeat-of="${RTC_B06_E3_PRIMARY_ID}" --retained-sample-multiplier=2
-    rtc_capture_b06_manifest
-  elif [ "${RTC_B06_E3_REPEAT_REQUIRED_STATUS}" -ne 3 ]; then
-    exit "${RTC_B06_E3_REPEAT_REQUIRED_STATUS}"
-  fi
-
-  case "${RTC_B06_E4_DECISION}" in
-    not-required)
-      ;;
-    required)
-      DATABASE_URL=postgres://app:app@localhost:5432/appdb npm run db:test:up
-      test "$(docker compose ps --status running --services postgres)" = "postgres"
-      mkdir -p tmp/perf/rtc-baseline
-      RTC_B06_E4_GATE_ROOT="$(mktemp -d "tmp/perf/rtc-baseline/diagnostic-gates-$(git rev-parse --short=12 HEAD)-XXXXXX")"
-      DATABASE_URL=postgres://app:app@localhost:5432/appdb RALLAR_ICE_MODE=local RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR="${RTC_B06_E4_GATE_ROOT}/e4-pg-all-scenarios" npm run test:rallar:full-stack:postgres:live-rtc-3:all
-      test "$(git rev-parse HEAD)" = "${RTC_B06_GATED_HEAD}"
-      test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_GATED_TREE}"
-      test -z "$(git status --porcelain)"
-
-      RTC_BASELINE_ID="$(date -u +%Y%m%d)-$(git rev-parse --short=12 HEAD)-e4-pg"
-      RTC_B06_E4_PRIMARY_ID="${RTC_BASELINE_ID}"
-      deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06
-      rtc_capture_b06_manifest
-
-      set +e
-      RTC_B06_E4_REPEAT_WORKLOADS="$(deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts repeat-required --baseline-id="${RTC_B06_E4_PRIMARY_ID}" --format=workload-csv)"
-      RTC_B06_E4_REPEAT_REQUIRED_STATUS="$?"
-      set -e
-      if [ "${RTC_B06_E4_REPEAT_REQUIRED_STATUS}" -eq 0 ]; then
-        test "${RTC_B06_E4_REPEAT_WORKLOADS}" = "RTC-B06"
-        RTC_BASELINE_ID="${RTC_B06_E4_PRIMARY_ID}-repeat-01"
-        deno run --config apps/api-v1/deno.json --allow-read --allow-write=tmp/perf/rtc-baseline --allow-run=git,node,npm,deno,uname,sysctl scripts/perf/rtc-baseline/rtc-baseline-cli.ts initialize --baseline-id="${RTC_BASELINE_ID}" --workloads=RTC-B06 --repeat-of="${RTC_B06_E4_PRIMARY_ID}" --retained-sample-multiplier=2
-        rtc_capture_b06_manifest
-      elif [ "${RTC_B06_E4_REPEAT_REQUIRED_STATUS}" -ne 3 ]; then
-        exit "${RTC_B06_E4_REPEAT_REQUIRED_STATUS}"
-      fi
-      ;;
-    *)
-      exit 64
-      ;;
-  esac
-  printf 'export RTC_B06_E3_PRIMARY_ID=%q\n' "${RTC_B06_E3_PRIMARY_ID}"
-  printf 'export RTC_B06_E4_DECISION=%q\n' "${RTC_B06_E4_DECISION}"
-  printf 'export RTC_B06_E4_DECISION_REASON=%q\n' "${RTC_B06_E4_DECISION_REASON}"
-  if [ "${RTC_B06_E4_DECISION}" = "required" ]; then
-    printf 'export RTC_B06_E4_PRIMARY_ID=%q\n' "${RTC_B06_E4_PRIMARY_ID}"
-  fi
-  ```
-
-  `list-external-attempts` derives the primary 1+5/1+3/1+3 or repeat
-  1+10/1+6/1+6 process identities from the validated immutable manifest; neither
-  the shell nor the B06 producer accepts a count. The E3 primary summary and
-  hashes persist the explicit E4 decision and reviewed reason before any sample
-  starts; repeats inherit it. `required` must produce finalized E4 evidence,
-  while `not-required` records only a reasoned scope decision and cannot support
-  a database-backed candidate. Preserve the B06 head as a new anchor.
-
-- [ ] **Step 6: Produce a complete cross-anchor rerun before comparison**
-
-  Run this step only when candidate selection would compare original-anchor and
-  B06-head evidence. First bind the later run to the exact B06 gate and select
-  one frozen B01-B05 workload:
-
-  ```bash
-  : "${RTC_B06_GATED_HEAD:?export the exact Step 4 green B06 head SHA}"
-  : "${RTC_B06_GATED_TREE:?export the exact Step 4 green B06 tree SHA}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_RUN:?export the exact Step 4b main-based Branch Release Gate run ID}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT:?export the exact Step 4b run attempt}"
-  : "${RTC_B06_MAIN_BRANCH_GATE_JOB:?export the exact Step 4b Release Gate job ID}"
-  : "${RTC_CANDIDATE_WORKLOAD:?export exactly one of RTC-B01 through RTC-B05}"
-  test "$(git rev-parse HEAD)" = "${RTC_B06_GATED_HEAD}"
-  test "$(git rev-parse HEAD^{tree})" = "${RTC_B06_GATED_TREE}"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B06_GATED_HEAD}"
-  test "$(gh run view "${RTC_B06_MAIN_BRANCH_GATE_RUN}" --attempt "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_MAIN_BRANCH_GATE_JOB}" --jq .run_id)" = "${RTC_B06_MAIN_BRANCH_GATE_RUN}"
-  test "$(gh api "/repos/intact-software-systems/ar-eye-hunter/actions/jobs/${RTC_B06_MAIN_BRANCH_GATE_JOB}" --jq .conclusion)" = "success"
-  test -z "$(git status --porcelain)"
-  case "${RTC_CANDIDATE_WORKLOAD}" in
-    RTC-B01|RTC-B02|RTC-B03|RTC-B04)
-      printf 'export RTC_B01_B05_HEAD=%q\n' "${RTC_B06_GATED_HEAD}"
-      printf 'export RTC_B01_B05_TREE=%q\n' "${RTC_B06_GATED_TREE}"
-      printf 'export RTC_B01_B05_BRANCH_GATE_RUN=%q\n' "${RTC_B06_MAIN_BRANCH_GATE_RUN}"
-      printf 'export RTC_B01_B05_BRANCH_GATE_ATTEMPT=%q\n' "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}"
-      ;;
-    RTC-B05)
-      printf 'export RTC_B01_B05_HEAD=%q\n' "${RTC_B06_GATED_HEAD}"
-      printf 'export RTC_B01_B05_TREE=%q\n' "${RTC_B06_GATED_TREE}"
-      printf 'export RTC_B01_B05_BRANCH_GATE_RUN=%q\n' "${RTC_B06_MAIN_BRANCH_GATE_RUN}"
-      printf 'export RTC_B01_B05_BRANCH_GATE_ATTEMPT=%q\n' "${RTC_B06_MAIN_BRANCH_GATE_ATTEMPT}"
-      ;;
-    *)
-      exit 64
-      ;;
-  esac
-  ```
-
-  For `RTC-B01` through `RTC-B04`, execute **all** of Task 8 Steps 1-5 with
-  those printed B06 head/tree/gate inputs. That deliberately creates and fully
-  captures the complete B01-B04 E1 manifest; never initialize the combined
-  manifest and capture only the selected workload. For `RTC-B05`, execute all
-  of Task 9 Steps 1-2 with those B06 inputs. In either route, retain the newly
-  printed primary baseline ID and any controlled repeat; do not reuse or append
-  to an original-anchor directory. For the combined E1 flow, use its repeat ID
-  only when the stable `RTC_E1_TRIGGERED_REPEAT_WORKLOADS` CSV contains the
-  selected workload; otherwise use the E1 primary. Reject a listed workload
-  with an empty repeat ID or an unlisted workload paired to that subset repeat.
-
-  Finally require each primary ID plus the exact finalized cohort selected for
-  comparison. Use the primary itself when no repeat was required; use its sole
-  validated `-repeat-01` ID when triggered. Validate only the selected workload
-  as an explicit paired comparison. The command rejects an incomplete/unlinked
-  repeat, a still-noisy repeat, or any non-Git grouping difference and never
-  pools samples:
-
-  ```bash
-  : "${RTC_ORIGINAL_PRIMARY_BASELINE_ID:?export the finalized original-anchor primary baseline ID}"
-  : "${RTC_ORIGINAL_COMPARISON_BASELINE_ID:?export that primary ID or its required finalized repeat ID}"
-  : "${RTC_B06_RERUN_PRIMARY_BASELINE_ID:?export the finalized B06-head rerun primary baseline ID}"
-  : "${RTC_B06_RERUN_COMPARISON_BASELINE_ID:?export that primary ID or its required finalized repeat ID}"
-  : "${RTC_CANDIDATE_WORKLOAD:?export the same RTC-B01 through RTC-B05 workload}"
-  deno run --config apps/api-v1/deno.json --allow-read --allow-run=git,node,npm,deno,uname,sysctl \
-    scripts/perf/rtc-baseline/rtc-baseline-cli.ts compare-paired \
-    --left-primary-baseline-id="${RTC_ORIGINAL_PRIMARY_BASELINE_ID}" \
-    --left-comparison-baseline-id="${RTC_ORIGINAL_COMPARISON_BASELINE_ID}" \
-    --right-primary-baseline-id="${RTC_B06_RERUN_PRIMARY_BASELINE_ID}" \
-    --right-comparison-baseline-id="${RTC_B06_RERUN_COMPARISON_BASELINE_ID}" \
-    --workload="${RTC_CANDIDATE_WORKLOAD}"
-  ```
-
-  Never rewrite original-anchor evidence or pool the two heads.
-
-**Exit:** B06 has its own exact clean head and evidence; B01-B05 has been
-re-measured on that head wherever a cross-anchor claim requires it.
+**Exit:** B06 has a distinct published/gated anchor, complete E3 evidence,
+required E4 evidence or a valid hashed skip, exact required repeats, and a valid
+summary. B07, optimization, raw-artifact publication, and Phase 2 remain held.
 
 ### Task 11: Keep B07 held
 
 **Files:** No changes or artifacts without separate authorization.
+
+**Organization prerequisite:** Tasks 4A and 4B must be merged and revalidated
+before any future B07 amendment can name RTC benchmark paths. A later B07 plan
+must use `packages/shared-rtc-bench/**` commands/catalog provenance and may not
+restore `scripts/perf/**` wrappers.
 
 - [ ] Request a new human decision naming remote cost, fleet, manifest, commit,
       and artifact handling before dispatching either manifest.
@@ -4261,7 +3814,14 @@ completion.
 
 **Files:** Analysis is read-only. A durable update may modify only this plan on a
 separately authorized plan-only branch/worktree; it may never add a seventh
-B01-B05 anchor commit, a second B06 commit, or a sixth B06 path.
+B01-B05 anchor commit, a second B06 commit, or a fifth B06 path.
+
+**Prerequisites:** the exact reviewed Task 4A/4B package is on both immutable
+measurement anchors; Tasks 8-10 have finalized and validated their required
+evidence; all source/config paths in each summary resolve to the corresponding
+anchor; and no accepted evidence crosses the pre-/post-organization path/hash
+boundary. Package navigation/catalog metadata remains measurement provenance,
+not ontology metadata.
 
 - [ ] **Step 1: Reconcile evidence without changing either anchor**
 
@@ -4362,9 +3922,9 @@ evidence, or an explicit conclusion that no optimization is justified.
 
 ## 12. Phase 1 Baseline Completion Gate
 
-An exact six-commit B01-B05 draft head with green local and **Branch Release
-Gate** evidence is a gated measurement-anchor milestone only. The equivalent
-B06 draft head is a second gated measurement-anchor milestone. Both remain
+An exact reviewed-package B01-B05 head with green local and publication evidence
+is a gated measurement-anchor milestone only. The equivalent B06 head is a
+second gated measurement-anchor milestone. Both remain
 explicitly incomplete source-publication evidence even when capture succeeds;
 neither a draft PR nor this plan-only publication can substitute for merge and
 resulting-default-branch workflow evidence.
@@ -4374,12 +3934,23 @@ The baseline is complete only when:
 - the exact approved plan revision is on the resulting default branch and its
   **Run Hetzner Supported Distributed Manifests** workflow is green for that
   default-branch commit;
-- the B01-B05 instrumentation PR is merged, its exact resulting default-branch
-  commit/tree is recorded, and **Run Hetzner Supported Distributed Manifests**
-  is green for that resulting commit;
+- Task 4A package relocation is merged with exact semantic-parity,
+  architecture, Branch Release Gate, resulting-main compatibility, and **Run
+  Hetzner Supported Distributed Manifests** evidence;
+- Task 4B review/remediation is merged with a complete executable trace, a
+  complete one-disposition-per-candidate legacy ledger, exact human approval
+  for each retained item, zero independently re-reviewed Critical/Important
+  finding, Branch Release Gate, resulting-main compatibility, and **Run Hetzner
+  Supported Distributed Manifests** evidence;
+- B04 and B05 instrumentation are each merged from the reviewed package, their
+  exact resulting default-branch commits/trees are recorded, and the required
+  feature/resulting-main workflows are green;
+- the resulting B01-B05 anchor contains no RTC/WebRTC benchmark implementation
+  under `scripts/**`, has no prohibited package dependency or reverse product
+  import, and passes the package architecture/semantic/Deno/TypeScript gates;
 - after B01-B05 publication, any stacked B06 base is proved to be an ancestor of
   `main`, the unchanged B06 PR is retargeted and freshly Branch-Release-gated as
-  an exact five-path diff, is merged, and records its own exact resulting
+  an exact four-path diff, is merged, and records its own exact resulting
   default-branch commit/tree plus green **Run Hetzner Supported Distributed
   Manifests** run; a squash/rebase rewrite of the stacked base leaves this plan
   incomplete until a separately approved replacement-head plan redoes B06;
@@ -4417,14 +3988,16 @@ incomplete evidence milestone and do not mark this written plan complete.
 
 ## 13. Progress Record
 
-| Date       | Plan revision                                                                                                    | State              | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Next action                                                                                                                                                                                                                                                                                                                                  |
-| ---------- | ---------------------------------------------------------------------------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-06 | Accepted Phase 0 blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d`                                                 | `accepted-design`  | Frozen B01-B06 workloads, environments, gates, artifacts, reproducibility, and stop rules were accepted. No baseline was executed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reconcile the approved structural decision without starting instrumentation.                                                                                                                                                                                                                                                                 |
-| 2026-08-07 | Phase 1 structural amendment envelope at coordinator `1dba71d7b2bebaa2738b7e36a6f8fb510fee3f71`                  | `plan-publication` | Exact B01-B05 feature-folder/test split, 16 accepted harnesses, browser soak, ordered six-commit branch, later five-path B06 hold, README/coverage/B07/production holds, and distinct-anchor rules are approved for this plan-only publication. The old prototype supplied design input only; no source, capture, or completion evidence is current.                                                                                                                                                                                                                                                                                                                                                                                                       | Publish this plan-only revision, record its exact blob and gates, and stop for human approval of that blob before activation.                                                                                                                                                                                                                |
-| 2026-08-08 | CLI-boundary feasibility amendment based on PR #89 merge `f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41`              | `plan-amendment`   | The clean Task 1 feasibility review proved the five-path foundation could not keep the stateful envelope readable and at or below 400 lines while also owning real Deno composition. This amendment adds only `rtc-baseline-cli.ts`, moves the file-store port beside the envelope, keeps contracts data-only and validation pure, and preserves every workload, environment, correctness, reproducibility, anchor, and hold rule. No RTC source, capture, service, production, B06, B07, optimization, or Phase 2 work was authorized or completed.                                                                                                                                                                                                       | Publish this exact plan blob, obtain new human blob approval and a separately updated coordinator activation, then restart Task 0 from current `main`.                                                                                                                                                                                       |
-| 2026-08-08 | Nine-path Task 1 feasibility amendment based on current `main` `73a5e16c5ab09230c142efe78d82f2edd5d3025f`        | `plan-amendment`   | Independent review proved the six-path foundation still could not preserve the exact required behavior, semantic tests, visible ownership, and 400-line limit. This amendment adds only pure `rtc-baseline-statistics.ts`, stateful `rtc-baseline-evidence-store.ts`, and application-boundary `rtc-performance-baseline-cli.test.ts`; keeps six ordered B01-B05 commits and every workload, environment, artifact, comparison, anchor, B06, and later hold unchanged; and treats both held spikes as read-only design input with no current evidence.                                                                                                                                                                                                     | Publish this exact plan blob, obtain qualifying human exact-blob approval and separate roadmap activation, then restart Task 0 and new nine-file RED boundaries from fresh then-current `main`.                                                                                                                                              |
-| 2026-08-08 | Thirteen-path Task 1 feasibility amendment based on current `main` `1ec386f12735203daf928ca56e6b21d3b089c196`    | `plan-amendment`   | Independent review proved the nine-path spike still could not preserve the complete manifest, accepted-evidence workflow, public shell, semantic test ownership, and 400-line limit without obscuring responsibilities. This amendment adds only pure `rtc-baseline-workload-manifest.ts`, stateful `rtc-baseline-evidence-acceptance.ts`, and their manifest/envelope semantic tests; keeps the six ordered B01-B05 commits and every workload, environment, artifact, comparison, anchor, five-path B06 reservation, and later hold unchanged; and treats every held spike as read-only design input with no current evidence.                                                                                                                           | Publish this exact plan blob, obtain qualifying human exact-blob approval and separate roadmap activation, then restart Task 0 from fresh then-current `main` and establish new RED boundaries for all 13 Task 1 files before selectively porting audited fragments.                                                                         |
-| 2026-08-08 | Sixteen-path Task 1 feasibility amendment based on current `main` `fdb53f836f7e1fae7b416161a0dbff8d98f91760`     | `plan-amendment`   | Independent review of the thirteen-path Task 1 WIP found that real Deno runtime composition and the accepted-evidence lifecycle still overloaded the CLI and envelope test boundaries. This amendment adds only `rtc-baseline-deno-runtime.ts`, its direct runtime test, and the direct evidence-acceptance test; moves CLI grammar out of pure validation; preserves the six ordered B01-B05 commits, every workload, environment, artifact, comparison, anchor, five-path B06 reservation, and later hold; and treats the thirteen-path WIP as read-only design input with no current evidence.                                                                                                                                                          | Publish this exact plan blob, obtain qualifying human exact-blob approval and separate roadmap activation, then restart Task 0 from fresh then-current `main` and establish new RED boundaries for all 16 Task 1 files. Selectively port only audited fragments; never wholesale-copy WIP or inherit its tests, gates, or completion claims. |
-| 2026-08-09 | Twenty-five-path Task 1 feasibility amendment based on current `main` `9ff4b7422c8124acf4bce0c46d1d1bf7cddbab6a` | `plan-amendment`   | Independent review of the sixteen-path WIP confirmed that complete safe decoding, artifact layout/checksum parsing, causal failure accounting, verified finalization/repeat reads, adapter-neutral observation, and exact CLI grammar remained overloaded or under-specified. This amendment adds only those six source owners and their validation, evidence-failure, and finalization tests; freezes the configuration descriptor/worker grammar, complete B05 locator, and exact primary-summary repeat link; preserves all six ordered commits, workloads, samples, environments, anchors, B06 five-path reservation, and later holds; and treats the sixteen-path WIP as read-only design input with no inherited test, gate, or completion evidence. | Publish this exact plan blob, obtain qualifying exact-blob human approval and separate roadmap activation, then restart Task 0 from fresh then-current `main`, create all ten tests while all 15 sources are absent, record the exact ten-test RED, and implement only the 25-path Task 1 foundation.                                        |
-| 2026-08-09 | Thirty-nine-path Task 1 feasibility amendment based on current `main` `5f20dca92b3c4bc95e71a88abdc01fb420eb1549` | `plan-amendment`   | Independent review of the twenty-five-path WIP proved that complete literal workload policy, safe persisted-artifact decoding and validation, recoverable disk-backed finalized reads, real Deno adapters, exact CLI option primitives, and their independent semantic tests cannot fit honestly within the existing owners and 400-line cap. This amendment adds only six source owners and eight direct tests, keeps all six ordered commits, workloads, samples, environments, artifact rules, both anchors, the exact five-path B06 reservation, and every later hold unchanged, and treats the rejected twenty-five-path WIP as read-only design input with no inherited implementation, test, gate, or completion evidence.                          | Publish this exact plan blob, obtain qualifying exact-blob human approval and separate roadmap activation, then restart Task 0 from fresh then-current `main`, create all 18 tests while all 21 sources are absent, record the exact 18-test RED, and implement only the 39-path Task 1 foundation.                                          |
-| 2026-08-10 | Controller-protocol correction based on current `main` `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`                | `plan-amendment`   | Review of the held thirty-nine-path Task 1 implementation found that Task 1 had not frozen the same controller protocol already used by the later executable recipes. This correction makes those recipes canonical: one baseline persists an ordered nonempty `workloadIds` list; initialization uses `--workloads`; producer ingestion uses `--producer-exit-status` and `--raw-result`; and external-attempt listing emits the existing exact four-column TSV. It changes no workload, environment, sample, evidence, comparison, anchor, write reservation, ordered commit, or hold.                                                                                                                                                                   | Publish this exact plan blob in one draft plan-only PR and stop for qualifying exact-blob human approval. RTC implementation and capture remain inactive; any later implementation resumption still requires the matching coordinator activation.                                                                                            |
+| Date       | Plan revision                                                                                                    | State                       | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Next action                                                                                                                                                                                                                                                                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-06 | Accepted Phase 0 blob `50614b299cfc9b1d85aafb1e32537e56f512ff3d`                                                 | `accepted-design`           | Frozen B01-B06 workloads, environments, gates, artifacts, reproducibility, and stop rules were accepted. No baseline was executed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Reconcile the approved structural decision without starting instrumentation.                                                                                                                                                                                                                                                                 |
+| 2026-08-07 | Phase 1 structural amendment envelope at coordinator `1dba71d7b2bebaa2738b7e36a6f8fb510fee3f71`                  | `plan-publication`          | Exact B01-B05 feature-folder/test split, 16 accepted harnesses, browser soak, ordered six-commit branch, later five-path B06 hold, README/coverage/B07/production holds, and distinct-anchor rules are approved for this plan-only publication. The old prototype supplied design input only; no source, capture, or completion evidence is current.                                                                                                                                                                                                                                                                                                                                                                                                       | Publish this plan-only revision, record its exact blob and gates, and stop for human approval of that blob before activation.                                                                                                                                                                                                                |
+| 2026-08-08 | CLI-boundary feasibility amendment based on PR #89 merge `f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41`              | `plan-amendment`            | The clean Task 1 feasibility review proved the five-path foundation could not keep the stateful envelope readable and at or below 400 lines while also owning real Deno composition. This amendment adds only `rtc-baseline-cli.ts`, moves the file-store port beside the envelope, keeps contracts data-only and validation pure, and preserves every workload, environment, correctness, reproducibility, anchor, and hold rule. No RTC source, capture, service, production, B06, B07, optimization, or Phase 2 work was authorized or completed.                                                                                                                                                                                                       | Publish this exact plan blob, obtain new human blob approval and a separately updated coordinator activation, then restart Task 0 from current `main`.                                                                                                                                                                                       |
+| 2026-08-08 | Nine-path Task 1 feasibility amendment based on current `main` `73a5e16c5ab09230c142efe78d82f2edd5d3025f`        | `plan-amendment`            | Independent review proved the six-path foundation still could not preserve the exact required behavior, semantic tests, visible ownership, and 400-line limit. This amendment adds only pure `rtc-baseline-statistics.ts`, stateful `rtc-baseline-evidence-store.ts`, and application-boundary `rtc-performance-baseline-cli.test.ts`; keeps six ordered B01-B05 commits and every workload, environment, artifact, comparison, anchor, B06, and later hold unchanged; and treats both held spikes as read-only design input with no current evidence.                                                                                                                                                                                                     | Publish this exact plan blob, obtain qualifying human exact-blob approval and separate roadmap activation, then restart Task 0 and new nine-file RED boundaries from fresh then-current `main`.                                                                                                                                              |
+| 2026-08-08 | Thirteen-path Task 1 feasibility amendment based on current `main` `1ec386f12735203daf928ca56e6b21d3b089c196`    | `plan-amendment`            | Independent review proved the nine-path spike still could not preserve the complete manifest, accepted-evidence workflow, public shell, semantic test ownership, and 400-line limit without obscuring responsibilities. This amendment adds only pure `rtc-baseline-workload-manifest.ts`, stateful `rtc-baseline-evidence-acceptance.ts`, and their manifest/envelope semantic tests; keeps the six ordered B01-B05 commits and every workload, environment, artifact, comparison, anchor, five-path B06 reservation, and later hold unchanged; and treats every held spike as read-only design input with no current evidence.                                                                                                                           | Publish this exact plan blob, obtain qualifying human exact-blob approval and separate roadmap activation, then restart Task 0 from fresh then-current `main` and establish new RED boundaries for all 13 Task 1 files before selectively porting audited fragments.                                                                         |
+| 2026-08-08 | Sixteen-path Task 1 feasibility amendment based on current `main` `fdb53f836f7e1fae7b416161a0dbff8d98f91760`     | `plan-amendment`            | Independent review of the thirteen-path Task 1 WIP found that real Deno runtime composition and the accepted-evidence lifecycle still overloaded the CLI and envelope test boundaries. This amendment adds only `rtc-baseline-deno-runtime.ts`, its direct runtime test, and the direct evidence-acceptance test; moves CLI grammar out of pure validation; preserves the six ordered B01-B05 commits, every workload, environment, artifact, comparison, anchor, five-path B06 reservation, and later hold; and treats the thirteen-path WIP as read-only design input with no current evidence.                                                                                                                                                          | Publish this exact plan blob, obtain qualifying human exact-blob approval and separate roadmap activation, then restart Task 0 from fresh then-current `main` and establish new RED boundaries for all 16 Task 1 files. Selectively port only audited fragments; never wholesale-copy WIP or inherit its tests, gates, or completion claims. |
+| 2026-08-09 | Twenty-five-path Task 1 feasibility amendment based on current `main` `9ff4b7422c8124acf4bce0c46d1d1bf7cddbab6a` | `plan-amendment`            | Independent review of the sixteen-path WIP confirmed that complete safe decoding, artifact layout/checksum parsing, causal failure accounting, verified finalization/repeat reads, adapter-neutral observation, and exact CLI grammar remained overloaded or under-specified. This amendment adds only those six source owners and their validation, evidence-failure, and finalization tests; freezes the configuration descriptor/worker grammar, complete B05 locator, and exact primary-summary repeat link; preserves all six ordered commits, workloads, samples, environments, anchors, B06 five-path reservation, and later holds; and treats the sixteen-path WIP as read-only design input with no inherited test, gate, or completion evidence. | Publish this exact plan blob, obtain qualifying exact-blob human approval and separate roadmap activation, then restart Task 0 from fresh then-current `main`, create all ten tests while all 15 sources are absent, record the exact ten-test RED, and implement only the 25-path Task 1 foundation.                                        |
+| 2026-08-09 | Thirty-nine-path Task 1 feasibility amendment based on current `main` `5f20dca92b3c4bc95e71a88abdc01fb420eb1549` | `plan-amendment`            | Independent review of the twenty-five-path WIP proved that complete literal workload policy, safe persisted-artifact decoding and validation, recoverable disk-backed finalized reads, real Deno adapters, exact CLI option primitives, and their independent semantic tests cannot fit honestly within the existing owners and 400-line cap. This amendment adds only six source owners and eight direct tests, keeps all six ordered commits, workloads, samples, environments, artifact rules, both anchors, the exact five-path B06 reservation, and every later hold unchanged, and treats the rejected twenty-five-path WIP as read-only design input with no inherited implementation, test, gate, or completion evidence.                          | Publish this exact plan blob, obtain qualifying exact-blob human approval and separate roadmap activation, then restart Task 0 from fresh then-current `main`, create all 18 tests while all 21 sources are absent, record the exact 18-test RED, and implement only the 39-path Task 1 foundation.                                          |
+| 2026-08-10 | Controller-protocol correction based on current `main` `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`                | `plan-amendment`            | Review of the held thirty-nine-path Task 1 implementation found that Task 1 had not frozen the same controller protocol already used by the later executable recipes. This correction makes those recipes canonical: one baseline persists an ordered nonempty `workloadIds` list; initialization uses `--workloads`; producer ingestion uses `--producer-exit-status` and `--raw-result`; and external-attempt listing emits the existing exact four-column TSV. It changes no workload, environment, sample, evidence, comparison, anchor, write reservation, ordered commit, or hold.                                                                                                                                                                   | Publish this exact plan blob in one draft plan-only PR and stop for qualifying exact-blob human approval. RTC implementation and capture remain inactive; any later implementation resumption still requires the matching coordinator activation.                                                                                            |
+| 2026-08-12 | Foundation through B03 published                                                                                 | `instrumentation-published` | Foundation PR #150 merged as `f43c1881e684fd2a423b0993c4389d969c264311`; B01 PR #162 merged as `e921c46058d9db91c8c7707868593a523c4e75e0`; B02 PR #169 merged as `33fa104d2cbf347eab1d02a54107c01f064aad00`; B03 PR #193 merged as `39ad65b499c4bf944acfe48446ad1c334d97d37d`, tree `f11d95321e7bbd241d816f303f888945352160d7`, after exact-head Branch Release Gate run 31543466797 and resulting-main Hetzner run 31570814746 succeeded. B03 local/focused/repository validation is recorded in Task 4. No benchmark or baseline capture ran.                                                                                                                                                                                                            | Hold B04 and capture; organize and review the complete benchmark capability first.                                                                                                                                                                                                                                                           |
+| 2026-08-12 | Shared RTC benchmark organization design and in-place plan amendment in draft PR #196                            | `proposed-plan`             | The verified current surface is 49 RTC/WebRTC-related performance sources: 48 relocate into the exact private package capability tree and one general state-write policy moves to its actual state-write owner. The amendment adds the three-layer PR stack, exact Task 4A inventory/reservation, Task 4B trace/remediation/legacy ledger, current human-readability standard, ontology Task 4 coordination, and post-organization Tasks 5-12. This record is planning only; no package, source move, configuration change, or benchmark execution is complete.                                                                                                                                                                                            | Publish the exact plan blob and roadmap coordination record, then stop for direct human approval of that exact blob. Task 4A remains inactive until approval and a later matching activation.                                                                                                                                                |
