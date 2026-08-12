@@ -179,17 +179,17 @@ describe('Rallar skill plugin and publication integrity', () => {
       '- main',
       'paths-ignore:',
       "- 'docs/superpowers/plans/**'",
-      "- 'plans/**'",
-      "- '.agents/**'",
-      "- 'AGENTS.md'",
     ]);
+    for (const buildContractPath of ["'plans/**'", "'.agents/**'", "'AGENTS.md'"]) {
+      expect(branchWorkflow).not.toContain(buildContractPath);
+    }
     expect(branchWorkflow).not.toContain('docs/superpowers/specs/**');
     expect(branchWorkflow).not.toContain('.codex-plugin/**');
     expect(reusableWorkflow).not.toContain('paths-ignore:');
 
     expectAllNormalized(progressSkill, [
-      'Plan-only branches do not wait for Branch Release Gate when every changed path is excluded by the workflow',
-      'Branch Release Gate remains required when its path contract includes changed code, workflows, scripts, tests, or plugin metadata',
+      'Historical-plan-only branches do not wait for Branch Release Gate when every changed path is excluded by the workflow',
+      'Branch Release Gate remains required when its build-affecting path contract includes changed code, workflows, scripts, tests, package metadata, lockfiles, active plans, or agent and plugin contracts',
     ]);
     for (const source of [agents, testingSkill, testCommands]) {
       expect(source).not.toContain('Plan-only branches do not wait for');

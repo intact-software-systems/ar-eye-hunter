@@ -469,19 +469,19 @@ second adaptive checker, structure analyzer, PR validator, or broad CI suite.
 
 **Planned mirrored tests:** `packages/tests/repo/validation-evidence/`
 
-- [ ] Add one canonical build-affecting tree digest and
+- [x] Add one canonical build-affecting tree digest and
       `validation-evidence-v1` reader/writer/validator. Reuse the existing PR
       freshness path classifier as an explicit fact contract rather than
       creating a second definition of build-affecting content.
-- [ ] Produce trusted workflow evidence containing repository, workflow and run
+- [x] Produce trusted workflow evidence containing repository, workflow and run
       identity, validated head, build-tree digest, successful conclusion, and
       completion time. Fail closed on malformed, expired, untrusted, or
       mismatched evidence.
-- [ ] Let Branch Release Gate reuse a prior successful broad run only when its
+- [x] Let Branch Release Gate reuse a prior successful broad run only when its
       head is an ancestor of the candidate, its artifact is still within the
       accepted lifetime, and the current build-tree digest matches. Otherwise
       run the unchanged broad Release Gate and publish fresh evidence.
-- [ ] Prove documentation-only reuse and invalidation for code, tests,
+- [x] Prove documentation-only reuse and invalidation for code, tests,
       workflows/actions, package metadata, lockfiles, root build configuration,
       agent/plugin contracts, and adaptive-plan contracts.
 
@@ -701,11 +701,7 @@ are selected at the preceding checkpoint.
         "build-tree digest computation",
         "trusted prior-run evidence validation",
         "evidence production and branch-workflow reuse"
-      ],
-      "activation": {
-        "state": "planned",
-        "slice": "content-sensitive-validation-evidence"
-      }
+      ]
     },
     {
       "owner": "distributed validation risk",
@@ -746,10 +742,12 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "content-sensitive-validation-evidence"
+  ],
   "facts": {
     "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
-    "affectedCodeDigest": "0f6e1a2f54bc8317cfb9ace52ca3138f83808ff31bdac789647d04ca358151b5",
+    "affectedCodeDigest": "dfe442637e7f77857d37e2a03105ab598c305114c194ef5e80bf23a8048b67b8",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -765,7 +763,6 @@ are selected at the preceding checkpoint.
     "structure": "Give validation evidence one owner at scripts/validation-evidence with the existing PR freshness classifier as an explicit fact contract and ownership of Branch Release Gate/reusable Release Gate orchestration. Give distributed validation risk a separate scripts/distributed-validation-risk owner in front of the existing Hetzner supported-manifest workflow. Neither owner may duplicate broad CI, the distributed runner, build-path classification, or architectural judgment.",
     "decision": "continue",
     "nextSlices": [
-      "content-sensitive-validation-evidence",
       "risk-scoped-distributed-validation"
     ]
   },
@@ -813,6 +810,12 @@ are selected at the preceding checkpoint.
       "destination": "packages/tests/repo/pr-human-review/legacy-review-stage-integration.test.ts",
       "owner": "PR human review",
       "rationale": "Exact legacy-stage coverage now lives with the PR-review capability while preserving direct integration with the legacy scanner."
+    },
+    {
+      "kind": "ownership-contract",
+      "target": "scripts/validation-evidence content-sensitive broad-validation orchestration",
+      "disposition": "keep",
+      "rationale": "One cohesive owner selects trusted prior evidence, produces fresh evidence from the completed broad job, and converges both routes into one branch result. The existing PR freshness classifier remains the only build-path fact owner and release-gate.yml remains the unchanged broad validator. Reopen this disposition if another workflow family needs a different evidence trust boundary or the capability gains a second independent lifecycle."
     }
   ],
   "freshStructuralReview": {

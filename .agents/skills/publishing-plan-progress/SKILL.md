@@ -119,9 +119,10 @@ skipped, failed, expired, or unverifiable required publication evidence keeps pu
 incomplete. An instruction not to commit or push postpones publication; it does not turn missing
 evidence green.
 
-Plan-only branches do not wait for Branch Release Gate when every changed path is excluded by the
-workflow. Branch Release Gate remains required when its path contract includes changed code,
-workflows, scripts, tests, or plugin metadata.
+Historical-plan-only branches do not wait for Branch Release Gate when every changed path is
+excluded by the workflow. Branch Release Gate remains required when its build-affecting path
+contract includes changed code, workflows, scripts, tests, package metadata, lockfiles, active
+plans, or agent and plugin contracts.
 
 Cloudflare Workers, Cloudflare Pages, and Deno Deploy production or preview contexts are
 default-branch deployment concerns. A feature-branch provider run is configuration drift, not an

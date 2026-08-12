@@ -60,12 +60,18 @@ describe('governance gate workflow', () => {
         },
         'release-gate': {
           name: 'Release Gate',
-          needs: 'governance-gate',
+          needs: ['governance-gate', 'validation-evidence'],
           uses: './.github/workflows/release-gate.yml',
           with: { changed_repo_style_base: 'origin/main' },
         },
       },
     });
-    expect(Object.keys(workflow.jobs)).toEqual(['governance-gate', 'release-gate']);
+    expect(workflow.jobs['validation-evidence']).toMatchObject({
+      needs: 'governance-gate',
+    });
+    const branchSource = readFileSync(workflowPath, 'utf8');
+    expect(branchSource).not.toContain('npm run check:plan-adaptation');
+    expect(branchSource).not.toContain('npm run check:repo-structure');
+    expect(branchSource).not.toContain('npm run test:pr-human-review');
   });
 });

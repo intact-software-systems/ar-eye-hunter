@@ -96,6 +96,7 @@
     "check:adaptive-governance": "npm run check:plan-adaptation && npm run check:repo-structure",
     "check:governance-gate": "node scripts/governance-gate.mjs",
     "test:governance-gate": "vitest run packages/tests/repo/governance-gate",
+    "test:validation-evidence": "vitest run packages/tests/repo/validation-evidence",
     "check:repo-style": "node scripts/repo-style-check.mjs --cognitive-metrics",
     "check:repo-style:construction-details": "node scripts/repo-style-check.mjs --construction-details",
     "check:repo-style:changed": "node scripts/check-changed-repo-style.mjs",
