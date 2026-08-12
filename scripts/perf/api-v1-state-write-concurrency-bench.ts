@@ -76,7 +76,7 @@ import {
 } from './pool-group-topology-state-write-position-balanced-results.mjs';
 import {
   selectStateWriteRegressionReasons,
-} from './rtc-topology/state-write-reasons.ts';
+} from './state-write/api-v1-state-write-regression-reasons.ts';
 export { deriveAppInboxAttemptObservations } from './api-v1-state-write-attempt-evidence.ts';
 export { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 export { parseGroupTopologyRegressionReasons };

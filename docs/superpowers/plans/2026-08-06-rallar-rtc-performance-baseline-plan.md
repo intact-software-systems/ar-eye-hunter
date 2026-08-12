@@ -26,10 +26,12 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 ## Global Constraints
 
-- This revision is planning and coordination only. It authorizes no package
-  creation, source/test relocation, configuration change, benchmark execution,
-  or Task 4A implementation. Activation requires human approval of this exact
-  plan blob and a matching published roadmap reservation.
+- PR #196's planning revision authorized no implementation by itself. The human
+  subsequently approved exact plan blob
+  `b78e00e982d186264bc5ba6b4b2a943f15a328f3` and explicitly authorized Task 4A
+  execution. This progress revision activates only Section 10's exact Task 4A
+  reservation; it does not authorize Task 4B, B04, capture, B06, ontology
+  implementation, or production RTC changes.
 - Preserve the accepted `RTC-B01` through `RTC-B06` workloads, environments,
   correctness gates, sample counts, CLI grammar, identities, artifact schemas,
   timing boundaries, output confinement, failure accounting, reproducibility
@@ -63,9 +65,10 @@ GitHub Actions, and ignored JSON evidence under `tmp/perf/rtc-baseline/**`.
 
 **Created:** 2026-08-06
 
-**Status:** Task 4A/4B organization amendment proposed in draft PR #196;
-publication, exact revised plan-blob human approval, and coordinator activation
-are still required. No source move is active.
+**Status:** PR #196 is merged, its resulting-main workflow passed, and exact
+plan blob `b78e00e982d186264bc5ba6b4b2a943f15a328f3` received explicit human
+approval. Task 4A alone is active on `codex/shared-rtc-bench-task-4a`; Task 4B,
+B04, capture, B06, ontology implementation, and production RTC remain held.
 
 **Roadmap:**
 [Rallar Architecture Quality And RTC Program Roadmap](../../../plans/rallar-architecture-quality-and-rtc-program-roadmap.md)
@@ -914,20 +917,20 @@ program. The valid outcome may be “no optimization justified yet.”
 
 ## 10. Overlap And Write Reservations
 
-### Current plan-only reservation
+### Published plan layer and active Task 4A reservation
 
-Draft PR #196 may edit and publish only:
+PR #196 edited and published only:
 
 - `docs/superpowers/specs/2026-08-12-shared-rtc-bench-organization-design.md`;
 - this plan;
 - `plans/rallar-architecture-quality-and-rtc-program-roadmap.md`; and
 - its GitHub draft-PR coordination record.
 
-The specification needs no content change in this amendment. The write sets
-below remain proposed and inactive until the new exact plan blob receives
-separate human approval and the roadmap coordinator activates Task 4A.
+The specification needs no content change during Task 4A. The human approved
+the exact plan blob and authorized starting; the roadmap activates only the
+Task 4A write set below. Every Task 4B and later write set remains inactive.
 
-### Task 4A package-ownership reservation — proposed, inactive
+### Task 4A package-ownership reservation — active
 
 Task 4A reserves creation and all content under
 `packages/shared-rtc-bench/**`, limited to the exact parity-checkpoint inventory
@@ -2736,9 +2739,12 @@ evidence semantics remain frozen.
 
 ### Task 4A: Establish package ownership
 
-**State:** proposed and inactive. Human approval must name the exact amended
-plan blob and the roadmap must publish the matching Task 4A reservation before
-any step below changes a file.
+**State:** active only on `codex/shared-rtc-bench-task-4a`. The human named exact
+plan blob `b78e00e982d186264bc5ba6b4b2a943f15a328f3` and then explicitly stated
+“I authorise you to start.” PR #196 merged as current main
+`55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af`; resulting-main **Run Hetzner
+Supported Distributed Manifests** run 31597501992 succeeded on that exact
+commit. This progress record activates no later milestone.
 
 **Purpose:** relocate every RTC/WebRTC performance tool and owning test into the
 private `packages/shared-rtc-bench/**` capability tree while preserving behavior
@@ -2756,7 +2762,7 @@ published evidence above is still reachable; and current `origin/main` has a
 recorded compatibility review. Main movement triggers the smallest documented
 path/contract delta, not an automatic rebase or redesign.
 
-- [ ] **Step 1: Prove the exact base, reservation, and clean branch**
+- [x] **Step 1: Prove the exact base, reservation, and clean branch**
 
   Fetch current refs. Verify the approved plan blob from `origin/main`, the
   exact human record, the roadmap activation, the complete Section 10 source
@@ -2765,7 +2771,7 @@ path/contract delta, not an automatic rebase or redesign.
   ownership, production imports, ontology Task 4's three reserved paths, and
   frozen benchmark contracts. Stop on a material contract conflict.
 
-- [ ] **Step 2: Establish architecture RED before relocation**
+- [x] **Step 2: Establish architecture RED before relocation**
 
   Create only the package skeleton/configuration, README executable-row schema,
   and the three architecture tests named in Section 10; update only
@@ -2785,7 +2791,7 @@ path/contract delta, not an automatic rebase or redesign.
   a no-tests result is an invalid RED. Unexpected passes or unrelated failures
   mean the boundary is not proven; fix the tests, not the repository behavior.
 
-- [ ] **Step 3: Perform the one-to-one relocation and setup replacement**
+- [x] **Step 3: Perform the one-to-one relocation and setup replacement**
 
   Move every source through the Section 10 current-to-target table and every
   owning test to the exact mirrored target. Add only the three narrowly named
@@ -2806,7 +2812,7 @@ path/contract delta, not an automatic rebase or redesign.
   after imports point at the new owner. Create no wrapper or compatibility
   entrypoint.
 
-- [ ] **Step 4: Update path-valued contracts and repository participation**
+- [x] **Step 4: Update path-valued contracts and repository participation**
 
   Update the accepted workload catalog's worker prefixes, `sourcePaths`, and
   `configPaths` one-for-one. Preserve every workload/case/input key,
@@ -2823,7 +2829,7 @@ path/contract delta, not an automatic rebase or redesign.
   executable and distinguish accepted baseline, standalone benchmark, and
   maintained diagnostic.
 
-- [ ] **Step 5: Prove semantic parity and architecture GREEN**
+- [x] **Step 5: Prove semantic parity and architecture GREEN**
 
   Run the three architecture tests first; expected: all pass and enumerate zero
   old executable/workload implementation, prohibited dependency, reverse
@@ -2849,7 +2855,7 @@ path/contract delta, not an automatic rebase or redesign.
   expected to differ; behavior is not. Run only deterministic tests/smokes—no
   baseline capture or performance comparison.
 
-- [ ] **Step 6: Run repository completion gates and independent parity review**
+- [x] **Step 6: Run repository completion gates and independent parity review**
 
   Run, on the final uncommitted tree:
 
@@ -4001,3 +4007,5 @@ incomplete evidence milestone and do not mark this written plan complete.
 | 2026-08-10 | Controller-protocol correction based on current `main` `0b1fa13e07f7a8e4540d389cd5e25dfa95270da4`                | `plan-amendment`            | Review of the held thirty-nine-path Task 1 implementation found that Task 1 had not frozen the same controller protocol already used by the later executable recipes. This correction makes those recipes canonical: one baseline persists an ordered nonempty `workloadIds` list; initialization uses `--workloads`; producer ingestion uses `--producer-exit-status` and `--raw-result`; and external-attempt listing emits the existing exact four-column TSV. It changes no workload, environment, sample, evidence, comparison, anchor, write reservation, ordered commit, or hold.                                                                                                                                                                   | Publish this exact plan blob in one draft plan-only PR and stop for qualifying exact-blob human approval. RTC implementation and capture remain inactive; any later implementation resumption still requires the matching coordinator activation.                                                                                            |
 | 2026-08-12 | Foundation through B03 published                                                                                 | `instrumentation-published` | Foundation PR #150 merged as `f43c1881e684fd2a423b0993c4389d969c264311`; B01 PR #162 merged as `e921c46058d9db91c8c7707868593a523c4e75e0`; B02 PR #169 merged as `33fa104d2cbf347eab1d02a54107c01f064aad00`; B03 PR #193 merged as `39ad65b499c4bf944acfe48446ad1c334d97d37d`, tree `f11d95321e7bbd241d816f303f888945352160d7`, after exact-head Branch Release Gate run 31543466797 and resulting-main Hetzner run 31570814746 succeeded. B03 local/focused/repository validation is recorded in Task 4. No benchmark or baseline capture ran.                                                                                                                                                                                                            | Hold B04 and capture; organize and review the complete benchmark capability first.                                                                                                                                                                                                                                                           |
 | 2026-08-12 | Shared RTC benchmark organization design and in-place plan amendment in draft PR #196                            | `proposed-plan`             | The verified current surface is 49 RTC/WebRTC-related performance sources: 48 relocate into the exact private package capability tree and one general state-write policy moves to its actual state-write owner. The amendment adds the three-layer PR stack, exact Task 4A inventory/reservation, Task 4B trace/remediation/legacy ledger, current human-readability standard, ontology Task 4 coordination, and post-organization Tasks 5-12. This record is planning only; no package, source move, configuration change, or benchmark execution is complete.                                                                                                                                                                                            | Publish the exact plan blob and roadmap coordination record, then stop for direct human approval of that exact blob. Task 4A remains inactive until approval and a later matching activation.                                                                                                                                                |
+| 2026-08-12 | Exact approved organization plan blob `b78e00e982d186264bc5ba6b4b2a943f15a328f3`                                 | `task-4a-in-progress`       | PR #196 merged as current main `55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af`, and resulting-main run 31597501992 succeeded on that exact commit. The human explicitly named the blob and authorized starting Task 4A. A compatibility review found no material contract, ownership, or ontology-reservation conflict. On a fresh branch from that main, the three architecture tests produced genuine RED before relocation; the exact 49 source dispositions, owning tests, three benchmark setup modules, package/config/catalog/command/navigation integration, and old-path deletions are now present as the uncommitted parity candidate. No benchmark or baseline capture ran.                                                                          | Complete Step 5 focused/style gates, Step 6 repository gates and independent parity review, then publish the separate draft Task 4A PR and require Branch Release Gate on its exact head. Task 4A remains incomplete until merge and resulting-main evidence; keep Task 4B and every later hold inactive.                                    |
+| 2026-08-12 | Task 4A relocation/parity layer published in draft PR #198                                                       | `task-4a-draft-published`   | The draft preserves the exact 49 dispositions, 51 package sources including three setup owners, 29 package tests, package dependency boundaries, catalog/hash/command/config participation, and old-path deletion. Focused/package gates and the full unit, CI, and build gates passed on the implementation candidate; independent semantic-parity review reported zero Critical, Important, or Minor findings. Branch Release Gate run 31632389893 then identified four unclassified occurrences in the plan-mandated package navigation architecture test. They are now individually recorded as two durable public package-interface contracts; executable and test behavior did not change. No benchmark or baseline capture ran.                     | Publish the corrected exact head, rerun invalidated local gates, and require Branch Release Gate success. Record the final commit/tree/workflow evidence on PR #198. Step 7 and Task 4A remain incomplete until human review, merge, and resulting-main workflow evidence; Task 4B and every later hold remain inactive.                     |

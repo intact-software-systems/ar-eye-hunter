@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/rtc-multicast-serialization-bench.ts",
+        "blob": "e1c923caa9e6ba48964a67bc2c30ed7e5b13b89d"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/workloads/multicast/rtc-multicast-serialization-bench.ts"
+      ]
+    },
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/rtc-room-graph-no-rtt-bench.ts",
+        "blob": "7e5ab89531e9e6f7b2e73068ed71ad944ecd55e3"
+      },
+      "targets": ["packages/shared-rtc-bench/diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts"]
+    },
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/rtc-rtt-group-scan-bench.ts",
+        "blob": "6dd5faafa84b58a2f139e4e49e78415a5cbbb403"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts"
+      ]
+    },
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/rtc-topology-rtt-traffic-metrics.ts",
+        "blob": "6d196f869bda5c5eb9316346e6dc694c5fab4cdf"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts"
+      ]
+    },
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/webrtc-group-cache-fallback-bench.ts",
+        "blob": "cbd7b5082f27e3aec133fd728a17808cc8f273d4"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-cache-fallback-bench.ts"
+      ]
+    },
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/webrtc-group-manager-peer-owners-bench.ts",
+        "blob": "33ffaba8d46f9f14fa3e9e9ba9a33e4e65140739"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts"
+      ]
+    },
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/webrtc-group-manager-state-bench.ts",
+        "blob": "cfc58770ff8077493ab0ba38f9734e5504495804"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/workloads/group-coordination/webrtc-group-manager-state-bench.ts"
+      ]
+    },
+    {
+      "mergeBase": "55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af",
+      "source": {
+        "path": "scripts/perf/webrtc-heartbeat-callback-churn-bench.ts",
+        "blob": "de06af7f08f03e5b9021d618a5671f25cdb5c8e1"
+      },
+      "targets": [
+        "packages/shared-rtc-bench/workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts"
+      ]
+    }
+  ]
+}

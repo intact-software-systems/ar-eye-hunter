@@ -28,17 +28,12 @@ export const reviewedDispositions = Object.freeze([
     symbol: undefined,
   }),
   Object.freeze({
-    path: 'scripts/perf/rtc-baseline/rtc-baseline-decoding.ts',
+    path: 'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
     rule: 'boundary.unknown',
     symbol: 'normalizeRtcBaselineJson',
   }),
   Object.freeze({
-    path: 'scripts/perf/rtc-baseline',
-    rule: 'layout.directory-density',
-    symbol: 'rtc-baseline',
-  }),
-  Object.freeze({
-    path: 'scripts/perf/rtc-baseline/rtc-baseline-cli-grammar.ts',
+    path: 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
     rule: 'layout.primary-export-name',
     symbol: 'parseRtcBaselineCommand',
   }),

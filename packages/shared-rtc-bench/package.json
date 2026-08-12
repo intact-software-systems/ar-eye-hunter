@@ -1,0 +1,15 @@
+{
+  "name": "@ar-eye-hunter/shared-rtc-bench",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config ../../vitest.config.ts \"$PWD/tests\"",
+    "check:deno": "deno check --config deno.json baseline/command/rtc-baseline-cli.ts workloads/signaling/rtc-peer-connection-diagnostics-burst.ts workloads/signaling/rtc-ice-candidate-queue-bench.ts workloads/signaling/rtc-peer-listener-cleanup-bench.ts workloads/data-channel/rtc-data-channel-replace-key-bench.ts workloads/data-channel/rtc-data-channel-drain-bench.ts workloads/data-channel/rtc-data-channel-close-retention-bench.ts workloads/data-channel/rtc-data-channel-error-reference-bench.ts workloads/topology/rtc-topology-star-bench.ts workloads/topology/rtc-topology-tree-no-rtt-bench.ts workloads/topology/rtc-topology-mesh-no-rtt-bench.ts workloads/topology/rtc-room-graph-rtt-bench.ts workloads/topology/rtc-topology-inactive-churn-bench.ts workloads/topology/rtc-rtt-repository-filter-bench.ts workloads/multicast/rtc-multicast-serialization-bench.ts workloads/group-coordination/webrtc-group-cache-fallback-bench.ts workloads/group-coordination/webrtc-group-manager-state-bench.ts workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts workloads/group-coordination/webrtc-heartbeat-callback-churn-bench.ts topology-delivery/delivery-log-bench.ts topology-replay/replay-drain-operation-counts.ts diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts",
+    "check": "npm run typecheck && npm run test && npm run check:deno"
+  },
+  "devDependencies": {
+    "@types/deno": "2.7.0"
+  }
+}
