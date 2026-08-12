@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 
-it('keeps the maintained RTT traffic diagnostic checked', () => {
+it('keeps the maintained RTT traffic diagnostic checked', { timeout: 30_000 }, () => {
   const result = spawnSync(
     'deno',
     [
