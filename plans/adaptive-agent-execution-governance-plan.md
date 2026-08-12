@@ -174,7 +174,13 @@ are selected at the preceding checkpoint.
       "entry": "scripts/plan-adaptation.mjs",
       "testRoot": "packages/tests/repo/plan-adaptation",
       "focusedCommand": "npm run test:plan-adaptation",
-      "navigationMap": "scripts/plan-adaptation/README.md"
+      "navigationMap": "scripts/plan-adaptation/README.md",
+      "factContracts": [],
+      "controlFlowFamilies": [
+        "lifecycle mutation",
+        "read-only validation",
+        "close-out"
+      ]
     },
     {
       "owner": "repository structure",
@@ -182,7 +188,14 @@ are selected at the preceding checkpoint.
       "entry": "scripts/repo-structure-check.mjs",
       "testRoot": "packages/tests/repo/repo-structure-check",
       "focusedCommand": "npm run test:repo-structure",
-      "navigationMap": null
+      "navigationMap": null,
+      "factContracts": [
+        "scripts/repo-style-check/structural-facts.mjs"
+      ],
+      "controlFlowFamilies": [
+        "structural scan",
+        "declaration validation"
+      ]
     }
   ],
   "architecture": {
@@ -198,7 +211,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "8bd39030c5208e47b74d1fe27ed05a8c831a9c1de95b9fc75a4f32ad142ba7a0",
+    "affectedCodeDigest": "efbfde548abea7c69259b0b4e0e0a2891d1f90dcb85f795a3a2a36659f3df455",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -208,13 +221,11 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Slice 1 fix round 2 removes partial-state transaction rollback paths, makes post-commit backup cleanup unambiguous, and confines registry discovery before repository-controlled reads or writes.",
-    "learning": "Rollback must distinguish targets actually backed up and replacements actually installed; deleting the entire intended target set can destroy untouched originals when setup fails midway.",
-    "structure": "file-transaction.mjs remains the single injected filesystem side-effect boundary, while active-plan-registry.mjs now owns one shared confined resolver for the plans root and generated registry path.",
+    "outcome": "Slice 2 adds a read-only repository-structure command that baselines unrelated debt, blocks changed singleton and redundant topology, validates declared navigation evidence, and requires human dispositions for structural facts.",
+    "learning": "Material change classification needs an explicit evidence boundary: unchanged parsed JavaScript or TypeScript tokens prove formatting, comment, and prose-only edits, while token changes and non-JavaScript or TypeScript edits fail closed as material.",
+    "structure": "scripts/repo-structure-check owns topology, declarations, semantic depth, exceptions, and changed-surface adoption; it consumes density, prefix-clustering, and file-size facts only through scripts/repo-style-check/structural-facts.mjs.",
     "decision": "continue",
-    "nextSlices": [
-      "slice-2-repository-structure"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
@@ -252,6 +263,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "Slice 1 fix round 2 removes partial-state transaction rollback paths, makes post-commit backup cleanup unambiguous, and confines registry discovery before repository-controlled reads or writes."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "Slice 2 adds a read-only repository-structure command that baselines unrelated debt, blocks changed singleton and redundant topology, validates declared navigation evidence, and requires human dispositions for structural facts."
     }
   ]
 }

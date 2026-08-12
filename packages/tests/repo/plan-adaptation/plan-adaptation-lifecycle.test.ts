@@ -448,6 +448,8 @@ function createRecord(): any {
         testRoot: 'packages/tests/repo/plan-adaptation',
         focusedCommand: 'npm run test:plan-adaptation',
         navigationMap: null,
+        factContracts: [],
+        controlFlowFamilies: ['lifecycle mutation', 'read-only check'],
       },
     ],
     architecture: {

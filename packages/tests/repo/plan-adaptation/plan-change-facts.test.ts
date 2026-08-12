@@ -132,6 +132,30 @@ describe('qualification and checkpoint facts', () => {
       ]),
     );
   });
+
+  it('treats an explicitly consumed cross-owner fact contract as declared', () => {
+    const fixture = createRepository();
+    writeFixture(
+      fixture.root,
+      'scripts/repo-style-check/structural-facts.mjs',
+      'export const facts = [];\n',
+    );
+    const changes = readChangedPaths(fixture.root, fixture.base);
+    const record = {
+      capabilities: [
+        {
+          root: 'scripts/repo-structure-check',
+          entry: 'scripts/repo-structure-check.mjs',
+          testRoot: 'packages/tests/repo/repo-structure-check',
+          factContracts: ['scripts/repo-style-check/structural-facts.mjs'],
+        },
+      ],
+    };
+
+    expect(computeUndeclaredChangedPaths(changes, record)).not.toContain(
+      'scripts/repo-style-check/structural-facts.mjs',
+    );
+  });
   it('qualifies every required diff shape against the actual Git diff', () => {
     const fixture = createRepository();
     writeFixture(fixture.root, 'plans/new-plan.md', '# Written plan\n');

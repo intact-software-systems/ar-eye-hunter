@@ -40,6 +40,8 @@ describe('adaptive plan record', () => {
     record.status = 'acitve';
     record.capabilities[0].root = '../scripts';
     record.capabilities[0].entry = '/tmp/entry.mjs';
+    record.capabilities[0].factContracts = ['../outside.mjs'];
+    record.capabilities[0].controlFlowFamilies = [];
     record.completedSlicesSinceCheckpoint = ['slice-one', 2];
     record.facts = {
       diffBase: 42,
@@ -57,6 +59,8 @@ describe('adaptive plan record', () => {
         'record.status must be active',
         'record.capabilities[0].root must be a safe repository-relative path',
         'record.capabilities[0].entry must be a safe repository-relative path',
+        'record.capabilities[0].factContracts must contain safe repository-relative paths',
+        'record.capabilities[0].controlFlowFamilies must contain unique non-empty strings',
         'record.completedSlicesSinceCheckpoint must contain only non-empty strings',
         'record.facts.diffBase must be a non-empty string',
         'record.facts.affectedCodeDigest must be null or a SHA-256 digest',
@@ -66,6 +70,7 @@ describe('adaptive plan record', () => {
         'record.materialDecisions[0].decision must be a non-empty string',
         'record.freshStructuralReview.failures must be an array',
         'record.coldNavigationEvidence.summary must be a non-empty string',
+        'record.coldNavigationEvidence.probes must be a non-empty array',
       ]),
     );
   });
@@ -182,6 +187,8 @@ function createRecord(): any {
         testRoot: 'packages/tests/repo/plan-adaptation',
         focusedCommand: 'npm run test:plan-adaptation',
         navigationMap: null,
+        factContracts: [],
+        controlFlowFamilies: ['lifecycle mutation', 'read-only check', 'close-out'],
       },
       {
         owner: 'repository structure',
@@ -190,6 +197,8 @@ function createRecord(): any {
         testRoot: 'packages/tests/repo/repo-structure-check',
         focusedCommand: 'npm run test:repo-structure',
         navigationMap: null,
+        factContracts: ['scripts/repo-style-check/structural-facts.mjs'],
+        controlFlowFamilies: ['structural scan', 'declaration validation'],
       },
     ],
     architecture: {

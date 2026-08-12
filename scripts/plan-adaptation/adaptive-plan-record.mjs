@@ -79,6 +79,30 @@ function validateCapabilities(issues, capabilities) {
       const name = `record.capabilities[${index}].navigationMap`;
       issues.push(`${name} must be null or a safe repository-relative path`);
     }
+    if (
+      capability.factContracts !== undefined &&
+      (!Array.isArray(capability.factContracts) ||
+        capability.factContracts.some((factContract) => !isSafeRepositoryPath(factContract)))
+    ) {
+      issues.push(
+        `record.capabilities[${index}].factContracts must contain safe ` +
+          'repository-relative paths',
+      );
+    }
+    if (
+      capability.controlFlowFamilies !== undefined &&
+      (!Array.isArray(capability.controlFlowFamilies) ||
+        capability.controlFlowFamilies.length === 0 ||
+        capability.controlFlowFamilies.some(
+          (family) => typeof family !== 'string' || family.trim() === '',
+        ) ||
+        new Set(capability.controlFlowFamilies).size !== capability.controlFlowFamilies.length)
+    ) {
+      issues.push(
+        `record.capabilities[${index}].controlFlowFamilies must contain unique ` +
+          'non-empty strings',
+      );
+    }
   }
 }
 
@@ -161,6 +185,24 @@ function validateColdNavigationEvidence(issues, evidence) {
     return;
   }
   requireText(issues, evidence.summary, 'record.coldNavigationEvidence.summary');
+  if (!Array.isArray(evidence.probes) || evidence.probes.length === 0) {
+    issues.push('record.coldNavigationEvidence.probes must be a non-empty array');
+  } else {
+    for (const [index, probe] of evidence.probes.entries()) {
+      requireText(
+        issues,
+        probe?.capabilityOwner,
+        `record.coldNavigationEvidence.probes[${index}].capabilityOwner`,
+      );
+      requireText(issues, probe?.symbol, `record.coldNavigationEvidence.probes[${index}].symbol`);
+      if (!isSafeRepositoryPath(probe?.path)) {
+        issues.push(
+          `record.coldNavigationEvidence.probes[${index}].path must be a safe ` +
+            'repository-relative path',
+        );
+      }
+    }
+  }
   if (
     evidence.consolidationDecisionIndex !== undefined &&
     (!Number.isInteger(evidence.consolidationDecisionIndex) ||

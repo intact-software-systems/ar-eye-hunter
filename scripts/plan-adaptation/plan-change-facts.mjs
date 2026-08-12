@@ -91,6 +91,9 @@ export function computeUndeclaredChangedPaths(changes, record, planPath = '') {
   for (const capability of record.capabilities ?? []) {
     allowedRoots.push(capability.root, capability.testRoot);
     allowedPaths.add(capability.entry);
+    for (const factContract of capability.factContracts ?? []) {
+      allowedPaths.add(factContract);
+    }
   }
   return allChangedPaths(changes).filter((changedPath) => {
     if (allowedPaths.has(changedPath)) {
