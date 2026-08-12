@@ -85,12 +85,84 @@ function validateCapabilities(issues, capabilities) {
       continue;
     }
     requireText(issues, capability.owner, `record.capabilities[${index}].owner`);
+    validateCapabilityActivation(issues, capability, index);
     if (kind === 'guidance') {
       validateGuidanceCapability(issues, capability, index);
     } else {
       validateCodeCapability(issues, capability, index);
     }
   }
+  validatePlannedCapabilityOwnership(issues, capabilities);
+}
+
+function validatePlannedCapabilityOwnership(issues, capabilities) {
+  for (const [leftIndex, leftCapability] of capabilities.entries()) {
+    for (const rightCapability of capabilities.slice(leftIndex + 1)) {
+      if (!isPlannedCapability(leftCapability) && !isPlannedCapability(rightCapability)) {
+        continue;
+      }
+      const plannedCapability = isPlannedCapability(leftCapability)
+        ? leftCapability
+        : rightCapability;
+      const otherCapability =
+        plannedCapability === leftCapability ? rightCapability : leftCapability;
+      for (const plannedRoot of topologyRoots(plannedCapability)) {
+        for (const otherRoot of topologyRoots(otherCapability)) {
+          if (rootsOverlap(plannedRoot, otherRoot)) {
+            const otherState = isPlannedCapability(otherCapability) ? 'planned' : 'active';
+            issues.push(
+              `planned capability ${plannedCapability.owner} root ${plannedRoot} overlaps ` +
+                `${otherState} capability ${otherCapability.owner} root ${otherRoot}`,
+            );
+          }
+        }
+      }
+    }
+  }
+}
+
+function topologyRoots(capability) {
+  if (!isRecord(capability)) {
+    return [];
+  }
+  return capability.kind === 'guidance'
+    ? [capability.skillRoot, capability.contractTestRoot, capability.evaluationRoot].filter(
+        (root) => typeof root === 'string',
+      )
+    : [capability.root, capability.testRoot].filter((root) => typeof root === 'string');
+}
+
+function rootsOverlap(left, right) {
+  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+
+function validateCapabilityActivation(issues, capability, index) {
+  if (capability.activation === undefined) {
+    return;
+  }
+  if (
+    !isRecord(capability.activation) ||
+    capability.activation.state !== 'planned' ||
+    !hasExactKeys(capability.activation, ['state', 'slice'])
+  ) {
+    issues.push(
+      `record.capabilities[${index}].activation must be omitted or exactly planned with one slice`,
+    );
+    return;
+  }
+  if (
+    typeof capability.activation.slice !== 'string' ||
+    capability.activation.slice.trim() === ''
+  ) {
+    issues.push(
+      `record.capabilities[${index}].activation.slice must be a non-empty string ` +
+        'for planned capabilities',
+    );
+  }
+}
+
+export function isPlannedCapability(capability) {
+  return capability?.activation?.state === 'planned';
 }
 
 function validateCodeCapability(issues, capability, index) {
@@ -376,6 +448,11 @@ function requireText(issues, value, name) {
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(value, expectedKeys) {
+  const keys = Object.keys(value);
+  return keys.length === expectedKeys.length && expectedKeys.every((key) => keys.includes(key));
 }
 
 function toError(value) {

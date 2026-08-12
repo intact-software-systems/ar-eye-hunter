@@ -149,6 +149,110 @@ describe('adaptive plan record', () => {
       'record.capabilities[0].kind must be code or guidance',
     );
   });
+
+  it('requires a planned capability to bind one named horizon slice', () => {
+    const record = createRecord();
+    record.capabilities[0].activation = { state: 'planned' };
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'record.capabilities[0].activation must be omitted or exactly planned with one slice',
+    );
+
+    record.capabilities[0].activation = {
+      state: 'planned',
+      slice: 'future-owner',
+    };
+    expect(validateCheckpoint(record.checkpoint, record)).toContain(
+      'planned capability plan adaptation must bind a current horizon slice: future-owner',
+    );
+  });
+
+  it('accepts only omission or an exact planned activation declaration', () => {
+    const record = createRecord();
+    record.capabilities[0].activation = { state: 'active' };
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'record.capabilities[0].activation must be omitted or exactly planned with one slice',
+    );
+
+    record.capabilities[0].activation = {
+      state: 'planned',
+      slice: 'slice-1-plan-adaptation',
+      future: true,
+    };
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'record.capabilities[0].activation must be omitted or exactly planned with one slice',
+    );
+
+    record.capabilities[0].activation = { state: 'planned', slice: ' ' };
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'record.capabilities[0].activation.slice must be a non-empty string for planned capabilities',
+    );
+  });
+
+  it('rejects planned topology roots that overlap active or planned owners', () => {
+    const record = createRecord();
+    record.capabilities.push({
+      owner: 'broad planned owner',
+      root: 'scripts',
+      entry: 'scripts/future-owner.mjs',
+      testRoot: 'packages/tests/repo/future-owner',
+      focusedCommand: 'npm run test:future-owner',
+      navigationMap: null,
+      factContracts: [],
+      controlFlowFamilies: ['future behavior'],
+      activation: { state: 'planned', slice: 'slice-1-plan-adaptation' },
+    });
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'planned capability broad planned owner root scripts overlaps active capability plan adaptation root scripts/plan-adaptation',
+    );
+
+    record.capabilities.push({
+      owner: 'nested planned owner',
+      root: 'scripts/future-owner/internal',
+      entry: 'scripts/future-owner/internal/entry.mjs',
+      testRoot: 'packages/tests/repo/future-owner-internal',
+      focusedCommand: 'npm run test:future-owner-internal',
+      navigationMap: null,
+      factContracts: [],
+      controlFlowFamilies: ['future behavior'],
+      activation: { state: 'planned', slice: 'slice-1-plan-adaptation' },
+    });
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'planned capability broad planned owner root scripts overlaps planned capability nested planned owner root scripts/future-owner/internal',
+    );
+  });
+
+  it('accepts planned code and guidance declarations with complete safe paths', () => {
+    const record = createRecord();
+    record.capabilities[0].activation = {
+      state: 'planned',
+      slice: 'slice-1-plan-adaptation',
+    };
+    record.capabilities.push({
+      kind: 'guidance',
+      owner: 'future guidance',
+      skillRoot: '.agents/skills/future-guidance',
+      skillEntry: '.agents/skills/future-guidance/SKILL.md',
+      contractTestRoot: 'packages/tests/repo/future-guidance',
+      focusedCommand: 'npm run test:future-guidance',
+      evaluationRoot: '.agents/evaluations/future-guidance/v1',
+      contractPaths: ['.codex-plugin/plugin.json'],
+      activation: {
+        state: 'planned',
+        slice: 'slice-2-repository-structure',
+      },
+    });
+
+    expect(validateAdaptivePlanRecord(record)).toEqual([]);
+    expect(validateCheckpoint(record.checkpoint, record)).toEqual([]);
+  });
+
+  it('preserves omitted activation as the existing active capability behavior', () => {
+    expect(validateAdaptivePlanRecord(createRecord())).toEqual([]);
+  });
 });
 
 describe('checkpoint policy', () => {

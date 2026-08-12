@@ -158,7 +158,7 @@ describe('qualification and checkpoint facts', () => {
     );
   });
 
-  it('declares guidance, evaluation, mirrored contract, and cross-owner contract surfaces', () => {
+  it('reserves planned code and guidance surfaces before activation', () => {
     const fixture = createRepository();
     writeFixture(
       fixture.root,
@@ -180,7 +180,6 @@ describe('qualification and checkpoint facts', () => {
       'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts',
       'export {};\n',
     );
-    const changes = readChangedPaths(fixture.root, fixture.base);
     const record = {
       capabilities: [
         {
@@ -192,9 +191,26 @@ describe('qualification and checkpoint facts', () => {
           focusedCommand: 'npm run test:adaptive-plan-execution',
           evaluationRoot: '.agents/evaluations/adaptive-agent-execution/v1',
           contractPaths: ['packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts'],
+          activation: { state: 'planned', slice: 'future-guidance' },
+        },
+        {
+          owner: 'future code owner',
+          root: 'scripts/future-code',
+          entry: 'scripts/future-code.mjs',
+          testRoot: 'packages/tests/repo/future-code',
+          focusedCommand: 'npm run test:future-code',
+          navigationMap: 'scripts/future-code/README.md',
+          factContracts: ['scripts/future-contract.mjs'],
+          activation: { state: 'planned', slice: 'future-code' },
         },
       ],
     };
+
+    writeFixture(fixture.root, 'scripts/future-code.mjs', 'export const future = true;\n');
+    writeFixture(fixture.root, 'scripts/future-code/README.md', '# Future code\n');
+    writeFixture(fixture.root, 'packages/tests/repo/future-code/owner.test.ts', 'export {};\n');
+    writeFixture(fixture.root, 'scripts/future-contract.mjs', 'export const facts = [];\n');
+    const changes = readChangedPaths(fixture.root, fixture.base);
 
     expect(computeUndeclaredChangedPaths(changes, record)).toEqual([]);
 

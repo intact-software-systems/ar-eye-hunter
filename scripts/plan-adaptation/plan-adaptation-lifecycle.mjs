@@ -6,6 +6,7 @@ import {
   computeCheckpointDigest,
   parseAdaptivePlanRecord,
   replaceAdaptivePlanRecord,
+  isPlannedCapability,
   validateAdaptivePlanRecord,
 } from './adaptive-plan-record.mjs';
 import { hasConsolidationDecision, validateCheckpoint } from './adaptive-plan-policy.mjs';
@@ -38,6 +39,18 @@ export function completeAdaptivePlanSlice(input) {
   }
   if (!plan.record.checkpoint.nextSlices.includes(input.slice)) {
     throw new Error(`slice ${input.slice} is not in the current horizon`);
+  }
+  const plannedOwners = plan.record.capabilities
+    .filter(
+      (capability) =>
+        isPlannedCapability(capability) && capability.activation.slice === input.slice,
+    )
+    .map((capability) => capability.owner);
+  if (plannedOwners.length > 0) {
+    throw new Error(
+      `slice ${input.slice} has planned capabilities: ${plannedOwners.join(', ')}; ` +
+        'activate them before completion',
+    );
   }
   plan.record.completedSlicesSinceCheckpoint.push(input.slice);
   plan.record.checkpoint.nextSlices = plan.record.checkpoint.nextSlices.filter(
@@ -152,6 +165,14 @@ export function checkAdaptivePlans(input) {
 export function closeAdaptivePlan(input) {
   const plan = readPlan(input);
   validateRecordAndCheckpoint(plan.record);
+  const plannedOwners = plan.record.capabilities
+    .filter(isPlannedCapability)
+    .map((capability) => capability.owner);
+  if (plannedOwners.length > 0) {
+    throw new Error(
+      `close cannot continue while planned capabilities remain: ${plannedOwners.join(', ')}`,
+    );
+  }
   validateFinalEvidence(input, plan.record);
   const activePlans = readActivePlans(input.repoRoot);
   const registryPath = resolveActivePlanRegistryPath(input.repoRoot);

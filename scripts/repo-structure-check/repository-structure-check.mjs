@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isProductionAuthoredCodePath, readRepositoryFiles } from './repository-files.mjs';
 import { readAdaptivePlans } from '../plan-adaptation/active-plan-registry.mjs';
 import { validateAdaptivePlanRecord } from '../plan-adaptation/adaptive-plan-record.mjs';
+import { isPlannedCapability } from '../plan-adaptation/adaptive-plan-record.mjs';
 import {
   computeAffectedCodeDigest,
   readChangedPaths,
@@ -26,6 +27,9 @@ export function checkRepositoryStructure(input) {
     throw new Error('repository structure base must match the active plan diffBase');
   }
   const repository = readRepositoryFiles(input.repoRoot, input.base);
+  const plannedRoots = activePlan.record.capabilities
+    .filter(isPlannedCapability)
+    .flatMap(toPlannedCapabilityRoots);
   const capabilityFindings = collectCapabilityFindings(input.repoRoot, activePlan, repository);
   if (capabilityFindings.length > 0) {
     return {
@@ -38,8 +42,16 @@ export function checkRepositoryStructure(input) {
     changes: readChangedPaths(input.repoRoot, input.base),
     record: activePlan.record,
   });
-  const targetDirectories = toCodeDirectories(repository.targetFiles);
-  const baseDirectories = toCodeDirectories(repository.baseFiles);
+  const targetFiles = repository.targetFiles.filter(
+    (file) => !isUnderPlannedRoot(file, plannedRoots),
+  );
+  const baseFiles = repository.baseFiles.filter((file) => !isUnderPlannedRoot(file, plannedRoots));
+  const changes = repository.changes.flatMap((change) =>
+    toActiveEndpointChanges(change, plannedRoots),
+  );
+  const plannedSurfaceRepository = { ...repository, baseFiles, changes, targetFiles };
+  const targetDirectories = toCodeDirectories(targetFiles);
+  const baseDirectories = toCodeDirectories(baseFiles);
   const exceptionRegistry = readStructureExceptions(input.repoRoot);
   const findings = [
     ...exceptionRegistry.issues.map((message) => ({
@@ -49,7 +61,7 @@ export function checkRepositoryStructure(input) {
     })),
     ...capabilityFindings,
     ...collectSingletonFindings({
-      repository,
+      repository: plannedSurfaceRepository,
       targetDirectories,
       baseDirectories,
       exceptions: exceptionRegistry.exceptions,
@@ -57,7 +69,7 @@ export function checkRepositoryStructure(input) {
     ...collectRedundantChainFindings(targetDirectories, baseDirectories),
     ...collectDispositionFindings({
       repoRoot: input.repoRoot,
-      repository,
+      repository: plannedSurfaceRepository,
       activePlan,
       affectedCodeDigest,
     }),
@@ -90,9 +102,9 @@ function collectSingletonFindings(input) {
   const findings = [];
   const { repository, targetDirectories, baseDirectories, exceptions } = input;
   for (const [directory, descendants] of targetDirectories) {
-    const materiallyChanged = repository.changes.some(
+    const topologyChanged = repository.changes.some(
       (change) =>
-        change.material &&
+        (change.material || change.kind === 'D') &&
         [change.source, change.target]
           .filter(Boolean)
           .some((file) => file === directory || file.startsWith(`${directory}/`)),
@@ -105,7 +117,7 @@ function collectSingletonFindings(input) {
     if (
       descendants.length === 1 &&
       directory === path.posix.dirname(descendants[0]) &&
-      ((!baseDirectories.has(directory) && !pathOnlyLineage) || materiallyChanged)
+      ((!baseDirectories.has(directory) && !pathOnlyLineage) || topologyChanged)
     ) {
       const finding = {
         target: directory,
@@ -156,7 +168,7 @@ function collectDispositionFindings(input) {
   const structuralFacts = [
     ...readChangedRepositoryStyleFacts(repoRoot, repository),
     ...collectSemanticDepthFacts({
-      capabilities,
+      capabilities: capabilities.filter((capability) => !isPlannedCapability(capability)),
       authoredFiles: repository.targetFiles,
     }).filter((fact) => isFactOnMateriallyChangedSurface(fact, repository.changes)),
   ];
@@ -170,6 +182,36 @@ function collectDispositionFindings(input) {
     ruleId: 'structure.disposition-required',
     message,
   }));
+}
+
+function toPlannedCapabilityRoots(capability) {
+  if (capability.kind === 'guidance') {
+    return [capability.skillRoot, capability.contractTestRoot, capability.evaluationRoot].filter(
+      Boolean,
+    );
+  }
+  return [capability.root, capability.testRoot].filter(Boolean);
+}
+
+function isUnderPlannedRoot(file, plannedRoots) {
+  return plannedRoots.some((root) => file === root || file.startsWith(`${root}/`));
+}
+
+function toActiveEndpointChanges(change, plannedRoots) {
+  const sourcePlanned =
+    change.source !== undefined && isUnderPlannedRoot(change.source, plannedRoots);
+  const targetPlanned =
+    change.target !== undefined && isUnderPlannedRoot(change.target, plannedRoots);
+  if (sourcePlanned && targetPlanned) {
+    return [];
+  }
+  if (sourcePlanned) {
+    return [{ ...change, kind: 'A', source: undefined }];
+  }
+  if (targetPlanned) {
+    return [{ ...change, kind: 'D', target: undefined }];
+  }
+  return [change];
 }
 
 function readRequiredStructurePlan(repoRoot) {

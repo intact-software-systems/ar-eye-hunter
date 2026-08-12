@@ -2,12 +2,16 @@ import path from 'node:path';
 import { parse } from '@babel/parser';
 
 import { isProductionAuthoredCodePath } from './repository-files.mjs';
+import { isPlannedCapability } from '../plan-adaptation/adaptive-plan-record.mjs';
 
 export function validateCapabilityDeclarations(input) {
   const authoredFileSet = new Set(input.authoredFiles);
   const repositoryFileSet = new Set(input.repositoryFiles ?? input.authoredFiles);
   const issues = [];
   for (const capability of input.capabilities) {
+    if (isPlannedCapability(capability)) {
+      continue;
+    }
     if (capability.kind === 'guidance') {
       validateGuidanceCapability({ issues, capability, repositoryFileSet, input });
     } else {

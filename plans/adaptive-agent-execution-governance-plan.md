@@ -220,13 +220,15 @@ contract test.
 repository-structure judgment. The new skill may point to those owners but may
 not restate them.
 
-## Current horizon
+## Completed planned-capability declaration lifecycle
 
-The completed behavior horizon exposed one lifecycle gap before the second
-guidance owner can be created: a capability declaration currently requires its
-files to exist, so it cannot reserve the intended owner and affected surface
-before implementation begins. The next horizon contains one tooling slice that
-makes this transition explicit. No second skill or later outcome is active yet.
+The completed behavior horizon exposed one lifecycle gap before a future
+guidance owner can be declared: a capability declaration required its files to
+exist, so it could not reserve the intended owner and affected surface before
+implementation began. Task 6 completed that lifecycle transition. The canonical
+record now lists the completed slice and has an empty horizon; selecting any
+future capability, including a repository-structure skill, requires a later
+checkpoint judgment.
 
 ### Task 6: Planned capability declaration lifecycle
 
@@ -236,21 +238,21 @@ makes this transition explicit. No second skill or later outcome is active yet.
 **Mirrored tests:** `packages/tests/repo/plan-adaptation/` and
 `packages/tests/repo/repo-structure-check/`
 
-- [ ] Add an optional capability activation state with backward-compatible
+- [x] Add an optional capability activation state with backward-compatible
       active behavior. A planned declaration binds to exactly one current
       horizon slice and reserves its declared owner, roots, tests, evaluations,
       contracts, and affected-code surface before those files exist.
-- [ ] Validate the complete declaration shape and safe repository-relative
+- [x] Validate the complete declaration shape and safe repository-relative
       paths while planned, but defer file, command, symbol, topology, and
       navigation-map existence checks until activation.
-- [ ] Reject slice completion while a capability bound to that slice remains
+- [x] Reject slice completion while a capability bound to that slice remains
       planned, reject stale planned declarations outside the current horizon,
       and reject plan close-out while any capability remains planned.
-- [ ] Cover active backward compatibility, planned code and guidance owners,
+- [x] Cover active backward compatibility, planned code and guidance owners,
       affected-surface reservation, activation, completion, stale-horizon, and
       close-out behavior at deterministic and semantic command boundaries.
-- [ ] Run focused/read-only adaptive governance, complete this slice, and use
-      the next checkpoint to declare the repository-structure skill before
+- [x] Run focused/read-only adaptive governance and complete this slice. A
+      later checkpoint must declare the repository-structure skill before
       authoring it.
 
 **Legacy impact:** Extend the one canonical capability registry. Add no staging
@@ -352,10 +354,12 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "planned-capability-declaration-lifecycle"
+  ],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "27acd69579d48331810d57ab670aa921d519fe900c3c25c65d59ee6c132c6ffd",
+    "affectedCodeDigest": "1d65338cabf15bf03e98fe6992675c5069849b7213f3b46ccb94ca51be2fae4d",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -369,9 +373,7 @@ are selected at the preceding checkpoint.
     "learning": "A capability must be declared before its implementation files exist so the next slice starts with truthful ownership and affected scope. Requiring every declaration to resolve immediately forces temporary scope-growth and makes the control loop discover the intended owner only after work has already begun.",
     "structure": "Extend the existing canonical capability declaration with a backward-compatible active state and an explicit planned state bound to one current-horizon slice. Planned declarations reserve their owner and affected paths while deferring repository-existence checks; activation is required before slice completion, and no planned declaration may survive outside its horizon or through plan close-out.",
     "decision": "amend",
-    "nextSlices": [
-      "planned-capability-declaration-lifecycle"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {

@@ -81,6 +81,143 @@ describe('repository structure command', () => {
     expect(result.stdout).toContain('apps/new-feature [topology.singleton-subtree]');
   });
 
+  it('defers planned code and guidance surfaces until source-record activation', () => {
+    const fixture = createRepositoryFixture();
+    writeFixture(
+      fixture.root,
+      'package.json',
+      JSON.stringify({
+        scripts: {
+          ...fixtureScripts(),
+          'test:future-code': 'vitest run packages/tests/future-code',
+          'test:future-guidance': 'vitest run packages/tests/repo/future-guidance',
+        },
+      }),
+    );
+    writeFixture(fixture.root, 'apps/future-code/entry.ts', 'export const future = true;\n');
+    const planned = createRecord();
+    planned.checkpoint.nextSlices = ['fixture-slice', 'future-owner'];
+    planned.capabilities.push(
+      {
+        owner: 'future code',
+        root: 'apps/future-code',
+        entry: 'apps/future-code/entry.ts',
+        testRoot: 'packages/tests/future-code',
+        focusedCommand: 'npm run test:future-code',
+        navigationMap: null,
+        factContracts: [],
+        controlFlowFamilies: ['future behavior'],
+        activation: { state: 'planned', slice: 'future-owner' },
+      },
+      {
+        kind: 'guidance',
+        owner: 'future guidance',
+        skillRoot: '.agents/skills/future-guidance',
+        skillEntry: '.agents/skills/future-guidance/SKILL.md',
+        contractTestRoot: 'packages/tests/repo/future-guidance',
+        focusedCommand: 'npm run test:future-guidance',
+        evaluationRoot: '.agents/evaluations/future-guidance/v1',
+        contractPaths: ['.codex-plugin/plugin.json'],
+        activation: { state: 'planned', slice: 'future-owner' },
+      },
+    );
+    writePlanRecord(fixture.root, planned);
+
+    const deferred = runChecker(fixture);
+
+    expect(deferred.status, `${deferred.stdout}\n${deferred.stderr}`).toBe(0);
+
+    writeFixture(fixture.root, 'packages/tests/future-code/entry.test.ts', 'export {};\n');
+    writeFixture(fixture.root, '.agents/skills/future-guidance/SKILL.md', '# Future guidance\n');
+    writeFixture(fixture.root, 'packages/tests/repo/future-guidance/entry.test.ts', 'export {};\n');
+    writeFixture(fixture.root, '.agents/evaluations/future-guidance/v1/rubric.json', '{}\n');
+    writeFixture(fixture.root, '.codex-plugin/plugin.json', '{}\n');
+    for (const capability of planned.capabilities.slice(1)) {
+      delete capability.activation;
+    }
+    writePlanRecord(fixture.root, planned);
+    const activated = runChecker(fixture);
+
+    expect(activated.status).toBe(1);
+    expect(activated.stdout).toContain('apps/future-code [topology.singleton-subtree]');
+    expect(activated.stdout).toContain(
+      'packages/tests/repo/future-guidance [topology.singleton-subtree]',
+    );
+  });
+
+  it('rejects broad planned roots that overlap active or planned owners', () => {
+    const fixture = createRepositoryFixture();
+    const record = createRecord();
+    record.checkpoint.nextSlices = ['fixture-slice', 'future-owner'];
+    record.capabilities.push(
+      plannedCodeCapability({ owner: 'broad planned owner', root: 'scripts' }),
+      plannedCodeCapability({
+        owner: 'nested planned owner',
+        root: 'scripts/future-owner',
+        entry: 'scripts/future-owner/entry.mjs',
+        testRoot: 'packages/tests/repo/future-owner',
+      }),
+    );
+    writePlanRecord(fixture.root, record);
+
+    const result = runChecker(fixture);
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain(
+      'planned capability broad planned owner root scripts overlaps active capability example capability root scripts/example',
+    );
+    expect(result.stderr).toContain(
+      'planned capability broad planned owner root scripts overlaps planned capability nested planned owner root scripts/future-owner',
+    );
+  });
+
+  it('keeps the active endpoint of a cross-boundary rename under topology enforcement', () => {
+    const activeSourceFixture = createRepositoryFixture({
+      'apps/active-owner/stays.ts': 'export const stays = true;\n',
+      'apps/active-owner/moves.ts': 'export const moves = true;\n',
+    });
+    const record = createRecord();
+    record.checkpoint.nextSlices = ['fixture-slice', 'future-owner'];
+    record.capabilities.push(
+      plannedCodeCapability({
+        owner: 'future owner',
+        root: 'apps/future-owner',
+        entry: 'apps/future-owner/entry.ts',
+        testRoot: 'packages/tests/future-owner',
+      }),
+    );
+    writePlanRecord(activeSourceFixture.root, record);
+    writeFixture(activeSourceFixture.root, 'apps/future-owner/.keep', '');
+    runGit(activeSourceFixture.root, [
+      'mv',
+      'apps/active-owner/moves.ts',
+      'apps/future-owner/moves.ts',
+    ]);
+
+    const activeToPlanned = runChecker(activeSourceFixture);
+
+    expect(activeToPlanned.status).toBe(1);
+    expect(activeToPlanned.stdout).toContain('apps/active-owner [topology.singleton-subtree]');
+
+    const activeTargetFixture = createRepositoryFixture({
+      'apps/future-owner/moves.ts': 'export const moves = true;\n',
+    });
+    writePlanRecord(activeTargetFixture.root, record);
+    writeFixture(activeTargetFixture.root, 'apps/active-destination/.keep', '');
+    runGit(activeTargetFixture.root, [
+      'mv',
+      'apps/future-owner/moves.ts',
+      'apps/active-destination/moves.ts',
+    ]);
+
+    const plannedToActive = runChecker(activeTargetFixture);
+
+    expect(plannedToActive.status).toBe(1);
+    expect(plannedToActive.stdout).toContain(
+      'apps/active-destination [topology.singleton-subtree]',
+    );
+  });
+
   it('uses the active plan diff base when no base option is supplied', () => {
     const fixture = createRepositoryFixture();
     writeFixture(fixture.root, 'apps/new-feature/only-module.ts', 'export const value = true;\n');
@@ -295,4 +432,19 @@ function writeGuidancePlanRecord(root: string): void {
     contractPaths: ['packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts'],
   });
   writePlanRecord(root, record);
+}
+
+function plannedCodeCapability(overrides: Record<string, unknown> = {}) {
+  return {
+    owner: 'future owner',
+    root: 'apps/future-owner',
+    entry: 'apps/future-owner/entry.ts',
+    testRoot: 'packages/tests/future-owner',
+    focusedCommand: 'npm run test:future-owner',
+    navigationMap: null,
+    factContracts: [],
+    controlFlowFamilies: ['future behavior'],
+    activation: { state: 'planned', slice: 'future-owner' },
+    ...overrides,
+  };
 }

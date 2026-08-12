@@ -120,6 +120,56 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(registryBefore);
   });
 
+  it('requires a planned capability to activate before its slice can complete', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    const record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+    record.capabilities[0].activation = { state: 'planned', slice: 'slice-one' };
+    writeFixture(fixture.root, fixture.planPath, `# Fixture plan\n\n${recordBlock(record)}\n`);
+
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    const result = runCli(fixture.root, ['complete-slice', ...common, '--slice', 'slice-one']);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'slice slice-one has planned capabilities: plan adaptation; activate them before completion',
+    );
+  });
+
+  it('allows a source-record activation to pass init, check, and slice completion', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    const planned = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+    planned.capabilities[0].activation = { state: 'planned', slice: 'slice-one' };
+    writeFixture(fixture.root, fixture.planPath, `# Fixture plan\n\n${recordBlock(planned)}\n`);
+
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    const activated = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+    delete activated.capabilities[0].activation;
+    writeFixture(fixture.root, fixture.planPath, `# Fixture plan\n\n${recordBlock(activated)}\n`);
+
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    expect(runCli(fixture.root, ['check', ...common]).status).toBe(0);
+    expect(runCli(fixture.root, ['complete-slice', ...common, '--slice', 'slice-one']).status).toBe(
+      0,
+    );
+  });
+
+  it('rejects a planned capability that is outside the current horizon', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    const record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+    record.capabilities[0].activation = { state: 'planned', slice: 'stale-owner' };
+    writeFixture(fixture.root, fixture.planPath, `# Fixture plan\n\n${recordBlock(record)}\n`);
+
+    const result = runCli(fixture.root, ['init', ...common]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'planned capability plan adaptation must bind a current horizon slice: stale-owner',
+    );
+  });
+
   it('keeps an applied consolidation checkpoint valid while rejecting a second one', () => {
     const fixture = createLifecycleRepository();
     const common = ['--plan', fixture.planPath, '--base', fixture.base];
@@ -210,6 +260,38 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('final pull-request evidence');
     expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(true);
+  });
+
+  it('rejects close-out while a capability remains planned', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    const record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+    record.capabilities[0].activation = { state: 'planned', slice: 'slice-one' };
+    writeFixture(fixture.root, fixture.planPath, `# Fixture plan\n\n${recordBlock(record)}\n`);
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+
+    const evidenceRelativePath = 'final-pr-evidence.json';
+    writeFileSync(
+      path.join(fixture.root, evidenceRelativePath),
+      JSON.stringify({
+        version: 1,
+        planId: record.planId,
+        pullRequestUrl: 'https://github.com/example/repository/pull/1',
+        finalReview: { status: 'complete', planDigest: recordDigest(record) },
+      }),
+    );
+
+    const result = runCli(fixture.root, [
+      'close',
+      ...common,
+      '--final-pr-evidence',
+      evidenceRelativePath,
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain(
+      'close cannot continue while planned capabilities remain: plan adaptation',
+    );
   });
 
   it('runs the package check entry from the single active record and configured base', () => {

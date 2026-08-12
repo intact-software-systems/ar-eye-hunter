@@ -103,6 +103,9 @@ export function computeUndeclaredChangedPaths(changes, record, planPath = '') {
     } else {
       allowedRoots.push(capability.root, capability.testRoot);
       allowedPaths.add(capability.entry);
+      if (typeof capability.navigationMap === 'string') {
+        allowedPaths.add(capability.navigationMap);
+      }
       for (const factContract of capability.factContracts ?? []) {
         allowedPaths.add(factContract);
       }

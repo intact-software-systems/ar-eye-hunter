@@ -1,4 +1,4 @@
-import { computeCheckpointDigest } from './adaptive-plan-record.mjs';
+import { computeCheckpointDigest, isPlannedCapability } from './adaptive-plan-record.mjs';
 
 const decisions = new Set(['continue', 'amend', 'consolidate', 'stop']);
 
@@ -17,9 +17,24 @@ export function validateCheckpoint(checkpoint, record) {
   }
   validateNextSlices(issues, checkpoint.nextSlices);
   validateCompletedSliceOverlap(issues, checkpoint.nextSlices, record);
+  validatePlannedCapabilityHorizon(issues, checkpoint.nextSlices, record);
   validateContinueDecision(issues, checkpoint, record);
   validateConsolidationDecision(issues, checkpoint, record);
   return issues;
+}
+
+function validatePlannedCapabilityHorizon(issues, nextSlices, record) {
+  if (!Array.isArray(nextSlices) || !Array.isArray(record.capabilities)) {
+    return;
+  }
+  for (const capability of record.capabilities) {
+    if (isPlannedCapability(capability) && !nextSlices.includes(capability.activation.slice)) {
+      issues.push(
+        `planned capability ${capability.owner} must bind a current horizon slice: ` +
+          capability.activation.slice,
+      );
+    }
+  }
 }
 
 function validateCompletedSliceOverlap(issues, nextSlices, record) {

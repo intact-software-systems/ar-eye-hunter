@@ -169,6 +169,40 @@ describe('repository capability declarations', () => {
     );
   });
 
+  it('defers planned code and guidance existence checks until activation', () => {
+    const code = capability({
+      root: 'scripts/future-code',
+      entry: 'scripts/future-code.mjs',
+      testRoot: 'packages/tests/repo/future-code',
+      focusedCommand: 'npm run test:future-code',
+      navigationMap: 'scripts/future-code/README.md',
+      factContracts: ['scripts/future-contract.mjs'],
+      activation: { state: 'planned', slice: 'future-owner' },
+    });
+    const guidance = guidanceCapability({
+      owner: 'future guidance',
+      skillRoot: '.agents/skills/future-guidance',
+      skillEntry: '.agents/skills/future-guidance/SKILL.md',
+      contractTestRoot: 'packages/tests/repo/future-guidance',
+      focusedCommand: 'npm run test:future-guidance',
+      evaluationRoot: '.agents/evaluations/future-guidance/v1',
+      contractPaths: ['.codex-plugin/plugin.json'],
+      activation: { state: 'planned', slice: 'future-owner' },
+    });
+
+    expect(
+      validateCapabilityDeclarations({
+        repoRoot: '/repo',
+        capabilities: [code, guidance],
+        authoredFiles: [],
+        repositoryFiles: [],
+        packageScripts: {},
+        readFile: () => undefined,
+        coldNavigationEvidence: null,
+      }),
+    ).toEqual([]);
+  });
+
   it('requires the declared capability and test roots to contain authored code', () => {
     const issues = validateCapabilityDeclarations({
       repoRoot: '/repo',
