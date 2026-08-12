@@ -1,3 +1,5 @@
+import { computeCheckpointDigest } from './adaptive-plan-record.mjs';
+
 const decisions = new Set(['continue', 'amend', 'consolidate', 'stop']);
 
 export function validateCheckpoint(checkpoint, record) {
@@ -71,6 +73,11 @@ function validateContinueDecision(issues, checkpoint, record) {
 
 function validateConsolidationDecision(issues, checkpoint, record) {
   const consolidated = hasConsolidationDecision(record);
+  const persistedCurrentConsolidation = record.materialDecisions?.some(
+    (entry) =>
+      entry?.decision === 'consolidate' &&
+      entry.checkpointDigest === computeCheckpointDigest(checkpoint),
+  );
   const coldNavigationFailed = record.coldNavigationEvidence?.status === 'failed';
   const consolidationDecisionIndex = record.coldNavigationEvidence?.consolidationDecisionIndex;
   const referencedConsolidation =
@@ -90,7 +97,7 @@ function validateConsolidationDecision(issues, checkpoint, record) {
   if (checkpoint.decision !== 'consolidate') {
     return;
   }
-  if (consolidated) {
+  if (consolidated && !persistedCurrentConsolidation) {
     issues.push('only one autonomous consolidation slice is allowed');
   }
   if (checkpoint.nextSlices?.length !== 1) {

@@ -92,6 +92,47 @@ describe('plan adaptation CLI lifecycle', () => {
     );
   });
 
+  it('keeps an applied consolidation checkpoint valid while rejecting a second one', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    expect(runCli(fixture.root, ['prepare', ...common]).status).toBe(0);
+
+    const draftPath = path.join(fixture.root, '.plan-adaptation/fixture-plan.draft.json');
+    const draft = JSON.parse(readFileSync(draftPath, 'utf8'));
+    draft.record.checkpoint = {
+      outcome: 'Navigation requires one bounded consolidation.',
+      learning: 'The active owner map is incomplete.',
+      structure: 'One consolidation slice repairs the owner map.',
+      decision: 'consolidate',
+      nextSlices: ['repair-owner-map'],
+    };
+    writeFileSync(draftPath, `${JSON.stringify(draft, null, 2)}\n`);
+
+    expect(runCli(fixture.root, ['apply', ...common]).status).toBe(0);
+    expect(runCli(fixture.root, ['check', ...common]).status).toBe(0);
+    expect(
+      runCli(fixture.root, ['complete-slice', ...common, '--slice', 'repair-owner-map']).status,
+    ).toBe(0);
+    expect(runCli(fixture.root, ['check', ...common]).status).toBe(0);
+
+    expect(runCli(fixture.root, ['prepare', ...common]).status).toBe(0);
+    const secondDraft = JSON.parse(readFileSync(draftPath, 'utf8'));
+    secondDraft.record.checkpoint = {
+      outcome: 'Navigation requires one bounded consolidation.',
+      learning: 'The active owner map is incomplete.',
+      structure: 'One consolidation slice repairs the owner map.',
+      decision: 'consolidate',
+      nextSlices: ['repair-owner-map'],
+    };
+    writeFileSync(draftPath, `${JSON.stringify(secondDraft, null, 2)}\n`);
+
+    expect(runCli(fixture.root, ['apply', ...common]).stdout).toContain(
+      'only one autonomous consolidation slice is allowed',
+    );
+  });
+
   it('keeps prepare drafts ignored and rejects stale facts or incomplete judgments on apply', () => {
     const fixture = createLifecycleRepository();
     const common = ['--plan', fixture.planPath, '--base', fixture.base];

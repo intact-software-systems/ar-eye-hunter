@@ -543,6 +543,42 @@ describe('repository capability declarations', () => {
     );
   });
 
+  it('allows navigation maps to trace explicitly declared cross-owner fact contracts', () => {
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [
+        capability({
+          navigationMap: 'scripts/example/README.md',
+          controlFlowFamilies: ['scan', 'classify', 'report'],
+          factContracts: ['scripts/other/contract.mjs'],
+        }),
+      ],
+      authoredFiles: [...fixtureFiles(), 'scripts/other/contract.mjs'],
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: (file: string) => {
+        if (file === 'scripts/example/README.md') {
+          return (
+            '[entry](../example.mjs#runExample)\n' +
+            '[fact contract](../other/contract.mjs#readFacts)\n'
+          );
+        }
+        if (file === 'scripts/example.mjs') {
+          return 'export function runExample() { return true; }\n';
+        }
+        if (file === 'scripts/other/contract.mjs') {
+          return 'export function readFacts() { return []; }\n';
+        }
+        return undefined;
+      },
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).not.toContain(
+      'example capability navigation-map path scripts/other/contract.mjs is outside its declared owner',
+    );
+    expect(issues).toEqual([]);
+  });
+
   it('requires cold-navigation probes to stay within their declared owner', () => {
     const issues = validateCapabilityDeclarations({
       repoRoot: '/repo',

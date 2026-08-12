@@ -25,6 +25,20 @@ export function computeAdaptivePlanRecordDigest(record) {
   return createHash('sha256').update(JSON.stringify(record)).digest('hex');
 }
 
+export function computeCheckpointDigest(checkpoint) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        outcome: checkpoint.outcome,
+        learning: checkpoint.learning,
+        structure: checkpoint.structure,
+        decision: checkpoint.decision,
+        nextSlices: checkpoint.nextSlices,
+      }),
+    )
+    .digest('hex');
+}
+
 export function validateAdaptivePlanRecord(record) {
   const issues = [];
   if (!isRecord(record) || record.version !== 1) {
@@ -252,6 +266,15 @@ function validateMaterialDecisions(issues, decisions) {
     requireText(issues, decision.decision, `record.materialDecisions[${index}].decision`);
     if (decision.summary !== undefined) {
       requireText(issues, decision.summary, `record.materialDecisions[${index}].summary`);
+    }
+    if (
+      decision.decision === 'consolidate' &&
+      (typeof decision.checkpointDigest !== 'string' ||
+        !/^[0-9a-f]{64}$/u.test(decision.checkpointDigest))
+    ) {
+      issues.push(
+        `record.materialDecisions[${index}].checkpointDigest must bind the consolidate checkpoint`,
+      );
     }
   }
 }

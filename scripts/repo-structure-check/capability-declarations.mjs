@@ -128,7 +128,10 @@ function validateNavigationMap(validation) {
     const sourcePath = path.posix.normalize(
       path.posix.join(path.posix.dirname(capability.navigationMap), relativePath),
     );
-    if (!isCapabilitySourcePath(capability, sourcePath)) {
+    if (
+      !isCapabilitySourcePath(capability, sourcePath) &&
+      !(capability.factContracts ?? []).includes(sourcePath)
+    ) {
       issues.push(
         `${capability.owner} navigation-map path ${sourcePath} is outside its declared owner`,
       );

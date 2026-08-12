@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  computeCheckpointDigest,
   parseAdaptivePlanRecord,
   replaceAdaptivePlanRecord,
   validateAdaptivePlanRecord,
@@ -174,10 +175,15 @@ describe('checkpoint policy', () => {
       date: '2026-08-12',
       decision: 'consolidate',
       summary: 'Consolidate the plan-adaptation owner before another feature slice.',
+      checkpointDigest: computeCheckpointDigest(consolidation),
     });
-    expect(validateCheckpoint(consolidation, record)).toContain(
-      'only one autonomous consolidation slice is allowed',
-    );
+    expect(validateCheckpoint(consolidation, record)).toEqual([]);
+    expect(
+      validateCheckpoint(
+        { ...consolidation, nextSlices: ['second-autonomous-consolidation'] },
+        record,
+      ),
+    ).toContain('only one autonomous consolidation slice is allowed');
 
     record.coldNavigationEvidence = {
       status: 'failed',

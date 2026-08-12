@@ -73,7 +73,7 @@ requires the existing explicit human approval contract. A thorough independent
 final review freezes the build-affecting tree/plan digest, traces the changed
 governance entry-to-result paths, and repeats after any invalidating change.
 
-## Current horizon
+## Completed foundation
 
 ### Task 1: Slice 1 — plan-adaptation tooling
 
@@ -81,17 +81,17 @@ governance entry-to-result paths, and repeats after any invalidating change.
 
 **Mirrored tests:** `packages/tests/repo/plan-adaptation/`
 
-- [ ] Write failing focused tests for record parsing/replacement, canonical
+- [x] Write failing focused tests for record parsing/replacement, canonical
       content digests, qualifying diffs, undeclared paths, triggers, two-slice
       enforcement, consolidation escalation, registry generation, and close-out.
-- [ ] Implement one cohesive capability with a thin
+- [x] Implement one cohesive capability with a thin
       `scripts/plan-adaptation.mjs` command entry.
-- [ ] Add `plan:adapt` and focused governance scripts to `package.json`.
-- [ ] Add a semantic CLI-boundary test for the real
+- [x] Add `plan:adapt` and focused governance scripts to `package.json`.
+- [x] Add a semantic CLI-boundary test for the real
       `init`/`complete-slice`/`prepare`/`apply`/`check`/`close` flow, not only parser
       tests, and make `test:plan-adaptation` the exact focused command.
-- [ ] Keep `test:plan-adaptation` below ten seconds.
-- [ ] Review the slice against this plan and record checkpoint facts without
+- [x] Keep `test:plan-adaptation` below ten seconds.
+- [x] Review the slice against this plan and record checkpoint facts without
       activating later outcomes.
 
 **Legacy impact:** Add no second plan registry, digest implementation, or
@@ -107,29 +107,118 @@ minimization or removal.
 
 **Mirrored tests:** `packages/tests/repo/repo-structure-check/`
 
-- [ ] Write failing focused tests for singleton subtrees, redundant nesting,
+- [x] Write failing focused tests for singleton subtrees, redundant nesting,
       semantic-depth dispositions, canonical entries, mirrored tests, navigation
       maps, changed-surface debt activation, and unrelated-debt fixtures.
-- [ ] Cover authored code under `apps`, `packages`, `scripts`, `examples`, and
+- [x] Cover authored code under `apps`, `packages`, `scripts`, `examples`, and
       tests with explicit generated/tool exclusions.
-- [ ] Block new or materially activated singleton authored-code subtrees and
+- [x] Block new or materially activated singleton authored-code subtrees and
       redundant one-child chains. Require explicit human-approved production
       exceptions with an owner and review/removal condition.
-- [ ] Require declarations for capability entries, mirrored test roots, and
+- [x] Require declarations for capability entries, mirrored test roots, and
       complex-feature navigation maps. Report density, prefix clustering, size,
       and semantic depth as mandatory dispositions, never automatic splits.
-- [ ] Keep repo style as the canonical implementation for its existing
+- [x] Keep repo style as the canonical implementation for its existing
       density, prefix-clustering, and file-size facts. Consume one intentionally
       exported fact contract; do not compute those metrics again.
-- [ ] Add a semantic command-boundary test and make `test:repo-structure` the
+- [x] Add a semantic command-boundary test and make `test:repo-structure` the
       exact focused command. Route both focused commands through
       `test:adaptive-governance` and keep the aggregate below ten seconds.
-- [ ] Run the checkpoint and a fresh cold-navigation probe before activating
+- [x] Run the checkpoint and a fresh cold-navigation probe before activating
       later work.
 
 **Legacy impact:** Preserve repo-style compatibility while preventing parallel
 metric owners. Migrate only the affected new tests into the mirrored subtree;
 do not reorganize unrelated flat test debt.
+
+## Completed consolidation
+
+### Task 3: Foundational governance navigation and active-plan truth consolidation
+
+**Decision:** This one autonomous consolidation slice replaces the next feature
+slice. No checkpoint-activated outcome is active until the post-consolidation
+cold probe passes.
+
+- [x] Declare repository structure's real control-flow and trust families
+      without collapsing them into generic scan vocabulary.
+- [x] Add the required owner-local repository-structure navigation map. It must
+      link the canonical entry and the inventory/classification,
+      topology/disposition, capability navigation, authenticated exception,
+      active-plan configuration, and repo-style fact-contract boundaries.
+- [x] Correct the plan-adaptation navigation map so mutation, read-only check,
+      and destructive close commands link to their actual lifecycle owners and
+      exits.
+- [x] Keep completed Slices 1 and 2 under `Completed foundation`; the generated
+      active index and checkpoint identify this consolidation as the sole
+      current slice.
+- [x] Run focused/read-only adaptive governance and repeat the exact fresh cold
+      probes. A failed post-consolidation probe requires `stop` and human
+      direction; a pass may activate only the next two outcome slices.
+
+**Legacy impact:** Replace inaccurate navigation prose and stale active-plan
+status directly. Do not add a second map, a compatibility alias, a parallel
+owner, or an implementation-plan dependency for normal code navigation.
+
+## Current horizon
+
+The skill-writing contract requires each behavior skill to complete its own
+RED–GREEN–REFACTOR cycle before the next skill is authored. The first
+checkpoint-activated behavior outcome is therefore split into these two
+independently testable capability slices; guidance simplification remains
+inactive until their checkpoint.
+
+### Task 4: Adaptive plan execution skill and evaluations
+
+**Skill owner:** `.agents/skills/adaptive-plan-execution/SKILL.md`
+
+**Versioned evaluation owner:**
+`.agents/evaluations/adaptive-agent-execution/v1/`
+
+- [ ] Convert the already-captured no-skill baseline into versioned pressure
+      scenarios and a machine-readable result/rubric contract without copying
+      ignored model output into the skill.
+- [ ] Author one concise `adaptive-plan-execution` skill from those observed
+      failures. It owns qualification, the two-slice horizon, trigger-based
+      reflection, five judgments, consolidation/stop behavior, and
+      proportionate validation selection; deterministic commands remain owned
+      by `scripts/plan-adaptation/`.
+- [ ] Add focused deterministic contract tests under
+      `packages/tests/repo/adaptive-agent-execution/` for skill discovery,
+      record/command routing, scenario coverage, rubric shape, and the boundary
+      between agent judgment and automated facts.
+- [ ] Run the adaptive-plan pressure scenarios with a fresh agent and refine
+      only observed loopholes until every critical result complies.
+- [ ] Validate the skill package and focused contract before starting the next
+      skill.
+
+**Legacy impact:** Do not duplicate plan publication, testing catalogs, or
+repository-structure judgment. The new skill may point to those owners but may
+not restate them.
+
+### Task 5: Repository structure skill and evaluations
+
+**Skill owner:** `.agents/skills/organizing-repository-structure/SKILL.md`
+
+**Evaluation owner:** `.agents/evaluations/adaptive-agent-execution/v1/`
+
+- [ ] Run the structure pressure scenarios without the new skill, preserving
+      the already-captured baseline and any newly observed rationalizations.
+- [ ] Author one concise `organizing-repository-structure` skill that turns
+      automated facts into human-navigation judgments without prescribing a
+      folder taxonomy or mechanically selecting dispositions.
+- [ ] Extend the focused deterministic contract for structure-skill discovery,
+      owner/entry/test/map reasoning, singleton versus flat-folder tradeoffs,
+      consolidation escalation, and legacy/debt boundaries.
+- [ ] Run all six critical fresh-agent scenarios with the two skills and refine
+      observed loopholes until every result complies.
+- [ ] Add the live evaluation entry/workflow so model runs occur only when
+      behavior-shaping skill or scenario files change and their raw reports are
+      retained as workflow artifacts. Keep deterministic skill contracts in CI.
+- [ ] Run the checkpoint before activating guidance simplification or PR v2.
+
+**Legacy impact:** Keep `scripts/repo-structure-check/` as the only mechanical
+structure-policy owner and repo style as the only density/prefix/size fact
+owner. Do not create a second architecture guide or a compatibility skill.
 
 ## Checkpoint-activated outcomes
 
@@ -188,13 +277,18 @@ are selected at the preceding checkpoint.
       "entry": "scripts/repo-structure-check.mjs",
       "testRoot": "packages/tests/repo/repo-structure-check",
       "focusedCommand": "npm run test:repo-structure",
-      "navigationMap": null,
+      "navigationMap": "scripts/repo-structure-check/README.md",
       "factContracts": [
+        "scripts/plan-adaptation/active-plan-registry.mjs",
+        "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "scripts/plan-adaptation/plan-change-facts.mjs",
         "scripts/repo-style-check/structural-facts.mjs"
       ],
       "controlFlowFamilies": [
-        "structural scan",
-        "declaration validation"
+        "authored inventory and material-change classification",
+        "topology and structural-disposition evaluation",
+        "capability and cold-navigation validation",
+        "authenticated singleton-exception verification"
       ]
     }
   ],
@@ -211,7 +305,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "0cb9e2b9c49f1abfa1390d67f29ecc7c32ac88e950041b7511248fd60bdf3513",
+    "affectedCodeDigest": "5640b5a87eb7c541e69a56e31f8cfc7896a9ca12b4245049772402926870914a",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -221,11 +315,14 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Slice 2 fix round 2 removes caller-selected exception evidence, verifies registered approvals through authenticated gh API lookup, scopes shell navigation evidence, and excludes generated/tool nodes before filesystem inspection.",
-    "learning": "Trusted review input must be derived from the repository and registry rather than a caller path; fail-closed inspection must distinguish authored scope from explicit exclusions before touching filesystem metadata.",
-    "structure": "scripts/repo-structure-check keeps one exception-verification boundary with injectable pure lookup tests and production gh API access only for nonempty registries; capability declarations retain a bounded shell scope scanner without a parser dependency.",
+    "outcome": "The autonomous consolidation repaired both durable navigation maps, made repository structure's four control-flow and trust families explicit, restored truthful completed/current plan horizons, and passed an independent code review plus a fresh-context cold-navigation probe.",
+    "learning": "A checkpoint must distinguish a persisted decision from a newly applied decision: read-only validation may recognize the current consolidation digest, while apply must reject every later consolidation once the source ledger contains one. Behavior-skill authoring must also complete RED-GREEN-REFACTOR one skill at a time, so the behavior outcome needs two slices rather than one batch.",
+    "structure": "Plan adaptation and repository structure remain separate cohesive owners with accurate owner-local maps and four explicit cross-owner fact contracts. The next horizon adds one self-contained repo-local skill at a time plus versioned evaluations; it does not create another policy or fact owner.",
     "decision": "continue",
-    "nextSlices": []
+    "nextSlices": [
+      "adaptive-plan-execution-skill-and-evaluations",
+      "organizing-repository-structure-skill-and-evaluations"
+    ]
   },
   "structuralDispositions": [
     {
@@ -235,8 +332,66 @@ are selected at the preceding checkpoint.
       "rationale": "Repo style remains canonical; repository structure consumes one exported fact contract and owns only topology and disposition policy."
     }
   ],
-  "freshStructuralReview": null,
-  "coldNavigationEvidence": null,
+  "freshStructuralReview": {
+    "status": "complete",
+    "failures": []
+  },
+  "coldNavigationEvidence": {
+    "status": "passed",
+    "summary": "After consolidation, a fresh reviewer located both canonical commands, every lifecycle and trust family, mutation/read-only/destructive exits, explicit cross-owner facts, failure paths, and mirrored tests without reading the tactical plan, design, history, or PR.",
+    "probes": [
+      {
+        "capabilityOwner": "plan adaptation",
+        "path": "scripts/plan-adaptation.mjs",
+        "symbol": "runCommand"
+      },
+      {
+        "capabilityOwner": "plan adaptation",
+        "path": "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "symbol": "parseAdaptivePlanRecord"
+      },
+      {
+        "capabilityOwner": "plan adaptation",
+        "path": "scripts/plan-adaptation/adaptive-plan-policy.mjs",
+        "symbol": "validateCheckpoint"
+      },
+      {
+        "capabilityOwner": "plan adaptation",
+        "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+        "symbol": "closeAdaptivePlan"
+      },
+      {
+        "capabilityOwner": "repository structure",
+        "path": "scripts/repo-structure-check.mjs",
+        "symbol": "readInput"
+      },
+      {
+        "capabilityOwner": "repository structure",
+        "path": "scripts/repo-structure-check/repository-structure-check.mjs",
+        "symbol": "checkRepositoryStructure"
+      },
+      {
+        "capabilityOwner": "repository structure",
+        "path": "scripts/repo-structure-check/repository-files.mjs",
+        "symbol": "readRepositoryFiles"
+      },
+      {
+        "capabilityOwner": "repository structure",
+        "path": "scripts/repo-structure-check/capability-declarations.mjs",
+        "symbol": "validateCapabilityDeclarations"
+      },
+      {
+        "capabilityOwner": "repository structure",
+        "path": "scripts/repo-structure-check/structural-dispositions.mjs",
+        "symbol": "validateStructuralDispositions"
+      },
+      {
+        "capabilityOwner": "repository structure",
+        "path": "scripts/repo-structure-check/structure-exceptions.mjs",
+        "symbol": "readStructureExceptions"
+      }
+    ]
+  },
   "materialDecisions": [
     {
       "date": "2026-08-12",
@@ -279,6 +434,17 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "Slice 2 fix round 2 removes caller-selected exception evidence, verifies registered approvals through authenticated gh API lookup, scopes shell navigation evidence, and excludes generated/tool nodes before filesystem inspection."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "consolidate",
+      "summary": "The first horizon delivered independently reviewed plan-adaptation and repository-structure capabilities with exact entries, mirrored tests, fail-closed boundaries, content-sensitive facts, and passing focused/read-only governance checks.",
+      "checkpointDigest": "ea7fed2f2c9e442eeaf30f4a82eb75e927a705f6206160f94bc1f29461c89a75"
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "The autonomous consolidation repaired both durable navigation maps, made repository structure's four control-flow and trust families explicit, restored truthful completed/current plan horizons, and passed an independent code review plus a fresh-context cold-navigation probe."
     }
   ]
 }

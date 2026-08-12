@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import {
   computeAdaptivePlanRecordDigest,
+  computeCheckpointDigest,
   parseAdaptivePlanRecord,
   replaceAdaptivePlanRecord,
   validateAdaptivePlanRecord,
@@ -81,6 +82,9 @@ export function applyAdaptivePlan(input) {
   }
   if (draft.sourceRecordDigest !== computeAdaptivePlanRecordDigest(plan.record)) {
     throw new Error('source plan record changed after prepare; run prepare again');
+  }
+  if (draft.record.checkpoint.decision === 'consolidate' && hasConsolidationDecision(plan.record)) {
+    throw new Error('only one autonomous consolidation slice is allowed');
   }
   validateRecordAndCheckpoint(draft.record);
   const currentFacts = readCurrentFacts(input, draft.record);
@@ -228,13 +232,12 @@ function readDraft(draftPath) {
 }
 
 function appendMaterialDecision(record) {
-  if (record.checkpoint.decision === 'consolidate' && hasConsolidationDecision(record)) {
-    return;
-  }
+  const checkpointDigest = computeCheckpointDigest(record.checkpoint);
   record.materialDecisions.push({
     date: new Date().toISOString().slice(0, 10),
     decision: record.checkpoint.decision,
     summary: record.checkpoint.outcome,
+    ...(record.checkpoint.decision === 'consolidate' ? { checkpointDigest } : {}),
   });
 }
 
