@@ -24,7 +24,12 @@ export function validateEvaluationResult(input) {
     expectedScenarios,
     scenarioResults,
   });
-  validateSummary(issues, input.result.summary, expectedScenarios, scenarioOutcomes);
+  validateSummary({
+    issues,
+    summary: input.result.summary,
+    expectedScenarios,
+    outcomes: scenarioOutcomes,
+  });
   return issues;
 }
 
@@ -77,7 +82,7 @@ function validateScenarioResults(issues, input) {
       continue;
     }
     const scenario = expectedById.get(scenarioResult.scenarioId);
-    const outcome = validateScenarioResult(issues, input, scenario, scenarioResult);
+    const outcome = validateScenarioResult({ issues, input, scenario, result: scenarioResult });
     if (!outcomes.has(scenario.id)) {
       outcomes.set(scenario.id, outcome);
     }
@@ -85,7 +90,8 @@ function validateScenarioResults(issues, input) {
   return outcomes;
 }
 
-function validateScenarioResult(issues, input, scenario, result) {
+function validateScenarioResult(validation) {
+  const { issues, input, scenario, result } = validation;
   const prefix = scenario.id;
   const verdicts = resultVerdicts(input.rubric);
   const dimensionResults = Array.isArray(result.dimensionResults) ? result.dimensionResults : [];
@@ -103,8 +109,18 @@ function validateScenarioResult(issues, input, scenario, result) {
   } else if (result.verdict !== computedVerdict) {
     issues.push(`${prefix} verdict must be ${computedVerdict} when a required dimension fails`);
   }
-  validateCriticalFailures(issues, scenario, result.criticalFailures, failedDimensions);
-  validateRawArtifact(issues, input, prefix, result.rawOutputArtifact);
+  validateCriticalFailures({
+    issues,
+    scenario,
+    criticalFailures: result.criticalFailures,
+    failedDimensions,
+  });
+  validateRawArtifact({
+    issues,
+    input,
+    scenarioId: prefix,
+    repositoryPath: result.rawOutputArtifact,
+  });
   return { computedVerdict };
 }
 
@@ -153,9 +169,10 @@ function validateDimensionResults(issues, input) {
   return [...new Set(failed)].sort();
 }
 
-function validateCriticalFailures(issues, scenario, value, failedDimensions) {
-  const actual = Array.isArray(value) ? value : [];
-  if (!Array.isArray(value) || actual.some((entry) => typeof entry !== 'string')) {
+function validateCriticalFailures(validation) {
+  const { issues, scenario, criticalFailures, failedDimensions } = validation;
+  const actual = Array.isArray(criticalFailures) ? criticalFailures : [];
+  if (!Array.isArray(criticalFailures) || actual.some((entry) => typeof entry !== 'string')) {
     issues.push(`${scenario.id} criticalFailures must be an array of dimension IDs`);
     return;
   }
@@ -165,7 +182,8 @@ function validateCriticalFailures(issues, scenario, value, failedDimensions) {
   }
 }
 
-function validateRawArtifact(issues, input, scenarioId, repositoryPath) {
+function validateRawArtifact(validation) {
+  const { issues, input, scenarioId, repositoryPath } = validation;
   if (!isSafeRepositoryPath(repositoryPath)) {
     issues.push(`${scenarioId} rawOutputArtifact must be a safe repository-relative path`);
     return;
@@ -181,7 +199,8 @@ function validateRawArtifact(issues, input, scenarioId, repositoryPath) {
   }
 }
 
-function validateSummary(issues, summary, expectedScenarios, outcomes) {
+function validateSummary(validation) {
+  const { issues, summary, expectedScenarios, outcomes } = validation;
   if (!isRecord(summary)) {
     issues.push('result.summary must be an object');
     return;
@@ -193,13 +212,29 @@ function validateSummary(issues, summary, expectedScenarios, outcomes) {
   const criticalPassed = critical.filter(
     (scenario) => outcomes.get(scenario.id)?.computedVerdict === 'pass',
   ).length;
-  validateSummaryValue(issues, summary.total, expectedScenarios.length, 'total');
-  validateSummaryValue(issues, summary.passed, passed, 'passed');
-  validateSummaryValue(issues, summary.criticalTotal, critical.length, 'criticalTotal');
-  validateSummaryValue(issues, summary.criticalPassed, criticalPassed, 'criticalPassed');
+  validateSummaryValue({
+    issues,
+    actual: summary.total,
+    expected: expectedScenarios.length,
+    field: 'total',
+  });
+  validateSummaryValue({ issues, actual: summary.passed, expected: passed, field: 'passed' });
+  validateSummaryValue({
+    issues,
+    actual: summary.criticalTotal,
+    expected: critical.length,
+    field: 'criticalTotal',
+  });
+  validateSummaryValue({
+    issues,
+    actual: summary.criticalPassed,
+    expected: criticalPassed,
+    field: 'criticalPassed',
+  });
 }
 
-function validateSummaryValue(issues, actual, expected, field) {
+function validateSummaryValue(validation) {
+  const { issues, actual, expected, field } = validation;
   if (!Number.isInteger(actual) || actual !== expected) {
     issues.push(`result.summary.${field} must equal ${expected}`);
   }
