@@ -362,6 +362,29 @@ without introducing product/runtime dependencies.
 The active RTC plan gains two milestones between current Task 4 and Task 5.
 Later tasks retain their existing numbers to preserve durable references.
 
+### Review pressure and publication slices
+
+The affected surface contains more than 20 production-tooling modules and more
+than three materially different control-flow families. A single implementation
+pull request would make it difficult to verify relocation parity separately
+from structural corrections. The work therefore uses a three-layer stack:
+
+1. Design and plan layer: this specification, the exact RTC plan amendment, and
+   coordination/activation records only. It authorizes no source move until its
+   exact plan blob is approved and activated.
+2. Task 4A relocation layer: package creation, complete moves, dependency
+   corrections, command/path updates, and semantic-parity evidence. It contains
+   no broad structural redesign beyond the boundaries required to remove test
+   dependencies and establish the package.
+3. Task 4B review/remediation layer: major code and legacy review, protocol
+   consolidation, responsibility splits, test separation, corrections, and
+   final independent re-review.
+
+Each layer records its parent, exact base and head, owned paths, plan link,
+validation evidence, and remaining holds. The next layer does not merge before
+its parent. B04 remains a later plan task after all three layers are merged and
+revalidated.
+
 ### Task 4A: Establish package ownership
 
 Task 4A is a behavior-preserving relocation and boundary change:
