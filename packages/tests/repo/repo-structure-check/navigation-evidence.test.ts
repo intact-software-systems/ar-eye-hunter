@@ -195,13 +195,15 @@ describe('repository navigation evidence', () => {
     ['source', 'scripts/example/first.mjs', source('firstResult')],
   ])('rejects a %s replaced between identity capture and descriptor open', (_, target, content) => {
     const fixture = navigationFixture();
+    const absoluteTarget = path.join(fixture.root, target);
+    const replacementPath = `${absoluteTarget}.replacement`;
+    writeFileSync(replacementPath, content);
 
     expect(() =>
       createEvidence(fixture.root, capability(), fixtureDigest, {
         beforeOpen({ repositoryPath, absolutePath }) {
           if (repositoryPath === target) {
-            unlinkSync(absolutePath);
-            writeFileSync(absolutePath, content);
+            renameSync(replacementPath, absolutePath);
           }
         },
       }),
