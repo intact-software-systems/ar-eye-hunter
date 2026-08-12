@@ -459,6 +459,61 @@ trusted retained-legacy and candidate-report behaviors that remain part of v2.
 **Legacy impact:** Add one early gate and one command owner. Do not create a
 second adaptive checker, structure analyzer, PR validator, or broad CI suite.
 
+## Current two-slice horizon
+
+### Task 14: Content-sensitive validation evidence
+
+**Planned owner:** `scripts/validation-evidence/`
+
+**Planned canonical entry:** `scripts/validation-evidence.mjs`
+
+**Planned mirrored tests:** `packages/tests/repo/validation-evidence/`
+
+- [ ] Add one canonical build-affecting tree digest and
+      `validation-evidence-v1` reader/writer/validator. Reuse the existing PR
+      freshness path classifier as an explicit fact contract rather than
+      creating a second definition of build-affecting content.
+- [ ] Produce trusted workflow evidence containing repository, workflow and run
+      identity, validated head, build-tree digest, successful conclusion, and
+      completion time. Fail closed on malformed, expired, untrusted, or
+      mismatched evidence.
+- [ ] Let Branch Release Gate reuse a prior successful broad run only when its
+      head is an ancestor of the candidate, its artifact is still within the
+      accepted lifetime, and the current build-tree digest matches. Otherwise
+      run the unchanged broad Release Gate and publish fresh evidence.
+- [ ] Prove documentation-only reuse and invalidation for code, tests,
+      workflows/actions, package metadata, lockfiles, root build configuration,
+      agent/plugin contracts, and adaptive-plan contracts.
+
+**Legacy impact:** Replace commit-SHA freshness with content-sensitive evidence
+selection. Preserve the broad Release Gate unchanged as the canonical validator
+when reuse is not earned.
+
+### Task 15: Risk-scoped distributed validation
+
+**Planned owner:** `scripts/distributed-validation-risk/`
+
+**Planned canonical entry:** `scripts/distributed-validation-risk.mjs`
+
+**Planned mirrored tests:** `packages/tests/repo/distributed-validation-risk/`
+
+- [ ] Add a fast deterministic changed-path classifier for distributed
+      protocol/controller/headless, realtime routing/topology, deployment
+      runner, and explicit structured plan-acceptance requirements.
+- [ ] Run the classifier first on main pushes and condition the existing
+      supported-manifest preflight, preparation, and expensive Hetzner matrix on
+      its decision. Emit a stable human-readable and machine-readable reason.
+- [ ] Preserve manual dispatch as an explicit operator override while keeping
+      ordinary unrelated main pushes cheap. Do not weaken or duplicate the
+      existing manifest runner or supported-manifest matrix.
+- [ ] Prove every selected and non-selected path family, rename endpoints,
+      malformed/ambiguous inputs, explicit plan selection, workflow wiring, and
+      manual override.
+
+**Legacy impact:** Replace unconditional main-push Hetzner execution with one
+risk decision in front of the unchanged distributed runner. Retain manual
+dispatch and all existing supported manifests.
+
 ## Checkpoint-activated outcomes
 
 These outcomes are fixed; their exact file placement and concrete slice pairing
@@ -504,6 +559,9 @@ are selected at the preceding checkpoint.
       "focusedCommand": "npm run test:plan-adaptation",
       "navigationMap": "scripts/plan-adaptation/README.md",
       "factContracts": [],
+      "contractPaths": [
+        "docs/superpowers/specs/2026-08-12-adaptive-agent-execution-governance-design.md"
+      ],
       "controlFlowFamilies": [
         "lifecycle mutation",
         "read-only validation",
@@ -617,14 +675,60 @@ are selected at the preceding checkpoint.
         "packages/tests/repo/github-actions-runtime-governance.test.ts"
       ],
       "contractPaths": [
-        ".github/workflows/governance-gate.yml",
-        ".github/workflows/branch-release-gate.yml"
+        ".github/workflows/governance-gate.yml"
       ],
       "controlFlowFamilies": [
         "local phase orchestration",
         "focused contract validation",
         "GitHub early-gate integration"
       ]
+    },
+    {
+      "owner": "validation evidence",
+      "root": "scripts/validation-evidence",
+      "entry": "scripts/validation-evidence.mjs",
+      "testRoot": "packages/tests/repo/validation-evidence",
+      "focusedCommand": "npm run test:validation-evidence",
+      "navigationMap": "scripts/validation-evidence/README.md",
+      "factContracts": [
+        "scripts/pr-human-review/review-freshness.mjs"
+      ],
+      "contractPaths": [
+        ".github/workflows/branch-release-gate.yml",
+        ".github/workflows/release-gate.yml"
+      ],
+      "controlFlowFamilies": [
+        "build-tree digest computation",
+        "trusted prior-run evidence validation",
+        "evidence production and branch-workflow reuse"
+      ],
+      "activation": {
+        "state": "planned",
+        "slice": "content-sensitive-validation-evidence"
+      }
+    },
+    {
+      "owner": "distributed validation risk",
+      "root": "scripts/distributed-validation-risk",
+      "entry": "scripts/distributed-validation-risk.mjs",
+      "testRoot": "packages/tests/repo/distributed-validation-risk",
+      "focusedCommand": "npm run test:distributed-validation-risk",
+      "navigationMap": "scripts/distributed-validation-risk/README.md",
+      "factContracts": [
+        "scripts/plan-adaptation/adaptive-plan-record.mjs"
+      ],
+      "contractPaths": [
+        ".github/workflows/hetzner-supported-distributed-manifests.yml"
+      ],
+      "controlFlowFamilies": [
+        "changed-path risk classification",
+        "structured plan requirement and manual override",
+        "main-push Hetzner workflow selection"
+      ],
+      "activation": {
+        "state": "planned",
+        "slice": "risk-scoped-distributed-validation"
+      }
     }
   ],
   "architecture": {
@@ -642,12 +746,10 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [
-    "fast-governance-gate"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "f77fdd416d7008ba88b78ee6079e624151f11073c13c7d0be368a6b5cddc95a9",
+    "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
+    "affectedCodeDigest": "0f6e1a2f54bc8317cfb9ace52ca3138f83808ff31bdac789647d04ca358151b5",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -658,11 +760,14 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "PR Human Review Record v2 now directly replaces v1 through one exact thin command entry, one visible and metadata contract, content-sensitive initial/checkpoint/final validation, preserved trusted retained-legacy and candidate-report evidence, mirrored focused tests, and synchronized-PR workflow enforcement.",
-    "learning": "The planned check-pr-human-review entry was not an exact sibling of its capability root; the direct cutover moved it to scripts/pr-human-review.mjs without a wrapper. Review also showed that build freshness needs explicit repository contracts plus ordinary-documentation exclusion, initial review needs planned horizon owners while final review needs active owners, and removed v1 predecessors need structured fail-closed dispositions rather than unresolved undeclared paths.",
-    "structure": "Keep PR human review as one mixed code, template, documentation, workflow, and legacy-integration owner at scripts/pr-human-review with exact non-code contracts and explicit cross-owner plan/legacy facts. Keep Governance Gate separate and activate only fast-governance-gate next.",
-    "decision": "amend",
-    "nextSlices": []
+    "outcome": "PR Human Review v2 and the Fast Governance Gate now form a reviewed content-aware review boundary and a phase-attributed early CI boundary. The gate preserves canonical plan, structure, review, and focused-test owners, remains below ten seconds across repeated trials, and blocks the broad Release Gate without duplicating it.",
+    "learning": "The first broad branch failure was compatibility drift rather than a governance regression: the branch changed neither the headless bundle nor its test, and refreshed origin/main already raised the measured cap from 197 to 199 KiB. Merging origin/main and advancing the explicit diff base made that proof and the exact Governance Gate green. The next automation must therefore reuse evidence by build content and trusted run identity, not by head SHA, while distributed validation needs its own structured risk decision rather than an unconditional main-push trigger.",
+    "structure": "Give validation evidence one owner at scripts/validation-evidence with the existing PR freshness classifier as an explicit fact contract and ownership of Branch Release Gate/reusable Release Gate orchestration. Give distributed validation risk a separate scripts/distributed-validation-risk owner in front of the existing Hetzner supported-manifest workflow. Neither owner may duplicate broad CI, the distributed runner, build-path classification, or architectural judgment.",
+    "decision": "continue",
+    "nextSlices": [
+      "content-sensitive-validation-evidence",
+      "risk-scoped-distributed-validation"
+    ]
   },
   "structuralDispositions": [
     {
@@ -868,6 +973,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "amend",
       "summary": "PR Human Review Record v2 now directly replaces v1 through one exact thin command entry, one visible and metadata contract, content-sensitive initial/checkpoint/final validation, preserved trusted retained-legacy and candidate-report evidence, mirrored focused tests, and synchronized-PR workflow enforcement."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "PR Human Review v2 and the Fast Governance Gate now form a reviewed content-aware review boundary and a phase-attributed early CI boundary. The gate preserves canonical plan, structure, review, and focused-test owners, remains below ten seconds across repeated trials, and blocks the broad Release Gate without duplicating it."
     }
   ]
 }
