@@ -115,9 +115,10 @@ export function runChecker(
     | {
         readonly environment?: Readonly<Record<string, string | undefined>>;
         readonly extraArgs?: readonly string[];
+        readonly includeBase?: boolean;
       } = true,
 ) {
-  const includeBase = typeof options === 'boolean' ? options : true;
+  const includeBase = typeof options === 'boolean' ? options : (options.includeBase ?? true);
   const environment = typeof options === 'boolean' ? undefined : options.environment;
   const extraArgs = typeof options === 'boolean' ? [] : (options.extraArgs ?? []);
   const args = [...(includeBase ? ['--base', fixture.base] : []), ...extraArgs];

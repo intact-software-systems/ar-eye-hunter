@@ -1,5 +1,27 @@
 # Repository structure navigation map
 
+```repository-navigation-v1
+{
+  "version": 1,
+  "entry": {
+    "path": "scripts/repo-structure-check.mjs",
+    "symbol": "readInput"
+  },
+  "results": [
+    {
+      "path": "scripts/repo-structure-check.mjs",
+      "symbol": "printResult"
+    }
+  ],
+  "failures": [
+    {
+      "path": "scripts/repo-structure-check.mjs",
+      "symbol": "toError"
+    }
+  ]
+}
+```
+
 [scripts/repo-structure-check.mjs#readInput](../repo-structure-check.mjs#readInput) is the only
 command entry. It resolves the content-bound comparison base and calls
 [repository-structure-check.mjs#checkRepositoryStructure](./repository-structure-check.mjs#checkRepositoryStructure),
@@ -22,6 +44,11 @@ which returns sorted findings without choosing a folder layout for the agent.
   [capability-declarations.mjs#validateCapabilityDeclarations](./capability-declarations.mjs#validateCapabilityDeclarations).
   This is also the owner of entry, mirrored-test, focused-command, map-link, and source-symbol
   validation.
+- `--navigation-evidence <capability-owner>` selects one active code declaration, then
+  [navigation-evidence.mjs#createRepositoryNavigationEvidence](./navigation-evidence.mjs#createRepositoryNavigationEvidence)
+  validates this map's fenced contract and composes the digest-bound JSON evidence record. The
+  mode reuses canonical capability-declaration and adaptive-facts validation, then validates the
+  fenced navigation contract; it never runs topology policy or selects a structural disposition.
 - Production singleton exceptions enter through
   [structure-exceptions.mjs#readStructureExceptions](./structure-exceptions.mjs#readStructureExceptions).
   [structure-exceptions.mjs#readRepositoryExceptionContext](./structure-exceptions.mjs#readRepositoryExceptionContext)

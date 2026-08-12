@@ -7,10 +7,16 @@ import { validateAdaptivePlanRecord } from '../plan-adaptation/adaptive-plan-rec
 import { isPlannedCapability } from '../plan-adaptation/adaptive-plan-record.mjs';
 import {
   computeAffectedCodeDigest,
+  hasCurrentPlanFacts,
   readChangedPaths,
 } from '../plan-adaptation/plan-change-facts.mjs';
 import { collectRepositoryStyleFacts } from '../repo-style-check/structural-facts.mjs';
 import { validateCapabilityDeclarations } from './capability-declarations.mjs';
+import {
+  createRepositoryNavigationEvidence,
+  readSafeRepositoryFile,
+  selectNavigationCapability,
+} from './navigation-evidence.mjs';
 import { readStructureExceptions } from './structure-exceptions.mjs';
 import {
   collectSemanticDepthFacts,
@@ -79,6 +85,65 @@ export function checkRepositoryStructure(input) {
     mergeBase: repository.mergeBase,
     findings: findings.toSorted(compareFindings),
   };
+}
+
+export function readRepositoryNavigationEvidence(input) {
+  const activePlan = readRequiredStructurePlan(input.repoRoot);
+  const base = activePlan.record.facts.diffBase;
+  const changes = readChangedPaths(input.repoRoot, base);
+  if (
+    !hasCurrentPlanFacts({
+      repoRoot: input.repoRoot,
+      base,
+      changes,
+      record: activePlan.record,
+      planPath: activePlan.planPath,
+    })
+  ) {
+    throw new Error(`${activePlan.planPath} computed facts are stale`);
+  }
+  const repository = readRepositoryFiles(input.repoRoot, base);
+  const packageJson = JSON.parse(
+    readSafeRepositoryFile(input.repoRoot, 'package.json', input.fileOperations),
+  );
+  const declarationIssues = validateCapabilityDeclarations({
+    repoRoot: input.repoRoot,
+    capabilities: activePlan.record.capabilities,
+    authoredFiles: repository.targetFiles,
+    repositoryFiles: repository.targetRepositoryFiles,
+    packageScripts: packageJson.scripts ?? {},
+    readFile: (file) => readSafeRepositoryFile(input.repoRoot, file, input.fileOperations),
+    coldNavigationEvidence: activePlan.record.coldNavigationEvidence,
+  });
+  if (declarationIssues.length > 0) {
+    throw new Error(
+      'navigation evidence requires valid capability declarations: ' +
+        declarationIssues.sort().join('; '),
+    );
+  }
+  const capability = selectNavigationCapability(activePlan.record.capabilities, input.owner);
+  const evidence = createRepositoryNavigationEvidence({
+    repoRoot: input.repoRoot,
+    capability,
+    repositoryFiles: repository.targetRepositoryFiles,
+    packageScripts: packageJson.scripts ?? {},
+    affectedCodeDigest: activePlan.record.facts.affectedCodeDigest,
+    fileOperations: input.fileOperations,
+  });
+  input.afterEvidenceComposed?.();
+  const finalChanges = readChangedPaths(input.repoRoot, base);
+  if (
+    !hasCurrentPlanFacts({
+      repoRoot: input.repoRoot,
+      base,
+      changes: finalChanges,
+      record: activePlan.record,
+      planPath: activePlan.planPath,
+    })
+  ) {
+    throw new Error('computed facts changed while reading navigation evidence');
+  }
+  return evidence;
 }
 
 function collectCapabilityFindings(repoRoot, activePlan, repository) {

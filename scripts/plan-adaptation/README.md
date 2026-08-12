@@ -1,5 +1,39 @@
 # Plan adaptation navigation map
 
+```repository-navigation-v1
+{
+  "version": 1,
+  "entry": {
+    "path": "scripts/plan-adaptation.mjs",
+    "symbol": "runCommand"
+  },
+  "results": [
+    {
+      "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+      "symbol": "writePlanAndRegistry"
+    },
+    {
+      "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+      "symbol": "prepareAdaptivePlan"
+    },
+    {
+      "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+      "symbol": "checkAdaptivePlans"
+    },
+    {
+      "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+      "symbol": "closeAdaptivePlan"
+    }
+  ],
+  "failures": [
+    {
+      "path": "scripts/plan-adaptation.mjs",
+      "symbol": "toError"
+    }
+  ]
+}
+```
+
 [scripts/plan-adaptation.mjs#runCommand](../plan-adaptation.mjs#runCommand) is the only command
 entry. It decodes six commands and routes each to its lifecycle owner:
 

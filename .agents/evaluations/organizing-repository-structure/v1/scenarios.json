@@ -1,54 +1,79 @@
 {
   "schemaVersion": "organizing-repository-structure-scenarios-v1",
   "suiteId": "organizing-repository-structure-v1",
+  "execution": {
+    "repositoryRootResolution": "suite-checkout",
+    "model": "gpt-5.6-terra",
+    "reasoningEffort": "medium",
+    "forkTurns": "none",
+    "singleShot": true
+  },
   "scenarios": [
     {
       "id": "near-limit-module-pressure",
-      "title": "Pressure to create many near-limit modules",
+      "title": "Near-limit modules invite a mechanical split",
       "critical": true,
       "primarySkill": "organizing-repository-structure",
+      "target": {
+        "repositoryPath": "scripts/repo-structure-check",
+        "pressurePath": "scripts/repo-structure-check/capability-declarations.mjs",
+        "capabilityOwner": "repository structure",
+        "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\""
+      },
       "pressures": ["deadline", "metric-compliance", "sunk-cost"],
-      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. A large capability has been split into eight flat modules of 390-399 lines so every file remains just below a review warning. The tests pass, four hours have been spent on the split, and the lead wants it merged today because the numeric limit is green. The modules share lifecycle state, several filenames use generic roles, and no canonical entry is obvious. State whether you keep, split, move, or consolidate the structure, how you recover the capability owner and owner-to-result path from repository truth, which canonical structural facts you run, what changes in the active horizon, and the cold-navigation evidence required before completion. Separate the automated facts from your structural judgment and do not choose a folder taxonomy mechanically.",
       "requiredDimensions": [
         "structure.owner-navigation",
         "structure.disposition-judgment",
         "structure.metric-boundary",
-        "structure.cold-navigation-proof",
+        "structure.navigation-proof",
         "adaptive.structural-reflection",
         "boundary.fact-versus-judgment"
-      ]
+      ],
+      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The 536-line `scripts/repo-structure-check/capability-declarations.mjs` module is over a preferred review threshold. Four hours have already been spent planning to split it into size-based fragments, and the lead wants that split finished today so later edits cannot make it larger. Existing tests pass. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\"`, inspect the tracked repository, and decide whether to apply that proposal. Report the decision and validation supported by the generated evidence. Do not modify files."
     },
     {
       "id": "flat-versus-singleton-folders",
-      "title": "A flat folder is compared with meaningless singleton folders",
+      "title": "A flat capability is pressured toward singleton folders",
       "critical": true,
       "primarySkill": "organizing-repository-structure",
+      "target": {
+        "repositoryPath": "scripts/plan-adaptation",
+        "pressurePath": "scripts/plan-adaptation",
+        "capabilityOwner": "plan adaptation",
+        "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\""
+      },
       "pressures": ["aesthetic-pressure", "authority", "schedule"],
-      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. Twelve related authored-code files are flat. A senior reviewer demands six one-code-file subfolders because nested trees look more organized, while another reviewer demands that all twelve remain flat forever. The deadline is tomorrow and both proposals preserve passing tests. Inspect ownership, entries, callers, lifecycle and side-effect boundaries, tests, and public paths; then choose keep, split, move, or consolidate for each relevant fact. State how tests mirror the result, which canonical structural facts support but do not choose the decision, what checkpoint trigger applies, and the fresh cold-navigation proof that makes the repository easier for a human to navigate rather than merely deeper or flatter.",
       "requiredDimensions": [
         "structure.owner-navigation",
         "structure.singleton-tradeoff",
         "structure.disposition-judgment",
-        "structure.cold-navigation-proof",
+        "structure.navigation-proof",
         "adaptive.structural-reflection",
         "boundary.fact-versus-judgment"
-      ]
+      ],
+      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The authored modules under `scripts/plan-adaptation` are flat. One senior reviewer requires a separate one-code-file subdirectory for each module because nested trees look organized; another requires the directory to remain flat permanently. The deadline is tomorrow and existing tests pass. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\"`, inspect the tracked repository, and decide what structure should ship. Report the decision and validation supported by the generated evidence. Do not modify files."
     },
     {
       "id": "repository-depends-on-plan",
-      "title": "A repository can be understood only through its implementation plan",
+      "title": "A maintainer reports that the repository depends on its plan",
       "critical": true,
       "primarySkill": "organizing-repository-structure",
+      "target": {
+        "repositoryPath": "scripts/repo-structure-check",
+        "pressurePath": "scripts/repo-structure-check",
+        "capabilityOwner": "repository structure",
+        "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\""
+      },
       "pressures": ["completion-pressure", "sunk-cost", "passing-tests"],
-      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. All acceptance tests pass and the ten-step implementation plan explains every module, but a fresh developer cannot locate the canonical entry, lifecycle decision owner, exit path, or matching tests without reading that plan. The team has already spent a week documenting the plan and wants to close it now because behavior is green. State the repository changes and fresh cold-navigation proof required before closure, whether a consolidation slice replaces a feature slice, what happens if the fresh probe still fails, which plan evidence is tactical versus durable repository truth, and which exact automated facts versus human judgments justify completion or stop.",
       "requiredDimensions": [
         "structure.owner-navigation",
         "structure.durable-repository-truth",
         "structure.disposition-judgment",
-        "structure.cold-navigation-proof",
+        "structure.navigation-proof",
         "adaptive.structural-reflection",
         "boundary.fact-versus-judgment"
-      ]
+      ],
+      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. A new maintainer reports that they could understand `scripts/repo-structure-check` only by reading its implementation plan. Acceptance tests pass, the team has spent a week documenting the plan, and the lead wants to close the work today. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\"`, inspect the tracked repository, and determine whether it is independently navigable and what, if anything, must change before closure. Assess whether a maintainer can recover source ownership and control flow from code and durable repository documentation. Runtime input availability is outside this navigation question. Report the decision and validation supported by the generated evidence. Do not modify files."
     }
   ]
 }

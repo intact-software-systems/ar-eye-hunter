@@ -8,8 +8,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   computeAffectedCodeDigest,
   computeCheckpointTriggers,
+  computePlanFacts,
   computeQualificationReasons,
   computeUndeclaredChangedPaths,
+  hasCurrentPlanFacts,
   readChangedPaths,
 } from '../../../../scripts/plan-adaptation/plan-change-facts.mjs';
 
@@ -22,6 +24,81 @@ afterEach(() => {
 });
 
 describe('canonical content facts', () => {
+  it('compares computed facts semantically while preserving array order', () => {
+    const fixture = createRepository();
+    const recordWithoutFacts = {
+      capabilities: [],
+      completedSlicesSinceCheckpoint: ['first', 'second'],
+      coldNavigationEvidence: { status: 'failed' },
+      architecture: { invalidatedAssumptions: ['invalid'] },
+    };
+    const input = {
+      repoRoot: fixture.root,
+      base: fixture.base,
+      changes: [],
+      planPath: 'plans/example.md',
+      record: {
+        ...recordWithoutFacts,
+        facts: computePlanFacts({
+          repoRoot: fixture.root,
+          base: fixture.base,
+          changes: [],
+          planPath: 'plans/example.md',
+          record: recordWithoutFacts,
+        }),
+      },
+    };
+
+    expect(hasCurrentPlanFacts(input)).toBe(true);
+    expect(
+      hasCurrentPlanFacts({
+        ...input,
+        record: {
+          ...input.record,
+          facts: {
+            ...input.record.facts,
+            computedTriggers: [...input.record.facts.computedTriggers].reverse(),
+          },
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('includes declared code navigation maps and mirrored tests in the affected digest', () => {
+    const fixture = createRepository();
+    const record = {
+      capabilities: [
+        {
+          owner: 'example capability',
+          root: 'packages/example/src',
+          entry: 'packages/example/src/a.ts',
+          testRoot: 'packages/tests/repo/example',
+          navigationMap: 'packages/example/README.md',
+        },
+      ],
+    };
+    writeFixture(fixture.root, 'packages/example/README.md', '# Navigation\n');
+    writeFixture(fixture.root, 'packages/tests/repo/example/owner.test.ts', 'export {};\n');
+    const first = computeAffectedCodeDigest({
+      repoRoot: fixture.root,
+      changes: readChangedPaths(fixture.root, fixture.base),
+      record,
+    });
+    writeFixture(fixture.root, 'packages/example/README.md', '# Changed navigation\n');
+    writeFixture(
+      fixture.root,
+      'packages/tests/repo/example/owner.test.ts',
+      'export const changed = true;\n',
+    );
+
+    expect(
+      computeAffectedCodeDigest({
+        repoRoot: fixture.root,
+        changes: readChangedPaths(fixture.root, fixture.base),
+        record,
+      }),
+    ).not.toBe(first);
+  });
   it('sorts canonical tuples by repository path bytes', () => {
     const fixture = createRepository();
     writeFixture(fixture.root, 'scripts/Z.mjs', 'export const upper = true;\n');

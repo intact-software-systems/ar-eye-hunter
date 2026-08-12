@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -131,7 +133,100 @@ function validateScenarioResult(validation) {
     scenarioId: prefix,
     repositoryPath: result.rawOutputArtifact,
   });
+  if (input.suite.suiteId === 'organizing-repository-structure-v1') {
+    validateNavigationEvidence({ issues, input, scenario, result });
+  }
   return { computedVerdict };
+}
+
+function validateNavigationEvidence(validation) {
+  const { issues, input, scenario, result } = validation;
+  const prefix = scenario.id;
+  if (result.navigationEvidenceCommand !== scenario.target?.evidenceCommand) {
+    issues.push(`${prefix} navigation evidence command must match the scenario command`);
+  }
+  if (result.navigationEvidenceOwner !== scenario.target?.capabilityOwner) {
+    issues.push(`${prefix} navigation evidence owner must match the scenario owner`);
+  }
+  if (result.navigationEvidenceExitCode !== 0) {
+    issues.push(`${prefix} navigation evidence exitCode must equal 0`);
+  }
+  if (!isSha256(result.navigationEvidenceDigest)) {
+    issues.push(`${prefix} navigationEvidenceDigest must be a SHA-256 digest`);
+  }
+  if (!isSha256(result.affectedCodeDigest)) {
+    issues.push(`${prefix} affectedCodeDigest must be a SHA-256 digest`);
+  }
+  const artifact = readNavigationEvidenceArtifact({ issues, input, prefix, result });
+  if (artifact === undefined) {
+    return;
+  }
+  const expected = input.rubric.scenarioExpectations?.[scenario.id];
+  const exactKeys = [
+    'affectedCodeDigest',
+    'entry',
+    'failures',
+    'focusedCommand',
+    'navigationMap',
+    'owner',
+    'results',
+    'root',
+    'schemaVersion',
+    'testRoot',
+  ];
+  if (!isRecord(artifact) || !sameSortedStrings(Object.keys(artifact), exactKeys)) {
+    issues.push(`${prefix} navigation evidence artifact must use the strict v1 JSON schema`);
+    return;
+  }
+  const expectedArtifact = {
+    schemaVersion: 'repository-navigation-evidence-v1',
+    owner: scenario.target.capabilityOwner,
+    root: scenario.target.repositoryPath,
+    entry: withoutReferenceKind(expected?.entry),
+    results: expected?.acceptedResults?.map(withoutReferenceKind).sort(compareReferences),
+    failures: [withoutReferenceKind(expected?.failure)],
+    testRoot: expected?.tests?.path,
+    focusedCommand: `npm run ${expected?.focusedCommand?.symbol}`,
+    navigationMap: { state: 'present', path: expected?.navigationMap?.path },
+    affectedCodeDigest: result.affectedCodeDigest,
+  };
+  if (!isDeepStrictEqual(artifact, expectedArtifact)) {
+    issues.push(`${prefix} navigation evidence artifact must match expected repository truth`);
+  }
+}
+
+function readNavigationEvidenceArtifact({ issues, input, prefix, result }) {
+  if (!isSafeRepositoryPath(result.navigationEvidenceArtifact)) {
+    issues.push(`${prefix} navigationEvidenceArtifact must be a safe repository-relative path`);
+    return undefined;
+  }
+  try {
+    const readArtifact = input.readArtifact ?? ((filePath) => readFileSync(filePath, 'utf8'));
+    const text = readArtifact(path.join(input.repoRoot, result.navigationEvidenceArtifact));
+    const digest = createHash('sha256').update(text).digest('hex');
+    if (digest !== result.navigationEvidenceDigest) {
+      issues.push(`${prefix} navigation evidence digest does not match its artifact`);
+    }
+    return JSON.parse(text);
+  } catch {
+    issues.push(`${prefix} navigationEvidenceArtifact cannot be read as JSON`);
+    return undefined;
+  }
+}
+
+function withoutReferenceKind(reference) {
+  return isRecord(reference) ? { path: reference.path, symbol: reference.symbol } : undefined;
+}
+
+function compareReferences(left, right) {
+  return Buffer.compare(
+    Buffer.from(`${left.path}\0${left.symbol}`),
+    Buffer.from(`${right.path}\0${right.symbol}`),
+  );
+}
+
+function isSha256(value) {
+  return typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 }
 
 function validateDimensionResults(issues, input) {

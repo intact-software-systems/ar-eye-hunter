@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -54,17 +55,34 @@ describe('organizing repository structure evaluation result validation', () => {
       'FAIL: suite must be adaptive-agent-execution or organizing-repository-structure',
     );
   });
+
+  it.each([
+    ['missing artifact', { navigationEvidenceArtifact: undefined }, /navigationEvidenceArtifact/u],
+    ['wrong digest', { navigationEvidenceDigest: '0'.repeat(64) }, /digest does not match/u],
+    ['wrong owner', { navigationEvidenceOwner: 'wrong owner' }, /owner must match/u],
+    ['wrong command', { navigationEvidenceCommand: 'node wrong.mjs' }, /command must match/u],
+    ['missing exit code', { navigationEvidenceExitCode: undefined }, /exitCode must equal 0/u],
+    ['nonzero exit code', { navigationEvidenceExitCode: 2 }, /exitCode must equal 0/u],
+    [
+      'wrong affected digest',
+      { affectedCodeDigest: 'f'.repeat(64) },
+      /artifact must match expected repository truth/u,
+    ],
+  ])('rejects structure provenance with %s', (_, changes, expected) => {
+    const input = createValidationInput();
+    input.result.scenarioResults[0] = { ...input.result.scenarioResults[0], ...changes };
+
+    expect(validateEvaluationResult(input).join('\n')).toMatch(expected);
+  });
 });
 
 function createValidationInput(
   evaluationRoot = structureEvaluationRoot,
   primarySkill = 'organizing-repository-structure',
-): any {
-  const suite = readJson(`${evaluationRoot}/scenarios.json`) as any;
-  const rubric = readJson(`${evaluationRoot}/rubric.json`) as any;
-  const scenarios = suite.scenarios.filter(
-    (scenario: any) => scenario.primarySkill === primarySkill,
-  );
+): EvaluationValidationInput {
+  const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
+  const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
+  const scenarios = suite.scenarios.filter((scenario) => scenario.primarySkill === primarySkill);
   return {
     repoRoot,
     suite,
@@ -78,18 +96,54 @@ function createValidationInput(
       model: 'fresh-agent',
       startedAt: '2026-08-12T16:00:00Z',
       completedAt: '2026-08-12T16:10:00Z',
-      scenarioResults: scenarios.map((scenario: any) => ({
-        scenarioId: scenario.id,
-        verdict: 'pass',
-        dimensionResults: scenario.requiredDimensions.map((dimensionId: string) => ({
-          dimensionId,
+      scenarioResults: scenarios.map((scenario) => {
+        if (evaluationRoot !== structureEvaluationRoot) {
+          return {
+            scenarioId: scenario.id,
+            verdict: 'pass',
+            dimensionResults: scenario.requiredDimensions.map((dimensionId: string) => ({
+              dimensionId,
+              verdict: 'pass',
+              evidence: `Direct evidence for ${dimensionId}.`,
+              reason: `The raw answer satisfies ${dimensionId}.`,
+            })),
+            criticalFailures: [],
+            rawOutputArtifact: rawArtifact,
+          };
+        }
+        const expected = rubric.scenarioExpectations[scenario.id];
+        const evidence = JSON.stringify({
+          schemaVersion: 'repository-navigation-evidence-v1',
+          owner: scenario.target.capabilityOwner,
+          root: scenario.target.repositoryPath,
+          entry: withoutKind(expected.entry),
+          results: expected.acceptedResults.map(withoutKind).sort(compareReference),
+          failures: [withoutKind(expected.failure)],
+          testRoot: expected.tests.path,
+          focusedCommand: `npm run ${expected.focusedCommand.symbol}`,
+          navigationMap: { state: 'present', path: expected.navigationMap.path },
+          affectedCodeDigest: 'a'.repeat(64),
+        });
+        const navigationEvidenceArtifact = writeArtifact(`${scenario.id}-evidence.json`, evidence);
+        return {
+          scenarioId: scenario.id,
           verdict: 'pass',
-          evidence: `Direct evidence for ${dimensionId}.`,
-          reason: `The raw answer satisfies ${dimensionId}.`,
-        })),
-        criticalFailures: [],
-        rawOutputArtifact: rawArtifact,
-      })),
+          dimensionResults: scenario.requiredDimensions.map((dimensionId: string) => ({
+            dimensionId,
+            verdict: 'pass',
+            evidence: `Direct evidence for ${dimensionId}.`,
+            reason: `The raw answer satisfies ${dimensionId}.`,
+          })),
+          criticalFailures: [],
+          rawOutputArtifact: rawArtifact,
+          navigationEvidenceArtifact,
+          navigationEvidenceDigest: sha256(evidence),
+          navigationEvidenceCommand: scenario.target.evidenceCommand,
+          navigationEvidenceOwner: scenario.target.capabilityOwner,
+          navigationEvidenceExitCode: 0,
+          affectedCodeDigest: 'a'.repeat(64),
+        };
+      }),
       summary: {
         criticalPassed: scenarios.length,
         criticalTotal: scenarios.length,
@@ -98,6 +152,82 @@ function createValidationInput(
       },
     },
   };
+}
+
+interface EvaluationValidationInput {
+  readonly repoRoot: string;
+  readonly suite: EvaluationSuite;
+  readonly rubric: EvaluationRubric;
+  readonly result: EvaluationResult;
+}
+
+interface EvaluationSuite {
+  readonly suiteId: string;
+  readonly scenarios: readonly EvaluationScenario[];
+}
+
+interface EvaluationScenario {
+  readonly id: string;
+  readonly primarySkill: string;
+  readonly critical: boolean;
+  readonly requiredDimensions: readonly string[];
+  readonly target: {
+    readonly repositoryPath: string;
+    readonly capabilityOwner: string;
+    readonly evidenceCommand: string;
+  };
+}
+
+interface EvaluationRubric {
+  readonly suiteId: string;
+  readonly dimensions: readonly { readonly id: string }[];
+  readonly resultContract: {
+    readonly schemaVersion: string;
+    readonly skillVariants: readonly string[];
+    readonly verdicts: readonly string[];
+  };
+  readonly scenarioExpectations: Readonly<Record<string, ScenarioExpectation>>;
+}
+
+interface EvaluationResult {
+  readonly schemaVersion: string;
+  readonly runId: string;
+  readonly suiteId: string;
+  readonly primarySkill: string;
+  readonly skillVariant: string;
+  readonly model: string;
+  readonly startedAt: string;
+  readonly completedAt: string;
+  readonly scenarioResults: readonly EvaluationScenarioResult[];
+  readonly summary: EvaluationSummary;
+}
+
+interface EvaluationScenarioResult {
+  readonly scenarioId: string;
+  readonly verdict: string;
+  readonly dimensionResults: readonly EvaluationDimensionResult[];
+  readonly criticalFailures: readonly string[];
+  readonly rawOutputArtifact: string;
+  readonly navigationEvidenceArtifact?: string;
+  readonly navigationEvidenceDigest?: string;
+  readonly navigationEvidenceCommand?: string;
+  readonly navigationEvidenceOwner?: string;
+  readonly navigationEvidenceExitCode?: number;
+  readonly affectedCodeDigest?: string;
+}
+
+interface EvaluationDimensionResult {
+  readonly dimensionId: string;
+  readonly verdict: string;
+  readonly evidence: string;
+  readonly reason: string;
+}
+
+interface EvaluationSummary {
+  readonly criticalPassed: number;
+  readonly criticalTotal: number;
+  readonly passed: number;
+  readonly total: number;
 }
 
 function readJson(repositoryPath: string): unknown {
@@ -110,6 +240,47 @@ function writeResult(result: unknown): string {
   const resultPath = path.join(temporaryDirectory, 'result.json');
   writeFileSync(resultPath, JSON.stringify(result), 'utf8');
   return resultPath;
+}
+
+function writeArtifact(name: string, content: string): string {
+  const temporaryDirectory = mkdtempSync(path.join(repoRoot, '.superpowers', 'task8-result-'));
+  temporaryDirectories.push(temporaryDirectory);
+  const artifactPath = path.join(temporaryDirectory, name);
+  writeFileSync(artifactPath, content, 'utf8');
+  return path.relative(repoRoot, artifactPath);
+}
+
+function sha256(content: string): string {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+interface ScenarioExpectation {
+  readonly entry: EvidenceReference;
+  readonly acceptedResults: readonly EvidenceReference[];
+  readonly failure: EvidenceReference;
+  readonly tests: { readonly path: string };
+  readonly focusedCommand: { readonly symbol: string };
+  readonly navigationMap: { readonly path: string };
+}
+
+interface EvidenceReference {
+  readonly kind: string;
+  readonly path: string;
+  readonly symbol: string;
+}
+
+function withoutKind({ path: repositoryPath, symbol }: EvidenceReference) {
+  return { path: repositoryPath, symbol };
+}
+
+function compareReference(
+  left: Readonly<{ path: string; symbol: string }>,
+  right: Readonly<{ path: string; symbol: string }>,
+): number {
+  return Buffer.compare(
+    Buffer.from(`${left.path}\0${left.symbol}`),
+    Buffer.from(`${right.path}\0${right.symbol}`),
+  );
 }
 
 function runCli(args: readonly string[]): ReturnType<typeof spawnSync> {

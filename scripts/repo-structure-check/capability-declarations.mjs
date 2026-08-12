@@ -295,18 +295,18 @@ function validateSourceReference(reference) {
     return;
   }
   const source = reference.input.readFile(reference.sourcePath);
-  const extension = path.posix.extname(reference.sourcePath).toLowerCase();
-  if (!supportedSymbolExtensions.has(extension)) {
+  const evidence =
+    typeof source === 'string'
+      ? readTopLevelSymbolEvidence(reference.sourcePath, source)
+      : { status: 'resolved', symbols: new Set() };
+  if (evidence.status === 'unsupported') {
+    const extension = path.posix.extname(reference.sourcePath).toLowerCase();
     reference.issues.push(
       `${reference.prefix} symbol evidence for ${reference.sourcePath} uses unsupported ` +
         `language ${extension || '(none)'}`,
     );
     return;
   }
-  const evidence =
-    typeof source === 'string'
-      ? readTopLevelSymbolEvidence(reference.sourcePath, source)
-      : { status: 'resolved', symbols: new Set() };
   if (evidence.status === 'malformed-shell') {
     reference.issues.push(
       `${reference.prefix} symbol evidence for ${reference.sourcePath} is unresolvable because ` +
@@ -339,8 +339,11 @@ const supportedSymbolExtensions = new Set([
   '.tsx',
 ]);
 
-function readTopLevelSymbolEvidence(file, source) {
+export function readTopLevelSymbolEvidence(file, source) {
   const extension = path.posix.extname(file).toLowerCase();
+  if (!supportedSymbolExtensions.has(extension)) {
+    return { status: 'unsupported', symbols: new Set() };
+  }
   if (extension === '.py') {
     return { status: 'resolved', symbols: pythonTopLevelSymbols(source) };
   }

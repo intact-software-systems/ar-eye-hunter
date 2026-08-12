@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
+import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 
 const modulePattern = /\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/u;
@@ -167,6 +168,10 @@ export function computePlanFacts(input) {
   };
 }
 
+export function hasCurrentPlanFacts(input) {
+  return isDeepStrictEqual(computePlanFacts(input), input.record.facts);
+}
+
 function toContentTuples(repoRoot, change, record) {
   const tuples = [];
   if (change.oldPath && isAffectedCodePath(change.oldPath, record)) {
@@ -258,8 +263,19 @@ function isAffectedCodePath(changedPath, record) {
     /(?:^|\/)package\.json$/u.test(changedPath) ||
     (record?.capabilities ?? []).some(
       (capability) =>
-        capability.kind === 'guidance' && isGuidanceCapabilityPath(changedPath, capability),
+        (capability.kind === 'guidance' && isGuidanceCapabilityPath(changedPath, capability)) ||
+        (capability.kind !== 'guidance' && isCodeCapabilityPath(changedPath, capability)),
     )
+  );
+}
+
+function isCodeCapabilityPath(changedPath, capability) {
+  return (
+    changedPath === capability.entry ||
+    changedPath === capability.navigationMap ||
+    (typeof capability.root === 'string' && isWithin(changedPath, capability.root)) ||
+    (typeof capability.testRoot === 'string' && isWithin(changedPath, capability.testRoot)) ||
+    (capability.factContracts ?? []).includes(changedPath)
   );
 }
 

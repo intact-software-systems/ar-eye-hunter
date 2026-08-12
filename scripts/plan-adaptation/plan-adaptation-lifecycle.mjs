@@ -21,6 +21,7 @@ import { writeFileTransaction } from './file-transaction.mjs';
 import {
   computePlanFacts,
   computeQualificationReasons,
+  hasCurrentPlanFacts,
   readChangedPaths,
 } from './plan-change-facts.mjs';
 
@@ -140,15 +141,16 @@ export function checkAdaptivePlans(input) {
       typeof activePlan.record.facts?.diffBase === 'string'
         ? activePlan.record.facts.diffBase
         : input.base;
-    const currentFacts = readCurrentFacts(
-      {
-        ...input,
-        planPath: activePlan.planPath,
+    const changes = readChangedPaths(input.repoRoot, factBase);
+    if (
+      !hasCurrentPlanFacts({
+        repoRoot: input.repoRoot,
         base: factBase,
-      },
-      activePlan.record,
-    );
-    if (JSON.stringify(currentFacts) !== JSON.stringify(activePlan.record.facts)) {
+        changes,
+        record: activePlan.record,
+        planPath: activePlan.planPath,
+      })
+    ) {
       issues.push(`${activePlan.planPath} computed facts are stale`);
     }
   }

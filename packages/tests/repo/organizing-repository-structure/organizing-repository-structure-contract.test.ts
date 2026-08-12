@@ -39,9 +39,28 @@ describe('organizing repository structure skill contract', () => {
       'split',
       'move',
       'consolidate',
-      'cold-navigation',
+      'navigation evidence',
       'structuralDispositions',
+      'node scripts/repo-structure-check.mjs --navigation-evidence <capability-owner>',
     ]);
+  });
+
+  it('uses generated evidence instead of requiring agents to transcribe exact facts', () => {
+    const skill = normalizeWhitespace(readRepo(`${skillRoot}/SKILL.md`));
+
+    expectAll(skill, [
+      'entry',
+      'result',
+      'Do not make a current disposition permanent',
+      'generated navigation-evidence record',
+      'do not transcribe facts the checker already owns',
+      'actual structural pressure',
+    ]);
+    expect(skill).not.toContain('exact applicable `repository/path#symbol`');
+    expect(skill).not.toContain('declared `package.json` focused command');
+    expect(skill).not.toContain(
+      'why neither flat dumping nor singleton nesting controls the decision',
+    );
   });
 
   it('keeps structural facts separate from human architectural judgment', () => {

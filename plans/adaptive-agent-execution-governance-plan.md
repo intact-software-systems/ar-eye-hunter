@@ -259,13 +259,15 @@ checkpoint judgment.
 registry, placeholder files, permissive missing-file exception, or parallel
 scope allowlist.
 
-## Current horizon
+## Checkpointed behavior attempt
 
-The canonical lifecycle can now reserve a future guidance owner without
-placeholder files or temporary undeclared scope. This horizon activates only
-the repository-structure behavior skill. General guidance simplification stays
-inactive until fresh-agent evaluation proves the new skill can turn structural
-facts into human-navigable decisions.
+The canonical lifecycle reserved and activated the repository-structure
+guidance owner without placeholder files or temporary undeclared scope. The
+skill and its deterministic evaluation contracts were implemented, but the
+behavior outcome is not complete: independent review rejected summarized
+evidence, and the replacement provenance-bound campaign stopped when its first
+assisted run recovered only two of six exact navigation facts. General guidance
+simplification therefore remains inactive.
 
 ### Task 7: Organizing repository structure skill and evaluations
 
@@ -290,15 +292,87 @@ facts into human-navigable decisions.
 - [x] Reuse the canonical evaluation-result validator API; add no second result
       validator. Extend its CLI only when needed to select the structure suite
       explicitly while preserving the existing adaptive-suite command.
-- [x] Run the structure pressure scenarios with a fresh agent and refine only
-      observed loopholes until every critical result complies. Activate the
-      planned capability by removing its activation metadata, refresh facts,
-      pass full structure validation, then complete only this slice.
+- [x] Prove the structure pressure scenarios with provenance-bound verbatim
+      fresh-agent evidence and pass independent review. The prose-only approach
+      failed this criterion; resume it only after the current automation slice
+      supplies canonical navigation facts.
 
 **Legacy impact:** Do not duplicate repository metrics, plan adaptation,
 publication, or testing catalogs. The skill points agents to the canonical
 checker and style facts, while human structural judgment remains visible in the
 adaptive record.
+
+## Current horizon
+
+### Task 8: Automated repository navigation evidence
+
+- [x] Extend the canonical repository-structure capability to emit one
+      machine-readable navigation-evidence record for a declared capability:
+      owner, canonical entry, applicable terminal result and failure symbols,
+      mirrored tests, declared focused command, and navigation-map state.
+- [x] Derive and validate those facts from the capability declaration,
+      repository files, navigation map, package scripts, and source symbols;
+      do not ask automation to choose a structural disposition or folder.
+- [x] Make the structure skill consume the generated evidence and retain only
+      the creative judgments: `keep`, `split`, `move`, or `consolidate`, the
+      rationale, reopening conditions, and adaptive-plan reflection.
+- [x] Add deterministic and semantic command tests. The frozen provenance
+      campaign and independent review remain the unchecked Task 7 acceptance
+      criterion and must pass before selecting general guidance simplification.
+
+**Legacy impact:** Replace prompt-enforced fact transcription with one
+repository-owned fact artifact. Keep the existing checker, declaration registry,
+style facts, skill, and evaluation validator canonical; add no parallel
+navigation registry or automatic folder selector.
+
+## Current two-slice horizon
+
+### Task 9: General agent guidance simplification
+
+**Planned guidance owner:** general agent guidance routing
+
+**Planned mirrored contract tests:**
+`packages/tests/repo/general-agent-guidance/`
+
+- [ ] Make `adaptive-plan-execution` the one execution-time adaptation owner
+      and `organizing-repository-structure` the one structural-judgment owner.
+      General guidance routes to them without restating their rules.
+- [ ] Reduce `publishing-plan-progress` to publication, remote evidence,
+      compatibility checks, issue handoff, and completion publication. Remove
+      its duplicate slice/checkpoint and unconditional local full-suite policy.
+- [ ] Remove duplicate issue-startup, exact-SHA freshness, unconditional local
+      full-suite, plan-adaptation, and structure rules from `AGENTS.md`,
+      `rallar-code-writing`, and `rallar-testing`; retain only owner routing and
+      each file's actual domain rules.
+- [ ] Add focused contract tests that reject duplicate rule ownership while
+      preserving final completion gates and explicit high-risk validation.
+
+**Legacy impact:** Directly minimize duplicate guidance. Add no compatibility
+copy, second plan workflow, second testing catalog, or permanent transition text.
+
+### Task 10: Repository contract-path declarations
+
+**Owners:** `scripts/plan-adaptation/` and
+`scripts/repo-structure-check/`
+
+**Mirrored tests:** `packages/tests/repo/plan-adaptation/` and
+`packages/tests/repo/repo-structure-check/`
+
+- [ ] Add exact repository contract paths to code-capability declarations so a
+      capability can own non-code contracts such as templates, durable
+      Markdown, and workflow definitions without disguising them as authored
+      source fact contracts.
+- [ ] Include those paths in affected-code digests, undeclared-path detection,
+      planned-surface reservation, safe repository inventory validation, and
+      changed-surface ownership checks. Do not apply source-symbol or topology
+      rules to them.
+- [ ] Reject missing, unsafe, duplicate, or cross-owner contract paths and
+      preserve existing code/guidance declaration compatibility.
+- [ ] Add record, fact, declaration, and semantic command tests, then use the
+      new field to declare the later PR Human Review v2 owner honestly.
+
+**Legacy impact:** Extend the existing capability registry and checker. Add no
+parallel allowlist, workflow registry, or permissive undeclared-path exception.
 
 ## Checkpoint-activated outcomes
 
@@ -395,12 +469,33 @@ are selected at the preceding checkpoint.
         ".agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs",
         "packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts"
       ]
+    },
+    {
+      "kind": "guidance",
+      "owner": "general agent guidance routing",
+      "skillRoot": ".agents/skills/publishing-plan-progress",
+      "skillEntry": ".agents/skills/publishing-plan-progress/SKILL.md",
+      "contractTestRoot": "packages/tests/repo/general-agent-guidance",
+      "focusedCommand": "npm run test:general-agent-guidance",
+      "evaluationRoot": null,
+      "contractPaths": [
+        "AGENTS.md",
+        ".agents/skills/rallar-code-writing/SKILL.md",
+        ".agents/skills/rallar-testing/SKILL.md",
+        ".agents/skills/rallar-testing/references/test-commands.md"
+      ],
+      "activation": {
+        "state": "planned",
+        "slice": "general-agent-guidance-simplification"
+      }
     }
   ],
   "architecture": {
     "currentHypothesis": "Plan, style, review, and workflow rules exist as separate controls without one execution-time adaptation owner.",
     "intendedHypothesis": "A plan-adaptation capability owns rolling decisions while a separate repository-structure capability supplies structural facts.",
-    "invalidatedAssumptions": [],
+    "invalidatedAssumptions": [
+      "A prose-only repository-structure skill can reliably make fresh agents reproduce exact owner-to-result navigation evidence; the frozen provenance run made a sound structural judgment but recovered only two of six required repository facts."
+    ],
     "freshInitialReview": {
       "status": "complete",
       "reviewer": "/root/initial_architecture_review",
@@ -408,26 +503,28 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [
-    "organizing-repository-structure-skill-and-evaluations"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "ebc932556c8df8205fe9da5db7ffb02a6f1444a2ce70556c591cb8351a80032a",
+    "affectedCodeDigest": "d2ca61adaf5e60e9f2e0f01e8a2d34ba3e96bba8a1b04e0c8c6acd1b05412cc4",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
       "public-contract-change",
-      "lifecycle-change"
+      "lifecycle-change",
+      "invalid-assumption"
     ],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The planned-capability lifecycle is complete and independently reviewed: planned owners reserve their scope without placeholder files, are disjoint from active and other planned topology roots, preserve active rename lineage, and must activate before completion or close-out. A separate CI regression correction also restored the adaptive evaluation validator to the repository input-contract standard without changing its API or results.",
-    "learning": "Future behavior guidance must have an explicit planned owner before authoring begins, while planned exemptions must never suppress an active owner's structural evidence. The GitHub correction also showed that the local WORKTREE repo-style collector skips dot-prefixed guidance code even though immutable CI scans it, so the later Governance Gate must provide surface parity and direct skill-root style checks remain required meanwhile.",
-    "structure": "Declare one planned repository-structure guidance capability with its exact skill, evaluation, mirrored test, plugin discovery, and canonical evaluation-validator contract paths. Activate only its skill/evaluation slice; keep general guidance simplification inactive until fresh-agent results prove this behavior owner, and retain WORKTREE versus immutable-tree parity as an acceptance obligation for the later Governance Gate.",
-    "decision": "continue",
-    "nextSlices": []
+    "outcome": "The organizing-repository-structure skill and automated navigation-evidence boundary now pass deterministic validation, five provenance-bound assisted micro-runs, all three critical full scenarios, and independent review with no Critical or Important findings. Exact navigation facts moved into repository-owned automation while agents retained coherent, reversible structural judgment.",
+    "learning": "Automated owner, entry, result, failure, test, command, map, and digest evidence made the behavior reliable without manufacturing a gap between control and assisted agents. The next PR-review cutover also exposed a declaration gap: code capabilities can own authored source fact contracts but cannot yet declare templates, durable Markdown, and workflows as non-code contract paths.",
+    "structure": "Activate one guidance-simplification slice owned by publishing-plan-progress with exact cross-guidance contracts, and one infrastructure slice in the existing plan-adaptation and repository-structure owners to add safe non-code contract paths for code capabilities. Defer PR Human Review v2 until that registry support can declare its mixed script, template, documentation, workflow, and legacy-integration surface honestly.",
+    "decision": "amend",
+    "nextSlices": [
+      "general-agent-guidance-simplification",
+      "repository-contract-path-declarations"
+    ]
   },
   "structuralDispositions": [
     {
@@ -565,6 +662,16 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "The planned-capability lifecycle is complete and independently reviewed: planned owners reserve their scope without placeholder files, are disjoint from active and other planned topology roots, preserve active rename lineage, and must activate before completion or close-out. A separate CI regression correction also restored the adaptive evaluation validator to the repository input-contract standard without changing its API or results."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "amend",
+      "summary": "The repository-structure skill, blind scenarios, portable evaluation contract, and provenance ledger were implemented, but Task 7 did not satisfy its behavior acceptance. Independent review rejected summarized evidence, and the replacement frozen campaign stopped correctly when its first assisted run recovered only two of six exact navigation facts despite making a reasonable structural decision."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "amend",
+      "summary": "The organizing-repository-structure skill and automated navigation-evidence boundary now pass deterministic validation, five provenance-bound assisted micro-runs, all three critical full scenarios, and independent review with no Critical or Important findings. Exact navigation facts moved into repository-owned automation while agents retained coherent, reversible structural judgment."
     }
   ]
 }

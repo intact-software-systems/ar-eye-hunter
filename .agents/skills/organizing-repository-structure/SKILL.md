@@ -16,35 +16,31 @@ adaptive plan or changes its ownership, folder, lifecycle, or navigation facts.
 ## Judgment workflow
 
 1. Recover repository truth without using the plan, design, history, or PR as a map. Start
-   from the package, app, command, route, or public export; locate callers, the capability
-   owner and canonical entry, decisions and state, side effects and failures, the result or
-   exit, mirrored tests, and any durable navigation map.
-2. Read `scripts/repo-structure-check/README.md`. Run the applicable canonical style facts
-   and `npm run check:repo-structure`. Density, prefix clustering, size, cognitive load, and
-   depth come from `scripts/repo-style-check/structural-facts.mjs`; topology, capability,
-   disposition, and cold-navigation validity come from the repository-structure checker.
-3. Give every current fact one visible `structuralDispositions` judgment:
+   from the command or export; locate the owner, entry, decisions, side effects, failures,
+   result, mirrored tests, and map.
+2. Read `scripts/repo-structure-check/README.md`. Run canonical style facts and
+   `npm run check:repo-structure`, then run
+   `node scripts/repo-structure-check.mjs --navigation-evidence <capability-owner>`.
+   Density, prefix, size, load, and depth come from
+   `scripts/repo-style-check/structural-facts.mjs`; topology and navigation evidence come
+   from the structure checker.
+3. Give every fact one visible `structuralDispositions` judgment: `keep` for coherent direct
+   ownership; `split` for independent responsibilities; `move` for a different owner; or
+   `consolidate` when fragmentation obscures one flow.
 
-   | Disposition   | Use when                                                              |
-   | ------------- | --------------------------------------------------------------------- |
-   | `keep`        | The current placement keeps one coherent owner and direct navigation. |
-   | `split`       | Independent responsibilities or lifecycles need distinct owners.      |
-   | `move`        | The behavior belongs to another existing owner or boundary.           |
-   | `consolidate` | Fragmentation or pass-through structure obscures one owner or flow.   |
-
-4. Base the choice on separation of concerns, single responsibility, dependency direction,
-   public compatibility, and human navigation. Do not mechanically split on a metric. Reject
+4. Base the choice on separation of concerns, single responsibility, dependencies,
+   compatibility, and human navigation. Do not mechanically split on a metric. Reject
    both flat dumping of unrelated responsibilities and meaningless singleton nesting. A
    folder is justified by a real domain, lifecycle, policy, translation, compatibility,
-   protocol, runtime, side-effect, or ownership boundary—not by a prescribed taxonomy.
-5. Implement the smallest coherent shape. Keep one obvious entry, mirror tests under the
-   production owner, update exports and consumers deliberately, and preserve public paths
-   unless the task authorizes a compatibility change. Re-run focused behavior checks and
-   canonical structure/style checks.
-6. Require a fresh cold-navigation probe. Give the reviewer only the repository and a
-   capability question; require exact owner, entry, owner-to-result path, failure/exit paths,
-   mirrored tests, and focused command or map. Record the evidence at its canonical plan
-   owner. Passing tests or a detailed tactical plan do not replace this proof.
+   protocol, runtime, side-effect, or ownership boundary—not by a prescribed taxonomy. Do
+   not make a current disposition permanent; state which changed facts would reopen it.
+5. Implement the smallest coherent shape. Keep an obvious entry, mirrored tests, deliberate
+   exports and consumers, and compatible public paths. Re-run focused and canonical checks.
+6. Use the generated navigation-evidence record as the canonical fact proof; do not
+   transcribe facts the checker already owns. Explain the actual structural pressure from
+   recovered responsibilities and dependencies, the disposition, reopening conditions, and
+   adaptive-plan effect. Record the judgment at its canonical plan owner. Passing tests or
+   a detailed tactical plan do not replace repository-owned evidence.
 
 ## Decision boundary
 

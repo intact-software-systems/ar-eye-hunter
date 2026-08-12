@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { validateCapabilityDeclarations } from '../../../../scripts/repo-structure-check/capability-declarations.mjs';
+import {
+  readTopLevelSymbolEvidence,
+  validateCapabilityDeclarations,
+} from '../../../../scripts/repo-structure-check/capability-declarations.mjs';
 
 describe('repository capability declarations', () => {
   it('requires the declared canonical entry to exist', () => {
@@ -566,6 +569,18 @@ describe('repository capability declarations', () => {
       'cold-navigation probe symbol evidence for scripts/example/styles.css uses unsupported language .css',
     );
   });
+
+  it.each(['.md', '.json', '.css'])(
+    'keeps %s source evidence unsupported at its canonical reader',
+    (extension) => {
+      expect(
+        readTopLevelSymbolEvidence(`scripts/example/fake${extension}`, 'export const fake = true;'),
+      ).toEqual({
+        status: 'unsupported',
+        symbols: new Set(),
+      });
+    },
+  );
 
   it('rejects a navigation map without source links', () => {
     const issues = validateCapabilityDeclarations({

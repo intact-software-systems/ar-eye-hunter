@@ -182,7 +182,8 @@ describe('repository structure command safety', () => {
     });
     expect(callerEvidenceResult.status).toBe(2);
     expect(callerEvidenceResult.stderr).toContain(
-      'usage: node scripts/repo-structure-check.mjs [--base <git-ref>]',
+      'usage: node scripts/repo-structure-check.mjs ' +
+        '[--base <git-ref> | --navigation-evidence <capability-owner>]',
     );
     expect(existsSync(fakeGitHub.logPath)).toBe(false);
 

@@ -2,36 +2,48 @@
 
 import {
   checkRepositoryStructure,
+  readRepositoryNavigationEvidence,
   resolveRepositoryStructureBase,
 } from './repo-structure-check/repository-structure-check.mjs';
 
 try {
   const input = readInput(process.argv.slice(2));
   const repoRoot = process.cwd();
-  const base = input.base ?? resolveRepositoryStructureBase(repoRoot);
-  const result = checkRepositoryStructure({ repoRoot, base });
-  printResult(result);
-  process.exitCode = result.findings.length === 0 ? 0 : 1;
+  if (input.navigationEvidenceOwner !== undefined) {
+    const evidence = readRepositoryNavigationEvidence({
+      repoRoot,
+      owner: input.navigationEvidenceOwner,
+    });
+    console.log(JSON.stringify(evidence));
+    process.exitCode = 0;
+  } else {
+    const base = input.base ?? resolveRepositoryStructureBase(repoRoot);
+    const result = checkRepositoryStructure({ repoRoot, base });
+    printResult(result);
+    process.exitCode = result.findings.length === 0 ? 0 : 1;
+  }
 } catch (error) {
   console.error(`repository structure check failed: ${toError(error).message}`);
   process.exitCode = 2;
 }
 
 function readInput(args) {
-  const input = {};
-  for (let index = 0; index < args.length; index += 2) {
-    const option = args[index];
-    const value = args[index + 1];
-    if (value === undefined) {
-      throw new Error('usage: node scripts/repo-structure-check.mjs [--base <git-ref>]');
-    }
-    if (option === '--base' && input.base === undefined) {
-      input.base = value;
-    } else {
-      throw new Error('usage: node scripts/repo-structure-check.mjs [--base <git-ref>]');
-    }
+  const usage =
+    'usage: node scripts/repo-structure-check.mjs ' +
+    '[--base <git-ref> | --navigation-evidence <capability-owner>]';
+  if (args.length === 0) {
+    return {};
   }
-  return input;
+  if (args.length !== 2 || args[1] === '') {
+    throw new Error(usage);
+  }
+  if (args[0] === '--base') {
+    return { base: args[1] };
+  }
+  if (args[0] === '--navigation-evidence') {
+    return { navigationEvidenceOwner: args[1] };
+  }
+  throw new Error(usage);
 }
 
 function printResult(result) {
