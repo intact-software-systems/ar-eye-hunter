@@ -7,9 +7,18 @@ import {
     rallarBlackBoxParallelChildSourceRecipePath,
 } from './composite-results.ts';
 import {
+    lookupPayloadPath,
+    type PayloadPathLookup,
+} from './wait/wait-event-match.ts';
+import { waitForEvent } from './wait/wait-for-event.ts';
+import {
+    assertValueMatches,
+    isRallarBlackBoxAssertOperator,
+    RALLAR_BLACK_BOX_ASSERT_OPERATORS,
+} from './assert/assert-value-operators.ts';
+import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestAssertCommand,
-    type RallarBlackBoxTestAssertOperator,
     type RallarBlackBoxTestAssertResultValue,
     type RallarBlackBoxTestCommand,
     type RallarBlackBoxTestCommandContext,
@@ -43,8 +52,6 @@ import {
     type RallarBlackBoxTestStatsSnapshot,
     type RallarBlackBoxTestTransport,
     type RallarBlackBoxTestWaitCommand,
-    type RallarBlackBoxTestWaitMatch,
-    type RallarBlackBoxTestWaitResultValue,
 } from './types.ts';
 
 export type CreateRallarBlackBoxTestRuntimeOptions = Readonly<{
@@ -98,9 +105,7 @@ type LoopResultMetrics = Readonly<{
 
 const LOOP_PLACEHOLDER_PATTERN = /\{loop\.(index|iteration|elapsedMs|commandIndex)\}/g;
 const LOOP_EXACT_PLACEHOLDER_PATTERN = /^\{loop\.(index|iteration|elapsedMs|commandIndex)\}$/;
-const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
 const RECENT_ASSERT_SOURCE_LIMIT = 20;
-const ASSERT_OPERATORS = ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'] as const;
 const ABORT_ERROR_CODE = 'RALLAR_BLACK_BOX_ABORTED';
 const RALLAR_CONFIG_AUTH_INTENT_KEYS = [
     'username',
@@ -116,11 +121,6 @@ const RALLAR_CONFIG_INHERITED_KEYS = [
     'leaveRoomOnClose',
     'timeoutMs',
 ] as const;
-
-type PayloadPathLookup = Readonly<{
-    exists: boolean;
-    value?: unknown;
-}>;
 
 function initialState(): RallarBlackBoxTestState {
     return {
@@ -358,105 +358,6 @@ function replaceLoopPlaceholders(value: unknown, context: LoopContext): unknown 
     }
 
     return value;
-}
-
-function normalisePayloadPath(path: string): string {
-    if (path.startsWith('$.payload.')) {
-        return path.slice('$.payload.'.length);
-    }
-    if (path.startsWith('payload.')) {
-        return path.slice('payload.'.length);
-    }
-    if (path.startsWith('$.')) {
-        return path.slice('$.'.length);
-    }
-    return path;
-}
-
-function lookupPayloadPath(payload: unknown, path: string | undefined): PayloadPathLookup {
-    if (!path || path.trim().length === 0) {
-        return {
-            exists: payload !== undefined,
-            value: payload,
-        };
-    }
-
-    let current = payload;
-    const segments = normalisePayloadPath(path)
-        .split('.')
-        .filter(segment => segment.length > 0);
-    for (const segment of segments) {
-        if ((Array.isArray(current) || typeof current === 'string') && segment === 'length') {
-            current = current.length;
-            continue;
-        }
-
-        if (Array.isArray(current)) {
-            const index = Number(segment);
-            if (!Number.isInteger(index) || index < 0 || index >= current.length) {
-                return { exists: false };
-            }
-            current = current[index];
-            continue;
-        }
-
-        if (!current || typeof current !== 'object') {
-            return { exists: false };
-        }
-
-        const record = current as Record<string, unknown>;
-        if (!Object.prototype.hasOwnProperty.call(record, segment)) {
-            return { exists: false };
-        }
-        current = record[segment];
-    }
-
-    return {
-        exists: true,
-        value: current,
-    };
-}
-
-function sameJsonValue(left: unknown, right: unknown): boolean {
-    try {
-        return JSON.stringify(left) === JSON.stringify(right);
-    } catch (_error) {
-        return Object.is(left, right);
-    }
-}
-
-function containsValue(value: unknown, expected: string): boolean {
-    if (typeof value === 'string') {
-        return value.includes(expected);
-    }
-    try {
-        const serialized = JSON.stringify(value);
-        return typeof serialized === 'string'
-            ? serialized.includes(expected)
-            : String(value).includes(expected);
-    } catch (_error) {
-        return String(value).includes(expected);
-    }
-}
-
-function containsAssertValue(value: unknown, expected: unknown): boolean {
-    if (Array.isArray(value)) {
-        return value.some(entry => sameJsonValue(entry, expected));
-    }
-
-    if (typeof value === 'string') {
-        return value.includes(String(expected));
-    }
-
-    if (value && typeof value === 'object') {
-        if (typeof expected === 'string') {
-            return containsValue(value, expected);
-        }
-        return Object.values(value as Record<string, unknown>)
-            .some(entry => sameJsonValue(entry, expected));
-    }
-
-    return containsValue(value, String(expected));
 }
 
 class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
@@ -1992,266 +1893,31 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
     }
 
     private async waitForEvent(command: WaitCommandWithId): Promise<CommandOutcome> {
-        if (!command.match || Object.keys(command.match).length === 0) {
-            return this.waitInvalid(command, 'Wait requires at least one match field.');
-        }
-
-        if (this.cancelRequested) {
-            return this.waitCancelled(command);
-        }
-
-        const immediate = this.findWaitEvent(command.match);
-        if (immediate) {
-            return this.waitMatched(command, immediate);
-        }
-
-        const deadlineEpochMs = this.waitDeadlineEpochMs(command);
-        if (this.now() >= deadlineEpochMs) {
-            return this.waitTimedOut(command, deadlineEpochMs);
-        }
-
-        return await new Promise<CommandOutcome>((resolve) => {
-            let settled = false;
-            let timeout: ReturnType<typeof setTimeout> | undefined;
-            let unsubscribe: (() => void) | undefined;
-            let cleanupAfterSubscribe = false;
-            const signal = this.cancellationController.signal;
-
-            const cleanup = () => {
-                if (timeout) {
-                    clearTimeout(timeout);
-                    timeout = undefined;
-                }
-                signal.removeEventListener('abort', onAbort);
-                if (unsubscribe) {
-                    unsubscribe();
-                    unsubscribe = undefined;
-                } else {
-                    cleanupAfterSubscribe = true;
-                }
-            };
-
-            const settle = (outcome: CommandOutcome) => {
-                if (settled) {
-                    return;
-                }
-                settled = true;
-                cleanup();
-                resolve(outcome);
-            };
-
-            const evaluate = () => {
-                if (this.cancelRequested) {
-                    settle(this.waitCancelled(command));
-                    return;
-                }
-
-                const matched = this.findWaitEvent(command.match);
-                if (matched) {
-                    settle(this.waitMatched(command, matched));
-                    return;
-                }
-
-                if (this.now() >= deadlineEpochMs) {
-                    settle(this.waitTimedOut(command, deadlineEpochMs));
-                }
-            };
-
-            const timeoutDelayMs = Math.max(0, deadlineEpochMs - this.now());
-            const onAbort = () => {
-                settle(this.waitCancelled(command));
-            };
-            if (signal.aborted) {
-                settle(this.waitCancelled(command));
-                return;
-            }
-            timeout = setTimeout(() => {
-                settle(this.waitTimedOut(command, deadlineEpochMs));
-            }, timeoutDelayMs);
-            signal.addEventListener('abort', onAbort, {
-                once: true,
-            });
-            unsubscribe = this.subscribe(evaluate);
-            if (cleanupAfterSubscribe && unsubscribe) {
-                unsubscribe();
-                unsubscribe = undefined;
-            }
+        return await waitForEvent({
+            command,
+            now: this.now,
+            sleep: this.sleep,
+            cancellationSignal: this.cancellationController.signal,
+            cancelRequested: () => this.cancelRequested,
+            currentStatus: () => this.currentState.status,
+            currentEvents: () => this.currentState.events,
+            subscribe: listener => this.subscribe(() => listener()),
         });
-    }
-
-    private findWaitEvent(match: RallarBlackBoxTestWaitMatch): RallarBlackBoxTestEvent | undefined {
-        const events = this.currentState.events;
-        for (let index = events.length - 1; index >= 0; index--) {
-            const event = events[index];
-            if (this.waitEventMatches(event, match)) {
-                return event;
-            }
-        }
-        return undefined;
-    }
-
-    private waitEventMatches(
-        event: RallarBlackBoxTestEvent,
-        match: RallarBlackBoxTestWaitMatch,
-    ): boolean {
-        if (match.kind !== undefined && event.kind !== match.kind) {
-            return false;
-        }
-        if (match.topic !== undefined && event.topic !== match.topic) {
-            return false;
-        }
-        if (match.commandId !== undefined && event.commandId !== match.commandId) {
-            return false;
-        }
-        if (match.connection !== undefined && event.connection !== match.connection) {
-            return false;
-        }
-        if (match.transport !== undefined && event.transport !== match.transport) {
-            return false;
-        }
-        if (match.severity !== undefined && event.severity !== match.severity) {
-            return false;
-        }
-
-        if (
-            match.payloadPath !== undefined ||
-            match.equals !== undefined ||
-            match.contains !== undefined ||
-            match.exists !== undefined
-        ) {
-            const lookup = lookupPayloadPath(event.payload, match.payloadPath);
-            if (match.exists !== undefined && lookup.exists !== match.exists) {
-                return false;
-            }
-            if (match.exists !== false && !lookup.exists) {
-                return false;
-            }
-            if (match.equals !== undefined && !sameJsonValue(lookup.value, match.equals)) {
-                return false;
-            }
-            if (match.contains !== undefined && !containsValue(lookup.value, match.contains)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private waitDeadlineEpochMs(command: WaitCommandWithId): number {
-        const timeoutMs = command.timeoutMs === undefined
-            ? command.deadlineEpochMs === undefined
-                ? DEFAULT_WAIT_TIMEOUT_MS
-                : undefined
-            : Math.max(0, command.timeoutMs);
-        const timeoutDeadline = timeoutMs === undefined
-            ? undefined
-            : this.now() + timeoutMs;
-
-        if (command.deadlineEpochMs === undefined) {
-            return timeoutDeadline ?? (this.now() + DEFAULT_WAIT_TIMEOUT_MS);
-        }
-
-        return timeoutDeadline === undefined
-            ? command.deadlineEpochMs
-            : Math.min(timeoutDeadline, command.deadlineEpochMs);
-    }
-
-    private toWaitResultValue(
-        command: WaitCommandWithId,
-        partial: Readonly<{
-            matched: boolean;
-            timedOut?: boolean;
-            cancelled?: boolean;
-            event?: RallarBlackBoxTestEvent;
-        }>,
-    ): RallarBlackBoxTestWaitResultValue {
-        return {
-            commandId: command.commandId,
-            match: command.match,
-            ...partial,
-        };
-    }
-
-    private waitMatched(
-        command: WaitCommandWithId,
-        event: RallarBlackBoxTestEvent,
-    ): CommandOutcome {
-        return {
-            status: 'ok',
-            value: this.toWaitResultValue(command, {
-                matched: true,
-                event,
-            }),
-            nextStatus: this.currentState.status,
-        };
-    }
-
-    private waitTimedOut(
-        command: WaitCommandWithId,
-        deadlineEpochMs: number,
-    ): CommandOutcome {
-        return {
-            status: 'failed',
-            value: this.toWaitResultValue(command, {
-                matched: false,
-                timedOut: true,
-            }),
-            error: {
-                code: 'RALLAR_BLACK_BOX_WAIT_TIMEOUT',
-                message: 'Wait command timed out before matching a runtime event.',
-                details: {
-                    timeoutMs: command.timeoutMs,
-                    deadlineEpochMs,
-                    match: command.match,
-                },
-            },
-            nextStatus: 'failed',
-        };
-    }
-
-    private waitCancelled(command: WaitCommandWithId): CommandOutcome {
-        return {
-            status: 'cancelled',
-            value: this.toWaitResultValue(command, {
-                matched: false,
-                cancelled: true,
-            }),
-            nextStatus: 'cancelled',
-        };
-    }
-
-    private waitInvalid(
-        command: WaitCommandWithId,
-        message: string,
-        details?: unknown,
-    ): CommandOutcome {
-        return {
-            status: 'failed',
-            value: this.toWaitResultValue(command, {
-                matched: false,
-            }),
-            error: {
-                code: 'RALLAR_BLACK_BOX_WAIT_INVALID',
-                message,
-                details,
-            },
-            nextStatus: 'failed',
-        };
     }
 
     private assertRuntimeEvidence(command: AssertCommandWithId): CommandOutcome {
         if (typeof command.source !== 'string' || command.source.trim().length === 0) {
             return this.assertInvalid(command, 'Assert requires a non-empty source.');
         }
-        if (!this.isAssertOperator(command.operator)) {
+        if (!isRallarBlackBoxAssertOperator(command.operator)) {
             return this.assertInvalid(command, 'Assert operator is not supported.', {
                 operator: command.operator,
-                supportedOperators: ASSERT_OPERATORS,
+                supportedOperators: RALLAR_BLACK_BOX_ASSERT_OPERATORS,
             });
         }
 
         const source = this.resolveAssertSource(command.source);
-        const passed = this.assertValueMatches(
+        const passed = assertValueMatches(
             source,
             command.operator,
             command.expected,
@@ -2276,11 +1942,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             },
             nextStatus: 'failed',
         };
-    }
-
-    private isAssertOperator(value: unknown): value is RallarBlackBoxTestAssertOperator {
-        return typeof value === 'string' &&
-            ASSERT_OPERATORS.includes(value as RallarBlackBoxTestAssertOperator);
     }
 
     private resolveAssertSource(source: string): PayloadPathLookup {
@@ -2337,35 +1998,6 @@ class InMemoryRallarBlackBoxTestRuntime implements RallarBlackBoxTestRuntime {
             failures: this.currentState.failures,
             resultCache: this.currentState.resultCache,
         };
-    }
-
-    private assertValueMatches(
-        source: PayloadPathLookup,
-        operator: RallarBlackBoxTestAssertOperator,
-        expected: unknown,
-    ): boolean {
-        switch (operator) {
-            case 'equals':
-                return source.exists && sameJsonValue(source.value, expected);
-            case 'notEquals':
-                return !source.exists || !sameJsonValue(source.value, expected);
-            case 'contains':
-                return source.exists && containsAssertValue(source.value, expected);
-            case 'exists':
-                return expected === undefined
-                    ? source.exists
-                    : source.exists === Boolean(expected);
-            case 'gte':
-                return source.exists &&
-                    typeof source.value === 'number' &&
-                    typeof expected === 'number' &&
-                    source.value >= expected;
-            case 'lte':
-                return source.exists &&
-                    typeof source.value === 'number' &&
-                    typeof expected === 'number' &&
-                    source.value <= expected;
-        }
     }
 
     private toAssertResultValue(

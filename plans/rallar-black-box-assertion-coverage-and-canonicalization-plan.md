@@ -7,8 +7,14 @@
 > choice that would otherwise block mid-task. Keep the draft PR and this record
 > current after every checkpoint.
 
-Status: in execution as a stacked PR series based on
-`fix/api-v1-blackbox-authz-presence-findings` (PR #161, unmerged base).
+Status: complete. Landed on `main` at `93483f47` (squash of the W1–W8
+stack via PR #173; per-workstream review history in PRs #165–#168 and
+#170–#173). Completion evidence: Branch Release Gate green on the final
+feature-branch commit `6f763ddf`; Run Hetzner Supported Distributed
+Manifests green on the resulting `main` commit `93483f47`. Open follow-ups:
+#174 (poll-round rewrite decision), #175 (remote-browser RTC absent), #176
+(distributed parity — now planned in
+[rallar-bb-test-distributed-assertion-parity-plan.md](./rallar-bb-test-distributed-assertion-parity-plan.md)).
 
 | Workstream | Status | Branch / PR |
 |---|---|---|

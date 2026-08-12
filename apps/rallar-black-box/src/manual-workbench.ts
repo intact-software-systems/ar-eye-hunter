@@ -543,10 +543,6 @@ export function manualRtcNackProbeCommands(
             negativeCase: 'not-yet-in-sync',
             expectedOutcome: 'nack',
         },
-        expect: {
-            outcome: 'nack',
-            code: 'not-yet-in-sync',
-        },
     }];
 }
 
@@ -574,10 +570,6 @@ export function manualRtcNegativeRecipeSnippet(
                 negativeCase: 'missing-peer',
                 expectedOutcome: 'delivery-failure',
             },
-            expect: {
-                status: 'failed',
-                code: 'missing-peer',
-            },
         },
         {
             ...asRtcSendCommand(manualSendCommand({
@@ -589,10 +581,6 @@ export function manualRtcNegativeRecipeSnippet(
             metadata: {
                 negativeCase: 'stale-agent',
                 expectedOutcome: 'delivery-failure',
-            },
-            expect: {
-                status: 'failed',
-                code: 'stale-agent',
             },
         },
         {
@@ -612,10 +600,6 @@ export function manualRtcNegativeRecipeSnippet(
                 negativeCase: 'permission-denied',
                 expectedOutcome: 'permission-failure',
             },
-            expect: {
-                status: 'failed',
-                code: 'permission-denied',
-            },
         },
         manualSimpleCommand('close', 7),
         {
@@ -625,10 +609,6 @@ export function manualRtcNegativeRecipeSnippet(
             metadata: {
                 negativeCase: 'closed-transport',
                 expectedOutcome: 'transport-failure',
-            },
-            expect: {
-                status: 'failed',
-                code: 'closed-transport',
             },
         },
         ...manualRtcNackProbeCommands(baseValues, payload, 9),

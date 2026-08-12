@@ -87,6 +87,68 @@ identity is not recipe-resolvable because simulated providers and external
 runtime configuration can remain valid. `refreshRoom` is an internal runtime
 bridge operation, not a recipe command or public command-schema field.
 
+## RTC Send Boundary And HTTP Result Evidence
+
+`rtc.send` has no `expect` field on the control path: the command schema and
+`validateRallarBlackBoxTestCommand` reject it, because no agent runtime ever
+evaluates it and a control-dispatched recipe carrying it would validate green
+while asserting nothing. The `RallarBlackBoxTestRtcSendCommand.expect`
+TypeScript field exists only for the in-process black-box-runner adapter,
+which calls `runtime.execute` directly and records runner-side expectations.
+Distributed delivery expectations belong in `wait` and `assert` commands.
+
+`http.request` results record `url`, `status`, `statusText`, `ok`, the full
+response header record, and the decoded body. Every recorded result value,
+failure detail, and the mirrored `rallar.bb.http.response` event passes the
+runtime redaction pipeline, so sensitive header and body names (authorization,
+cookie, token, ticket, and the other default key substrings) appear as
+`<redacted>` in results, events, failures, and artifacts. Header evidence is
+therefore assertable from recorded results without extra capture options.
+
+## Wait Absence
+
+`wait` with `absent: true` asserts non-delivery: the agent holds the full wait
+window (`timeoutMs`/`deadlineEpochMs`, default 5000 ms — an absence claim is
+only as strong as the time spent listening), then scans the whole event
+buffer once. Any matching event — buffered before the wait started or arriving
+during the window — fails the command with
+`RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED` and the offending redacted event in
+the result value and error details; an empty scan succeeds with
+`matched: false, absent: true`. Past events match by design, exactly like
+positive waits. `absent` accepts only `true`; schema and control validation
+reject other values. Semantics mirror the black-box-runner's `expect.absent`
+waits. Pair every absence wait with a same-scope positive control delivery so
+a broken transport cannot masquerade as proven absence. Evaluation lives in
+`wait/wait-for-event.ts`; match semantics live in `wait/wait-event-match.ts`.
+
+## Assert Operators
+
+`assert` evaluates a dot-path `source` over the runtime evidence roots
+(`state`, `config`, `lastResult`, `events`, `messages`, `diagnostics`,
+`reports`, `recent*`, `stats`, `failures`, `resultCache.<commandId>`).
+Operators:
+
+- `equals` / `notEquals` / `contains` / `exists` — historical semantics kept:
+  `notEquals` passes when the path is missing, and `gte` / `lte` accept only
+  values that are already numbers.
+- `gt` / `lt` / `between` — runner-comparator parity: values and bounds are
+  coerced with `Number(...)` and must be finite; `between` takes an inclusive
+  `[low, high]` pair and fails on a malformed pair.
+- `length` — exact length of an array or string; anything else fails.
+- `matches` — regular-expression source tested against a string value; a
+  non-string value or an invalid pattern fails the assert instead of
+  throwing.
+- `matchesShape` — `json-compare` `compatible` mode: the expected shape is a
+  subset the actual value must satisfy with equal values; extra object keys
+  and extra array elements in the actual value are allowed.
+- `matchesShapeComplete` — `compatible-complete` mode: like `matchesShape`
+  but arrays must be complete, so an unexpected array element fails. Extra
+  object keys are still allowed in both shape modes.
+
+Failing asserts fail the command with `RALLAR_BLACK_BOX_ASSERT_FAILED`; the
+result value and error details carry the redacted `expected`/`actual`
+evidence. Evaluation lives in `assert/assert-value-operators.ts`.
+
 ## Validation
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.

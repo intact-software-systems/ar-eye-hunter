@@ -503,6 +503,9 @@ function validateWaitCommand(command: Record<string, unknown>): ControlCommandVa
     if (!isRecord(command.match)) {
         return fail('wait.match is required.');
     }
+    if (command.absent !== undefined && command.absent !== true) {
+        return fail('wait.absent must be true when present.');
+    }
 
     let result = validateKeys(command.match, [
         'kind',
@@ -568,7 +571,21 @@ function validateAssertCommand(command: Record<string, unknown>): ControlCommand
         command,
         'operator',
         'assert',
-        ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'],
+        [
+            'equals',
+            'notEquals',
+            'contains',
+            'exists',
+            'gte',
+            'lte',
+            'gt',
+            'lt',
+            'between',
+            'length',
+            'matches',
+            'matchesShape',
+            'matchesShapeComplete',
+        ],
     );
 }
 
@@ -1147,7 +1164,7 @@ export function validateRallarBlackBoxTestCommand(
             );
             return !result.ok ? result : validateParallelCommand(command, depth);
         case 'wait':
-            result = validateKeys(command, [...base, 'match'], 'wait');
+            result = validateKeys(command, [...base, 'match', 'absent'], 'wait');
             return !result.ok ? result : validateWaitCommand(command);
         case 'assert':
             result = validateKeys(command, [...base, 'source', 'operator', 'expected'], 'assert');
@@ -1179,7 +1196,6 @@ export function validateRallarBlackBoxTestCommand(
                     ...base,
                     'connection',
                     'send',
-                    'expect',
                     'applicationId',
                     'workspaceId',
                     'scope',

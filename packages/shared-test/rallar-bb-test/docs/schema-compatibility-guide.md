@@ -153,3 +153,139 @@ Prompt/documentation updates:
 
 Verification:
 ```
+
+## Upgrade Notes
+
+```text
+Title: rtc.send.expect fails closed on the control-protocol path
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D0
+
+Change type:
+- Breaking schema change (removal of a silently ignored optional field)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (rtc.send branch)
+- validateRallarBlackBoxTestCommand rtc.send allowlist
+
+Old shape:
+rtc.send accepted an optional `expect` field. No agent runtime ever read it,
+so a control-dispatched recipe carrying it validated green while asserting
+nothing.
+
+New shape:
+rtc.send rejects `expect` at schema validation and control-protocol
+validateKeys ("rtc.send has unsupported field: expect."). The TypeScript
+field remains for the in-process black-box-runner adapter, which bypasses
+network validation and records runner-side expectations.
+
+Migration:
+Remove `expect` from distributed rtc.send commands; move authoring hints
+into `metadata`. Delivery expectations belong in `wait`/`assert` commands.
+
+Golden corpus updates:
+Added invalid recipe case `rtc-send-expect-rejected`.
+
+Prompt/documentation updates:
+rtc.send capability metadata no longer lists `expect`; capability
+description no longer mentions recorded expectations.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-rtc-send-expect-fail-closed.test.ts
+```
+
+```text
+Title: wait gains an optional absent: true absence mode
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D1
+
+Change type:
+- Compatible optional addition (with a fail-closed rollout edge)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (wait branch)
+- validateRallarBlackBoxTestCommand wait allowlist
+
+Old shape:
+wait matched only positively: it succeeded when an event matched and timed
+out otherwise. Non-delivery could not be asserted.
+
+New shape:
+wait accepts optional absent: true. The agent holds the full wait window,
+then scans the whole event buffer once; any match (buffered or new) fails
+with RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED carrying the offending redacted
+event, an empty scan succeeds with matched: false, absent: true. Only the
+literal true is accepted. Semantics mirror the runner's expect.absent.
+
+Migration:
+No change for existing recipes. Recipes using absent: true dispatched to
+agents built before this change fail closed at validateKeys with
+"wait has unsupported field: absent." — intended behavior. World-fleet
+manifests must not adopt absence waits until the D4 capability gate exists.
+
+Golden corpus updates:
+golden-composite-wait-assert-v1 gained an absent wait command
+(golden-wait-absent-v1).
+
+Prompt/documentation updates:
+New "Prompt: Distributed Absence Wait" section; wait capability metadata
+lists absent; schema-and-capabilities.md documents the hold-then-scan
+semantics; composite-conformance matrix gained wait-absence-hold and
+wait-absence-violated cases.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-control-protocol.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-wait-absence.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
+```
+
+```text
+Title: assert gains gt, lt, between, length, matches, and JSON shape operators
+Date: 2026-08-11
+Owner: rallar-bb-test distributed assertion parity plan, workstream D2
+
+Change type:
+- Compatible optional addition (widened operator enum, fail-closed on old agents)
+
+Affected schemas:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+- RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA (assert operator enum)
+- validateRallarBlackBoxTestCommand assert operator list
+
+Old shape:
+assert supported equals, notEquals, contains, exists, gte, lte with
+JSON.stringify equality as the only comparison primitive.
+
+New shape:
+The operator enum adds gt, lt, between ([low, high] inclusive), length
+(arrays/strings), matches (regular-expression source), matchesShape
+(json-compare compatible), and matchesShapeComplete (compatible-complete;
+arrays must be complete, so unexpected array elements fail). New numeric
+operators follow runner-comparator parity and coerce with Number(). The
+historical six operators keep their exact semantics and quirks.
+
+Migration:
+No change for existing recipes. Recipes using the new operators dispatched to
+agents built before this change fail closed at operator validation —
+intended. World-fleet manifests must not adopt the new operators before the
+D4 capability gate.
+
+Golden corpus updates:
+golden-composite-wait-assert-v1 gained gt, between, matches, matchesShape,
+and length examples; new invalid case assert-operator-unknown.
+
+Prompt/documentation updates:
+New "Prompt: Extended Assert Operators" section; assert capability
+description updated; schema-and-capabilities.md documents operator
+semantics; composite-conformance matrix gained assert-shape-complete-violated.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-assert-operators.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-composite-conformance.test.ts
+```

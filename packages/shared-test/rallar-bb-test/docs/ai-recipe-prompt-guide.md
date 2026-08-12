@@ -173,6 +173,37 @@ Constraints:
   and distributed metadata.
 ```
 
+## Prompt: Distributed Absence Wait
+
+Use this when the test must prove a message was never delivered — the
+distributed twin of the runner's `expect.absent`.
+
+```text
+Generate one Rallar black-box browser-agent recipe as JSON.
+
+Use:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+
+Goal:
+- Prove cross-scope isolation: traffic sent to one topic must never appear on
+  another topic this agent observes.
+
+Constraints:
+- Output JSON only with schemaVersion 1.
+- First deliver a same-scope positive control: rtc.send on the observed topic
+  followed by a normal wait that matches it, so transport health is proven
+  before any absence claim.
+- Then add a wait command with absent: true whose match targets the
+  other-scope topic that must stay silent. Give it an explicit timeoutMs —
+  the agent holds that full window before scanning, and the absence claim is
+  only as strong as this window.
+- Do not set absent to anything other than true; the schema rejects it.
+- A matching event buffered before the absence wait started also violates it,
+  exactly like positive waits match past events.
+- On violation the run fails with RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED and
+  the offending redacted event; do not add a separate assert for it.
+```
+
 ## Prompt: Looped RTC Realtime
 
 Use this when you want a compact distributed recipe that sends game-style
@@ -286,6 +317,37 @@ Constraints:
   expected 1.
 - Do not use JavaScript expressions in assert.source.
 - Do not embed credentials or tokens.
+```
+
+## Prompt: Extended Assert Operators
+
+Use this when evidence checks need numeric bounds, patterns, or JSON shapes
+instead of exact equality.
+
+```text
+Generate one Rallar black-box browser-agent recipe as JSON.
+
+Use:
+- RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
+
+Goal:
+- Assert recorded evidence with the extended operator set.
+
+Constraints:
+- Output JSON only with schemaVersion 1.
+- assert operators are: equals, notEquals, contains, exists, gte, lte, gt,
+  lt, between, length, matches, matchesShape, matchesShapeComplete.
+- gt/lt/between coerce values with Number() and need finite bounds; between
+  expects an inclusive [low, high] pair. gte/lte stay strictly numeric.
+- length expects the exact length of an array or string source.
+- matches expects a regular-expression source string tested against a string
+  value.
+- matchesShape checks json-compare compatible mode (expected is a subset with
+  equal values). matchesShapeComplete additionally requires arrays to be
+  complete, so an unexpected array element fails; use it to pin fan-out
+  collections exactly.
+- A failing assert fails the run with RALLAR_BLACK_BOX_ASSERT_FAILED and
+  redacted expected/actual details; do not add retry loops around asserts.
 ```
 
 ## Prompt: Black-box-runner RTC Scenario

@@ -194,6 +194,7 @@ export type RallarBlackBoxTestWaitCommand =
     & RallarBlackBoxTestCommandBase<'wait'>
     & Readonly<{
     match: RallarBlackBoxTestWaitMatch;
+    absent?: true;
 }>;
 
 export type RallarBlackBoxTestAssertOperator =
@@ -202,7 +203,14 @@ export type RallarBlackBoxTestAssertOperator =
     | 'contains'
     | 'exists'
     | 'gte'
-    | 'lte';
+    | 'lte'
+    | 'gt'
+    | 'lt'
+    | 'between'
+    | 'length'
+    | 'matches'
+    | 'matchesShape'
+    | 'matchesShapeComplete';
 
 export type RallarBlackBoxTestAssertCommand =
     & RallarBlackBoxTestCommandBase<'assert'>
@@ -239,7 +247,7 @@ export type RallarBlackBoxTestRtcSendCommand =
     & Readonly<{
     connection?: string;
     send?: unknown;
-    expect?: unknown;
+    expect?: unknown; // black-box-runner-adapter in-process only; control validators reject it
     applicationId?: string;
     workspaceId?: string;
     scope?: Readonly<Record<string, unknown>>;
@@ -746,6 +754,7 @@ export type RallarBlackBoxTestParallelResultValue = Readonly<{
 export type RallarBlackBoxTestWaitResultValue = Readonly<{
     commandId: string;
     matched: boolean;
+    absent?: true;
     timedOut?: boolean;
     cancelled?: boolean;
     match: RallarBlackBoxTestWaitMatch;

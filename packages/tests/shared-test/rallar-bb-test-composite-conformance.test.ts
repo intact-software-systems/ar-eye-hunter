@@ -201,6 +201,9 @@ describe('rallar-bb-test composite conformance matrix', () => {
             'parallel-ws-rtc-groups',
             'wait-assert-evidence',
             'cancel-during-loop',
+            'wait-absence-hold',
+            'wait-absence-violated',
+            'assert-shape-complete-violated',
             'negative-no-peer',
         ]);
         expect(RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_PROVIDERS.map(entry => entry.providerId)).toEqual([
@@ -215,7 +218,7 @@ describe('rallar-bb-test composite conformance matrix', () => {
             },
         });
 
-        expect(matrix).toHaveLength(15);
+        expect(matrix).toHaveLength(24);
         expect(new Set(matrix.map(entry => entry.entryId)).size).toBe(matrix.length);
         matrix.forEach(entry => {
             expect(entry.supported).toBe(true);

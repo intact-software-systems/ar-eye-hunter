@@ -10,6 +10,22 @@ import {
     RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
     RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
 } from './distributed-run.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    isJsonRecordValue,
+    validateJsonSchema,
+    type JsonSchema,
+    type JsonSchemaValidationIssue,
+    type JsonSchemaValidationResult,
+} from './schema/json-schema-validation.ts';
+
+export {
+    formatJsonSchemaValidationErrors,
+    validateJsonSchema,
+    type JsonSchema,
+    type JsonSchemaValidationIssue,
+    type JsonSchemaValidationResult,
+};
 
 export const RALLAR_BLACK_BOX_SCHEMA_VERSION = 1;
 export const RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION = RALLAR_BLACK_BOX_SCHEMA_VERSION;
@@ -17,40 +33,6 @@ export const RALLAR_BLACK_BOX_SUPPORTED_RECIPE_SCHEMA_VERSIONS = [
     RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
 ] as const;
 
-export type JsonSchema = Readonly<{
-    $schema?: string;
-    $id?: string;
-    title?: string;
-    description?: string;
-    type?: string | readonly string[];
-    enum?: readonly unknown[];
-    const?: unknown;
-    required?: readonly string[];
-    properties?: Readonly<Record<string, JsonSchema>>;
-    additionalProperties?: boolean | JsonSchema;
-    items?: JsonSchema;
-    oneOf?: readonly JsonSchema[];
-    anyOf?: readonly JsonSchema[];
-    requiredAnyOf?: readonly Readonly<{
-        properties: readonly string[];
-        message: string;
-    }>[];
-    minimum?: number;
-    exclusiveMinimum?: number;
-    maximum?: number;
-    minItems?: number;
-    examples?: readonly unknown[];
-    default?: unknown;
-}>;
-
-export type JsonSchemaValidationIssue = Readonly<{
-    path: string;
-    message: string;
-}>;
-
-export type JsonSchemaValidationResult =
-    | Readonly<{ ok: true; errors: readonly [] }>
-    | Readonly<{ ok: false; errors: readonly JsonSchemaValidationIssue[] }>;
 
 export type RallarBlackBoxRecipeCompatibilityResult =
     | Readonly<{
@@ -475,7 +457,21 @@ const waitMatchSchema: JsonSchema = {
 
 const assertOperatorSchema: JsonSchema = {
     type: 'string',
-    enum: ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'],
+    enum: [
+        'equals',
+        'notEquals',
+        'contains',
+        'exists',
+        'gte',
+        'lte',
+        'gt',
+        'lt',
+        'between',
+        'length',
+        'matches',
+        'matchesShape',
+        'matchesShapeComplete',
+    ],
 };
 
 const parallelGroupSchema: JsonSchema = {
@@ -562,6 +558,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
     }),
     wait: strictCommandSchema('wait', ['match'], {
         match: waitMatchSchema,
+        absent: { const: true },
     }),
     assert: strictCommandSchema('assert', ['source', 'operator'], {
         source: stringSchema,
@@ -584,7 +581,6 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
     'rtc.send': strictCommandSchema('rtc.send', [], {
         connection: stringSchema,
         send: anySchema,
-        expect: anySchema,
         applicationId: stringSchema,
         workspaceId: stringSchema,
         scope: recordSchema,
@@ -937,9 +933,16 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'wait',
         title: 'Wait For Runtime Evidence',
-        description: 'Waits for an existing or future browser-agent runtime event, diagnostic, message, result, stats, or report that matches simple fields.',
+        description: 'Waits for a matching runtime event; with absent: true it instead holds the full window and fails when any buffered or new event matches.',
         requiredFields: ['match'],
-        optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'absent',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata',
+        ],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['the matching evidence must be emitted by earlier or concurrent commands, browser adapters, or provider event bridges'],
@@ -960,7 +963,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'assert',
         title: 'Assert Runtime Evidence',
-        description: 'Checks a simple read-only browser-agent source such as state, config, last result, events, messages, diagnostics, stats, or failures.',
+        description: 'Checks a read-only browser-agent evidence source with equality, containment, numeric-bound, length, regex, and JSON-shape operators.',
         requiredFields: ['source', 'operator'],
         optionalFields: ['expected', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
@@ -1021,12 +1024,11 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
     {
         kind: 'rtc.send',
         title: 'RTC Send',
-        description: 'Sends JSON through a connected RTC/realtime provider and optionally records expectations.',
+        description: 'Sends JSON through a connected RTC/realtime provider.',
         requiredFields: [],
         optionalFields: [
             'connection',
             'send',
-            'expect',
             'applicationId',
             'workspaceId',
             'scope',
@@ -1876,22 +1878,11 @@ export const RALLAR_BLACK_BOX_SCHEMA_CATALOG = {
     distributedRunManifest: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
 } as const;
 
-export function validateJsonSchema(schema: JsonSchema, value: unknown): JsonSchemaValidationResult {
-    const errors: JsonSchemaValidationIssue[] = [];
-    validateNode(schema, value, '$', errors);
-    return errors.length === 0
-        ? { ok: true, errors: [] }
-        : { ok: false, errors };
-}
-
-export function formatJsonSchemaValidationErrors(errors: readonly JsonSchemaValidationIssue[]): string {
-    return errors.map(error => `${error.path}: ${error.message}`).join('\n');
-}
 
 export function validateRallarBlackBoxRecipeCompatibility(
     value: unknown,
 ): RallarBlackBoxRecipeCompatibilityResult {
-    const root = isRecord(value) ? value : {};
+    const root = isJsonRecordValue(value) ? value : {};
     const explicitSchemaVersion = root.schemaVersion;
     const schemaValidation = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, value);
     const warnings: JsonSchemaValidationIssue[] = explicitSchemaVersion === undefined
@@ -1924,177 +1915,4 @@ export function validateRallarBlackBoxRecipeCompatibility(
         warnings,
         errors: [],
     };
-}
-
-function validateNode(
-    schema: JsonSchema,
-    value: unknown,
-    path: string,
-    errors: JsonSchemaValidationIssue[],
-): void {
-    if (schema.const !== undefined && !sameJsonValue(schema.const, value)) {
-        errors.push({ path, message: `Expected ${JSON.stringify(schema.const)}.` });
-        return;
-    }
-
-    if (schema.enum && !schema.enum.some(candidate => sameJsonValue(candidate, value))) {
-        errors.push({ path, message: `Expected one of ${schema.enum.map(candidate => JSON.stringify(candidate)).join(', ')}.` });
-        return;
-    }
-
-    if (schema.oneOf) {
-        const discriminated = discriminatedOneOfSchema(schema.oneOf, value);
-        if (discriminated) {
-            validateNode(discriminated, value, path, errors);
-            return;
-        }
-
-        const matches = schema.oneOf
-            .map(candidate => validationErrors(candidate, value, path).length === 0)
-            .filter(Boolean).length;
-        if (matches !== 1) {
-            errors.push({ path, message: `Expected value to match exactly one schema, matched ${matches}.` });
-        }
-        return;
-    }
-
-    if (schema.anyOf) {
-        const matches = schema.anyOf.some(candidate => validationErrors(candidate, value, path).length === 0);
-        if (!matches) {
-            errors.push({ path, message: 'Expected value to match at least one schema.' });
-        }
-        return;
-    }
-
-    if (schema.type && !matchesType(value, schema.type)) {
-        errors.push({ path, message: `Expected ${Array.isArray(schema.type) ? schema.type.join(' or ') : schema.type}.` });
-        return;
-    }
-
-    if (typeof schema.minimum === 'number' && typeof value === 'number' && value < schema.minimum) {
-        errors.push({ path, message: `Expected number >= ${schema.minimum}.` });
-    }
-
-    if (
-        typeof schema.exclusiveMinimum === 'number' &&
-        typeof value === 'number' &&
-        value <= schema.exclusiveMinimum
-    ) {
-        errors.push({ path, message: `Expected number > ${schema.exclusiveMinimum}.` });
-    }
-
-    if (typeof schema.maximum === 'number' && typeof value === 'number' && value > schema.maximum) {
-        errors.push({ path, message: `Expected number <= ${schema.maximum}.` });
-    }
-
-    if (typeof schema.minItems === 'number' && Array.isArray(value) && value.length < schema.minItems) {
-        errors.push({ path, message: `Expected at least ${schema.minItems} item(s).` });
-    }
-
-    if (schema.items && Array.isArray(value)) {
-        value.forEach((entry, index) => {
-            validateNode(schema.items as JsonSchema, entry, `${path}[${index}]`, errors);
-        });
-    }
-
-    if (schema.required && isRecord(value)) {
-        for (const property of schema.required) {
-            if (value[property] === undefined) {
-                errors.push({ path, message: `Missing required property ${property}.` });
-            }
-        }
-    }
-
-    if (schema.requiredAnyOf && isRecord(value)) {
-        for (const requirement of schema.requiredAnyOf) {
-            if (!requirement.properties.some(property => value[property] !== undefined)) {
-                errors.push({ path, message: requirement.message });
-            }
-        }
-    }
-
-    if (!isRecord(value)) {
-        return;
-    }
-
-    const propertySchemas = schema.properties ?? {};
-    for (const [property, propertySchema] of Object.entries(propertySchemas)) {
-        if (value[property] !== undefined) {
-            validateNode(propertySchema, value[property], childPath(path, property), errors);
-        }
-    }
-
-    const knownProperties = new Set(Object.keys(propertySchemas));
-    for (const [property, propertyValue] of Object.entries(value)) {
-        if (knownProperties.has(property)) {
-            continue;
-        }
-
-        if (schema.additionalProperties === false) {
-            errors.push({ path: childPath(path, property), message: 'Unexpected property.' });
-            continue;
-        }
-
-        if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-            validateNode(schema.additionalProperties, propertyValue, childPath(path, property), errors);
-        }
-    }
-}
-
-function validationErrors(schema: JsonSchema, value: unknown, path: string): JsonSchemaValidationIssue[] {
-    const errors: JsonSchemaValidationIssue[] = [];
-    validateNode(schema, value, path, errors);
-    return errors;
-}
-
-function discriminatedOneOfSchema(candidates: readonly JsonSchema[], value: unknown): JsonSchema | undefined {
-    if (!isRecord(value)) {
-        return undefined;
-    }
-
-    const kind = value.kind;
-    if (typeof kind !== 'string') {
-        return undefined;
-    }
-
-    return candidates.find(candidate => candidate.properties?.kind?.const === kind);
-}
-
-function matchesType(value: unknown, expected: string | readonly string[]): boolean {
-    if (Array.isArray(expected)) {
-        return expected.some(type => matchesType(value, type));
-    }
-
-    switch (expected) {
-        case 'array':
-            return Array.isArray(value);
-        case 'boolean':
-            return typeof value === 'boolean';
-        case 'integer':
-            return Number.isInteger(value);
-        case 'null':
-            return value === null;
-        case 'number':
-            return typeof value === 'number' && Number.isFinite(value);
-        case 'object':
-            return isRecord(value);
-        case 'string':
-            return typeof value === 'string';
-        default:
-            return true;
-    }
-}
-
-function sameJsonValue(left: unknown, right: unknown): boolean {
-    return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function childPath(parent: string, property: string): string {
-    return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(property)
-        ? `${parent}.${property}`
-        : `${parent}[${JSON.stringify(property)}]`;
 }
