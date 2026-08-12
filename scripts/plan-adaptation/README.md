@@ -51,7 +51,11 @@ entry. It decodes six commands and routes each to its lifecycle owner:
   [plan-adaptation-lifecycle.mjs#closeAdaptivePlan](./plan-adaptation-lifecycle.mjs#closeAdaptivePlan).
 
 - [adaptive-plan-record.mjs#parseAdaptivePlanRecord](./adaptive-plan-record.mjs#parseAdaptivePlanRecord)
-  owns the single fenced JSON record, canonical replacement, record validation, and record digest.
+  owns the single fenced JSON record, canonical replacement, non-capability record validation, and
+  record digest.
+- [adaptive-plan-capabilities.mjs#validateAdaptivePlanCapabilities](./adaptive-plan-capabilities.mjs#validateAdaptivePlanCapabilities)
+  owns code and guidance declaration shapes, planned activation and topology reservation, and exact
+  `contractPaths`/`factContracts` ownership policy.
 - [plan-change-facts.mjs#computePlanFacts](./plan-change-facts.mjs#computePlanFacts) reads the actual
   Git diff and computes qualification, triggers, undeclared paths, and sorted path/mode/content
   digests.
@@ -69,3 +73,22 @@ entry. It decodes six commands and routes each to its lifecycle owner:
 
 The mirrored semantic tests are under `packages/tests/repo/plan-adaptation/` and run through
 `npm run test:plan-adaptation`.
+
+## Exact non-code contracts
+
+A code capability may declare an optional `contractPaths` array for exact repository files such as
+pull-request templates, Markdown contracts, and workflow definitions. Each path is content-bound,
+counts as declared changed surface, and participates in capability-crossing detection, but it is not
+part of the capability's authored-code root, source-symbol evidence, or topology. Active paths must
+resolve to non-code repository files. Planned paths reserve the same exact ownership before the file
+exists, and code owners cannot claim the same path or claim a path inside another capability's owned
+roots.
+
+Guidance capabilities keep shared `contractPaths` semantics: those paths are evidence and may be
+cited by more than one guidance owner. The backward-compatible skill form omits `guidanceRole` and
+uses `skillRoot` plus its exact `skillEntry`. A first-class router instead declares
+`guidanceRole: "router"` and one exact `routingEntry`; its normalized owner name mirrors the
+contract-test root. Both forms declare a focused command and may declare evaluation evidence, but
+their fields are an exact union so a router cannot masquerade as a skill owner. Router entries,
+tests, evaluations, and contracts are content-bound without becoming authored-code topology or
+source-symbol evidence.

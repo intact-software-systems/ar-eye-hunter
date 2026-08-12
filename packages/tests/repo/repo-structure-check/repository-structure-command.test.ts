@@ -26,6 +26,91 @@ describe('repository structure command', () => {
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
   });
 
+  it('activates a planned guidance router without creating a skill or authored-code topology', () => {
+    const fixture = createGuidanceRouterRepositoryFixture();
+    const record = createRecord();
+    record.checkpoint.nextSlices = ['fixture-slice', 'general-guidance-routing-declaration'];
+    const router = guidanceRouterCapability({
+      activation: {
+        state: 'planned',
+        slice: 'general-guidance-routing-declaration',
+      },
+    });
+    record.capabilities.push(router);
+    writePlanRecord(fixture.root, record);
+
+    const planned = runChecker(fixture);
+
+    expect(planned.status, `${planned.stdout}\n${planned.stderr}`).toBe(0);
+
+    delete router.activation;
+    writePlanRecord(fixture.root, record);
+    const active = runChecker(fixture);
+
+    expect(active.status, `${active.stdout}\n${active.stderr}`).toBe(0);
+    expect(active.stdout).not.toContain('topology.singleton-subtree');
+  });
+
+  it('requires live code contract inventory without treating its workflow path as topology', () => {
+    const fixture = createRepositoryFixture();
+    const record = createRecord();
+    record.capabilities[0].contractPaths = ['.github/workflows/example-governance.yml'];
+    writePlanRecord(fixture.root, record);
+
+    const missing = runChecker(fixture);
+
+    expect(missing.status).toBe(1);
+    expect(missing.stdout).toContain(
+      'example capability contract path .github/workflows/example-governance.yml does not resolve',
+    );
+
+    writeFixture(
+      fixture.root,
+      '.github/workflows/example-governance.yml',
+      'name: Example governance\n',
+    );
+
+    const resolved = runChecker(fixture);
+
+    expect(resolved.status, `${resolved.stdout}\n${resolved.stderr}`).toBe(0);
+    expect(resolved.stdout).not.toContain('topology.');
+  });
+
+  it.each(['deleted', 'unreadable', 'symlink'])(
+    'fails closed when a declared code contract is %s',
+    (state) => {
+      const contractPath = '.github/workflows/example-governance.yml';
+      const fixture = createRepositoryFixture({
+        [contractPath]: 'name: Example governance\n',
+      });
+      const record = createRecord();
+      record.capabilities[0].contractPaths = [contractPath];
+      const absolutePath = path.join(fixture.root, contractPath);
+      if (state === 'deleted') {
+        rmSync(absolutePath);
+      } else if (state === 'unreadable') {
+        chmodSync(absolutePath, 0o000);
+      } else {
+        rmSync(absolutePath);
+        symlinkSync('../../../package.json', absolutePath);
+      }
+      writePlanRecord(fixture.root, record);
+
+      try {
+        const result = runChecker(fixture);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(
+          `example capability contract path ${contractPath} does not resolve`,
+        );
+      } finally {
+        if (state === 'unreadable') {
+          chmodSync(absolutePath, 0o644);
+        }
+      }
+    },
+  );
+
   it('ignores unrelated deleted, unreadable, and symlink repository inventory entries', () => {
     const fixture = createGuidanceRepositoryFixture({
       'notes/tracked-deleted.md': 'delete me\n',
@@ -417,6 +502,40 @@ function createGuidanceRepositoryFixture(extraFiles: Record<string, string> = {}
     'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts': 'export {};\n',
     ...extraFiles,
   });
+}
+
+function createGuidanceRouterRepositoryFixture(extraFiles: Record<string, string> = {}) {
+  return createRepositoryFixture({
+    'package.json': JSON.stringify({
+      scripts: {
+        ...fixtureScripts(),
+        'test:general-agent-guidance': 'vitest run packages/tests/repo/general-agent-guidance',
+      },
+    }),
+    'AGENTS.md': '# Rallar Agent Guide\n',
+    'packages/tests/repo/general-agent-guidance/contract.test.ts': 'export {};\n',
+    'packages/tests/repo/general-agent-guidance/evaluation-v1.json': '{}\n',
+    '.agents/skills/adaptive-plan-execution/SKILL.md': '# Adaptive Plan Execution\n',
+    '.agents/skills/organizing-repository-structure/SKILL.md': '# Repository Structure\n',
+    ...extraFiles,
+  });
+}
+
+function guidanceRouterCapability(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: 'guidance',
+    guidanceRole: 'router',
+    owner: 'general agent guidance',
+    routingEntry: 'AGENTS.md',
+    contractTestRoot: 'packages/tests/repo/general-agent-guidance',
+    focusedCommand: 'npm run test:general-agent-guidance',
+    evaluationRoot: null,
+    contractPaths: [
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+      '.agents/skills/organizing-repository-structure/SKILL.md',
+    ],
+    ...overrides,
+  };
 }
 
 function writeGuidancePlanRecord(root: string): void {

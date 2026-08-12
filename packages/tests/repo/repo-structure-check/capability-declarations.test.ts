@@ -122,6 +122,42 @@ describe('repository capability declarations', () => {
     );
   });
 
+  it('validates exact code contracts as non-code repository files', () => {
+    const contractPath = '.github/PULL_REQUEST_TEMPLATE/governance.md';
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability({ contractPaths: [contractPath] })],
+      authoredFiles: fixtureFiles(),
+      repositoryFiles: [...fixtureFiles(), contractPath],
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: () => '',
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toEqual([]);
+  });
+
+  it('rejects missing or authored-code paths from code contract declarations', () => {
+    const missingPath = '.github/workflows/missing.yml';
+    const authoredPath = 'scripts/example/first.mjs';
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [capability({ contractPaths: [missingPath, authoredPath] })],
+      authoredFiles: fixtureFiles(),
+      repositoryFiles: fixtureFiles(),
+      packageScripts: { 'test:example': 'vitest run packages/tests/repo/example' },
+      readFile: () => '',
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        `example capability contract path ${missingPath} does not resolve`,
+        `example capability contract path ${authoredPath} must identify a non-code repository file`,
+      ]),
+    );
+  });
+
   it('proves guidance, evaluation, and cross-owner contracts as repository files', () => {
     const guidance = guidanceCapability();
     const repositoryFiles = guidanceFiles();
@@ -169,6 +205,93 @@ describe('repository capability declarations', () => {
     );
     expect(issues.join('\n')).not.toMatch(
       /controlFlowFamilies|navigation map|authored code|semantic-depth/u,
+    );
+  });
+
+  it('validates router-owned guidance inventory, mirrored tests, command, and cold navigation', () => {
+    const router = guidanceRouterCapability();
+    const repositoryFiles = guidanceRouterFiles();
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [router],
+      authoredFiles: fixtureFiles(),
+      repositoryFiles,
+      packageScripts: {
+        'test:general-agent-guidance': 'vitest run packages/tests/repo/general-agent-guidance',
+      },
+      readFile: (file: string) => (repositoryFiles.includes(file) ? 'fixture' : undefined),
+      coldNavigationEvidence: {
+        status: 'passed',
+        summary: 'The root router and specialist contracts are repository-navigable.',
+        probes: [
+          {
+            capabilityOwner: 'general agent guidance',
+            path: 'AGENTS.md',
+            symbol: 'Rallar Agent Guide',
+          },
+        ],
+      },
+    });
+
+    expect(issues).toEqual([]);
+  });
+
+  it('fails closed for missing router evidence without applying authored-code rules', () => {
+    const router = guidanceRouterCapability({
+      owner: 'wrong guidance owner',
+      focusedCommand: 'npm run test:wrong-guidance',
+    });
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [router],
+      authoredFiles: fixtureFiles(),
+      repositoryFiles: ['packages/tests/repo/general-agent-guidance/contract.test.ts'],
+      packageScripts: {},
+      readFile: () => undefined,
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        'wrong guidance owner routing entry AGENTS.md does not resolve',
+        'wrong guidance owner contract test root packages/tests/repo/general-agent-guidance must mirror wrong-guidance-owner',
+        'wrong guidance owner focused command npm run test:wrong-guidance must resolve exactly to vitest run packages/tests/repo/general-agent-guidance',
+        'wrong guidance owner contract path .agents/skills/adaptive-plan-execution/SKILL.md does not resolve',
+      ]),
+    );
+    expect(issues.join('\n')).not.toMatch(
+      /controlFlowFamilies|navigation map|authored code|semantic-depth/u,
+    );
+  });
+
+  it('does not let router evaluation naming override the owner-mirrored test root', () => {
+    const router = guidanceRouterCapability({
+      contractTestRoot: 'packages/tests/repo/masquerade',
+      focusedCommand: 'npm run test:masquerade',
+      evaluationRoot: '.agents/evaluations/masquerade/v1',
+    });
+    const repositoryFiles = [
+      'AGENTS.md',
+      'packages/tests/repo/masquerade/contract.test.ts',
+      '.agents/evaluations/masquerade/v1/rubric.json',
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+      '.agents/skills/organizing-repository-structure/SKILL.md',
+    ];
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [router],
+      authoredFiles: fixtureFiles(),
+      repositoryFiles,
+      packageScripts: {
+        'test:masquerade': 'vitest run packages/tests/repo/masquerade',
+      },
+      readFile: (file: string) => (repositoryFiles.includes(file) ? 'fixture' : undefined),
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toContain(
+      'general agent guidance contract test root packages/tests/repo/masquerade must mirror ' +
+        'general-agent-guidance',
     );
   });
 
@@ -752,5 +875,32 @@ function guidanceFiles(): readonly string[] {
     '.agents/evaluations/adaptive-agent-execution/v1/rubric.json',
     'packages/tests/repo/adaptive-agent-execution/contract.test.ts',
     'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts',
+  ];
+}
+
+function guidanceRouterCapability(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: 'guidance',
+    guidanceRole: 'router',
+    owner: 'general agent guidance',
+    routingEntry: 'AGENTS.md',
+    contractTestRoot: 'packages/tests/repo/general-agent-guidance',
+    focusedCommand: 'npm run test:general-agent-guidance',
+    evaluationRoot: null,
+    contractPaths: [
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+      '.agents/skills/organizing-repository-structure/SKILL.md',
+    ],
+    ...overrides,
+  };
+}
+
+function guidanceRouterFiles(): readonly string[] {
+  return [
+    'AGENTS.md',
+    'packages/tests/repo/general-agent-guidance/contract.test.ts',
+    'packages/tests/repo/general-agent-guidance/evaluation-v1.json',
+    '.agents/skills/adaptive-plan-execution/SKILL.md',
+    '.agents/skills/organizing-repository-structure/SKILL.md',
   ];
 }

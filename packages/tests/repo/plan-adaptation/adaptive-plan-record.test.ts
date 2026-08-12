@@ -136,8 +136,140 @@ describe('adaptive plan record', () => {
         'record.capabilities[2].evaluationRoot must be null or a safe repository-relative path',
         'record.capabilities[2].contractPaths must contain safe repository-relative paths',
         'record.capabilities[2].skillEntry must be the SKILL.md entry inside its skillRoot',
-        'record.capabilities[2] guidance capability must not declare code-only fields',
+        'record.capabilities[2] guidance capability contains fields outside the skill-owned union: navigationMap',
       ]),
+    );
+  });
+
+  it('validates an exact router-owned guidance union without weakening skill compatibility', () => {
+    const record = createRecord();
+    record.capabilities.push({
+      kind: 'guidance',
+      guidanceRole: 'router',
+      owner: 'general agent guidance',
+      routingEntry: 'AGENTS.md',
+      contractTestRoot: 'packages/tests/repo/general-agent-guidance',
+      focusedCommand: 'npm run test:general-agent-guidance',
+      evaluationRoot: null,
+      contractPaths: [
+        '.agents/skills/adaptive-plan-execution/SKILL.md',
+        '.agents/skills/organizing-repository-structure/SKILL.md',
+      ],
+    });
+
+    expect(validateAdaptivePlanRecord(record)).toEqual([]);
+
+    const implicitRouter = { ...record.capabilities[2] };
+    delete implicitRouter.guidanceRole;
+    record.capabilities[2] = implicitRouter;
+
+    expect(validateAdaptivePlanRecord(record)).toEqual(
+      expect.arrayContaining([
+        'record.capabilities[2].skillRoot must be a non-empty string',
+        'record.capabilities[2].skillEntry must be a non-empty string',
+        'record.capabilities[2] guidance capability contains fields outside the skill-owned union: routingEntry',
+      ]),
+    );
+
+    record.capabilities[2] = {
+      ...implicitRouter,
+      guidanceRole: 'router',
+      routingEntry: '../AGENTS.md',
+      skillRoot: '.agents/skills/publishing-plan-progress',
+      unexpectedPolicy: true,
+    };
+
+    expect(validateAdaptivePlanRecord(record)).toEqual(
+      expect.arrayContaining([
+        'record.capabilities[2].routingEntry must be a safe repository-relative path',
+        'record.capabilities[2] guidance capability contains fields outside the router-owned union: skillRoot, unexpectedPolicy',
+      ]),
+    );
+
+    record.capabilities[2].guidanceRole = 'unknown';
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'record.capabilities[2].guidanceRole must be router when present',
+    );
+  });
+
+  it('accepts optional exact code contract paths and rejects unsafe or duplicate entries', () => {
+    const record = createRecord();
+    record.capabilities[0].contractPaths = ['.github/PULL_REQUEST_TEMPLATE/governance.md'];
+
+    expect(validateAdaptivePlanRecord(record)).toEqual([]);
+
+    record.capabilities[0].contractPaths = [
+      '../outside.md',
+      '.github/PULL_REQUEST_TEMPLATE/governance.md',
+      '.github/PULL_REQUEST_TEMPLATE/governance.md',
+    ];
+
+    expect(validateAdaptivePlanRecord(record)).toEqual(
+      expect.arrayContaining([
+        'record.capabilities[0].contractPaths must contain safe repository-relative paths',
+        'record.capabilities[0].contractPaths must contain unique paths',
+      ]),
+    );
+  });
+
+  it('reserves planned code contract paths against active and planned code owners', () => {
+    const record = createRecord();
+    record.capabilities[0].contractPaths = ['.github/workflows/governance.yml'];
+    record.capabilities.push({
+      owner: 'future governance',
+      root: 'scripts/future-governance',
+      entry: 'scripts/future-governance.mjs',
+      testRoot: 'packages/tests/repo/future-governance',
+      focusedCommand: 'npm run test:future-governance',
+      navigationMap: null,
+      factContracts: [],
+      contractPaths: ['.github/workflows/governance.yml'],
+      controlFlowFamilies: ['future validation'],
+      activation: { state: 'planned', slice: 'slice-1-plan-adaptation' },
+    });
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'planned capability future governance contract path .github/workflows/governance.yml ' +
+        'conflicts with active capability plan adaptation',
+    );
+
+    record.capabilities[2].contractPaths = ['scripts/repo-structure-check/contract.md'];
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'planned capability future governance contract path ' +
+        'scripts/repo-structure-check/contract.md conflicts with active capability ' +
+        'repository structure',
+    );
+  });
+
+  it('rejects contract paths claimed by another code owner as an exact fact contract', () => {
+    const record = createRecord();
+    record.capabilities[0].factContracts = ['.github/workflows/governance.yml'];
+    record.capabilities[1].contractPaths = ['.github/workflows/governance.yml'];
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'active capability repository structure contract path .github/workflows/governance.yml ' +
+        'conflicts with active capability plan adaptation fact contract',
+    );
+
+    record.capabilities[1].activation = {
+      state: 'planned',
+      slice: 'slice-2-repository-structure',
+    };
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'planned capability repository structure contract path ' +
+        '.github/workflows/governance.yml conflicts with active capability plan adaptation ' +
+        'fact contract',
+    );
+  });
+
+  it('rejects the same exact path as one code owner fact and non-code contract', () => {
+    const record = createRecord();
+    record.capabilities[0].factContracts = ['.github/workflows/governance.yml'];
+    record.capabilities[0].contractPaths = ['.github/workflows/governance.yml'];
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'active capability plan adaptation path .github/workflows/governance.yml cannot be both ' +
+        'a fact contract and a contract path',
     );
   });
 

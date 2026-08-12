@@ -62,7 +62,7 @@ describe('repo code style review evidence integrity', () => {
       '.agents/skills/rallar-code-writing/references/convergent-service-writing.md',
     );
     const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
-    const publishing = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
+    const organizing = readRepo('.agents/skills/organizing-repository-structure/SKILL.md');
 
     expectAllNormalized(codeStyle, [
       'discriminated type-to-payload relationship',
@@ -87,9 +87,10 @@ describe('repo code style review evidence integrity', () => {
       'durable repository navigation map',
       'historical PR body is not a durable substitute',
     ]);
-    expectAllNormalized(publishing, [
-      'durable repository navigation map',
-      'historical PR body is not a durable substitute',
+    expectAllNormalized(organizing, [
+      'mirrored tests, and map',
+      'generated navigation-evidence record',
+      'repository-owned evidence',
     ]);
   });
 });

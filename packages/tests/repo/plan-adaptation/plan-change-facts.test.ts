@@ -10,6 +10,7 @@ import {
   computeCheckpointTriggers,
   computePlanFacts,
   computeQualificationReasons,
+  computeQualificationReasonsForPlan,
   computeUndeclaredChangedPaths,
   hasCurrentPlanFacts,
   readChangedPaths,
@@ -91,6 +92,36 @@ describe('canonical content facts', () => {
       'export const changed = true;\n',
     );
 
+    expect(
+      computeAffectedCodeDigest({
+        repoRoot: fixture.root,
+        changes: readChangedPaths(fixture.root, fixture.base),
+        record,
+      }),
+    ).not.toBe(first);
+  });
+
+  it('binds exact code contract paths to freshness and treats them as declared', () => {
+    const fixture = createRepository();
+    const contractPath = '.github/workflows/governance.yml';
+    const record = {
+      capabilities: [
+        {
+          owner: 'example capability',
+          root: 'packages/example/src',
+          entry: 'packages/example/src/a.ts',
+          testRoot: 'packages/tests/repo/example',
+          contractPaths: [contractPath],
+        },
+      ],
+    };
+    writeFixture(fixture.root, contractPath, 'name: Governance\n');
+    const changes = readChangedPaths(fixture.root, fixture.base);
+    const first = computeAffectedCodeDigest({ repoRoot: fixture.root, changes, record });
+
+    expect(computeUndeclaredChangedPaths(changes, record)).not.toContain(contractPath);
+
+    writeFixture(fixture.root, contractPath, 'name: Changed governance\n');
     expect(
       computeAffectedCodeDigest({
         repoRoot: fixture.root,
@@ -278,6 +309,7 @@ describe('qualification and checkpoint facts', () => {
           focusedCommand: 'npm run test:future-code',
           navigationMap: 'scripts/future-code/README.md',
           factContracts: ['scripts/future-contract.mjs'],
+          contractPaths: ['.github/workflows/future-code.yml'],
           activation: { state: 'planned', slice: 'future-code' },
         },
       ],
@@ -287,6 +319,7 @@ describe('qualification and checkpoint facts', () => {
     writeFixture(fixture.root, 'scripts/future-code/README.md', '# Future code\n');
     writeFixture(fixture.root, 'packages/tests/repo/future-code/owner.test.ts', 'export {};\n');
     writeFixture(fixture.root, 'scripts/future-contract.mjs', 'export const facts = [];\n');
+    writeFixture(fixture.root, '.github/workflows/future-code.yml', 'name: Future code\n');
     const changes = readChangedPaths(fixture.root, fixture.base);
 
     expect(computeUndeclaredChangedPaths(changes, record)).toEqual([]);
@@ -304,6 +337,126 @@ describe('qualification and checkpoint facts', () => {
         record,
       }),
     ).not.toBe(digest);
+  });
+
+  it('tracks planned and active guidance-router entries, tests, evaluations, contracts, and crossings', () => {
+    const fixture = createRepository();
+    const routerPaths = [
+      'AGENTS.md',
+      'packages/tests/repo/general-agent-guidance/contract.test.ts',
+      'packages/tests/repo/general-agent-guidance/evaluation-v1.json',
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+      '.agents/skills/organizing-repository-structure/SKILL.md',
+    ];
+    for (const repositoryPath of routerPaths) {
+      writeFixture(fixture.root, repositoryPath, `${repositoryPath}\n`);
+    }
+    const router = {
+      kind: 'guidance',
+      guidanceRole: 'router',
+      owner: 'general agent guidance',
+      routingEntry: 'AGENTS.md',
+      contractTestRoot: 'packages/tests/repo/general-agent-guidance',
+      focusedCommand: 'npm run test:general-agent-guidance',
+      evaluationRoot: null,
+      contractPaths: [
+        '.agents/skills/adaptive-plan-execution/SKILL.md',
+        '.agents/skills/organizing-repository-structure/SKILL.md',
+      ],
+      activation: { state: 'planned', slice: 'general-guidance-routing-declaration' },
+    };
+    const record = {
+      capabilities: [
+        router,
+        {
+          kind: 'guidance',
+          owner: 'adaptive plan execution guidance',
+          skillRoot: '.agents/skills/adaptive-plan-execution',
+          skillEntry: '.agents/skills/adaptive-plan-execution/SKILL.md',
+          contractTestRoot: 'packages/tests/repo/adaptive-agent-execution',
+          focusedCommand: 'npm run test:adaptive-plan-execution',
+          evaluationRoot: null,
+          contractPaths: [],
+        },
+        {
+          kind: 'guidance',
+          owner: 'repository structure guidance',
+          skillRoot: '.agents/skills/organizing-repository-structure',
+          skillEntry: '.agents/skills/organizing-repository-structure/SKILL.md',
+          contractTestRoot: 'packages/tests/repo/organizing-repository-structure',
+          focusedCommand: 'npm run test:organizing-repository-structure',
+          evaluationRoot: null,
+          contractPaths: [],
+        },
+      ],
+    };
+    const changes = readChangedPaths(fixture.root, fixture.base);
+
+    expect(computeUndeclaredChangedPaths(changes, record)).toEqual([]);
+    expect(
+      computeQualificationReasonsForPlan({
+        repoRoot: fixture.root,
+        base: fixture.base,
+        changes,
+        record,
+      }),
+    ).toContain('package-or-capability-crossing');
+
+    const plannedDigest = computeAffectedCodeDigest({ repoRoot: fixture.root, changes, record });
+    delete router.activation;
+    expect(computeAffectedCodeDigest({ repoRoot: fixture.root, changes, record })).toBe(
+      plannedDigest,
+    );
+    writeFixture(fixture.root, 'AGENTS.md', '# Changed router\n');
+    expect(
+      computeAffectedCodeDigest({
+        repoRoot: fixture.root,
+        changes: readChangedPaths(fixture.root, fixture.base),
+        record,
+      }),
+    ).not.toBe(plannedDigest);
+  });
+
+  it('detects ownership crossing between exact code contracts outside authored roots', () => {
+    const fixture = createRepository();
+    writeFixture(fixture.root, '.github/workflows/first.yml', 'name: First\n');
+    writeFixture(fixture.root, '.github/workflows/second.yml', 'name: Second\n');
+    const changes = readChangedPaths(fixture.root, fixture.base);
+    const record = {
+      capabilities: [
+        {
+          owner: 'first governance owner',
+          root: 'scripts/first-governance',
+          entry: 'scripts/first-governance.mjs',
+          testRoot: 'packages/tests/repo/first-governance',
+          contractPaths: ['.github/workflows/first.yml'],
+        },
+        {
+          owner: 'second governance owner',
+          root: 'scripts/second-governance',
+          entry: 'scripts/second-governance.mjs',
+          testRoot: 'packages/tests/repo/second-governance',
+          contractPaths: ['.github/workflows/second.yml'],
+        },
+      ],
+    };
+
+    expect(
+      computeQualificationReasonsForPlan({
+        repoRoot: fixture.root,
+        base: fixture.base,
+        changes,
+        record,
+      }),
+    ).toContain('package-or-capability-crossing');
+    expect(
+      computeCheckpointTriggers({
+        repoRoot: fixture.root,
+        base: fixture.base,
+        changes,
+        record,
+      }),
+    ).toContain('ownership-change');
   });
   it('qualifies every required diff shape against the actual Git diff', () => {
     const fixture = createRepository();

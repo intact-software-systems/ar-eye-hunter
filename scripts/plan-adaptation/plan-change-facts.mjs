@@ -64,6 +64,11 @@ export function computeAffectedCodeDigest(digestInput) {
 }
 
 export function computeQualificationReasons(repoRoot, base, changes) {
+  return computeQualificationReasonsForPlan({ repoRoot, base, changes });
+}
+
+export function computeQualificationReasonsForPlan(input) {
+  const { repoRoot, base, changes, record } = input;
   const reasons = [];
   const changedPaths = allChangedPaths(changes);
   if (changedPaths.some((changedPath) => isWrittenPlan(changedPath))) {
@@ -78,7 +83,7 @@ export function computeQualificationReasons(repoRoot, base, changes) {
   if (productionModules.length >= 3) {
     reasons.push('three-production-modules');
   }
-  if (hasCapabilityCrossing(changes)) {
+  if (hasCapabilityCrossing(changes, record)) {
     reasons.push('package-or-capability-crossing');
   }
   if (changedPaths.some(isPublicOwnershipPath)) {
@@ -92,12 +97,13 @@ export function computeUndeclaredChangedPaths(changes, record, planPath = '') {
   const allowedRoots = [];
   for (const capability of record.capabilities ?? []) {
     if (capability.kind === 'guidance') {
-      allowedRoots.push(
-        capability.skillRoot,
-        capability.contractTestRoot,
-        capability.evaluationRoot,
-      );
-      allowedPaths.add(capability.skillEntry);
+      allowedRoots.push(capability.contractTestRoot, capability.evaluationRoot);
+      if (capability.guidanceRole === 'router') {
+        allowedPaths.add(capability.routingEntry);
+      } else {
+        allowedRoots.push(capability.skillRoot);
+        allowedPaths.add(capability.skillEntry);
+      }
       for (const contractPath of capability.contractPaths ?? []) {
         allowedPaths.add(contractPath);
       }
@@ -109,6 +115,9 @@ export function computeUndeclaredChangedPaths(changes, record, planPath = '') {
       }
       for (const factContract of capability.factContracts ?? []) {
         allowedPaths.add(factContract);
+      }
+      for (const contractPath of capability.contractPaths ?? []) {
+        allowedPaths.add(contractPath);
       }
     }
   }
@@ -122,12 +131,12 @@ export function computeUndeclaredChangedPaths(changes, record, planPath = '') {
 
 export function computeCheckpointTriggers(input) {
   const triggers = [];
-  const qualification = computeQualificationReasons(input.repoRoot, input.base, input.changes);
+  const qualification = computeQualificationReasonsForPlan(input);
   const changedPaths = allChangedPaths(input.changes);
   if (qualification.includes('directory-creation-or-movement')) {
     triggers.push('folder-change');
   }
-  if (hasCapabilityCrossing(input.changes)) {
+  if (hasCapabilityCrossing(input.changes, input.record)) {
     triggers.push('ownership-change');
   }
   if (changedPaths.some(isPublicOwnershipPath)) {
@@ -217,13 +226,49 @@ function hasDirectoryCreationOrMovement(repoRoot, base, changes) {
   });
 }
 
-function hasCapabilityCrossing(changes) {
+function hasCapabilityCrossing(changes, record) {
   const roots = new Set(allChangedPaths(changes).map(toCapabilityRoot).filter(Boolean));
   const movedAcrossRoot = changes.some(
     (change) =>
       change.oldPath && toCapabilityRoot(change.oldPath) !== toCapabilityRoot(change.path),
   );
-  return movedAcrossRoot || roots.size >= 2;
+  const declaredOwners = new Set(
+    allChangedPaths(changes).flatMap((changedPath) =>
+      toDeclaredCapabilityOwners(changedPath, record?.capabilities ?? []),
+    ),
+  );
+  const movedAcrossDeclaredOwner = changes.some((change) => {
+    if (change.oldPath === undefined) {
+      return false;
+    }
+    const oldOwners = toDeclaredCapabilityOwners(change.oldPath, record?.capabilities ?? []);
+    const newOwners = toDeclaredCapabilityOwners(change.path, record?.capabilities ?? []);
+    return oldOwners.some((owner) => !newOwners.includes(owner));
+  });
+  return movedAcrossRoot || roots.size >= 2 || movedAcrossDeclaredOwner || declaredOwners.size >= 2;
+}
+
+function toDeclaredCapabilityOwners(changedPath, capabilities) {
+  return capabilities
+    .filter((capability) => isCapabilityOwnershipPath(changedPath, capability))
+    .map((capability) => capability.owner)
+    .filter((owner) => typeof owner === 'string');
+}
+
+function isCapabilityOwnershipPath(changedPath, capability) {
+  return capability.kind === 'guidance'
+    ? isGuidanceCapabilityPath(changedPath, capability)
+    : isCodeOwnershipPath(changedPath, capability);
+}
+
+function isCodeOwnershipPath(changedPath, capability) {
+  return (
+    changedPath === capability.entry ||
+    changedPath === capability.navigationMap ||
+    (typeof capability.root === 'string' && isWithin(changedPath, capability.root)) ||
+    (typeof capability.testRoot === 'string' && isWithin(changedPath, capability.testRoot)) ||
+    (capability.contractPaths ?? []).includes(changedPath)
+  );
 }
 
 function toCapabilityRoot(changedPath) {
@@ -275,16 +320,20 @@ function isCodeCapabilityPath(changedPath, capability) {
     changedPath === capability.navigationMap ||
     (typeof capability.root === 'string' && isWithin(changedPath, capability.root)) ||
     (typeof capability.testRoot === 'string' && isWithin(changedPath, capability.testRoot)) ||
-    (capability.factContracts ?? []).includes(changedPath)
+    (capability.factContracts ?? []).includes(changedPath) ||
+    (capability.contractPaths ?? []).includes(changedPath)
   );
 }
 
 function isGuidanceCapabilityPath(changedPath, capability) {
   return (
-    changedPath === capability.skillEntry ||
+    changedPath ===
+      (capability.guidanceRole === 'router' ? capability.routingEntry : capability.skillEntry) ||
     changedPath === capability.evaluationRoot ||
     changedPath === capability.contractTestRoot ||
-    (typeof capability.skillRoot === 'string' && isWithin(changedPath, capability.skillRoot)) ||
+    (capability.guidanceRole !== 'router' &&
+      typeof capability.skillRoot === 'string' &&
+      isWithin(changedPath, capability.skillRoot)) ||
     (typeof capability.evaluationRoot === 'string' &&
       isWithin(changedPath, capability.evaluationRoot)) ||
     (typeof capability.contractTestRoot === 'string' &&

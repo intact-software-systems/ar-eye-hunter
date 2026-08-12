@@ -34,6 +34,10 @@ coding standard; local guidance may tighten it but may not relax it.
 TypeScript changes must also follow every TypeScript-specific rule in
 `references/repo-code-style.md`.
 
+**REQUIRED SUB-SKILL:** Use `organizing-repository-structure` for repository shape decisions.
+
+**REQUIRED SUB-SKILL:** Use `adaptive-plan-execution` when code work qualifies for an adaptive plan.
+
 When TypeScript work creates, changes, reviews, or refactors named types — APIs,
 interfaces, DTOs, type aliases, namespaces, classes with associated types, or
 public type surfaces — also read `references/typescript-type-organization.md`
@@ -164,14 +168,15 @@ checker does not substitute for following production symbols.
 
 ## Validation
 
-Run the focused tests and type-check for the touched surface. Run
+Use `rallar-testing` to select the focused tests, type-checks, and high-risk
+proofs for the touched surface. Run
 `npm run check:repo-style` and review warnings in changed production files. For
 output that reaches the display cap, rerun with `--root` set to the smallest
 directory containing changed production files. For public API or cross-runtime
 changes, check both browser and server consumers. Report passed, failed, and
-skipped commands in the completion handoff. For written implementation work,
-also follow the `rallar-testing` plan-completion gate. Focused checks never
-substitute for that final gate.
+skipped commands in the completion handoff. For written or multi-slice work,
+`adaptive-plan-execution` owns plan-level validation scope and checkpoint
+decisions.
 
 For every construction-detail warning in changed production code, record its
 path, rule, and symbol plus one human disposition: fixed, demonstrated false
@@ -179,3 +184,14 @@ positive, or accepted existing debt with no new/worsened magnitude and an
 owner. The review rule is that silence or a warning-only exit code is not a
 disposition. This review does not make every optional warning globally
 blocking.
+
+## Affected Production Legacy
+
+For written work that affects production, require a `Legacy baseline and exit criteria`, a
+`Legacy impact` judgment for each capability slice, and a final `Complete Code and Legacy Review`.
+The adaptive plan owns when that review runs; this skill owns the code judgment. Trace every
+changed production path from canonical entry to result and classify affected legacy as `removed`,
+`minimized-boundary`, `resolved`, or `retained-pending-human-approval`. Unclassified affected
+legacy blocks code completion. A retained item requires explicit human approval of its purpose,
+consumer, unsafe-removal reason, minimization, owner, tests, review/removal condition, and current
+candidate tree. An issue or agent judgment does not replace that approval.

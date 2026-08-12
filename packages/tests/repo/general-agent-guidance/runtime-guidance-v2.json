@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "general-agent-guidance-runtime-v2",
+  "automaticAuthorities": [
+    {
+      "id": "codex-system-and-developer-runtime",
+      "source": "platform-managed fresh collaboration agent",
+      "binding": "per-run freshAgentId, model, reasoningEffort, forkTurns, singleShot, timestamps, and exact runtime preamble"
+    },
+    {
+      "id": "repository-agents-guide",
+      "source": "runtime-injected repository AGENTS.md",
+      "binding": "immutable baseline commit, Git tree, Git object path, and content digest"
+    },
+    {
+      "id": "mandatory-using-superpowers-skill",
+      "source": "superpowers:using-superpowers@6.2.0",
+      "binding": "logical identity, resolved path, and content digest"
+    }
+  ],
+  "invocationPolicy": {
+    "control": "Use only automatic authorities and the exact scenario prompt.",
+    "candidate": "Use automatic authorities plus the candidate AGENTS.md and four declared repository skills.",
+    "optionalSkillLoading": "prohibited",
+    "repositoryFileReading": "prohibited except for declared candidate inputs",
+    "externalServices": "prohibited"
+  },
+  "captureBoundary": "Platform policy text is not copied into repository artifacts. Its application is bound to the fresh agent identity and execution configuration; every behavior-specific runtime instruction is preserved verbatim in the per-run preamble artifact."
+}

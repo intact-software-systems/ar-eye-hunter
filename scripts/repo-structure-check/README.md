@@ -43,7 +43,12 @@ which returns sorted findings without choosing a folder layout for the agent.
 - Capability ownership and cold-navigation evidence are validated by
   [capability-declarations.mjs#validateCapabilityDeclarations](./capability-declarations.mjs#validateCapabilityDeclarations).
   This is also the owner of entry, mirrored-test, focused-command, map-link, and source-symbol
-  validation.
+  validation. Exact code-capability `contractPaths` are validated against repository inventory as
+  non-code files and deliberately bypass source-symbol and topology rules. Guidance declarations
+  validate either an existing skill entry or a first-class routing entry, plus mirrored contract
+  tests, evaluation evidence, focused commands, and shared specialist contracts. Guidance router
+  evidence remains repository inventory and deliberately bypasses authored-code topology and
+  source-symbol rules.
 - `--navigation-evidence <capability-owner>` selects one active code declaration, then
   [navigation-evidence.mjs#createRepositoryNavigationEvidence](./navigation-evidence.mjs#createRepositoryNavigationEvidence)
   validates this map's fenced contract and composes the digest-bound JSON evidence record. The

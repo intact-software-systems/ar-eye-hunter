@@ -302,7 +302,7 @@ publication, or testing catalogs. The skill points agents to the canonical
 checker and style facts, while human structural judgment remains visible in the
 adaptive record.
 
-## Current horizon
+## Completed checkpointed behavior
 
 ### Task 8: Automated repository navigation evidence
 
@@ -325,26 +325,26 @@ repository-owned fact artifact. Keep the existing checker, declaration registry,
 style facts, skill, and evaluation validator canonical; add no parallel
 navigation registry or automatic folder selector.
 
-## Current two-slice horizon
+## Completed two-slice horizon
 
 ### Task 9: General agent guidance simplification
 
-**Planned guidance owner:** general agent guidance routing
+**Guidance owner:** general agent guidance
 
 **Planned mirrored contract tests:**
 `packages/tests/repo/general-agent-guidance/`
 
-- [ ] Make `adaptive-plan-execution` the one execution-time adaptation owner
+- [x] Make `adaptive-plan-execution` the one execution-time adaptation owner
       and `organizing-repository-structure` the one structural-judgment owner.
       General guidance routes to them without restating their rules.
-- [ ] Reduce `publishing-plan-progress` to publication, remote evidence,
+- [x] Reduce `publishing-plan-progress` to publication, remote evidence,
       compatibility checks, issue handoff, and completion publication. Remove
       its duplicate slice/checkpoint and unconditional local full-suite policy.
-- [ ] Remove duplicate issue-startup, exact-SHA freshness, unconditional local
+- [x] Remove duplicate issue-startup, exact-SHA freshness, unconditional local
       full-suite, plan-adaptation, and structure rules from `AGENTS.md`,
       `rallar-code-writing`, and `rallar-testing`; retain only owner routing and
       each file's actual domain rules.
-- [ ] Add focused contract tests that reject duplicate rule ownership while
+- [x] Add focused contract tests that reject duplicate rule ownership while
       preserving final completion gates and explicit high-risk validation.
 
 **Legacy impact:** Directly minimize duplicate guidance. Add no compatibility
@@ -358,21 +358,104 @@ copy, second plan workflow, second testing catalog, or permanent transition text
 **Mirrored tests:** `packages/tests/repo/plan-adaptation/` and
 `packages/tests/repo/repo-structure-check/`
 
-- [ ] Add exact repository contract paths to code-capability declarations so a
+- [x] Add exact repository contract paths to code-capability declarations so a
       capability can own non-code contracts such as templates, durable
       Markdown, and workflow definitions without disguising them as authored
       source fact contracts.
-- [ ] Include those paths in affected-code digests, undeclared-path detection,
+- [x] Include those paths in affected-code digests, undeclared-path detection,
       planned-surface reservation, safe repository inventory validation, and
       changed-surface ownership checks. Do not apply source-symbol or topology
       rules to them.
-- [ ] Reject missing, unsafe, duplicate, or cross-owner contract paths and
+- [x] Reject missing, unsafe, duplicate, or cross-owner contract paths and
       preserve existing code/guidance declaration compatibility.
-- [ ] Add record, fact, declaration, and semantic command tests, then use the
+- [x] Add record, fact, declaration, and semantic command tests, then use the
       new field to declare the later PR Human Review v2 owner honestly.
 
 **Legacy impact:** Extend the existing capability registry and checker. Add no
 parallel allowlist, workflow registry, or permissive undeclared-path exception.
+
+## Completed corrective horizon
+
+### Task 11: General guidance routing declaration correction
+
+**Owners:** `scripts/plan-adaptation/` and
+`scripts/repo-structure-check/`
+
+**Mirrored tests:** `packages/tests/repo/plan-adaptation/` and
+`packages/tests/repo/repo-structure-check/`
+
+- [x] Add a first-class guidance-router declaration whose canonical entry is
+      `AGENTS.md`, whose mirrored contract tests are
+      `packages/tests/repo/general-agent-guidance/`, and whose declared
+      contracts remain the actual specialist skill owners.
+- [x] Preserve the existing skill-owned guidance declaration shape without
+      letting a router masquerade as a skill root or making publication own
+      plan, structure, testing, and code-writing rules.
+- [x] Include router entry, tests, evaluations, and contracts in planned and
+      active affected-surface facts, while keeping authored-code topology and
+      source-symbol rules inapplicable.
+- [x] Prove schema, activation, facts, repository inventory, focused command,
+      and cold-navigation behavior at deterministic and semantic command
+      boundaries, then activate the corrected Task 9 owner.
+
+**Legacy impact:** Correct the one canonical capability registry. Do not rename
+the human-navigable `general-agent-guidance` tests to match the publication
+skill, create a placeholder routing skill, or keep the invalid ownership model.
+
+## Current two-slice horizon
+
+### Task 12: PR Human Review Record v2 direct cutover
+
+**Planned owner:** `scripts/pr-human-review/`
+
+**Planned canonical entry:** `scripts/check-pr-human-review.mjs`
+
+**Planned mirrored tests:** `packages/tests/repo/pr-human-review/`
+
+- [ ] Replace the visible template, durable contract, metadata parser, evidence
+      validator, legacy-stage integration, and workflow label with Review Record
+      v2 in one cutover. Retain no v1 parser or permanent transition validator.
+- [ ] Make the initial review cover goal, acceptance criteria, capability-tree
+      hypothesis, canonical owner/entry, and the first two slices. Replace
+      repeated milestone narratives with one checkpoint record bound to the
+      current adaptive-plan digest.
+- [ ] Bind final freshness to the build-affecting tree digest plus plan goal,
+      acceptance criteria, and current structural decision. Unrelated
+      documentation changes must not invalidate a valid final review.
+- [ ] Require the final fresh reviewer to verify declared outcomes, every
+      owner-to-result path, navigation, tests, compatibility, proportional
+      validation, and complete legacy closure. Preserve trusted retained-legacy
+      approval and exact candidate-ledger validation.
+- [ ] Move focused v2 tests into the mirrored owner, update legacy integration
+      tests directly, and prove v1 rejection plus existing-open-PR migration on
+      the next synchronization. The introducing PR records the bootstrap
+      exception because its base workflow cannot run candidate v2 code.
+
+**Legacy impact:** Delete v1 behavior and labels directly. Preserve only the
+trusted retained-legacy and candidate-report behaviors that remain part of v2.
+
+### Task 13: Fast Governance Gate
+
+**Planned owner:** `scripts/governance-gate/`
+
+**Planned canonical entry:** `scripts/governance-gate.mjs`
+
+**Planned mirrored tests:** `packages/tests/repo/governance-gate/`
+
+- [ ] Add one fast local command and GitHub workflow that run adaptive-plan,
+      repository-structure, Review Record v2, and their focused deterministic
+      contract checks before the expensive Branch Release Gate.
+- [ ] Make the branch workflow depend on the Governance Gate without copying
+      check logic into YAML or weakening the existing broad release workflow.
+- [ ] Fail closed on missing package commands, stale plan facts, structure
+      findings, v1 review contracts, and focused test failure. Emit concise
+      phase-specific failures suitable for CI triage.
+- [ ] Keep the local governance path below ten seconds and target less than two
+      minutes in GitHub. Document exact command ownership and add deterministic
+      workflow/command contract tests.
+
+**Legacy impact:** Add one early gate and one command owner. Do not create a
+second adaptive checker, structure analyzer, PR validator, or broad CI suite.
 
 ## Checkpoint-activated outcomes
 
@@ -472,21 +555,77 @@ are selected at the preceding checkpoint.
     },
     {
       "kind": "guidance",
-      "owner": "general agent guidance routing",
-      "skillRoot": ".agents/skills/publishing-plan-progress",
-      "skillEntry": ".agents/skills/publishing-plan-progress/SKILL.md",
+      "guidanceRole": "router",
+      "owner": "general agent guidance",
+      "routingEntry": "AGENTS.md",
       "contractTestRoot": "packages/tests/repo/general-agent-guidance",
       "focusedCommand": "npm run test:general-agent-guidance",
       "evaluationRoot": null,
       "contractPaths": [
-        "AGENTS.md",
+        ".agents/skills/adaptive-plan-execution/SKILL.md",
+        ".agents/skills/organizing-repository-structure/SKILL.md",
+        ".agents/skills/publishing-plan-progress/SKILL.md",
         ".agents/skills/rallar-code-writing/SKILL.md",
         ".agents/skills/rallar-testing/SKILL.md",
-        ".agents/skills/rallar-testing/references/test-commands.md"
+        ".agents/skills/rallar-testing/references/test-commands.md",
+        "packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts",
+        "packages/tests/repo/repo-code-style-authority-integrity.test.ts",
+        "packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts"
+      ]
+    },
+    {
+      "owner": "PR human review",
+      "root": "scripts/pr-human-review",
+      "entry": "scripts/check-pr-human-review.mjs",
+      "testRoot": "packages/tests/repo/pr-human-review",
+      "focusedCommand": "npm run test:pr-human-review",
+      "navigationMap": "scripts/pr-human-review/README.md",
+      "factContracts": [
+        "scripts/check-pr-human-review-legacy-stages.mjs",
+        "scripts/legacy-review/validate-supplied-evidence.mjs",
+        "packages/tests/repo/pr-human-review-record-contract.test.ts",
+        "packages/tests/repo/pr-human-review-validation.test.ts",
+        "packages/tests/repo/legacy-review-stage-driver.test.ts"
+      ],
+      "contractPaths": [
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/workflows/pr-human-review-record.yml",
+        "docs/pr-human-review-record.md",
+        "docs/production-legacy-exceptions.md"
+      ],
+      "controlFlowFamilies": [
+        "review input and evidence decoding",
+        "initial checkpoint and final freshness validation",
+        "trusted retained-legacy approval",
+        "legacy candidate-stage integration"
       ],
       "activation": {
         "state": "planned",
-        "slice": "general-agent-guidance-simplification"
+        "slice": "pr-human-review-record-v2"
+      }
+    },
+    {
+      "owner": "governance gate",
+      "root": "scripts/governance-gate",
+      "entry": "scripts/governance-gate.mjs",
+      "testRoot": "packages/tests/repo/governance-gate",
+      "focusedCommand": "npm run test:governance-gate",
+      "navigationMap": "scripts/governance-gate/README.md",
+      "factContracts": [
+        "packages/tests/repo/github-actions-runtime-governance.test.ts"
+      ],
+      "contractPaths": [
+        ".github/workflows/governance-gate.yml",
+        ".github/workflows/branch-release-gate.yml"
+      ],
+      "controlFlowFamilies": [
+        "local phase orchestration",
+        "focused contract validation",
+        "GitHub early-gate integration"
+      ],
+      "activation": {
+        "state": "planned",
+        "slice": "fast-governance-gate"
       }
     }
   ],
@@ -494,7 +633,8 @@ are selected at the preceding checkpoint.
     "currentHypothesis": "Plan, style, review, and workflow rules exist as separate controls without one execution-time adaptation owner.",
     "intendedHypothesis": "A plan-adaptation capability owns rolling decisions while a separate repository-structure capability supplies structural facts.",
     "invalidatedAssumptions": [
-      "A prose-only repository-structure skill can reliably make fresh agents reproduce exact owner-to-result navigation evidence; the frozen provenance run made a sound structural judgment but recovered only two of six required repository facts."
+      "A prose-only repository-structure skill can reliably make fresh agents reproduce exact owner-to-result navigation evidence; the frozen provenance run made a sound structural judgment but recovered only two of six required repository facts.",
+      "Every guidance capability is a skill owner with a mirrored skill-named test root. Activating Task 9 proved that AGENTS.md is a distinct routing owner whose general-agent-guidance tests must not be disguised as publishing-plan-progress ownership."
     ],
     "freshInitialReview": {
       "status": "complete",
@@ -506,7 +646,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "d2ca61adaf5e60e9f2e0f01e8a2d34ba3e96bba8a1b04e0c8c6acd1b05412cc4",
+    "affectedCodeDigest": "51143c9e9356f73bb8e978bc503e317d4d6cfc95ee44f41f6ef0d82390c99c73",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -517,13 +657,13 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The organizing-repository-structure skill and automated navigation-evidence boundary now pass deterministic validation, five provenance-bound assisted micro-runs, all three critical full scenarios, and independent review with no Critical or Important findings. Exact navigation facts moved into repository-owned automation while agents retained coherent, reversible structural judgment.",
-    "learning": "Automated owner, entry, result, failure, test, command, map, and digest evidence made the behavior reliable without manufacturing a gap between control and assisted agents. The next PR-review cutover also exposed a declaration gap: code capabilities can own authored source fact contracts but cannot yet declare templates, durable Markdown, and workflows as non-code contract paths.",
-    "structure": "Activate one guidance-simplification slice owned by publishing-plan-progress with exact cross-guidance contracts, and one infrastructure slice in the existing plan-adaptation and repository-structure owners to add safe non-code contract paths for code capabilities. Defer PR Human Review v2 until that registry support can declare its mixed script, template, documentation, workflow, and legacy-integration surface honestly.",
-    "decision": "amend",
+    "outcome": "The corrective guidance-router slice now represents AGENTS.md as its own exact owner, includes router facts and cold navigation without authored-code rules, preserves skill declarations as a separate backward-compatible union, and passes independent review plus the 8.82-second aggregate governance path.",
+    "learning": "Activation-time validation was valuable: it exposed that a repository router is not a skill even when it delegates to skills. The newly advanced default branch reorganizes RTC benchmark ownership and changes generic package metadata, but does not alter the governance owners, contracts, acceptance criteria, or validation paths in this horizon; compatibility review found no plan delta.",
+    "structure": "Activate PR Human Review v2 as one mixed code/template/documentation/workflow capability with exact non-code contracts and legacy integration facts. Pair it with a separate Governance Gate owner that orchestrates canonical checks before broad CI. Keep content-sensitive evidence reuse inactive until both review and early-gate contracts are stable.",
+    "decision": "continue",
     "nextSlices": [
-      "general-agent-guidance-simplification",
-      "repository-contract-path-declarations"
+      "pr-human-review-record-v2",
+      "fast-governance-gate"
     ]
   },
   "structuralDispositions": [
@@ -532,6 +672,12 @@ are selected at the preceding checkpoint.
       "target": "scripts/repo-style-check/layout-rules.mjs density, prefix-clustering, and file-size facts",
       "disposition": "keep",
       "rationale": "Repo style remains canonical; repository structure consumes one exported fact contract and owns only topology and disposition policy."
+    },
+    {
+      "kind": "ownership-contract",
+      "target": "scripts/plan-adaptation/adaptive-plan-record.mjs capability declaration policy",
+      "disposition": "split",
+      "rationale": "Task 10 exposed capability declaration shape, planned topology, and exact contract ownership as one independent policy seam. adaptive-plan-capabilities.mjs now owns that policy while adaptive-plan-record.mjs retains record parsing, digests, and non-capability fields."
     }
   ],
   "freshStructuralReview": {
@@ -591,6 +737,11 @@ are selected at the preceding checkpoint.
         "capabilityOwner": "repository structure",
         "path": "scripts/repo-structure-check/structure-exceptions.mjs",
         "symbol": "readStructureExceptions"
+      },
+      {
+        "capabilityOwner": "general agent guidance",
+        "path": "AGENTS.md",
+        "symbol": "Rallar Agent Guide"
       }
     ]
   },
@@ -672,6 +823,16 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "amend",
       "summary": "The organizing-repository-structure skill and automated navigation-evidence boundary now pass deterministic validation, five provenance-bound assisted micro-runs, all three critical full scenarios, and independent review with no Critical or Important findings. Exact navigation facts moved into repository-owned automation while agents retained coherent, reversible structural judgment."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "amend",
+      "summary": "Task 9 removed duplicated execution, structure, test-scope, issue-startup, and publication rules and passed a provenance-bound 5+5 evaluation plus independent review. Task 10 added exact non-code contract ownership, closed active/planned fact-contract conflicts, and split capability policy from the oversized plan-record module with independent review passing."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "continue",
+      "summary": "The corrective guidance-router slice now represents AGENTS.md as its own exact owner, includes router facts and cold navigation without authored-code rules, preserves skill declarations as a separate backward-compatible union, and passes independent review plus the 8.82-second aggregate governance path."
     }
   ]
 }

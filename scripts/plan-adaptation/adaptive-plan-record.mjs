@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
 
+import {
+  isSafeRepositoryPath,
+  validateAdaptivePlanCapabilities,
+} from './adaptive-plan-capabilities.mjs';
+
+export { isPlannedCapability, isSafeRepositoryPath } from './adaptive-plan-capabilities.mjs';
+
 const recordPattern = /```plan-adaptation-v1\s*\n([\s\S]*?)\n```/gu;
 
 export function parseAdaptivePlanRecord(markdown, sourceName = 'adaptive plan') {
@@ -52,7 +59,7 @@ export function validateAdaptivePlanRecord(record) {
   }
   requireText(issues, record.goal, 'record.goal');
   requireTextArray(issues, record.acceptanceCriteria, 'record.acceptanceCriteria');
-  validateCapabilities(issues, record.capabilities);
+  issues.push(...validateAdaptivePlanCapabilities(record.capabilities));
   validateTextArray(
     issues,
     record.completedSlicesSinceCheckpoint,
@@ -67,184 +74,6 @@ export function validateAdaptivePlanRecord(record) {
   validateColdNavigationEvidence(issues, record.coldNavigationEvidence);
   validateMaterialDecisions(issues, record.materialDecisions);
   return issues;
-}
-
-function validateCapabilities(issues, capabilities) {
-  if (!Array.isArray(capabilities) || capabilities.length === 0) {
-    issues.push('record.capabilities must contain at least one capability');
-    return;
-  }
-  for (const [index, capability] of capabilities.entries()) {
-    if (!isRecord(capability)) {
-      issues.push(`record.capabilities[${index}] must be an object`);
-      continue;
-    }
-    const kind = capability.kind ?? 'code';
-    if (!['code', 'guidance'].includes(kind)) {
-      issues.push(`record.capabilities[${index}].kind must be code or guidance`);
-      continue;
-    }
-    requireText(issues, capability.owner, `record.capabilities[${index}].owner`);
-    validateCapabilityActivation(issues, capability, index);
-    if (kind === 'guidance') {
-      validateGuidanceCapability(issues, capability, index);
-    } else {
-      validateCodeCapability(issues, capability, index);
-    }
-  }
-  validatePlannedCapabilityOwnership(issues, capabilities);
-}
-
-function validatePlannedCapabilityOwnership(issues, capabilities) {
-  for (const [leftIndex, leftCapability] of capabilities.entries()) {
-    for (const rightCapability of capabilities.slice(leftIndex + 1)) {
-      if (!isPlannedCapability(leftCapability) && !isPlannedCapability(rightCapability)) {
-        continue;
-      }
-      const plannedCapability = isPlannedCapability(leftCapability)
-        ? leftCapability
-        : rightCapability;
-      const otherCapability =
-        plannedCapability === leftCapability ? rightCapability : leftCapability;
-      for (const plannedRoot of topologyRoots(plannedCapability)) {
-        for (const otherRoot of topologyRoots(otherCapability)) {
-          if (rootsOverlap(plannedRoot, otherRoot)) {
-            const otherState = isPlannedCapability(otherCapability) ? 'planned' : 'active';
-            issues.push(
-              `planned capability ${plannedCapability.owner} root ${plannedRoot} overlaps ` +
-                `${otherState} capability ${otherCapability.owner} root ${otherRoot}`,
-            );
-          }
-        }
-      }
-    }
-  }
-}
-
-function topologyRoots(capability) {
-  if (!isRecord(capability)) {
-    return [];
-  }
-  return capability.kind === 'guidance'
-    ? [capability.skillRoot, capability.contractTestRoot, capability.evaluationRoot].filter(
-        (root) => typeof root === 'string',
-      )
-    : [capability.root, capability.testRoot].filter((root) => typeof root === 'string');
-}
-
-function rootsOverlap(left, right) {
-  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
-}
-
-function validateCapabilityActivation(issues, capability, index) {
-  if (capability.activation === undefined) {
-    return;
-  }
-  if (
-    !isRecord(capability.activation) ||
-    capability.activation.state !== 'planned' ||
-    !hasExactKeys(capability.activation, ['state', 'slice'])
-  ) {
-    issues.push(
-      `record.capabilities[${index}].activation must be omitted or exactly planned with one slice`,
-    );
-    return;
-  }
-  if (
-    typeof capability.activation.slice !== 'string' ||
-    capability.activation.slice.trim() === ''
-  ) {
-    issues.push(
-      `record.capabilities[${index}].activation.slice must be a non-empty string ` +
-        'for planned capabilities',
-    );
-  }
-}
-
-export function isPlannedCapability(capability) {
-  return capability?.activation?.state === 'planned';
-}
-
-function validateCodeCapability(issues, capability, index) {
-  for (const field of ['root', 'entry', 'testRoot', 'focusedCommand']) {
-    requireText(issues, capability[field], `record.capabilities[${index}].${field}`);
-  }
-  for (const field of ['root', 'entry', 'testRoot']) {
-    if (!isSafeRepositoryPath(capability[field])) {
-      issues.push(`record.capabilities[${index}].${field} must be a safe repository-relative path`);
-    }
-  }
-  if (capability.navigationMap !== null && !isSafeRepositoryPath(capability.navigationMap)) {
-    const name = `record.capabilities[${index}].navigationMap`;
-    issues.push(`${name} must be null or a safe repository-relative path`);
-  }
-  if (
-    capability.factContracts !== undefined &&
-    (!Array.isArray(capability.factContracts) ||
-      capability.factContracts.some((factContract) => !isSafeRepositoryPath(factContract)))
-  ) {
-    issues.push(
-      `record.capabilities[${index}].factContracts must contain safe ` +
-        'repository-relative paths',
-    );
-  }
-  if (
-    capability.controlFlowFamilies !== undefined &&
-    (!Array.isArray(capability.controlFlowFamilies) ||
-      capability.controlFlowFamilies.length === 0 ||
-      capability.controlFlowFamilies.some(
-        (family) => typeof family !== 'string' || family.trim() === '',
-      ) ||
-      new Set(capability.controlFlowFamilies).size !== capability.controlFlowFamilies.length)
-  ) {
-    issues.push(
-      `record.capabilities[${index}].controlFlowFamilies must contain unique ` +
-        'non-empty strings',
-    );
-  }
-}
-
-function validateGuidanceCapability(issues, capability, index) {
-  for (const field of ['skillRoot', 'skillEntry', 'contractTestRoot', 'focusedCommand']) {
-    requireText(issues, capability[field], `record.capabilities[${index}].${field}`);
-  }
-  for (const field of ['skillRoot', 'skillEntry', 'contractTestRoot']) {
-    if (!isSafeRepositoryPath(capability[field])) {
-      issues.push(`record.capabilities[${index}].${field} must be a safe repository-relative path`);
-    }
-  }
-  if (
-    capability.evaluationRoot !== undefined &&
-    capability.evaluationRoot !== null &&
-    !isSafeRepositoryPath(capability.evaluationRoot)
-  ) {
-    issues.push(
-      `record.capabilities[${index}].evaluationRoot must be null or a safe ` +
-        'repository-relative path',
-    );
-  }
-  if (
-    !Array.isArray(capability.contractPaths) ||
-    capability.contractPaths.some((contractPath) => !isSafeRepositoryPath(contractPath))
-  ) {
-    issues.push(
-      `record.capabilities[${index}].contractPaths must contain safe repository-relative paths`,
-    );
-  }
-  if (capability.skillEntry !== `${capability.skillRoot}/SKILL.md`) {
-    issues.push(
-      `record.capabilities[${index}].skillEntry must be the SKILL.md entry inside its skillRoot`,
-    );
-  }
-  if (
-    ['root', 'entry', 'testRoot', 'navigationMap', 'factContracts', 'controlFlowFamilies'].some(
-      (field) => field in capability,
-    )
-  ) {
-    issues.push(
-      `record.capabilities[${index}] guidance capability must not declare code-only fields`,
-    );
-  }
 }
 
 function validateFacts(issues, facts) {
@@ -426,20 +255,6 @@ function validateTextArray(issues, value, name) {
   }
 }
 
-export function isSafeRepositoryPath(value) {
-  if (typeof value !== 'string' || value === '' || value.includes('\\') || value.includes('\0')) {
-    return false;
-  }
-  if (
-    value.startsWith('/') ||
-    value.endsWith('/') ||
-    value.split('/').some((part) => part === '' || part === '.' || part === '..')
-  ) {
-    return false;
-  }
-  return true;
-}
-
 function requireText(issues, value, name) {
   if (typeof value !== 'string' || value.trim() === '') {
     issues.push(`${name} must be a non-empty string`);
@@ -448,11 +263,6 @@ function requireText(issues, value, name) {
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(value, expectedKeys) {
-  const keys = Object.keys(value);
-  return keys.length === expectedKeys.length && expectedKeys.every((key) => keys.includes(key));
 }
 
 function toError(value) {

@@ -33,7 +33,6 @@ describe('repo code style authority integrity', () => {
     const agents = readRepo('AGENTS.md');
     const codeWriting = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
     const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
-    const publishing = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
     const canonicalStyle = readRepo(canonicalStylePath);
     const humanGuide = readRepo('docs/repo-human-style-guide.md');
     const slogan = 'The goal is not minimum syntax. The goal is minimum cognitive indirection.';
@@ -55,14 +54,14 @@ describe('repo code style authority integrity', () => {
       );
     }
 
-    expectAllNormalized(publishing, [
-      'Every production-affecting implementation plan must include a `Legacy baseline and exit criteria` section',
-      'Each implementation task includes a `Legacy impact` field',
-      'Complete Code and Legacy Review',
-      'Production code is the primary design artifact; tests are secondary evidence',
-      'Tests may prove approved compatibility behavior, but they never authorize an implicit legacy path or make a plan complete',
-      'Newly discovered in-scope legacy is added to the active plan rather than deferred through an issue',
-      'Unclassified legacy at completion',
+    expectAllNormalized(codeWriting, [
+      '`Legacy baseline and exit criteria`',
+      '`Legacy impact` judgment for each capability slice',
+      '`Complete Code and Legacy Review`',
+      'The adaptive plan owns when that review runs; this skill owns the code judgment',
+      '`removed`, `minimized-boundary`, `resolved`, or `retained-pending-human-approval`',
+      'Unclassified affected legacy blocks code completion',
+      'explicit human approval',
     ]);
     expectAllNormalized(canonicalStyle, [
       'Unapproved production legacy may exist only while an active plan explicitly owns its disposition',

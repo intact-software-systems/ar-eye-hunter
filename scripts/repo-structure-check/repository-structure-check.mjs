@@ -251,9 +251,11 @@ function collectDispositionFindings(input) {
 
 function toPlannedCapabilityRoots(capability) {
   if (capability.kind === 'guidance') {
-    return [capability.skillRoot, capability.contractTestRoot, capability.evaluationRoot].filter(
-      Boolean,
-    );
+    const roots = [capability.contractTestRoot, capability.evaluationRoot];
+    if (capability.guidanceRole !== 'router') {
+      roots.push(capability.skillRoot);
+    }
+    return roots.filter(Boolean);
   }
   return [capability.root, capability.testRoot].filter(Boolean);
 }

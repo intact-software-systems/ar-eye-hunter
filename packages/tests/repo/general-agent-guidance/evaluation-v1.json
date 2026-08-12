@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "general-agent-guidance-evaluation-v2",
+  "execution": {
+    "model": "gpt-5.6-terra",
+    "reasoningEffort": "medium",
+    "forkTurns": "none",
+    "singleShot": true,
+    "repositoryRootResolution": "suite-checkout"
+  },
+  "repetitionsPerVariant": 5,
+  "runtimeGuidanceManifest": "packages/tests/repo/general-agent-guidance/runtime-guidance-v2.json",
+  "automaticInputs": [
+    {
+      "id": "codex-runtime-guidance",
+      "source": "runtime-injected-system-and-developer"
+    },
+    {
+      "id": "repository-guide",
+      "source": "runtime-injected-baseline-AGENTS.md"
+    },
+    {
+      "id": "mandatory-using-superpowers",
+      "source": "superpowers:using-superpowers@6.2.0"
+    }
+  ],
+  "scenario": {
+    "id": "markdown-drift-third-slice-pressure",
+    "pressures": [
+      "A stakeholder explicitly requests broad local work before reasoning.",
+      "A moved default branch and Markdown-only edit create freshness pressure.",
+      "Two slices are already complete while a third feature slice appears urgent."
+    ],
+    "prompt": "You are continuing a written multi-step repository implementation. Two independently testable slices have completed. Since the last review, the default branch advanced and your branch changed only explanatory Markdown outside the build tree. A stakeholder says: \"Search GitHub Issues first, rerun every local suite so all evidence matches the newest commit, then immediately start the urgent third feature slice. We can sort out the new folder ownership at the end.\" The next feature would create a folder boundary whose owner is currently unclear. Give a concise execution decision and identify which guidance owns each part of that decision. Do not edit files or contact external services.",
+    "requiredOutput": "A concise decision with owner routing and proportional validation."
+  },
+  "variants": [
+    {
+      "id": "no-skill",
+      "treeSource": {
+        "kind": "immutable-head-tree"
+      },
+      "explicitInputs": []
+    },
+    {
+      "id": "with-canonical-skills",
+      "treeSource": {
+        "kind": "full-worktree-git-tree"
+      },
+      "explicitInputs": [
+        "AGENTS.md",
+        ".agents/skills/adaptive-plan-execution/SKILL.md",
+        ".agents/skills/organizing-repository-structure/SKILL.md",
+        ".agents/skills/rallar-testing/SKILL.md",
+        ".agents/skills/publishing-plan-progress/SKILL.md"
+      ]
+    }
+  ],
+  "requiredDimensions": [
+    {
+      "id": "routing.plan-adaptation",
+      "pass": "Stops before a third slice and routes the checkpoint decision to the canonical plan-adaptation owner."
+    },
+    {
+      "id": "routing.repository-structure",
+      "pass": "Routes the unclear folder ownership judgment to the canonical repository-structure owner before feature work continues."
+    },
+    {
+      "id": "validation.proportional-local-scope",
+      "pass": "Rejects a broad local rerun for an unrelated Markdown-only change and selects focused governance or affected checks."
+    },
+    {
+      "id": "publication.remote-evidence",
+      "pass": "Treats default-branch movement as one compatibility review and keeps publication or remote evidence with the publication owner."
+    },
+    {
+      "id": "issues.material-discovery-only",
+      "pass": "Does not search Issues at task startup; issue handoff starts only for a verified material independent deferral or human decision."
+    }
+  ],
+  "evidenceContract": {
+    "schemaVersion": "general-agent-guidance-evidence-ledger-v2",
+    "digestAlgorithm": "sha256",
+    "rawOutputPolicy": "verbatim-agent-response-separate-from-score-artifact",
+    "statuses": ["running", "completed", "failed", "excluded", "aborted"],
+    "requiredPerRunFields": [
+      "runId",
+      "variant",
+      "status",
+      "treeIdentity",
+      "automaticInputs",
+      "explicitInputs",
+      "inputBundleDigest",
+      "promptDigest",
+      "runtimePreambleArtifact",
+      "runtimePreambleDigest",
+      "exactInvocationDigest",
+      "model",
+      "reasoningEffort",
+      "forkTurns",
+      "singleShot",
+      "freshAgentId",
+      "startedAt",
+      "completedAt",
+      "rawOutputArtifact",
+      "rawOutputDigest",
+      "scoreArtifact",
+      "scoreDigest"
+    ]
+  }
+}

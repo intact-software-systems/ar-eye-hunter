@@ -255,14 +255,14 @@ describe('authoritative mutation guidance integrity', () => {
     const progress = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
 
     expectAllNormalized(progress, [
-      'more than 100 changed files',
-      'more than 10,000 changed lines',
-      'more than 20 changed production modules',
-      'more than three materially different control-flow families',
+      '100 changed files',
+      '10,000 changed lines',
+      '20 production modules',
+      'three materially different control-flow families',
       'stacked-versus-single decision',
       'one-screen read-first map',
-      'current head/tree/workflow evidence',
-      'stale evidence blocks completion',
+      'build-affecting tree digest',
+      'unverifiable required publication evidence keeps publication incomplete',
     ]);
   });
 
