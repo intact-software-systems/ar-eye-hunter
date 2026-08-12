@@ -215,7 +215,8 @@ observable-behavior work.
 Use this size and cohesion review sequence:
 
 1. Summarize the file responsibility in one sentence.
-2. Apply the numeric tier from the authoritative standard.
+2. Apply the cognitive-load tier, responsibility threshold, and navigation
+   backstop from the authoritative standard.
 3. Inspect the eight qualitative cohesion signals.
 4. Identify real responsibility boundaries before proposing extraction.
 5. Check whether an exception applies and is approved.
@@ -439,10 +440,13 @@ understood. The merge-base feature-branch gate below is active.
 
 The full-repository scan remains warning-only so legacy debt does not block
 unrelated work. Feature branches run a separate comparison against their merge
-base and fail only for new or worsened findings. For file length, worsened
-means crossing a size tier (400/500/800) or same-tier growth of more than
-max(10% of the merge-base length, 25 physical lines); every other rule treats
-any magnitude growth as worsened:
+base and fail only for new or worsened findings. For the file metrics —
+`file.cognitive-load` (tiers 50/110/330), `file.responsibility-count`
+(threshold 12 runtime value exports), and the `file.length` navigation backstop
+(1,200 physical lines after the data-literal discount) — worsened means
+crossing a metric tier or same-tier growth of more than max(10% of the
+merge-base magnitude, 25 units); every other rule treats any magnitude growth
+as worsened:
 
 ```bash
 npm run check:repo-style:changed -- origin/main

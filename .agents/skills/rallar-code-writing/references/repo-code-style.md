@@ -121,8 +121,9 @@ active plan and cannot be deferred through an issue to complete the plan.
   repository-wide cleanup.
 - The manual review gate is active now. The full-repository checker remains warning-only while legacy debt remains.
   No global strict checker mode is available. Feature-branch CI blocks only new or worsened findings against the merge
-  base. For file length, worsened means crossing a size tier (400/500/800) or same-tier growth of more than
-  max(10% of the merge-base length, 25 physical lines); every other rule treats any magnitude growth as worsened.
+  base. For the file metrics — `file.cognitive-load`, `file.responsibility-count`, and the `file.length` navigation
+  backstop — worsened means crossing a metric tier or same-tier growth of more than
+  max(10% of the merge-base magnitude, 25 units); every other rule treats any magnitude growth as worsened.
 - Tests, mocks, stories, fixtures, and generated artifacts are excluded from the default production-code checker, but
   not from the human-readable standard.
 - A deliberate exception requires explicit human approval and a short rationale in the task handoff. Existing violations
@@ -267,18 +268,33 @@ consumers use the intentional package entry point.
 ## File size and complexity
 
 A file owns one coherent responsibility that a developer can summarize in one
-sentence. Count all physical lines, including blank lines and comments, when
-applying these tiers:
+sentence. File density is measured by cognitive load — the checker's Sonar-style
+cognitive-complexity sum over the whole file (`file.cognitive-load`) — because
+decision density, not line count, is what makes a file hard to hold in your
+head:
 
-- `<=400` physical lines: normal target;
-- `401-500` physical lines: cohesion warning;
-- `501-800` physical lines: required separation review;
-- `>800` physical lines: refactor or record an approved persistent exception in
+- cognitive load `<50`: normal target;
+- cognitive load `50-109`: cohesion warning;
+- cognitive load `110-329`: required separation review;
+- cognitive load `>=330`: refactor or record an approved persistent exception in
   [the repo code-style exception registry](../../../../docs/repo-code-style-exceptions.md).
 
-An existing TypeScript file above 400 lines must not grow without explicit human
-approval. When a change materially touches more than one responsibility, split
-it along those responsibilities as part of the change.
+The tiers are calibrated on the production corpus (p85/p95/p99 of 1,676
+production files). A file exporting `>=12` runtime values
+(`file.responsibility-count`) prompts the same split review: many independent
+value exports usually mean many independent reasons to change.
+
+Physical length remains only as a navigation backstop (`file.length`): after
+subtracting data-literal lines — behavior-free object and array literals
+spanning three or more lines — a file stays at or under `1,200` physical lines,
+or is refactored or recorded as an approved persistent exception. The computed
+data-literal discount replaces registry entries for declarative files: large
+schema, manifest, and lookup data needs no exception while the code around it
+stays navigable.
+
+An existing file already inside a warning tier must not worsen its tier without
+explicit human approval. When a change materially touches more than one
+responsibility, split it along those responsibilities as part of the change.
 
 For a general function, count from its declaration through its closing brace,
 including blank lines and comments:
@@ -319,8 +335,9 @@ outside human-authored size enforcement.
 Materially touched means behavior, contracts, control flow, state, lifecycle,
 structure, or responsibility changed. Import-only, formatting-only, typo, and
 path-only changes do not trigger exception registration. When a materially
-touched `>800`-line file or `>60`-line function remains above its threshold,
-record the approved exception in
+touched file remains at or above cognitive load `330` or above the `1,200`-line
+navigation backstop, or a materially touched `>60`-line function remains above
+its threshold, record the approved exception in
 [the registry](../../../../docs/repo-code-style-exceptions.md). Do not put size
 justifications in source comments.
 

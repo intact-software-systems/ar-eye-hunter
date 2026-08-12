@@ -201,15 +201,19 @@ describe('repo code style authority integrity', () => {
     expect(factoryExample).not.toContain('Manager');
   });
 
-  it('applies the human file-size threshold to every TypeScript surface', () => {
+  it('applies the human file-density thresholds to every TypeScript surface', () => {
     const canonicalStyle = readRepo(canonicalStylePath);
 
     expectAll(canonicalStyle, [
       'A file owns one coherent responsibility',
-      '`<=400` physical lines: normal target',
-      '`401-500` physical lines: cohesion warning',
-      '`501-800` physical lines: required separation review',
-      '`>800` physical lines: refactor or record an approved persistent exception',
+      'cognitive load `<50`: normal target',
+      'cognitive load `50-109`: cohesion warning',
+      'cognitive load `110-329`: required separation review',
+      'cognitive load `>=330`: refactor or record an approved persistent exception',
+      '`>=12` runtime values',
+      'navigation backstop (`file.length`)',
+      'at or under `1,200` physical lines',
+      'data-literal discount replaces registry entries for declarative files',
       '`<=40` physical lines: normal target',
       '`41-49` physical lines: warning',
       '`50-60` physical lines: required separation review',
@@ -217,6 +221,8 @@ describe('repo code style authority integrity', () => {
       'Route handlers retain the stricter `<=30`-line target',
     ]);
     expect(canonicalStyle).not.toContain('production-file review threshold');
+    expect(canonicalStyle).not.toContain('`401-500` physical lines');
+    expect(canonicalStyle).not.toContain('`>800` physical lines');
   });
 
   it('defines qualitative cohesion review before any size-driven extraction', () => {
@@ -237,7 +243,7 @@ describe('repo code style authority integrity', () => {
     ]);
     expectAll(humanGuide, [
       'Summarize the file responsibility in one sentence',
-      'Apply the numeric tier',
+      'Apply the cognitive-load tier, responsibility threshold, and navigation backstop',
       'Inspect the eight qualitative cohesion signals',
       'Identify real responsibility boundaries before proposing extraction',
       'Check whether an exception applies and is approved',

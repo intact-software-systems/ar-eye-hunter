@@ -104,7 +104,7 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
-  it('does not enforce warning-only cognitive metrics in the changed gate', () => {
+  it('fails when a change introduces a cognitive-load finding', () => {
     const fixture = createGitFixture({
       'apps/example/decision-dense.ts': 'export const placeholderValue = 0;\n',
     });
@@ -113,7 +113,82 @@ describe('changed repository style checker', () => {
 
     const result = runChangedChecker(fixture);
 
-    expect(result.status).toBe(0);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('file.cognitive-load');
+  });
+
+  it('tolerates same-tier cognitive growth inside the band', () => {
+    const fixture = createGitFixture({
+      'apps/example/decision-dense.ts': decisionDenseSource(60),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/decision-dense.ts', decisionDenseSource(70));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('PASS: no new repository style findings');
+  });
+
+  it('fails when same-tier cognitive growth exceeds the tolerance band', () => {
+    const fixture = createGitFixture({
+      'apps/example/decision-dense.ts': decisionDenseSource(60),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/decision-dense.ts', decisionDenseSource(90));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(1);
+    expect(result.stdout).toContain('file.cognitive-load');
+  });
+
+  it('fails when tolerated cognitive growth crosses a tier', () => {
+    const fixture = createGitFixture({
+      'apps/example/decision-dense.ts': decisionDenseSource(100),
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/decision-dense.ts', decisionDenseSource(115));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(1);
+    expect(result.stdout).toContain('file.cognitive-load');
+  });
+
+  it('fails a new responsibility finding and tolerates in-band export growth', () => {
+    const crossing = createGitFixture({
+      'apps/example/wide-surface.ts': valueExportSource(11),
+    });
+    commitAll(crossing, 'base');
+    writeFixture(crossing, 'apps/example/wide-surface.ts', valueExportSource(12));
+
+    const crossingResult = runChangedChecker(crossing);
+
+    expect(crossingResult.status, crossingResult.stdout).toBe(1);
+    expect(crossingResult.stdout).toContain('file.responsibility-count');
+
+    const growing = createGitFixture({
+      'apps/example/wide-surface.ts': valueExportSource(12),
+    });
+    commitAll(growing, 'base');
+    writeFixture(growing, 'apps/example/wide-surface.ts', valueExportSource(13));
+
+    const growingResult = runChangedChecker(growing);
+
+    expect(growingResult.status, growingResult.stdout).toBe(0);
+  });
+
+  it('discounts behavior-free data literals before the navigation backstop', () => {
+    const fixture = createGitFixture({
+      'apps/example/navigation-table.ts': 'export const placeholderValue = 0;\n',
+    });
+    commitAll(fixture, 'base');
+    writeFixture(fixture, 'apps/example/navigation-table.ts', dataLiteralSource(1400));
+
+    const result = runChangedChecker(fixture);
+
+    expect(result.status, result.stdout).toBe(0);
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
@@ -131,12 +206,12 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('Line 1 exceeds 100 chars');
   });
 
-  it('tolerates small same-tier growth of an over-limit file', () => {
+  it('tolerates in-band growth of a file over the navigation backstop', () => {
     const fixture = createGitFixture({
-      'apps/example/legacy-large.ts': linesSource(600),
+      'apps/example/legacy-large.ts': linesSource(1300),
     });
     commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(618));
+    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(1400));
 
     const result = runChangedChecker(fixture);
 
@@ -144,12 +219,12 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
-  it('fails when same-tier growth exceeds the tolerance band', () => {
+  it('fails when backstop growth exceeds the tolerance band', () => {
     const fixture = createGitFixture({
-      'apps/example/legacy-large.ts': linesSource(600),
+      'apps/example/legacy-large.ts': linesSource(1300),
     });
     commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(700));
+    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(1450));
 
     const result = runChangedChecker(fixture);
 
@@ -157,25 +232,12 @@ describe('changed repository style checker', () => {
     expect(result.stdout).toContain('file.length');
   });
 
-  it('fails when tolerated-size growth crosses a file-size tier', () => {
+  it('fails when a file crosses the navigation backstop within the growth band', () => {
     const fixture = createGitFixture({
-      'apps/example/legacy-large.ts': linesSource(495),
+      'apps/example/growing-file.ts': linesSource(1150),
     });
     commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/legacy-large.ts', linesSource(507));
-
-    const result = runChangedChecker(fixture);
-
-    expect(result.status, result.stdout).toBe(1);
-    expect(result.stdout).toContain('file.length');
-  });
-
-  it('fails when a compliant file grows past the 400-line limit within the band', () => {
-    const fixture = createGitFixture({
-      'apps/example/growing-file.ts': linesSource(395),
-    });
-    commitAll(fixture, 'base');
-    writeFixture(fixture, 'apps/example/growing-file.ts', linesSource(410));
+    writeFixture(fixture, 'apps/example/growing-file.ts', linesSource(1210));
 
     const result = runChangedChecker(fixture);
 
@@ -401,6 +463,21 @@ function decisionDenseSource(decisionCount: number): string {
 
 function overlongSource(label: string): string {
   return `const value = '${label}${'x'.repeat(110)}';\n`;
+}
+
+function valueExportSource(valueCount: number): string {
+  return Array.from(
+    { length: valueCount },
+    (_, index) => `export const surfaceValue${index} = ${index};`,
+  ).join('\n');
+}
+
+function dataLiteralSource(rowCount: number): string {
+  return [
+    'export const navigationTable = [',
+    ...Array.from({ length: rowCount }, (_, index) => `  'navigation-row-${index}',`),
+    '];',
+  ].join('\n');
 }
 
 function linesSource(lineCount: number): string {

@@ -1,5 +1,7 @@
 const magnitudePatternsByRule = {
   'file.length': /File length (\d+)/u,
+  'file.cognitive-load': /File cognitive load (\d+)/u,
+  'file.responsibility-count': /File exports (\d+) runtime values/u,
   'line.width': /(?:actual |\.\.\. and )(\d+)/u,
   'route.handler-length': /has (\d+) lines/u,
   'route.handler-complexity': /complexity (\d+)/u,
@@ -9,9 +11,18 @@ const magnitudePatternsByRule = {
   'layout.feature-prefix-cluster': /appears in (\d+) direct files/u,
 };
 
-const fileLengthTierUpperBounds = [400, 500, 800];
-const fileLengthGrowthToleranceFraction = 0.1;
-const fileLengthGrowthToleranceMinimumLines = 25;
+// The file metrics fail only on tier crossing or same-tier growth beyond
+// max(10% of the merge-base magnitude, 25 units); every other rule treats any
+// magnitude growth as worsened. Tier bounds are the last magnitude inside each
+// tier: cognitive load 50/110/330, responsibility 12, and the 1,200-line
+// navigation backstop (its findings all share one tier, so only growth applies).
+const toleranceTierUpperBoundsByRule = {
+  'file.length': [1200],
+  'file.cognitive-load': [49, 109, 329],
+  'file.responsibility-count': [11],
+};
+const growthToleranceFraction = 0.1;
+const growthToleranceMinimumUnits = 25;
 
 export function findingMagnitude(finding) {
   const match = magnitudePatternsByRule[finding.ruleId]?.exec(finding.message);
@@ -25,22 +36,23 @@ export function compareFindingMagnitudeDescending(left, right) {
   return findingMagnitude(right) - findingMagnitude(left);
 }
 
-// file.length worsening means crossing a size tier (400/500/800) or same-tier
-// growth beyond max(10% of base, 25 lines); every other rule treats any
-// magnitude growth as worsened.
 export function matchesBaseMagnitude(ruleId, baseMagnitude, targetMagnitude) {
   if (baseMagnitude >= targetMagnitude) {
     return true;
   }
-  if (ruleId !== 'file.length') {
+  const tierUpperBounds = toleranceTierUpperBoundsByRule[ruleId];
+  if (tierUpperBounds === undefined) {
     return false;
   }
-  if (toFileLengthTier(targetMagnitude) !== toFileLengthTier(baseMagnitude)) {
+  if (
+    resolveToleranceTier(tierUpperBounds, targetMagnitude) !==
+    resolveToleranceTier(tierUpperBounds, baseMagnitude)
+  ) {
     return false;
   }
   const toleratedGrowth = Math.max(
-    fileLengthGrowthToleranceFraction * baseMagnitude,
-    fileLengthGrowthToleranceMinimumLines,
+    growthToleranceFraction * baseMagnitude,
+    growthToleranceMinimumUnits,
   );
   return targetMagnitude - baseMagnitude <= toleratedGrowth;
 }
@@ -59,7 +71,7 @@ export function boundaryUnknownMagnitude(finding) {
   return /^\d+$/u.test(magnitude) ? Number(magnitude) : 1;
 }
 
-function toFileLengthTier(magnitude) {
-  const tierIndex = fileLengthTierUpperBounds.findIndex((upperBound) => magnitude <= upperBound);
-  return tierIndex < 0 ? fileLengthTierUpperBounds.length : tierIndex;
+function resolveToleranceTier(tierUpperBounds, magnitude) {
+  const tierIndex = tierUpperBounds.findIndex((upperBound) => magnitude <= upperBound);
+  return tierIndex < 0 ? tierUpperBounds.length : tierIndex;
 }

@@ -205,9 +205,11 @@ Highest-frequency rules:
 - **No role folders** — no repo- or package-wide `types/`, `interfaces/`, `helpers/`, `utils/`,
   `factories/`, `translators/`. Organize by owned feature; a private one-use contract stays beside
   its behavior. `mod.ts` is a package compatibility boundary; don't add nested barrels.
-- **Sizes**: files ≤400 lines (>800 needs a registered exception in
-  `docs/repo-code-style-exceptions.md`); functions ≤40 lines (>60 needs an exception); route
-  handlers ≤30 lines and cyclomatic complexity ≤8. Split route modules as `*-read.ts`, `*-write.ts`,
+- **Sizes**: file density is governed by cognitive load — warn ≥50, required review ≥110, ≥330
+  needs a registered exception in `docs/repo-code-style-exceptions.md`; ≥12 runtime value exports
+  prompts the same split review; physical length is only a 1,200-line navigation backstop after
+  the data-literal discount. Functions ≤40 lines (>60 needs an exception); route handlers ≤30
+  lines and cyclomatic complexity ≤8. Split route modules as `*-read.ts`, `*-write.ts`,
   `*-admin.ts`, `*-errors.ts`.
 - **Expected failure is a value, not an exception.** Use `Either` from
   `packages/shared/resilience/Either.ts` (`Either.ofLeft` / `Either.ofRight`). Do not throw for

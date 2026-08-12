@@ -27,9 +27,10 @@ const scanOptions = Object.freeze({
   constructionDetails: false,
   outputContracts: true,
   objectInterfaces: true,
-  // Phase-2 cognitive metrics stay warning-only: the changed-findings gate
-  // does not fail on them until the planned gate flip enables this option.
-  cognitiveMetrics: false,
+  // Gate flip: the cognitive metrics are the failing signal, with the
+  // tolerance bands owned by finding-magnitude.mjs; file.length remains only
+  // as the 1,200-line navigation backstop after the data-literal discount.
+  cognitiveMetrics: true,
 });
 
 async function main() {
