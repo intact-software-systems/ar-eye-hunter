@@ -68,6 +68,7 @@ const generatedFilePattern = /(?:\.generated|\.gen|\.pb)(?:\.d)?\.[cm]?(?:t|j)sx
 export function readRepositoryFiles(repoRoot, base) {
   const mergeBase = runGit(repoRoot, ['merge-base', base, 'HEAD']).trim();
   const targetFiles = collectTargetFiles(repoRoot);
+  const targetRepositoryFiles = collectTargetRepositoryFiles(repoRoot);
   const baseFiles = runGit(repoRoot, ['ls-tree', '-rz', '--name-only', mergeBase])
     .split('\0')
     .filter((file) => isAuthoredCodePath(file));
@@ -75,11 +76,33 @@ export function readRepositoryFiles(repoRoot, base) {
   return {
     mergeBase,
     targetFiles,
+    targetRepositoryFiles,
     baseFiles,
     changes,
     readTargetFile: (file) => readFileSync(path.join(repoRoot, file), 'utf8'),
     readBaseFile: (file) => readGitFile(repoRoot, mergeBase, file),
   };
+}
+
+function collectTargetRepositoryFiles(repoRoot) {
+  return runGit(repoRoot, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'])
+    .split('\0')
+    .filter(Boolean)
+    .filter((file) => isReadableRegularFile(path.join(repoRoot, file)))
+    .sort(compareCodeUnits);
+}
+
+function isReadableRegularFile(absolutePath) {
+  let stat;
+  try {
+    stat = lstatSync(absolutePath);
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+  return stat.isFile() && (stat.mode & 0o444) !== 0;
 }
 
 export function isAuthoredCodePath(file) {
@@ -153,18 +176,18 @@ function readChanges(repoRoot, mergeBase) {
             target: kind === 'D' ? undefined : firstPath,
           }
         : { kind, source: firstPath, target: secondPath };
-    trackedChanges.push({
-      ...change,
-      material: isMaterialChange(repoRoot, mergeBase, change),
-    });
+    trackedChanges.push(change);
   }
   const untrackedChanges = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'])
     .split('\0')
     .filter(Boolean)
     .map((target) => ({ kind: 'A', source: undefined, target, material: true }));
-  return [...trackedChanges, ...untrackedChanges].filter((change) =>
-    [change.source, change.target].filter(Boolean).some(isAuthoredCodePath),
-  );
+  return [...trackedChanges, ...untrackedChanges]
+    .filter((change) => [change.source, change.target].filter(Boolean).some(isAuthoredCodePath))
+    .map((change) => ({
+      ...change,
+      material: change.material ?? isMaterialChange(repoRoot, mergeBase, change),
+    }));
 }
 
 function isMaterialChange(repoRoot, mergeBase, change) {

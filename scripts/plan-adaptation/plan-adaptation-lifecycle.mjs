@@ -36,7 +36,13 @@ export function completeAdaptivePlanSlice(input) {
   if (plan.record.completedSlicesSinceCheckpoint.includes(input.slice)) {
     throw new Error(`slice ${input.slice} is already complete since the prior checkpoint`);
   }
+  if (!plan.record.checkpoint.nextSlices.includes(input.slice)) {
+    throw new Error(`slice ${input.slice} is not in the current horizon`);
+  }
   plan.record.completedSlicesSinceCheckpoint.push(input.slice);
+  plan.record.checkpoint.nextSlices = plan.record.checkpoint.nextSlices.filter(
+    (slice) => slice !== input.slice,
+  );
   plan.record.facts = readCurrentFacts(input, plan.record);
   writePlanAndRegistry({ input, markdown: plan.markdown, record: plan.record });
 }

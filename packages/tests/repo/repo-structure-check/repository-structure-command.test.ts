@@ -1,16 +1,76 @@
+import { chmodSync, rmSync, symlinkSync } from 'node:fs';
+import path from 'node:path';
+
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   cleanupRepositoryFixtures,
+  createRecord,
   createRepositoryFixture,
+  fixtureScripts,
   runChecker,
   runGit,
   writeFixture,
+  writePlanRecord,
 } from './repository-structure-command-fixture.ts';
 
 afterEach(cleanupRepositoryFixtures);
 
 describe('repository structure command', () => {
+  it('validates a live guidance capability without treating Markdown or JSON as code', () => {
+    const fixture = createGuidanceRepositoryFixture();
+    writeGuidancePlanRecord(fixture.root);
+
+    const result = runChecker(fixture);
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+  });
+
+  it('ignores unrelated deleted, unreadable, and symlink repository inventory entries', () => {
+    const fixture = createGuidanceRepositoryFixture({
+      'notes/tracked-deleted.md': 'delete me\n',
+    });
+    rmSync(path.join(fixture.root, 'notes/tracked-deleted.md'));
+    writeFixture(fixture.root, 'notes/unreadable.md', 'unreadable\n');
+    chmodSync(path.join(fixture.root, 'notes/unreadable.md'), 0o000);
+    writeFixture(fixture.root, 'notes/symlink-target.md', 'target\n');
+    symlinkSync('symlink-target.md', path.join(fixture.root, 'notes/unrelated-link.md'));
+    writeGuidancePlanRecord(fixture.root);
+
+    const result = runChecker(fixture);
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+  });
+
+  it('does not accept a guidance symlink or unreadable evaluation as declaration evidence', () => {
+    const fixture = createGuidanceRepositoryFixture({
+      '.agents/evaluations/adaptive-agent-execution/v1/scenarios.json': '',
+    });
+    const skillEntry = path.join(fixture.root, '.agents/skills/adaptive-plan-execution/SKILL.md');
+    rmSync(skillEntry);
+    symlinkSync('../../../notes/missing-skill.md', skillEntry);
+    chmodSync(
+      path.join(fixture.root, '.agents/evaluations/adaptive-agent-execution/v1/rubric.json'),
+      0o000,
+    );
+    rmSync(
+      path.join(fixture.root, '.agents/evaluations/adaptive-agent-execution/v1/scenarios.json'),
+    );
+    writeGuidancePlanRecord(fixture.root);
+
+    const result = runChecker(fixture);
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(1);
+    expect(result.stdout).toContain(
+      'adaptive plan execution guidance skill entry ' +
+        '.agents/skills/adaptive-plan-execution/SKILL.md does not resolve',
+    );
+    expect(result.stdout).toContain(
+      'adaptive plan execution guidance evaluation root ' +
+        '.agents/evaluations/adaptive-agent-execution/v1 contains no repository files',
+    );
+  });
+
   it('rejects a new authored-code subtree with one code descendant', () => {
     const fixture = createRepositoryFixture();
     writeFixture(fixture.root, 'apps/new-feature/only-module.ts', 'export const value = true;\n');
@@ -202,3 +262,37 @@ describe('repository structure command', () => {
     );
   });
 });
+
+function createGuidanceRepositoryFixture(extraFiles: Record<string, string> = {}) {
+  return createRepositoryFixture({
+    'package.json': JSON.stringify({
+      scripts: {
+        ...fixtureScripts(),
+        'test:adaptive-plan-execution': 'vitest run packages/tests/repo/adaptive-agent-execution',
+      },
+    }),
+    '.agents/skills/adaptive-plan-execution/SKILL.md': '# Adaptive Plan Execution\n',
+    '.agents/skills/adaptive-plan-execution/agents/openai.yaml': 'interface: {}\n',
+    '.agents/evaluations/adaptive-agent-execution/v1/rubric.json': '{}\n',
+    '.agents/evaluations/adaptive-agent-execution/v1/scenarios.json': '{}\n',
+    'packages/tests/repo/adaptive-agent-execution/first.test.ts': 'export {};\n',
+    'packages/tests/repo/adaptive-agent-execution/second.test.ts': 'export {};\n',
+    'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts': 'export {};\n',
+    ...extraFiles,
+  });
+}
+
+function writeGuidancePlanRecord(root: string): void {
+  const record = createRecord();
+  record.capabilities.push({
+    kind: 'guidance',
+    owner: 'adaptive plan execution guidance',
+    skillRoot: '.agents/skills/adaptive-plan-execution',
+    skillEntry: '.agents/skills/adaptive-plan-execution/SKILL.md',
+    contractTestRoot: 'packages/tests/repo/adaptive-agent-execution',
+    focusedCommand: 'npm run test:adaptive-plan-execution',
+    evaluationRoot: '.agents/evaluations/adaptive-agent-execution/v1',
+    contractPaths: ['packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts'],
+  });
+  writePlanRecord(root, record);
+}

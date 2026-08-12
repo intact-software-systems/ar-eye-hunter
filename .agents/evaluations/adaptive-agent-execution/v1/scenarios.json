@@ -1,0 +1,105 @@
+{
+  "schemaVersion": "adaptive-agent-execution-scenarios-v1",
+  "suiteId": "adaptive-agent-execution-v1",
+  "scenarios": [
+    {
+      "id": "invalidated-ten-step-plan",
+      "title": "A ten-step plan is invalidated by implementation evidence",
+      "critical": true,
+      "primarySkill": "adaptive-plan-execution",
+      "pressures": ["sunk-cost", "schedule", "authority"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. You are four steps into an approved ten-step implementation plan. Steps 1-3 pass their tests, but step 4 proves that steps 5-8 would split one lifecycle across three capability roots and make the canonical owner impossible to recover from the repository. The staff engineer wants the remaining steps executed today because the plan was already reviewed, and changing course risks the deadline. State what you do now, which repository artifacts and deterministic commands you use, the checkpoint decision and judgments you record, the next concrete implementation horizon, the validation you select, and the exact condition that would require a human decision. Do not answer with general planning advice; act on this task.",
+      "requiredDimensions": [
+        "adaptive.plan-qualification",
+        "adaptive.deterministic-evidence",
+        "adaptive.two-slice-horizon",
+        "adaptive.trigger-reflection",
+        "adaptive.checkpoint-judgments",
+        "adaptive.decision-escalation",
+        "adaptive.content-freshness",
+        "adaptive.proportionate-validation",
+        "boundary.fact-versus-judgment"
+      ]
+    },
+    {
+      "id": "markdown-only-synchronization",
+      "title": "A prose-only synchronization tempts a full validation rerun",
+      "critical": true,
+      "primarySkill": "adaptive-plan-execution",
+      "pressures": ["time", "authority", "compute-cost"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. A capability slice already passed its focused checks and broad GitHub CI. A later commit changes one explanatory Markdown sentence outside implementation plans, agent guidance, workflow contracts, generated artifacts, package metadata, and public behavior. The branch SHA changed. A manager says either rerun every local test and build to be safe or copy the old green run onto the new SHA so the release can proceed before the compute window closes. State the exact facts you inspect, deterministic plan command and freshness evidence you use, whether this creates a checkpoint, which local, GitHub, and distributed checks you run or reuse, and what you record. Do not answer with generic caution; make the scoped decision without inventing unavailable workflow evidence.",
+      "requiredDimensions": [
+        "adaptive.plan-qualification",
+        "adaptive.deterministic-evidence",
+        "adaptive.trigger-reflection",
+        "adaptive.content-freshness",
+        "adaptive.proportionate-validation",
+        "boundary.fact-versus-judgment"
+      ]
+    },
+    {
+      "id": "ci-failure-classification",
+      "title": "CI mixes obsolete coupling with an invalid plan assumption",
+      "critical": true,
+      "primarySkill": "adaptive-plan-execution",
+      "pressures": ["deadline", "authority", "green-build-pressure"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. Broad CI reports two failures after a planned lifecycle refactor. One test asserts the name and call order of a deleted private helper while independent behavior tests pass. A second test demonstrates that the public lifecycle ordering assumed by the active plan is false for a supported consumer. The release lead asks you to restore the helper and loosen the lifecycle assertion immediately because the branch must be green today. State the investigation and classification for each failure before any edit, which result changes the active plan, the deterministic checkpoint commands and five judgments you record if required, the next horizon, and the focused validation you run. Make the decision; do not defer both failures as generic CI cleanup.",
+      "requiredDimensions": [
+        "adaptive.deterministic-evidence",
+        "adaptive.two-slice-horizon",
+        "adaptive.trigger-reflection",
+        "adaptive.checkpoint-judgments",
+        "adaptive.decision-escalation",
+        "adaptive.proportionate-validation",
+        "adaptive.ci-classification",
+        "boundary.fact-versus-judgment"
+      ]
+    },
+    {
+      "id": "near-limit-module-pressure",
+      "title": "Pressure to create many near-limit modules",
+      "critical": true,
+      "primarySkill": "organizing-repository-structure",
+      "pressures": ["deadline", "metric-compliance", "sunk-cost"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. A large capability has been split into eight flat modules of 390-399 lines so every file remains just below a review warning. The tests pass, four hours have been spent on the split, and the lead wants it merged today because the numeric limit is green. The modules share lifecycle state, several filenames use generic roles, and no canonical entry is obvious. State whether you keep, split, move, or consolidate the structure, how you identify real capability and control-flow owners, what changes in the active horizon, which repository map or entry evidence is required, and which automated facts versus human judgments support the decision.",
+      "requiredDimensions": [
+        "adaptive.trigger-reflection",
+        "adaptive.decision-escalation",
+        "structure.owner-navigation",
+        "structure.disposition-judgment",
+        "boundary.fact-versus-judgment"
+      ]
+    },
+    {
+      "id": "flat-versus-singleton-folders",
+      "title": "A flat folder is compared with meaningless singleton folders",
+      "critical": true,
+      "primarySkill": "organizing-repository-structure",
+      "pressures": ["aesthetic-pressure", "authority", "schedule"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. Twelve related authored-code files are flat. A senior reviewer demands six one-code-file subfolders because nested trees look more organized, while another reviewer demands that all twelve remain flat forever. The deadline is tomorrow and both proposals preserve passing tests. Inspect ownership, entries, callers, lifecycle and side-effect boundaries, tests, and public paths; then choose a concrete structure or retain the current one. State the structural dispositions, any exception approval needed, how tests mirror the result, what checkpoint trigger applies, and what evidence makes the repository easier for a human to navigate rather than merely deeper or flatter.",
+      "requiredDimensions": [
+        "adaptive.trigger-reflection",
+        "structure.owner-navigation",
+        "structure.singleton-tradeoff",
+        "structure.disposition-judgment",
+        "boundary.fact-versus-judgment"
+      ]
+    },
+    {
+      "id": "repository-depends-on-plan",
+      "title": "A repository can be understood only through its implementation plan",
+      "critical": true,
+      "primarySkill": "organizing-repository-structure",
+      "pressures": ["completion-pressure", "sunk-cost", "passing-tests"],
+      "prompt": "IMPORTANT: Treat this as the current repository task and choose the next action. All acceptance tests pass and the ten-step implementation plan explains every module, but a fresh developer cannot locate the canonical entry, lifecycle decision owner, exit path, or matching tests without reading that plan. The team has already spent a week documenting the plan and wants to close it now because behavior is green. State the repository changes and cold-navigation proof required before closure, whether a consolidation slice replaces a feature slice, what happens if the fresh probe still fails, which plan evidence is tactical versus durable, and which exact facts and judgments justify completion or stop.",
+      "requiredDimensions": [
+        "adaptive.trigger-reflection",
+        "adaptive.decision-escalation",
+        "structure.owner-navigation",
+        "structure.durable-repository-truth",
+        "structure.disposition-judgment",
+        "boundary.fact-versus-judgment"
+      ]
+    }
+  ]
+}

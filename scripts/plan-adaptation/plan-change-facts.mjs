@@ -43,9 +43,10 @@ export function readChangedPaths(repoRoot, base) {
   return changes.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-export function computeAffectedCodeDigest(repoRoot, base, changes) {
+export function computeAffectedCodeDigest(digestInput) {
+  const { repoRoot, changes, record } = digestInput;
   const tuples = changes
-    .flatMap((change) => toContentTuples(repoRoot, change))
+    .flatMap((change) => toContentTuples(repoRoot, change, record))
     .sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
   const hash = createHash('sha256');
   for (const tuple of tuples) {
@@ -89,17 +90,29 @@ export function computeUndeclaredChangedPaths(changes, record, planPath = '') {
   const allowedPaths = new Set([planPath, 'plans/README.md', 'package.json', '.gitignore']);
   const allowedRoots = [];
   for (const capability of record.capabilities ?? []) {
-    allowedRoots.push(capability.root, capability.testRoot);
-    allowedPaths.add(capability.entry);
-    for (const factContract of capability.factContracts ?? []) {
-      allowedPaths.add(factContract);
+    if (capability.kind === 'guidance') {
+      allowedRoots.push(
+        capability.skillRoot,
+        capability.contractTestRoot,
+        capability.evaluationRoot,
+      );
+      allowedPaths.add(capability.skillEntry);
+      for (const contractPath of capability.contractPaths ?? []) {
+        allowedPaths.add(contractPath);
+      }
+    } else {
+      allowedRoots.push(capability.root, capability.testRoot);
+      allowedPaths.add(capability.entry);
+      for (const factContract of capability.factContracts ?? []) {
+        allowedPaths.add(factContract);
+      }
     }
   }
   return allChangedPaths(changes).filter((changedPath) => {
     if (allowedPaths.has(changedPath)) {
       return false;
     }
-    return !allowedRoots.some((root) => isWithin(changedPath, root));
+    return !allowedRoots.filter(Boolean).some((root) => isWithin(changedPath, root));
   });
 }
 
@@ -137,7 +150,11 @@ export function computeCheckpointTriggers(input) {
 export function computePlanFacts(input) {
   return {
     diffBase: input.base,
-    affectedCodeDigest: computeAffectedCodeDigest(input.repoRoot, input.base, input.changes),
+    affectedCodeDigest: computeAffectedCodeDigest({
+      repoRoot: input.repoRoot,
+      changes: input.changes,
+      record: input.record,
+    }),
     computedTriggers: computeCheckpointTriggers(input),
     undeclaredChangedPaths: computeUndeclaredChangedPaths(
       input.changes,
@@ -147,12 +164,12 @@ export function computePlanFacts(input) {
   };
 }
 
-function toContentTuples(repoRoot, change) {
+function toContentTuples(repoRoot, change, record) {
   const tuples = [];
-  if (change.oldPath && isAffectedCodePath(change.oldPath)) {
+  if (change.oldPath && isAffectedCodePath(change.oldPath, record)) {
     tuples.push({ path: change.oldPath, mode: '000000', content: Buffer.alloc(0) });
   }
-  if (!isAffectedCodePath(change.path)) {
+  if (!isAffectedCodePath(change.path, record)) {
     return tuples;
   }
   if (change.status.startsWith('D')) {
@@ -232,8 +249,29 @@ function isProductionModule(changedPath) {
   return !changedPath.includes('/tests/') && !/\.(?:spec|test)\.[^.]+$/u.test(changedPath);
 }
 
-function isAffectedCodePath(changedPath) {
-  return isProductionModule(changedPath) || /(?:^|\/)package\.json$/u.test(changedPath);
+function isAffectedCodePath(changedPath, record) {
+  return (
+    isProductionModule(changedPath) ||
+    /(?:^|\/)package\.json$/u.test(changedPath) ||
+    (record?.capabilities ?? []).some(
+      (capability) =>
+        capability.kind === 'guidance' && isGuidanceCapabilityPath(changedPath, capability),
+    )
+  );
+}
+
+function isGuidanceCapabilityPath(changedPath, capability) {
+  return (
+    changedPath === capability.skillEntry ||
+    changedPath === capability.evaluationRoot ||
+    changedPath === capability.contractTestRoot ||
+    (typeof capability.skillRoot === 'string' && isWithin(changedPath, capability.skillRoot)) ||
+    (typeof capability.evaluationRoot === 'string' &&
+      isWithin(changedPath, capability.evaluationRoot)) ||
+    (typeof capability.contractTestRoot === 'string' &&
+      isWithin(changedPath, capability.contractTestRoot)) ||
+    (capability.contractPaths ?? []).includes(changedPath)
+  );
 }
 
 function isPublicOwnershipPath(changedPath) {

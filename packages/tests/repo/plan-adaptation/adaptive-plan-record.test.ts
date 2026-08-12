@@ -101,6 +101,54 @@ describe('adaptive plan record', () => {
       ]),
     );
   });
+
+  it('validates guidance capabilities without changing the existing code-capability shape', () => {
+    const record = createRecord();
+    record.capabilities.push({
+      kind: 'guidance',
+      owner: 'adaptive plan execution guidance',
+      skillRoot: '.agents/skills/adaptive-plan-execution',
+      skillEntry: '.agents/skills/adaptive-plan-execution/SKILL.md',
+      contractTestRoot: 'packages/tests/repo/adaptive-agent-execution',
+      focusedCommand: 'npm run test:adaptive-plan-execution',
+      evaluationRoot: '.agents/evaluations/adaptive-agent-execution/v1',
+      contractPaths: ['packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts'],
+    });
+
+    expect(validateAdaptivePlanRecord(record)).toEqual([]);
+
+    record.capabilities[2] = {
+      kind: 'guidance',
+      owner: 'adaptive plan execution guidance',
+      skillRoot: '../outside',
+      skillEntry: '.agents/skills/other/SKILL.md',
+      contractTestRoot: '/tmp/contracts',
+      focusedCommand: 'npm run test:adaptive-plan-execution',
+      evaluationRoot: '../evaluations',
+      contractPaths: ['../shared-contract.test.ts'],
+      navigationMap: null,
+    };
+
+    expect(validateAdaptivePlanRecord(record)).toEqual(
+      expect.arrayContaining([
+        'record.capabilities[2].skillRoot must be a safe repository-relative path',
+        'record.capabilities[2].contractTestRoot must be a safe repository-relative path',
+        'record.capabilities[2].evaluationRoot must be null or a safe repository-relative path',
+        'record.capabilities[2].contractPaths must contain safe repository-relative paths',
+        'record.capabilities[2].skillEntry must be the SKILL.md entry inside its skillRoot',
+        'record.capabilities[2] guidance capability must not declare code-only fields',
+      ]),
+    );
+  });
+
+  it('rejects unknown capability kinds', () => {
+    const record = createRecord();
+    record.capabilities[0].kind = 'workflow';
+
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'record.capabilities[0].kind must be code or guidance',
+    );
+  });
 });
 
 describe('checkpoint policy', () => {
@@ -118,6 +166,15 @@ describe('checkpoint policy', () => {
         'checkpoint.learning must be a non-empty judgment',
         'checkpoint.nextSlices must contain at most two concrete slices',
       ]),
+    );
+  });
+
+  it('rejects a completed slice that is still presented in the next horizon', () => {
+    const record = createRecord();
+    record.completedSlicesSinceCheckpoint = ['slice-1-plan-adaptation'];
+
+    expect(validateCheckpoint(record.checkpoint, record)).toContain(
+      'checkpoint.nextSlices must not include completed slices: slice-1-plan-adaptation',
     );
   });
 
@@ -178,6 +235,12 @@ describe('checkpoint policy', () => {
       checkpointDigest: computeCheckpointDigest(consolidation),
     });
     expect(validateCheckpoint(consolidation, record)).toEqual([]);
+    record.completedSlicesSinceCheckpoint = ['different-slice'];
+    expect(validateCheckpoint({ ...consolidation, nextSlices: [] }, record)).toContain(
+      'consolidate must replace the next feature slice with one consolidation slice',
+    );
+    record.completedSlicesSinceCheckpoint = ['repair-owner'];
+    expect(validateCheckpoint({ ...consolidation, nextSlices: [] }, record)).toEqual([]);
     expect(
       validateCheckpoint(
         { ...consolidation, nextSlices: ['second-autonomous-consolidation'] },

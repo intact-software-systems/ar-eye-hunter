@@ -5,16 +5,82 @@ import { isProductionAuthoredCodePath } from './repository-files.mjs';
 
 export function validateCapabilityDeclarations(input) {
   const authoredFileSet = new Set(input.authoredFiles);
+  const repositoryFileSet = new Set(input.repositoryFiles ?? input.authoredFiles);
   const issues = [];
   for (const capability of input.capabilities) {
-    validateCapabilityControlFlow(issues, capability);
-    validateCapabilityPaths(issues, capability, authoredFileSet);
-    validateCapabilityCommand(issues, capability, input.packageScripts);
-    validateFactContracts(issues, capability, authoredFileSet);
-    validateCapabilityComplexity({ issues, input, capability, authoredFileSet });
+    if (capability.kind === 'guidance') {
+      validateGuidanceCapability({ issues, capability, repositoryFileSet, input });
+    } else {
+      validateCapabilityControlFlow(issues, capability);
+      validateCapabilityPaths(issues, capability, authoredFileSet);
+      validateCapabilityCommand(issues, capability, input.packageScripts);
+      validateFactContracts(issues, capability, authoredFileSet);
+      validateCapabilityComplexity({ issues, input, capability, authoredFileSet });
+    }
   }
-  validateColdNavigationEvidence(issues, input, authoredFileSet);
+  validateColdNavigationEvidence({ issues, input, authoredFileSet, repositoryFileSet });
   return issues;
+}
+
+function validateGuidanceCapability(validation) {
+  const { issues, capability, repositoryFileSet, input } = validation;
+  if (!hasFileUnder(repositoryFileSet, capability.skillRoot)) {
+    issues.push(
+      `${capability.owner} skill root ${capability.skillRoot} contains no repository files`,
+    );
+  }
+  if (!repositoryFileSet.has(capability.skillEntry)) {
+    issues.push(`${capability.owner} skill entry ${capability.skillEntry} does not resolve`);
+  }
+  if (capability.skillEntry !== `${capability.skillRoot}/SKILL.md`) {
+    issues.push(`${capability.owner} skill entry must be SKILL.md inside ${capability.skillRoot}`);
+  }
+  if (!hasFileUnder(repositoryFileSet, capability.contractTestRoot)) {
+    issues.push(
+      `${capability.owner} contract test root ${capability.contractTestRoot} contains no tests`,
+    );
+  } else if (
+    ![...repositoryFileSet].some((file) => isTestModuleUnder(file, capability.contractTestRoot))
+  ) {
+    issues.push(
+      `${capability.owner} contract test root ${capability.contractTestRoot} contains no ` +
+        '.test/.spec modules',
+    );
+  }
+  if (!isRecognizedGuidanceTestMirror(capability)) {
+    issues.push(
+      `${capability.owner} contract test root ${capability.contractTestRoot} must mirror ` +
+        capability.skillRoot,
+    );
+  }
+  validateGuidanceCommand(issues, capability, input.packageScripts);
+  if (
+    capability.evaluationRoot !== undefined &&
+    capability.evaluationRoot !== null &&
+    !hasFileUnder(repositoryFileSet, capability.evaluationRoot)
+  ) {
+    issues.push(
+      `${capability.owner} evaluation root ${capability.evaluationRoot} contains no ` +
+        'repository files',
+    );
+  }
+  for (const contractPath of capability.contractPaths ?? []) {
+    if (!repositoryFileSet.has(contractPath)) {
+      issues.push(`${capability.owner} contract path ${contractPath} does not resolve`);
+    }
+  }
+}
+
+function validateGuidanceCommand(issues, capability, packageScripts) {
+  const commandMatch = /^npm run ([a-z0-9:-]+)$/u.exec(capability.focusedCommand);
+  const resolvedCommand = commandMatch && packageScripts[commandMatch[1]];
+  const expectedCommand = `vitest run ${capability.contractTestRoot}`;
+  if (resolvedCommand !== expectedCommand) {
+    issues.push(
+      `${capability.owner} focused command ${capability.focusedCommand} must resolve exactly ` +
+        `to ${expectedCommand}`,
+    );
+  }
 }
 
 function validateCapabilityControlFlow(issues, capability) {
@@ -161,7 +227,8 @@ function validateNavigationMap(validation) {
   }
 }
 
-function validateColdNavigationEvidence(issues, input, authoredFiles) {
+function validateColdNavigationEvidence(coldNavigationValidation) {
+  const { issues, input, authoredFileSet, repositoryFileSet } = coldNavigationValidation;
   const evidence = input.coldNavigationEvidence;
   if (evidence === null) {
     return;
@@ -177,6 +244,13 @@ function validateColdNavigationEvidence(issues, input, authoredFiles) {
     const capability = capabilitiesByOwner.get(probe.capabilityOwner);
     if (capability === undefined) {
       issues.push(`cold-navigation probe owner ${probe.capabilityOwner} is not declared`);
+    } else if (capability.kind === 'guidance') {
+      if (!isGuidanceRepositoryPath(capability, probe.path)) {
+        issues.push(`cold-navigation probe path ${probe.path} is outside ${probe.capabilityOwner}`);
+      } else if (!repositoryFileSet.has(probe.path)) {
+        issues.push(`cold-navigation probe path ${probe.path} does not resolve`);
+      }
+      continue;
     } else if (!isCapabilitySourcePath(capability, probe.path)) {
       issues.push(`cold-navigation probe path ${probe.path} is outside ${probe.capabilityOwner}`);
       continue;
@@ -184,12 +258,25 @@ function validateColdNavigationEvidence(issues, input, authoredFiles) {
     validateSourceReference({
       issues,
       input,
-      authoredFiles,
+      authoredFiles: authoredFileSet,
       sourcePath: probe.path,
       symbol: probe.symbol,
       prefix: 'cold-navigation probe',
     });
   }
+}
+
+function isGuidanceRepositoryPath(capability, repositoryPath) {
+  return (
+    repositoryPath === capability.skillEntry ||
+    repositoryPath === capability.evaluationRoot ||
+    repositoryPath === capability.contractTestRoot ||
+    repositoryPath.startsWith(`${capability.skillRoot}/`) ||
+    (typeof capability.evaluationRoot === 'string' &&
+      repositoryPath.startsWith(`${capability.evaluationRoot}/`)) ||
+    repositoryPath.startsWith(`${capability.contractTestRoot}/`) ||
+    (capability.contractPaths ?? []).includes(repositoryPath)
+  );
 }
 
 function isCapabilitySourcePath(capability, sourcePath) {
@@ -421,6 +508,21 @@ function isRecognizedTestMirror(capability) {
     tests: ['packages/tests/repo/tests', 'tests/repo/tests'],
   }[surface];
   return prefixes?.some((prefix) => capability.testRoot === `${prefix}/${ownerPath}`) ?? false;
+}
+
+function isRecognizedGuidanceTestMirror(capability) {
+  const ownerNames = new Set([path.posix.basename(capability.skillRoot)]);
+  if (typeof capability.evaluationRoot === 'string') {
+    const evaluationParts = capability.evaluationRoot.split('/');
+    if (evaluationParts[0] === '.agents' && evaluationParts[1] === 'evaluations') {
+      ownerNames.add(evaluationParts[2]);
+    }
+  }
+  return [...ownerNames].some((ownerName) =>
+    [`packages/tests/repo/${ownerName}`, `tests/repo/${ownerName}`].includes(
+      capability.contractTestRoot,
+    ),
+  );
 }
 
 function isTestModuleUnder(file, testRoot) {

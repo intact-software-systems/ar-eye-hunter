@@ -26,11 +26,18 @@ export function checkRepositoryStructure(input) {
     throw new Error('repository structure base must match the active plan diffBase');
   }
   const repository = readRepositoryFiles(input.repoRoot, input.base);
-  const affectedCodeDigest = computeAffectedCodeDigest(
-    input.repoRoot,
-    input.base,
-    readChangedPaths(input.repoRoot, input.base),
-  );
+  const capabilityFindings = collectCapabilityFindings(input.repoRoot, activePlan, repository);
+  if (capabilityFindings.length > 0) {
+    return {
+      mergeBase: repository.mergeBase,
+      findings: capabilityFindings.toSorted(compareFindings),
+    };
+  }
+  const affectedCodeDigest = computeAffectedCodeDigest({
+    repoRoot: input.repoRoot,
+    changes: readChangedPaths(input.repoRoot, input.base),
+    record: activePlan.record,
+  });
   const targetDirectories = toCodeDirectories(repository.targetFiles);
   const baseDirectories = toCodeDirectories(repository.baseFiles);
   const exceptionRegistry = readStructureExceptions(input.repoRoot);
@@ -40,7 +47,7 @@ export function checkRepositoryStructure(input) {
       ruleId: 'exception.invalid',
       message,
     })),
-    ...collectCapabilityFindings(input.repoRoot, activePlan, repository.targetFiles),
+    ...capabilityFindings,
     ...collectSingletonFindings({
       repository,
       targetDirectories,
@@ -62,12 +69,13 @@ export function checkRepositoryStructure(input) {
   };
 }
 
-function collectCapabilityFindings(repoRoot, activePlan, authoredFiles) {
+function collectCapabilityFindings(repoRoot, activePlan, repository) {
   const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
   return validateCapabilityDeclarations({
     repoRoot,
     capabilities: activePlan.record.capabilities,
-    authoredFiles,
+    authoredFiles: repository.targetFiles,
+    repositoryFiles: repository.targetRepositoryFiles,
     packageScripts: packageJson.scripts ?? {},
     readFile: (file) => readRepositoryText(repoRoot, file),
     coldNavigationEvidence: activePlan.record.coldNavigationEvidence,

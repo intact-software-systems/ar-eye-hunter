@@ -29,11 +29,10 @@ describe('canonical content facts', () => {
     runGit(fixture.root, ['add', '.']);
 
     expect(
-      computeAffectedCodeDigest(
-        fixture.root,
-        fixture.base,
-        readChangedPaths(fixture.root, fixture.base),
-      ),
+      computeAffectedCodeDigest({
+        repoRoot: fixture.root,
+        changes: readChangedPaths(fixture.root, fixture.base),
+      }),
     ).toBe('c0b3655922b79cf563699a94aadb3772a7ac1e20c18d01d54f83100d13fee7a4');
   });
 
@@ -44,23 +43,28 @@ describe('canonical content facts', () => {
     chmodSync(path.join(first.root, 'scripts/tool.mjs'), 0o755);
     runGit(first.root, ['add', '.']);
 
-    const digest = computeAffectedCodeDigest(
-      first.root,
-      first.base,
-      readChangedPaths(first.root, first.base),
-    );
+    const digest = computeAffectedCodeDigest({
+      repoRoot: first.root,
+      changes: readChangedPaths(first.root, first.base),
+    });
     runGit(first.root, ['commit', '--quiet', '-m', 'same tree at another SHA']);
     const secondBase = runGit(first.root, ['rev-parse', 'HEAD']).trim();
     runGit(first.root, ['commit', '--quiet', '--allow-empty', '-m', 'different SHA']);
 
     expect(
-      computeAffectedCodeDigest(first.root, first.base, readChangedPaths(first.root, first.base)),
+      computeAffectedCodeDigest({
+        repoRoot: first.root,
+        changes: readChangedPaths(first.root, first.base),
+      }),
     ).toBe(digest);
     expect(secondBase).not.toBe(runGit(first.root, ['rev-parse', 'HEAD']).trim());
 
     chmodSync(path.join(first.root, 'scripts/tool.mjs'), 0o644);
     expect(
-      computeAffectedCodeDigest(first.root, first.base, readChangedPaths(first.root, first.base)),
+      computeAffectedCodeDigest({
+        repoRoot: first.root,
+        changes: readChangedPaths(first.root, first.base),
+      }),
     ).not.toBe(digest);
   });
 
@@ -69,21 +73,19 @@ describe('canonical content facts', () => {
     writeFixture(fixture.root, 'scripts/tool.mjs', 'export const tool = true;\n');
     chmodSync(path.join(fixture.root, 'scripts/tool.mjs'), 0o755);
     runGit(fixture.root, ['add', '.']);
-    const executableDigest = computeAffectedCodeDigest(
-      fixture.root,
-      fixture.base,
-      readChangedPaths(fixture.root, fixture.base),
-    );
+    const executableDigest = computeAffectedCodeDigest({
+      repoRoot: fixture.root,
+      changes: readChangedPaths(fixture.root, fixture.base),
+    });
 
     runGit(fixture.root, ['config', 'core.fileMode', 'false']);
     chmodSync(path.join(fixture.root, 'scripts/tool.mjs'), 0o644);
 
     expect(
-      computeAffectedCodeDigest(
-        fixture.root,
-        fixture.base,
-        readChangedPaths(fixture.root, fixture.base),
-      ),
+      computeAffectedCodeDigest({
+        repoRoot: fixture.root,
+        changes: readChangedPaths(fixture.root, fixture.base),
+      }),
     ).toBe(executableDigest);
   });
 
@@ -93,11 +95,10 @@ describe('canonical content facts', () => {
     runGit(fixture.root, ['mv', 'packages/example/src/a.ts', 'notes/a.txt']);
 
     expect(
-      computeAffectedCodeDigest(
-        fixture.root,
-        fixture.base,
-        readChangedPaths(fixture.root, fixture.base),
-      ),
+      computeAffectedCodeDigest({
+        repoRoot: fixture.root,
+        changes: readChangedPaths(fixture.root, fixture.base),
+      }),
     ).toBe('cf952557964e8fe54de27ab2551e23ede7b32f9271259dd786c5ba29b1611304');
   });
 });
@@ -155,6 +156,61 @@ describe('qualification and checkpoint facts', () => {
     expect(computeUndeclaredChangedPaths(changes, record)).not.toContain(
       'scripts/repo-style-check/structural-facts.mjs',
     );
+  });
+
+  it('declares guidance, evaluation, mirrored contract, and cross-owner contract surfaces', () => {
+    const fixture = createRepository();
+    writeFixture(
+      fixture.root,
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+      '# Adaptive Plan Execution\n',
+    );
+    writeFixture(
+      fixture.root,
+      '.agents/evaluations/adaptive-agent-execution/v1/rubric.json',
+      '{"version":1}\n',
+    );
+    writeFixture(
+      fixture.root,
+      'packages/tests/repo/adaptive-agent-execution/contract.test.ts',
+      'export {};\n',
+    );
+    writeFixture(
+      fixture.root,
+      'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts',
+      'export {};\n',
+    );
+    const changes = readChangedPaths(fixture.root, fixture.base);
+    const record = {
+      capabilities: [
+        {
+          kind: 'guidance',
+          owner: 'adaptive plan execution guidance',
+          skillRoot: '.agents/skills/adaptive-plan-execution',
+          skillEntry: '.agents/skills/adaptive-plan-execution/SKILL.md',
+          contractTestRoot: 'packages/tests/repo/adaptive-agent-execution',
+          focusedCommand: 'npm run test:adaptive-plan-execution',
+          evaluationRoot: '.agents/evaluations/adaptive-agent-execution/v1',
+          contractPaths: ['packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts'],
+        },
+      ],
+    };
+
+    expect(computeUndeclaredChangedPaths(changes, record)).toEqual([]);
+
+    const digest = computeAffectedCodeDigest({ repoRoot: fixture.root, changes, record });
+    writeFixture(
+      fixture.root,
+      '.agents/evaluations/adaptive-agent-execution/v1/rubric.json',
+      '{"version":2}\n',
+    );
+    expect(
+      computeAffectedCodeDigest({
+        repoRoot: fixture.root,
+        changes: readChangedPaths(fixture.root, fixture.base),
+        record,
+      }),
+    ).not.toBe(digest);
   });
   it('qualifies every required diff shape against the actual Git diff', () => {
     const fixture = createRepository();

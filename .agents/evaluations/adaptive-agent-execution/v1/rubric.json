@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "adaptive-agent-execution-rubric-v1",
+  "suiteId": "adaptive-agent-execution-v1",
+  "criticalPolicy": "Every required dimension for every critical scenario must pass.",
+  "nonGoals": [
+    "Score general architecture eloquence or writing style.",
+    "Require a particular folder taxonomy or mechanically chosen structural disposition.",
+    "Treat raw model output as repository guidance or copy it into a skill."
+  ],
+  "authority": {
+    "automatedFacts": [
+      "qualifying diff classification",
+      "computed triggers",
+      "affected-code digest",
+      "undeclared changed paths",
+      "two-slice count",
+      "record serialization",
+      "active-plan registry state"
+    ],
+    "agentJudgments": [
+      "outcome",
+      "learning",
+      "structure",
+      "decision",
+      "next slices",
+      "structural disposition",
+      "validation scope"
+    ]
+  },
+  "dimensions": [
+    {
+      "id": "adaptive.plan-qualification",
+      "pass": "Correctly identifies whether the work qualifies and names the affected capability owner, canonical entry, test root, and acceptance surface."
+    },
+    {
+      "id": "adaptive.deterministic-evidence",
+      "pass": "Uses the applicable canonical plan-adaptation lifecycle commands and their draft/check output instead of hand-computing record facts or narrating an unbound checkpoint."
+    },
+    {
+      "id": "adaptive.two-slice-horizon",
+      "pass": "Keeps at most two concrete independently testable capability or consolidation slices and does not disguise tasks, commits, or file batches as slices."
+    },
+    {
+      "id": "adaptive.trigger-reflection",
+      "pass": "Checkpoints on structural change, invalid learning, scope growth, navigation degradation, or two slices, and does not add ceremony for a SHA-only or unrelated prose change."
+    },
+    {
+      "id": "adaptive.checkpoint-judgments",
+      "pass": "Supplies distinct outcome, learning, structure, decision, and next-slices judgments grounded in current evidence."
+    },
+    {
+      "id": "adaptive.decision-escalation",
+      "pass": "Selects continue, amend, consolidate, or stop consistently; does not deepen a known structural failure; and stops for human direction after a failed autonomous consolidation probe."
+    },
+    {
+      "id": "adaptive.content-freshness",
+      "pass": "Uses affected build/code content and the canonical digest rather than latest commit SHA, while refusing to invent or relabel unavailable remote evidence."
+    },
+    {
+      "id": "adaptive.proportionate-validation",
+      "pass": "Selects affected local checks, broad GitHub validation only for changed build content, and distributed checks only for classified risk or explicit acceptance."
+    },
+    {
+      "id": "adaptive.ci-classification",
+      "pass": "Classifies each failure as regression, infrastructure/flaky, obsolete coupled test, or invalid plan assumption before editing, and only the invalid assumption automatically amends the plan."
+    },
+    {
+      "id": "structure.owner-navigation",
+      "pass": "Recovers capability ownership, canonical entry, owner-to-result path, and mirrored tests from repository artifacts rather than the tactical plan."
+    },
+    {
+      "id": "structure.singleton-tradeoff",
+      "pass": "Rejects both automatic flattening and meaningless singleton nesting, using a real domain, lifecycle, public, runtime, or ownership boundary as the decision basis."
+    },
+    {
+      "id": "structure.durable-repository-truth",
+      "pass": "Makes code, entries, tests, and required navigation maps sufficient for cold navigation and treats the active plan as tactical evidence."
+    },
+    {
+      "id": "structure.disposition-judgment",
+      "pass": "Chooses keep, split, move, or consolidate from current structural facts without treating density, size, prefix, or depth findings as automatic folder instructions."
+    },
+    {
+      "id": "boundary.fact-versus-judgment",
+      "pass": "Leaves deterministic facts to automation while making and explaining the architectural, checkpoint, disposition, and validation judgments the tools cannot choose."
+    }
+  ],
+  "resultContract": {
+    "schemaVersion": "adaptive-agent-execution-result-v1",
+    "requiredRunFields": [
+      "schemaVersion",
+      "runId",
+      "suiteId",
+      "primarySkill",
+      "skillVariant",
+      "model",
+      "startedAt",
+      "completedAt",
+      "scenarioResults",
+      "summary"
+    ],
+    "skillVariants": ["no-skill", "with-skill"],
+    "verdicts": ["pass", "fail"],
+    "requiredScenarioFields": [
+      "scenarioId",
+      "verdict",
+      "dimensionResults",
+      "criticalFailures",
+      "rawOutputArtifact"
+    ],
+    "requiredDimensionFields": ["dimensionId", "verdict", "evidence", "reason"],
+    "summaryFields": ["criticalPassed", "criticalTotal", "passed", "total"]
+  }
+}

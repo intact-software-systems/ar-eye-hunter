@@ -79,44 +79,99 @@ function validateCapabilities(issues, capabilities) {
       issues.push(`record.capabilities[${index}] must be an object`);
       continue;
     }
-    for (const field of ['owner', 'root', 'entry', 'testRoot', 'focusedCommand']) {
-      requireText(issues, capability[field], `record.capabilities[${index}].${field}`);
+    const kind = capability.kind ?? 'code';
+    if (!['code', 'guidance'].includes(kind)) {
+      issues.push(`record.capabilities[${index}].kind must be code or guidance`);
+      continue;
     }
-    for (const field of ['root', 'entry', 'testRoot']) {
-      if (!isSafeRepositoryPath(capability[field])) {
-        issues.push(
-          `record.capabilities[${index}].${field} must be a safe repository-relative path`,
-        );
-      }
+    requireText(issues, capability.owner, `record.capabilities[${index}].owner`);
+    if (kind === 'guidance') {
+      validateGuidanceCapability(issues, capability, index);
+    } else {
+      validateCodeCapability(issues, capability, index);
     }
-    if (capability.navigationMap !== null && !isSafeRepositoryPath(capability.navigationMap)) {
-      const name = `record.capabilities[${index}].navigationMap`;
-      issues.push(`${name} must be null or a safe repository-relative path`);
+  }
+}
+
+function validateCodeCapability(issues, capability, index) {
+  for (const field of ['root', 'entry', 'testRoot', 'focusedCommand']) {
+    requireText(issues, capability[field], `record.capabilities[${index}].${field}`);
+  }
+  for (const field of ['root', 'entry', 'testRoot']) {
+    if (!isSafeRepositoryPath(capability[field])) {
+      issues.push(`record.capabilities[${index}].${field} must be a safe repository-relative path`);
     }
-    if (
-      capability.factContracts !== undefined &&
-      (!Array.isArray(capability.factContracts) ||
-        capability.factContracts.some((factContract) => !isSafeRepositoryPath(factContract)))
-    ) {
-      issues.push(
-        `record.capabilities[${index}].factContracts must contain safe ` +
-          'repository-relative paths',
-      );
+  }
+  if (capability.navigationMap !== null && !isSafeRepositoryPath(capability.navigationMap)) {
+    const name = `record.capabilities[${index}].navigationMap`;
+    issues.push(`${name} must be null or a safe repository-relative path`);
+  }
+  if (
+    capability.factContracts !== undefined &&
+    (!Array.isArray(capability.factContracts) ||
+      capability.factContracts.some((factContract) => !isSafeRepositoryPath(factContract)))
+  ) {
+    issues.push(
+      `record.capabilities[${index}].factContracts must contain safe ` +
+        'repository-relative paths',
+    );
+  }
+  if (
+    capability.controlFlowFamilies !== undefined &&
+    (!Array.isArray(capability.controlFlowFamilies) ||
+      capability.controlFlowFamilies.length === 0 ||
+      capability.controlFlowFamilies.some(
+        (family) => typeof family !== 'string' || family.trim() === '',
+      ) ||
+      new Set(capability.controlFlowFamilies).size !== capability.controlFlowFamilies.length)
+  ) {
+    issues.push(
+      `record.capabilities[${index}].controlFlowFamilies must contain unique ` +
+        'non-empty strings',
+    );
+  }
+}
+
+function validateGuidanceCapability(issues, capability, index) {
+  for (const field of ['skillRoot', 'skillEntry', 'contractTestRoot', 'focusedCommand']) {
+    requireText(issues, capability[field], `record.capabilities[${index}].${field}`);
+  }
+  for (const field of ['skillRoot', 'skillEntry', 'contractTestRoot']) {
+    if (!isSafeRepositoryPath(capability[field])) {
+      issues.push(`record.capabilities[${index}].${field} must be a safe repository-relative path`);
     }
-    if (
-      capability.controlFlowFamilies !== undefined &&
-      (!Array.isArray(capability.controlFlowFamilies) ||
-        capability.controlFlowFamilies.length === 0 ||
-        capability.controlFlowFamilies.some(
-          (family) => typeof family !== 'string' || family.trim() === '',
-        ) ||
-        new Set(capability.controlFlowFamilies).size !== capability.controlFlowFamilies.length)
-    ) {
-      issues.push(
-        `record.capabilities[${index}].controlFlowFamilies must contain unique ` +
-          'non-empty strings',
-      );
-    }
+  }
+  if (
+    capability.evaluationRoot !== undefined &&
+    capability.evaluationRoot !== null &&
+    !isSafeRepositoryPath(capability.evaluationRoot)
+  ) {
+    issues.push(
+      `record.capabilities[${index}].evaluationRoot must be null or a safe ` +
+        'repository-relative path',
+    );
+  }
+  if (
+    !Array.isArray(capability.contractPaths) ||
+    capability.contractPaths.some((contractPath) => !isSafeRepositoryPath(contractPath))
+  ) {
+    issues.push(
+      `record.capabilities[${index}].contractPaths must contain safe repository-relative paths`,
+    );
+  }
+  if (capability.skillEntry !== `${capability.skillRoot}/SKILL.md`) {
+    issues.push(
+      `record.capabilities[${index}].skillEntry must be the SKILL.md entry inside its skillRoot`,
+    );
+  }
+  if (
+    ['root', 'entry', 'testRoot', 'navigationMap', 'factContracts', 'controlFlowFamilies'].some(
+      (field) => field in capability,
+    )
+  ) {
+    issues.push(
+      `record.capabilities[${index}] guidance capability must not declare code-only fields`,
+    );
   }
 }
 

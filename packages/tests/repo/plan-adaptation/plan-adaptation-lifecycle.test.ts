@@ -37,6 +37,14 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(runCli(fixture.root, ['complete-slice', ...common, '--slice', 'slice-one']).status).toBe(
       0,
     );
+    const completedPlan = parseRecord(
+      readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'),
+    );
+    expect(completedPlan.completedSlicesSinceCheckpoint).toEqual(['slice-one']);
+    expect(completedPlan.checkpoint.nextSlices).toEqual(['slice-two']);
+    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toContain(
+      '| fixture-plan | plan adaptation  | active | continue            | slice-two  |',
+    );
     expect(runCli(fixture.root, ['prepare', ...common]).status).toBe(0);
 
     const draftPath = path.join(fixture.root, '.plan-adaptation/fixture-plan.draft.json');
@@ -90,6 +98,26 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).not.toContain(
       'fixture-plan',
     );
+  });
+
+  it('rejects completion of a slice outside the current horizon without changing files', () => {
+    const fixture = createLifecycleRepository();
+    const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
+    const planBefore = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
+    const registryBefore = readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8');
+
+    const result = runCli(fixture.root, [
+      'complete-slice',
+      ...common,
+      '--slice',
+      'unplanned-slice',
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('slice unplanned-slice is not in the current horizon');
+    expect(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8')).toBe(planBefore);
+    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(registryBefore);
   });
 
   it('keeps an applied consolidation checkpoint valid while rejecting a second one', () => {

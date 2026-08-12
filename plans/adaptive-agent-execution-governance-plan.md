@@ -159,66 +159,103 @@ cold probe passes.
 status directly. Do not add a second map, a compatibility alias, a parallel
 owner, or an implementation-plan dependency for normal code navigation.
 
-## Current horizon
+## Completed behavior horizon
 
-The skill-writing contract requires each behavior skill to complete its own
-RED–GREEN–REFACTOR cycle before the next skill is authored. The first
-checkpoint-activated behavior outcome is therefore split into these two
-independently testable capability slices; guidance simplification remains
-inactive until their checkpoint.
+The first skill's GREEN candidate exposed a scope-growth trigger: the active
+record can declare authored-code capabilities but cannot truthfully declare a
+skill/evaluation owner. Do not disguise guidance files as code or fact
+contracts. This amended horizon adds that missing declaration kind, then
+resumes the already-tested skill slice. The repository-structure skill and
+guidance simplification return to outcome-shape until the next checkpoint.
 
-### Task 4: Adaptive plan execution skill and evaluations
+### Task 4: Guidance capability declarations
+
+**Owners:** `scripts/plan-adaptation/` and
+`scripts/repo-structure-check/`
+
+**Mirrored tests:** `packages/tests/repo/plan-adaptation/` and
+`packages/tests/repo/repo-structure-check/`
+
+- [x] Extend the adaptive record with a discriminated guidance capability that
+      declares one skill root/entry, mirrored contract-test root and focused
+      command, optional evaluation root, and explicit cross-owner contract
+      paths. Existing code capabilities remain compatible.
+- [x] Include the guidance, evaluation, and contract surfaces in undeclared-path
+      and affected-scope facts; do not route them through code fact contracts.
+- [x] Make repository-structure validation prove the declared skill/evaluation
+      files and focused test command without applying authored-code topology,
+      semantic-depth, or source-symbol rules to Markdown/JSON guidance.
+- [x] Add RED/GREEN coverage at the record, fact, declaration, and live command
+      boundaries, then refresh the active record to declare Task 5 honestly.
+
+**Legacy impact:** Add no parallel registry or skill inventory. Preserve the
+existing code-capability shape and keep plugin discovery in its current
+contract test.
+
+### Task 5: Adaptive plan execution skill and evaluations
 
 **Skill owner:** `.agents/skills/adaptive-plan-execution/SKILL.md`
 
 **Versioned evaluation owner:**
 `.agents/evaluations/adaptive-agent-execution/v1/`
 
-- [ ] Convert the already-captured no-skill baseline into versioned pressure
+- [x] Convert the already-captured no-skill baseline into versioned pressure
       scenarios and a machine-readable result/rubric contract without copying
       ignored model output into the skill.
-- [ ] Author one concise `adaptive-plan-execution` skill from those observed
+- [x] Author one concise `adaptive-plan-execution` skill from those observed
       failures. It owns qualification, the two-slice horizon, trigger-based
       reflection, five judgments, consolidation/stop behavior, and
       proportionate validation selection; deterministic commands remain owned
       by `scripts/plan-adaptation/`.
-- [ ] Add focused deterministic contract tests under
+- [x] Add focused deterministic contract tests under
       `packages/tests/repo/adaptive-agent-execution/` for skill discovery,
       record/command routing, scenario coverage, rubric shape, and the boundary
       between agent judgment and automated facts.
-- [ ] Run the adaptive-plan pressure scenarios with a fresh agent and refine
+- [x] Run the adaptive-plan pressure scenarios with a fresh agent and refine
       only observed loopholes until every critical result complies.
-- [ ] Validate the skill package and focused contract before starting the next
+- [x] Validate the skill package and focused contract before starting the next
       skill.
 
 **Legacy impact:** Do not duplicate plan publication, testing catalogs, or
 repository-structure judgment. The new skill may point to those owners but may
 not restate them.
 
-### Task 5: Repository structure skill and evaluations
+## Current horizon
 
-**Skill owner:** `.agents/skills/organizing-repository-structure/SKILL.md`
+The completed behavior horizon exposed one lifecycle gap before the second
+guidance owner can be created: a capability declaration currently requires its
+files to exist, so it cannot reserve the intended owner and affected surface
+before implementation begins. The next horizon contains one tooling slice that
+makes this transition explicit. No second skill or later outcome is active yet.
 
-**Evaluation owner:** `.agents/evaluations/adaptive-agent-execution/v1/`
+### Task 6: Planned capability declaration lifecycle
 
-- [ ] Run the structure pressure scenarios without the new skill, preserving
-      the already-captured baseline and any newly observed rationalizations.
-- [ ] Author one concise `organizing-repository-structure` skill that turns
-      automated facts into human-navigation judgments without prescribing a
-      folder taxonomy or mechanically selecting dispositions.
-- [ ] Extend the focused deterministic contract for structure-skill discovery,
-      owner/entry/test/map reasoning, singleton versus flat-folder tradeoffs,
-      consolidation escalation, and legacy/debt boundaries.
-- [ ] Run all six critical fresh-agent scenarios with the two skills and refine
-      observed loopholes until every result complies.
-- [ ] Add the live evaluation entry/workflow so model runs occur only when
-      behavior-shaping skill or scenario files change and their raw reports are
-      retained as workflow artifacts. Keep deterministic skill contracts in CI.
-- [ ] Run the checkpoint before activating guidance simplification or PR v2.
+**Owners:** `scripts/plan-adaptation/` and
+`scripts/repo-structure-check/`
 
-**Legacy impact:** Keep `scripts/repo-structure-check/` as the only mechanical
-structure-policy owner and repo style as the only density/prefix/size fact
-owner. Do not create a second architecture guide or a compatibility skill.
+**Mirrored tests:** `packages/tests/repo/plan-adaptation/` and
+`packages/tests/repo/repo-structure-check/`
+
+- [ ] Add an optional capability activation state with backward-compatible
+      active behavior. A planned declaration binds to exactly one current
+      horizon slice and reserves its declared owner, roots, tests, evaluations,
+      contracts, and affected-code surface before those files exist.
+- [ ] Validate the complete declaration shape and safe repository-relative
+      paths while planned, but defer file, command, symbol, topology, and
+      navigation-map existence checks until activation.
+- [ ] Reject slice completion while a capability bound to that slice remains
+      planned, reject stale planned declarations outside the current horizon,
+      and reject plan close-out while any capability remains planned.
+- [ ] Cover active backward compatibility, planned code and guidance owners,
+      affected-surface reservation, activation, completion, stale-horizon, and
+      close-out behavior at deterministic and semantic command boundaries.
+- [ ] Run focused/read-only adaptive governance, complete this slice, and use
+      the next checkpoint to declare the repository-structure skill before
+      authoring it.
+
+**Legacy impact:** Extend the one canonical capability registry. Add no staging
+registry, placeholder files, permissive missing-file exception, or parallel
+scope allowlist.
 
 ## Checkpoint-activated outcomes
 
@@ -290,11 +327,24 @@ are selected at the preceding checkpoint.
         "capability and cold-navigation validation",
         "authenticated singleton-exception verification"
       ]
+    },
+    {
+      "kind": "guidance",
+      "owner": "adaptive plan execution guidance",
+      "skillRoot": ".agents/skills/adaptive-plan-execution",
+      "skillEntry": ".agents/skills/adaptive-plan-execution/SKILL.md",
+      "contractTestRoot": "packages/tests/repo/adaptive-agent-execution",
+      "focusedCommand": "npm run test:adaptive-plan-execution",
+      "evaluationRoot": ".agents/evaluations/adaptive-agent-execution/v1",
+      "contractPaths": [
+        "packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts"
+      ]
     }
   ],
   "architecture": {
     "currentHypothesis": "Plan, style, review, and workflow rules exist as separate controls without one execution-time adaptation owner.",
     "intendedHypothesis": "A plan-adaptation capability owns rolling decisions while a separate repository-structure capability supplies structural facts.",
+    "invalidatedAssumptions": [],
     "freshInitialReview": {
       "status": "complete",
       "reviewer": "/root/initial_architecture_review",
@@ -305,7 +355,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "f07fee5352c94ca215fb00666b93ef80d0daf96d",
-    "affectedCodeDigest": "5640b5a87eb7c541e69a56e31f8cfc7896a9ca12b4245049772402926870914a",
+    "affectedCodeDigest": "27acd69579d48331810d57ab670aa921d519fe900c3c25c65d59ee6c132c6ffd",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -315,13 +365,12 @@ are selected at the preceding checkpoint.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The autonomous consolidation repaired both durable navigation maps, made repository structure's four control-flow and trust families explicit, restored truthful completed/current plan horizons, and passed an independent code review plus a fresh-context cold-navigation probe.",
-    "learning": "A checkpoint must distinguish a persisted decision from a newly applied decision: read-only validation may recognize the current consolidation digest, while apply must reject every later consolidation once the source ledger contains one. Behavior-skill authoring must also complete RED-GREEN-REFACTOR one skill at a time, so the behavior outcome needs two slices rather than one batch.",
-    "structure": "Plan adaptation and repository structure remain separate cohesive owners with accurate owner-local maps and four explicit cross-owner fact contracts. The next horizon adds one self-contained repo-local skill at a time plus versioned evaluations; it does not create another policy or fact owner.",
-    "decision": "continue",
+    "outcome": "Guidance capabilities now have an honest declaration shape, and the adaptive-plan execution skill, versioned evaluations, canonical result validator, focused tests, and plugin discovery contract are complete. All three critical fresh-agent scenarios pass all 23 required rubric dimensions, focused/read-only checks pass, and an independent behavior-horizon review has no open Critical or Important findings.",
+    "learning": "A capability must be declared before its implementation files exist so the next slice starts with truthful ownership and affected scope. Requiring every declaration to resolve immediately forces temporary scope-growth and makes the control loop discover the intended owner only after work has already begun.",
+    "structure": "Extend the existing canonical capability declaration with a backward-compatible active state and an explicit planned state bound to one current-horizon slice. Planned declarations reserve their owner and affected paths while deferring repository-existence checks; activation is required before slice completion, and no planned declaration may survive outside its horizon or through plan close-out.",
+    "decision": "amend",
     "nextSlices": [
-      "adaptive-plan-execution-skill-and-evaluations",
-      "organizing-repository-structure-skill-and-evaluations"
+      "planned-capability-declaration-lifecycle"
     ]
   },
   "structuralDispositions": [
@@ -445,6 +494,16 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "The autonomous consolidation repaired both durable navigation maps, made repository structure's four control-flow and trust families explicit, restored truthful completed/current plan horizons, and passed an independent code review plus a fresh-context cold-navigation probe."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "amend",
+      "summary": "The adaptive-plan skill reached deterministic GREEN and all three critical fresh-agent scenarios passed after observed command and consolidation loopholes were closed, but its new skill, evaluation, and shared discovery-contract paths remain visibly undeclared by the active record."
+    },
+    {
+      "date": "2026-08-12",
+      "decision": "amend",
+      "summary": "Guidance capabilities now have an honest declaration shape, and the adaptive-plan execution skill, versioned evaluations, canonical result validator, focused tests, and plugin discovery contract are complete. All three critical fresh-agent scenarios pass all 23 required rubric dimensions, focused/read-only checks pass, and an independent behavior-horizon review has no open Critical or Important findings."
     }
   ]
 }

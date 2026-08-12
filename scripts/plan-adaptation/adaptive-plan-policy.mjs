@@ -16,9 +16,21 @@ export function validateCheckpoint(checkpoint, record) {
     issues.push('checkpoint.decision must be continue, amend, consolidate, or stop');
   }
   validateNextSlices(issues, checkpoint.nextSlices);
+  validateCompletedSliceOverlap(issues, checkpoint.nextSlices, record);
   validateContinueDecision(issues, checkpoint, record);
   validateConsolidationDecision(issues, checkpoint, record);
   return issues;
+}
+
+function validateCompletedSliceOverlap(issues, nextSlices, record) {
+  if (!Array.isArray(nextSlices) || !Array.isArray(record.completedSlicesSinceCheckpoint)) {
+    return;
+  }
+  const completedSlices = new Set(record.completedSlicesSinceCheckpoint);
+  const overlap = nextSlices.filter((slice) => completedSlices.has(slice));
+  if (overlap.length > 0) {
+    issues.push(`checkpoint.nextSlices must not include completed slices: ${overlap.join(', ')}`);
+  }
 }
 
 export function hasConsolidationDecision(record) {
@@ -73,11 +85,24 @@ function validateContinueDecision(issues, checkpoint, record) {
 
 function validateConsolidationDecision(issues, checkpoint, record) {
   const consolidated = hasConsolidationDecision(record);
-  const persistedCurrentConsolidation = record.materialDecisions?.some(
-    (entry) =>
-      entry?.decision === 'consolidate' &&
-      entry.checkpointDigest === computeCheckpointDigest(checkpoint),
-  );
+  const completedSlice = record.completedSlicesSinceCheckpoint?.[0];
+  const completedCurrentConsolidation =
+    consolidated &&
+    checkpoint.decision === 'consolidate' &&
+    checkpoint.nextSlices?.length === 0 &&
+    record.completedSlicesSinceCheckpoint?.length === 1 &&
+    record.materialDecisions.some(
+      (entry) =>
+        entry?.decision === 'consolidate' &&
+        entry.checkpointDigest ===
+          computeCheckpointDigest({ ...checkpoint, nextSlices: [completedSlice] }),
+    );
+  const persistedCurrentConsolidation =
+    record.materialDecisions?.some(
+      (entry) =>
+        entry?.decision === 'consolidate' &&
+        entry.checkpointDigest === computeCheckpointDigest(checkpoint),
+    ) || completedCurrentConsolidation;
   const coldNavigationFailed = record.coldNavigationEvidence?.status === 'failed';
   const consolidationDecisionIndex = record.coldNavigationEvidence?.consolidationDecisionIndex;
   const referencedConsolidation =
@@ -100,7 +125,7 @@ function validateConsolidationDecision(issues, checkpoint, record) {
   if (consolidated && !persistedCurrentConsolidation) {
     issues.push('only one autonomous consolidation slice is allowed');
   }
-  if (checkpoint.nextSlices?.length !== 1) {
+  if (checkpoint.nextSlices?.length !== 1 && !completedCurrentConsolidation) {
     issues.push('consolidate must replace the next feature slice with one consolidation slice');
   }
 }

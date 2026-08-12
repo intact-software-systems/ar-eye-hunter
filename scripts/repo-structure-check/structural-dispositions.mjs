@@ -43,6 +43,9 @@ export function validateStructuralDispositions(input) {
 export function collectSemanticDepthFacts(input) {
   const factsByTarget = new Map();
   for (const capability of input.capabilities) {
+    if (capability.kind === 'guidance') {
+      continue;
+    }
     for (const file of input.authoredFiles) {
       if (!file.startsWith(`${capability.root}/`)) {
         continue;

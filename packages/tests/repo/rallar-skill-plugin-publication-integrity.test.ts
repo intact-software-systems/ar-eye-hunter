@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const skillsRoot = path.join(repoRoot, '.agents/skills');
 const expectedSkills = [
+  'adaptive-plan-execution',
   'building-rallar-apps',
   'performance-analysis',
   'rallar-ai',

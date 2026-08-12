@@ -119,6 +119,56 @@ describe('repository capability declarations', () => {
     );
   });
 
+  it('proves guidance, evaluation, and cross-owner contracts as repository files', () => {
+    const guidance = guidanceCapability();
+    const repositoryFiles = guidanceFiles();
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [guidance],
+      authoredFiles: fixtureFiles(),
+      repositoryFiles,
+      packageScripts: {
+        'test:adaptive-plan-execution': 'vitest run packages/tests/repo/adaptive-agent-execution',
+      },
+      readFile: (file: string) => (repositoryFiles.includes(file) ? 'fixture' : undefined),
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toEqual([]);
+  });
+
+  it('reports missing guidance evidence without applying code navigation or topology rules', () => {
+    const guidance = guidanceCapability();
+    const repositoryFiles = guidanceFiles().filter(
+      (file) =>
+        file !== '.agents/evaluations/adaptive-agent-execution/v1/rubric.json' &&
+        file !== 'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts',
+    );
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [guidance],
+      authoredFiles: fixtureFiles(),
+      repositoryFiles,
+      packageScripts: {
+        'test:adaptive-plan-execution': 'vitest run packages/tests/repo/adaptive-agent-execution',
+      },
+      readFile: (file: string) => (repositoryFiles.includes(file) ? 'fixture' : undefined),
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        'adaptive plan execution guidance evaluation root ' +
+          '.agents/evaluations/adaptive-agent-execution/v1 contains no repository files',
+        'adaptive plan execution guidance contract path ' +
+          'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts does not resolve',
+      ]),
+    );
+    expect(issues.join('\n')).not.toMatch(
+      /controlFlowFamilies|navigation map|authored code|semantic-depth/u,
+    );
+  });
+
   it('requires the declared capability and test roots to contain authored code', () => {
     const issues = validateCapabilityDeclarations({
       repoRoot: '/repo',
@@ -629,5 +679,29 @@ function fixtureFiles(): readonly string[] {
     'scripts/example/second.mjs',
     'packages/tests/repo/example/first.test.ts',
     'packages/tests/repo/example/second.test.ts',
+  ];
+}
+
+function guidanceCapability(overrides: Record<string, unknown> = {}) {
+  return {
+    kind: 'guidance',
+    owner: 'adaptive plan execution guidance',
+    skillRoot: '.agents/skills/adaptive-plan-execution',
+    skillEntry: '.agents/skills/adaptive-plan-execution/SKILL.md',
+    contractTestRoot: 'packages/tests/repo/adaptive-agent-execution',
+    focusedCommand: 'npm run test:adaptive-plan-execution',
+    evaluationRoot: '.agents/evaluations/adaptive-agent-execution/v1',
+    contractPaths: ['packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts'],
+    ...overrides,
+  };
+}
+
+function guidanceFiles(): readonly string[] {
+  return [
+    '.agents/skills/adaptive-plan-execution/SKILL.md',
+    '.agents/skills/adaptive-plan-execution/agents/openai.yaml',
+    '.agents/evaluations/adaptive-agent-execution/v1/rubric.json',
+    'packages/tests/repo/adaptive-agent-execution/contract.test.ts',
+    'packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts',
   ];
 }
