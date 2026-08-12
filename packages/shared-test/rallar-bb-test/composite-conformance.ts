@@ -223,7 +223,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES:
         {
             caseId: 'loop-until-convergence',
             title: 'Loop Until Convergence',
-            intent: 'Prove until mode polls an http.request/assert pair and exits on first success.',
+            intent: 'Prove until mode polls an http.request/assert pair to first success.',
             expectedStatus: 'ok',
             requiredCommandKinds: ['configure', 'loop', 'http.request', 'assert', 'stats'],
             requiredCompositeKinds: ['loop'],
@@ -232,7 +232,7 @@ export const RALLAR_BLACK_BOX_COMPOSITE_CONFORMANCE_CASES:
         {
             caseId: 'loop-until-exhausted',
             title: 'Loop Until Exhausted Control',
-            intent: 'Prove a never-converging until loop exhausts its bounds with the last attempt.',
+            intent: 'Prove a never-converging until loop exhausts bounds with the last attempt.',
             expectedStatus: 'failed',
             requiredCommandKinds: ['configure', 'loop', 'assert'],
             requiredCompositeKinds: ['loop'],
