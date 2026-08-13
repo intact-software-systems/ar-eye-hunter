@@ -12,7 +12,6 @@ import {
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
 import {
-  createRtcBaselineAcceptedWorkerSampleIdentity,
   runRtcBaselineAcceptedWorkerSamples,
 } from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
@@ -70,40 +69,6 @@ export function parseRtcIceCandidateQueueArguments(arguments_: readonly string[]
   );
   if (!parsed.ok) return parsed;
   return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
-}
-
-export function createRtcIceCandidateQueueSamples(input: {
-  worker: AcceptedArguments;
-  results: readonly RtcIceCandidateQueueResult[];
-}): RtcBaselineSampleDto[] {
-  const worker = acceptedWorkerIdentity(input.worker);
-  let priorFailureId: string | undefined;
-  return input.worker.sampleIds.map((sampleId, index) => {
-    const identity = createRtcBaselineAcceptedWorkerSampleIdentity(worker, index);
-    const result = input.results[index];
-    if (priorFailureId !== undefined || result === undefined) {
-      return createSample({
-        identity,
-        outcome: 'not-run',
-        rawEvidence: null,
-        issues: [
-          rtcBaselineIssue(
-            '$.rawEvidence',
-            'causal-not-run',
-            priorFailureId ?? 'Missing inner run.',
-          ),
-        ],
-      });
-    }
-    const issues = validateResult(input.worker.input, result);
-    if (issues.length > 0) priorFailureId = sampleId;
-    return createSample({
-      identity,
-      outcome: issues.length === 0 ? 'passed' : 'failed',
-      rawEvidence: result,
-      issues,
-    });
-  });
 }
 
 export async function runRtcIceCandidateQueueAcceptedSamples(input: {

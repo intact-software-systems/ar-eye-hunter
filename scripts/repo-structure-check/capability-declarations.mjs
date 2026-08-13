@@ -16,7 +16,7 @@ export function validateCapabilityDeclarations(input) {
       validateGuidanceCapability({ issues, capability, repositoryFileSet, input });
     } else {
       validateCapabilityControlFlow(issues, capability);
-      validateCapabilityPaths(issues, capability, authoredFileSet);
+      validateCapabilityPaths({ issues, capability, authoredFileSet, input });
       validateCapabilityCommand(issues, capability, input);
       validateFactContracts(issues, capability, authoredFileSet);
       validateCodeContractPaths({ issues, capability, authoredFileSet, repositoryFileSet });
@@ -125,7 +125,8 @@ function validateCapabilityControlFlow(issues, capability) {
   }
 }
 
-function validateCapabilityPaths(issues, capability, authoredFileSet) {
+function validateCapabilityPaths(validation) {
+  const { issues, capability, authoredFileSet, input } = validation;
   if (!hasFileUnder(authoredFileSet, capability.root)) {
     issues.push(`${capability.owner} root ${capability.root} contains no authored code`);
   }
@@ -141,7 +142,7 @@ function validateCapabilityPaths(issues, capability, authoredFileSet) {
   if (!hasFileUnder(authoredFileSet, capability.testRoot)) {
     issues.push(`${capability.owner} test root ${capability.testRoot} contains no authored tests`);
   }
-  if (!isRecognizedTestMirror(capability)) {
+  if (!isRecognizedTestMirror(capability, input)) {
     issues.push(
       `${capability.owner} test root ${capability.testRoot} must use a recognized mirrored ` +
         `test hierarchy for ${capability.root}`,
@@ -180,6 +181,7 @@ function resolvesCapabilityFocusedCommand(capability, input, expectedCommand) {
   const packageScript = packageManifest?.scripts?.[workspaceCommand[2]];
   return (
     packageManifest?.name === workspaceCommand[1] &&
+    packageManifest.private === true &&
     resolveWorkspaceVitestRoot(capability.root, packageScript) === capability.testRoot
   );
 }
@@ -585,10 +587,11 @@ function isOwnedEntry(capability) {
   );
 }
 
-function isRecognizedTestMirror(capability) {
+function isRecognizedTestMirror(capability, input) {
   if (
     capability.root.startsWith('packages/') &&
-    capability.testRoot === `${capability.root}/tests`
+    capability.testRoot === `${capability.root}/tests` &&
+    readCapabilityPackageManifest(capability, input)?.private === true
   ) {
     return true;
   }

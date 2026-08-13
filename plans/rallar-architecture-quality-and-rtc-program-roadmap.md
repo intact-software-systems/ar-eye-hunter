@@ -117,10 +117,10 @@ historical table: the human activated only Task 4B from exact plan blob
 `c1edd59d9d57799f7b955013acf624a76312740f` on base
 `8ee348e215a3e30d9b4959ce90369aea1b55b620`. Both authorized slices are locally
 complete. The authoritative plan now contains the code-derived trace for all 25
-executables, 18 exact legacy dispositions with no retained item, eight corrected
+executables, 18 exact legacy dispositions with no retained item, fourteen corrected
 Critical/Important findings, and old/new assertion parity for the exact three
-capability tests. Package tests pass 31 files/278 tests and repository-structure
-tests pass 10 files/120 tests; final unchanged-tree validation, independent
+capability tests. Package tests pass 31 files/281 tests and repository-structure
+tests pass 10 files/121 tests; final unchanged-tree validation, independent
 review, draft PR, and exact-head remote evidence remain pending. No benchmark or
 accepted capture ran, and Task 5/B04 remains inactive.
 
@@ -542,7 +542,7 @@ the human-program track and held here; B07, production, optimization, raw
 artifact publication, and Phase 2 remain held by the standalone activation
 line above.
 
-#### Completed shared RTC benchmark organization reservation — Task 4A only
+#### Completed Task 4A organization and active Task 4B review reservation
 
 [PR #196](https://github.com/intact-software-systems/ar-eye-hunter/pull/196)
 published the authoritative RTC plan blob
@@ -611,8 +611,10 @@ Deno-lock requirement and merged as
 `85b531ff8fd5fb0e9722a79876061c40a9eaf6fd`. Exact resulting-main run
 31674331404 succeeded. Current-main compatibility review through
 `8dab885023ca722c717e5a40724d9db635c20fd5` found no material Task 4A path,
-contract, dependency, or ontology-reservation effect. Task 4B is eligible for a
-separate human activation but remains inactive; B04, all capture, B06, B07,
+contract, dependency, or ontology-reservation effect. The human separately
+activated only Task 4B from plan blob
+`c1edd59d9d57799f7b955013acf624a76312740f`; its review and draft-publication
+gates are in progress on the isolated branch. B04, all capture, B06, B07,
 production change, optimization, and Phase 2 remain held.
 
 ## 6. Phase 0 — Establish Control And Measurement Design

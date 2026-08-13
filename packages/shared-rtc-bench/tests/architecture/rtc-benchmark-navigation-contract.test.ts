@@ -48,6 +48,24 @@ describe('shared RTC benchmark navigation contract', () => {
       `missing/duplicate README rows:\n${missingOrDuplicateRows.join('\n')}`,
     ).toEqual([]);
     expect(vitestConfig).toContain('packages/shared-rtc-bench/tests/**/*.test.ts');
+    expect(readme).toContain('`createRtcPeerConnectionDiagnosticsDependencies`');
+    expect(readme).not.toContain('`createRtcPeerConnectionDiagnosticsFakeRuntime`');
+    expect(readme).toContain('`QRtcDataChannel.sendJson` queue replacement behavior');
+    expect(readme).toContain('Construction, connect, and reset loop');
+    for (const command of [
+      'initialize',
+      'capture',
+      'list-external-attempts',
+      'record-browser',
+      'record-external',
+      'record-external-cohort',
+      'repeat-required',
+      'compare-paired',
+      'validate',
+      'finalize',
+    ]) {
+      expect(readme).toContain(`\`${command}\``);
+    }
   });
 
   it('keeps diagnostics outside accepted baseline catalog and checked by Deno', () => {

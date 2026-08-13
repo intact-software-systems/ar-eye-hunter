@@ -92,4 +92,44 @@ describe('RTC topology replay drain operation-count harness', () => {
     ).rejects.toThrow('workload failed');
     expect(calls).toEqual(['start', 'workload', 'stop']);
   });
+
+  it('stops a replay service when start rejects after installing resources', async () => {
+    const calls: string[] = [];
+    await expect(
+      executeRtcTopologyReplayServiceLifecycle(
+        {
+          start: async () => {
+            calls.push('start');
+            throw new Error('start failed');
+          },
+          stop: async () => {
+            calls.push('stop');
+          },
+        },
+        async () => {
+          calls.push('workload');
+          return 'not reached';
+        },
+      ),
+    ).rejects.toThrow('start failed');
+    expect(calls).toEqual(['start', 'stop']);
+  });
+
+  it('preserves start and cleanup failures together', async () => {
+    const startFailure = new Error('start failed');
+    const cleanupFailure = new Error('cleanup failed');
+    const result = executeRtcTopologyReplayServiceLifecycle(
+      {
+        start: async () => {
+          throw startFailure;
+        },
+        stop: async () => {
+          throw cleanupFailure;
+        },
+      },
+      async () => 'not reached',
+    );
+
+    await expect(result).rejects.toMatchObject({ errors: [startFailure, cleanupFailure] });
+  });
 });

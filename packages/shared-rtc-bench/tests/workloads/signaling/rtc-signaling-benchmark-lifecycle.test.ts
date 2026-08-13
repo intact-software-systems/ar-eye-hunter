@@ -229,7 +229,7 @@ it('RTC-B01 preserves counters, cleanup, identities, and failure persistence', a
   });
 });
 
-it('RTC-B01 accepts the fixed queue and listener matrices', () => {
+it('RTC-B01 accepts the fixed queue and listener matrices through the canonical runner', async () => {
   const queue = signalingWorker(
     'ice-candidate-queue',
     'candidates-25000',
@@ -241,31 +241,34 @@ it('RTC-B01 accepts the fixed queue and listener matrices', () => {
     words('--rtc-inner-runs=5 --rtc-peers=10000'),
   );
   const samples = [
-    ...IceQueue.createRtcIceCandidateQueueSamples({
+    ...(await IceQueue.runRtcIceCandidateQueueAcceptedSamples({
       worker: accepted(IceQueue.parseRtcIceCandidateQueueArguments(queue.arguments)),
-      results: Array(5).fill({
+      run: async () => ({
         durationMs: 1,
         candidateCount: 25000,
         addedCandidates: 25000,
         remainingQueuedCandidates: 0,
       }),
-    }),
-    ...Listeners.createRtcPeerListenerCleanupSamples({
+    })),
+    ...(await Listeners.runRtcPeerListenerCleanupAcceptedSamples({
       worker: accepted(Listeners.parseRtcPeerListenerCleanupArguments(listeners.arguments)),
-      results: Array(5).fill({
+      run: async () => ({
         durationMs: 1,
         peerCount: 10000,
         retainedIceGatheringListeners: 0,
         maxListenersPerPeer: 0,
         unclearedHandlerSlots: 0,
       }),
-    }),
+    })),
   ];
   expect(
     samples.every(
       (sample) => sample.outcome === 'passed' && sample.evidenceClass === 'synthetic-path',
     ),
   ).toBe(true);
+  expect(Object.keys(Diagnostics)).not.toContain('createRtcPeerConnectionDiagnosticsSamples');
+  expect(Object.keys(IceQueue)).not.toContain('createRtcIceCandidateQueueSamples');
+  expect(Object.keys(Listeners)).not.toContain('createRtcPeerListenerCleanupSamples');
 });
 
 it('RTC-B01 diagnostics stay create-new beneath tmp/perf/results', () => {

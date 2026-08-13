@@ -107,10 +107,10 @@ export async function executeRtcTopologyReplayServiceLifecycle<Result>(
   service: Pick<RtcTopologyReplayService, 'start' | 'stop'>,
   execute: () => Promise<Result>,
 ): Promise<Result> {
-  await service.start();
   let executionFailed = false;
   let executionFailure = new Error('RTC topology replay workload failed before cleanup');
   try {
+    await service.start();
     return await execute();
   } catch (error) {
     executionFailed = true;
