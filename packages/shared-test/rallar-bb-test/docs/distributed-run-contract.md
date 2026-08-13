@@ -49,6 +49,8 @@ Important optional fields:
 - `startDeadlineEpochMs`: required when `startMode` is `scheduled`.
 - `artifactPolicy`: event JSONL, result JSONL, failure bundle, and distributed
   metadata retention preferences.
+- `groupAssertions`: optional coordinator-evaluated invariants over the
+  collected evidence of every targeted agent. See "Group Assertions" below.
 
 Use `validateDistributedRunManifestContract(manifest)` after JSON Schema
 validation for domain checks such as:
@@ -59,6 +61,11 @@ validation for domain checks such as:
 - scheduled runs require `startDeadlineEpochMs`
 - ACK timeout and expected participant count must be positive integers
 - barrier timeout must be a positive integer when supplied
+- group assertion IDs must be unique; sources must reference a manifest recipe
+  key (and, for inline recipes, an authored `commandId`); `scope.role` must be
+  a declared role unless a role-assignment pattern policy derives roles;
+  `countMatching` needs at least one bound and `allEqualWithin` a tolerance
+  `>= 0`; `minParticipants` must be an integer `>= 1`
 
 ## Lifecycle States
 
@@ -100,6 +107,9 @@ The rollup rules are deliberately simple and deterministic:
   to `failed`.
 - Optional participant or recipe failures are counted as evidence but do not
   fail the distributed run.
+- Failed group assertion results are blocking failures with
+  `kind: 'group-assertion'`; a run whose recipes all passed still rolls up to
+  `failed` when any group assertion failed.
 - If all required recipe results passed, the distributed run is `passed`.
 - If any required participant or recipe is running, the distributed run is
   `running`.
@@ -112,7 +122,73 @@ The rollup rules are deliberately simple and deterministic:
 - Otherwise the state remains the supplied non-terminal hint or `draft`.
 
 The rollup returns a summary and a `failures` array that can feed the future UI
-and artifact export.
+and artifact export. When the manifest declares `groupAssertions`, the summary
+carries `groupAssertions` / `passedGroupAssertions` / `failedGroupAssertions`
+counts and the rollup echoes each per-assertion result.
+
+## Group Assertions
+
+`groupAssertions` is the assertion altitude neither per-agent dialect has:
+invariants over the collected evidence of every agent in the shared group,
+evaluated **coordinator-side** by the control server's distributed-run rollup
+after every dispatched recipe result completed. Agents are unchanged, so the
+agent capability gate does not apply; an old control server rejects the field
+at manifest validation (fail closed), and dispatch tooling validates before
+POSTing.
+
+Every assertion reads one result value from every participating agent through
+a typed address `{ recipeId, commandId, path }`: the manifest recipe key, the
+authored command ID inside that recipe's composite result (loop and parallel
+children included), and a payload path into that command result's `value`.
+Value predicates reuse the assert operator vocabulary from
+`assert/assert-value-operators.ts`, so agent-side and coordinator-side
+semantics cannot drift.
+
+The v1 aggregate vocabulary is fixed, strict, and deterministic:
+
+- `allMatch` — every participating agent's value satisfies the predicate.
+- `noneMatch` — no participating agent's value satisfies the predicate; kept
+  as a named aggregate because the intent and diagnostics are clearer than
+  `countMatching == 0`.
+- `countMatching` with `count.equals` / `count.gte` / `count.lte` — quorum
+  checks against the frozen participant denominator.
+- `allEqual` — every agent contributed the same JSON value under
+  `deepEqualJson` (object-key-order insensitive, array-order sensitive;
+  deliberately not `sameJsonValue` and not `json-compare` exact).
+- `allEqualWithin` — numeric agreement within an absolute `tolerance`;
+  non-numeric evidence marks the holder violating.
+
+Authoring rule: when the expected value is known, use `allMatch equals X` —
+`allEqual` alone passes when every agent agrees on the same wrong value; the
+two compose ("all equal AND the first one matches X").
+
+Participation rules, mandatory on every group assertion:
+
+- The participant set is **frozen at target resolution** from the run
+  snapshot's `targetResolution`; late joins and drops never change the
+  denominator.
+- Missing, duplicate, or unresolved evidence at the address **fails by
+  default** with `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING`;
+  absence of evidence is never a pass.
+- `scope.role` narrows participants to a manifest role; `minParticipants` is
+  the only explicit relaxation and only excuses missing agents — duplicate or
+  unresolved evidence still fails. A scope no frozen participant holds fails
+  with `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS`.
+- Aggregate violations fail with
+  `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED`; failure details carry a
+  redacted per-agent value table identifying missing and violating agents by
+  agent ID, and the same codes flow into `failures.json` and the artifact
+  analyzer vocabulary.
+
+Group assertions are exclusively run-failing **correctness** gates in v1;
+fleet performance and SLO evidence stays in artifact-analysis thresholds.
+
+Evidence retention: the control server stores start-phase recipe results for
+group-assertion runs uncompacted (other recipe results keep the compact
+`resultCount` projection), because the per-command composite results are the
+coordinator's evidence source. Raw values stay in memory only; every value
+that reaches results, failures, or artifacts passes the redaction pipeline
+first.
 
 ## Target Resolution
 
