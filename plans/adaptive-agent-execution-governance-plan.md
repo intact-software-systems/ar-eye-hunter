@@ -779,7 +779,9 @@ parallel registry.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "adaptive-plan-closeout-receipt"
+  ],
   "facts": {
     "diffBase": "origin/main",
     "affectedCodeDigest": "a0497aa2f98c5c4821b20e52225afa22d13a69dc024645634d761ccb6bea06c0",
@@ -795,9 +797,7 @@ parallel registry.
     "learning": "Destructive close-out needs durable repository evidence that binds the removed active record, reviewed digest, and PR evidence; plan deletion alone is ambiguous and must remain fail-closed.",
     "structure": "Keep receipt production and verification inside the existing plan-adaptation lifecycle owner. The close transaction writes one direct plans/<plan-id>.closure.json receipt while removing the tactical plan and regenerating the registry; read-only validation accepts only an exact base-plan deletion authenticated by that receipt.",
     "decision": "amend",
-    "nextSlices": [
-      "adaptive-plan-closeout-receipt"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
