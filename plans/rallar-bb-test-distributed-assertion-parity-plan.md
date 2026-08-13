@@ -8,13 +8,16 @@
 > that would otherwise block mid-task.
 
 Status: D0-D5 merged to `main` (owner-approved admin squash merges of #182,
-#187, #190, #192 on 2026-08-12; #180/#181 merged via the stack root).
-Remaining before completion: the approved Hetzner dispatch of
-`16-rtc-absence-wait-2-agent` (D1), **Run Hetzner Supported Distributed
-Manifests** green on the resulting default-branch commit, and a decision on
-the unmandated D6. The stack's structural-lineage manifest was retired with
-the final merge (all extractions are now main baseline). Implements the decision
-items of issue
+#187, #190, #192 on 2026-08-12; #180/#181 merged via the stack root; #178
+closed as fully landed). D6 is authored and governance-ready below; its
+evidence base was revalidated against `main` at `8ee348e2` on 2026-08-13.
+Remaining before plan completion: the D6 mandate and implementation, the
+approved Hetzner dispatch of `16-rtc-absence-wait-2-agent` (D1), **Run
+Hetzner Supported Distributed Manifests** green on the resulting
+default-branch commit, and the final `Complete Code and Legacy Review` task.
+The stack's structural-lineage manifest was retired with the final merge
+(all extractions are now main baseline). Implements the decision items of
+issue
 [#176](https://github.com/intact-software-systems/ar-eye-hunter/issues/176).
 
 | Workstream | Status | Branch / PR |
@@ -25,7 +28,7 @@ items of issue
 | D3 `loop` until-success polling | merged | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
 | D4 capability advertisement + preflight gating | merged | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
 | D5 parity and conformance deepening | merged | [#192](https://github.com/intact-software-systems/ar-eye-hunter/pull/192) |
-| D6 coordinator-evaluated group assertions | not started | — |
+| D6 coordinator-evaluated group assertions | ready to start (prompt + governance recorded) | — |
 
 Plan evidence base: authored 2026-08-11 after the W1–W8 assertion-coverage
 stack landed on `main` at `93483f47` (Branch Release Gate green on
@@ -87,16 +90,23 @@ and bound step latency. The distributed dialect cannot express any of that:
   the template in `schema-compatibility-guide.md`. The lockstep tests in
   `packages/tests/shared-test/rallar-bb-test-schema.test.ts` (`:166`, `:298`,
   `:347`) enforce most of this mechanically.
-- **Style-gate budgets.** `runtime.ts` (2761), `schema.ts` (2100),
-  `control-protocol.ts` (1540), `control-client.ts` (938), and `types.ts`
-  (907) are all over the 800-line cap and **none is registered** in
-  `docs/repo-code-style-exceptions.md`. The changed-findings gate forbids net
-  growth of over-cap files, so new evaluator logic lands in new feature
-  modules (`wait-absence.ts`, `assert-value-operators.ts`,
-  `loop-until.ts` beside `runtime.ts`) with minimal dispatch wiring offset by
-  equivalent extractions under a structural-lineage manifest — the exact
-  pattern the W1–W8 stack used on the runner megafiles. Budget this cost into
-  every estimate; it dominated the runner work.
+- **Style-gate budgets (revalidated 2026-08-13 at `8ee348e2`).**
+  `runtime.ts` (2519), `schema.ts` (1922), `control-protocol.ts` (1546),
+  `control-client.ts` (911), `types.ts` (918), `distributed-run.ts` (1053),
+  `distributed-run-monitor.ts` (4640), `distributed-artifact-analysis.ts`
+  (2988), and control-server `control-service.ts` (2315) are over the
+  800-line cap with no registered exceptions. New logic lands in the
+  established feature subfolders (`wait/`, `assert/`, `loop/`,
+  `conformance/`, `schema/`, `distributed/` — the flat package directory is
+  over the 20-file density threshold, so no new direct files there), with
+  net-neutral wiring in over-cap files; new modules stay <=399 lines with at
+  most one >400 survivor per extraction pool. The D0-D5 lineage manifest is
+  retired; a D6 extraction of pre-existing `main` code needs a fresh manifest
+  entry pinned to D6's own merge-base. Since #195, cognitive-load metrics
+  (warn 50 / review 110 / refactor-or-register 330) and the runtime-export
+  responsibility rule are **failing** changed-gate signals, and PRs to main
+  carry the `pr-human-review-record-v1` requirement
+  (`npm run check:pr-human-review`).
 - **Redaction.** Every new evidence payload (offending absence event,
   comparator actuals, poll attempt results) passes the runtime redaction
   pipeline before it reaches results, events, failures, or artifacts.
@@ -110,6 +120,30 @@ and bound step latency. The distributed dialect cannot express any of that:
   semantics match the runner's: absence waits hold the full window and scan
   the whole buffer; polling success is the child expectation passing;
   exhaustion of either bound is a failure carrying the last attempt.
+
+## Legacy baseline and exit criteria
+
+Affected-surface legacy inventory with dispositions. D0-D5 dispositions are
+already landed on `main`; D6's rows bind its implementation. Unrelated,
+untouched repository legacy (including the runner/bb-test dual-dialect
+architecture itself, guarded by D5's outcome-parity suite) is outside this
+gate.
+
+| Item (path / symbol) | Purpose | Canonical owner | Disposition |
+|---|---|---|---|
+| `types.ts` `RallarBlackBoxTestRtcSendCommand.expect` | in-process runner-adapter parity data; rejected by control validators | `black-box-runner-adapter.ts` | minimized-boundary (D0, owner-merged #180/#182) |
+| manual-workbench rtc.send `expect` blobs | vacuous negative-snippet expectations | removed; intent lives in snippet `metadata` | removed (D0) |
+| assert `notEquals` missing-path pass; strictly numeric `gte`/`lte` | historical operator semantics old recipes rely on | `assert/assert-value-operators.ts` | retained, documented (D2, owner-merged #182); revisit only with a versioned operator change |
+| `sameJsonValue` JSON.stringify equality | wait/assert equality primitive | `wait/wait-event-match.ts` | retained for agent-side matching; **disqualified for D6 `allEqual`** — D6 ships `deepEqualJson` (key-order insensitive, array-order sensitive) as a separate named primitive; three comparison vocabularies then exist deliberately: `sameJsonValue` (agent match), `json-compare` (shape modes), `deepEqualJson` (group agreement). D6 documents the boundary in `schema-and-capabilities.md`; a fourth vocabulary is prohibited |
+| `plans/repo-style-lineages/rallar-bb-test-distributed-assertion-parity.json` | style-gate extraction lineage for D0-D5 | — | removed (retired with #192) |
+| stale `crdt`-only agent capability advertisements on world-fleet agents | pre-D4 agents lacking the `assertions` block | `distributed/control-agent-capabilities.ts` + staging gate | minimized-boundary: gated by `missing-assertion-capability` staging blockers until fleets roll forward; exit = world-fleet rollout advertising the block |
+
+Exit criteria: every row above stays in its recorded disposition; D6 adds no
+new comparison primitive beyond `deepEqualJson`, imports agent predicates
+from `assert/assert-value-operators.ts` instead of forking them, and the
+final `Complete Code and Legacy Review` task confirms the ledger against the
+frozen head SHA. A retained item may change disposition only with explicit
+owner approval recorded here.
 
 ---
 
@@ -428,29 +462,82 @@ repo's "no latency SLOs in gates" doctrine — with a deliberate, per-contract
 promotion path later if a specific performance bound becomes an explicit
 product contract. Record the resolution here before implementing D6.
 
+**Resolution (proposed 2026-08-13, recorded on owner merge of this plan
+update): correctness-only in v1.** Group assertions are run-failing
+correctness gates; fleet performance/SLO evidence stays in artifact-analysis
+thresholds. Per-contract promotion of a specific performance bound requires
+a new owner decision recorded here first.
+
+**D6 revalidation (2026-08-13 at `8ee348e2`):** the prerequisites hold on
+`main`. D2 shipped its predicates as pure, runtime-agnostic functions
+(`assert/assert-value-operators.ts` — already imported by Deno control-server
+paths through `distributed/control-agent-capabilities.ts`, so
+coordinator-side reuse cannot drift from agent-side semantics). The typed
+address coordinates exist (`resultCache.<commandId>` agent-side; composite
+result paths in `composite-results.ts`). The participant set is already
+frozen at target resolution and recorded on the run snapshot
+(`control-service.ts` stores `targetResolution`; `resolveDistributedRunTargets`
+in `distributed-run.ts`). Rollup evaluation attaches where
+`distributed-run-contract.md` "Rollup Rules" and the control server's
+distributed-run rollup already run. New failure codes must join the
+D5 analyzer vocabulary (`assertion-absence`/`convergence-polling` precedent
+in `distributed-artifact-analysis.ts`) and the failure-triage reference.
+
+**Legacy impact:** creates one deliberate new comparison primitive
+(`deepEqualJson`, group-agreement semantics) with a named owner and a
+documented three-vocabulary boundary (see Legacy baseline); reuses D2's
+predicate module rather than duplicating operator logic; touches no agent
+runtime path and creates no compatibility mode. The Hetzner manifest it
+adds follows the one-group isolation contract.
+
 **Prompt:**
 
 ```
-Add a manifest-level groupAssertions block to the rallar-bb-test distributed
-run contract, evaluated coordinator-side in the distributed-run rollup after
-required recipes and barriers complete: allMatch, noneMatch, countMatching
-(equals/gte/lte), allEqual (deep equality: key-order insensitive,
-array-order sensitive — a new pure deepEqualJson, not sameJsonValue and not
-json-compare exact), and allEqualWithin, with typed sources
-{recipeId, commandId, path}, predicates reused as pure functions from D2's
-operator module, role scoping, a participant set frozen at target
-resolution, and missing/duplicate/unresolved evidence failing by default
-(minParticipants only as explicit relaxation). Implement evaluation in a new
-distributed-run module (net-neutral wiring in existing over-cap files),
-update the manifest schema + golden corpus + distributed-run-contract doc +
-control-server OpenAPI examples, emit redacted per-agent value tables naming
-missing and violating agents with named failure codes into failures.json and
-the artifact analyzer, and add a conformance case per aggregate with a
-deliberately-broken control, plus one checked-in Hetzner manifest asserting
-allEqual convergence and noneMatch isolation across the fleet. Run the
-schema, distributed-run, control-server deno, conformance, and
-artifact-analysis suites plus test:repo-governance; dispatch the manifest
-through the Hetzner workflow once reviewed.
+Implement workstream D6 of plans/rallar-bb-test-distributed-assertion-parity-plan.md
+end to end using publishing-plan-progress, rallar-code-writing, and
+rallar-testing; read rallar-hetzner-ops before touching manifests. Branch
+codex/bb-test-d6-group-assertions off main; one draft PR targeting main;
+update the plan Status table; push without asking; never commit or push main.
+
+Build the manifest-level groupAssertions block exactly as specified in the
+D6 section: aggregates allMatch, noneMatch, countMatching (equals/gte/lte),
+allEqual (new pure deepEqualJson: object-key-order insensitive, array-order
+sensitive — NOT sameJsonValue, NOT json-compare exact), allEqualWithin;
+typed sources {recipeId, commandId, path}; value predicates imported from
+assert/assert-value-operators.ts (never reimplemented); scope.role +
+minParticipants as the only explicit relaxation; the participant set frozen
+at target resolution from the run snapshot's targetResolution; missing,
+duplicate, or unresolved evidence fails by default. Correctness-only: no
+performance/SLO aggregate may fail a run (resolved in the plan).
+
+Placement per the style budgets: evaluation in new
+distributed/group-assertions*.ts modules (<=399 lines each, at most one >400
+pool survivor per extraction; the flat package dir is density-capped);
+net-neutral wiring in distributed-run.ts and the control server's rollup;
+any extraction of pre-existing main code gets a fresh
+plans/repo-style-lineages manifest pinned to this branch's merge-base.
+Aligned surfaces in the same PR: manifest schema branch + capability/OpenAPI
+docs on the control server, golden corpus (valid manifest with a
+groupAssertions example + invalid cases), distributed-run-contract.md,
+ai-recipe-prompt-guide.md, schema-and-capabilities.md (document the
+three-vocabulary comparison boundary), an upgrade note, redacted per-agent
+value tables naming missing and violating agents with named failure codes
+wired into failures.json, distributed-artifact-analysis vocabulary, and the
+failure-triage reference. Add a conformance case per aggregate with a
+deliberately-broken control, plus one checked-in extended Hetzner manifest
+asserting allEqual convergence and noneMatch isolation (one-group isolation
+contract; no second room).
+
+Validation floor: rallar-bb-test schema + distributed-run +
+composite-conformance + artifact-analysis + assertion-outcome-parity vitest,
+control-server deno task check + test, hetzner-distributed-manifests vitest,
+test:repo-governance, check:repo-style:changed against origin/main (cognitive
+metrics are failing signals since #195), npm run check:pr-human-review, and
+the shared-test + rallar-black-box typechecks. Stop and ask only if: a
+product decision beyond the plan's baked-in ones appears, a change would be
+schema-breaking or need a protocolVersion bump, a style exception would be
+needed instead of extracting, or before dispatching any real Hetzner or
+world-fleet run (the manifest dispatch waits for explicit approval).
 ```
 
 **Done when:** a synthetic run with one disagreeing agent fails `allEqual`
@@ -458,6 +545,33 @@ naming that agent; one leaked frame anywhere fails `noneMatch` with the
 offending evidence; a missing agent fails by default; `countMatching`
 expresses the quorum cases against the frozen denominator; and the Hetzner
 manifest passes a real dispatch.
+
+## Complete Code and Legacy Review (final task)
+
+Runs after the last mandated workstream merges and before the plan is
+declared complete:
+
+1. Freeze and record the base and head SHAs of the final state.
+2. Dispatch an independent read-only reviewer over the changed production
+   paths: control envelope -> validators -> agent runtime dispatch
+   (wait/assert/loop modules) -> results/redaction -> control client ->
+   staging target resolution and capability gate -> rollup and group
+   assertions (if D6 lands) -> artifacts and analyzer.
+3. Review the Legacy baseline ledger, the diff, and the call paths for
+   unnamed legacy; give every item one disposition: removed,
+   minimized-boundary, resolved, or retained-pending-human-approval.
+4. Resolve all Critical and Important findings; any corrective production
+   change repeats the review.
+5. Present retained items to the owner with exact path, symbol, purpose,
+   unsafe-removal reason, minimization, canonical owner, compatibility
+   tests, named owner, review/removal condition, and the exact head SHA;
+   only explicit approval of that ledger permits retention.
+6. Confirm the completion gates: `npm run test:unit`, `npm run test:ci`,
+   `npm run build` on the final tree; Branch Release Gate green on the final
+   feature commit; the approved Hetzner dispatch of
+   `16-rtc-absence-wait-2-agent`; and **Run Hetzner Supported Distributed
+   Manifests** green on the resulting default-branch commit, each with its
+   exact SHA recorded here.
 
 ## Sequencing and guardrails
 
