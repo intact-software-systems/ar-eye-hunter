@@ -77,6 +77,9 @@ describe('plan adaptation CLI lifecycle', () => {
     const beforeCheck = snapshotTrackedFiles(fixture.root);
     expect(runCli(fixture.root, ['check', ...common]).status).toBe(0);
     expect(snapshotTrackedFiles(fixture.root)).toEqual(beforeCheck);
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'complete fixture plan']);
+    const closeBase = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
 
     const evidenceRelativePath = 'final-pr-evidence.json';
     const evidencePath = path.join(fixture.root, evidenceRelativePath);
@@ -91,13 +94,31 @@ describe('plan adaptation CLI lifecycle', () => {
       }),
     );
     expect(
-      runCli(fixture.root, ['close', ...common, '--final-pr-evidence', evidenceRelativePath])
-        .status,
+      runCli(fixture.root, [
+        'close',
+        '--plan',
+        fixture.planPath,
+        '--base',
+        closeBase,
+        '--final-pr-evidence',
+        evidenceRelativePath,
+      ]).status,
     ).toBe(0);
     expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(false);
     expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).not.toContain(
       'fixture-plan',
     );
+    expect(
+      JSON.parse(readFileSync(path.join(fixture.root, 'plans/fixture-plan.closure.json'), 'utf8')),
+    ).toEqual({
+      schemaVersion: 'plan-adaptation-closure-v1',
+      planId: 'fixture-plan',
+      planPath: fixture.planPath,
+      planDigest: recordDigest(record),
+      pullRequestUrl: 'https://github.com/example/repository/pull/1',
+      finalReviewStatus: 'complete',
+    });
+    expect(runCli(fixture.root, ['check', '--base', closeBase]).status).toBe(0);
   });
 
   it('rejects completion of a slice outside the current horizon without changing files', () => {
