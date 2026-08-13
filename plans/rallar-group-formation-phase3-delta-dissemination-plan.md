@@ -563,8 +563,7 @@ adaptive horizon rule.
       "folder-change",
       "ownership-change",
       "public-contract-change",
-      "scope-growth",
-      "two-completed-slices"
+      "scope-growth"
     ],
     "undeclaredChangedPaths": [
       "plans/rallar-group-topology-evidence-ledger-plan.md",
