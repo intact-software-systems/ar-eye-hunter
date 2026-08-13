@@ -229,6 +229,14 @@ removed active record, and the already-validated final PR URL and completed
 review status. It contains no architecture judgment and no clock-derived
 freshness claim.
 
+The final receipt-only pull request uses the PR Human Review Record v2
+`plan-only` exemption. That exemption accepts only implementation-plan Markdown
+and canonical `plans/<plan-id>.closure.json` paths, and its declared path set
+must still exactly equal the observed diff. Arbitrary JSON, mixed code changes,
+and unsafe or noncanonical receipt paths remain ineligible. Adaptive governance,
+not the exemption parser, authenticates the receipt against the deleted base
+record and generated registry transition.
+
 Its closed shape is `schemaVersion`, `planId`, `planPath`, `planDigest`,
 `pullRequestUrl`, and `finalReviewStatus`, in that deterministic order. The
 schema version is `plan-adaptation-closure-v1`, and the review status must be
