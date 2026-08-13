@@ -695,7 +695,8 @@ are selected at the preceding checkpoint.
       ],
       "contractPaths": [
         ".github/workflows/branch-release-gate.yml",
-        ".github/workflows/release-gate.yml"
+        ".github/workflows/release-gate.yml",
+        "apps/relic-hunter-server-v1/deno.lock"
       ],
       "controlFlowFamilies": [
         "build-tree digest computation",
@@ -716,7 +717,9 @@ are selected at the preceding checkpoint.
       ],
       "contractPaths": [
         ".github/workflows/hetzner-supported-distributed-manifests.yml",
+        "apps/api-v1/deno.json",
         "apps/api-v1/deno.lock",
+        "deno.json",
         "deno.lock"
       ],
       "controlFlowFamilies": [
@@ -744,7 +747,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
-    "affectedCodeDigest": "b169410e027d6a6c16c0980e384fa142231d7c3be44c5c3add6bf62e618353fa",
+    "affectedCodeDigest": "4c3c4b3c3c138bb7340b62bc0fbc7aa798854013efe0430e69aa0458fec54a0c",
     "computedTriggers": [
       "folder-change",
       "ownership-change",

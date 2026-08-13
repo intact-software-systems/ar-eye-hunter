@@ -145,7 +145,15 @@ describe('distributed validation risk classification', () => {
     },
     {
       family: 'distributed-protocol-controller-headless',
+      path: 'deno.json',
+    },
+    {
+      family: 'distributed-protocol-controller-headless',
       path: 'apps/api-v1/deno.lock',
+    },
+    {
+      family: 'distributed-protocol-controller-headless',
+      path: 'apps/api-v1/deno.json',
     },
     {
       family: 'distributed-protocol-controller-headless',
