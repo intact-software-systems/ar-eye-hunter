@@ -15,7 +15,7 @@ import {
   createPostgresSql,
   topologyGroupSnapshot,
   type PostgresSql,
-} from '../../topology/concurrency/postgres-topology-concurrency-fixtures.ts';
+} from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -130,11 +130,7 @@ class BarrierRuntimeStateRepository extends PSqlRuntimeStateRepository {
   private readonly barrierNamespace: string;
   private readonly barrier: () => Promise<void>;
 
-  constructor(
-    sql: PSqlSql,
-    barrierNamespace: string,
-    barrier: () => Promise<void>,
-  ) {
+  constructor(sql: PSqlSql, barrierNamespace: string, barrier: () => Promise<void>) {
     super(sql);
     this.barrierNamespace = barrierNamespace;
     this.barrier = barrier;

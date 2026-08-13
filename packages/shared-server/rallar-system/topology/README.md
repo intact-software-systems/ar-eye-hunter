@@ -153,6 +153,75 @@ inputs, explicit snapshot-selection policy, required snapshot and RTT readers,
 and an explicit local/persistent mode. RTC APP_OUTBOX replay calls that planning
 owner directly. Existing RTC topology algorithm behavior remains unchanged.
 
+## Five capability-family traces
+
+These code-derived traces are durable qualitative navigation evidence. Each separates
+construction and registration from runtime invocation and names callback/retry ownership,
+normal and inactive exits, terminal failure, cleanup, caller result, and compatibility paths.
+
+### Config and override mutation
+
+| Stage                         | Owner and behavior                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Construction and registration | API composition constructs `GroupTopologyManagementService`; `AppGroupInboxService.setTopologyManagementService` captures its config mutation owner before registering the four config/override queue types. `TopologyAppInboxHandler` receives the canonical owner directly.                                                                             |
+| Invocation and retry          | HTTP/admin creates the canonical command and authenticated proof. Each queue attempt rereads session authority, then invokes `GroupTopologyConfigMutationService` for prepare → exact read → compute → independent validate. `AppInboxMutationTransactionWriter` owns callback invocation, rollback, conflict classification, and whole-attempt re-entry. |
+| Commit and result             | The transaction guards authority, config/override, invariant and target generations; inserts immutable mutation/idempotency and deterministic RTC work; writes the durable result; and completes the reservation. Confirmed real-write data owns the post-commit APP_OUTBOX wake; the caller receives the durable result.                                 |
+| Early/inactive exits          | `claim`, `no-op`, and `replay` preserve their existing results without a config/override write. Divergent idempotency is a typed terminal exit.                                                                                                                                                                                                           |
+| Failure and cleanup           | Malformed protocol, policy denial, corruption, and non-canonical recomputation fail at their existing owners. Retryable compare-and-set conflicts roll back before re-entry; exhaustion becomes the existing durable failure. The transaction owner cleans up rollback state.                                                                             |
+| Canonical/compatibility path  | Runtime composition and handler code import canonical mutation owners. `packages/shared-server/mod.ts`, the management facade, and the one-hop `AppGroupInboxService` command export remain compatibility surfaces only.                                                                                                                                  |
+
+### Explicit reconfigure
+
+| Stage                         | Owner and behavior                                                                                                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Construction and registration | The management facade constructs `GroupTopologyReconfigureMutation`; `AppGroupInboxService.setTopologyManagementService` captures it before registering `RTC_TOPOLOGY_RECONFIGURE`, and the handler receives it directly.                                    |
+| Invocation and retry          | Authenticated AppInbox ingress rereads current group/authority, resolved config, and RTT planning authority. The mutation computes and validates deterministic work; the transaction writer owns rollback and whole-attempt re-entry after retryable guards. |
+| Commit and result             | One transaction applies the authority fence, inserts deterministic `RTC_TOPOLOGY_RECOMPUTE` work, writes the queued result, and completes the reservation. Confirmed commit returns the durable queued result and wakes APP_OUTBOX.                          |
+| Early/inactive exits          | Existing idempotent queued/replay behavior returns its durable result. Reconfigure never writes config, override, config generation, invariant generation, or config idempotency records.                                                                    |
+| Failure and cleanup           | Invalid actor, lifecycle, group identity, request options, or authority fails at the existing boundary. Retryable conflicts roll back the attempt; terminal failure and exhaustion retain AppInbox ownership and cleanup.                                    |
+| Canonical/compatibility path  | The handler imports `GroupTopologyReconfigureMutation` directly. The public management facade remains supported externally but is not reacquired by canonical handler execution.                                                                             |
+
+### Query and topology view
+
+| Stage                         | Owner and behavior                                                                                                                                                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Construction and registration | `GroupTopologyManagementService` constructs one `GroupTopologyConfigGenerationReadiness` and shares it with `GroupTopologyConfigQueryService`; HTTP/admin composition exposes the supported facade and unchanged serializers. No queue callback is registered.                                                           |
+| Invocation and retry          | An authorized caller invokes the query owner or facade. Readiness precedes exact batch or invariant-bracketed fallback reads; defaults, durable config, live override, and request options resolve before persisted/process-local view selection. A failed readiness promise is removed so a later invocation may retry. |
+| Normal result                 | The query returns config, override, or topology view through the unchanged serializer. Planning reads current group, resolved config, RTT measurements, and the RTC clock through named authority inputs.                                                                                                                |
+| Inactive/no-op exit           | An expired override is observationally absent. Process-local compatibility view selection remains explicit and does not persist or publish topology.                                                                                                                                                                     |
+| Failure and cleanup           | Corrupt storage, mismatched read invariants, invalid scope, or authorization fail at their existing boundaries. Query creates no transaction, receipt, outbox row, or wake; readiness owns failed-promise removal.                                                                                                       |
+| Canonical/compatibility path  | Internal planning/query consumers import their narrow owners. `GroupTopologyManagementService` remains the one public compatibility facade and serializer entry.                                                                                                                                                         |
+
+### Maintenance and expiry
+
+| Stage                         | Owner and behavior                                                                                                                                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Construction and registration | Startup explicitly invokes generation backfill and, only with `oldWritersStopped: true`, bounded legacy-key migration. Per-group query/mutation construction supplies shared readiness. Generic runtime-state cleanup remains separate.                                      |
+| Invocation and retry          | Backfill and migration enumerate canonical sources and retain three-attempt optimistic retry. First per-group access invokes memoized readiness; failure removes the promise for a later retry. Generic cleanup runs on its existing schedule, not as an import side effect. |
+| Normal/no-op exits            | Already-ready generations, absent legacy sources, and value-identical canonical destinations retain accepted/no-op outcomes. Successful migration compares the exact destination before conditional legacy deletion.                                                         |
+| Conflict/failure              | Divergent canonical data and invariant corruption remain terminal. Retryable optimistic conflicts re-enter the full maintenance attempt; exhaustion propagates through the existing maintenance failure boundary.                                                            |
+| Cleanup and result            | Config, generation, invariant, and idempotency records remain non-expiring. Override expiry makes the value observationally absent, then generic cleanup removes it; expiry creates no receipt, recompute, publication, or wake.                                             |
+| Canonical/compatibility path  | Callers import backfill, migration, and readiness owners directly. No legacy-key or moved-private-path wrapper becomes an execution path.                                                                                                                                    |
+
+### Downstream RTC publication
+
+| Stage                         | Owner and behavior                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Construction and registration | API composition constructs RTC repositories, planning, `createRtcTopologyWorkHandler`, replay lifecycle, QueueBox bridge, WS delivery, and reconnect hydration before queue readiness. Shared-server owns reusable behavior; API-v1 owns process identity, environment policy, startup, health, and shutdown.                                                   |
+| Invocation and retry          | APP_OUTBOX claims committed `RTC_TOPOLOGY_RECOMPUTE` work. The handler reads claim/snapshot/planning authority, computes via `RallarRtcTopologyService`, validates next-hop invariants, and uses the transaction owner's callback/rollback/retry contract. Replay separately polls committed per-process streams and advances only a contiguous handled prefix. |
+| Commit and after-commit       | One transaction performs snapshot CAS, execution claim, immutable publication, optional WS_OUTBOX, durable stream append, and APP_OUTBOX completion. Only confirmed commit data reaches cache observation, metrics, and WS wake; QueueBox remains immediate and duplicate-tolerant.                                                                             |
+| Inactive/repair exits         | Accepted identical publication and completed work retain idempotent exits. Missing history or a retention gap selects current authorized hydration; disabled replay leaves durable polling off without changing publication writes.                                                                                                                             |
+| Failure and cleanup           | Lease loss, CAS conflict, failed send, missing/mismatched references, and failed gap hydration do not over-acknowledge. Retryable conflicts roll back; corruption is terminal. Replay owns heartbeat, cursor, retention, cancellation, socket fencing, and shutdown cleanup.                                                                                    |
+| Result and compatibility path | Results flow through WS delivery and the shared-web overlay cache to `WebRtcGroupManager`. Canonical composition imports work/planning owners directly; deprecated `RtcTopologyClusterTransport` remains a public compatibility export only.                                                                                                                    |
+
+## Controlled navigation sample disposition
+
+No valid controlled human sample was collected at the approved Task 1 baseline, so the human
+explicitly waived the comparison. These five independently reviewed code-derived traces are
+qualitative navigation evidence only. They make no claim about elapsed time, wrong files,
+compatibility-hop counts, unresolved-question counts, productivity, causality, or statistical
+improvement, and no missing human value has been filled by an AI.
+
 ## Deferred owners
 
 - Downstream RTC APP_OUTBOX work, topology snapshots/publications, WS audience,
