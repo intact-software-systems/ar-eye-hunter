@@ -3103,18 +3103,23 @@ record's single next slice.
     "diffBase": "dc44ab029dd415b356833d3b72e0207f79c4bc88",
     "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "computedTriggers": [
+      "ownership-change",
       "invalid-assumption",
       "scope-growth"
     ],
     "undeclaredChangedPaths": [
+      "docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md",
+      "packages/shared-web/tsconfig.json",
+      "packages/shared/tsconfig.json",
       "plans/adaptive-agent-execution-governance-plan.md",
-      "plans/adaptive-agent-execution-governance.closure.json"
+      "plans/adaptive-agent-execution-governance.closure.json",
+      "plans/rallar-architecture-quality-and-rtc-program-roadmap.md"
     ]
   },
   "checkpoint": {
-    "outcome": "PRs A, B, and C are integrated. PR C correctness and resulting-main evidence are retained, its failed publication evidence remains failed, and the human explicitly skipped the unconsumed performance workflow. Current main leaves topology production behavior unchanged but introduces adaptive capability governance that the legacy test layout does not yet satisfy.",
-    "learning": "The remaining value is not another measurement campaign or broad reorganization. It is one behavior-neutral consolidation that makes the already implemented topology ownership directly navigable and governable under current main.",
-    "structure": "Keep packages/shared-server/rallar-system/topology as the production owner and its existing README as the navigation owner. Move the topology tests into the recognized mirrored hierarchy, add one exact focused command, correct the two retained style findings, and preserve every public, persisted, authority, transaction, retry, receipt, outbox, and downstream boundary.",
+    "outcome": "PR #203's RTC plan and roadmap updates landed after this plan's facts were prepared. They are concurrent sibling evidence and do not change group-topology behavior or ownership.",
+    "learning": "The stale facts came from main advancing before integration, not from a topology implementation change.",
+    "structure": "Keep the existing group-topology owner and the activate-group-topology-capability consolidation slice unchanged.",
     "decision": "consolidate",
     "nextSlices": [
       "activate-group-topology-capability"
@@ -3161,6 +3166,12 @@ record's single next slice.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "The human explicitly skipped the unconsumed PR C performance workflow and requested replanning under the adaptive tools now on main; the skip is retained as a closure deviation, not a pass."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "consolidate",
+      "summary": "PR #203's RTC plan and roadmap updates landed after this plan's facts were prepared. They are concurrent sibling evidence and do not change group-topology behavior or ownership.",
+      "checkpointDigest": "d3059a7d620520177f63440f8e56b28d121535c893670e068cc48d0af1a1cdcd"
     }
   ]
 }
