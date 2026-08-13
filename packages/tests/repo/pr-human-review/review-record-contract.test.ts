@@ -89,6 +89,10 @@ describe('PR Human Review Record v2 contract', () => {
         'No production, test, script, workflow, package metadata, or runtime files changed',
       ]);
     }
+    expectAllNormalized(contract, [
+      'canonical `plans/<plan-id>.closure.json` receipts',
+      'Adaptive governance authenticates the receipt',
+    ]);
   });
 });
 

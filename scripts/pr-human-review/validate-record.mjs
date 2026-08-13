@@ -1,5 +1,6 @@
 import { validateRetainedLegacy } from './trusted-retained-legacy.mjs';
 import { isBuildAffectingPath } from './review-freshness.mjs';
+import { isPlanClosureReceiptPath } from '../plan-adaptation/plan-closure-receipt.mjs';
 import {
   isExactSha,
   readVisibleReviewSections,
@@ -13,7 +14,11 @@ export { isExactSha } from './validate-review-evidence.mjs';
 
 const recordFence = /```pr-human-review-record-v2\s*\n([\s\S]*?)\n```/gu;
 const exemptionPaths = {
-  'plan-only': [/^docs\/superpowers\/plans\/.+\.md$/u, /^plans\/.+\.md$/u],
+  'plan-only': [
+    /^docs\/superpowers\/plans\/.+\.md$/u,
+    /^plans\/.+\.md$/u,
+    isPlanClosureReceiptPath,
+  ],
   'documentation-only': [
     (repositoryPath) => /\.mdx?$/u.test(repositoryPath) && !isBuildAffectingPath(repositoryPath),
   ],
@@ -205,13 +210,14 @@ function normalizePath(repositoryPath) {
   if (
     typeof repositoryPath !== 'string' ||
     repositoryPath.includes('\\') ||
+    repositoryPath.startsWith('./') ||
     repositoryPath.startsWith('/') ||
+    repositoryPath.includes('//') ||
     repositoryPath.includes('../')
   ) {
     return undefined;
   }
-  const normalized = repositoryPath.replace(/^\.\//u, '').replace(/\/+/gu, '/');
-  return normalized.includes('/./') || normalized === '.' ? undefined : normalized;
+  return repositoryPath.includes('/./') || repositoryPath === '.' ? undefined : repositoryPath;
 }
 
 function sameTextArray(left, right) {

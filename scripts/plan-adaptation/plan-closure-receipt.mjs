@@ -225,7 +225,7 @@ function isTacticalPlanPath(value) {
   );
 }
 
-function isPlanClosureReceiptPath(value) {
+export function isPlanClosureReceiptPath(value) {
   return (
     typeof value === 'string' && /^plans\/[a-z0-9]+(?:-[a-z0-9]+)*\.closure\.json$/u.test(value)
   );
