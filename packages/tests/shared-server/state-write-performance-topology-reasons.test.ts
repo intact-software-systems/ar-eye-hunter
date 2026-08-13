@@ -5,7 +5,7 @@ import {
   GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA,
 } from '../../../scripts/perf/pool-group-topology-state-write-position-balanced-results.mjs';
 
-const APPROVED_PR_C_BASE_COMMIT = '33fa104d2cbf347eab1d02a54107c01f064aad00';
+const APPROVED_PR_C_BASE_COMMIT = '39ad65b499c4bf944acfe48446ad1c334d97d37d';
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
 const CANDIDATE_TREE = '7f971bcf84aa494265992d17e3c9b99227bd8122';
 const CANDIDATE_IDENTITY = { commit: CANDIDATE_COMMIT, tree: CANDIDATE_TREE } as const;
