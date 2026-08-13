@@ -3,7 +3,13 @@ import type { StateSnapshotReadSource } from '@shared/api/state-snapshot-read.ts
 export type BrowserStateReadDiagnosticEvent = Readonly<{
   name: 'rallar.browser.state-read';
   feature: 'client' | 'group';
-  operation: 'point' | 'heartbeat' | 'collection' | 'topology-read-through' | 'reopen-resync';
+  operation:
+    | 'point'
+    | 'heartbeat'
+    | 'collection'
+    | 'topology-read-through'
+    | 'reopen-resync'
+    | 'delta-apply';
   result:
     | 'found'
     | 'not-found'
@@ -11,6 +17,9 @@ export type BrowserStateReadDiagnosticEvent = Readonly<{
     | 'removed'
     | 'preserved'
     | 'adopted'
+    | 'applied'
+    | 'no-op'
+    | 'gap-pull'
     | 'no-overlay'
     | 'revision-conflict'
     | 'read-failed'

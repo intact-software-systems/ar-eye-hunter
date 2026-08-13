@@ -44,7 +44,10 @@ describe('rallar-black-box-headless bundle boundary', () => {
     // Validated snapshot point reads and race-fenced repair add a bounded browser cost.
     // Group-formation Phase 1 (overlay provenance admission, bounded bootstrap
     // selection, outbound dial plan) adds ~0.7 KiB; measured 194.61 at that change.
-    expect(result.brotliKiB).toBeLessThan(199);
+    // Phase 3 M2 browser delta consumption (delta-envelope wire validation,
+    // snapshot materialization, floored gap pull) adds ~1.9 KiB; measured
+    // 200.40 at that change.
+    expect(result.brotliKiB).toBeLessThan(202);
   });
 });
 

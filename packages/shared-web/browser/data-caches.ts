@@ -29,6 +29,10 @@ import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts
 import { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
 
 import {
+    acceptGroupStateDeltaEnvelope,
+    toGroupStateDeltaEnvelope,
+} from './state-cache/group-state-delta-application.ts';
+import {
     isRtcTopologyCurrentStateMessage,
 } from './state-cache/is-rtc-topology-current-state-message.ts';
 import {
@@ -167,8 +171,28 @@ export function initialise(
                             break;
                         }
 
-                        case AppTopics.clientStateEvent:
+                        case AppTopics.clientStateEvent: {
+                            break;
+                        }
+
                         case AppTopics.groupStateEvent: {
+                            const scope = readActiveStateCacheScope(initialScope);
+                            const envelope = toGroupStateDeltaEnvelope(
+                                data.payload.resource,
+                                scope,
+                            );
+                            if (envelope === undefined) {
+                                break;
+                            }
+                            await acceptGroupStateDeltaEnvelope(
+                                envelope,
+                                scope,
+                                stateRepositoryObserverContext
+                                    ?.rereadGroupSnapshots,
+                            );
+                            await groupStateSnapshotsRepository
+                                .waitForGroupStateSnapshotChangesIdle();
+                            await waitForStateRepositoryObserverTasks();
                             break;
                         }
 
