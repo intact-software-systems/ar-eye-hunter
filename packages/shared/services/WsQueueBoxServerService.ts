@@ -472,6 +472,7 @@ export class WsQueueBoxServerService {
             topicId: message.route.topicId,
             recipientCount: recipients.length,
             sentCount: sent,
+            payloadBytes: encoded.text.length,
         });
         return {
             status: toWsServerLiveSendStatus(
@@ -651,7 +652,8 @@ export class WsQueueBoxServerService {
     ): Promise<Readonly<{ status: 'sent' | 'no-targets' }>> {
         if (prepared.kind === 'cluster-local-complete') return { status: 'sent' };
         try {
-            this.socket.send(prepared.connectionId, prepared.message);
+            const encoded = this.socket.encode(prepared.message);
+            this.socket.sendEncoded(prepared.connectionId, encoded);
             this.recordOutboundDeliveryOutcome({
                 status: 'sent',
                 messageId: prepared.message.id.msgId,
@@ -659,6 +661,7 @@ export class WsQueueBoxServerService {
             this.recordDeliveryDiagnostics({
                 kind: 'outbox-send',
                 topicId: prepared.message.route.topicId,
+                payloadBytes: encoded.text.length,
             });
             return { status: 'sent' };
         } catch (error) {
