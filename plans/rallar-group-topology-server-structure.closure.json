@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "plan-adaptation-closure-v1",
+  "planId": "rallar-group-topology-server-structure",
+  "planPath": "plans/rallar-group-topology-server-structure-plan.md",
+  "planDigest": "9016fa3cd8521609fd8ef27d8e16d459b4c8c6a072b2e68e271b7973b535eb85",
+  "pullRequestUrl": "https://github.com/intact-software-systems/ar-eye-hunter/pull/209",
+  "finalReviewStatus": "complete"
+}
