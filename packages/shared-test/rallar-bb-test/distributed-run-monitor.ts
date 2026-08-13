@@ -1,5 +1,6 @@
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
+    RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRoleAssignmentPolicy,
@@ -224,6 +225,7 @@ export type BuildDistributedRunManifestInput = Readonly<{
     startMode: 'manual' | 'auto-after-ready' | 'scheduled';
     startDeadlineEpochMs?: number;
     expectedParticipantCount?: number;
+    groupAssertions?: readonly RallarBlackBoxDistributedGroupAssertion[];
 }>;
 
 export type DistributedRunProgressStatus =
@@ -1705,6 +1707,7 @@ export function buildDistributedRunManifest(
             includeResultJsonl: true,
             includeFailureBundle: true,
         },
+        groupAssertions: input.groupAssertions,
         metadata: {
             createdBy: 'rallar-black-box-spa',
             rolePattern: input.rolePattern,
