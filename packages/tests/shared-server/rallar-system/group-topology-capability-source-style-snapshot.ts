@@ -2,8 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-export const groupTopologyCapabilityBaseCommit = '49adc91cbcf00e97560716fc91ae4f4a31a291c1';
-export const groupTopologyCapabilityBaseTree = '97f995bff6849b1fc090a8b1a595d112a1e845cc';
+export const groupTopologyCapabilityBaseCommit = 'aa124e03775492f9e37882bb9ed02b03dfe0dad6';
+export const groupTopologyCapabilityBaseTree = '7fdefc3d98f875298c95a65d716de88a3741c00a';
 export const predecessorGroupTopologyTestRoot = 'packages/tests/shared-server/topology';
 export const mirroredGroupTopologyTestRoot = 'packages/tests/shared-server/rallar-system/topology';
 export const groupTopologyPlanningSnapshotPath =

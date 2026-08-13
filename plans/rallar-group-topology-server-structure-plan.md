@@ -1779,15 +1779,16 @@ tree. No performance protocol is part of this child's remaining horizon.
 Current main advanced during execution from the observed
 `20f0bd8ce8a905054feb8d60d61c6a169d149b1b` tree
 `50c5c2c16a2ee0264c4bd3263e9ff629a8d524a0` to merge base
-`49adc91cbcf00e97560716fc91ae4f4a31a291c1` tree
-`97f995bff6849b1fc090a8b1a595d112a1e845cc`. The compatibility result is
+`aa124e03775492f9e37882bb9ed02b03dfe0dad6` tree
+`7fdefc3d98f875298c95a65d716de88a3741c00a`. The compatibility result is
 **Compatible — no plan delta**. The later commit refreshes only this plan's
-PR #203 sibling-facts checkpoint. The wider reconciled current-main changes
-add RTC benchmark consumers of canonical replay owners, generic black-box
-assertions with no topology ownership, and governance that requires the
-recognized test mirror, focused command, and navigation contract. They change
-no topology behavior, owner, public/persisted contract, integration, or Task 5
-acceptance criterion.
+PR #203 sibling-facts checkpoint, and `aa124e03` removes contaminated
+uncommitted TypeScript paths from that older fact refresh. The wider reconciled
+current-main changes add RTC benchmark consumers of canonical replay owners,
+generic black-box assertions with no topology ownership, and governance that
+requires the recognized test mirror, focused command, and navigation contract.
+They change no topology behavior, owner, public/persisted contract, integration,
+or Task 5 acceptance criterion.
 
 The durable README now records construction/registration and runtime timelines
 for all five families: config/override mutation, explicit reconfigure, query,
@@ -3216,18 +3217,18 @@ record's current next slice.
     },
     "compatibilityReview": {
       "initialBase": "20f0bd8ce8a905054feb8d60d61c6a169d149b1b",
-      "base": "49adc91cbcf00e97560716fc91ae4f4a31a291c1",
-      "tree": "97f995bff6849b1fc090a8b1a595d112a1e845cc",
+      "base": "aa124e03775492f9e37882bb9ed02b03dfe0dad6",
+      "tree": "7fdefc3d98f875298c95a65d716de88a3741c00a",
       "result": "Compatible — no plan delta",
-      "topologyImpact": "RTC benchmark ownership adds direct canonical replay consumers, generic black-box assertions do not own topology contracts, and repository/adaptive governance requires the mirrored test root, exact focused command, and machine-verifiable navigation contract. The later 49adc91c movement refreshes only this plan's PR #203 sibling facts. No topology production behavior or semantic test changed."
+      "topologyImpact": "RTC benchmark ownership adds direct canonical replay consumers, generic black-box assertions do not own topology contracts, and repository/adaptive governance requires the mirrored test root, exact focused command, and machine-verifiable navigation contract. The later 49adc91c movement refreshes this plan's PR #203 sibling facts; aa124e03 removes contaminated uncommitted TypeScript paths from that older fact refresh. No topology production behavior or semantic test changed."
     }
   },
   "completedSlicesSinceCheckpoint": [
     "closure-receipt-publication"
   ],
   "facts": {
-    "diffBase": "49adc91cbcf00e97560716fc91ae4f4a31a291c1",
-    "affectedCodeDigest": "cf527111c519146083638ecd117b739670edc68b0d1eab9cba062c8e8a5aae9a",
+    "diffBase": "aa124e03775492f9e37882bb9ed02b03dfe0dad6",
+    "affectedCodeDigest": "cc83dedf212e09a2bbe3e9050c1417d1bb899d6658abdf2cb4b3c06dd749d86e",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -3270,9 +3271,9 @@ record's current next slice.
     ]
   },
   "checkpoint": {
-    "outcome": "The completed activate-group-topology-capability slice preserves all moved semantic and concurrency behavior; after final formatting, the focused suite and all four affected downstream Postgres modules pass on the same source tree.",
-    "learning": "The opted-in Postgres gate exposed four downstream integration imports and one worker fixture import whose extra mirror depth was not exercised by the default focused suite; correcting only those relative paths restored the existing tests without changing production behavior or contracts.",
-    "structure": "The group topology authority remains rooted at packages/shared-server/rallar-system/topology with its README as navigation owner, while the recognized mirrored test root and every external Postgres/config consumer are declared capability facts or contracts; no predecessor test root or private-path wrapper remains.",
+    "outcome": "Main advanced to aa124e03775492f9e37882bb9ed02b03dfe0dad6 through a plan-only fact cleanup; the rebased capability source remains behaviorally identical and all production, test, ownership, integration, and acceptance contracts remain valid.",
+    "learning": "The new base removes two contaminated uncommitted TypeScript configuration paths from an older fact refresh and preserves the clean-worktree lesson; it changes no topology source, predecessor test, command, or governance implementation.",
+    "structure": "Keep the activated production owner, recognized test mirror, exact focused command, README navigation owner, declared Postgres consumers, completed one-slice boundary, and post-consolidation no-next-slice checkpoint unchanged on aa124e03.",
     "decision": "amend",
     "nextSlices": []
   },
@@ -3396,6 +3397,11 @@ record's current next slice.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "The completed activate-group-topology-capability slice preserves all moved semantic and concurrency behavior; after final formatting, the focused suite and all four affected downstream Postgres modules pass on the same source tree."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "Main advanced to aa124e03775492f9e37882bb9ed02b03dfe0dad6 through a plan-only fact cleanup; the rebased capability source remains behaviorally identical and all production, test, ownership, integration, and acceptance contracts remain valid."
     }
   ]
 }
