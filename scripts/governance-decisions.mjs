@@ -9,6 +9,7 @@ import { decodeGovernanceDecisionCommand } from './governance-decisions/governan
 import { decodeGovernanceDecisionRequest } from './governance-decisions/governance-decision-request.mjs';
 import { computeGovernanceDecisionTransition } from './governance-decisions/governance-decision-transition.mjs';
 import { readGitRepositorySnapshot } from './governance-decisions/git-repository-snapshot.mjs';
+import { readChangedPathsBetweenRevisions } from './plan-adaptation/plan-change-facts.mjs';
 
 try {
   const command = decodeGovernanceDecisionCommand(process.argv.slice(2));
@@ -33,6 +34,8 @@ function previewDecision(command) {
   return computeGovernanceDecisionTransition({
     request,
     snapshot,
+    readChanges: (baseOid, headOid) =>
+      readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
     readSnapshot: (commitOid) =>
       readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
     ...(request.operation === 'plan.supersede'
@@ -50,6 +53,8 @@ function previewDecision(command) {
 function verifyCommit(command) {
   return verifyGovernanceDecisionCommit({
     commitOid: command.commitOid,
+    readRepositoryChanges: (baseOid, headOid) =>
+      readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
     readRepositorySnapshot: (commitOid) =>
       readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
   });

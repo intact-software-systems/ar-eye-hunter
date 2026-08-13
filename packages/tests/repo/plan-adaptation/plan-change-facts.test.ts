@@ -15,6 +15,7 @@ import {
   computeUndeclaredChangedPaths,
   hasCurrentPlanFacts,
   readChangedPaths,
+  readChangedPathsBetweenRevisions,
 } from '../../../../scripts/plan-adaptation/plan-change-facts.mjs';
 
 const fixtureRoots: string[] = [];
@@ -43,6 +44,7 @@ describe('canonical content facts', () => {
         baseOid: fixture.base,
         baseEntries: readTree(fixture.root, fixture.base),
         entries: readIndexTree(fixture.root),
+        changes,
         record,
         planPath: 'plans/example.md',
       }),
@@ -85,24 +87,60 @@ describe('canonical content facts', () => {
         destination: 'scripts/existing/example.ts',
       }),
     ]);
+    const changes = readChangedPaths(fixture.root, base);
     const worktreeFacts = computePlanFacts({
       repoRoot: fixture.root,
       base,
-      changes: readChangedPaths(fixture.root, base),
+      changes,
       record,
       planPath: 'plans/example.md',
     });
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'move and modify source']);
+    const candidateHead = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
 
     expect(
       computePlanFactsFromTree({
         baseOid: base,
         baseEntries: readTree(fixture.root, base),
-        entries: readIndexTree(fixture.root),
+        entries: readTree(fixture.root, candidateHead),
+        changes: readChangedPathsBetweenRevisions(fixture.root, base, candidateHead),
         record,
         planPath: 'plans/example.md',
       }),
     ).toEqual(worktreeFacts);
     expect(worktreeFacts.computedTriggers).toContain('folder-change');
+  });
+
+  it('does not turn unrelated delete and add changes into a folder movement', () => {
+    const fixture = createRepository();
+    writeFixture(fixture.root, 'scripts/existing/keep.ts', 'export const keep = true;\n');
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'add existing destination']);
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    runGit(fixture.root, ['rm', 'packages/example/src/a.ts']);
+    writeFixture(fixture.root, 'scripts/existing/unrelated.ts', 'export const other = 42;\n');
+    runGit(fixture.root, ['add', '.']);
+    const changes = readChangedPaths(fixture.root, base);
+    const record = predecessorRecord([]);
+    const worktreeFacts = computePlanFacts({
+      repoRoot: fixture.root,
+      base,
+      changes,
+      record,
+      planPath: 'plans/example.md',
+    });
+
+    expect(worktreeFacts.computedTriggers).not.toContain('folder-change');
+    expect(
+      computePlanFactsFromTree({
+        baseOid: base,
+        baseEntries: readTree(fixture.root, base),
+        entries: readIndexTree(fixture.root),
+        changes,
+        record,
+        planPath: 'plans/example.md',
+      }),
+    ).toEqual(worktreeFacts);
   });
 
   it('compares computed facts semantically while preserving array order', () => {

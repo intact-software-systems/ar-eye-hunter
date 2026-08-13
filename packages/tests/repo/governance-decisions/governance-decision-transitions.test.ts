@@ -75,6 +75,7 @@ describe('governance decision transitions', () => {
     const transition = computeGovernanceDecisionTransition({
       request,
       snapshot: brokenSnapshot,
+      readChanges: () => [],
       readSnapshot: () => snapshot,
     });
     const repairedMarkdown = transition.additions.find(
@@ -137,11 +138,88 @@ describe('governance decision transitions', () => {
     const transition = computeGovernanceDecisionTransition({
       request,
       snapshot: invalidSnapshot,
+      readChanges: () => [],
       readSnapshot: () => snapshot,
     });
 
     expect(transition.bypassedInvariants).toContain(
       'replacement checkpoint: continue is invalid while an unrecoverable navigation or ownership failure is known',
+    );
+  });
+
+  it('computes repair facts from the exact candidate plan tree', () => {
+    const fixture = createRepositoryFixture({
+      planPath: 'plans/governance-lifecycle-recovery.md',
+    });
+    const snapshot = readGitRepositorySnapshot({
+      repoRoot: fixture.root,
+      commitOid: fixture.headOid,
+    });
+    const record = parseAdaptivePlanRecord(
+      readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'),
+      fixture.planPath,
+    );
+    record.facts.diffBase = snapshot.headOid;
+    const markdown = toPlanMarkdown(record);
+    const currentSnapshot = replaceSnapshotEntry(snapshot, fixture.planPath, markdown);
+
+    const transition = computeGovernanceDecisionTransition({
+      request: repairRequest(fixture, markdown),
+      snapshot: currentSnapshot,
+      readChanges: () => [],
+      readSnapshot: () => snapshot,
+    });
+    const repaired = parseAdaptivePlanRecord(
+      transition.additions.find((addition) => addition.path === fixture.planPath)!.content,
+      fixture.planPath,
+    );
+
+    expect(repaired.facts.computedTriggers).toContain('lifecycle-change');
+  });
+
+  it('reports a forced second autonomous consolidation as a bypassed invariant', () => {
+    const fixture = createRepositoryFixture();
+    const snapshot = readGitRepositorySnapshot({
+      repoRoot: fixture.root,
+      commitOid: fixture.headOid,
+    });
+    const markdown = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
+    const record = parseAdaptivePlanRecord(markdown, fixture.planPath);
+    record.facts.diffBase = snapshot.headOid;
+    record.materialDecisions.push({
+      date: '2026-08-12',
+      decision: 'consolidate',
+      summary: 'The prior autonomous consolidation was selected.',
+      checkpointDigest: 'a'.repeat(64),
+    });
+    const priorConsolidationMarkdown = toPlanMarkdown(record);
+    const priorConsolidationSnapshot = replaceSnapshotEntry(
+      snapshot,
+      fixture.planPath,
+      priorConsolidationMarkdown,
+    );
+    const request = decodeGovernanceDecisionRequest({
+      ...repairRequest(fixture, priorConsolidationMarkdown),
+      payload: {
+        checkpoint: {
+          outcome: 'Force another consolidation.',
+          learning: 'Administrative override.',
+          structure: 'One more bounded consolidation is required.',
+          decision: 'consolidate',
+          nextSlices: ['second-consolidation'],
+        },
+      },
+    });
+
+    const transition = computeGovernanceDecisionTransition({
+      request,
+      snapshot: priorConsolidationSnapshot,
+      readChanges: () => [],
+      readSnapshot: () => snapshot,
+    });
+
+    expect(transition.bypassedInvariants).toContain(
+      'replacement checkpoint: only one autonomous consolidation slice is allowed',
     );
   });
 
@@ -363,19 +441,20 @@ describe('governance decision transitions', () => {
       computeGovernanceDecisionTransition({
         request: repairRequest(fixture, invalidMarkdown),
         snapshot: invalidSnapshot,
+        readChanges: () => [],
         readSnapshot: () => snapshot,
       }),
     ).toThrow('target plan contains non-bypassable schema defects: record.goal');
   });
 });
 
-function createRepositoryFixture(options: { planMarkdown?: string } = {}) {
+function createRepositoryFixture(options: { planMarkdown?: string; planPath?: string } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'governance-decisions-'));
   fixtures.push(root);
   execFileSync('git', ['init', '-q'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Fixture'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
-  const planPath = 'plans/authenticated-governance-decisions.md';
+  const planPath = options.planPath ?? 'plans/authenticated-governance-decisions.md';
   execFileSync('mkdir', ['-p', 'plans'], { cwd: root });
   const planMarkdown = options.planMarkdown ?? toGovernanceDecisionFixturePlanMarkdown();
   writeFileSync(path.join(root, planPath), planMarkdown);

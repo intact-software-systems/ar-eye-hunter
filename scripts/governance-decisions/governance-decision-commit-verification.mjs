@@ -72,6 +72,7 @@ export function verifyGovernanceDecisionCommit(verificationInput) {
   const transition = computeGovernanceDecisionTransition({
     request,
     snapshot: parentSnapshot,
+    readChanges: verificationInput.readRepositoryChanges,
     readSnapshot: verificationInput.readRepositorySnapshot,
     readBlob: (blobOid) =>
       readCommitBlob({

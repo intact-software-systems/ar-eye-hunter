@@ -36,6 +36,7 @@ export function computeGovernanceDecisionTransition(transitionInput) {
     entriesByPath,
     targetEntry,
     readBlob: transitionInput.readBlob,
+    readChanges: transitionInput.readChanges,
     readSnapshot: transitionInput.readSnapshot,
   });
   return toTransition({
@@ -67,6 +68,9 @@ function computePlanRepair(operationInput) {
   const repairedRecord = structuredClone(record);
   repairedRecord.checkpoint = structuredClone(operationInput.request.payload.checkpoint);
   repairedRecord.completedSlicesSinceCheckpoint = [];
+  const replacementIssues = validateCheckpoint(repairedRecord.checkpoint, repairedRecord).map(
+    (issue) => `replacement checkpoint: ${issue}`,
+  );
   repairedRecord.materialDecisions = [
     ...repairedRecord.materialDecisions,
     toMaterialDecision(
@@ -75,9 +79,6 @@ function computePlanRepair(operationInput) {
       operationInput.request,
     ),
   ];
-  const replacementIssues = validateCheckpoint(repairedRecord.checkpoint, repairedRecord).map(
-    (issue) => `replacement checkpoint: ${issue}`,
-  );
 
   const candidateEntries = replaceEntryContent(
     operationInput.entriesByPath,
@@ -329,8 +330,11 @@ function toMaterialDecision(date, checkpoint, request) {
 }
 
 function computeFactsFromSnapshotReader(operationInput, factInput) {
-  if (typeof operationInput.readSnapshot !== 'function') {
-    throw new Error('plan.repair requires an injected base snapshot reader');
+  if (
+    typeof operationInput.readSnapshot !== 'function' ||
+    typeof operationInput.readChanges !== 'function'
+  ) {
+    throw new Error('plan.repair requires injected base snapshot and change readers');
   }
   const baseOid = factInput.record.facts?.diffBase;
   if (typeof baseOid !== 'string' || baseOid === '') {
@@ -340,13 +344,68 @@ function computeFactsFromSnapshotReader(operationInput, factInput) {
   if (baseSnapshot?.headOid !== baseOid || !Array.isArray(baseSnapshot.entries)) {
     throw new Error('base snapshot reader returned the wrong repository tree');
   }
+  const changes = operationInput.readChanges(baseOid, operationInput.request.expectedHeadOid);
+  if (!Array.isArray(changes)) {
+    throw new Error('change reader returned malformed repository changes');
+  }
+  const candidateChanges = replaceCanonicalChangesForCandidatePaths({
+    changes,
+    baseEntries: baseSnapshot.entries,
+    candidateEntries: factInput.entries,
+    candidatePaths: [factInput.planPath],
+  });
   return computePlanFactsFromTree({
     baseOid,
     baseEntries: baseSnapshot.entries,
     entries: factInput.entries,
+    changes: candidateChanges,
     record: factInput.record,
     planPath: factInput.planPath,
   });
+}
+
+function replaceCanonicalChangesForCandidatePaths(input) {
+  const candidatePathSet = new Set(input.candidatePaths);
+  const baseByPath = new Map(input.baseEntries.map((entry) => [entry.path, entry]));
+  const candidateByPath = new Map(input.candidateEntries.map((entry) => [entry.path, entry]));
+  const retained = [];
+  for (const change of input.changes) {
+    if (candidatePathSet.has(change.path)) {
+      if (change.status.startsWith('R') && !candidatePathSet.has(change.oldPath)) {
+        retained.push({
+          status: 'D',
+          path: change.oldPath,
+          oldMode: change.oldMode,
+          newMode: '000000',
+        });
+      }
+      continue;
+    }
+    if (candidatePathSet.has(change.oldPath)) {
+      retained.push({
+        status: 'A',
+        path: change.path,
+        oldMode: '000000',
+        newMode: change.newMode,
+      });
+      continue;
+    }
+    retained.push(change);
+  }
+  for (const candidatePath of input.candidatePaths) {
+    const base = baseByPath.get(candidatePath);
+    const candidate = candidateByPath.get(candidatePath);
+    if (base?.mode === candidate?.mode && base?.blobOid === candidate?.blobOid) {
+      continue;
+    }
+    retained.push({
+      status: base ? (candidate ? 'M' : 'D') : 'A',
+      path: candidatePath,
+      oldMode: base?.mode ?? '000000',
+      newMode: candidate?.mode ?? '000000',
+    });
+  }
+  return retained.sort((left, right) => compareText(left.path, right.path));
 }
 
 function replaceEntryContent(entriesByPath, entryPath, content) {

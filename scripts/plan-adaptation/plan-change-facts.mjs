@@ -9,7 +9,7 @@ const productionRoots = new Set(['apps', 'examples', 'packages', 'scripts']);
 
 export function readChangedPaths(repoRoot, base) {
   validateGitBase(repoRoot, base);
-  const output = runGit(repoRoot, [
+  const changes = parseRawChanges(runGit(repoRoot, [
     'diff',
     '--raw',
     '-z',
@@ -17,18 +17,7 @@ export function readChangedPaths(repoRoot, base) {
     '--end-of-options',
     base,
     '--',
-  ]);
-  const tokens = output.split('\0').filter(Boolean);
-  const changes = [];
-  for (let index = 0; index < tokens.length;) {
-    const metadata = parseRawMetadata(tokens[index++]);
-    const status = metadata.status;
-    if (status.startsWith('R') || status.startsWith('C')) {
-      changes.push({ ...metadata, oldPath: tokens[index++], path: tokens[index++] });
-    } else {
-      changes.push({ ...metadata, path: tokens[index++] });
-    }
-  }
+  ]));
   const knownPaths = new Set(changes.map((change) => change.path));
   const untracked = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']);
   for (const untrackedPath of untracked.split('\0').filter(Boolean)) {
@@ -42,6 +31,38 @@ export function readChangedPaths(repoRoot, base) {
     }
   }
   return changes.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export function readChangedPathsBetweenRevisions(repoRoot, base, head) {
+  validateGitBase(repoRoot, base);
+  validateGitBase(repoRoot, head);
+  return parseRawChanges(
+    runGit(repoRoot, [
+      'diff',
+      '--raw',
+      '-z',
+      '--find-renames',
+      '--end-of-options',
+      base,
+      head,
+      '--',
+    ]),
+  ).sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function parseRawChanges(output) {
+  const tokens = output.split('\0').filter(Boolean);
+  const changes = [];
+  for (let index = 0; index < tokens.length;) {
+    const metadata = parseRawMetadata(tokens[index++]);
+    const status = metadata.status;
+    if (status.startsWith('R') || status.startsWith('C')) {
+      changes.push({ ...metadata, oldPath: tokens[index++], path: tokens[index++] });
+    } else {
+      changes.push({ ...metadata, path: tokens[index++] });
+    }
+  }
+  return changes;
 }
 
 export function computeAffectedCodeDigest(digestInput) {
@@ -208,11 +229,25 @@ export function computePlanFacts(input) {
 }
 
 export function computePlanFactsFromTree(input) {
+  if (!Array.isArray(input.changes)) {
+    throw new Error('candidate-tree plan facts require canonical Git changes');
+  }
+  const entriesByPath = new Map(input.entries.map((entry) => [entry.path, entry]));
+  const changes = input.changes.map((change) => {
+    if (change.status.startsWith('D')) {
+      return { ...change };
+    }
+    const entry = entriesByPath.get(change.path);
+    if (!entry || entry.mode !== change.newMode) {
+      throw new Error(`canonical Git change does not match candidate tree: ${change.path}`);
+    }
+    return { ...change, content: entry.content };
+  });
   return computePlanFacts({
     repoRoot: undefined,
     base: input.baseOid,
     basePaths: input.baseEntries.map((entry) => entry.path),
-    changes: computeTreeChanges(input.baseEntries, input.entries),
+    changes,
     record: input.record,
     planPath: input.planPath,
   });
@@ -257,9 +292,6 @@ function hasDirectoryCreationOrMovement(input) {
         .split('\n')
         .filter(Boolean),
   );
-  const deletedParents = input.changes
-    .filter((change) => change.status.startsWith('D'))
-    .map((change) => path.dirname(change.path));
   return input.changes.some((change) => {
     if (change.status.startsWith('R')) {
       return path.dirname(change.oldPath) !== path.dirname(change.path);
@@ -268,69 +300,8 @@ function hasDirectoryCreationOrMovement(input) {
       return false;
     }
     const parent = path.dirname(change.path);
-    const newDirectory =
-      parent !== '.' && ![...basePaths].some((basePath) => isWithin(basePath, parent));
-    const conservativeMove = deletedParents.some((deletedParent) => deletedParent !== parent);
-    return newDirectory || conservativeMove;
+    return parent !== '.' && ![...basePaths].some((basePath) => isWithin(basePath, parent));
   });
-}
-
-function computeTreeChanges(baseEntries, entries) {
-  const baseByPath = new Map(baseEntries.map((entry) => [entry.path, entry]));
-  const entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
-  const deleted = [...baseByPath.values()].filter((entry) => !entriesByPath.has(entry.path));
-  const added = [...entriesByPath.values()].filter((entry) => !baseByPath.has(entry.path));
-  const renamedNewPaths = new Set();
-  const changes = [];
-  for (const oldEntry of deleted) {
-    const matches = added.filter(
-      (newEntry) =>
-        !renamedNewPaths.has(newEntry.path) &&
-        newEntry.blobOid === oldEntry.blobOid &&
-        newEntry.mode === oldEntry.mode,
-    );
-    if (matches.length === 1) {
-      const newEntry = matches[0];
-      renamedNewPaths.add(newEntry.path);
-      changes.push({
-        status: 'R100',
-        oldPath: oldEntry.path,
-        path: newEntry.path,
-        oldMode: oldEntry.mode,
-        newMode: newEntry.mode,
-        content: newEntry.content,
-      });
-    } else {
-      changes.push({
-        status: 'D',
-        path: oldEntry.path,
-        oldMode: oldEntry.mode,
-        newMode: '000000',
-      });
-    }
-  }
-  for (const newEntry of added.filter((entry) => !renamedNewPaths.has(entry.path))) {
-    changes.push({
-      status: 'A',
-      path: newEntry.path,
-      oldMode: '000000',
-      newMode: newEntry.mode,
-      content: newEntry.content,
-    });
-  }
-  for (const entry of entries) {
-    const baseEntry = baseByPath.get(entry.path);
-    if (baseEntry && (baseEntry.blobOid !== entry.blobOid || baseEntry.mode !== entry.mode)) {
-      changes.push({
-        status: 'M',
-        path: entry.path,
-        oldMode: baseEntry.mode,
-        newMode: entry.mode,
-        content: entry.content,
-      });
-    }
-  }
-  return changes.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function hasCapabilityCrossing(changes, record) {
