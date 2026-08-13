@@ -109,6 +109,17 @@ not a pass and not a topology behavior regression. Initializing this separately
 authorized active plan makes current plan navigation valid; it does not rewrite
 the historical run.
 
+After branch publication, remote `main` advanced to
+`124e09924f1b20682f1a9407a0c3c91a2bfeeaff`, tree
+`9d058d1045eb314b5d7bffa718464fef1f6db14c`, through PR #212. The exact range
+from the authorized base changes only
+`plans/rallar-bb-test-distributed-assertion-parity-plan.md`; it does not touch
+this plan, the generated registry, either reciprocal program record, the
+closure receipt, topology ownership, or the evidence sources. Compatibility
+result: **Compatible — no plan delta**. This branch intentionally retains the
+human-authorized diff base `8ee348e2`; GitHub targets the advanced `main` and
+can preserve the unrelated plan change without widening this slice.
+
 ### 2.2 Planning and implementation ledger
 
 | Stage                                                                            | Immutable evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Disposition                                                                                                                                                                                                                                                                                                                                                                          |
@@ -203,17 +214,17 @@ for its exact final head; no future result is fabricated in advance.
 - [x] Complete one independent initial read-only review of the evidence
       hypothesis, owner, source records, reciprocal update surface, focused
       commands, and sole slice.
-- [ ] Record the planning and PR A-D evidence already existing at the exact
+- [x] Record the planning and PR A-D evidence already existing at the exact
       base, including every immutable success, failure, waiver, and human
       closure disposition.
-- [ ] Record warning dispositions, the controlled-human-sample waiver,
+- [x] Record warning dispositions, the controlled-human-sample waiver,
       compatibility owners, supplementary-ratchet decisions, semantic and
       concurrency coverage, and the no-performance disposition.
-- [ ] Update both reciprocal program records from stale drafted/unapproved
+- [x] Update both reciprocal program records from stale drafted/unapproved
       topology state to closed implementation plus active evidence-ledger
       publication state.
-- [ ] Preserve the old receipt and deleted plan history byte-for-byte.
-- [ ] Complete the adaptive slice, write and apply the five checkpoint
+- [x] Preserve the old receipt and deleted plan history byte-for-byte.
+- [x] Complete the adaptive slice, write and apply the five checkpoint
       judgments, and expose no second slice.
 - [ ] Obtain independent final plan/legacy review with Critical 0 and Important
       0 on the exact final head.
@@ -343,17 +354,21 @@ exact default-branch count above with Critical 0 and Important 0.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The human-authorized evidence-ledger recovery plan is initialized from exact main; no ledger slice has executed.",
-    "learning": "The implementation plan was authentically closed before its separately authorized reciprocal evidence ledger was published.",
-    "structure": "The adaptive lifecycle owns this plan and generated registry; two exact non-code contracts own all reciprocal program updates.",
+    "outcome": "The sole publish-later-evidence-ledger slice records complete planning and PR A-D facts, updates both reciprocal program records, and preserves the authenticated receipt and deleted implementation plan without code or performance changes.",
+    "learning": "Evidence-ledger publication must keep successful correctness gates, failed publication evidence, human closure deviations, waived navigation sampling, retained ratchets, and skipped performance work as distinct non-circular facts; remote main movement through PR #212 changes none of those contracts.",
+    "structure": "Plan adaptation owns the active record and generated registry, repository structure owns capability and navigation validation, and exactly two declared non-code contracts own reciprocal program reconciliation; the completed plan exposes no second slice.",
     "decision": "continue",
-    "nextSlices": [
-      "publish-later-evidence-ledger"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [],
   "freshStructuralReview": null,
   "coldNavigationEvidence": null,
-  "materialDecisions": []
+  "materialDecisions": [
+    {
+      "date": "2026-08-13",
+      "decision": "continue",
+      "summary": "The sole publish-later-evidence-ledger slice records complete planning and PR A-D facts, updates both reciprocal program records, and preserves the authenticated receipt and deleted implementation plan without code or performance changes."
+    }
+  ]
 }
 ```
