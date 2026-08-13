@@ -555,10 +555,12 @@ adaptive horizon rule.
       ]
     }
   ],
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "delta-primary-tier-measurement"
+  ],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "b8e4350b003fcc41aefe3d7f714ce5f277c34037b69f356743c4db35c2ef3201",
+    "affectedCodeDigest": "594fca018a9da8418b4da730557d3f1c2772a06019bc288fbb2747e671d2f0b4",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -569,6 +571,9 @@ adaptive horizon rule.
       "plans/rallar-group-topology-evidence-ledger-plan.md",
       "plans/repo-human-traceability-program-execution-plan.md",
       "plans/repo-human-traceability-refactoring-program-plan.md"
+      "packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts",
+      "plans/rallar-group-topology-evidence-ledger-plan.md",
+      "scripts/perf/api-v1-state-write-concurrency-bench.ts"
     ]
   },
   "checkpoint": {
@@ -577,7 +582,6 @@ adaptive horizon rule.
     "structure": "Owners unchanged; the browser delta application landed inside the state-cache subfeature and the admission limiter beside the existing api-v1 service owners; no moves or new folders beyond the two files their features own.",
     "decision": "continue",
     "nextSlices": [
-      "delta-primary-tier-measurement",
       "convergence-and-perf-gates"
     ]
   },

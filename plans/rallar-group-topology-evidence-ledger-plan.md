@@ -349,7 +349,7 @@ exact default-branch count above with Critical 0 and Important 0.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "3c85d214bcac5c2e9ae9a44d7e2f2db0b2a57feb24bc25672cb042c8f569c7e9",
+    "affectedCodeDigest": "974e5278725f96bd7bf35789bed06e8a790f08a236e2d25c348e27a7b2c8240e",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -439,7 +439,8 @@ exact default-branch count above with Critical 0 and Important 0.
       "packages/tests/shared/ws-outbox-owner-miss-retry.test.ts",
       "plans/rallar-bb-test-distributed-assertion-parity-plan.md",
       "plans/rallar-group-formation-phase3-delta-dissemination-plan.md",
-      "playground/rtc-design/baselines/2026-08-13-phase3-delta-dissemination-results.md"
+      "playground/rtc-design/baselines/2026-08-13-phase3-delta-dissemination-results.md",
+      "scripts/perf/api-v1-state-write-concurrency-bench.ts"
     ]
   },
   "checkpoint": {
