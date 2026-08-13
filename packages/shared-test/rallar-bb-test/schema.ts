@@ -12,7 +12,7 @@ import {
 } from './distributed-run.ts';
 import {
     RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA,
-} from './distributed/group-assertions-schema.ts';
+} from './distributed/rallar-black-box-group-assertions-schema.ts';
 import {
     formatJsonSchemaValidationErrors,
     isJsonRecordValue,

@@ -73,7 +73,11 @@ export function rollupDistributedRunResult(
     const requiredParticipants = participants.filter(item => item.required !== false);
     const requiredRecipes = recipes.filter(item => item.required !== false);
     const requiredItems = [
-        ...requiredParticipants.map(item => ({ kind: 'participant' as const, key: item.agentId, item })),
+        ...requiredParticipants.map(item => ({
+            kind: 'participant' as const,
+            key: item.agentId,
+            item,
+        })),
         ...requiredRecipes.map(item => ({ kind: 'recipe' as const, key: itemKey(item), item })),
     ];
     const failures: RallarBlackBoxDistributedRunRollupFailure[] = [
@@ -160,7 +164,10 @@ function deriveRollupState(input: DeriveRollupStateInput): RallarBlackBoxDistrib
         return 'passed';
     }
 
-    if (recipes.some(item => item.state === 'running') || participants.some(item => item.state === 'running')) {
+    if (
+        recipes.some(item => item.state === 'running') ||
+        participants.some(item => item.state === 'running')
+    ) {
         return 'running';
     }
 
@@ -194,5 +201,7 @@ function isBlockingItemFailure(item: Readonly<{
 }
 
 function itemKey(item: RallarBlackBoxDistributedRecipeResult): string {
-    return item.recipeKey || [item.agentId, item.recipeId, item.role].filter(Boolean).join(':') || 'recipe';
+    return item.recipeKey ||
+        [item.agentId, item.recipeId, item.role].filter(Boolean).join(':') ||
+        'recipe';
 }

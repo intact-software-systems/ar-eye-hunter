@@ -305,22 +305,22 @@ function inlineRecipeCommandIds(
         return undefined;
     }
     const commandIds = new Set<string>();
-    const visit = (commands: readonly any[]): void => {
-        for (const command of commands) {
-            if (typeof command?.commandId === 'string') {
-                commandIds.add(command.commandId);
-            }
-            if (Array.isArray(command?.commands)) {
-                visit(command.commands);
-            }
-            if (Array.isArray(command?.groups)) {
-                command.groups.forEach((group: any) => visit(group?.commands ?? []));
-            }
-            if (Array.isArray(command?.recipe?.commands)) {
-                visit(command.recipe.commands);
-            }
+    const pending: any[] = [...selection.recipe.commands];
+    while (pending.length > 0) {
+        const command = pending.shift();
+        if (typeof command?.commandId === 'string') {
+            commandIds.add(command.commandId);
         }
-    };
-    visit(selection.recipe.commands);
+        pending.push(
+            ...(command?.commands ?? []),
+            ...toParallelGroupCommands(command),
+            ...(command?.recipe?.commands ?? []),
+        );
+    }
     return commandIds;
+}
+
+function toParallelGroupCommands(command: any): readonly any[] {
+    const groups: readonly any[] = command?.groups ?? [];
+    return groups.flatMap(group => group?.commands ?? []);
 }
