@@ -91,6 +91,13 @@ function validateRunEvidence({ repoRoot, candidate, run, source, jobs, buildTree
   if (!isAncestor(repoRoot, evidence.head, candidate.head)) {
     return rejected('validation-evidence-head-is-not-ancestor');
   }
+  const sourceBuildTreeDigest = computeBuildAffectingTreeDigest({
+    repoRoot,
+    headSha: evidence.head,
+  });
+  if (evidence.buildTreeDigest !== sourceBuildTreeDigest) {
+    return rejected('validation-evidence-source-digest-mismatch');
+  }
   if (evidence.buildTreeDigest !== buildTreeDigest) {
     return rejected('build-tree-digest-mismatch');
   }

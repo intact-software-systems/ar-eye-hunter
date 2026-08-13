@@ -140,6 +140,7 @@ describe('validation evidence command', () => {
     'untrusted-release-gate-job',
     'expired-validation-evidence',
     'validation-evidence-head-is-not-ancestor',
+    'validation-evidence-source-digest-mismatch',
     'build-tree-digest-mismatch',
   ])('requires broad validation after the selector succeeds with reuse=false: %s', () => {
     const result = spawnSync(

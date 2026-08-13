@@ -141,6 +141,14 @@ describe('distributed validation risk classification', () => {
     },
     {
       family: 'distributed-protocol-controller-headless',
+      path: 'deno.lock',
+    },
+    {
+      family: 'distributed-protocol-controller-headless',
+      path: 'apps/api-v1/deno.lock',
+    },
+    {
+      family: 'distributed-protocol-controller-headless',
       path: 'packages/shared-test/rallar-bb-test/browser/rtc-connect-readiness.ts',
     },
     {

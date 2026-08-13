@@ -104,6 +104,28 @@ describe('validation evidence reuse', () => {
       reason: 'validation-evidence-head-is-not-ancestor',
     });
   });
+
+  it('rejects an artifact that claims the candidate digest for a different prior head', () => {
+    const fixture = createEvidenceFixture();
+    const candidateHead = commit(fixture.repoRoot, 'future production tree', {
+      'apps/example/main.ts': 'export const value = 2;\n',
+    });
+    const candidateDigest = computeBuildAffectingTreeDigest({
+      repoRoot: fixture.repoRoot,
+      headSha: candidateHead,
+    });
+    const artifact = JSON.parse(readFileSync(fixture.artifactPath, 'utf8'));
+    artifact.buildTreeDigest = candidateDigest;
+    writeFileSync(fixture.artifactPath, `${JSON.stringify(artifact)}\n`, 'utf8');
+
+    const selection = runSelection(fixture, candidateHead);
+
+    expect(selection.result.status).toBe(0);
+    expect(selection.outputs).toMatchObject({
+      reuse: 'false',
+      reason: 'validation-evidence-source-digest-mismatch',
+    });
+  });
 });
 
 function createEvidenceFixture(mutation: Record<string, any> = {}) {
@@ -188,7 +210,13 @@ function createEvidenceFixture(mutation: Record<string, any> = {}) {
     })}\n`,
     'utf8',
   );
-  return { repoRoot: gitRoot, inputRoot, evidenceHead, buildTreeDigest };
+  return {
+    repoRoot: gitRoot,
+    inputRoot,
+    evidenceHead,
+    buildTreeDigest,
+    artifactPath: path.join(artifactRoot, 'validation-evidence-v1.json'),
+  };
 }
 
 function runSelection(fixture: any, candidateHead: string, now = '2026-08-13T10:00:00.000Z') {

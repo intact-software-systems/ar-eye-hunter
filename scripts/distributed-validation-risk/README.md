@@ -49,8 +49,9 @@ is the only command entry. It exposes two direct operations:
 - The headless policy includes the complete `packages/shared-test/rallar-bb-test/` runtime and
   protocol owner, its shared browser-runtime and JSON-comparison dependencies, the deployed
   `worker:headless` command and script, and the controller/headless application roots. It also
-  selects the exact package manifests and lockfile that `npm ci` and the deployed workspace command
-  use. Adjacent `packages/shared-test` docs and test-data owners remain outside this cost boundary;
+  selects the exact package manifests, npm lockfile, and Deno locks that installation and the
+  deployed workspace command use. Adjacent `packages/shared-test` docs and test-data owners remain
+  outside this cost boundary;
   the root is not otherwise treated as distributed risk. The deployment policy explicitly includes
   `.github/workflows/deploy-hetzner-controller.yml` in addition to the supported Hetzner runner
   workflows and controller scripts.

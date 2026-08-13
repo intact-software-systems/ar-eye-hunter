@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate exact-SHA review evidence
+    name: Validate PR Human Review Record v2 evidence
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

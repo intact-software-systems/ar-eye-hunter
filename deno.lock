@@ -3635,6 +3635,18 @@
           ]
         }
       },
+      "packages/shared-rtc-bench": {
+        "dependencies": [
+          "jsr:@std/path@^1.0.9",
+          "npm:graphology@0.26.0",
+          "npm:postgres@^3.4.9"
+        ],
+        "packageJson": {
+          "dependencies": [
+            "npm:@types/deno@2.7.0"
+          ]
+        }
+      },
       "packages/shared-web": {
         "packageJson": {
           "dependencies": [

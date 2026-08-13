@@ -715,7 +715,9 @@ are selected at the preceding checkpoint.
         "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
       ],
       "contractPaths": [
-        ".github/workflows/hetzner-supported-distributed-manifests.yml"
+        ".github/workflows/hetzner-supported-distributed-manifests.yml",
+        "apps/api-v1/deno.lock",
+        "deno.lock"
       ],
       "controlFlowFamilies": [
         "changed-path risk classification",
@@ -742,7 +744,7 @@ are selected at the preceding checkpoint.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
-    "affectedCodeDigest": "8d3faed303a740361d4ad89849c3791b734827e0958dcc6f8ecb59ee8fc3fdca",
+    "affectedCodeDigest": "b169410e027d6a6c16c0980e384fa142231d7c3be44c5c3add6bf62e618353fa",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
