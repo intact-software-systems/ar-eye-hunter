@@ -47,7 +47,8 @@ entry. It decodes six commands and routes each to its lifecycle owner:
   [plan-adaptation-lifecycle.mjs#applyAdaptivePlan](./plan-adaptation-lifecycle.mjs#applyAdaptivePlan).
 - `check` is read-only and exits through
   [plan-adaptation-lifecycle.mjs#checkAdaptivePlans](./plan-adaptation-lifecycle.mjs#checkAdaptivePlans).
-- `close` validates final PR evidence, removes the tactical plan, and exits through
+- `close` validates final PR evidence and the exact comparison-base plan, atomically writes a
+  durable receipt while removing the tactical plan and registry entry, and exits through
   [plan-adaptation-lifecycle.mjs#closeAdaptivePlan](./plan-adaptation-lifecycle.mjs#closeAdaptivePlan).
 
 - [adaptive-plan-record.mjs#parseAdaptivePlanRecord](./adaptive-plan-record.mjs#parseAdaptivePlanRecord)
@@ -66,10 +67,15 @@ entry. It decodes six commands and routes each to its lifecycle owner:
 - [file-transaction.mjs#writeFileTransaction](./file-transaction.mjs#writeFileTransaction) stages
   same-directory replacements and rolls back multi-file lifecycle changes when any replacement
   fails.
+- [plan-closure-receipt.mjs#createPlanClosureReceipt](./plan-closure-receipt.mjs#createPlanClosureReceipt)
+  translates the validated close input into the canonical data-only receipt.
+  [plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges](./plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges)
+  verifies the base plan, generated base registry, receipt identity, and complete current-tree
+  transition before read-only qualification ignores the authenticated plan deletion.
 - [plan-adaptation-lifecycle.mjs#writePlanAndRegistry](./plan-adaptation-lifecycle.mjs#writePlanAndRegistry)
   is the common mutation exit for `init`, `complete-slice`, and `apply`. Destructive close calls
-  `writeFileTransaction` directly after its separate final-evidence, registry, and target
-  validation.
+  `writeFileTransaction` directly after its separate final-evidence, comparison-base, registry,
+  receipt, and target validation.
 
 The mirrored semantic tests are under `packages/tests/repo/plan-adaptation/` and run through
 `npm run test:plan-adaptation`.

@@ -19,6 +19,10 @@ import {
 } from './active-plan-registry.mjs';
 import { writeFileTransaction } from './file-transaction.mjs';
 import {
+  createPlanClosureReceipt,
+  readAuthenticatedPlanClosureChanges,
+} from './plan-closure-receipt.mjs';
+import {
   computePlanFacts,
   computeQualificationReasons,
   hasCurrentPlanFacts,
@@ -123,10 +127,20 @@ export function applyAdaptivePlan(input) {
 
 export function checkAdaptivePlans(input) {
   const changes = readChangedPaths(input.repoRoot, input.base);
-  const qualification = computeQualificationReasons(input.repoRoot, input.base, changes);
+  const closureChanges = readAuthenticatedPlanClosureChanges({
+    repoRoot: input.repoRoot,
+    base: input.base,
+    changes,
+  });
+  const qualification = computeQualificationReasons(
+    input.repoRoot,
+    input.base,
+    closureChanges.changes,
+  );
   const adaptivePlans = readAdaptivePlans(input.repoRoot);
   const activePlans = adaptivePlans.filter(({ record }) => record.status === 'active');
   const issues = [];
+  issues.push(...closureChanges.issues);
   for (const adaptivePlan of adaptivePlans) {
     issues.push(...validateAdaptivePlanRecord(adaptivePlan.record));
     issues.push(...validateCheckpoint(adaptivePlan.record.checkpoint, adaptivePlan.record));
@@ -175,7 +189,7 @@ export function closeAdaptivePlan(input) {
       `close cannot continue while planned capabilities remain: ${plannedOwners.join(', ')}`,
     );
   }
-  validateFinalEvidence(input, plan.record);
+  const evidence = validateFinalEvidence(input, plan.record);
   const activePlans = readActivePlans(input.repoRoot);
   const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
   const currentRegistry = readFileSync(registryPath, 'utf8');
@@ -187,6 +201,13 @@ export function closeAdaptivePlan(input) {
   ) {
     throw new Error('close requires the plan to be the current active registry entry');
   }
+  const receipt = createPlanClosureReceipt({
+    repoRoot: input.repoRoot,
+    base: input.base,
+    planPath: input.planPath,
+    record: plan.record,
+    evidence,
+  });
   writeFileTransaction({
     replacements: [
       {
@@ -195,6 +216,7 @@ export function closeAdaptivePlan(input) {
           activePlans.filter((entry) => entry.planPath !== input.planPath),
         ),
       },
+      receipt,
     ],
     removals: [plan.absolutePath],
   });
@@ -294,6 +316,7 @@ function validateFinalEvidence(input, record) {
       'final pull-request evidence does not match the current plan and completed review',
     );
   }
+  return evidence;
 }
 
 function toDraftPath(repoRoot, planId) {

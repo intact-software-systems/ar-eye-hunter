@@ -216,6 +216,42 @@ must comply.
 
 ## Rollout
 
+### Merge-close authorization receipt
+
+The merged implementation exposed one final lifecycle ambiguity: deleting the
+only tactical plan removes the evidence that distinguishes an authorized close
+from an unplanned plan deletion. `close` therefore writes one deterministic
+`plans/<plan-id>.closure.json` receipt in the same file transaction that removes
+the tactical plan and regenerates `plans/README.md`.
+
+The receipt is data-only. It binds the plan ID and path, the exact digest of the
+removed active record, and the already-validated final PR URL and completed
+review status. It contains no architecture judgment and no clock-derived
+freshness claim.
+
+Its closed shape is `schemaVersion`, `planId`, `planPath`, `planDigest`,
+`pullRequestUrl`, and `finalReviewStatus`, in that deterministic order. The
+schema version is `plan-adaptation-closure-v1`, and the review status must be
+`complete`.
+
+On a close-out branch with no active plan, read-only governance may disregard
+the deleted plan's `written-plan` qualification only when repository truth
+proves all of the following:
+
+- the comparison base contains the matching active plan and generated registry
+  entry;
+- the current tree contains exactly one regular, non-symlink receipt at the
+  canonical path and no tactical plan at the recorded path;
+- the receipt has the closed v1 shape and its record/review digests match the
+  base plan; and
+- the current generated registry no longer contains that plan.
+
+Malformed, forged, misplaced, stale, partial, or unrelated receipts remain
+ordinary qualifying work and fail closed without an active plan. Any other
+qualification reason still requires an active plan. After the receipt lands on
+the default branch, ordinary checks see no close-out diff and need no special
+state.
+
 Existing structural debt is baselined and activated only by material changed
 surface. The first horizon contains plan-adaptation tooling and the separate
 repository-structure analyzer. Their checkpoint and cold-navigation probe choose

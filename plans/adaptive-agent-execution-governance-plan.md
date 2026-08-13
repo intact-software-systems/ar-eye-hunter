@@ -534,6 +534,40 @@ are selected at the preceding checkpoint.
    evidence; run tactical plan close-out; and retain durable decisions only at
    their real owners.
 
+## Merge-close correction
+
+### Task 16: Authenticated adaptive-plan close-out
+
+**Owner:** `scripts/plan-adaptation/`
+
+**Mirrored tests:** `packages/tests/repo/plan-adaptation/`
+
+- [x] Add a failing semantic lifecycle test that runs the real `close` command,
+      proves the tactical plan and registry entry are removed atomically, and
+      requires the immediately following read-only `check` to pass against the
+      same base.
+- [x] Add fail-closed cases for a missing, malformed, misplaced, symlinked,
+      stale-digest, mismatched-plan, and partial close-out receipt. Prove that
+      unrelated qualification reasons still require an active plan.
+- [x] Make `close` write one deterministic direct
+      `plans/<plan-id>.closure.json` receipt that binds the removed active
+      record digest and already-validated final PR evidence. Keep receipt
+      translation and verification inside the existing plan-adaptation owner.
+- [x] Verify the base contains the exact active plan and generated registry
+      entry before accepting a close-out deletion. Do not weaken ordinary
+      written-plan qualification.
+- [x] Run focused plan-adaptation, adaptive governance, navigation, style,
+      formatting, and diff checks; obtain an independent review; and complete
+      this slice.
+- [ ] Publish and merge the correction so the default-branch comparison base
+      contains the exact completed plan record and receipt verifier.
+- [ ] From that merged base, run the corrected close command with PR #197
+      evidence and publish the receipt-only close-out transition.
+
+**Legacy impact:** Replace ambiguous deletion-only close-out with one durable
+authenticated receipt. Retain no permissive plan-deletion exception and no
+parallel registry.
+
 ```plan-adaptation-v1
 {
   "version": 1,
@@ -735,7 +769,8 @@ are selected at the preceding checkpoint.
     "invalidatedAssumptions": [
       "A prose-only repository-structure skill can reliably make fresh agents reproduce exact owner-to-result navigation evidence; the frozen provenance run made a sound structural judgment but recovered only two of six required repository facts.",
       "Every guidance capability is a skill owner with a mirrored skill-named test root. Activating Task 9 proved that AGENTS.md is a distinct routing owner whose general-agent-guidance tests must not be disguised as publishing-plan-progress ownership.",
-      "The planned PR-review command name check-pr-human-review was a valid executable name but not an exact thin sibling of scripts/pr-human-review; direct cutover required scripts/pr-human-review.mjs and no compatibility wrapper."
+      "The planned PR-review command name check-pr-human-review was a valid executable name but not an exact thin sibling of scripts/pr-human-review; direct cutover required scripts/pr-human-review.mjs and no compatibility wrapper.",
+      "Removing a completed tactical plan was assumed to be self-authenticating. The merged close command removes the only active record, so the next governance check sees only written-plan deletion and cannot distinguish an authorized close-out from an unplanned removal."
     ],
     "freshInitialReview": {
       "status": "complete",
@@ -745,25 +780,23 @@ are selected at the preceding checkpoint.
     }
   },
   "completedSlicesSinceCheckpoint": [
-    "complete-code-and-legacy-review"
+    "adaptive-plan-closeout-receipt"
   ],
   "facts": {
-    "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
-    "affectedCodeDigest": "4c3c4b3c3c138bb7340b62bc0fbc7aa798854013efe0430e69aa0458fec54a0c",
+    "diffBase": "origin/main",
+    "affectedCodeDigest": "a0497aa2f98c5c4821b20e52225afa22d13a69dc024645634d761ccb6bea06c0",
     "computedTriggers": [
-      "folder-change",
       "ownership-change",
-      "public-contract-change",
       "lifecycle-change",
       "invalid-assumption"
     ],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Content-sensitive broad-validation evidence and risk-scoped distributed validation now replace commit-only freshness and unconditional main-push Hetzner execution. Both capabilities have exact owners, deterministic fail-closed policies, truthful workflow result jobs, complete navigation evidence, and independent reviews with no open findings.",
-    "learning": "Trusted reuse must bind the canonical build-tree digest to independently verified workflow and job identity; a successful selector alone is not evidence. Distributed risk inventories must follow cohesive deployed runtime ownership rather than a brittle list of apparent entry files, while malformed inputs select expensive validation or block rather than silently skipping it.",
-    "structure": "Keep validation evidence, distributed-risk selection, the unchanged broad Release Gate, and the unchanged Hetzner runner as four distinct boundaries. The final slice performs no new feature work: it freezes the candidate, traces every declared owner from entry to result, closes all legacy and predecessor paths, records proportional local and GitHub evidence, synchronizes the v2 PR record, and closes the tactical plan only when all completion gates are current.",
-    "decision": "continue",
+    "outcome": "PR #197 merged and its exact resulting-main distributed workflow passed on attempt 2, but the final tactical close command cannot produce a governance-valid close-out branch because it removes the only active record.",
+    "learning": "Destructive close-out needs durable repository evidence that binds the removed active record, reviewed digest, and PR evidence; plan deletion alone is ambiguous and must remain fail-closed.",
+    "structure": "Keep receipt production and verification inside the existing plan-adaptation lifecycle owner. The close transaction writes one direct plans/<plan-id>.closure.json receipt while removing the tactical plan and regenerating the registry; read-only validation accepts only an exact base-plan deletion authenticated by that receipt.",
+    "decision": "amend",
     "nextSlices": []
   },
   "structuralDispositions": [
@@ -992,6 +1025,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-13",
       "decision": "continue",
       "summary": "Content-sensitive broad-validation evidence and risk-scoped distributed validation now replace commit-only freshness and unconditional main-push Hetzner execution. Both capabilities have exact owners, deterministic fail-closed policies, truthful workflow result jobs, complete navigation evidence, and independent reviews with no open findings."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "PR #197 merged and its exact resulting-main distributed workflow passed on attempt 2, but the final tactical close command cannot produce a governance-valid close-out branch because it removes the only active record."
     }
   ]
 }
