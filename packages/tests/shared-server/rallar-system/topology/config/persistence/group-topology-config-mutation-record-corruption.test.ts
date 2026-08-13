@@ -5,7 +5,7 @@ import { GroupTopologyConfigRepositoryInvariantCorruptionError } from '@shared-s
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
 import {
   createTopologyTestEffectiveConfig,
   createTopologyTestGroupRef,

@@ -7,7 +7,7 @@ import {
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
 
 describe('group topology config repository keys', () => {
   it('uses canonical optional-workspace keys across every topology namespace', () => {

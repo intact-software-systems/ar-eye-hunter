@@ -12,8 +12,8 @@ import { migrateLegacyGroupTopologyConfigKeys } from '@shared-server/rallar-syst
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
-import { createTopologyTestEffectiveConfig } from './group-topology-config-persistence-test-fixtures.ts';
+import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { createTopologyTestEffectiveConfig } from '../persistence/group-topology-config-persistence-test-fixtures.ts';
 
 describe('group topology config legacy migration', () => {
   it('migrates a value-verified explicit-sentinel legacy source before generation backfill', async () => {

@@ -4,7 +4,7 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { GroupTopologyConfigGenerationReadiness } from '@shared-server/rallar-system/topology/config/maintenance/group-topology-config-generation-readiness.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
 
 const FIRST_GROUP: GroupRef = {
   applicationId: 'app-1',

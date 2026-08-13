@@ -6,7 +6,7 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 
-import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
 import {
   createTopologyTestEffectiveConfig,
   createTopologyTestGroupRef,

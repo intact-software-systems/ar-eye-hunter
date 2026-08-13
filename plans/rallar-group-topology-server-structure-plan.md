@@ -3071,7 +3071,10 @@ record's single next slice.
       "testRoot": "packages/tests/shared-server/rallar-system/topology",
       "focusedCommand": "npm run test:group-topology",
       "navigationMap": "packages/shared-server/rallar-system/topology/README.md",
-      "factContracts": [],
+      "factContracts": [
+        "packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts",
+        "packages/tests/shared-server/rallar-system/group-topology-capability-source-style-snapshot.ts"
+      ],
       "contractPaths": [],
       "controlFlowFamilies": [
         "configuration ingress and authority",
@@ -3079,11 +3082,7 @@ record's single next slice.
         "AppInbox transaction, retry, and outbox exits",
         "reconfiguration and planning",
         "downstream RTC replay and publication"
-      ],
-      "activation": {
-        "state": "planned",
-        "slice": "activate-group-topology-capability"
-      }
+      ]
     }
   ],
   "architecture": {
@@ -3094,33 +3093,71 @@ record's single next slice.
       "The pre-governance packages/tests/shared-server/topology path is an acceptable declared mirror for packages/shared-server/rallar-system/topology."
     ],
     "freshInitialReview": {
-      "status": "pending",
-      "reason": "Independent initial review is required before implementation publication; no separate reviewer was started during this plan-only replan."
+      "status": "passed",
+      "base": "20f0bd8ce8a905054feb8d60d61c6a169d149b1b",
+      "criticalFindings": 0,
+      "importantFindings": 4,
+      "disposition": "Resolved within activate-group-topology-capability: refresh adaptive facts through the checkpoint; add the README navigation contract and symbol anchors; correct depth-sensitive cross-root test paths after the mirror move; and extend permanent canonical-import and compatibility evidence.",
+      "issue207": "Existing follow-up only; authenticated plan-only closure-receipt policy does not block this build-affecting slice or a declared Task 5 acceptance criterion."
+    },
+    "compatibilityReview": {
+      "initialBase": "20f0bd8ce8a905054feb8d60d61c6a169d149b1b",
+      "base": "49adc91cbcf00e97560716fc91ae4f4a31a291c1",
+      "tree": "97f995bff6849b1fc090a8b1a595d112a1e845cc",
+      "result": "Compatible — no plan delta",
+      "topologyImpact": "RTC benchmark ownership adds direct canonical replay consumers, generic black-box assertions do not own topology contracts, and repository/adaptive governance requires the mirrored test root, exact focused command, and machine-verifiable navigation contract. The later 49adc91c movement refreshes only this plan's PR #203 sibling facts. No topology production behavior or semantic test changed."
     }
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "dc44ab029dd415b356833d3b72e0207f79c4bc88",
-    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diffBase": "49adc91cbcf00e97560716fc91ae4f4a31a291c1",
+    "affectedCodeDigest": "e256a654cdaeb4c6678c341120faf669b695ca380fee925bce778599184e844a",
     "computedTriggers": [
+      "folder-change",
       "ownership-change",
+      "public-contract-change",
       "invalid-assumption",
       "scope-growth"
     ],
     "undeclaredChangedPaths": [
-      "docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md",
-      "packages/shared-web/tsconfig.json",
-      "packages/shared/tsconfig.json",
-      "plans/adaptive-agent-execution-governance-plan.md",
-      "plans/adaptive-agent-execution-governance.closure.json",
-      "plans/rallar-architecture-quality-and-rtc-program-roadmap.md"
+      "packages/tests/shared-server/topology/concurrency/fixtures/postgres-topology-app-inbox-worker.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-app-inbox-concurrency.test.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-concurrency-fixtures.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-config-override-concurrency.test.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-mutation-worker-concurrency.test.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-mutation-worker-fixtures.ts",
+      "packages/tests/shared-server/topology/config/group-topology-config-query-service.test.ts",
+      "packages/tests/shared-server/topology/config/group-topology-config-resolution.test.ts",
+      "packages/tests/shared-server/topology/config/maintenance/group-topology-config-generation-readiness.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-boundary.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-compute.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-idempotency.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-result.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-test-fixtures.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-transaction.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-validation.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-exact-read.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-generation.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-legacy-migration.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-mutation-record-corruption.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-persistence-test-fixtures.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-corruption.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-keys.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-read-write.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-scope-isolation.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-authority.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "packages/tests/shared-server/topology/planning/group-topology-planning-service.test.ts",
+      "packages/tests/shared-server/topology/reconfigure/group-topology-reconfigure-mutation.test.ts"
     ]
   },
   "checkpoint": {
-    "outcome": "PR #203's RTC plan and roadmap updates landed after this plan's facts were prepared. They are concurrent sibling evidence and do not change group-topology behavior or ownership.",
-    "learning": "The stale facts came from main advancing before integration, not from a topology implementation change.",
-    "structure": "Keep the existing group-topology owner and the activate-group-topology-capability consolidation slice unchanged.",
-    "decision": "consolidate",
+    "outcome": "The capability activation is rebased onto main 49adc91cbcf00e97560716fc91ae4f4a31a291c1 after a compatibility review found no product, ownership, integration, or acceptance-contract change.",
+    "learning": "The new main commit changes only this plan's already-known PR #203 sibling-facts checkpoint. Production topology files, the predecessor semantic-test cohort, package commands, and repository governance remain byte-identical to the reviewed implementation base.",
+    "structure": "Keep the activated production owner, recognized test mirror, exact command, README navigation owner, snapshot fact contract, canonical-import evidence, and one-slice boundary unchanged on the new merge base.",
+    "decision": "amend",
     "nextSlices": [
       "activate-group-topology-capability"
     ]
@@ -3148,17 +3185,8 @@ record's single next slice.
     }
   ],
   "freshStructuralReview": {
-    "status": "failed",
-    "failures": [
-      {
-        "kind": "navigation",
-        "summary": "The active topology implementation has neither the recognized mirrored test root nor an exact focused capability command required by current governance.",
-        "recoverable": true,
-        "deepenedBySlices": [
-          "close-group-topology-child"
-        ]
-      }
-    ]
+    "status": "complete",
+    "failures": []
   },
   "coldNavigationEvidence": null,
   "materialDecisions": [
@@ -3172,6 +3200,27 @@ record's single next slice.
       "decision": "consolidate",
       "summary": "PR #203's RTC plan and roadmap updates landed after this plan's facts were prepared. They are concurrent sibling evidence and do not change group-topology behavior or ownership.",
       "checkpointDigest": "d3059a7d620520177f63440f8e56b28d121535c893670e068cc48d0af1a1cdcd"
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "consolidate",
+      "summary": "The existing group-topology production owner is now paired with the recognized mirrored test root, exact focused command, machine-verifiable navigation contract, temporary child source/style snapshot, corrected retained style rows, and expanded canonical-import evidence. Focused semantic tests pass without a topology behavior or contract change.",
+      "checkpointDigest": "cc61a93c3e645cae7a530634febbe139d5d8a6739bdfe270d8e8a7ddaa5dd4ee"
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The activated capability now passes both its exact focused suite and the repository structure checker after the recognized test mirror was aligned with its internal ownership boundaries."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The formatted capability activation still passes its exact focused suite and repository structure checker, with the temporary snapshot and navigation map normalized to repository formatting."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The capability activation is rebased onto main 49adc91cbcf00e97560716fc91ae4f4a31a291c1 after a compatibility review found no product, ownership, integration, or acceptance-contract change."
     }
   ]
 }
