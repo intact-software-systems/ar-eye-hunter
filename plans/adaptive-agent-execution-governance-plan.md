@@ -739,10 +739,7 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [
-    "content-sensitive-validation-evidence",
-    "risk-scoped-distributed-validation"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
     "affectedCodeDigest": "8d3faed303a740361d4ad89849c3791b734827e0958dcc6f8ecb59ee8fc3fdca",
@@ -751,17 +748,18 @@ are selected at the preceding checkpoint.
       "ownership-change",
       "public-contract-change",
       "lifecycle-change",
-      "invalid-assumption",
-      "two-completed-slices"
+      "invalid-assumption"
     ],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "PR Human Review v2 and the Fast Governance Gate now form a reviewed content-aware review boundary and a phase-attributed early CI boundary. The gate preserves canonical plan, structure, review, and focused-test owners, remains below ten seconds across repeated trials, and blocks the broad Release Gate without duplicating it.",
-    "learning": "The first broad branch failure was compatibility drift rather than a governance regression: the branch changed neither the headless bundle nor its test, and refreshed origin/main already raised the measured cap from 197 to 199 KiB. Merging origin/main and advancing the explicit diff base made that proof and the exact Governance Gate green. The next automation must therefore reuse evidence by build content and trusted run identity, not by head SHA, while distributed validation needs its own structured risk decision rather than an unconditional main-push trigger.",
-    "structure": "Give validation evidence one owner at scripts/validation-evidence with the existing PR freshness classifier as an explicit fact contract and ownership of Branch Release Gate/reusable Release Gate orchestration. Give distributed validation risk a separate scripts/distributed-validation-risk owner in front of the existing Hetzner supported-manifest workflow. Neither owner may duplicate broad CI, the distributed runner, build-path classification, or architectural judgment.",
+    "outcome": "Content-sensitive broad-validation evidence and risk-scoped distributed validation now replace commit-only freshness and unconditional main-push Hetzner execution. Both capabilities have exact owners, deterministic fail-closed policies, truthful workflow result jobs, complete navigation evidence, and independent reviews with no open findings.",
+    "learning": "Trusted reuse must bind the canonical build-tree digest to independently verified workflow and job identity; a successful selector alone is not evidence. Distributed risk inventories must follow cohesive deployed runtime ownership rather than a brittle list of apparent entry files, while malformed inputs select expensive validation or block rather than silently skipping it.",
+    "structure": "Keep validation evidence, distributed-risk selection, the unchanged broad Release Gate, and the unchanged Hetzner runner as four distinct boundaries. The final slice performs no new feature work: it freezes the candidate, traces every declared owner from entry to result, closes all legacy and predecessor paths, records proportional local and GitHub evidence, synchronizes the v2 PR record, and closes the tactical plan only when all completion gates are current.",
     "decision": "continue",
-    "nextSlices": []
+    "nextSlices": [
+      "complete-code-and-legacy-review"
+    ]
   },
   "structuralDispositions": [
     {
@@ -984,6 +982,11 @@ are selected at the preceding checkpoint.
       "date": "2026-08-12",
       "decision": "continue",
       "summary": "PR Human Review v2 and the Fast Governance Gate now form a reviewed content-aware review boundary and a phase-attributed early CI boundary. The gate preserves canonical plan, structure, review, and focused-test owners, remains below ten seconds across repeated trials, and blocks the broad Release Gate without duplicating it."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "continue",
+      "summary": "Content-sensitive broad-validation evidence and risk-scoped distributed validation now replace commit-only freshness and unconditional main-push Hetzner execution. Both capabilities have exact owners, deterministic fail-closed policies, truthful workflow result jobs, complete navigation evidence, and independent reviews with no open findings."
     }
   ]
 }
