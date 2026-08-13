@@ -3218,18 +3218,16 @@ record's current next slice.
     },
     "compatibilityReview": {
       "initialBase": "20f0bd8ce8a905054feb8d60d61c6a169d149b1b",
-      "base": "aa124e03775492f9e37882bb9ed02b03dfe0dad6",
-      "tree": "7fdefc3d98f875298c95a65d716de88a3741c00a",
+      "base": "939d63d28a1cf8dac0f3610415152074aa941db0",
+      "tree": "bc5720b20811cd047b58f7233ab9657fce321621",
       "result": "Compatible — no plan delta",
-      "topologyImpact": "RTC benchmark ownership adds direct canonical replay consumers, generic black-box assertions do not own topology contracts, and repository/adaptive governance requires the mirrored test root, exact focused command, and machine-verifiable navigation contract. The later 49adc91c movement refreshes this plan's PR #203 sibling facts; aa124e03 removes contaminated uncommitted TypeScript paths from that older fact refresh. No topology production behavior or semantic test changed."
+      "topologyImpact": "RTC benchmark ownership adds direct canonical replay consumers, generic black-box assertions do not own topology contracts, and repository/adaptive governance requires the mirrored test root, exact focused command, and machine-verifiable navigation contract. The later 49adc91c movement refreshes this plan's PR #203 sibling facts; aa124e03 removes contaminated uncommitted TypeScript paths from that older fact refresh; 939d63d2 publishes the already-recorded closure-receipt correction. No topology production behavior, ownership, semantic test, integration boundary, or acceptance criterion changed."
     }
   },
-  "completedSlicesSinceCheckpoint": [
-    "closure-receipt-publication"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "aa124e03775492f9e37882bb9ed02b03dfe0dad6",
-    "affectedCodeDigest": "3f843a04ea3c168cd10456688ea7ba5a3781cedabc34612a48abab7e1df74b8b",
+    "affectedCodeDigest": "27261391232b696929a9e808d6464f84b3eaab9d19c9849b2833d0876d82c572",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -3413,6 +3411,11 @@ record's current next slice.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "The final-review replay import correction and six individually reviewed structure-coupling dispositions pass focused tests and governance, and the global coupling registry is declared as the capability's exact non-code review contract."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "PR #210 advanced main to 939d63d28a1cf8dac0f3610415152074aa941db0 with the already-recorded closure-receipt publication correction. Conflict resolution preserves that material decision before the completed group-topology activation checkpoint, retains the empty horizon, and changes no topology behavior, ownership, integration, or acceptance contract."
     }
   ]
 }
