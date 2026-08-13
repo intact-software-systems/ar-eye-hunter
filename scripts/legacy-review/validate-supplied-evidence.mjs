@@ -28,7 +28,7 @@ export function validateSuppliedEvidence(input, candidates) {
   const stage = input.stage ?? 'final';
   const reviews = reviewsForStage(record, stage);
   if (reviews.length === 0) {
-    return stage === 'milestone' ? [] : [`${stage} review legacy ledger is required`];
+    return [`${stage} review legacy ledger is required`];
   }
   const reportSha256 = computeReportSha256(
     toCanonicalReportText(
@@ -36,13 +36,13 @@ export function validateSuppliedEvidence(input, candidates) {
     ),
   );
   const errors = [];
-  for (const [index, review] of reviews.entries()) {
+  for (const review of reviews) {
     validateLedger({
       legacy: review?.legacy,
       candidates,
       reportSha256,
       errors,
-      label: stage === 'milestone' ? `milestone review ${index + 1}` : `${stage} review`,
+      label: `${stage} review`,
       registryPath: input.registry,
       retainedLegacy: record.retainedLegacy,
       requireRetainedApproval: stage === 'final',
@@ -54,11 +54,6 @@ export function validateSuppliedEvidence(input, candidates) {
 function reviewsForStage(record, stage) {
   if (stage === 'initial') {
     return [record?.initialReview];
-  }
-  if (stage === 'milestone') {
-    return record?.milestoneReview?.classification === 'reviewed'
-      ? (record.milestoneReview.entries ?? [])
-      : [];
   }
   return [record?.finalReview];
 }
@@ -125,9 +120,9 @@ export function readReviewRecord(source) {
       ? readReviewRecord(parsed.pull_request.body)
       : parsed;
   } catch {
-    const match = source.match(/```pr-human-review-record-v1\s*\n([\s\S]*?)\n```/u);
+    const match = source.match(/```pr-human-review-record-v2\s*\n([\s\S]*?)\n```/u);
     if (!match) {
-      throw new Error('review record is not JSON or a PR Human Review Record v1 fence');
+      throw new Error('review record is not JSON or a PR Human Review Record v2 fence');
     }
     return JSON.parse(match[1]);
   }

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Organizing Repository Structure'
+  short_description: 'Turn repository facts into navigable structure'
+  default_prompt: 'Use $organizing-repository-structure to assess this repository structure and choose an evidence-based disposition.'

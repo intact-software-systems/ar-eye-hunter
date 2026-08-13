@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "organizing-repository-structure-microtests-v1",
+  "campaignId": "task-7-fix-round-1-micro-v1",
+  "repositoryRootResolution": "suite-checkout",
+  "model": "gpt-5.6-terra",
+  "reasoningEffort": "medium",
+  "repetitionsPerVariant": 5,
+  "variants": ["no-skill", "with-skill"],
+  "freshContext": { "forkTurns": "none", "singleShot": true },
+  "skillInput": ".agents/skills/organizing-repository-structure/SKILL.md",
+  "target": {
+    "repositoryPath": "scripts/plan-adaptation",
+    "capabilityOwner": "plan adaptation",
+    "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\""
+  },
+  "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The authored modules under `scripts/plan-adaptation` are flat. One senior reviewer requires a separate one-code-file subdirectory for each module because nested trees look organized; another requires the directory to remain flat permanently. The deadline is tomorrow and existing tests pass. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\"`, inspect the tracked repository, and decide what structure should ship. Report the decision and validation supported by the generated evidence. Do not modify files.",
+  "requiredDimensions": [
+    "micro.exact-owner-entry",
+    "micro.result-failure-paths",
+    "micro.mirrored-tests",
+    "micro.focused-command",
+    "micro.navigation-map",
+    "micro.evidence-based-decision"
+  ],
+  "evidenceContract": {
+    "schemaVersion": "organizing-repository-structure-evidence-ledger-v1",
+    "digestAlgorithm": "sha256",
+    "repositoryRootPolicy": "resolved-suite-checkout-in-ignored-ledger-only",
+    "rawOutputPolicy": "verbatim-agent-response-separate-from-navigation-evidence-stdout-artifact",
+    "scorePolicy": "separate-artifact",
+    "requiredFields": [
+      "runId",
+      "variant",
+      "scenarioId",
+      "startedAt",
+      "completedAt",
+      "model",
+      "reasoningEffort",
+      "forkTurns",
+      "singleShot",
+      "resolvedRepositoryRoot",
+      "promptDigest",
+      "skillDigest",
+      "rubricDigest",
+      "status",
+      "rawOutputArtifact",
+      "scoreArtifact",
+      "navigationEvidenceCommand",
+      "navigationEvidenceStartedAt",
+      "navigationEvidenceCompletedAt",
+      "navigationEvidenceExitCode",
+      "navigationEvidenceArtifact",
+      "navigationEvidenceDigest",
+      "navigationEvidenceSchemaVersion",
+      "navigationEvidenceOwner",
+      "navigationEvidenceAffectedCodeDigest"
+    ],
+    "statuses": ["running", "completed", "failed", "invalid", "aborted"]
+  },
+  "scoring": {
+    "micro.exact-owner-entry": "Uses a valid `repository-navigation-evidence-v1` record for `plan adaptation`; the record, not answer transcription, proves owner and entry.",
+    "micro.result-failure-paths": {
+      "acceptedResultSymbols": [
+        {
+          "kind": "symbol",
+          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+          "symbol": "writePlanAndRegistry"
+        },
+        {
+          "kind": "symbol",
+          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+          "symbol": "prepareAdaptivePlan"
+        },
+        {
+          "kind": "symbol",
+          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+          "symbol": "checkAdaptivePlans"
+        },
+        {
+          "kind": "symbol",
+          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
+          "symbol": "closeAdaptivePlan"
+        }
+      ],
+      "requiredFailureSymbol": {
+        "kind": "symbol",
+        "path": "scripts/plan-adaptation.mjs",
+        "symbol": "toError"
+      },
+      "pass": "Uses the valid generated record; the record must contain at least one accepted terminal and the required failure symbol, while the answer need not transcribe them."
+    },
+    "micro.mirrored-tests": "Uses the valid generated record whose testRoot resolves to the declared mirrored tests.",
+    "micro.focused-command": "Runs or cites the focused command supplied by the valid generated record.",
+    "micro.navigation-map": "Uses the valid generated record whose navigationMap state is present and path resolves.",
+    "micro.evidence-based-decision": "Keeps the current flat capability while rejecting both automatic singleton nesting and a flat-forever rule from recovered responsibilities."
+  }
+}

@@ -191,38 +191,11 @@ concurrency cases. Run `test:postgres:presence-expiry` separately and last
 because it retains fixed-ID outbox evidence that can affect later global
 outbox workers. Release Gate follows this same order.
 
-## Plan Completion Gate
+## Plan-Level Validation Routing
 
-Plan-only branches do not wait for local or Branch Release Gate builds. This
-exception applies only when every changed path is an implementation-plan or
-agent-guidance path excluded by `.github/workflows/branch-release-gate.yml`.
-Branch Release Gate remains required for branches that change code, workflows,
-scripts, tests, or plugin metadata.
-
-Focused checks and surface-specific suites are feedback; they never substitute
-for the plan completion gate for build-affecting implementation plans. From the
-final uncommitted working tree, run:
-
-```bash
-npm run test:unit
-npm run test:ci
-npm run build
-```
-
-Any change after a successful command invalidates its result. Before completion
-of a build-affecting implementation plan, the draft pull request must be
-current, **Branch Release Gate** must pass for the final feature-branch commit,
-and **Run Hetzner Supported Distributed Manifests** must pass for the resulting
-default-branch commit. Verify and record the exact commit SHA; a Release Gate
-run on different code is not evidence for the current plan. Do not approve
-completion: the plan is not complete while any required command or workflow is
-pending, skipped, failed, or attached to an older commit. An instruction not to
-commit or push postpones publication but does not waive any completion gate for
-build-affecting implementation plans.
-
-`npm run test:ci` includes the repository Deno, E2E, and in-memory full-stack
-suites after unit tests. Run `npm run test:unit` separately as required so its
-result is explicit rather than inferred from a later composite failure.
+`adaptive-plan-execution` owns plan-level validation scope. Use this catalog for
+the affected behavior, type, build, browser, and explicitly required high-risk
+proofs; do not expand a Markdown-only change into unrelated local suites.
 
 ## UI Workflow Testing
 

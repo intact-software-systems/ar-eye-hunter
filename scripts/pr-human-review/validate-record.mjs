@@ -1,19 +1,22 @@
 import { validateRetainedLegacy } from './trusted-retained-legacy.mjs';
+import { isBuildAffectingPath } from './review-freshness.mjs';
 import {
   isExactSha,
   readVisibleReviewSections,
+  validateCheckpointReview,
   validateFinalFindings,
-  validateFreshReview,
-  validateMilestoneReview,
-  validateReviewEvidence,
+  validateFinalReview,
+  validateInitialReview,
 } from './validate-review-evidence.mjs';
 
 export { isExactSha } from './validate-review-evidence.mjs';
 
-const recordFence = /```pr-human-review-record-v1\s*\n([\s\S]*?)\n```/gu;
+const recordFence = /```pr-human-review-record-v2\s*\n([\s\S]*?)\n```/gu;
 const exemptionPaths = {
   'plan-only': [/^docs\/superpowers\/plans\/.+\.md$/u, /^plans\/.+\.md$/u],
-  'documentation-only': [/^docs\/(?!superpowers\/plans\/).+\.md$/u],
+  'documentation-only': [
+    (repositoryPath) => /\.mdx?$/u.test(repositoryPath) && !isBuildAffectingPath(repositoryPath),
+  ],
   'agent-guidance-only': [/^\.agents\/.+\.md$/u, /^AGENTS\.md$/u],
 };
 
@@ -24,7 +27,7 @@ export function validateReviewRecord(input) {
     return errors;
   }
   const { record, visibleBody } = recordEvidence;
-  validateCurrentShas(input, errors);
+  validateCurrentInput(input, errors);
   validateRecordShape(record, errors);
   if (record.scope === 'exempt') {
     validateExemption(record, input.changedPaths, errors);
@@ -33,26 +36,32 @@ export function validateReviewRecord(input) {
   if (record.scope !== 'code-changing') {
     return errors;
   }
-  const visibleSections = readVisibleReviewSections(visibleBody, errors);
-  validateMilestoneReview(record.milestoneReview, visibleSections.milestone, errors);
-  const initialReview = validateReviewEvidence({
+  validatePlanReference(record.plan, input.currentPlan, errors);
+  const sections = readVisibleReviewSections(visibleBody, errors);
+  validateInitialReview({
     review: record.initialReview,
-    stage: 'initial',
-    section: visibleSections.initial,
+    reviewedPlanContext: input.reviewedPlanContextBySha?.[record.initialReview?.headSha],
+    section: sections.initial,
+    errors,
+  });
+  validateCheckpointReview({
+    checkpointReview: record.checkpointReview,
+    currentPlan: input.currentPlan,
+    section: sections.checkpoint,
     errors,
   });
   if (input.draft) {
-    validateFreshReview({ review: initialReview, stage: 'initial', input, errors });
     return errors;
   }
-  const finalReview = validateReviewEvidence({
+  const finalReview = validateFinalReview({
     review: record.finalReview,
-    stage: 'final',
-    section: visibleSections.final,
+    currentPlan: input.currentPlan,
+    currentBuildTreeDigest: input.currentBuildTreeDigest,
+    reviewedBuildTreeDigestBySha: input.reviewedBuildTreeDigestBySha,
+    section: sections.final,
     retainedLegacy: record.retainedLegacy,
     errors,
   });
-  validateFreshReview({ review: finalReview, stage: 'final', input, errors });
   validateFinalFindings(finalReview, errors);
   if (finalReview?.legacy?.items && Array.isArray(record.retainedLegacy)) {
     validateRetainedLegacy({ record, finalReview, ...input, errors });
@@ -60,29 +69,41 @@ export function validateReviewRecord(input) {
   return errors;
 }
 
+export function readReviewRecordV2(body) {
+  const errors = [];
+  const evidence = readRecord(body, errors);
+  if (!evidence) {
+    throw new Error(errors.join('; '));
+  }
+  return evidence.record;
+}
+
 function readRecord(body, errors) {
   const matches = [...body.matchAll(recordFence)];
   if (matches.length !== 1) {
-    errors.push('PR Human Review Record v1 must contain exactly one metadata fence');
+    errors.push('PR Human Review Record v2 must contain exactly one metadata fence');
+    return undefined;
+  }
+  const trimmedBody = body.trimEnd();
+  const fenceEnd = matches[0].index + matches[0][0].length;
+  if (fenceEnd !== trimmedBody.length) {
+    errors.push('PR Human Review Record v2 metadata fence must end the pull request body');
     return undefined;
   }
   try {
     const record = JSON.parse(matches[0][1]);
     if (!isPlainRecord(record)) {
-      errors.push('PR Human Review Record v1 metadata must be a plain object');
+      errors.push('PR Human Review Record v2 metadata must be a plain object');
       return undefined;
     }
-    return {
-      record,
-      visibleBody: body.replace(recordFence, ''),
-    };
+    return { record, visibleBody: body.replace(recordFence, '') };
   } catch {
-    errors.push('PR Human Review Record v1 metadata block is not valid JSON');
+    errors.push('PR Human Review Record v2 metadata block is not valid JSON');
     return undefined;
   }
 }
 
-function validateCurrentShas(input, errors) {
+function validateCurrentInput(input, errors) {
   if (!isExactSha(input.mergeBaseSha)) {
     errors.push('computed merge base SHA must be a full 40-character lowercase SHA');
   }
@@ -92,14 +113,52 @@ function validateCurrentShas(input, errors) {
 }
 
 function validateRecordShape(record, errors) {
-  if (record.version !== 1) {
-    errors.push('PR Human Review Record v1 metadata must use version 1');
+  if (record.version !== 2) {
+    errors.push('PR Human Review Record v2 metadata must use version 2');
   }
   if (record.scope !== 'code-changing' && record.scope !== 'exempt') {
     errors.push('review scope must be code-changing or exempt');
   }
   if (!Array.isArray(record.retainedLegacy)) {
     errors.push('retainedLegacy must be an array');
+  }
+  validateTopLevelFields(record, errors);
+}
+
+function validateTopLevelFields(record, errors) {
+  const fieldsByScope = {
+    'code-changing': new Set([
+      'version',
+      'scope',
+      'exemption',
+      'plan',
+      'initialReview',
+      'checkpointReview',
+      'finalReview',
+      'retainedLegacy',
+    ]),
+    exempt: new Set(['version', 'scope', 'exemption', 'retainedLegacy']),
+  };
+  const allowedFields = fieldsByScope[record.scope];
+  if (!allowedFields) {
+    return;
+  }
+  const unsupportedFields = Object.keys(record)
+    .filter((field) => !allowedFields.has(field))
+    .sort();
+  if (unsupportedFields.length > 0) {
+    const fieldList = unsupportedFields.join(', ');
+    errors.push(`${record.scope} review metadata contains unsupported fields: ${fieldList}`);
+  }
+}
+
+function validatePlanReference(plan, currentPlan, errors) {
+  if (!isPlainRecord(plan) || typeof plan.path !== 'string' || plan.path.length === 0) {
+    errors.push('code-changing review must identify its adaptive plan path');
+    return;
+  }
+  if (plan.path !== currentPlan?.path) {
+    errors.push('review adaptive plan path must match the current plan');
   }
 }
 
@@ -116,14 +175,18 @@ function validateExemption(record, changedPaths, errors) {
   }
   const expected = normalizePaths(exemption.changedPaths, 'exemption', errors);
   const actual = normalizePaths(changedPaths, 'observed', errors);
-  if (!sameSet(expected, actual)) {
+  if (!sameTextArray(expected, actual)) {
     errors.push('exemption changed paths must exactly match the observed changed paths');
   }
   for (const changedPath of actual) {
-    if (!allowedPatterns.some((pattern) => pattern.test(changedPath))) {
+    if (!allowedPatterns.some((pattern) => matchesExemptionPath(pattern, changedPath))) {
       errors.push(`${exemption.kind} exemption path is not allowed: ${changedPath}`);
     }
   }
+}
+
+function matchesExemptionPath(pattern, repositoryPath) {
+  return typeof pattern === 'function' ? pattern(repositoryPath) : pattern.test(repositoryPath);
 }
 
 function normalizePaths(paths, source, errors) {
@@ -131,28 +194,28 @@ function normalizePaths(paths, source, errors) {
     errors.push(`${source} changed paths must be an array`);
     return [];
   }
-  const normalized = paths.map((path) => normalizePath(path));
-  if (normalized.some((path) => path === undefined)) {
+  const normalized = paths.map(normalizePath);
+  if (normalized.some((repositoryPath) => repositoryPath === undefined)) {
     errors.push(`${source} changed paths must be normalized repository-relative paths`);
   }
   return [...new Set(normalized.filter(Boolean))].sort();
 }
 
-function normalizePath(path) {
+function normalizePath(repositoryPath) {
   if (
-    typeof path !== 'string' ||
-    path.includes('\\') ||
-    path.startsWith('/') ||
-    path.includes('../')
+    typeof repositoryPath !== 'string' ||
+    repositoryPath.includes('\\') ||
+    repositoryPath.startsWith('/') ||
+    repositoryPath.includes('../')
   ) {
     return undefined;
   }
-  const normalized = path.replace(/^\.\//u, '').replace(/\/+/gu, '/');
+  const normalized = repositoryPath.replace(/^\.\//u, '').replace(/\/+/gu, '/');
   return normalized.includes('/./') || normalized === '.' ? undefined : normalized;
 }
 
-function sameSet(left, right) {
-  return left.length === right.length && left.every((path, index) => path === right[index]);
+function sameTextArray(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function isPlainRecord(value) {

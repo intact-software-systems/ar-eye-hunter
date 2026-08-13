@@ -31,8 +31,8 @@ and authoritative persisted/shared contracts use mandatory fields by default.
   sequence and warning-only checker usage for the authoritative repo TypeScript
   standard in
   [repo-code-style.md](../.agents/skills/rallar-code-writing/references/repo-code-style.md).
-- [PR Human Review Record v1](./pr-human-review-record.md) Independent review,
-  exact-SHA evidence, and production-legacy approval record.
+- [PR Human Review Record v2](./pr-human-review-record.md) Independent review,
+  content-sensitive freshness, and exact production-legacy evidence.
 - [Production Legacy Exception Registry](./production-legacy-exceptions.md)
   Durable human approvals for retained affected-surface production legacy.
 - [Repo Code-Style Exception Registry](./repo-code-style-exceptions.md)

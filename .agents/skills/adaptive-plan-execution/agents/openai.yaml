@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Adaptive Plan Execution'
+  short_description: 'Adapt long-running plans with focused checkpoints'
+  default_prompt: 'Use $adaptive-plan-execution to execute this plan with evidence-driven checkpoints.'

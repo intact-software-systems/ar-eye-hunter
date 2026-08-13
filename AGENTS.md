@@ -52,38 +52,9 @@ standard.
   one reason to change.
 - For the human review workflow and warning-only check tooling, use
   `docs/repo-human-style-guide.md` and run `npm run check:repo-style`.
-- For written implementation plans and clearly long-running repository
-  implementation, including docs, scripts, and operations, use
-  `publishing-plan-progress`.
-- During every task, first search this repository's native GitHub Issues for a
-  verified material follow-up. Reuse and link an existing issue rather than
-  creating a duplicate; otherwise create an issue promptly when the work is
-  separately scoped, needs a user decision, or cannot safely be completed now.
-  Its body must state the problem, why it is deferred, safe evidence, the
-  requested decision or desired outcome, concrete acceptance criteria or first
-  step, guardrails, and related plan, PR, and issue links. Never include
-  secrets. Link every created or reused issue in the final handoff, or state
-  explicitly that there were none. If issue search or creation is unavailable
-  or prohibited, preserve the complete draft and state the exact reason instead.
-  An issue is not authorization to shrink the active task: work required by its
-  declared behavior, ownership, acceptance criteria, or promised validation
-  stays in the plan until fixed and validated. A created issue may record an
-  approved re-scope, but it never replaces that work or permits a dependent
-  milestone or plan to be called complete.
-- When concurrent local work causes material CPU or memory contention, publish
-  a safe non-default-branch checkpoint and monitor the GitHub workflow for its
-  exact head SHA rather than stalling on heavyweight local checks. Record every
-  skipped command and the reason; this never waives the final local or remote
-  completion gates.
-- Keep an initial plan or design checkpoint and its implementation in one draft
-  PR unless the review-pressure rule requires a written stacked decision.
-  Request review, but continue unless the user requires approval, gives
-  conflicting direction, or a real blocker prevents the affected work. Before
-  each published milestone and completion, a moved default branch requires one
-  compatibility review, not an automatic re-plan: record either no material
-  impact or the smallest plan delta, and fully replan only when a product
-  decision, contract, integration, or acceptance criterion is materially
-  invalidated.
+- Use `adaptive-plan-execution` for written or multi-slice plans,
+  `organizing-repository-structure` for repository shape, `rallar-testing` for
+  surface-specific commands, and `publishing-plan-progress` for publication.
 - No AI or agent may create or place a commit on `main`, `master`, or the local
   default branch without stating the exact branch, operation, staged file list,
   staged diff summary and staged Git tree ID from `git write-tree`, proposed
@@ -142,6 +113,8 @@ standard.
 
 ## Validation
 
+- Use `rallar-testing` to select affected checks and
+  `adaptive-plan-execution` for plan-level validation scope and checkpoints.
 - Run focused tests for the touched package or app before broader suites.
 - When adding or changing REST API behavior, add or adjust Rallar black-box
   recipes/tests in `packages/shared-test/black-box-runner` as part of the same
@@ -151,28 +124,6 @@ standard.
   bundle-boundary checks when exports or entry points change.
 - For game/realtime changes, include the relevant app tests/builds and shared
   package tests.
-- For build-affecting written implementation plans, the plan may be approved or
-  marked complete only after the final uncommitted working tree passes
-  `npm run test:unit`,
-  `npm run test:ci`, and `npm run build`. Focused tests are feedback, not a
-  substitute for these completion gates. Any change after a successful gate
-  invalidates that gate and requires it to run again.
-- Plan-only branches do not wait for local or Branch Release Gate builds. This
-  exception applies only when every changed path is an implementation-plan or
-  agent-guidance path excluded by `.github/workflows/branch-release-gate.yml`.
-  Branch Release Gate remains required for branches that change code, workflows,
-  scripts, tests, or plugin metadata.
-- For build-affecting implementation plans, publication is also part of
-  completion: keep the draft pull request current, require **Branch Release
-  Gate** to pass for the final feature-branch commit, and require **Run Hetzner
-  Supported Distributed Manifests** to pass for the resulting default-branch
-  commit. Record the exact commit SHA validated by each workflow. Do not
-  approve completion: the plan is not complete while any required command or
-  workflow is pending, skipped, failed, or attached to an older commit.
-- For build-affecting implementation plans, an explicit instruction not to
-  commit or push postpones publication; it does not waive any completion gate.
-  Continue safe uncommitted work and report the plan as incomplete until
-  publication and remote gates are permitted and successful.
 - Report commands that passed, failed, or were skipped.
 
 ## AI Handoff Contract (applies to all agents)
@@ -185,8 +136,8 @@ standard.
     explicit statement that there were none.
 - Keep the handoff structured, not just an action list. If tradeoffs were made,
   call them out explicitly.
-- Every final handoff ends with a Markdown `### Commands executed and what they
-  taught us` section. When commands or tool actions ran, include a concise
+- Every final handoff ends with a Markdown
+  `### Commands executed and what they taught us` section. When commands or tool actions ran, include a concise
   grouped bullet for each repeated or consequential action. If no commands or
   tool actions ran, write `No commands or tool actions were run.` in that
   section.

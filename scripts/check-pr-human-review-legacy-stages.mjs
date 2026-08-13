@@ -18,8 +18,6 @@ if (record?.scope === 'exempt') {
   console.log('PASS: explicit PR-review exemption skips legacy candidate stage scans');
 } else {
   const stages = [{ name: 'initial', kind: 'initial', review: record?.initialReview }];
-  for (const [index, review] of (record?.milestoneReview?.entries ?? []).entries())
-    stages.push({ name: `milestone-${index + 1}`, kind: 'milestone', review });
   if (!event.pull_request?.draft && record?.finalReview)
     stages.push({ name: 'final', kind: 'final', review: record.finalReview, final: true });
   for (const stage of stages) {
@@ -47,7 +45,7 @@ function runStage({ stage, currentHead, trustedBase, registry, retainedLegacy })
   const actualBase = gitText(['merge-base', trustedBase, head]);
   if (actualBase !== base)
     fail(`${stage.name} recorded merge base does not match trusted PR base history`);
-  if (stage.final ? head !== currentHead : !git(['merge-base', '--is-ancestor', head, currentHead]))
+  if (!git(['merge-base', '--is-ancestor', head, currentHead]))
     fail(`${stage.name} review head is not reachable from current candidate head`);
   const temp = mkdtempSync(path.join(tmpdir(), 'legacy-stage-'));
   try {
@@ -80,12 +78,6 @@ function stageReviewRecord({ stage, retainedLegacy }) {
   };
   if (stage.kind === 'initial') {
     return { ...stageRecord, initialReview: stage.review };
-  }
-  if (stage.kind === 'milestone') {
-    return {
-      ...stageRecord,
-      milestoneReview: { classification: 'reviewed', entries: [stage.review] },
-    };
   }
   return { ...stageRecord, finalReview: stage.review };
 }

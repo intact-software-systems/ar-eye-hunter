@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const skillsRoot = path.join(repoRoot, '.agents/skills');
 const expectedSkills = [
+  'adaptive-plan-execution',
   'building-rallar-apps',
+  'organizing-repository-structure',
   'performance-analysis',
   'rallar-ai',
   'rallar-code-writing',
@@ -63,10 +65,11 @@ describe('Rallar skill plugin and publication integrity', () => {
       interface?: { defaultPrompt?: readonly string[]; longDescription?: string };
     };
 
-    expectAll(agents, ['publishing-plan-progress', 'long-running']);
+    expectAll(agents, ['adaptive-plan-execution', 'publishing-plan-progress', 'publication']);
     expect(normalizedAgents).toContain(
-      'For written implementation plans and clearly long-running repository implementation, ' +
-        'including docs, scripts, and operations, use `publishing-plan-progress`.',
+      'Use `adaptive-plan-execution` for written or multi-slice plans, ' +
+        '`organizing-repository-structure` for repository shape, `rallar-testing` for ' +
+        'surface-specific commands, and `publishing-plan-progress` for publication.',
     );
     expectAll(normalizedAgents, [
       'No AI or agent may create or place a commit on `main`, `master`, or the local default branch',
@@ -82,37 +85,33 @@ describe('Rallar skill plugin and publication integrity', () => {
       '`codex/<topic>`',
       'draft pull request',
       'On a non-default branch',
-      'completed plan milestone',
-      'without waiting for human review',
+      'completed capability slice',
+      'without waiting for review',
       'Explicit user instructions',
       'installed GitHub publication workflow',
       'upstream tracking',
       'detached worktree',
       'Create branch here',
-      'Explicit user instructions may narrow or disable publication',
+      'may narrow or disable publication',
       'Default Branch Commit and Push Permission',
       'Before every default-branch commit',
-      'staged diff summary and staged Git tree ID',
+      'staged diff summary',
+      'staged Git tree ID',
       '`git write-tree`',
       'full commit IDs',
-      'proposed commit message, and operation type',
+      'proposed commit message',
       'commit, amend, merge, revert, cherry-pick, rebase, or squash',
-      'Do not commit while the user is unavailable or treat silence as approval',
-      'Any later default-branch commit requires a new request and approval',
-      'content, message, input commit, conflict resolution, or target changes',
+      'silence is not approval',
+      'Changed content, message, input, target, or conflict resolution invalidates approval',
       'Working directly on the default branch is not permission to commit',
       'Approval to commit is not approval to push',
       'approval to push is not approval to commit',
-      'standing instruction to publish progress',
       'exact remote, destination ref and refspec',
-      'resolved full commit IDs, not moving symbolic ranges',
-      'commit range changes, the approval is invalid',
-      'Wait for explicit approval',
-      'treat silence as approval',
-      'Any later default-branch push requires a new request and approval.',
-      'force push was separately disclosed',
-      'any source branch is pushed to the remote default ref',
-      'pauses only that Git operation, not safe uncommitted local plan work',
+      'resolved full old and new commit IDs',
+      'A changed tip or range invalidates approval',
+      'A force push requires separate disclosure and approval',
+      'whenever any source branch targets the remote default ref',
+      'pauses only that Git operation',
     ]);
     expect(plugin.keywords).toEqual(
       expect.arrayContaining([
@@ -128,43 +127,43 @@ describe('Rallar skill plugin and publication integrity', () => {
     );
   });
 
-  it('keeps plan completion behind local and published release gates', () => {
+  it('keeps validation scope and completion publication with their canonical owners', () => {
     const agents = readRepo('AGENTS.md');
     const progressSkill = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
     const testingSkill = readRepo('.agents/skills/rallar-testing/SKILL.md');
     const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
     const codeWritingSkill = readRepo('.agents/skills/rallar-code-writing/SKILL.md');
 
-    for (const source of [agents, progressSkill, testingSkill, testCommands]) {
-      expectAllNormalized(source, [
-        'npm run test:unit',
-        'npm run test:ci',
-        'npm run build',
-        'draft pull request',
-        'Branch Release Gate',
-        'Run Hetzner Supported Distributed Manifests',
-        'final feature-branch commit',
-        'resulting default-branch commit',
-        'pending, skipped, failed, or attached to an older commit',
-        'the plan is not complete',
-      ]);
-    }
-
     expectAllNormalized(progressSkill, [
-      'For build-affecting implementation plans, an instruction not to commit or push postpones publication',
-      'does not waive any completion gate',
-      'Any change after a successful gate invalidates that gate',
+      'draft pull request',
+      'Branch Release Gate',
+      'Run Hetzner Supported Distributed Manifests',
+      'build-affecting tree digest',
+      'Pending, skipped, failed, expired, or unverifiable required publication evidence keeps publication incomplete',
+      'An instruction not to commit or push postpones publication',
     ]);
     expectAllNormalized(testingSkill, [
-      'Focused tests are feedback, not a substitute for completion gates',
-      'Run the commands from the final uncommitted working tree before publication',
+      'adaptive-plan-execution',
+      'plan-level validation scope',
+      'test:api-v1:black-box:postgres:medium-scale',
+      'test:api-v1:black-box:postgres:topology-replay',
+      'perf:api-v1:state-write',
     ]);
-    expectAllNormalized(testCommands, ['Plan Completion Gate', 'Release Gate', 'exact commit SHA']);
+    expectAllNormalized(testCommands, [
+      'Plan-Level Validation Routing',
+      'adaptive-plan-execution',
+      'explicitly required high-risk proofs',
+    ]);
     expectAllNormalized(codeWritingSkill, [
       'rallar-testing',
-      'plan-completion gate',
-      'Focused checks never substitute for that final gate',
+      'adaptive-plan-execution',
+      'plan-level validation scope',
     ]);
+    for (const source of [agents, progressSkill, testingSkill, testCommands]) {
+      expect(source).not.toContain('npm run test:unit');
+      expect(source).not.toContain('npm run test:ci');
+      expect(source).not.toContain('npm run build');
+    }
   });
 
   it('limits feature-branch release gates to changes that can affect builds', () => {
@@ -180,19 +179,21 @@ describe('Rallar skill plugin and publication integrity', () => {
       '- main',
       'paths-ignore:',
       "- 'docs/superpowers/plans/**'",
-      "- 'plans/**'",
-      "- '.agents/**'",
-      "- 'AGENTS.md'",
     ]);
+    for (const buildContractPath of ["'plans/**'", "'.agents/**'", "'AGENTS.md'"]) {
+      expect(branchWorkflow).not.toContain(buildContractPath);
+    }
     expect(branchWorkflow).not.toContain('docs/superpowers/specs/**');
     expect(branchWorkflow).not.toContain('.codex-plugin/**');
     expect(reusableWorkflow).not.toContain('paths-ignore:');
 
-    for (const source of [agents, progressSkill, testingSkill, testCommands]) {
-      expectAllNormalized(source, [
-        'Plan-only branches do not wait for local or Branch Release Gate builds',
-        'Branch Release Gate remains required for branches that change code, workflows, scripts, tests, or plugin metadata',
-      ]);
+    expectAllNormalized(progressSkill, [
+      'Historical-plan-only branches do not wait for Branch Release Gate when every changed path is excluded by the workflow',
+      'Branch Release Gate remains required when its build-affecting path contract includes changed code, workflows, scripts, tests, package metadata, lockfiles, active plans, or agent and plugin contracts',
+    ]);
+    for (const source of [agents, testingSkill, testCommands]) {
+      expect(source).not.toContain('Plan-only branches do not wait for');
+      expect(source).not.toContain('Branch Release Gate remains required');
     }
   });
 

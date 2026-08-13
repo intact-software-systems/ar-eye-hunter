@@ -6,16 +6,136 @@ on:
       - main
     paths-ignore:
       - 'docs/superpowers/plans/**'
-      - 'plans/**'
-      - '.agents/**'
-      - 'AGENTS.md'
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  governance-gate:
+    name: Governance Gate
+    uses: ./.github/workflows/governance-gate.yml
+  validation-evidence:
+    name: Select validation evidence
+    needs: governance-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      reuse: ${{ steps.resolution.outputs.reuse }}
+      build_tree_digest: ${{ steps.resolution.outputs.build_tree_digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Select reusable validation evidence
+        id: selection
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/validation-evidence.mjs select
+          --repo-root "$GITHUB_WORKSPACE"
+          --repository "$GITHUB_REPOSITORY"
+          --workflow-path ".github/workflows/branch-release-gate.yml"
+          --branch "$GITHUB_REF_NAME"
+          --head "$GITHUB_SHA"
+          --current-run-id "$GITHUB_RUN_ID"
+          --now "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
+          --output "$GITHUB_OUTPUT"
+      - name: Fall back to broad validation
+        id: fallback
+        if: ${{ steps.selection.outcome != 'success' }}
+        run: |
+          echo "reuse=false" >> "$GITHUB_OUTPUT"
+          echo "reason=validation-evidence-selection-failed" >> "$GITHUB_OUTPUT"
+      - name: Resolve validation evidence selection
+        id: resolution
+        if: ${{ always() }}
+        env:
+          SELECTION_OUTCOME: ${{ steps.selection.outcome }}
+          SELECTION_REUSE: ${{ steps.selection.outputs.reuse }}
+          SELECTION_DIGEST: ${{ steps.selection.outputs.build_tree_digest }}
+          FALLBACK_REUSE: ${{ steps.fallback.outputs.reuse }}
+        run: |
+          if [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_REUSE" == "true" ]]; then
+            echo "reuse=true" >> "$GITHUB_OUTPUT"
+            echo "build_tree_digest=$SELECTION_DIGEST" >> "$GITHUB_OUTPUT"
+          else
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+          fi
   release-gate:
     name: Release Gate
+    needs:
+      - governance-gate
+      - validation-evidence
+    if: ${{ always() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.reuse != 'true' }}
     uses: ./.github/workflows/release-gate.yml
     with:
       changed_repo_style_base: origin/main
+  publish-validation-evidence:
+    name: Publish validation evidence
+    needs:
+      - governance-gate
+      - validation-evidence
+      - release-gate
+    if: ${{ always() && needs.release-gate.result == 'success' && needs.validation-evidence.outputs.reuse != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Read trusted current run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .artifacts/validation-evidence
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            > .artifacts/validation-evidence/current-run.json
+          gh api --paginate --slurp \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" \
+            > .artifacts/validation-evidence/current-jobs.json
+      - name: Create validation evidence
+        run: >-
+          node scripts/validation-evidence.mjs create
+          --repo-root "$GITHUB_WORKSPACE"
+          --run-envelope ".artifacts/validation-evidence/current-run.json"
+          --jobs-envelope ".artifacts/validation-evidence/current-jobs.json"
+          --release-gate-result "${{ needs.release-gate.result }}"
+          --output ".artifacts/validation-evidence/validation-evidence-v1.json"
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-evidence-v1
+          path: .artifacts/validation-evidence/validation-evidence-v1.json
+          if-no-files-found: error
+          retention-days: 7
+  branch-release-result:
+    name: Branch Release Gate result
+    needs:
+      - governance-gate
+      - validation-evidence
+      - release-gate
+      - publish-validation-evidence
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Conclude Branch Release Gate
+        run: >-
+          node scripts/validation-evidence.mjs conclude
+          --governance-result "${{ needs.governance-gate.result }}"
+          --selection-result "${{ needs.validation-evidence.result }}"
+          --reuse "${{ needs.validation-evidence.outputs.reuse }}"
+          --release-result "${{ needs.release-gate.result }}"
+          --publication-result "${{ needs.publish-validation-evidence.result }}"

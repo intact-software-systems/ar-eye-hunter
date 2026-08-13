@@ -23,7 +23,7 @@ describe('PR legacy review stage driver', () => {
     const record = {
       scope: 'code-changing',
       initialReview: stageReview(fixture, pendingItems),
-      milestoneReview: { classification: 'none', entries: [] },
+      checkpointReview: { adaptivePlanDigest: 'a'.repeat(64) },
       finalReview: null,
       retainedLegacy: [],
     };
@@ -32,27 +32,6 @@ describe('PR legacy review stage driver', () => {
 
     expect(result.status, result.stdout).toBe(0);
     expect(result.stdout).toContain('validated 1 exact-SHA legacy candidate review stage(s)');
-  });
-
-  it('validates milestone pending-retention evidence without final approval metadata', () => {
-    const fixture = createStageFixture();
-    const resolvedItems = reportedItems(fixture, 'resolved');
-    const pendingItems = reportedItems(fixture, 'retained-pending-human-approval');
-    const record = {
-      scope: 'code-changing',
-      initialReview: stageReview(fixture, resolvedItems),
-      milestoneReview: {
-        classification: 'reviewed',
-        entries: [stageReview(fixture, pendingItems)],
-      },
-      finalReview: null,
-      retainedLegacy: [],
-    };
-
-    const result = runStageDriver(fixture, record, true);
-
-    expect(result.status, result.stdout).toBe(0);
-    expect(result.stdout).toContain('validated 2 exact-SHA legacy candidate review stage(s)');
   });
 
   it('validates final retained legacy with the complete approval and registry evidence', () => {
@@ -64,10 +43,31 @@ describe('PR legacy review stage driver', () => {
     const record = {
       scope: 'code-changing',
       initialReview: stageReview(fixture, resolvedItems),
-      milestoneReview: { classification: 'none', entries: [] },
+      checkpointReview: { adaptivePlanDigest: 'a'.repeat(64) },
       finalReview: stageReview(fixture, retainedItems),
       retainedLegacy: approvals,
     };
+
+    const result = runStageDriver(fixture, record, false);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain('validated 2 exact-SHA legacy candidate review stage(s)');
+  });
+
+  it('keeps final legacy evidence valid after an unrelated documentation-only commit', () => {
+    const fixture = createStageFixture();
+    const resolvedItems = reportedItems(fixture, 'resolved');
+    const record = {
+      scope: 'code-changing',
+      initialReview: stageReview(fixture, resolvedItems),
+      checkpointReview: { adaptivePlanDigest: 'a'.repeat(64) },
+      finalReview: stageReview(fixture, resolvedItems),
+      retainedLegacy: [],
+    };
+    writeFixture(fixture.root, 'docs/follow-up.md', 'Unrelated explanatory text.\n');
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'docs follow-up']);
+    fixture.currentHead = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
 
     const result = runStageDriver(fixture, record, false);
 
@@ -94,7 +94,7 @@ describe('PR legacy review stage driver', () => {
           },
         },
       },
-      milestoneReview: { classification: 'none', entries: [] },
+      checkpointReview: { adaptivePlanDigest: 'a'.repeat(64) },
       finalReview: null,
       retainedLegacy: [],
     };
@@ -111,7 +111,7 @@ describe('PR legacy review stage driver', () => {
     const record = {
       scope: 'code-changing',
       initialReview: stageReview(fixture, incompleteItems),
-      milestoneReview: { classification: 'none', entries: [] },
+      checkpointReview: { adaptivePlanDigest: 'a'.repeat(64) },
       finalReview: null,
       retainedLegacy: [],
     };
@@ -148,7 +148,7 @@ function createStageFixture() {
   symlinkSync(path.join(repoRoot, 'scripts'), path.join(root, 'scripts'), 'dir');
   const registry = path.join(root, 'registry.md');
   writeFileSync(registry, '# Production Legacy Exception Registry\n');
-  return { root, base, head, registry };
+  return { root, base, head, currentHead: head, registry };
 }
 
 function runStageDriver(
@@ -165,7 +165,7 @@ function runStageDriver(
       '--event',
       event,
       '--current-head',
-      fixture.head,
+      fixture.currentHead,
       '--trusted-base',
       fixture.base,
       '--registry',
