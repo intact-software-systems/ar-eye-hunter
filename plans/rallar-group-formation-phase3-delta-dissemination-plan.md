@@ -111,6 +111,8 @@ snapshot-per-change can be dropped):
 | 6 | `rooms.onEvent` user events | `state-events.ts:196-238` → `room-events.ts:159-176` | consumes `group-state.event` (dedupe by eventId, no cache writes) | unaffected; delta envelope must keep the `GroupEvent` shape it validates |
 | 7 | Black-box recipes waiting on snapshot broadcasts | exactly two (repo-exhaustive): `api-v1-cross-application-ws-isolation.json:461-538` (ws.wait on `group-state.snapshot` frames + a negative cross-scope wait; memory + postgres profiles) and `api-v1-rtc-topology-convergence.json:622-690` (waits on both revision snapshots on two servers and asserts on snapshot **payload contents**; cluster profile). No recipe references `group-state.event`. | ws.wait steps on `group-state.snapshot` | dual-emit keeps both green; `delta-primary` tier runs need delta-mode recipe variants, including a delta-mode cross-scope isolation negative |
 | 8 | Tests pinning "events are ignored" | `data-caches.test.ts:383,794` | encode the current snapshot-primary contract | rewritten with the delta arm |
+| 9 | Server RTT group-resolution fallback | `topology/rtt/init-rtc-rtt-topic.ts:130` (`findGroupStateSnapshotsBySessionIds`) | reads the server process cache the snapshot topics' `onState` handlers refresh | M2 must keep server process caches truthful under delta-primary: a delta `onState` apply, post-commit observation on the mutating server, or a verified durable fallback (initial-review finding 4) |
+| 10 | Shared-graph group creation | `packages/shared-graph/group-graphs-create-service.ts:40` | same server process cache | same disposition as #9 |
 
 Additional discovered coupling: PR #152's equal-tuple decide
 (`group-state-snapshot-revision.ts:35-41`) treats lease-insensitive-equal
@@ -193,16 +195,19 @@ into `GroupPresenceSummaryWork` beside the existing `topologyIntent`.
   Browsers consume deltas as primary and snapshots as the trailing
   divergence oracle (equal-tuple decide throws on any reconstruction
   divergence). Every existing recipe and the #156-pinned proof stay green.
-- `delta-primary` — the event row (delta envelope) plus the
-  `group-directory.snapshot` row are emitted; the per-change
-  `group-state.snapshot` room fanout is dropped. Full snapshots serve
-  join, resync, and causal-gap pulls only. This mode produces the
-  headline egress numbers and is exercised by dedicated recipe runs; the
-  default flips only when a later checkpoint earns it with tier evidence.
-  (Directory-row disposition under `delta-primary` — kept initially
-  because the browser directory arm feeds the same cache and dropping it
-  would leave non-member directory consumers stale — is re-decided at the
-  M2 checkpoint with measured byte shares.)
+- `delta-primary` — the event row (delta envelope) is emitted; **both**
+  per-change full-snapshot rows (`group-state.snapshot` and
+  `group-directory.snapshot`) are dropped. Full snapshots serve join,
+  resync, and causal-gap pulls only. This mode produces the headline
+  egress numbers and is exercised by dedicated recipe runs; the default
+  flips only when a later checkpoint earns it with tier evidence.
+  (Directory-row disposition settled by the measured baseline: the
+  directory row carries the identical full snapshot and costs the same —
+  123.3 MB of the 255.0 MB N=50 burst vs 121.6 MB for
+  `group-state.snapshot` — so dropping only the state row caps the total
+  reduction at ~2×. The browser's directory arm feeds the same cache as
+  the state arm, so the delta path replaces both; directory freshness for
+  non-members comes from list/join pulls.)
 
 The `RALLAR_GROUP_FORMATION_DAMPING=legacy` mode bypasses the new flag
 entirely (legacy damping implies snapshot-per-change), preserving #156's
@@ -221,10 +226,24 @@ hand):
   expansion CASed against.
 - `resultingCausalRevision` — the post-summary `snapshot.causalRevision`
   (what the trailing snapshot rows carry).
-- `delta` — the resulting state for the affected slice, sufficient for
-  deterministic reapplication: the resulting member record and/or session
-  record (or removal markers), the resulting group aggregate fields, and
-  resulting `memberCount`/`onlineMemberCount`.
+- `delta` — the resulting state sufficient for deterministic
+  reapplication: the resulting member record and/or session record (or
+  removal markers) for the affected slice, the resulting group aggregate
+  fields, resulting `memberCount`/`onlineMemberCount`, **and the complete
+  resulting `activeSessions` identity set** (session ids). The identity
+  set is required, not optional: snapshot assembly TTL-filters
+  `activeSessions` against authoritative rows at expansion time, so a
+  summary transition can silently drop sessions beyond the mutation's own
+  slice; a delta carrying only the affected slice would materialize a
+  snapshot whose counts and session set disagree, and the shared
+  equal-tuple decide (`hasConsistentGroupOnlineMemberCount` on both sides
+  of the liveness-reduction arm) would throw on healthy operation
+  (initial-review finding 2).
+- No-op expansions: `compute()` emits rows regardless of
+  `summary.outcome`; a summary no-op has no CAS predecessor, so its
+  envelope stamps `predecessorCausalRevision === resultingCausalRevision`
+  and browsers must evaluate the equals-resulting no-op rule **before**
+  the equals-predecessor apply rule.
 
 Browser application rule (the causal-gap/resync contract, recorded as the
 plan's core judgment):
@@ -242,9 +261,19 @@ plan's core judgment):
    `minCausalRevision` read (`readStateGroupSnapshot`), floor =
    `resultingCausalRevision`, with the incomparable-recovery fallback to
    the full-collection reread that already exists.
-4. WS reconnect (`'connected'` lifecycle after a drop) → resync: point
-   pulls for joined groups + overlay read-through (M12), because deltas
-   during the gap are simply lost, not queued.
+4. WS reconnect → resync: point pulls for joined groups + overlay
+   read-through (M12), because deltas during the gap are simply lost, not
+   queued. The trigger is the socket-level re-open — the ws `'open'`
+   lifecycle signal (`rallar-runtime/ws.ts:259-262`) or the
+   `WsQueueBoxClientService.ts:331-333` `onOpen` TODO hook — **not** the
+   `'connected'` lifecycle, which fires only on session establishment
+   (`rallar-runtime/ws.ts:122-124`) and never on a mid-session socket
+   re-dial (initial-review finding 3).
+5. Divergence oracle channel: a `StateSnapshotRevisionConflictError` from
+   a delta- or snapshot-adoption write under dual-emit is caught at the
+   adoption boundary and recorded as a countable diagnostics outcome
+   (mirroring the overlay adoption diagnostics), never left to escape
+   into the inbound runtime's retry loop (initial-review finding 6).
 
 Audience correctness under `delta-primary`: the event row persists an
 **immutable computed audience** (the summary's active session ids at write
@@ -264,10 +293,11 @@ into an exported `acceptServerOverlayTopology` (same file ownership), then:
   the freshly accepted collection and routes results through
   `acceptServerOverlayTopology` (null snapshot → no-op). This gives
   `readStateGroupTopology` its first production caller.
-- **Reconnect:** a runtime lifecycle subscriber on the ws `'connected'`
-  signal re-runs the same joined-group topology pulls (plus D2's state
-  resync pulls), guarded by the middleware generation fence so a stale
-  reconnect cannot hydrate a newer session's caches.
+- **Reconnect:** a subscriber on the ws `'open'` lifecycle signal (the
+  socket-level re-open; see D2 rule 4 — `'connected'` fires only on
+  session establishment) re-runs the same joined-group topology pulls
+  (plus D2's state resync pulls), guarded by the middleware generation
+  fence so a stale reconnect cannot hydrate a newer session's caches.
 - Conflict posture: `setCurrentServerOverlayById` is the correct entry (a
   REST read is a fresh durable current-state read); the known equal-tuple
   different-bytes throw from a race with the #148 push hydration is caught
@@ -345,6 +375,13 @@ reserved for the case where the join itself must be accepted-but-deferred,
 which the current evidence (50/50 joins succeed at N=50 with retries
 unused) does not yet justify.
 
+**Non-vacuous admission proof (initial-review finding 7):** because the
+N=50 burst already passes with retries unused, "zero unavailable false
+failures" alone would pass without admission ever engaging. The admission
+recipe therefore includes a storm probe that drives at least one actual
+over-limit response and asserts the `429` + `Retry-After` contract on it,
+alongside the burst-with-admission-enabled liveness assertions.
+
 ### D5 — egress-bytes metric definition (slice 1, zero behavior change)
 
 `WsDeliveryDiagnosticsEvent` gains a required `payloadBytes` field
@@ -412,7 +449,7 @@ adaptive horizon rule.
   "goal": "Cut group-formation burst dissemination cost from O(N^3) toward O(N^2) egress bytes by making group-state.event deltas the primary browser update path with full snapshots reserved for join, resync, and causal-gap pulls, adding overlay topology read-through on connect and reconnect, and admission-controlling join bursts, all behind flags with the legacy snapshot-per-change path retained.",
   "acceptanceCriteria": [
     "Egress bytes per WS topic are counted on the delivery path and a tier baseline (N=6/20/50, memory + postgres + formation-large) is captured on a tree behaviorally identical to main and recorded beside the phase-2 results.",
-    "Burst egress bytes at N=50 with deltas primary drop by roughly an order of magnitude against the measured baseline, with the exact target set in this record from the measured baseline before candidate comparison.",
+    "Burst egress bytes at N=50 with deltas primary drop by roughly an order of magnitude against the measured baseline: primary-server burst egress at the large tier must be at most 25.5 MB against the measured 254,951,157 bytes (96.1 percent of which are the two per-change full-snapshot topics).",
     "A late-joiner recipe proves the current server overlay is present via read-through without waiting for a new topology publication, and readStateGroupTopology gains its first production caller.",
     "A reconnect-resync recipe proves group-state and overlay convergence after a dropped WS connection without waiting for a new per-change broadcast.",
     "Join tail latency under an N=50 burst with admission enabled shows zero unavailable false failures, and over-limit admission answers are contractual (429 with Retry-After, or an explicitly recorded 202 ticket contract) rather than 5xx.",
@@ -508,6 +545,9 @@ adaptive horizon rule.
       "testRoot": "packages/tests/shared-test",
       "focusedCommand": "npm run test:shared-test",
       "navigationMap": "packages/shared-test/black-box-runner/README.md",
+      "contractPaths": [
+        "playground/rtc-design/baselines/2026-08-13-phase3-delta-dissemination-results.md"
+      ],
       "controlFlowFamilies": [
         "managed server topology and run entry",
         "recipe execution and artifact writing",
@@ -518,26 +558,197 @@ adaptive horizon rule.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "46d07dd13c08740529fc7e76c662ff6693d442d88ce5aba4a7d40e6b836cded9",
+    "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
     "computedTriggers": [
+      "folder-change",
       "ownership-change",
-      "public-contract-change"
+      "public-contract-change",
+      "scope-growth"
     ],
-    "undeclaredChangedPaths": []
-  },
-  "checkpoint": {
-    "outcome": "Phase 3 is qualified and initialized on the re-audited base: the emission chain, browser consumer inventory, resync primitives, and issue interactions are recorded; the first horizon lands byte observability with zero behavior change and then the overlay read-through with its recipes.",
-    "learning": "The base moved well past the phase-2 shapes: group-state.event already exists but carries an empty payload and a pre-summary revision; delivery-audience self-healing and process-cache refresh ride the snapshot rows; a revision-floored pull and an incomparable-recovery reread already exist browser-side; PR #148 already pushes topology hydration on every connection, making M12 the pull-side complement rather than the only reconnect path.",
-    "structure": "Keep the five active capability owners as declared: the server expansion site, the shared contracts, the browser cache consumer, the api-v1 boundary, and the recipe runner; no new folders or ownership moves are needed for the first horizon, and later mechanisms stay outcome-shaped inside these owners.",
-    "decision": "continue",
-    "nextSlices": [
-      "egress-bytes-instrumentation-and-baseline",
-      "overlay-read-through-on-connect-and-reconnect"
+    "undeclaredChangedPaths": [
+      "plans/rallar-group-topology-evidence-ledger-plan.md",
+      "plans/repo-human-traceability-program-execution-plan.md",
+      "plans/repo-human-traceability-refactoring-program-plan.md"
     ]
   },
-  "structuralDispositions": [],
+  "checkpoint": {
+    "outcome": "Slice 1 landed and measured: per-topic WS egress-byte counters are live on the delivery path with zero behavior change, all tier suites pass (memory 19/19, postgres 19/19 plus 5/5 cluster, formation-large 1/1 with 1,323 step successes), and the baseline is recorded in the dated phase-3 results document: N=50 primary burst egress is 254,951,157 bytes with the two full-snapshot topics at 96.1 percent and idle steady state at exactly zero egress bytes.",
+    "learning": "The measured byte shares settle two open questions: group-directory.snapshot costs the same as group-state.snapshot (123.3 MB vs 121.6 MB at N=50), so delta-primary must replace both per-change snapshot rows or the reduction caps at roughly 2x; and group-state.event is only about one percent of burst egress, so the delta envelope has ample byte headroom. The Phase 2 idle property is re-verified through the new counter.",
+    "structure": "The five declared capability owners are unchanged and sufficient; the results document is declared as a contract path on the formation black-box recipes owner; no folder or ownership moves are needed for the next horizon.",
+    "decision": "continue",
+    "nextSlices": [
+      "overlay-read-through-on-connect-and-reconnect",
+      "m2-dual-emit-delta-envelope"
+    ]
+  },
+  "structuralDispositions": [
+    {
+      "kind": "predecessor-path",
+      "path": "packages/shared-server/rallar-system/formation-metrics/formation-metrics.ts",
+      "disposition": "consolidate",
+      "destination": "packages/shared-server/rallar-system/formation-metrics.ts",
+      "owner": "group-state dissemination server",
+      "rationale": "The formation-metrics directory held exactly one code file; materially touching it for the egress-byte counters triggered the singleton-subtree rule, and consolidating the recorder up beside the other flat rallar-system feature modules removes the one-file folder without changing any behavior or export symbol."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.directory-density",
+      "target": "packages/shared-server/rallar-system",
+      "identity": null,
+      "magnitude": 21,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "Pre-existing flat feature-module layout surfaced by touching single files in place; phase 3 adds one consolidated module and reorganizing this directory is outside the delta-dissemination outcome."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system",
+      "identity": "rtc",
+      "magnitude": 7,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system",
+      "identity": "state",
+      "magnitude": 4,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.directory-density",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": null,
+      "magnitude": 74,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "Pre-existing flat feature-module layout surfaced by touching single files in place; phase 3 adds one consolidated module and reorganizing this directory is outside the delta-dissemination outcome."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": "auth",
+      "magnitude": 4,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": "client",
+      "magnitude": 8,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": "crdt",
+      "magnitude": 17,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": "group",
+      "magnitude": 8,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": "inbox",
+      "magnitude": 12,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "layout.feature-prefix-cluster",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": "rtc",
+      "magnitude": 10,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "structure.semantic-depth",
+      "target": "packages/shared-server/rallar-system/group-state",
+      "identity": null,
+      "magnitude": 2,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "structure.semantic-depth",
+      "target": "packages/shared-server/rallar-system/group-state/inbox",
+      "identity": null,
+      "magnitude": 3,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "structure.semantic-depth",
+      "target": "packages/shared-server/rallar-system/group-state/presence",
+      "identity": null,
+      "magnitude": 3,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "structure.semantic-depth",
+      "target": "packages/shared-server/rallar-system/rtc-topology/inbox",
+      "identity": null,
+      "magnitude": 3,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
+    },
+    {
+      "kind": "current-fact",
+      "ruleId": "structure.semantic-depth",
+      "target": "packages/shared-server/rallar-system/services",
+      "identity": null,
+      "magnitude": 2,
+      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+      "disposition": "keep",
+      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
+    }
+  ],
   "freshStructuralReview": null,
   "coldNavigationEvidence": null,
-  "materialDecisions": []
+  "materialDecisions": [
+    {
+      "date": "2026-08-13",
+      "decision": "continue",
+      "summary": "Slice 1 landed and measured: per-topic WS egress-byte counters are live on the delivery path with zero behavior change, all tier suites pass (memory 19/19, postgres 19/19 plus 5/5 cluster, formation-large 1/1 with 1,323 step successes), and the baseline is recorded in the dated phase-3 results document: N=50 primary burst egress is 254,951,157 bytes with the two full-snapshot topics at 96.1 percent and idle steady state at exactly zero egress bytes."
+    }
+  ]
 }
 ```

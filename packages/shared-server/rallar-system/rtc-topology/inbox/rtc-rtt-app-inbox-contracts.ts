@@ -6,7 +6,7 @@ import type { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
 // prettier-ignore
 import type {
   GroupFormationRttMutationSink,
-} from '../../formation-metrics/formation-metrics.ts';
+} from '../../formation-metrics.ts';
 // prettier-ignore
 import type {
   TopologyMutationAuthorityProof,

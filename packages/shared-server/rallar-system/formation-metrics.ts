@@ -10,7 +10,7 @@ import type {
   WsDeliveryDiagnosticsSink,
 } from '@shared/services/ws-queue-box-server-contracts.ts';
 
-import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../services/rtc-topology-outbox-entry.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from './services/rtc-topology-outbox-entry.ts';
 
 export {
   GROUP_FORMATION_MUTATION_OUTCOMES,

@@ -53,7 +53,7 @@ import { groupStateGroupStorageKey } from '../persistence/group-state-storage-ke
 // prettier-ignore
 import type {
   GroupFormationPresenceSummarySink,
-} from '../../formation-metrics/formation-metrics.ts';
+} from '../../formation-metrics.ts';
 // prettier-ignore
 import {
   decodeCanonicalGroupPresenceSummaryWork,

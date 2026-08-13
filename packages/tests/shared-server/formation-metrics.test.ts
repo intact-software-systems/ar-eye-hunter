@@ -5,7 +5,7 @@ import {
   createGroupFormationMetricsRecorder,
   emptyGroupFormationMetrics,
   toGroupFormationOperationKind,
-} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
+} from '@shared-server/rallar-system/formation-metrics.ts';
 // prettier-ignore
 import {
   APP_OUTBOX_RTC_TOPOLOGY_TOPIC,

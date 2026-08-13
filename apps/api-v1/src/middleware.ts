@@ -83,7 +83,7 @@ import {
 } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
 import {
   createGroupFormationMetricsRecorder,
-} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
+} from '@shared-server/rallar-system/formation-metrics.ts';
 import {
   initApiRtcTopologyScalarRecomputeWorker,
 } from './services/init-api-rtc-topology-scalar-recompute-worker.ts';

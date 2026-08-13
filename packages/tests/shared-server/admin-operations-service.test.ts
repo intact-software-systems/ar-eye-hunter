@@ -12,7 +12,7 @@ import { AdminOperationsService } from '@shared-server/rallar-system/admin-opera
 // prettier-ignore
 import {
   emptyGroupFormationMetrics,
-} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
+} from '@shared-server/rallar-system/formation-metrics.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 
 const NOW_EPOCH_MS = 1_700_000_000_000;
