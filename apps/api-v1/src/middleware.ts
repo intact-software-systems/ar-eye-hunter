@@ -23,8 +23,10 @@ import {
 import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import { createApiCrdtMutationInboxFactories, findCurrentClientSnapshot }
-  from './services/create-api-crdt-document-authorizer.ts';
+import {
+  createApiCrdtMutationInboxFactories,
+  findCurrentClientSnapshot,
+} from './services/create-api-crdt-document-authorizer.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
@@ -38,10 +40,12 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 persistence/group-topology-config-repository.ts';
 import * as generationBackfill from '@shared-server/rallar-system/topology/config/maintenance/\
 backfill-group-topology-config-generations.ts';
-import { createClientStateService }
-  from '@shared-server/rallar-system/services/client-state-service.ts';
-import { createGroupStateService }
-  from '@shared-server/rallar-system/services/group-state-service.ts';
+import {
+  createClientStateService,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
+import {
+  createGroupStateService,
+} from '@shared-server/rallar-system/services/group-state-service.ts';
 import {
   createCachedClientStateService,
 } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
@@ -68,8 +72,11 @@ import {
 import {
   initPresenceExpiryReconciliation,
 } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
-import { createApiStateSnapshotReadSelectors, getApiAppInboxServiceOptions,
-  getApiTimingSink } from './services/timing-service.ts';
+import {
+  createApiStateSnapshotReadSelectors,
+  getApiAppInboxServiceOptions,
+  getApiTimingSink,
+} from './services/timing-service.ts';
 import { runRuntimeStateExpiryStartupBarrier } from './services/runtime-state-expiry-startup.ts';
 import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { readApiV1DatabaseBackendConfig } from './db/database-config.ts';
@@ -98,6 +105,9 @@ import {
   readApiGroupFormationDampingConfig,
   readApiGroupFormationTopologyIntent,
 } from './runtime/group-formation/group-formation-damping-config.ts';
+import {
+  readApiGroupStateDisseminationConfig,
+} from './runtime/group-formation/group-state-dissemination-config.ts';
 import {
   beginMiddlewareStartupGeneration,
   registerMiddlewareBackgroundTask,
@@ -254,7 +264,8 @@ function initialise(
     webSocketServer,
     wsRuntimeName,
     findGroupSnapshotByRef: (ref) => groupSnapshotReadThroughCache.findByRef(ref),
-    findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(clientSnapshotReadThroughCache, ref),
+    findClientSnapshotByRef: (ref) =>
+      findCurrentClientSnapshot(clientSnapshotReadThroughCache, ref),
     inboundStores: resolveServerWsQBoxALInboundRuntimeStores(wsRuntimeName),
     outboundStores: resolveServerWsQBoxALOutboundRuntimeStores(wsRuntimeName),
     wsDeliveryDiagnostics: groupFormationMetrics.wsDelivery,
@@ -279,6 +290,7 @@ function initialise(
       const presenceSummary = new GroupPresenceSummaryWork({
         runtimeRepository: runtimeStateRepository,
         topologyIntent,
+        disseminationMode: readApiGroupStateDisseminationConfig().dissemination,
         database: postgresSql,
         serviceId: myServerId,
         wakeQueue: wakeQueueEngine,
@@ -392,8 +404,10 @@ function initialise(
   })
     .catch((e) => console.error('Failed to initialise presence expiry reconciliation:', e));
   const selectors = createApiStateSnapshotReadSelectors({
-    clientDurable: clientsRepository, clientCache: clientSnapshotReadThroughCache,
-    groupDurable: groupsRepository, groupCache: groupSnapshotReadThroughCache,
+    clientDurable: clientsRepository,
+    clientCache: clientSnapshotReadThroughCache,
+    groupDurable: groupsRepository,
+    groupCache: groupSnapshotReadThroughCache,
   }, timing);
   return requireApiMiddleware(runtime, selectors, groupFormationMetrics);
 }

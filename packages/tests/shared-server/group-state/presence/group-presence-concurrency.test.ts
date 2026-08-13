@@ -327,6 +327,7 @@ describe('group presence concurrency', () => {
 
       const work = new GroupPresenceSummaryWork({
         topologyIntent: { damping: 'legacy' },
+        disseminationMode: 'snapshot-per-change',
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 3_000,
         serviceId: 'summary-worker',

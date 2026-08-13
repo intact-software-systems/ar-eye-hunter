@@ -15,6 +15,7 @@ import {
     validateAuthoritativeGroupEvent,
     validateAuthoritativeGroupSnapshot,
 } from '@shared/api/authoritative-state-validation.ts';
+import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type {
     ComputedClientStateSync,
     ComputedClientStateSyncEffect,
@@ -133,14 +134,22 @@ export function validateGroupStateSyncEffect(
             throw new TypeError('Computed group state sync effect kind is invalid');
         }
         validateAuthoritativeGroupEvent(effect.payload, computed.aggregateRef);
+    } else if (effect.payloadKind === 'delta-envelope') {
+        if (effect.effectKind !== 'member-state') {
+            throw new TypeError('Computed group state sync effect kind is invalid');
+        }
+        validateGroupStateDeltaEnvelope(effect.payload, computed.aggregateRef);
     } else {
         throw new TypeError('Computed group state sync payload kind is invalid');
     }
+    const identity = effect.payloadKind === 'delta-envelope'
+        ? effect.payload.event
+        : effect.payload;
     if (
-        !sameGroupRef(computed.aggregateRef, effect.payload) ||
-        effect.payload.causalRevision.groupRevision !==
+        !sameGroupRef(computed.aggregateRef, identity) ||
+        identity.causalRevision.groupRevision !==
             computed.acceptedCausalRevision.groupRevision ||
-        effect.payload.causalRevision.presenceRevision !==
+        identity.causalRevision.presenceRevision !==
             computed.acceptedCausalRevision.presenceRevision
     ) {
         throw new TypeError('Computed group state sync differs from accepted authority');

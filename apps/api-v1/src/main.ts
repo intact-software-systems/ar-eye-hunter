@@ -24,6 +24,9 @@ import {
 import {
   logGroupFormationDampingConfig,
 } from './runtime/group-formation/group-formation-damping-config.ts';
+import {
+  logGroupStateDisseminationConfig,
+} from './runtime/group-formation/group-state-dissemination-config.ts';
 
 const app: Hono = new Hono();
 addEventListener('unload', () => {
@@ -40,6 +43,7 @@ logDatabasePubSubConfig();
 const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig();
 logRtcTopologyReplayConfig(console.log, rtcTopologyReplayConfig);
 logGroupFormationDampingConfig(console.log);
+logGroupStateDisseminationConfig(console.log);
 
 const apiCors = cors(
   {

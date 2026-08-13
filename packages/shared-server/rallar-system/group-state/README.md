@@ -42,7 +42,12 @@ invocation so it is not a second runtime specification.
     group mutations.
 13. [GroupPresenceSummaryWork](./presence/group-presence-summary-work.ts#GroupPresenceSummaryWork)
     owns downstream summary convergence, its queue transaction, and post-commit
-    wake.
+    wake. Its required `disseminationMode` selects the per-change WS rows:
+    `snapshot-per-change` keeps the bare event row plus both full-snapshot
+    rows, `dual-emit` swaps the event payload for the
+    [GroupStateDeltaEnvelope](../../../shared/api/group-state-delta.ts#GroupStateDeltaEnvelope)
+    while keeping both snapshot rows, and `delta-primary` drops both per-change
+    snapshot rows.
 14. [createCachedGroupStateService](./snapshot/cached-group-state-service.ts#createCachedGroupStateService)
     is the composition adapter for durable authority and cache reads.
 15. [GroupStateSnapshotReadThroughCache](./snapshot/group-state-snapshot-read-through-cache.ts#GroupStateSnapshotReadThroughCache)

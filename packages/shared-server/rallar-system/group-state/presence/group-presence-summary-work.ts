@@ -1,6 +1,15 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+  GroupEvent,
+  GroupMember,
+  GroupPresenceSession,
+  GroupRef,
+  GroupSnapshot,
+  GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
+import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
+import { jsonEquals } from '@shared/repository/state-utils.ts';
 // prettier-ignore
 import type {
   GroupPresenceSummaryWorkData,
@@ -35,6 +44,7 @@ import {
 } from './compute-group-presence-summary.ts';
 import {
   computeGroupStateSyncEntries,
+  type ComputedGroupStateSyncEffect,
   type StateSyncAudience,
 } from '../../state-sync-publisher.ts';
 import { computeRtcTopologyEntry } from '../../services/RtcTopologyOutboxWork.ts';
@@ -67,9 +77,12 @@ export type GroupPresenceSummaryTopologyIntent =
     }>
   | Readonly<{ damping: 'legacy' }>;
 
+export type GroupStateDisseminationMode = 'snapshot-per-change' | 'dual-emit' | 'delta-primary';
+
 export type GroupPresenceSummaryWorkOptions = Readonly<{
   runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
   topologyIntent: GroupPresenceSummaryTopologyIntent;
+  disseminationMode: GroupStateDisseminationMode;
   database?: PSqlSql;
   now?: () => number;
   serviceId: string;
@@ -91,13 +104,22 @@ export type GroupPresenceSummaryComputedWork = Readonly<{
   coalescedTopologyWork: ComputedCoalescedAppOutboxWork | null;
 }>;
 
-interface ComputeGroupPresenceSummaryOutboxInput {
+export interface ComputeGroupPresenceSummaryOutboxInput {
   readonly work: GroupPresenceSummaryWorkData;
   readonly summary: GroupPresenceSummaryComputed;
+  readonly summaryPredecessorCausalRevision: GroupStateCausalRevision | null;
   readonly snapshot: GroupSnapshot;
   readonly audience: StateSyncAudience;
   readonly serviceId: string;
+  readonly disseminationMode: GroupStateDisseminationMode;
   readonly includePerCommandTopologyEntry: boolean;
+}
+
+export interface ComputeGroupStateDeltaEnvelopeInput {
+  readonly event: GroupEvent;
+  readonly summary: GroupPresenceSummaryComputed;
+  readonly summaryPredecessorCausalRevision: GroupStateCausalRevision | null;
+  readonly snapshot: GroupSnapshot;
 }
 
 export class GroupPresenceSummaryWork {
@@ -179,25 +201,14 @@ export class GroupPresenceSummaryWork {
       },
       (storageKey, message) => new Error(`${message}: ${storageKey}`),
     );
-    const audience = {
-      kind: 'group' as const,
-      applicationId: work.aggregateRef.applicationId,
-      workspaceId: work.aggregateRef.workspaceId,
-      resourceId: work.aggregateRef.groupId,
-    };
     const intent = this.options.topologyIntent;
     return {
       work,
       summary,
       snapshot,
-      downstreamOutboxEntries: computeGroupPresenceSummaryOutboxEntries({
-        work,
-        summary,
-        snapshot,
-        audience,
-        serviceId: this.options.serviceId,
-        includePerCommandTopologyEntry: intent.damping === 'legacy',
-      }),
+      downstreamOutboxEntries: computeGroupPresenceSummaryOutboxEntries(
+        this.toGroupPresenceSummaryOutboxInput(work, read, { summary, snapshot }),
+      ),
       coalescedTopologyWork:
         intent.damping === 'damped'
           ? computeCoalescedRtcTopologyGroupRevisionWork({
@@ -236,6 +247,32 @@ export class GroupPresenceSummaryWork {
     ) {
       throw new TypeError('Presence-summary event differs from accepted group revision');
     }
+    validateGroupPresenceSummaryOutboxEntries(
+      computed.downstreamOutboxEntries,
+      this.toGroupPresenceSummaryOutboxInput(work, read, computed),
+    );
+  }
+
+  private toGroupPresenceSummaryOutboxInput(
+    work: GroupPresenceSummaryWorkData,
+    read: GroupPresenceSummaryWorkRead,
+    computed: Readonly<{ summary: GroupPresenceSummaryComputed; snapshot: GroupSnapshot }>,
+  ): ComputeGroupPresenceSummaryOutboxInput {
+    return {
+      work,
+      summary: computed.summary,
+      summaryPredecessorCausalRevision: read.presence.current?.value.causalRevision ?? null,
+      snapshot: computed.snapshot,
+      audience: {
+        kind: 'group',
+        applicationId: work.aggregateRef.applicationId,
+        workspaceId: work.aggregateRef.workspaceId,
+        resourceId: work.aggregateRef.groupId,
+      },
+      serviceId: this.options.serviceId,
+      disseminationMode: this.options.disseminationMode,
+      includePerCommandTopologyEntry: this.options.topologyIntent.damping === 'legacy',
+    };
   }
 
   async write(
@@ -299,10 +336,10 @@ export class GroupPresenceSummaryWork {
   }
 }
 
-function computeGroupPresenceSummaryOutboxEntries(
+export function computeGroupPresenceSummaryOutboxEntries(
   input: ComputeGroupPresenceSummaryOutboxInput,
 ): readonly ResourceEntry[] {
-  const { work, summary, snapshot, audience, serviceId } = input;
+  const { work, audience, serviceId } = input;
   const eventEntries = computeGroupStateSyncEntries(
     {
       commandId: work.commandId,
@@ -311,17 +348,24 @@ function computeGroupPresenceSummaryOutboxEntries(
       audience,
       createdAtEpochMs: work.createdAtEpochMs,
       expireAtEpochMs: work.expireAtEpochMs,
-      effects: [
-        {
-          effectKind: 'member-state',
-          payloadKind: 'event',
-          payload: work.event,
-        },
-      ],
+      effects: [computeGroupStateEventEffect(input)],
     },
     serviceId,
   );
-  const snapshotEntries = computeGroupStateSyncEntries(
+  const snapshotEntries =
+    input.disseminationMode === 'delta-primary' ? [] : computeGroupSnapshotSyncEntries(input);
+  if (!input.includePerCommandTopologyEntry) {
+    return [...eventEntries, ...snapshotEntries];
+  }
+  const topologyEntry = computeGroupPresenceTopologyOutboxEntry(input);
+  return [...eventEntries, ...snapshotEntries, topologyEntry];
+}
+
+function computeGroupSnapshotSyncEntries(
+  input: ComputeGroupPresenceSummaryOutboxInput,
+): readonly ResourceEntry[] {
+  const { work, summary, snapshot, audience, serviceId } = input;
+  return computeGroupStateSyncEntries(
     {
       commandId: work.commandId,
       aggregateRef: work.aggregateRef,
@@ -344,11 +388,123 @@ function computeGroupPresenceSummaryOutboxEntries(
     },
     serviceId,
   );
-  if (!input.includePerCommandTopologyEntry) {
-    return [...eventEntries, ...snapshotEntries];
+}
+
+/**
+ * Deterministic recomputation mirror for the presence-summary expansion's
+ * downstream WS rows: the computed entry set must be byte-identical to the
+ * canonical projection for the active dissemination mode.
+ */
+export function validateGroupPresenceSummaryOutboxEntries(
+  computedEntries: readonly ResourceEntry[],
+  input: ComputeGroupPresenceSummaryOutboxInput,
+): void {
+  if (!jsonEquals(computedEntries, computeGroupPresenceSummaryOutboxEntries(input))) {
+    throw new TypeError('Presence-summary downstream outbox entries are not canonical');
   }
-  const topologyEntry = computeGroupPresenceTopologyOutboxEntry(input);
-  return [...eventEntries, ...snapshotEntries, topologyEntry];
+}
+
+function computeGroupStateEventEffect(
+  input: ComputeGroupPresenceSummaryOutboxInput,
+): ComputedGroupStateSyncEffect {
+  if (input.disseminationMode === 'snapshot-per-change') {
+    return {
+      effectKind: 'member-state',
+      payloadKind: 'event',
+      payload: input.work.event,
+    };
+  }
+  return {
+    effectKind: 'member-state',
+    payloadKind: 'delta-envelope',
+    payload: computeGroupStateDeltaEnvelope({
+      event: input.work.event,
+      summary: input.summary,
+      summaryPredecessorCausalRevision: input.summaryPredecessorCausalRevision,
+      snapshot: input.snapshot,
+    }),
+  };
+}
+
+export function computeGroupStateDeltaEnvelope(
+  input: ComputeGroupStateDeltaEnvelopeInput,
+): GroupStateDeltaEnvelope {
+  const { event, snapshot } = input;
+  const activeSessionIds = snapshot.activeSessions.map((session) => session.sessionId);
+  const removedSessionIds =
+    event.eventType === 'session-disconnected' &&
+    event.actor.kind === 'session' &&
+    !activeSessionIds.includes(event.actor.sessionId)
+      ? [event.actor.sessionId]
+      : [];
+  return {
+    event,
+    predecessorCausalRevision: resolveGroupStateDeltaPredecessorCausalRevision(input),
+    resultingCausalRevision: snapshot.causalRevision,
+    members: snapshot.members.filter((member) => isGroupMemberWrittenByEvent(member, event)),
+    removedMemberPrincipalIds: [],
+    sessions: computeGroupStateDeltaSessions(event, snapshot),
+    removedSessionIds,
+    activeSessionIds,
+    group: snapshot.group,
+    memberCount: snapshot.memberCount,
+    onlineMemberCount: snapshot.onlineMemberCount,
+    audienceSessionIds: input.summary.summary.activeSessionIds,
+  };
+}
+
+/**
+ * A summary no-op expansion has no CAS predecessor, so it stamps
+ * predecessor === resulting. A summary insert has no stored predecessor
+ * either; presenceRevision - 1 (= 0) matches the snapshot revision a REST
+ * read assembles before any summary exists for the group.
+ */
+function resolveGroupStateDeltaPredecessorCausalRevision(
+  input: ComputeGroupStateDeltaEnvelopeInput,
+): GroupStateCausalRevision {
+  const resulting = input.snapshot.causalRevision;
+  if (input.summary.outcome === 'no-op') return resulting;
+  if (input.summaryPredecessorCausalRevision !== null) {
+    return input.summaryPredecessorCausalRevision;
+  }
+  return {
+    groupRevision: resulting.groupRevision,
+    presenceRevision: resulting.presenceRevision - 1,
+  };
+}
+
+/**
+ * Member records written by the event's command carry the command's audit
+ * time and request id. The audit actor may differ from the event actor
+ * through creation/join fallback identity, so it must not join the match.
+ */
+function isGroupMemberWrittenByEvent(member: GroupMember, event: GroupEvent): boolean {
+  return (
+    member.updated.atEpochMs === event.occurredAtEpochMs &&
+    member.updated.requestId === event.requestId
+  );
+}
+
+/**
+ * The durable event carries no target-session identity, so the affected
+ * slice for a session-lifecycle event is the acting principal's resulting
+ * sessions. Service-driven transitions (expiry disconnects) carry no
+ * session slice; browsers reconcile them from the complete identity set.
+ */
+function computeGroupStateDeltaSessions(
+  event: GroupEvent,
+  snapshot: GroupSnapshot,
+): readonly GroupPresenceSession[] {
+  if (
+    event.eventType !== 'session-connected' &&
+    event.eventType !== 'session-heartbeat' &&
+    event.eventType !== 'session-disconnected'
+  ) {
+    return [];
+  }
+  const actor = event.actor;
+  if (actor.kind === 'service') return [];
+  return snapshot.activeSessions.filter((session) => session.principalId === actor.principalId);
 }
 
 function computeGroupPresenceTopologyOutboxEntry(

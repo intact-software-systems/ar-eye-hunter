@@ -34,6 +34,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
     const wakeQueue = vi.fn();
     const worker = new GroupPresenceSummaryWork({
       topologyIntent: { damping: 'legacy' },
+      disseminationMode: 'snapshot-per-change',
       runtimeRepository: new FakeRuntimeStateRepository(),
       database: database as never,
       serviceId: 'summary-handler',
@@ -79,6 +80,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
     const formationMetrics = vi.fn();
     const worker = new GroupPresenceSummaryWork({
       topologyIntent: { damping: 'legacy' },
+      disseminationMode: 'snapshot-per-change',
       runtimeRepository: new FakeRuntimeStateRepository(),
       database: database as never,
       serviceId: 'summary-handler',

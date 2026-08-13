@@ -23,6 +23,13 @@ validation.
    and
    [validateAuthoritativeGroupSnapshot](./authoritative-state-validation.ts#validateAuthoritativeGroupSnapshot)
    are the exact-shape validators applied at trust boundaries on both runtimes.
+   [GroupStateDeltaEnvelope](./group-state-delta.ts#GroupStateDeltaEnvelope) is
+   the `group-state.event` row payload under delta dissemination — the wrapped
+   GroupEvent plus the resulting-state slice, chained CAS revisions, the
+   complete resulting active-session identity set, and the persisted delivery
+   audience — with
+   [validateGroupStateDeltaEnvelope](./group-state-delta.ts#validateGroupStateDeltaEnvelope)
+   as its exact-shape validator.
 5. [WsDeliveryDiagnosticsEvent](../services/ws-queue-box-server-contracts.ts#WsDeliveryDiagnosticsEvent)
    is the per-send delivery diagnostics contract feeding the formation metrics
    recorder, and
