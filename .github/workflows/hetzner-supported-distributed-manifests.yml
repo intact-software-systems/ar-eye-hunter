@@ -14,8 +14,45 @@ concurrency:
   queue: max
 
 jobs:
+  selection:
+    name: Select distributed validation
+    runs-on: ubuntu-24.04
+    outputs:
+      selected: ${{ steps.selection.outputs.selected }}
+      reason_code: ${{ steps.selection.outputs.reason_code }}
+      reason: ${{ steps.selection.outputs.reason }}
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify distributed validation risk
+        id: selection
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE: ${{ github.event.before || '' }}
+          HEAD: ${{ github.sha }}
+        run: |
+          node scripts/distributed-validation-risk.mjs select \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --event-name "$EVENT_NAME" \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --output "$GITHUB_OUTPUT"
+
+      - name: Publish selection reason
+        env:
+          REASON: ${{ steps.selection.outputs.reason }}
+          REASON_CODE: ${{ steps.selection.outputs.reason_code }}
+        run: |
+          printf '### Distributed validation selection\n\n%s\n\nReason code: `%s`\n' \
+            "$REASON" "$REASON_CODE" >> "$GITHUB_STEP_SUMMARY"
+
   preflight:
     name: Validate shared preparation cohort
+    needs: selection
+    if: needs.selection.outputs.selected == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Check out the exact commit
@@ -32,7 +69,8 @@ jobs:
 
   prepare:
     name: Prepare Hetzner controller
-    needs: preflight
+    needs: [selection, preflight]
+    if: needs.selection.outputs.selected == 'true' && needs.preflight.result == 'success'
     uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml
     with:
       ref: ${{ github.sha }}
@@ -55,7 +93,8 @@ jobs:
 
   run:
     name: ${{ matrix.manifest_id }}
-    needs: prepare
+    needs: [selection, prepare]
+    if: needs.selection.outputs.selected == 'true' && needs.prepare.result == 'success'
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -90,3 +129,27 @@ jobs:
       terminal_timeout_seconds: '300'
       stop_after_run: true
     secrets: inherit
+
+  distributed-validation-result:
+    name: Run Hetzner Supported Distributed Manifests result
+    needs: [selection, preflight, prepare, run]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@v7
+
+      - name: Conclude distributed validation
+        env:
+          SELECTED: ${{ needs.selection.outputs.selected }}
+          SELECTION_RESULT: ${{ needs.selection.result }}
+          PREFLIGHT_RESULT: ${{ needs.preflight.result }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          RUN_RESULT: ${{ needs.run.result }}
+        run: |
+          node scripts/distributed-validation-risk.mjs conclude \
+            --selected "$SELECTED" \
+            --selection-result "$SELECTION_RESULT" \
+            --preflight-result "$PREFLIGHT_RESULT" \
+            --prepare-result "$PREPARE_RESULT" \
+            --run-result "$RUN_RESULT"

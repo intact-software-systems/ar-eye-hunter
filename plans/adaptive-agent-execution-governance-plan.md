@@ -497,16 +497,16 @@ when reuse is not earned.
 
 **Planned mirrored tests:** `packages/tests/repo/distributed-validation-risk/`
 
-- [ ] Add a fast deterministic changed-path classifier for distributed
+- [x] Add a fast deterministic changed-path classifier for distributed
       protocol/controller/headless, realtime routing/topology, deployment
       runner, and explicit structured plan-acceptance requirements.
-- [ ] Run the classifier first on main pushes and condition the existing
+- [x] Run the classifier first on main pushes and condition the existing
       supported-manifest preflight, preparation, and expensive Hetzner matrix on
       its decision. Emit a stable human-readable and machine-readable reason.
-- [ ] Preserve manual dispatch as an explicit operator override while keeping
+- [x] Preserve manual dispatch as an explicit operator override while keeping
       ordinary unrelated main pushes cheap. Do not weaken or duplicate the
       existing manifest runner or supported-manifest matrix.
-- [ ] Prove every selected and non-selected path family, rename endpoints,
+- [x] Prove every selected and non-selected path family, rename endpoints,
       malformed/ambiguous inputs, explicit plan selection, workflow wiring, and
       manual override.
 
@@ -711,7 +711,8 @@ are selected at the preceding checkpoint.
       "focusedCommand": "npm run test:distributed-validation-risk",
       "navigationMap": "scripts/distributed-validation-risk/README.md",
       "factContracts": [
-        "scripts/plan-adaptation/adaptive-plan-record.mjs"
+        "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
       ],
       "contractPaths": [
         ".github/workflows/hetzner-supported-distributed-manifests.yml"
@@ -720,11 +721,7 @@ are selected at the preceding checkpoint.
         "changed-path risk classification",
         "structured plan requirement and manual override",
         "main-push Hetzner workflow selection"
-      ],
-      "activation": {
-        "state": "planned",
-        "slice": "risk-scoped-distributed-validation"
-      }
+      ]
     }
   ],
   "architecture": {
@@ -743,17 +740,19 @@ are selected at the preceding checkpoint.
     }
   },
   "completedSlicesSinceCheckpoint": [
-    "content-sensitive-validation-evidence"
+    "content-sensitive-validation-evidence",
+    "risk-scoped-distributed-validation"
   ],
   "facts": {
     "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
-    "affectedCodeDigest": "dfe442637e7f77857d37e2a03105ab598c305114c194ef5e80bf23a8048b67b8",
+    "affectedCodeDigest": "8d3faed303a740361d4ad89849c3791b734827e0958dcc6f8ecb59ee8fc3fdca",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
       "public-contract-change",
       "lifecycle-change",
-      "invalid-assumption"
+      "invalid-assumption",
+      "two-completed-slices"
     ],
     "undeclaredChangedPaths": []
   },
@@ -762,9 +761,7 @@ are selected at the preceding checkpoint.
     "learning": "The first broad branch failure was compatibility drift rather than a governance regression: the branch changed neither the headless bundle nor its test, and refreshed origin/main already raised the measured cap from 197 to 199 KiB. Merging origin/main and advancing the explicit diff base made that proof and the exact Governance Gate green. The next automation must therefore reuse evidence by build content and trusted run identity, not by head SHA, while distributed validation needs its own structured risk decision rather than an unconditional main-push trigger.",
     "structure": "Give validation evidence one owner at scripts/validation-evidence with the existing PR freshness classifier as an explicit fact contract and ownership of Branch Release Gate/reusable Release Gate orchestration. Give distributed validation risk a separate scripts/distributed-validation-risk owner in front of the existing Hetzner supported-manifest workflow. Neither owner may duplicate broad CI, the distributed runner, build-path classification, or architectural judgment.",
     "decision": "continue",
-    "nextSlices": [
-      "risk-scoped-distributed-validation"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
@@ -816,6 +813,12 @@ are selected at the preceding checkpoint.
       "target": "scripts/validation-evidence content-sensitive broad-validation orchestration",
       "disposition": "keep",
       "rationale": "One cohesive owner selects trusted prior evidence, produces fresh evidence from the completed broad job, and converges both routes into one branch result. The existing PR freshness classifier remains the only build-path fact owner and release-gate.yml remains the unchanged broad validator. Reopen this disposition if another workflow family needs a different evidence trust boundary or the capability gains a second independent lifecycle."
+    },
+    {
+      "kind": "ownership-contract",
+      "target": "scripts/distributed-validation-risk selection and workflow-result policy",
+      "disposition": "keep",
+      "rationale": "One cohesive owner classifies changed-path and structured-plan risk, exposes one thin command boundary, and validates the final workflow truth without duplicating the existing supported-manifest runner. The input reader and workflow-result validator are separate side-effect and policy boundaries. Reopen this disposition if a second remote validation provider needs a different risk vocabulary or result lifecycle."
     }
   ],
   "freshStructuralReview": {

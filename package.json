@@ -97,6 +97,7 @@
     "check:governance-gate": "node scripts/governance-gate.mjs",
     "test:governance-gate": "vitest run packages/tests/repo/governance-gate",
     "test:validation-evidence": "vitest run packages/tests/repo/validation-evidence",
+    "test:distributed-validation-risk": "vitest run packages/tests/repo/distributed-validation-risk",
     "check:repo-style": "node scripts/repo-style-check.mjs --cognitive-metrics",
     "check:repo-style:construction-details": "node scripts/repo-style-check.mjs --construction-details",
     "check:repo-style:changed": "node scripts/check-changed-repo-style.mjs",

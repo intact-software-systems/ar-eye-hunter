@@ -59,6 +59,7 @@ export function validateAdaptivePlanRecord(record) {
   }
   requireText(issues, record.goal, 'record.goal');
   requireTextArray(issues, record.acceptanceCriteria, 'record.acceptanceCriteria');
+  validateDistributedValidationRequirement(issues, record.distributedValidation);
   issues.push(...validateAdaptivePlanCapabilities(record.capabilities));
   validateTextArray(
     issues,
@@ -74,6 +75,29 @@ export function validateAdaptivePlanRecord(record) {
   validateColdNavigationEvidence(issues, record.coldNavigationEvidence);
   validateMaterialDecisions(issues, record.materialDecisions);
   return issues;
+}
+
+function validateDistributedValidationRequirement(issues, requirement) {
+  if (requirement === undefined) {
+    return;
+  }
+  if (!isRecord(requirement)) {
+    issues.push('record.distributedValidation must be an object when present');
+    return;
+  }
+  if (requirement.required !== true) {
+    issues.push('record.distributedValidation.required must be true when present');
+  }
+  requireText(issues, requirement.reason, 'record.distributedValidation.reason');
+  const supportedFields = new Set(['required', 'reason']);
+  const unsupportedFields = Object.keys(requirement)
+    .filter((field) => !supportedFields.has(field))
+    .sort();
+  if (unsupportedFields.length > 0) {
+    issues.push(
+      `record.distributedValidation contains unsupported fields: ${unsupportedFields.join(', ')}`,
+    );
+  }
 }
 
 function validateFacts(issues, facts) {

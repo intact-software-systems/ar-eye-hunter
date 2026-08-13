@@ -788,7 +788,7 @@ describe('Hetzner distributed recipe workflow', () => {
     );
   });
 
-  it('runs supported Hetzner manifests on every main push with a serial matrix', async () => {
+  it('keeps risk-selected main pushes and manual dispatch on the serial matrix', async () => {
     const workflow = await readFile(path.join(repoRoot, supportedManifestsWorkflowPath), 'utf8');
     const parsedWorkflow = await readWorkflow(supportedManifestsWorkflowPath);
     const matrix = parsedWorkflow.jobs?.run?.strategy?.matrix as {
@@ -824,7 +824,7 @@ describe('Hetzner distributed recipe workflow', () => {
     const runJob = parsedWorkflow.jobs?.run;
 
     expect(prepareJob).toMatchObject({
-      needs: 'preflight',
+      needs: ['selection', 'preflight'],
       uses: './.github/workflows/hetzner-distributed-recipe-runner.yml',
       with: {
         ref: '${{ github.sha }}',
@@ -836,7 +836,7 @@ describe('Hetzner distributed recipe workflow', () => {
       },
     });
     expect(runJob).toMatchObject({
-      needs: 'prepare',
+      needs: ['selection', 'prepare'],
       uses: './.github/workflows/hetzner-distributed-recipe-runner.yml',
       with: {
         ref: '${{ github.sha }}',
