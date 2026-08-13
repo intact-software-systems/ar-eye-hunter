@@ -785,9 +785,7 @@ parallel registry.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [
-    "adaptive-plan-closeout-receipt"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "origin/main",
     "affectedCodeDigest": "be38adfca751eccfe2f974001fa6bd7398562bebbb1c6c6a78bb9ffb5e8b3e84",
@@ -798,11 +796,13 @@ parallel registry.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "PR #197 merged and its exact resulting-main distributed workflow passed on attempt 2, but the final tactical close command cannot produce a governance-valid close-out branch because it removes the only active record.",
-    "learning": "Destructive close-out needs durable repository evidence that binds the removed active record, reviewed digest, and PR evidence; plan deletion alone is ambiguous and must remain fail-closed.",
-    "structure": "Keep receipt production and verification inside the existing plan-adaptation lifecycle owner. The close transaction writes one direct plans/<plan-id>.closure.json receipt while removing the tactical plan and regenerating the registry; read-only validation accepts only an exact base-plan deletion authenticated by that receipt.",
+    "outcome": "The authenticated plan close command produced the intended receipt transition, but repository structure rejected the zero-active-plan tree and prevented the required governance-valid closeout branch.",
+    "learning": "Cross-owner consumers of the final plan lifecycle must reuse the canonical closure verifier; checking only for an active record cannot distinguish an authenticated last-plan transition.",
+    "structure": "Keep repository structure as the topology owner and reuse readAuthenticatedPlanClosureChanges as a declared plan-adaptation fact contract. Accept only one plan/receipt pair with the generated empty registry and no other changed surface.",
     "decision": "amend",
-    "nextSlices": []
+    "nextSlices": [
+      "repository-structure-closeout-integration"
+    ]
   },
   "structuralDispositions": [
     {
@@ -1035,6 +1035,11 @@ parallel registry.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "PR #197 merged and its exact resulting-main distributed workflow passed on attempt 2, but the final tactical close command cannot produce a governance-valid close-out branch because it removes the only active record."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The authenticated plan close command produced the intended receipt transition, but repository structure rejected the zero-active-plan tree and prevented the required governance-valid closeout branch."
     }
   ]
 }
