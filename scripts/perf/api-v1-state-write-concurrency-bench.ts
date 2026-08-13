@@ -2,7 +2,7 @@ import process from 'node:process';
 import { dirname, normalize } from 'node:path';
 import postgres, { type Sql } from 'postgres';
 import { Temporal } from '@js-temporal/polyfill';
-import { CircuitBreakerPolicy } from '@shared/resilience/Resilience.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from
   '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';

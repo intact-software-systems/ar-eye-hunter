@@ -1,8 +1,9 @@
-# Phase 3 Delta-Dissemination Results (baseline measured 2026-08-13)
+# Phase 3 Delta-Dissemination Results (baseline + candidate measured 2026-08-13/14)
 
-Status: **baseline captured** on the slice-1 instrumented tree (egress-byte
-counters only — zero behavior change relative to `main` at `124e0992`).
-Candidate sections follow when the M2/M12/M13 mechanisms land.
+Status: **baseline and candidate measured.** Baseline on the slice-1
+instrumented tree (egress-byte counters only — zero behavior change relative
+to `main` at `124e0992`); candidate on the full phase-3 tree (M12 read-through,
+M2 dissemination modes with the browser delta path, M13 admission).
 
 Phase 3 evidence beside
 [the Phase 0 formation-burst baseline](2026-08-08-formation-burst-baseline.md),
@@ -105,9 +106,113 @@ Per the plan's acceptance criteria: with deltas primary, large-tier
 magnitude — **target ≤ 25.5 MB against the measured 254.95 MB**, with the
 idle steady-state, liveness, and publish-skip properties intact.
 
-## Candidate results
+## Candidate results (measured 2026-08-14)
 
-_Pending: M12 read-through recipes (late-joiner, reconnect-resync), M2
-dual-emit and delta-primary tier reruns, M13 admission-enabled burst tail,
-medium-scale convergence gate, and the state-write perf comparison gate
-(issue #157 baseline-control protocol)._
+Candidate tree: the full phase-3 branch (slices M12 read-through, M2 server
+dual-emit/delta-primary with the delta envelope and persisted audience, M2
+browser delta consumption, M13 admission), measured with the same machine,
+methodology, freshly recreated database, and queue-table truncation before
+each large-tier capture. Admission was enabled at its defaults in every run
+(it is default-on). `dual-emit` is the branch default; `delta-primary` runs
+set `RALLAR_GROUP_STATE_DISSEMINATION=delta-primary` on the managed servers.
+
+### Burst egress bytes (T1−T0, primary server): baseline → dual-emit → delta-primary
+
+| Tier × backend | Baseline | Dual-emit | Delta-primary | Reduction (baseline → delta-primary) |
+| --- | --- | --- | --- | --- |
+| small × memory (N=6) | 551,678 | 589,431 | 122,835 | **4.5×** |
+| medium × memory (N=20) | 12,751,445 | 13,374,455 | 1,334,784 | **9.6×** |
+| small × postgres (N=6) | 679,507 | — | 181,790 | **3.7×** |
+| medium × postgres (N=20) | 19,449,936 | — | 1,833,900 | **10.6×** |
+| **large × postgres (N=50)** | **254,951,157** | 259,502,056 | **13,215,859** | **19.3×** |
+
+- **The N=50 target is met with 2× headroom: 13.2 MB against the ≤25.5 MB
+  target from the measured 255.0 MB baseline.** Both per-change full-snapshot
+  topics are absent from the delta-primary byte map; the remaining burst
+  egress is `group-state.event` envelopes (8.2 MB — O(1)-sized deltas whose
+  identity set scales with N, keeping the total O(N²)) and `overlay.topology`
+  publications (4.9 MB — untouched by this phase and now the largest
+  remaining fanout).
+- Dual-emit costs +1.8% at N=50 over baseline (the envelope beside the
+  retained snapshot rows) — the price of running the divergence oracle.
+- Every delta-primary tier run passed its full liveness assertions
+  (N=6: 163, N=20: 471/479, N=50: 1,307 step successes, zero failures;
+  every client observed full membership and at least one `overlay.topology`
+  publication).
+
+### Phase-2 properties re-verified on the candidate
+
+- **Idle steady state**: 0 expansions, 0 WS sends, 0 deliveries, and 0
+  egress bytes in every steady-state window at every tier and mode; the
+  steady-state mutations remain exactly the heartbeat lease renewals.
+- **Damping counters** (large tier, T2−T0): recomputes executed/published
+  collapse to 2–4 per server in both modes,
+  `topologyRebuildSkippedFingerprintCount` fires during formation (1 on the
+  primary in both modes), and `topologyPublishSkippedUnchangedCount` stays 0
+  in the burst windows because every executed plan there is genuinely
+  changed — exactly the Phase 2 results' documented shape.
+- **Cross-server suites**: postgres standard profile (22 recipes including
+  the phase-3 late-joiner, reconnect-resync, and admission recipes) plus the
+  5-recipe cluster profile passed on the candidate under the dual-emit
+  default.
+
+### M12 and M13 recipe evidence
+
+- `api-v1-group-topology-late-joiner` (22 steps): after formation, a member
+  joining without a presence transition reads the current server overlay
+  from `GET .../topology` immediately — the served version equals the
+  pre-join publication capture; no new publication is awaited or required.
+- `api-v1-group-state-reconnect-resync` (32 steps): a client drops WS,
+  misses a fingerprint-relevant update and its publication, reconnects on a
+  fresh socket, receives the unicast topology hydration push, and converges
+  through the revision-floored snapshot read and the topology read-through.
+- `api-v1-group-join-admission` (79 steps): a 70-attempt storm probe on one
+  group drives real `429` answers carrying `Retry-After: 60` while a second
+  principal's control join stays admitted; the N=50 burst passes with
+  admission enabled at defaults and zero unavailable false failures (the
+  join retry budgets stay unused, as in every tier run).
+
+### Convergence and perf gates (measured 2026-08-14)
+
+- **Medium-scale convergence gate: PASSED** —
+  `npm run test:api-v1:black-box:postgres:medium-scale` 1/1 with 2,748 step
+  successes and zero failures (the identical count to the Phase 2 run),
+  under the dual-emit default with admission enabled at defaults; recipe
+  constants, operation matrix, and assertions untouched.
+- **State-write perf comparison (issue #157 baseline-control protocol)**:
+  three runs on freshly recreated databases (`--backend=postgres --warmup=1
+  --runs=3 --concurrency=10`): baseline A and control baseline B on `main`
+  at `160e8f88`, candidate on the phase-3 tree. The **control pairing
+  (identical `main` code) FAILS the comparator outright** — uncontended p95
+  +9.8%, p99 +12.9%, shared throughput −23.7%, hot throughput −8.8%, plus
+  seven median drifts — re-confirming that this machine's run-to-run
+  variance sits far above the 5% gates (the Phase 2 finding issue #157
+  tracks). Against that floor, the **candidate passes every latency and
+  throughput gate in both pairings** (A→candidate and B→candidate). The
+  only flags are sub-noise reasoned medians: uncontended `sql.statements`
+  +6 of 23,786, `serializedResultBytes` +27 of 30.16 M, transaction time
+  +2.4% (A-pairing); hot `sql.rowsRead` +0.3% and `serializedResultBytes`
+  +0.6% (B-pairing) — consistent with the dual-emit envelope's slightly
+  larger event payloads and no added statements on the mutation path.
+  **Verdict: environment-limited comparator, with the sign-stable signal
+  (candidate latency/throughput inside both baseline pairings while the
+  identical-code control fails) indicating no mutation-path regression.**
+  Gate artifacts stay uncommitted under `tmp/perf/` per the artifact
+  policy.
+- **Discovered and repaired in passing**: the bench harness itself had
+  rotted on `main` — `scripts/perf/api-v1-state-write-concurrency-bench.ts`
+  still imported `CircuitBreakerPolicy` from `Resilience.ts` after PR #164
+  moved it to `circuit-breaker.ts`, so the gate could not run at all on
+  either tree. The one-line import repair is part of this branch and was
+  applied identically to the baseline worktree so both sides ran the same
+  instrument.
+
+### Completion gates
+
+_Recorded on the final tree: `test:unit`, `test:ci`, `build`, Branch
+Release Gate on the final feature-branch commit, and the Hetzner Supported
+Distributed Manifests workflow on the resulting default-branch commit.
+Known external blocker at measurement time: the `main` evidence-ledger
+adaptive plan keeps the one-active-plan structure rule failing (one
+navigation-evidence test and the CI governance gate) until it closes on
+main._

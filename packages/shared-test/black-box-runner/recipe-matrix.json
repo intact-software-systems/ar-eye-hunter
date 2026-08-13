@@ -1270,7 +1270,8 @@
       "tier": 1,
       "profiles": [
         "api-v1-black-box",
-        "api-v1-black-box-recipes"
+        "api-v1-black-box-recipes",
+        "api-v1-black-box-phase3-dissemination"
       ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-formation-burst-small",
@@ -1293,7 +1294,8 @@
       "tier": 1,
       "profiles": [
         "api-v1-black-box",
-        "api-v1-black-box-recipes"
+        "api-v1-black-box-recipes",
+        "api-v1-black-box-phase3-dissemination"
       ],
       "expectedExitCode": 0,
       "artifactName": "api-v1-group-formation-burst-medium",
