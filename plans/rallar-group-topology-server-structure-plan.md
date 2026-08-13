@@ -3103,24 +3103,21 @@ record's single next slice.
     "diffBase": "dc44ab029dd415b356833d3b72e0207f79c4bc88",
     "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "computedTriggers": [
-      "ownership-change",
       "invalid-assumption",
       "scope-growth"
     ],
     "undeclaredChangedPaths": [
       "docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md",
-      "packages/shared-web/tsconfig.json",
-      "packages/shared/tsconfig.json",
       "plans/adaptive-agent-execution-governance-plan.md",
       "plans/adaptive-agent-execution-governance.closure.json",
       "plans/rallar-architecture-quality-and-rtc-program-roadmap.md"
     ]
   },
   "checkpoint": {
-    "outcome": "PR #203's RTC plan and roadmap updates landed after this plan's facts were prepared. They are concurrent sibling evidence and do not change group-topology behavior or ownership.",
-    "learning": "The stale facts came from main advancing before integration, not from a topology implementation change.",
-    "structure": "Keep the existing group-topology owner and the activate-group-topology-capability consolidation slice unchanged.",
-    "decision": "consolidate",
+    "outcome": "The prior fact refresh captured two uncommitted TypeScript configuration paths. Current clean main contains only the merged sibling RTC plan and roadmap changes plus authenticated adaptive-governance closure evidence.",
+    "learning": "Adaptive facts must be prepared from a clean worktree; uncommitted paths contaminate the generated fact set even when they are not committed.",
+    "structure": "Keep the existing topology capability horizon unchanged while refreshing only deterministic facts from clean main.",
+    "decision": "amend",
     "nextSlices": [
       "activate-group-topology-capability"
     ]
@@ -3172,6 +3169,11 @@ record's single next slice.
       "decision": "consolidate",
       "summary": "PR #203's RTC plan and roadmap updates landed after this plan's facts were prepared. They are concurrent sibling evidence and do not change group-topology behavior or ownership.",
       "checkpointDigest": "d3059a7d620520177f63440f8e56b28d121535c893670e068cc48d0af1a1cdcd"
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The prior fact refresh captured two uncommitted TypeScript configuration paths. Current clean main contains only the merged sibling RTC plan and roadmap changes plus authenticated adaptive-governance closure evidence."
     }
   ]
 }
