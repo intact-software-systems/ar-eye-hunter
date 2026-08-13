@@ -72,12 +72,14 @@ export interface TopologyWorkerTrace {
   }>[];
 }
 
-const ROOT_DENO_CONFIG_PATH = fileURLToPath(new URL('../../../../../deno.json', import.meta.url));
+const ROOT_DENO_CONFIG_PATH = fileURLToPath(
+  new URL('../../../../../../deno.json', import.meta.url),
+);
 const APP_INBOX_WORKER_PATH = fileURLToPath(
-  new URL('./fixtures/postgres-topology-app-inbox-worker.ts', import.meta.url),
+  new URL('./postgres-topology-app-inbox-worker.ts', import.meta.url),
 );
 const APP_OUTBOX_WORKER_PATH = fileURLToPath(
-  new URL('../../fixtures/postgres-topology-app-outbox-worker.ts', import.meta.url),
+  new URL('../../../fixtures/postgres-topology-app-outbox-worker.ts', import.meta.url),
 );
 
 export async function createPostgresSql(databaseUrl: string): Promise<PostgresSql> {
@@ -220,7 +222,7 @@ function spawnWorker<Output>(
       workerPath,
     ],
     {
-      cwd: fileURLToPath(new URL('../../../../../', import.meta.url)),
+      cwd: fileURLToPath(new URL('../../../../../../', import.meta.url)),
       env: {
         ...process.env,
         DATABASE_URL: databaseUrl,

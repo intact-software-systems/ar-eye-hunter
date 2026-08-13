@@ -189,7 +189,7 @@ function validateMutationRecord(input: DeterministicMutationInput, receipt: Writ
 
 function readProductionSource(relativePath: string): string {
   return readFileSync(
-    new URL(`../../../../../shared-server/rallar-system/${relativePath}`, import.meta.url),
+    new URL(`../../../../../../shared-server/rallar-system/${relativePath}`, import.meta.url),
     'utf8',
   );
 }

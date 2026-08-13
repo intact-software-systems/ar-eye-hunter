@@ -11,8 +11,8 @@ import {
   GROUP_TOPOLOGY_CONFIG_NAMESPACE,
   GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
 } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
-import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
-import { ReadBatchFakeRuntimeStateRepository } from '../../../read-batch-fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
+import { ReadBatchFakeRuntimeStateRepository } from '../../../../read-batch-fake-runtime-state-repository.ts';
 
 const GROUP_REF: GroupRef = {
   applicationId: 'app-1',

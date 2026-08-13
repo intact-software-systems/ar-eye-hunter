@@ -1,5 +1,44 @@
 # Topology server navigation
 
+```repository-navigation-v1
+{
+  "version": 1,
+  "entry": {
+    "path": "packages/shared-server/rallar-system/topology/group-topology-management-service.ts",
+    "symbol": "GroupTopologyManagementService"
+  },
+  "results": [
+    {
+      "path": "packages/shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts",
+      "symbol": "toTopologyConfigMutationResult"
+    },
+    {
+      "path": "packages/shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts",
+      "symbol": "materializeRtcOverlayTopologyBroadcastMessage"
+    },
+    {
+      "path": "packages/shared-server/rallar-system/topology/replay/create-rtc-topology-work-handler.ts",
+      "symbol": "createRtcTopologyWorkHandler"
+    }
+  ],
+  "failures": [
+    {
+      "path": "packages/shared-server/rallar-system/topology/group-topology-errors.ts",
+      "symbol": "GroupTopologyValidationError"
+    },
+    {
+      "path": "packages/shared-server/rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts",
+      "symbol": "GroupTopologyConfigRepositoryInvariantCorruptionError"
+    }
+  ]
+}
+```
+
+[group-topology-management-service.ts#GroupTopologyManagementService](group-topology-management-service.ts#GroupTopologyManagementService)
+is the canonical capability entry. It exposes the supported management facade while its direct
+config, inbox, planning, reconfiguration, and replay owners retain their narrower decisions and
+side effects.
+
 This map names the current canonical owners for topology mutation protocol,
 pure config decisions, persistence, durable RTC delivery replay, and reconnect
 hydration. It is navigation evidence, not runtime truth. The first sections
@@ -9,57 +48,57 @@ persistence ownership.
 
 ## Current PR-A owners
 
-| Boundary                                            | Canonical owner                                                                                                                | Primary symbol                              |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| Config defaults, validation, expiry, and resolution | [config/group-topology-config.ts](config/group-topology-config.ts)                                                             | `resolveGroupTopologyConfig`                |
-| Mutation phase contracts                            | [config/mutation/group-topology-config-mutation-contracts.ts](config/mutation/group-topology-config-mutation-contracts.ts)     | `GroupTopologyConfigMutationComputed`       |
-| Idempotency decision                                | [config/mutation/topology-config-mutation-idempotency.ts](config/mutation/topology-config-mutation-idempotency.ts)             | `probeTopologyConfigMutationIdempotency`    |
-| Pure mutation computation                           | [config/mutation/compute-topology-config-mutation.ts](config/mutation/compute-topology-config-mutation.ts)                     | `computeTopologyConfigMutation`             |
-| Deterministic recomputation                         | [config/mutation/validate-topology-config-mutation.ts](config/mutation/validate-topology-config-mutation.ts)                   | `validateTopologyConfigMutation`            |
-| Input and attempt-time validation                   | [config/mutation/validate-topology-config-mutation-input.ts](config/mutation/validate-topology-config-mutation-input.ts)       | `validateTopologyConfigMutationInput`       |
-| Untrusted raw-value validation and typed handoff    | [config/mutation/topology-config-mutation-boundary.ts](config/mutation/topology-config-mutation-boundary.ts)                   | `readTopologyConfigMutationRecordBoundary`  |
-| Typed mutation validation values                    | [config/mutation/topology-config-mutation-validation-values.ts](config/mutation/topology-config-mutation-validation-values.ts) | `validateTopologyGroupRef`                  |
-| Stored state and mutation-record validation         | [config/mutation/validate-topology-config-records.ts](config/mutation/validate-topology-config-records.ts)                     | `validateGroupTopologyConfigMutationRecord` |
-| Durable receipt validation                          | [config/mutation/validate-topology-config-receipt.ts](config/mutation/validate-topology-config-receipt.ts)                     | `validateTopologyConfigReceipt`             |
-| Receipt creation and result reconstruction          | [config/mutation/topology-config-mutation-receipt.ts](config/mutation/topology-config-mutation-receipt.ts)                     | `resultFromTopologyConfigReceipt`           |
-| AppInbox protocol contracts                         | [inbox/topology-app-inbox-contracts.ts](inbox/topology-app-inbox-contracts.ts)                                                 | `TopologyAppInboxCommand`                   |
-| Command normalization, durable decoding, and hashes | [inbox/topology-app-inbox-command.ts](inbox/topology-app-inbox-command.ts)                                                     | `toTopologyAppInboxCommand`                 |
-| Enqueue and attempt-time session authority          | [inbox/topology-app-inbox-authority.ts](inbox/topology-app-inbox-authority.ts)                                                 | `verifyTopologyAppInboxAuthority`           |
-| Shared topology and RTC RTT proof                   | [inbox/topology-mutation-authority-proof.ts](inbox/topology-mutation-authority-proof.ts)                                       | `createTopologyMutationAuthorityProof`      |
-| Existing AppInbox dispatch boundary                 | [inbox/topology-app-inbox-handler.ts](inbox/topology-app-inbox-handler.ts)                                                     | `TopologyAppInboxHandler`                   |
+| Boundary                                            | Canonical owner                                                                                                                                                | Primary symbol                              |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Config defaults, validation, expiry, and resolution | [config/group-topology-config.ts](config/group-topology-config.ts#resolveGroupTopologyConfig)                                                                  | `resolveGroupTopologyConfig`                |
+| Mutation phase contracts                            | [config/mutation/group-topology-config-mutation-contracts.ts](config/mutation/group-topology-config-mutation-contracts.ts#GroupTopologyConfigMutationComputed) | `GroupTopologyConfigMutationComputed`       |
+| Idempotency decision                                | [config/mutation/topology-config-mutation-idempotency.ts](config/mutation/topology-config-mutation-idempotency.ts#probeTopologyConfigMutationIdempotency)      | `probeTopologyConfigMutationIdempotency`    |
+| Pure mutation computation                           | [config/mutation/compute-topology-config-mutation.ts](config/mutation/compute-topology-config-mutation.ts#computeTopologyConfigMutation)                       | `computeTopologyConfigMutation`             |
+| Deterministic recomputation                         | [config/mutation/validate-topology-config-mutation.ts](config/mutation/validate-topology-config-mutation.ts#validateTopologyConfigMutation)                    | `validateTopologyConfigMutation`            |
+| Input and attempt-time validation                   | [config/mutation/validate-topology-config-mutation-input.ts](config/mutation/validate-topology-config-mutation-input.ts#validateTopologyConfigMutationInput)   | `validateTopologyConfigMutationInput`       |
+| Untrusted raw-value validation and typed handoff    | [config/mutation/topology-config-mutation-boundary.ts](config/mutation/topology-config-mutation-boundary.ts#readTopologyConfigMutationRecordBoundary)          | `readTopologyConfigMutationRecordBoundary`  |
+| Typed mutation validation values                    | [config/mutation/topology-config-mutation-validation-values.ts](config/mutation/topology-config-mutation-validation-values.ts#validateTopologyGroupRef)        | `validateTopologyGroupRef`                  |
+| Stored state and mutation-record validation         | [config/mutation/validate-topology-config-records.ts](config/mutation/validate-topology-config-records.ts#validateGroupTopologyConfigMutationRecord)           | `validateGroupTopologyConfigMutationRecord` |
+| Durable receipt validation                          | [config/mutation/validate-topology-config-receipt.ts](config/mutation/validate-topology-config-receipt.ts#validateTopologyConfigReceipt)                       | `validateTopologyConfigReceipt`             |
+| Receipt creation and result reconstruction          | [config/mutation/topology-config-mutation-receipt.ts](config/mutation/topology-config-mutation-receipt.ts#resultFromTopologyConfigReceipt)                     | `resultFromTopologyConfigReceipt`           |
+| AppInbox protocol contracts                         | [inbox/topology-app-inbox-contracts.ts](inbox/topology-app-inbox-contracts.ts#TopologyAppInboxCommand)                                                         | `TopologyAppInboxCommand`                   |
+| Command normalization, durable decoding, and hashes | [inbox/topology-app-inbox-command.ts](inbox/topology-app-inbox-command.ts#toTopologyAppInboxCommand)                                                           | `toTopologyAppInboxCommand`                 |
+| Enqueue and attempt-time session authority          | [inbox/topology-app-inbox-authority.ts](inbox/topology-app-inbox-authority.ts#verifyTopologyAppInboxAuthority)                                                 | `verifyTopologyAppInboxAuthority`           |
+| Shared topology and RTC RTT proof                   | [inbox/topology-mutation-authority-proof.ts](inbox/topology-mutation-authority-proof.ts#createTopologyMutationAuthorityProof)                                  | `createTopologyMutationAuthorityProof`      |
+| Existing AppInbox dispatch boundary                 | [inbox/topology-app-inbox-handler.ts](inbox/topology-app-inbox-handler.ts#TopologyAppInboxHandler)                                                             | `TopologyAppInboxHandler`                   |
 
 ## Current PR-B owners
 
-| Boundary                                      | Canonical owner                                                                                                                      | Primary symbol                                          |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| Persistence contracts and corruption exit     | [config/persistence/group-topology-config-repository-contracts.ts](config/persistence/group-topology-config-repository-contracts.ts) | `GroupTopologyConfigRepositoryInvariantCorruptionError` |
-| Durable CRUD, CAS, and retained records       | [config/persistence/group-topology-config-repository.ts](config/persistence/group-topology-config-repository.ts)                     | `GroupTopologyConfigRepository`                         |
-| Source listing and legacy-source lookup       | [config/persistence/group-topology-config-source-repository.ts](config/persistence/group-topology-config-source-repository.ts)       | `GroupTopologyConfigSourceRepository`                   |
-| Runtime-state namespaces                      | [config/persistence/group-topology-config-runtime-namespaces.ts](config/persistence/group-topology-config-runtime-namespaces.ts)     | `GROUP_TOPOLOGY_CONFIG_NAMESPACE`                       |
-| Scoped storage keys and slot validation       | [config/persistence/group-topology-config-storage-keys.ts](config/persistence/group-topology-config-storage-keys.ts)                 | `groupTopologyConfigStorageKey`                         |
-| Stored entry decoding and corruption wrapping | [config/persistence/group-topology-config-persistence-codec.ts](config/persistence/group-topology-config-persistence-codec.ts)       | `decodeGroupTopologyMutationEntry`                      |
-| Exact batch/fallback persistence read         | [config/persistence/read-exact-group-topology-config-mutation.ts](config/persistence/read-exact-group-topology-config-mutation.ts)   | `readGroupTopologyMutationExactEntries`                 |
-| Stored config/override source decoding        | [config/persistence/decode-stored-group-topology-config.ts](config/persistence/decode-stored-group-topology-config.ts)               | `decodeStoredGroupTopologyConfig`                       |
-| Generation backfill                           | [config/maintenance/backfill-group-topology-config-generations.ts](config/maintenance/backfill-group-topology-config-generations.ts) | `backfillAllGroupTopologyConfigGenerations`             |
-| Bounded legacy-key migration                  | [config/maintenance/migrate-legacy-group-topology-config-keys.ts](config/maintenance/migrate-legacy-group-topology-config-keys.ts)   | `migrateLegacyGroupTopologyConfigKeys`                  |
-| Mutation read assembly                        | [config/mutation/read-topology-config-mutation.ts](config/mutation/read-topology-config-mutation.ts)                                 | `readTopologyConfigMutation`                            |
+| Boundary                                      | Canonical owner                                                                                                                                                                            | Primary symbol                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Persistence contracts and corruption exit     | [config/persistence/group-topology-config-repository-contracts.ts](config/persistence/group-topology-config-repository-contracts.ts#GroupTopologyConfigRepositoryInvariantCorruptionError) | `GroupTopologyConfigRepositoryInvariantCorruptionError` |
+| Durable CRUD, CAS, and retained records       | [config/persistence/group-topology-config-repository.ts](config/persistence/group-topology-config-repository.ts#GroupTopologyConfigRepository)                                             | `GroupTopologyConfigRepository`                         |
+| Source listing and legacy-source lookup       | [config/persistence/group-topology-config-source-repository.ts](config/persistence/group-topology-config-source-repository.ts#GroupTopologyConfigSourceRepository)                         | `GroupTopologyConfigSourceRepository`                   |
+| Runtime-state namespaces                      | [config/persistence/group-topology-config-runtime-namespaces.ts](config/persistence/group-topology-config-runtime-namespaces.ts#GROUP_TOPOLOGY_CONFIG_NAMESPACE)                           | `GROUP_TOPOLOGY_CONFIG_NAMESPACE`                       |
+| Scoped storage keys and slot validation       | [config/persistence/group-topology-config-storage-keys.ts](config/persistence/group-topology-config-storage-keys.ts#groupTopologyConfigStorageKey)                                         | `groupTopologyConfigStorageKey`                         |
+| Stored entry decoding and corruption wrapping | [config/persistence/group-topology-config-persistence-codec.ts](config/persistence/group-topology-config-persistence-codec.ts#decodeGroupTopologyMutationEntry)                            | `decodeGroupTopologyMutationEntry`                      |
+| Exact batch/fallback persistence read         | [config/persistence/read-exact-group-topology-config-mutation.ts](config/persistence/read-exact-group-topology-config-mutation.ts#readGroupTopologyMutationExactEntries)                   | `readGroupTopologyMutationExactEntries`                 |
+| Stored config/override source decoding        | [config/persistence/decode-stored-group-topology-config.ts](config/persistence/decode-stored-group-topology-config.ts#decodeStoredGroupTopologyConfig)                                     | `decodeStoredGroupTopologyConfig`                       |
+| Generation backfill                           | [config/maintenance/backfill-group-topology-config-generations.ts](config/maintenance/backfill-group-topology-config-generations.ts#backfillAllGroupTopologyConfigGenerations)             | `backfillAllGroupTopologyConfigGenerations`             |
+| Bounded legacy-key migration                  | [config/maintenance/migrate-legacy-group-topology-config-keys.ts](config/maintenance/migrate-legacy-group-topology-config-keys.ts#migrateLegacyGroupTopologyConfigKeys)                    | `migrateLegacyGroupTopologyConfigKeys`                  |
+| Mutation read assembly                        | [config/mutation/read-topology-config-mutation.ts](config/mutation/read-topology-config-mutation.ts#readTopologyConfigMutation)                                                            | `readTopologyConfigMutation`                            |
 
 ## Current PR-C owners
 
-| Boundary                                  | Canonical owner                                                                                                                      | Primary symbol                                  |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
-| Config and topology queries               | [config/group-topology-config-query-service.ts](config/group-topology-config-query-service.ts)                                       | `GroupTopologyConfigQueryService`               |
-| Shared generation readiness               | [config/maintenance/group-topology-config-generation-readiness.ts](config/maintenance/group-topology-config-generation-readiness.ts) | `GroupTopologyConfigGenerationReadiness`        |
-| Config mutation preparation/read/decision | [config/group-topology-config-mutation-service.ts](config/group-topology-config-mutation-service.ts)                                 | `GroupTopologyConfigMutationService`            |
-| Atomic config mutation write              | [config/mutation/write-topology-config-mutation.ts](config/mutation/write-topology-config-mutation.ts)                               | `writeTopologyConfigMutation`                   |
-| Config mutation result adapter            | [config/mutation/to-topology-config-mutation-result.ts](config/mutation/to-topology-config-mutation-result.ts)                       | `toTopologyConfigMutationResult`                |
-| AppInbox transaction/finalization         | [../services/app-inbox-transaction-writer.ts](../services/app-inbox-transaction-writer.ts)                                           | `AppInboxMutationTransactionWriter`             |
-| Reconfigure read/compute/validate/write   | [reconfigure/group-topology-reconfigure-mutation.ts](reconfigure/group-topology-reconfigure-mutation.ts)                             | `GroupTopologyReconfigureMutation`              |
-| Immutable planning authority              | [planning/group-topology-planning-authority.ts](planning/group-topology-planning-authority.ts)                                       | `GroupTopologyPlanningAuthority`                |
-| Topology planning and lifecycle           | [planning/group-topology-planning-service.ts](planning/group-topology-planning-service.ts)                                           | `GroupTopologyPlanningService`                  |
-| RTC overlay publication materialization   | [planning/materialize-rtc-overlay-topology-broadcast-message.ts](planning/materialize-rtc-overlay-topology-broadcast-message.ts)     | `materializeRtcOverlayTopologyBroadcastMessage` |
-| Topology validation errors                | [group-topology-errors.ts](group-topology-errors.ts)                                                                                 | `GroupTopologyValidationError`                  |
-| Public compatibility facade               | [group-topology-management-service.ts](group-topology-management-service.ts)                                                         | `GroupTopologyManagementService`                |
+| Boundary                                  | Canonical owner                                                                                                                                                                | Primary symbol                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| Config and topology queries               | [config/group-topology-config-query-service.ts](config/group-topology-config-query-service.ts#GroupTopologyConfigQueryService)                                                 | `GroupTopologyConfigQueryService`               |
+| Shared generation readiness               | [config/maintenance/group-topology-config-generation-readiness.ts](config/maintenance/group-topology-config-generation-readiness.ts#GroupTopologyConfigGenerationReadiness)    | `GroupTopologyConfigGenerationReadiness`        |
+| Config mutation preparation/read/decision | [config/group-topology-config-mutation-service.ts](config/group-topology-config-mutation-service.ts#GroupTopologyConfigMutationService)                                        | `GroupTopologyConfigMutationService`            |
+| Atomic config mutation write              | [config/mutation/write-topology-config-mutation.ts](config/mutation/write-topology-config-mutation.ts#writeTopologyConfigMutation)                                             | `writeTopologyConfigMutation`                   |
+| Config mutation result adapter            | [config/mutation/to-topology-config-mutation-result.ts](config/mutation/to-topology-config-mutation-result.ts#toTopologyConfigMutationResult)                                  | `toTopologyConfigMutationResult`                |
+| AppInbox transaction/finalization         | [../services/app-inbox-transaction-writer.ts](../services/app-inbox-transaction-writer.ts#AppInboxMutationTransactionWriter)                                                   | `AppInboxMutationTransactionWriter`             |
+| Reconfigure read/compute/validate/write   | [reconfigure/group-topology-reconfigure-mutation.ts](reconfigure/group-topology-reconfigure-mutation.ts#GroupTopologyReconfigureMutation)                                      | `GroupTopologyReconfigureMutation`              |
+| Immutable planning authority              | [planning/group-topology-planning-authority.ts](planning/group-topology-planning-authority.ts#GroupTopologyPlanningAuthority)                                                  | `GroupTopologyPlanningAuthority`                |
+| Topology planning and lifecycle           | [planning/group-topology-planning-service.ts](planning/group-topology-planning-service.ts#GroupTopologyPlanningService)                                                        | `GroupTopologyPlanningService`                  |
+| RTC overlay publication materialization   | [planning/materialize-rtc-overlay-topology-broadcast-message.ts](planning/materialize-rtc-overlay-topology-broadcast-message.ts#materializeRtcOverlayTopologyBroadcastMessage) | `materializeRtcOverlayTopologyBroadcastMessage` |
+| Topology validation errors                | [group-topology-errors.ts](group-topology-errors.ts#GroupTopologyValidationError)                                                                                              | `GroupTopologyValidationError`                  |
+| Public compatibility facade               | [group-topology-management-service.ts](group-topology-management-service.ts#GroupTopologyManagementService)                                                                    | `GroupTopologyManagementService`                |
 
 Canonical internal imports use these owners directly. The supported public
 compatibility boundaries remain `packages/shared-server/mod.ts`, the public
