@@ -644,6 +644,126 @@
       "metadata": {
         "source": "golden-compatibility-corpus"
       }
+    },
+    {
+      "schemaVersion": 1,
+      "distributedRunId": "golden-distributed-group-assertions-v1",
+      "controlRunId": "golden-control-v1",
+      "displayName": "Golden distributed group assertions",
+      "group": {
+        "applicationId": "rallar-server",
+        "workspaceId": "default",
+        "groupId": "golden-room"
+      },
+      "recipes": [
+        {
+          "recipeId": "golden-group-assertion-probe-v1",
+          "required": true,
+          "recipe": {
+            "schemaVersion": 1,
+            "recipeId": "golden-group-assertion-probe-v1",
+            "commands": [
+              {
+                "kind": "http.request",
+                "commandId": "golden-ga-members-read",
+                "request": {
+                  "method": "GET",
+                  "path": "/api/state/apps/rallar-server/workspaces/default/groups/golden-room"
+                },
+                "response": {
+                  "acceptedStatusCodes": [
+                    200
+                  ]
+                }
+              },
+              {
+                "kind": "stats",
+                "commandId": "golden-ga-stats"
+              }
+            ],
+            "metadata": {
+              "source": "golden-compatibility-corpus"
+            }
+          }
+        }
+      ],
+      "targetPolicy": {
+        "mode": "all-online-group-members",
+        "expectedParticipantCount": 2
+      },
+      "groupAssertions": [
+        {
+          "groupAssertionId": "golden-ga-all-match",
+          "aggregate": "allMatch",
+          "description": "Every agent read the expected member count.",
+          "source": {
+            "recipeId": "golden-group-assertion-probe-v1",
+            "commandId": "golden-ga-members-read",
+            "path": "body.memberCount"
+          },
+          "predicate": {
+            "operator": "equals",
+            "expected": 2
+          }
+        },
+        {
+          "groupAssertionId": "golden-ga-none-match",
+          "aggregate": "noneMatch",
+          "description": "No agent observed an authorization failure status.",
+          "source": {
+            "recipeId": "golden-group-assertion-probe-v1",
+            "commandId": "golden-ga-members-read",
+            "path": "status"
+          },
+          "predicate": {
+            "operator": "equals",
+            "expected": 403
+          }
+        },
+        {
+          "groupAssertionId": "golden-ga-count-matching",
+          "aggregate": "countMatching",
+          "description": "At least one agent reached the group state read.",
+          "source": {
+            "recipeId": "golden-group-assertion-probe-v1",
+            "commandId": "golden-ga-members-read",
+            "path": "ok"
+          },
+          "predicate": {
+            "operator": "equals",
+            "expected": true
+          },
+          "count": {
+            "gte": 1,
+            "lte": 2
+          }
+        },
+        {
+          "groupAssertionId": "golden-ga-all-equal",
+          "aggregate": "allEqual",
+          "description": "Every agent converged on the same member count.",
+          "source": {
+            "recipeId": "golden-group-assertion-probe-v1",
+            "commandId": "golden-ga-members-read",
+            "path": "body.memberCount"
+          }
+        },
+        {
+          "groupAssertionId": "golden-ga-all-equal-within",
+          "aggregate": "allEqualWithin",
+          "description": "Replicated revision counters differ by at most one.",
+          "source": {
+            "recipeId": "golden-group-assertion-probe-v1",
+            "commandId": "golden-ga-members-read",
+            "path": "body.stateRevision"
+          },
+          "tolerance": 1,
+          "minParticipants": 2
+        }
+      ],
+      "metadata": {
+        "source": "golden-compatibility-corpus"
+      }
     }
   ],
   "invalidRecipes": [
@@ -844,6 +964,112 @@
           ],
           "expectedParticipantCount": 1
         }
+      }
+    },
+    {
+      "caseId": "group-assertion-missing-predicate",
+      "expectedErrors": [
+        "Missing required property predicate."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "distributedRunId": "invalid-group-assertion-predicate",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "health-only"
+          }
+        ],
+        "targetPolicy": {
+          "mode": "all-online-group-members"
+        },
+        "groupAssertions": [
+          {
+            "groupAssertionId": "missing-predicate",
+            "aggregate": "allMatch",
+            "source": {
+              "recipeId": "health-only",
+              "commandId": "health-1",
+              "path": "value.ok"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "group-assertion-unknown-aggregate",
+      "expectedErrors": [
+        "Expected value to match exactly one schema, matched 0."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "distributedRunId": "invalid-group-assertion-aggregate",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "health-only"
+          }
+        ],
+        "targetPolicy": {
+          "mode": "all-online-group-members"
+        },
+        "groupAssertions": [
+          {
+            "groupAssertionId": "sum-is-not-v1",
+            "aggregate": "sum",
+            "source": {
+              "recipeId": "health-only",
+              "commandId": "health-1",
+              "path": "value.total"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "caseId": "group-assertion-count-without-bounds",
+      "expectedErrors": [
+        "countMatching requires at least one of equals, gte, lte."
+      ],
+      "value": {
+        "schemaVersion": 1,
+        "distributedRunId": "invalid-group-assertion-count",
+        "group": {
+          "applicationId": "rallar-server",
+          "workspaceId": "default",
+          "groupId": "golden-room"
+        },
+        "recipes": [
+          {
+            "recipeId": "health-only"
+          }
+        ],
+        "targetPolicy": {
+          "mode": "all-online-group-members"
+        },
+        "groupAssertions": [
+          {
+            "groupAssertionId": "count-without-bounds",
+            "aggregate": "countMatching",
+            "source": {
+              "recipeId": "health-only",
+              "commandId": "health-1",
+              "path": "value.ok"
+            },
+            "predicate": {
+              "operator": "exists"
+            },
+            "count": {}
+          }
+        ]
       }
     }
   ]

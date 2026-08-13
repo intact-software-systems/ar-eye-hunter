@@ -556,6 +556,7 @@ export type DistributedFailureExplanation = Readonly<{
         | 'readiness'
         | 'barrier'
         | 'command'
+        | 'group-assertion'
         | 'rtc-stream-performance'
         | 'diagnostic'
         | 'runtime'
@@ -3517,6 +3518,21 @@ function explanationForFailure(
             title: 'Agent disconnected during barrier',
             likelyCause: 'An agent left the control run while the distributed run waited at the barrier.',
             nextAction: 'Restart the disconnected agent with the same control run and a unique agent ID, then rerun the recipe.',
+            evidence,
+        };
+    }
+    if (code.startsWith('RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_')) {
+        return {
+            category: 'group-assertion',
+            title: code === 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING'
+                ? 'Group assertion evidence missing'
+                : code === 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS'
+                ? 'Group assertion has no participants'
+                : 'Group assertion failed',
+            likelyCause: failure.message ||
+                'The coordinator-evaluated group assertion did not hold over the frozen participant set.',
+            nextAction:
+                'Read the redacted per-agent value table in failures.json; it names missing and violating agents for the typed source address.',
             evidence,
         };
     }

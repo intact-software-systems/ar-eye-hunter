@@ -1118,6 +1118,10 @@ function verificationCommand(minimalFixArea: string): string {
     if (minimalFixArea === 'RTC stream pacing/performance') {
         return '`npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3`';
     }
+    if (minimalFixArea === 'group assertion contract or fleet evidence') {
+        return '`npx vitest run ' +
+            'packages/tests/shared-test/rallar-bb-test-group-assertion-conformance.test.ts`';
+    }
     if (minimalFixArea === 'RTC/TURN') {
         return '`npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3`';
     }
@@ -1138,6 +1142,9 @@ function minimalFixArea(input: Readonly<{
     const text = `${input.category ?? ''} ${input.transport ?? ''} ${input.text ?? ''}`.toLowerCase();
     if (text.includes('rtc-stream-performance') || isStreamFailureText(text)) {
         return 'RTC stream pacing/performance';
+    }
+    if (text.includes('group-assertion') || text.includes('group_assertion')) {
+        return 'group assertion contract or fleet evidence';
     }
     if (text.includes('assertion-absence') || text.includes('absence')) {
         return 'absence wait window or leaked traffic source';
@@ -1164,6 +1171,9 @@ function minimalFixArea(input: Readonly<{
 function failureCategory(code: string | undefined, message: string): string {
     const text = `${code ?? ''} ${message}`.toLowerCase();
     if (isStreamFailureText(text)) return 'rtc-stream-performance';
+    if (text.includes('group_assertion') || text.includes('group assertion')) {
+        return 'group-assertion';
+    }
     if (text.includes('absence')) return 'assertion-absence';
     if (text.includes('until')) return 'convergence-polling';
     if (text.includes('assertion-capability') || text.includes('assertion capabilities')) {
