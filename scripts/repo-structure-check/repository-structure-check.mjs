@@ -2,9 +2,14 @@ import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
 import { isProductionAuthoredCodePath, readRepositoryFiles } from './repository-files.mjs';
-import { readAdaptivePlans } from '../plan-adaptation/active-plan-registry.mjs';
+import {
+  readAdaptivePlans,
+  resolveActivePlanRegistryPath,
+  toActivePlanRegistry,
+} from '../plan-adaptation/active-plan-registry.mjs';
 import { validateAdaptivePlanRecord } from '../plan-adaptation/adaptive-plan-record.mjs';
 import { isPlannedCapability } from '../plan-adaptation/adaptive-plan-record.mjs';
+import { readAuthenticatedPlanClosureChanges } from '../plan-adaptation/plan-closure-receipt.mjs';
 import {
   computeAffectedCodeDigest,
   hasCurrentPlanFacts,
@@ -24,11 +29,19 @@ import {
 } from './structural-dispositions.mjs';
 
 export function resolveRepositoryStructureBase(repoRoot) {
-  return readRequiredStructurePlan(repoRoot).record.facts.diffBase;
+  const activePlans = readValidatedStructurePlans(repoRoot);
+  if (activePlans.length === 0) {
+    return 'origin/main';
+  }
+  return requireSingleActivePlan(activePlans).record.facts.diffBase;
 }
 
 export function checkRepositoryStructure(input) {
-  const activePlan = readRequiredStructurePlan(input.repoRoot);
+  const activePlans = readValidatedStructurePlans(input.repoRoot);
+  if (activePlans.length === 0) {
+    return checkAuthenticatedLastPlanCloseout(input);
+  }
+  const activePlan = requireSingleActivePlan(activePlans);
   if (input.base !== activePlan.record.facts.diffBase) {
     throw new Error('repository structure base must match the active plan diffBase');
   }
@@ -282,6 +295,10 @@ function toActiveEndpointChanges(change, plannedRoots) {
 }
 
 function readRequiredStructurePlan(repoRoot) {
+  return requireSingleActivePlan(readValidatedStructurePlans(repoRoot));
+}
+
+function readValidatedStructurePlans(repoRoot) {
   const plans = readAdaptivePlans(repoRoot);
   const schemaIssues = plans.flatMap(({ planPath, record }) =>
     validateAdaptivePlanRecord(record).map((issue) => `${planPath}: ${issue}`),
@@ -289,11 +306,39 @@ function readRequiredStructurePlan(repoRoot) {
   if (schemaIssues.length > 0) {
     throw new Error(`invalid adaptive plan record: ${schemaIssues.join('; ')}`);
   }
-  const activePlans = plans.filter(({ record }) => record.status === 'active');
+  return plans.filter(({ record }) => record.status === 'active');
+}
+
+function requireSingleActivePlan(activePlans) {
   if (activePlans.length !== 1) {
     throw new Error('repository structure requires exactly one active plan');
   }
   return activePlans[0];
+}
+
+function checkAuthenticatedLastPlanCloseout(input) {
+  const changes = readChangedPaths(input.repoRoot, input.base);
+  const closure = readAuthenticatedPlanClosureChanges({
+    repoRoot: input.repoRoot,
+    base: input.base,
+    changes,
+  });
+  const authenticatedPathCount = changes.length - closure.changes.length;
+  const registryChange = closure.changes.length === 1 ? closure.changes[0] : undefined;
+  const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
+  const registryIsCurrent =
+    readFileSync(registryPath, 'utf8') === toActivePlanRegistry([]) &&
+    registryChange?.path === 'plans/README.md' &&
+    registryChange.status.startsWith('M');
+  if (closure.issues.length > 0 || authenticatedPathCount !== 2 || !registryIsCurrent) {
+    const detail = closure.issues.length > 0 ? `: ${closure.issues.join('; ')}` : '';
+    throw new Error(
+      `repository structure requires exactly one active plan or an authenticated ` +
+        `last-plan close-out${detail}`,
+    );
+  }
+  const repository = readRepositoryFiles(input.repoRoot, input.base);
+  return { mergeBase: repository.mergeBase, findings: [] };
 }
 
 function readChangedRepositoryStyleFacts(repoRoot, repository) {

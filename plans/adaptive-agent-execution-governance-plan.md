@@ -556,10 +556,14 @@ are selected at the preceding checkpoint.
 - [x] Verify the base contains the exact active plan and generated registry
       entry before accepting a close-out deletion. Do not weaken ordinary
       written-plan qualification.
+- [x] Make repository-structure validation reuse the authenticated close-out
+      boundary when the last active plan is removed, while continuing to reject
+      zero-plan repositories, malformed receipts, and any additional changed
+      surface.
 - [x] Run focused plan-adaptation, adaptive governance, navigation, style,
       formatting, and diff checks; obtain an independent review; and complete
       this slice.
-- [ ] Publish and merge the correction so the default-branch comparison base
+- [x] Publish and merge the correction so the default-branch comparison base
       contains the exact completed plan record and receipt verifier.
 - [ ] From that merged base, run the corrected close command with PR #197
       evidence and publish the receipt-only close-out transition.
@@ -612,6 +616,7 @@ parallel registry.
       "factContracts": [
         "scripts/plan-adaptation/active-plan-registry.mjs",
         "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "scripts/plan-adaptation/plan-closure-receipt.mjs",
         "scripts/plan-adaptation/plan-change-facts.mjs",
         "scripts/repo-style-check/structural-facts.mjs"
       ],
@@ -619,6 +624,7 @@ parallel registry.
         "authored inventory and material-change classification",
         "topology and structural-disposition evaluation",
         "capability and cold-navigation validation",
+        "authenticated last-plan close-out validation",
         "authenticated singleton-exception verification"
       ]
     },
@@ -784,10 +790,9 @@ parallel registry.
   ],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "a0497aa2f98c5c4821b20e52225afa22d13a69dc024645634d761ccb6bea06c0",
+    "affectedCodeDigest": "be38adfca751eccfe2f974001fa6bd7398562bebbb1c6c6a78bb9ffb5e8b3e84",
     "computedTriggers": [
       "ownership-change",
-      "lifecycle-change",
       "invalid-assumption"
     ],
     "undeclaredChangedPaths": []

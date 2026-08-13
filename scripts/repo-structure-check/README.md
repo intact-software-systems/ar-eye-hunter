@@ -62,12 +62,16 @@ which returns sorted findings without choosing a folder layout for the agent.
 
 ## Declared cross-owner facts
 
-The checker consumes, but does not own, four explicitly declared contracts:
+The checker consumes, but does not own, five explicitly declared contracts:
 
 - [active-plan-registry.mjs#readAdaptivePlans](../plan-adaptation/active-plan-registry.mjs#readAdaptivePlans)
-  supplies the single active plan.
+  supplies the single active plan and generated registry.
 - [adaptive-plan-record.mjs#validateAdaptivePlanRecord](../plan-adaptation/adaptive-plan-record.mjs#validateAdaptivePlanRecord)
   validates its configuration before structure policy uses it.
+- [plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges](../plan-adaptation/plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges)
+  authenticates the exact last-plan close-out transition when no active plan remains. Repository
+  structure accepts that transition only when the generated registry is empty and no other changed
+  surface remains.
 - [plan-change-facts.mjs#computeAffectedCodeDigest](../plan-adaptation/plan-change-facts.mjs#computeAffectedCodeDigest)
   binds current structural dispositions to the affected-code surface.
 - [structural-facts.mjs#collectRepositoryStyleFacts](../repo-style-check/structural-facts.mjs#collectRepositoryStyleFacts)
