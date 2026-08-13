@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "plan-adaptation-closure-v1",
+  "planId": "adaptive-agent-execution-governance",
+  "planPath": "plans/adaptive-agent-execution-governance-plan.md",
+  "planDigest": "9883f0f58a85533ab054b20afeda6b1c1da28db33b95ff205fc10bb134b0d8a4",
+  "pullRequestUrl": "https://github.com/intact-software-systems/ar-eye-hunter/pull/206",
+  "finalReviewStatus": "complete"
+}
