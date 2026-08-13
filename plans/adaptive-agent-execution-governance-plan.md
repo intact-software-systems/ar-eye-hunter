@@ -744,7 +744,9 @@ are selected at the preceding checkpoint.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "complete-code-and-legacy-review"
+  ],
   "facts": {
     "diffBase": "03f690f3ae9d821876d50035ef7463def0985059",
     "affectedCodeDigest": "4c3c4b3c3c138bb7340b62bc0fbc7aa798854013efe0430e69aa0458fec54a0c",
@@ -762,9 +764,7 @@ are selected at the preceding checkpoint.
     "learning": "Trusted reuse must bind the canonical build-tree digest to independently verified workflow and job identity; a successful selector alone is not evidence. Distributed risk inventories must follow cohesive deployed runtime ownership rather than a brittle list of apparent entry files, while malformed inputs select expensive validation or block rather than silently skipping it.",
     "structure": "Keep validation evidence, distributed-risk selection, the unchanged broad Release Gate, and the unchanged Hetzner runner as four distinct boundaries. The final slice performs no new feature work: it freezes the candidate, traces every declared owner from entry to result, closes all legacy and predecessor paths, records proportional local and GitHub evidence, synchronizes the v2 PR record, and closes the tactical plan only when all completion gates are current.",
     "decision": "continue",
-    "nextSlices": [
-      "complete-code-and-legacy-review"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
