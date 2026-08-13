@@ -52,6 +52,7 @@ export function readAuthenticatedPlanClosureChanges(closureInput) {
     isPlanClosureReceiptPath(change.path),
   );
   const authenticatedPaths = new Set();
+  const authenticatedPlans = [];
   const issues = [];
 
   for (const deletion of planDeletions) {
@@ -69,6 +70,7 @@ export function readAuthenticatedPlanClosureChanges(closureInput) {
       });
       authenticatedPaths.add(deletion.path);
       authenticatedPaths.add(receiptPath);
+      authenticatedPlans.push(basePlan);
     } catch (error) {
       issues.push(`${deletion.path} close-out is not authenticated: ${toError(error).message}`);
     }
@@ -81,6 +83,7 @@ export function readAuthenticatedPlanClosureChanges(closureInput) {
   }
 
   return {
+    authenticatedPlans,
     changes: closureInput.changes.filter((change) => !authenticatedPaths.has(change.path)),
     issues,
   };

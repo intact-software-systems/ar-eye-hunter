@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { toActivePlanRegistry } from '../../../../scripts/plan-adaptation/active-plan-registry.mjs';
 import { computeAdaptivePlanRecordDigest } from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
+import { readRepositoryNavigationEvidence } from '../../../../scripts/repo-structure-check/repository-structure-check.mjs';
 import {
   cleanupRepositoryFixtures,
   createRecord,
@@ -19,13 +20,37 @@ import {
 afterEach(cleanupRepositoryFixtures);
 
 describe('repository structure close-out command', () => {
-  it('accepts an authenticated last-plan close-out without an active record', () => {
+  it('keeps structure and navigation authenticated throughout a closed plan read', () => {
     const { fixture, closeBase } = createLastPlanCloseoutFixture();
 
-    const result = runChecker(fixture, { includeBase: false });
+    const structureResult = runChecker(fixture, { includeBase: false });
 
-    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-    expect(result.stdout).toContain(`PASS: repository structure (${closeBase} -> WORKTREE)`);
+    expect(structureResult.status, `${structureResult.stdout}\n${structureResult.stderr}`).toBe(0);
+    expect(structureResult.stdout).toContain(
+      `PASS: repository structure (${closeBase} -> WORKTREE)`,
+    );
+
+    const navigationEvidence = readRepositoryNavigationEvidence({
+      repoRoot: fixture.root,
+      owner: 'example capability',
+    });
+
+    expect(navigationEvidence).toMatchObject({
+      schemaVersion: 'repository-navigation-evidence-v1',
+      owner: 'example capability',
+      entry: { path: 'scripts/example.mjs', symbol: 'runExample' },
+      affectedCodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    });
+
+    expect(() =>
+      readRepositoryNavigationEvidence({
+        repoRoot: fixture.root,
+        owner: 'example capability',
+        afterEvidenceComposed() {
+          writeFixture(fixture.root, 'scripts/unrelated.mjs', 'export const unrelated = true;\n');
+        },
+      }),
+    ).toThrow(/authenticated last-plan close-out/u);
   });
 
   it('rejects an authenticated close-out when more than one active plan is removed', () => {
@@ -90,6 +115,39 @@ describe('repository structure close-out command', () => {
 function createLastPlanCloseoutFixture() {
   const fixture = createRepositoryFixture();
   const record = createRecord();
+  (record.facts as Record<string, unknown>).affectedCodeDigest = 'a'.repeat(64);
+  record.capabilities[0].navigationMap = 'scripts/example/README.md';
+  writeFixture(
+    fixture.root,
+    'scripts/example.mjs',
+    'export function runExample() { return true; }\n' +
+      'export function toError(value) { return new Error(String(value)); }\n',
+  );
+  writeFixture(
+    fixture.root,
+    'scripts/example/README.md',
+    [
+      '# Example navigation map',
+      '',
+      '```repository-navigation-v1',
+      JSON.stringify(
+        {
+          version: 1,
+          entry: { path: 'scripts/example.mjs', symbol: 'runExample' },
+          results: [{ path: 'scripts/example/first.mjs', symbol: 'first' }],
+          failures: [{ path: 'scripts/example.mjs', symbol: 'toError' }],
+        },
+        null,
+        2,
+      ),
+      '```',
+      '',
+      '[entry](../example.mjs#runExample)',
+      '[result](./first.mjs#first)',
+      '[failure](../example.mjs#toError)',
+      '',
+    ].join('\n'),
+  );
   writePlanRecord(fixture.root, record);
   writeFixture(
     fixture.root,

@@ -71,7 +71,8 @@ entry. It decodes six commands and routes each to its lifecycle owner:
   translates the validated close input into the canonical data-only receipt.
   [plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges](./plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges)
   verifies the base plan, generated base registry, receipt identity, and complete current-tree
-  transition before read-only qualification ignores the authenticated plan deletion.
+  transition, and returns the exact authenticated base plan for read-only close-out consumers before
+  qualification ignores the authenticated plan deletion.
 - [plan-adaptation-lifecycle.mjs#writePlanAndRegistry](./plan-adaptation-lifecycle.mjs#writePlanAndRegistry)
   is the common mutation exit for `init`, `complete-slice`, and `apply`. Destructive close calls
   `writeFileTransaction` directly after its separate final-evidence, comparison-base, registry,
