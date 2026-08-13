@@ -21,6 +21,99 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  governance-decision:
+    name: Classify authenticated governance decision
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      decision_only: ${{ steps.resolve.outputs.decision_only }}
+      invalid_governance: ${{ steps.resolve.outputs.invalid_governance }}
+    steps:
+      - name: Check out the exact main commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Detect a governance-shaped commit
+        id: candidate
+        continue-on-error: true
+        run: |
+          printf 'governance_candidate=true\n' >> "$GITHUB_OUTPUT"
+          node scripts/governance-decisions/classify-governance-push.mjs candidate \
+            --commit "$GITHUB_SHA" \
+            --output "$GITHUB_OUTPUT"
+
+      - name: Verify an exact decision-only commit
+        id: verify
+        if: ${{ github.event_name == 'push' && steps.candidate.outcome == 'success' && steps.candidate.outputs.governance_candidate == 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
+        run: npm run governance:decide -- verify-commit --commit "$GITHUB_SHA"
+
+      - name: Resolve fail-closed governance classification
+        id: resolve
+        if: ${{ always() }}
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CANDIDATE_OUTCOME: ${{ steps.candidate.outcome }}
+          GOVERNANCE_CANDIDATE: ${{ steps.candidate.outputs.governance_candidate || 'true' }}
+          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
+        run: >-
+          node scripts/governance-decisions/classify-governance-push.mjs resolve
+          --event-name "$EVENT_NAME"
+          --candidate-outcome "$CANDIDATE_OUTCOME"
+          --candidate "$GOVERNANCE_CANDIDATE"
+          --verification-outcome "$VERIFICATION_OUTCOME"
+          --output "$GITHUB_OUTPUT"
+
+  invalid-governance-decision:
+    name: Reject invalid governance-shaped commit
+    needs: governance-decision
+    if: needs.governance-decision.outputs.invalid_governance == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report invalid governance evidence
+        run: |
+          echo "::error::Governance-shaped commit failed authenticated decision verification"
+          exit 1
+
+  governance-decision-checks:
+    name: Verify governance decision state
+    needs: governance-decision
+    if: needs.governance-decision.outputs.decision_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the exact main commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install governance test dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run focused governance verification
+        env:
+          PLAN_ADAPTATION_BASE: ${{ github.event.before }}
+        run: |
+          npm run test:governance-decisions
+          npm run check:plan-adaptation
+          node scripts/repo-structure-check.mjs --base "$PLAN_ADAPTATION_BASE"
+
   cloudflare-branch-controls:
     name: Enforce Cloudflare main-only branch controls
     # Temporarily disabled while Cloudflare remains manually configured for main only.
@@ -44,7 +137,8 @@ jobs:
 
   release-gate:
     name: Release Gate
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true }}
+    needs: governance-decision
+    if: ${{ always() && !cancelled() && needs.governance-decision.outputs.decision_only != 'true' && (github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true) }}
     uses: ./.github/workflows/release-gate.yml
 
   deno-deploy-preflight:

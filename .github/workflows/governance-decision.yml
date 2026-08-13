@@ -1,0 +1,177 @@
+name: Authenticated Governance Decision
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Preview or atomically apply the exact governance request
+        required: true
+        type: choice
+        options:
+          - preview
+          - apply
+      request_json:
+        description: Canonical or ordinary JSON request bytes
+        required: false
+        default: ''
+        type: string
+      request_blob_oid:
+        description: Immutable Git blob OID containing the request
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  preflight:
+    name: Verify trusted main request and administrator
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - name: Check out the exact workflow commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Materialize exactly one request input
+        env:
+          REQUEST_JSON: ${{ inputs.request_json }}
+          REQUEST_BLOB_OID: ${{ inputs.request_blob_oid }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          request_file="$RUNNER_TEMP/governance-decision-request.json"
+          if { [ -n "$REQUEST_JSON" ] && [ -n "$REQUEST_BLOB_OID" ]; } || \
+             { [ -z "$REQUEST_JSON" ] && [ -z "$REQUEST_BLOB_OID" ]; }; then
+            echo "::error::Supply exactly one of request_json or request_blob_oid"
+            exit 1
+          fi
+          if [ -n "$REQUEST_JSON" ]; then
+            printf '%s' "$REQUEST_JSON" > "$request_file"
+          else
+            if ! printf '%s' "$REQUEST_BLOB_OID" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::request_blob_oid must be a full lowercase Git object ID"
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$REQUEST_BLOB_OID" --jq .content \
+              | tr -d '\n' | base64 --decode > "$request_file"
+          fi
+
+      - name: Verify trusted-main administrator preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/governance-decision.yml@refs/heads/main
+        run: |
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = "$TRUSTED_WORKFLOW_REF"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          request_head="$(node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(value.expectedHeadOid ?? ''))" "$request_file")"
+          test "$request_head" = "$GITHUB_SHA"
+          permission_evidence="$(gh api \
+            "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" \
+            --jq '[.permission, .user.login] | @tsv')"
+          test "$permission_evidence" = "$(printf 'admin\t%s' "$GITHUB_ACTOR")"
+          node scripts/governance-decisions.mjs preview \
+            --request "$RUNNER_TEMP/governance-decision-request.json"
+
+      - name: Publish preflight mode
+        id: mode
+        env:
+          MODE: ${{ inputs.mode }}
+        run: printf 'mode=%s\n' "$MODE" >> "$GITHUB_OUTPUT"
+
+  apply:
+    name: Apply authenticated governance decision
+    needs: preflight
+    if: needs.preflight.outputs.mode == 'apply'
+    environment: governance-decisions-main
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out the exact workflow commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Materialize exactly one request input
+        env:
+          REQUEST_JSON: ${{ inputs.request_json }}
+          REQUEST_BLOB_OID: ${{ inputs.request_blob_oid }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          request_file="$RUNNER_TEMP/governance-decision-request.json"
+          if [ -n "$REQUEST_JSON" ]; then
+            printf '%s' "$REQUEST_JSON" > "$request_file"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/blobs/$REQUEST_BLOB_OID" --jq .content \
+              | tr -d '\n' | base64 --decode > "$request_file"
+          fi
+
+      - name: Repeat trusted-main administrator preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRUSTED_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/governance-decision.yml@refs/heads/main
+        run: |
+          test "$GITHUB_REF" = 'refs/heads/main'
+          test "$GITHUB_WORKFLOW_REF" = "$TRUSTED_WORKFLOW_REF"
+          test "$GITHUB_WORKFLOW_SHA" = "$GITHUB_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA"
+          request_head="$(node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(String(value.expectedHeadOid ?? ''))" "$request_file")"
+          test "$request_head" = "$GITHUB_SHA"
+          permission_evidence="$(gh api \
+            "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" \
+            --jq '[.permission, .user.login] | @tsv')"
+          test "$permission_evidence" = "$(printf 'admin\t%s' "$GITHUB_ACTOR")"
+          node scripts/governance-decisions.mjs preview \
+            --request "$RUNNER_TEMP/governance-decision-request.json"
+
+      - name: Create governance App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.GOVERNANCE_APP_ID }}
+          private-key: ${{ secrets.GOVERNANCE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ar-eye-hunter
+          permission-contents: write
+
+      - name: Recheck administrator with the App token
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          CONFIGURED_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
+          TOKEN_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          test "$CONFIGURED_APP_SLUG" = 'governance-decisions'
+          test "$TOKEN_APP_SLUG" = "$CONFIGURED_APP_SLUG"
+          permission_evidence="$(gh api \
+            "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" \
+            --jq '[.permission, .user.login] | @tsv')"
+          test "$permission_evidence" = "$(printf 'admin\t%s' "$GITHUB_ACTOR")"
+
+      - name: Apply one atomic governance decision commit
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GOVERNANCE_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GOVERNANCE_PREFLIGHT_ACTOR: ${{ github.actor }}
+          GOVERNANCE_PREFLIGHT_SHA: ${{ github.sha }}
+          GOVERNANCE_PREFLIGHT_WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: >-
+          node scripts/governance-decisions.mjs apply
+          --request "$RUNNER_TEMP/governance-decision-request.json"

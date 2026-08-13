@@ -25,15 +25,15 @@ describe('governance decision contracts', () => {
     const request = decodeGovernanceDecisionRequest(cancelRequest());
 
     expect(Object.keys(request)).toEqual([
-      'schemaVersion',
-      'operation',
-      'repository',
       'defaultBranch',
       'expectedHeadOid',
       'force',
-      'reason',
-      'target',
+      'operation',
       'payload',
+      'reason',
+      'repository',
+      'schemaVersion',
+      'target',
     ]);
     expect(() => decodeGovernanceDecisionRequest({ ...cancelRequest(), actor: 'mallory' })).toThrow(
       'unsupported request keys: actor',
@@ -89,6 +89,52 @@ describe('governance decision contracts', () => {
 
     expect(computeGovernanceDecisionId(request)).toBe(expectedDigest);
     expect(canonicalRequest.endsWith('\n')).toBe(false);
+  });
+
+  it('normalizes semantically equivalent nested key order before transition replay', () => {
+    const ordinary = cancelRequest();
+    const reordered = {
+      payload: {},
+      target: {
+        planDigest: (ordinary.target as { planDigest: string }).planDigest,
+        planPath: (ordinary.target as { planPath: string }).planPath,
+      },
+      reason: ordinary.reason,
+      force: ordinary.force,
+      expectedHeadOid: ordinary.expectedHeadOid,
+      defaultBranch: ordinary.defaultBranch,
+      repository: ordinary.repository,
+      operation: ordinary.operation,
+      schemaVersion: ordinary.schemaVersion,
+    };
+
+    expect(decodeGovernanceDecisionRequest(reordered)).toEqual(
+      decodeGovernanceDecisionRequest(ordinary),
+    );
+    expect(computeGovernanceDecisionId(decodeGovernanceDecisionRequest(reordered))).toBe(
+      computeGovernanceDecisionId(decodeGovernanceDecisionRequest(ordinary)),
+    );
+  });
+
+  it('normalizes differently ordered repair checkpoints to one exact request', () => {
+    const ordinary = repairRequest();
+    const checkpoint = ordinary.payload.checkpoint;
+    const reordered = {
+      ...ordinary,
+      payload: {
+        checkpoint: {
+          nextSlices: checkpoint.nextSlices,
+          decision: checkpoint.decision,
+          structure: checkpoint.structure,
+          learning: checkpoint.learning,
+          outcome: checkpoint.outcome,
+        },
+      },
+    };
+
+    expect(toCanonicalJson(decodeGovernanceDecisionRequest(reordered))).toBe(
+      toCanonicalJson(decodeGovernanceDecisionRequest(ordinary)),
+    );
   });
 
   it('creates an admin-only canonical receipt with sorted evidence and one newline', () => {

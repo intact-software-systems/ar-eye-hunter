@@ -67,7 +67,6 @@ function computePlanRepair(operationInput) {
   const { record, issues } = readGovernedPlan(operationInput);
   const repairedRecord = structuredClone(record);
   repairedRecord.checkpoint = structuredClone(operationInput.request.payload.checkpoint);
-  repairedRecord.completedSlicesSinceCheckpoint = [];
   const replacementIssues = validateCheckpoint(repairedRecord.checkpoint, repairedRecord).map(
     (issue) => `replacement checkpoint: ${issue}`,
   );

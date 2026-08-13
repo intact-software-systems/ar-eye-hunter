@@ -98,18 +98,22 @@ export function verifyGovernanceDecisionCommit(verificationInput) {
 }
 
 function validateReplayedTransition(replayInput) {
-  if (
-    toCanonicalJson(replayInput.transition.result) !==
-      toCanonicalJson(replayInput.receipt.result) ||
-    toCanonicalJson(replayInput.transition.bypassedInvariants) !==
-      toCanonicalJson(replayInput.receipt.bypassedInvariants) ||
-    toCanonicalJson(replayInput.transition.stateChanges) !==
-      toCanonicalJson(replayInput.receipt.stateChanges) ||
-    toCanonicalJson(replayInput.transition.stateChanges) !==
-      toCanonicalJson(replayInput.actualChanges)
-  ) {
-    throw new Error('commit does not equal the deterministic governance transition');
-  }
+  requireReplayedEquality('result', replayInput.transition.result, replayInput.receipt.result);
+  requireReplayedEquality(
+    'bypassed invariants',
+    replayInput.transition.bypassedInvariants,
+    replayInput.receipt.bypassedInvariants,
+  );
+  requireReplayedEquality(
+    'receipt state changes',
+    replayInput.transition.stateChanges,
+    replayInput.receipt.stateChanges,
+  );
+  requireReplayedEquality(
+    'actual state changes',
+    replayInput.transition.stateChanges,
+    replayInput.actualChanges,
+  );
   const actualEntries = new Map(
     replayInput.commitSnapshot.entries.map((entry) => [entry.path, entry]),
   );
@@ -125,6 +129,12 @@ function validateReplayedTransition(replayInput) {
       replayInput.actualChanges.length
   ) {
     throw new Error('commit does not equal the deterministic governance transition');
+  }
+}
+
+function requireReplayedEquality(name, expected, actual) {
+  if (toCanonicalJson(expected) !== toCanonicalJson(actual)) {
+    throw new Error(`commit does not equal the deterministic governance transition: ${name}`);
   }
 }
 

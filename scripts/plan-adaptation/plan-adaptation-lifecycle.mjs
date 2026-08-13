@@ -18,10 +18,8 @@ import {
   toActivePlanRegistry,
 } from './active-plan-registry.mjs';
 import { writeFileTransaction } from './file-transaction.mjs';
-import {
-  createPlanClosureReceipt,
-  readAuthenticatedPlanClosureChanges,
-} from './plan-closure-receipt.mjs';
+import { createPlanClosureReceipt } from './plan-closure-receipt.mjs';
+import { readAuthenticatedPlanTransitionChanges } from './plan-transition-authentication.mjs';
 import {
   computePlanFacts,
   computeQualificationReasons,
@@ -127,7 +125,7 @@ export function applyAdaptivePlan(input) {
 
 export function checkAdaptivePlans(input) {
   const changes = readChangedPaths(input.repoRoot, input.base);
-  const closureChanges = readAuthenticatedPlanClosureChanges({
+  const closureChanges = readAuthenticatedPlanTransitionChanges({
     repoRoot: input.repoRoot,
     base: input.base,
     changes,
@@ -151,11 +149,19 @@ export function checkAdaptivePlans(input) {
     );
   }
   for (const activePlan of activePlans) {
+    const authenticatedRepair = closureChanges.authenticatedDispositions.find(
+      (disposition) =>
+        disposition.operation === 'plan.repair' && disposition.planPath === activePlan.planPath,
+    );
+    if (authenticatedRepair && closureChanges.changes.length === 0) {
+      continue;
+    }
     const factBase =
       typeof activePlan.record.facts?.diffBase === 'string'
         ? activePlan.record.facts.diffBase
         : input.base;
-    const changes = readChangedPaths(input.repoRoot, factBase);
+    const changes =
+      factBase === input.base ? closureChanges.changes : readChangedPaths(input.repoRoot, factBase);
     if (
       !hasCurrentPlanFacts({
         repoRoot: input.repoRoot,

@@ -86,7 +86,7 @@ describe('governance decision transitions', () => {
     expect(repaired.goal).toBe(original.goal);
     expect(repaired.acceptanceCriteria).toEqual(original.acceptanceCriteria);
     expect(repaired.architecture).toEqual(original.architecture);
-    expect(repaired.completedSlicesSinceCheckpoint).toEqual([]);
+    expect(repaired.completedSlicesSinceCheckpoint).toEqual(['old-slice']);
     expect(repaired.checkpoint).toEqual(request.payload.checkpoint);
     expect(repaired.facts.affectedCodeDigest).toMatch(/^[0-9a-f]{64}$/u);
     expect(repaired.materialDecisions).toHaveLength(original.materialDecisions.length + 1);

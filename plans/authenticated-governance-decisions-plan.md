@@ -42,6 +42,7 @@ legacy evidence.
       ],
       "contractPaths": [
         ".github/workflows/deploy.yml",
+        ".github/workflows/governance-decision.yml",
         ".github/workflows/hetzner-supported-distributed-manifests.yml",
         "docs/superpowers/specs/2026-08-13-authenticated-governance-decisions-design.md",
         "docs/superpowers/plans/2026-08-13-authenticated-governance-decisions.md"
@@ -102,6 +103,7 @@ legacy evidence.
         "scripts/plan-adaptation/adaptive-plan-record.mjs",
         "scripts/plan-adaptation/plan-closure-receipt.mjs",
         "scripts/plan-adaptation/plan-change-facts.mjs",
+        "scripts/plan-adaptation/plan-transition-authentication.mjs",
         "scripts/repo-style-check/structural-facts.mjs"
       ],
       "controlFlowFamilies": [
@@ -181,11 +183,12 @@ legacy evidence.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "48a085ac2cdc57195bb8dba9b0818d030f788cd12ab73e505c95a2df74b28c26",
+    "affectedCodeDigest": "c85aa01c39b09f294c0c3ca20123dda49968c4a867dd40043652c2eb86f13c48",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
       "public-contract-change",
+      "lifecycle-change",
       "invalid-assumption"
     ],
     "undeclaredChangedPaths": []

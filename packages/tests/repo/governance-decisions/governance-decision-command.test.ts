@@ -1,5 +1,13 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -7,7 +15,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { computeSha256 } from '../../../../scripts/governance-decisions/canonical-json.mjs';
 import { decodeGovernanceDecisionCommand } from '../../../../scripts/governance-decisions/governance-decision-command.mjs';
-import { toGovernanceDecisionFixturePlanMarkdown } from './governance-decision-fixture';
+import {
+  createGovernanceDecisionFixturePlanRecord,
+  toGovernanceDecisionFixturePlanMarkdown,
+} from './governance-decision-fixture';
 
 const fixtureRoots: string[] = [];
 const commandPath = path.resolve('scripts/governance-decisions.mjs');
@@ -91,21 +102,87 @@ describe('governance decision command', () => {
     expect(runGit(fixture.root, ['status', '--short'])).toBe(beforeStatus);
   });
 
-  it.each(['apply', 'publish-blob', 'publish-request'])(
-    'fails %s at the one explicit trusted-publication boundary',
-    (command) => {
-      const arguments_ =
-        command === 'publish-blob'
-          ? [commandPath, command, '--file', 'plan.md']
-          : [commandPath, command, '--request', 'request.json'];
-      const result = spawnSync(process.execPath, arguments_, { encoding: 'utf8' });
+  it.each([
+    ['preview', 'local'],
+    ['preview', 'workflow'],
+    ['apply', 'local'],
+    ['apply', 'workflow'],
+  ] as const)('reads a remote-only supersession blob for %s through %s transport', (command, kind) => {
+    const fixture = createRepositoryFixture();
+    const successor = createGovernanceDecisionFixturePlanRecord();
+    successor.planId = 'remote-successor';
+    successor.capabilities[0].activation.slice = 'remote-successor-slice';
+    successor.checkpoint.nextSlices = ['remote-successor-slice'];
+    const successorMarkdown =
+      `# Remote successor\n\n\`\`\`plan-adaptation-v1\n` +
+      `${JSON.stringify(successor, null, 2)}\n\`\`\`\n`;
+    const successorBlobOid = computeGitBlobOid(successorMarkdown);
+    expect(
+      spawnSync('git', ['cat-file', '-e', successorBlobOid], { cwd: fixture.root }).status,
+    ).not.toBe(0);
 
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain(
-        'trusted publication is not configured; authenticated publication belongs to Task 2',
-      );
-    },
-  );
+    const requestRoot = mkdtempSync(path.join(tmpdir(), 'governance-command-request-'));
+    fixtureRoots.push(requestRoot);
+    const requestPath = path.join(requestRoot, 'supersede-request.json');
+    writeFileSync(
+      requestPath,
+      JSON.stringify({
+        schemaVersion: 'governance-decision-request-v1',
+        operation: 'plan.supersede',
+        repository: 'intact-software-systems/ar-eye-hunter',
+        defaultBranch: 'main',
+        expectedHeadOid: fixture.headOid,
+        force: true,
+        reason: 'Transfer the active plan to the immutable remote successor.',
+        target: {
+          planPath: fixture.planPath,
+          planDigest: computeSha256(readFileSync(path.join(fixture.root, fixture.planPath))),
+        },
+        payload: {
+          successorPlanPath: 'plans/remote-successor.md',
+          successorPlanBlobOid: successorBlobOid,
+        },
+      }),
+    );
+    const binRoot = path.join(requestRoot, 'bin');
+    mkdirSync(binRoot);
+    const ghPath = path.join(binRoot, 'gh');
+    writeFileSync(
+      ghPath,
+      fakeGitHubCli({
+        headOid: fixture.headOid,
+        successorBlobOid,
+        successorMarkdown,
+      }),
+    );
+    chmodSync(ghPath, 0o755);
+
+    const preview = spawnSync(
+      process.execPath,
+      [commandPath, command, '--request', requestPath, '--repo', fixture.root],
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${binRoot}:${process.env.PATH}`,
+          ...(kind === 'workflow' ? workflowEnvironment(fixture.headOid) : {}),
+        },
+      },
+    );
+
+    expect(preview.stderr).toBe('');
+    expect(preview.status).toBe(0);
+    if (command === 'preview') {
+      expect(JSON.parse(preview.stdout)).toMatchObject({
+        result: { acceptanceStatus: 'transferred' },
+        additions: expect.arrayContaining([
+          { path: 'plans/remote-successor.md', content: successorMarkdown },
+        ]),
+      });
+    } else {
+      expect(JSON.parse(preview.stdout)).toEqual({ oid: '9'.repeat(40) });
+    }
+  });
 
   it('keeps permanent fixtures independent from the disposable tactical plan', () => {
     const disposablePlanPath = ['plans/authenticated', 'governance-decisions-plan.md'].join('-');
@@ -138,4 +215,66 @@ function createRepositoryFixture() {
 
 function runGit(root: string, arguments_: string[]) {
   return execFileSync('git', arguments_, { cwd: root, encoding: 'utf8' });
+}
+
+function computeGitBlobOid(content: string) {
+  const bytes = Buffer.from(content);
+  return createHash('sha1')
+    .update(`blob ${bytes.byteLength}\0`)
+    .update(bytes)
+    .digest('hex');
+}
+
+function fakeGitHubCli(input: {
+  headOid: string;
+  successorBlobOid: string;
+  successorMarkdown: string;
+}) {
+  const responses = {
+    user: { login: 'repository-admin', type: 'User' },
+    permission: { permission: 'admin', user: { login: 'repository-admin' } },
+    main: { object: { sha: input.headOid } },
+    blob: {
+      sha: input.successorBlobOid,
+      encoding: 'base64',
+      content: Buffer.from(input.successorMarkdown).toString('base64'),
+      size: Buffer.byteLength(input.successorMarkdown),
+    },
+    commit: {
+      data: { createCommitOnBranch: { commit: { oid: '9'.repeat(40) } } },
+    },
+  };
+  return `#!/usr/bin/env node
+const endpoint = process.argv[3];
+const responses = ${JSON.stringify(responses)};
+let response;
+if (endpoint === 'user') response = responses.user;
+else if (endpoint.includes('/permission')) response = responses.permission;
+else if (endpoint.endsWith('/git/ref/heads/main')) response = responses.main;
+else if (endpoint.includes('/git/blobs/')) response = responses.blob;
+else if (endpoint === 'graphql') response = responses.commit;
+else throw new Error('unexpected fake GitHub endpoint: ' + endpoint);
+process.stdout.write(JSON.stringify(response));
+`;
+}
+
+function workflowEnvironment(headOid: string) {
+  const workflowRef =
+    'intact-software-systems/ar-eye-hunter/' +
+    '.github/workflows/governance-decision.yml@refs/heads/main';
+  return {
+    GITHUB_ACTIONS: 'true',
+    GITHUB_REPOSITORY: 'intact-software-systems/ar-eye-hunter',
+    GITHUB_REF: 'refs/heads/main',
+    GITHUB_WORKFLOW_REF: workflowRef,
+    GITHUB_WORKFLOW_SHA: headOid,
+    GITHUB_SHA: headOid,
+    GITHUB_ACTOR: 'repository-admin',
+    GITHUB_RUN_ID: '123',
+    GITHUB_RUN_ATTEMPT: '1',
+    GOVERNANCE_APP_SLUG: 'governance-decisions',
+    GOVERNANCE_PREFLIGHT_ACTOR: 'repository-admin',
+    GOVERNANCE_PREFLIGHT_SHA: headOid,
+    GOVERNANCE_PREFLIGHT_WORKFLOW_REF: workflowRef,
+  };
 }

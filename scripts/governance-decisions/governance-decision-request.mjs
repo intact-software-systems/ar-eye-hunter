@@ -45,7 +45,9 @@ export function decodeGovernanceDecisionRequest(value) {
   }
 
   validateOperationShape(value.operation, value.target, value.payload);
-  return Object.fromEntries(commonKeys.map((key) => [key, value[key]]));
+  return JSON.parse(
+    toCanonicalJson(Object.fromEntries(commonKeys.map((key) => [key, value[key]]))),
+  );
 }
 
 export function computeGovernanceDecisionId(request) {

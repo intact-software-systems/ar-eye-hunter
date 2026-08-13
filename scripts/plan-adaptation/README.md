@@ -73,6 +73,10 @@ entry. It decodes six commands and routes each to its lifecycle owner:
   verifies the base plan, generated base registry, receipt identity, and complete current-tree
   transition, and returns the exact authenticated base plan for read-only close-out consumers before
   qualification ignores the authenticated plan deletion.
+- [plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges](./plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges)
+  composes unchanged closure-v1 authentication with receipt-backed plan dispositions. Governance
+  receipts are replayed structurally from their exact parent commit; historical trusted receipts
+  require no current actor-permission lookup.
 - [plan-adaptation-lifecycle.mjs#writePlanAndRegistry](./plan-adaptation-lifecycle.mjs#writePlanAndRegistry)
   is the common mutation exit for `init`, `complete-slice`, and `apply`. Destructive close calls
   `writeFileTransaction` directly after its separate final-evidence, comparison-base, registry,
