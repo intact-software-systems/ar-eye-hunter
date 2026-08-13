@@ -1817,21 +1817,21 @@ details/output-contract/object-interface modes report respectively
 identical grouped `topology-app-inbox-command.ts` unknown-summary rows are
 counted separately. Every remaining row has this explicit disposition:
 
-| Path | Rule and rows | Disposition |
-| --- | --- | --- |
-| `config/maintenance/migrate-legacy-group-topology-config-keys.ts` | `boundary.unknown` × 2 | Accepted existing boundary evidence: raw legacy JSON is normalized and compared inside the migration owner before typed persistence. No row changed or worsened. |
-| `config/mutation/group-topology-config-mutation-contracts.ts` | `types.rename-alias` × 1 | Accepted existing contract debt. Removing the exported domain-role name is outside this behavior/API-preserving slice; the later ledger owns the decision. |
-| `config/mutation/topology-config-mutation-boundary.ts` | `boundary.unknown` × 6 | Accepted existing untrusted-boundary evidence. Each raw value is narrowed before domain computation; no row changed or worsened. |
-| `config/persistence/decode-stored-group-topology-config.ts` | `boundary.unknown` × 6 | Accepted existing persistence-decoder evidence. Stored JSON remains untrusted until this owner validates it; no row changed or worsened. |
-| `config/persistence/group-topology-config-persistence-codec.ts` | `boundary.unknown` × 5; `function.input-contract` × 2; `file.responsibility-count` × 1 | Accepted existing codec debt. Unknowns are owned at parse/decode boundaries; signatures and cohesive persisted-value exports are unchanged. Later ledger decides any API-neutral split. |
-| `config/persistence/group-topology-config-storage-keys.ts` | `file.responsibility-count` × 1; `abstraction.pass-through` × 3 | Accepted existing cohesive storage vocabulary. The three apparent pass-throughs deliberately preserve topology slot meaning over shared group-state key encoding; no new hop or export was added. |
-| `config/persistence/read-exact-group-topology-config-mutation.ts` | `boundary.unknown` × 7; `function.input-contract` × 1 | Accepted existing exact-read boundary debt. Runtime-state values remain untrusted until injected decoders/validators narrow them; changing the existing read port is outside this slice. |
-| `inbox/topology-app-inbox-authority.ts` | `boundary.unknown` × 2 | Accepted existing authenticated-proof boundary evidence. Durable values are decoded and verified before authority use; no row changed or worsened. |
-| `inbox/topology-app-inbox-command.ts` | `boundary.unknown` × 7; `abstraction.pass-through` × 1 | Accepted existing durable-command boundary evidence. `isTopologyRecord` is the named raw-record narrowing boundary used by exact-key validation; no new wrapper was added. |
-| `rallar-rtc-topology-metrics.ts` | `contract.object-interface` × 1 | Accepted existing untouched RTC metrics contract debt; unrelated type-surface work is deferred to its owner, not absorbed here. |
-| `replay/rtc-topology-reconnect-hydrator.ts` | `file.cognitive-load` × 1 | Accepted existing untouched RTC lifecycle debt at score 80, below the review tier; no magnitude growth occurred. |
-| `replay/rtc-topology-replay-service.ts` | `file.cognitive-load` × 1 | Accepted existing untouched replay lifecycle debt at score 80, below the review tier; no magnitude growth occurred. |
-| `replay/rtc-topology-work-codec.ts` | `abstraction.pass-through` × 1 | Demonstrated protocol boundary: the named conversion owns the canonical QueueBox context identity and its decode equality check. |
+| Path                                                              | Rule and rows                                                                          | Disposition                                                                                                                                                                                       |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config/maintenance/migrate-legacy-group-topology-config-keys.ts` | `boundary.unknown` × 2                                                                 | Accepted existing boundary evidence: raw legacy JSON is normalized and compared inside the migration owner before typed persistence. No row changed or worsened.                                  |
+| `config/mutation/group-topology-config-mutation-contracts.ts`     | `types.rename-alias` × 1                                                               | Accepted existing contract debt. Removing the exported domain-role name is outside this behavior/API-preserving slice; the later ledger owns the decision.                                        |
+| `config/mutation/topology-config-mutation-boundary.ts`            | `boundary.unknown` × 6                                                                 | Accepted existing untrusted-boundary evidence. Each raw value is narrowed before domain computation; no row changed or worsened.                                                                  |
+| `config/persistence/decode-stored-group-topology-config.ts`       | `boundary.unknown` × 6                                                                 | Accepted existing persistence-decoder evidence. Stored JSON remains untrusted until this owner validates it; no row changed or worsened.                                                          |
+| `config/persistence/group-topology-config-persistence-codec.ts`   | `boundary.unknown` × 5; `function.input-contract` × 2; `file.responsibility-count` × 1 | Accepted existing codec debt. Unknowns are owned at parse/decode boundaries; signatures and cohesive persisted-value exports are unchanged. Later ledger decides any API-neutral split.           |
+| `config/persistence/group-topology-config-storage-keys.ts`        | `file.responsibility-count` × 1; `abstraction.pass-through` × 3                        | Accepted existing cohesive storage vocabulary. The three apparent pass-throughs deliberately preserve topology slot meaning over shared group-state key encoding; no new hop or export was added. |
+| `config/persistence/read-exact-group-topology-config-mutation.ts` | `boundary.unknown` × 7; `function.input-contract` × 1                                  | Accepted existing exact-read boundary debt. Runtime-state values remain untrusted until injected decoders/validators narrow them; changing the existing read port is outside this slice.          |
+| `inbox/topology-app-inbox-authority.ts`                           | `boundary.unknown` × 2                                                                 | Accepted existing authenticated-proof boundary evidence. Durable values are decoded and verified before authority use; no row changed or worsened.                                                |
+| `inbox/topology-app-inbox-command.ts`                             | `boundary.unknown` × 7; `abstraction.pass-through` × 1                                 | Accepted existing durable-command boundary evidence. `isTopologyRecord` is the named raw-record narrowing boundary used by exact-key validation; no new wrapper was added.                        |
+| `rallar-rtc-topology-metrics.ts`                                  | `contract.object-interface` × 1                                                        | Accepted existing untouched RTC metrics contract debt; unrelated type-surface work is deferred to its owner, not absorbed here.                                                                   |
+| `replay/rtc-topology-reconnect-hydrator.ts`                       | `file.cognitive-load` × 1                                                              | Accepted existing untouched RTC lifecycle debt at score 80, below the review tier; no magnitude growth occurred.                                                                                  |
+| `replay/rtc-topology-replay-service.ts`                           | `file.cognitive-load` × 1                                                              | Accepted existing untouched replay lifecycle debt at score 80, below the review tier; no magnitude growth occurred.                                                                               |
+| `replay/rtc-topology-work-codec.ts`                               | `abstraction.pass-through` × 1                                                         | Demonstrated protocol boundary: the named conversion owns the canonical QueueBox context identity and its decode equality check.                                                                  |
 
 The materially changed planning and replay files now contribute zero focused
 warning rows. The snapshot test permanently checks the planning file's
@@ -1841,13 +1841,13 @@ exception was added.
 
 ##### Supplementary-ratchet dispositions
 
-| Ratchet | Task 5 disposition |
-| --- | --- |
-| Focused source/style snapshot | Retained through PR D with this child as owner. The later evidence ledger decides removal only after permanent semantic/size evidence owns every protected loss risk. |
-| Exact per-PR structural lineage | Retained unchanged as historical PR A/B/C evidence. This Git-native mirror move and its exact base/blob/path snapshot add no replacement private-path manifest; the later ledger decides removal after resulting-main evidence exists. |
-| Test ownership inventory | Historical 13/68/281 evidence remains exact. Current 31-file/26-module/85-case/356-assertion preservation is bound by the temporary snapshot while behavior-named tests remain primary; the later ledger decides removal. |
-| Consumer compatibility inventory | Replaced for topology execution by permanent runtime export-identity, direct-import, API-composition, and deleted-private-path tests. The shared repository consumer inventory is updated only to the new worker path. |
-| README path/primary-symbol integrity | Retained permanently as the durable `repository-navigation-v1` owner and repository-structure governance input. |
+| Ratchet                              | Task 5 disposition                                                                                                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Focused source/style snapshot        | Retained through PR D with this child as owner. The later evidence ledger decides removal only after permanent semantic/size evidence owns every protected loss risk.                                                                  |
+| Exact per-PR structural lineage      | Retained unchanged as historical PR A/B/C evidence. This Git-native mirror move and its exact base/blob/path snapshot add no replacement private-path manifest; the later ledger decides removal after resulting-main evidence exists. |
+| Test ownership inventory             | Historical 13/68/281 evidence remains exact. Current 31-file/26-module/85-case/356-assertion preservation is bound by the temporary snapshot while behavior-named tests remain primary; the later ledger decides removal.              |
+| Consumer compatibility inventory     | Replaced for topology execution by permanent runtime export-identity, direct-import, API-composition, and deleted-private-path tests. The shared repository consumer inventory is updated only to the new worker path.                 |
+| README path/primary-symbol integrity | Retained permanently as the durable `repository-navigation-v1` owner and repository-structure governance input.                                                                                                                        |
 
 Issue [#207](https://github.com/intact-software-systems/ar-eye-hunter/issues/207)
 remains an existing plan-only follow-up. Its authenticated closure-receipt
@@ -3188,6 +3188,7 @@ record's current next slice.
         "packages/tests/shared-server/rallar-system/group-topology-capability-source-style-snapshot.ts"
       ],
       "contractPaths": [
+        "docs/test-structure-coupling-exceptions.md",
         "packages/tests/shared-server/vitest.postgres-integration.config.mjs"
       ],
       "controlFlowFamilies": [
@@ -3228,7 +3229,7 @@ record's current next slice.
   ],
   "facts": {
     "diffBase": "aa124e03775492f9e37882bb9ed02b03dfe0dad6",
-    "affectedCodeDigest": "cc83dedf212e09a2bbe3e9050c1417d1bb899d6658abdf2cb4b3c06dd749d86e",
+    "affectedCodeDigest": "3f843a04ea3c168cd10456688ea7ba5a3781cedabc34612a48abab7e1df74b8b",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -3271,9 +3272,9 @@ record's current next slice.
     ]
   },
   "checkpoint": {
-    "outcome": "Main advanced to aa124e03775492f9e37882bb9ed02b03dfe0dad6 through a plan-only fact cleanup; the rebased capability source remains behaviorally identical and all production, test, ownership, integration, and acceptance contracts remain valid.",
-    "learning": "The new base removes two contaminated uncommitted TypeScript configuration paths from an older fact refresh and preserves the clean-worktree lesson; it changes no topology source, predecessor test, command, or governance implementation.",
-    "structure": "Keep the activated production owner, recognized test mirror, exact focused command, README navigation owner, declared Postgres consumers, completed one-slice boundary, and post-consolidation no-next-slice checkpoint unchanged on aa124e03.",
+    "outcome": "The final-review replay import correction and six individually reviewed structure-coupling dispositions pass focused tests and governance, and the global coupling registry is declared as the capability's exact non-code review contract.",
+    "learning": "A changed global governance registry should be attached to the capability that requires its entries through contractPaths, while the management public entry remains distinct from the narrower planning owner selected by canonical replay.",
+    "structure": "Keep the activated capability root, public management entry, direct replay planning import, mirrored test root, focused command, README navigation owner, declared coupling-registry and Postgres-config contracts, completed one-slice boundary, and empty next horizon.",
     "decision": "amend",
     "nextSlices": []
   },
@@ -3402,6 +3403,16 @@ record's current next slice.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "Main advanced to aa124e03775492f9e37882bb9ed02b03dfe0dad6 through a plan-only fact cleanup; the rebased capability source remains behaviorally identical and all production, test, ownership, integration, and acceptance contracts remain valid."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "Independent final review found RTC replay importing planning-owned message materialization symbols through the public management facade; replay now imports the declaration owner directly, the ownership test rejects that facade hop, and the release gate's six structural candidates have individual compatibility-boundary dispositions."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The final-review replay import correction and six individually reviewed structure-coupling dispositions pass focused tests and governance, and the global coupling registry is declared as the capability's exact non-code review contract."
     }
   ]
 }

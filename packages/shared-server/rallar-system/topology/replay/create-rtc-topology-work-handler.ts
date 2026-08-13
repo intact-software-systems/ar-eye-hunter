@@ -32,7 +32,7 @@ import {
 import {
   materializeRtcOverlayTopologyBroadcastMessage,
   type RtcOverlayTopologyMessageFacts,
-} from '../group-topology-management-service.ts';
+} from '../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
 import type { RallarTimingSink } from '../../services/timing.ts';
 import {

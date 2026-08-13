@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 122 entries were reviewed by independently meaningful behavior,
+The current 128 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -56,6 +56,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | State-write recipe evidence                      |       5 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
 | Shared-web package boundaries                    |       9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction.                         |
 | Shared RTC benchmark navigation                  |       4 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
+| Group topology canonical import direction        |       6 | Active composition and package exports bypass compatibility-only predecessor paths.                              |
 
 The full current candidate tree validates this registry even when the command
 reports a selected file set or a Git range. Filtered modes change the report,
@@ -843,6 +844,14 @@ moved or changed test.
       "coverageRelation": "The architecture assertion reads the accepted workload catalog and package check command, then proves each maintained diagnostic is excluded from accepted evidence and included in Deno checking."
     },
     {
+      "id": "group-topology-canonical-import-direction",
+      "domain": "Group topology canonical import direction",
+      "owner": "Rallar server maintainers",
+      "summary": "Active composition and package exports use the canonical group-topology capability owners without routing through compatibility-only predecessor paths. Executable assertion: “routes active composition and replay imports directly to canonical topology owners”.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners",
+      "coverageRelation": "Runtime export-identity assertions prove the public values are canonical, while this bounded source inspection proves active composition and internal replay select the named capability owners directly instead of compatibility-only paths."
+    },
+    {
       "id": "typescript-seven-release-boundary",
       "domain": "TypeScript 7 release boundary",
       "owner": "Rallar repository maintainers",
@@ -852,6 +861,84 @@ moved or changed test.
     }
   ],
   "entries": [
+    {
+      "id": "test-structure-coupling-b4ae70a143aeb441",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 70,
+      "column": 26,
+      "kind": "production-source-read",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the package entry whose public exports must resolve directly to the canonical group-topology repository and management owners.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-8afb0296a700cecd",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 71,
+      "column": 28,
+      "kind": "production-source-read",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Reads the API composition root to prove production construction imports the canonical capability entry instead of a predecessor service path.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-717ec2297834efca",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 74,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Pins the package export to the canonical topology configuration repository owner whose runtime identity is asserted independently.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-4ad59a273989944f",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 77,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Pins the public management export to the canonical capability entry while allowing that entry to retain its explicit compatibility surface.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-c131c169d1bf9068",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 80,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Requires API construction to select the canonical topology management entry rather than a compatibility-only predecessor module.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
+    {
+      "id": "test-structure-coupling-5b752e05869e42cf",
+      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "line": 86,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "group-topology-canonical-import-direction",
+      "disposition": "durable-boundary",
+      "boundary": "compatibility",
+      "owner": "Rallar server maintainers",
+      "rationale": "Rejects the deleted predecessor service location at the active API composition boundary so it cannot silently become a wrapper hop.",
+      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
+    },
     {
       "id": "test-structure-coupling-042b548b08a48aab",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",

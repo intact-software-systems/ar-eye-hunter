@@ -80,9 +80,11 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     expect(apiComposition).toContain(
       "from '@shared-server/rallar-system/topology/group-topology-management-service.ts';",
     );
-    expect(replayOwner).toContain("from '../group-topology-management-service.ts';");
+    expect(replayOwner).toContain(
+      "from '../planning/materialize-rtc-overlay-topology-broadcast-message.ts';",
+    );
     expect(apiComposition).not.toContain('/services/group-topology-management-service.ts');
-    expect(replayOwner).not.toContain('/services/group-topology-management-service.ts');
+    expect(replayOwner).not.toContain("from '../group-topology-management-service.ts';");
   });
 
   it('keeps moved private predecessor paths absent without compatibility wrappers', () => {
