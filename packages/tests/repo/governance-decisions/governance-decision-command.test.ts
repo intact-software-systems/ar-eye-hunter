@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { computeSha256 } from '../../../../scripts/governance-decisions/canonical-json.mjs';
 import { decodeGovernanceDecisionCommand } from '../../../../scripts/governance-decisions/governance-decision-command.mjs';
+import { toGovernanceDecisionFixturePlanMarkdown } from './governance-decision-fixture';
 
 const fixtureRoots: string[] = [];
 const commandPath = path.resolve('scripts/governance-decisions.mjs');
@@ -27,15 +28,12 @@ describe('governance decision command', () => {
         'verify-commit',
         '--commit',
         '1'.repeat(40),
-        '--parent',
-        '2'.repeat(40),
         '--repo',
         '/repo',
       ]),
     ).toEqual({
       command: 'verify-commit',
       commitOid: '1'.repeat(40),
-      parentOid: '2'.repeat(40),
       repoRoot: '/repo',
     });
     expect(decodeGovernanceDecisionCommand(['apply', '--request', 'request.json'])).toEqual({
@@ -43,7 +41,7 @@ describe('governance decision command', () => {
       requestPath: 'request.json',
       repoRoot: process.cwd(),
     });
-    expect(decodeGovernanceDecisionCommand(['publish-blob', '--path', 'plan.md'])).toEqual({
+    expect(decodeGovernanceDecisionCommand(['publish-blob', '--file', 'plan.md'])).toEqual({
       command: 'publish-blob',
       path: 'plan.md',
       repoRoot: process.cwd(),
@@ -98,7 +96,7 @@ describe('governance decision command', () => {
     (command) => {
       const arguments_ =
         command === 'publish-blob'
-          ? [commandPath, command, '--path', 'plan.md']
+          ? [commandPath, command, '--file', 'plan.md']
           : [commandPath, command, '--request', 'request.json'];
       const result = spawnSync(process.execPath, arguments_, { encoding: 'utf8' });
 
@@ -108,6 +106,19 @@ describe('governance decision command', () => {
       );
     },
   );
+
+  it('keeps permanent fixtures independent from the disposable tactical plan', () => {
+    const disposablePlanPath = ['plans/authenticated', 'governance-decisions-plan.md'].join('-');
+    for (const testFile of [
+      'governance-decision-command.test.ts',
+      'governance-decision-commit-verification.test.ts',
+      'governance-decision-transitions.test.ts',
+    ]) {
+      expect(readFileSync(path.join(import.meta.dirname, testFile), 'utf8')).not.toContain(
+        disposablePlanPath,
+      );
+    }
+  });
 });
 
 function createRepositoryFixture() {
@@ -118,10 +129,7 @@ function createRepositoryFixture() {
   runGit(root, ['config', 'user.email', 'fixture@example.com']);
   mkdirSync(path.join(root, 'plans'), { recursive: true });
   const planPath = 'plans/authenticated-governance-decisions.md';
-  writeFileSync(
-    path.join(root, planPath),
-    readFileSync(path.resolve('plans/authenticated-governance-decisions-plan.md')),
-  );
+  writeFileSync(path.join(root, planPath), toGovernanceDecisionFixturePlanMarkdown());
   writeFileSync(path.join(root, 'plans/README.md'), '# Active adaptive plans\n\nBefore.\n');
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-q', '-m', 'fixture']);

@@ -14,6 +14,7 @@ import { computeGovernanceDecisionTransition } from '../../../../scripts/governa
 import { readGitRepositorySnapshot } from '../../../../scripts/governance-decisions/git-repository-snapshot.mjs';
 import { parseAdaptivePlanRecord } from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
 import { initAdaptivePlan } from '../../../../scripts/plan-adaptation/plan-adaptation-lifecycle.mjs';
+import { toGovernanceDecisionFixturePlanMarkdown } from './governance-decision-fixture';
 
 const fixtures: string[] = [];
 
@@ -60,6 +61,7 @@ describe('governance decision transitions', () => {
       readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'),
       fixture.planPath,
     );
+    original.facts.diffBase = snapshot.headOid;
     original.completedSlicesSinceCheckpoint = ['old-slice'];
     original.checkpoint.nextSlices = original.checkpoint.nextSlices.filter(
       (slice: string) => slice !== 'old-slice',
@@ -69,37 +71,23 @@ describe('governance decision transitions', () => {
     const brokenMarkdown = toPlanMarkdown(original);
     const brokenSnapshot = replaceSnapshotEntry(snapshot, fixture.planPath, brokenMarkdown);
     const request = repairRequest(fixture, brokenMarkdown);
-    let observedCandidatePathCount = 0;
 
     const transition = computeGovernanceDecisionTransition({
       request,
       snapshot: brokenSnapshot,
-      computePlanFacts({ entries }) {
-        observedCandidatePathCount = entries.length;
-        const candidatePlan = entries.find((entry: any) => entry.path === fixture.planPath).content;
-        expect(parseAdaptivePlanRecord(candidatePlan, fixture.planPath).checkpoint).toEqual(
-          request.payload.checkpoint,
-        );
-        return {
-          diffBase: original.facts.diffBase,
-          affectedCodeDigest: 'a'.repeat(64),
-          computedTriggers: ['invalid-assumption'],
-          undeclaredChangedPaths: [],
-        };
-      },
+      readSnapshot: () => snapshot,
     });
     const repairedMarkdown = transition.additions.find(
       (addition) => addition.path === fixture.planPath,
     )!.content;
     const repaired = parseAdaptivePlanRecord(repairedMarkdown, fixture.planPath);
 
-    expect(observedCandidatePathCount).toBe(snapshot.entries.length);
     expect(repaired.goal).toBe(original.goal);
     expect(repaired.acceptanceCriteria).toEqual(original.acceptanceCriteria);
     expect(repaired.architecture).toEqual(original.architecture);
     expect(repaired.completedSlicesSinceCheckpoint).toEqual([]);
     expect(repaired.checkpoint).toEqual(request.payload.checkpoint);
-    expect(repaired.facts.affectedCodeDigest).toBe('a'.repeat(64));
+    expect(repaired.facts.affectedCodeDigest).toMatch(/^[0-9a-f]{64}$/u);
     expect(repaired.materialDecisions).toHaveLength(original.materialDecisions.length + 1);
     expect(repaired.materialDecisions.at(-1)).toMatchObject({
       decision: 'amend',
@@ -107,7 +95,53 @@ describe('governance decision transitions', () => {
     });
     expect(transition.bypassedInvariants).toEqual([...transition.bypassedInvariants].sort());
     expect(transition.bypassedInvariants).toContain(
-      'continue is invalid while an unrecoverable navigation or ownership failure is known',
+      'existing checkpoint: continue is invalid while an unrecoverable navigation or ownership failure is known',
+    );
+  });
+
+  it('reports every forced replacement-checkpoint domain invariant', () => {
+    const fixture = createRepositoryFixture();
+    const snapshot = readGitRepositorySnapshot({
+      repoRoot: fixture.root,
+      commitOid: fixture.headOid,
+    });
+    const markdown = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
+    const record = parseAdaptivePlanRecord(markdown, fixture.planPath);
+    record.facts.diffBase = snapshot.headOid;
+    record.freshStructuralReview = {
+      status: 'failed',
+      failures: [
+        {
+          kind: 'ownership',
+          summary: 'The active ownership boundary is unrecoverable.',
+          recoverable: false,
+          deepenedBySlices: [],
+        },
+      ],
+    };
+    const invalidMarkdown = toPlanMarkdown(record);
+    const invalidSnapshot = replaceSnapshotEntry(snapshot, fixture.planPath, invalidMarkdown);
+    const request = decodeGovernanceDecisionRequest({
+      ...repairRequest(fixture, invalidMarkdown),
+      payload: {
+        checkpoint: {
+          outcome: 'Force continuation.',
+          learning: 'Administrative override.',
+          structure: 'Leave structure unchanged.',
+          decision: 'continue',
+          nextSlices: ['next-slice'],
+        },
+      },
+    });
+
+    const transition = computeGovernanceDecisionTransition({
+      request,
+      snapshot: invalidSnapshot,
+      readSnapshot: () => snapshot,
+    });
+
+    expect(transition.bypassedInvariants).toContain(
+      'replacement checkpoint: continue is invalid while an unrecoverable navigation or ownership failure is known',
     );
   });
 
@@ -320,6 +354,7 @@ describe('governance decision transitions', () => {
       readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'),
       fixture.planPath,
     );
+    record.facts.diffBase = snapshot.headOid;
     record.goal = '';
     const invalidMarkdown = toPlanMarkdown(record);
     const invalidSnapshot = replaceSnapshotEntry(snapshot, fixture.planPath, invalidMarkdown);
@@ -328,7 +363,7 @@ describe('governance decision transitions', () => {
       computeGovernanceDecisionTransition({
         request: repairRequest(fixture, invalidMarkdown),
         snapshot: invalidSnapshot,
-        computePlanFacts: () => record.facts,
+        readSnapshot: () => snapshot,
       }),
     ).toThrow('target plan contains non-bypassable schema defects: record.goal');
   });
@@ -342,8 +377,7 @@ function createRepositoryFixture(options: { planMarkdown?: string } = {}) {
   execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
   const planPath = 'plans/authenticated-governance-decisions.md';
   execFileSync('mkdir', ['-p', 'plans'], { cwd: root });
-  const sourcePlan = path.resolve('plans/authenticated-governance-decisions-plan.md');
-  const planMarkdown = options.planMarkdown ?? readFileSync(sourcePlan, 'utf8');
+  const planMarkdown = options.planMarkdown ?? toGovernanceDecisionFixturePlanMarkdown();
   writeFileSync(path.join(root, planPath), planMarkdown);
   writeFileSync(
     path.join(root, 'plans/README.md'),

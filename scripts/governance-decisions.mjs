@@ -50,7 +50,6 @@ function previewDecision(command) {
 function verifyCommit(command) {
   return verifyGovernanceDecisionCommit({
     commitOid: command.commitOid,
-    parentOid: command.parentOid,
     readRepositorySnapshot: (commitOid) =>
       readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
   });

@@ -74,7 +74,7 @@ export function computeQualificationReasonsForPlan(input) {
   if (changedPaths.some((changedPath) => isWrittenPlan(changedPath))) {
     reasons.push('written-plan');
   }
-  if (hasDirectoryCreationOrMovement(repoRoot, base, changes)) {
+  if (hasDirectoryCreationOrMovement(input)) {
     reasons.push('directory-creation-or-movement');
   }
   const productionModules = changes.filter(
@@ -207,6 +207,17 @@ export function computePlanFacts(input) {
   };
 }
 
+export function computePlanFactsFromTree(input) {
+  return computePlanFacts({
+    repoRoot: undefined,
+    base: input.baseOid,
+    basePaths: input.baseEntries.map((entry) => entry.path),
+    changes: computeTreeChanges(input.baseEntries, input.entries),
+    record: input.record,
+    planPath: input.planPath,
+  });
+}
+
 export function hasCurrentPlanFacts(input) {
   return isDeepStrictEqual(computePlanFacts(input), input.record.facts);
 }
@@ -223,11 +234,12 @@ function toContentTuples(repoRoot, change, record) {
     tuples.push({ path: change.path, mode: '000000', content: Buffer.alloc(0) });
     return tuples;
   }
-  const absolutePath = path.join(repoRoot, change.path);
   const content =
-    change.newMode === '120000'
-      ? Buffer.from(readlinkSync(absolutePath))
-      : readFileSync(absolutePath);
+    change.content !== undefined
+      ? Buffer.from(change.content)
+      : change.newMode === '120000'
+        ? Buffer.from(readlinkSync(path.join(repoRoot, change.path)))
+        : readFileSync(path.join(repoRoot, change.path));
   tuples.push({ path: change.path, mode: change.newMode, content });
   return tuples;
 }
@@ -238,13 +250,17 @@ function allChangedPaths(changes) {
   ].sort();
 }
 
-function hasDirectoryCreationOrMovement(repoRoot, base, changes) {
+function hasDirectoryCreationOrMovement(input) {
   const basePaths = new Set(
-    runGit(repoRoot, ['ls-tree', '-r', '--name-only', '--end-of-options', base])
-      .split('\n')
-      .filter(Boolean),
+    input.basePaths ??
+      runGit(input.repoRoot, ['ls-tree', '-r', '--name-only', '--end-of-options', input.base])
+        .split('\n')
+        .filter(Boolean),
   );
-  return changes.some((change) => {
+  const deletedParents = input.changes
+    .filter((change) => change.status.startsWith('D'))
+    .map((change) => path.dirname(change.path));
+  return input.changes.some((change) => {
     if (change.status.startsWith('R')) {
       return path.dirname(change.oldPath) !== path.dirname(change.path);
     }
@@ -252,8 +268,69 @@ function hasDirectoryCreationOrMovement(repoRoot, base, changes) {
       return false;
     }
     const parent = path.dirname(change.path);
-    return parent !== '.' && ![...basePaths].some((basePath) => isWithin(basePath, parent));
+    const newDirectory =
+      parent !== '.' && ![...basePaths].some((basePath) => isWithin(basePath, parent));
+    const conservativeMove = deletedParents.some((deletedParent) => deletedParent !== parent);
+    return newDirectory || conservativeMove;
   });
+}
+
+function computeTreeChanges(baseEntries, entries) {
+  const baseByPath = new Map(baseEntries.map((entry) => [entry.path, entry]));
+  const entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
+  const deleted = [...baseByPath.values()].filter((entry) => !entriesByPath.has(entry.path));
+  const added = [...entriesByPath.values()].filter((entry) => !baseByPath.has(entry.path));
+  const renamedNewPaths = new Set();
+  const changes = [];
+  for (const oldEntry of deleted) {
+    const matches = added.filter(
+      (newEntry) =>
+        !renamedNewPaths.has(newEntry.path) &&
+        newEntry.blobOid === oldEntry.blobOid &&
+        newEntry.mode === oldEntry.mode,
+    );
+    if (matches.length === 1) {
+      const newEntry = matches[0];
+      renamedNewPaths.add(newEntry.path);
+      changes.push({
+        status: 'R100',
+        oldPath: oldEntry.path,
+        path: newEntry.path,
+        oldMode: oldEntry.mode,
+        newMode: newEntry.mode,
+        content: newEntry.content,
+      });
+    } else {
+      changes.push({
+        status: 'D',
+        path: oldEntry.path,
+        oldMode: oldEntry.mode,
+        newMode: '000000',
+      });
+    }
+  }
+  for (const newEntry of added.filter((entry) => !renamedNewPaths.has(entry.path))) {
+    changes.push({
+      status: 'A',
+      path: newEntry.path,
+      oldMode: '000000',
+      newMode: newEntry.mode,
+      content: newEntry.content,
+    });
+  }
+  for (const entry of entries) {
+    const baseEntry = baseByPath.get(entry.path);
+    if (baseEntry && (baseEntry.blobOid !== entry.blobOid || baseEntry.mode !== entry.mode)) {
+      changes.push({
+        status: 'M',
+        path: entry.path,
+        oldMode: baseEntry.mode,
+        newMode: entry.mode,
+        content: entry.content,
+      });
+    }
+  }
+  return changes.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function hasCapabilityCrossing(changes, record) {

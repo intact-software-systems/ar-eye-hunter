@@ -11,6 +11,10 @@ import { createGovernanceDecisionReceipt } from '../../../../scripts/governance-
 import { decodeGovernanceDecisionRequest } from '../../../../scripts/governance-decisions/governance-decision-request.mjs';
 import { computeGovernanceDecisionTransition } from '../../../../scripts/governance-decisions/governance-decision-transition.mjs';
 import { readGitRepositorySnapshot } from '../../../../scripts/governance-decisions/git-repository-snapshot.mjs';
+import {
+  createGovernanceDecisionFixturePlanRecord,
+  toGovernanceDecisionFixturePlanMarkdown,
+} from './governance-decision-fixture';
 
 const fixtureRoots: string[] = [];
 
@@ -26,7 +30,6 @@ describe('governance decision structural commit verification', () => {
 
     const verified = verifyGovernanceDecisionCommit({
       commitOid: fixture.commitOid,
-      parentOid: fixture.parentOid,
       readRepositorySnapshot: (commitOid) =>
         readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
     });
@@ -39,13 +42,182 @@ describe('governance decision structural commit verification', () => {
     });
   });
 
+  it('accepts a supersession when an unchanged path shares the successor blob', () => {
+    const fixture = createAppliedDecisionFixture({ operation: 'plan.supersede' });
+
+    const verified = verifyGovernanceDecisionCommit({
+      commitOid: fixture.commitOid,
+      readRepositorySnapshot: (commitOid) =>
+        readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
+    });
+
+    expect(verified).toMatchObject({
+      decisionOnly: true,
+      decisionId: fixture.transition.decisionId,
+      operation: 'plan.supersede',
+      receiptPath: fixture.transition.receiptPath,
+    });
+  });
+
+  it('uses the actual single commit parent and rejects root and merge commits', () => {
+    const fixture = createAppliedDecisionFixture();
+    expect(() =>
+      verifyGovernanceDecisionCommit({
+        commitOid: fixture.commitOid,
+        readRepositorySnapshot: (commitOid) => {
+          const snapshot = readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid });
+          return commitOid === fixture.commitOid ? { ...snapshot, parentOids: [] } : snapshot;
+        },
+      }),
+    ).toThrow('governance decision commit must have exactly one actual parent');
+    expect(() =>
+      verifyGovernanceDecisionCommit({
+        commitOid: fixture.commitOid,
+        readRepositorySnapshot: (commitOid) => {
+          const snapshot = readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid });
+          return commitOid === fixture.commitOid
+            ? { ...snapshot, parentOids: [fixture.parentOid, 'f'.repeat(40)] }
+            : snapshot;
+        },
+      }),
+    ).toThrow('governance decision commit must have exactly one actual parent');
+  });
+
+  it('rejects a receipt whose target digest is not the actual parent target', () => {
+    const fixture = createAppliedDecisionFixture();
+    const commitSnapshot = readGitRepositorySnapshot({
+      repoRoot: fixture.root,
+      commitOid: fixture.commitOid,
+    });
+    const receiptEntry = commitSnapshot.entries.find(
+      (entry) => entry.path === fixture.transition.receiptPath,
+    )!;
+    const receipt = JSON.parse(receiptEntry.content);
+    receipt.request.target.planDigest = 'f'.repeat(64);
+    receipt.decisionId = computeSha256(canonical(receipt.request));
+    receipt.requestDigest = receipt.decisionId;
+    const forgedPath = `governance/decisions/${receipt.decisionId}.json`;
+    const forgedContent = `${canonical(receipt)}\n`;
+    const forgedSnapshot = {
+      ...commitSnapshot,
+      entries: [
+        ...commitSnapshot.entries.filter((entry) => entry.path !== receiptEntry.path),
+        {
+          path: forgedPath,
+          mode: '100644',
+          blobOid: identityForContent(forgedContent).blobOid,
+          content: forgedContent,
+        },
+      ],
+    };
+    expect(() =>
+      verifyGovernanceDecisionCommit({
+        commitOid: fixture.commitOid,
+        readRepositorySnapshot: (commitOid) =>
+          commitOid === fixture.commitOid
+            ? { ...forgedSnapshot, parentOids: [fixture.parentOid] }
+            : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
+      }),
+    ).toThrow('target plan digest does not match expected head');
+  });
+
+  it('rejects a quarantine receipt whose blob OID is not the actual parent target', () => {
+    const fixture = createAppliedDecisionFixture({ operation: 'plan.quarantine' });
+    const commitSnapshot = readGitRepositorySnapshot({
+      repoRoot: fixture.root,
+      commitOid: fixture.commitOid,
+    });
+    const receiptEntry = commitSnapshot.entries.find(
+      (entry) => entry.path === fixture.transition.receiptPath,
+    )!;
+    const receipt = JSON.parse(receiptEntry.content);
+    receipt.request.target.planBlobOid = 'f'.repeat(40);
+    receipt.decisionId = computeSha256(canonical(receipt.request));
+    receipt.requestDigest = receipt.decisionId;
+    const forgedPath = `governance/decisions/${receipt.decisionId}.json`;
+    const forgedContent = `${canonical(receipt)}\n`;
+    const forgedSnapshot = {
+      ...commitSnapshot,
+      entries: [
+        ...commitSnapshot.entries.filter((entry) => entry.path !== receiptEntry.path),
+        {
+          path: forgedPath,
+          mode: '100644',
+          blobOid: identityForContent(forgedContent).blobOid,
+          content: forgedContent,
+        },
+      ],
+    };
+    expect(() =>
+      verifyGovernanceDecisionCommit({
+        commitOid: fixture.commitOid,
+        readRepositorySnapshot: (commitOid) =>
+          commitOid === fixture.commitOid
+            ? { ...forgedSnapshot, parentOids: [fixture.parentOid] }
+            : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
+      }),
+    ).toThrow('target plan blob identity does not match expected head');
+  });
+
+  it('rejects arbitrary declared registry bytes and non-regular changed files by replay', () => {
+    const fixture = createAppliedDecisionFixture();
+    const commitSnapshot = readGitRepositorySnapshot({
+      repoRoot: fixture.root,
+      commitOid: fixture.commitOid,
+    });
+    const registryEntry = commitSnapshot.entries.find((entry) => entry.path === 'plans/README.md')!;
+    const receiptEntry = commitSnapshot.entries.find(
+      (entry) => entry.path === fixture.transition.receiptPath,
+    )!;
+    const arbitraryContent = 'arbitrary but declared registry\n';
+    const receipt = JSON.parse(receiptEntry.content);
+    receipt.stateChanges.find((change: any) => change.path === registryEntry.path).after =
+      identityForContent(arbitraryContent);
+    const declaredReceiptContent = `${canonical(receipt)}\n`;
+    const arbitraryRegistry = replaceCommitEntry(
+      replaceCommitEntry(commitSnapshot, registryEntry.path, {
+        ...registryEntry,
+        content: arbitraryContent,
+        blobOid: identityForContent(arbitraryContent).blobOid,
+      }),
+      receiptEntry.path,
+      {
+        ...receiptEntry,
+        content: declaredReceiptContent,
+        blobOid: identityForContent(declaredReceiptContent).blobOid,
+      },
+    );
+    expect(() =>
+      verifyGovernanceDecisionCommit({
+        commitOid: fixture.commitOid,
+        readRepositorySnapshot: (commitOid) =>
+          commitOid === fixture.commitOid
+            ? { ...arbitraryRegistry, parentOids: [fixture.parentOid] }
+            : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
+      }),
+    ).toThrow('commit does not equal the deterministic governance transition');
+
+    const symlinkRegistry = replaceCommitEntry(commitSnapshot, registryEntry.path, {
+      ...registryEntry,
+      mode: '120000',
+    });
+    expect(() =>
+      verifyGovernanceDecisionCommit({
+        commitOid: fixture.commitOid,
+        readRepositorySnapshot: (commitOid) =>
+          commitOid === fixture.commitOid
+            ? { ...symlinkRegistry, parentOids: [fixture.parentOid] }
+            : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
+      }),
+    ).toThrow('changed governance path must be a regular 100644 file: plans/README.md');
+  });
+
   it('rejects a non-canonical receipt even when its JSON value is otherwise valid', () => {
     const fixture = createAppliedDecisionFixture({ prettyReceipt: true });
 
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        parentOid: fixture.parentOid,
         readRepositorySnapshot: (commitOid) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
@@ -57,7 +229,6 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: undeclared.commitOid,
-        parentOid: undeclared.parentOid,
         readRepositorySnapshot: (commitOid) =>
           readGitRepositorySnapshot({ repoRoot: undeclared.root, commitOid }),
       }),
@@ -70,11 +241,10 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: declared.commitOid,
-        parentOid: declared.parentOid,
         readRepositorySnapshot: (commitOid) =>
           readGitRepositorySnapshot({ repoRoot: declared.root, commitOid }),
       }),
-    ).toThrow('receipt declares a path that plan.cancel cannot change: unrelated.txt');
+    ).toThrow('commit does not equal the deterministic governance transition');
   });
 
   it('rejects decision digest and receipt path mismatches', () => {
@@ -83,7 +253,6 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        parentOid: fixture.parentOid,
         readRepositorySnapshot: (commitOid) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
@@ -102,7 +271,6 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: modifiedCommit,
-        parentOid: fixture.commitOid,
         readRepositorySnapshot: (commitOid) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
@@ -117,7 +285,6 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: deletedCommit,
-        parentOid: modifiedCommit,
         readRepositorySnapshot: (commitOid) =>
           readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
@@ -159,11 +326,10 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        parentOid: fixture.parentOid,
         readRepositorySnapshot: (commitOid) =>
           commitOid === fixture.parentOid ? parentSnapshot : forgedCommitSnapshot,
       }),
-    ).toThrow('plan.cancel must delete its target plan');
+    ).toThrow('commit does not equal the deterministic governance transition');
   });
 
   it('rejects extra receipt keys and symbolic-link receipt entries', () => {
@@ -189,7 +355,6 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        parentOid: fixture.parentOid,
         readRepositorySnapshot: (commitOid) =>
           commitOid === fixture.parentOid ? parentSnapshot : withExtraKey,
       }),
@@ -202,7 +367,6 @@ describe('governance decision structural commit verification', () => {
     expect(() =>
       verifyGovernanceDecisionCommit({
         commitOid: fixture.commitOid,
-        parentOid: fixture.parentOid,
         readRepositorySnapshot: (commitOid) =>
           commitOid === fixture.parentOid ? parentSnapshot : symlinkReceipt,
       }),
@@ -215,6 +379,7 @@ interface AppliedDecisionOptions {
   extraPath?: string;
   declareExtraPath?: boolean;
   requestDigest?: string;
+  operation?: 'plan.cancel' | 'plan.quarantine' | 'plan.supersede';
 }
 
 function createAppliedDecisionFixture(options: AppliedDecisionOptions = {}) {
@@ -225,12 +390,20 @@ function createAppliedDecisionFixture(options: AppliedDecisionOptions = {}) {
   execFileSync('git', ['config', 'user.email', 'fixture@example.com'], { cwd: root });
   mkdirSync(path.join(root, 'plans'), { recursive: true });
   const planPath = 'plans/authenticated-governance-decisions.md';
-  writeFileSync(
-    path.join(root, planPath),
-    readFileSync(path.resolve('plans/authenticated-governance-decisions-plan.md')),
-  );
+  const planMarkdown =
+    options.operation === 'plan.quarantine'
+      ? 'unreadable adaptive plan\n'
+      : toGovernanceDecisionFixturePlanMarkdown();
+  const successorPath = 'plans/successor.md';
+  const successorRecord = createGovernanceDecisionFixturePlanRecord();
+  successorRecord.planId = 'governance-decision-successor';
+  const successorMarkdown = toPlanMarkdown(successorRecord);
+  writeFileSync(path.join(root, planPath), planMarkdown);
   writeFileSync(path.join(root, 'plans/README.md'), '# Active adaptive plans\n\nBefore.\n');
   writeFileSync(path.join(root, 'unrelated.txt'), 'before\n');
+  if (options.operation === 'plan.supersede') {
+    writeFileSync(path.join(root, 'successor-copy.md'), successorMarkdown);
+  }
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-q', '-m', 'parent'], { cwd: root });
   const parentOid = readHead(root);
@@ -238,16 +411,32 @@ function createAppliedDecisionFixture(options: AppliedDecisionOptions = {}) {
   const planContent = readFileSync(path.join(root, planPath));
   const request = decodeGovernanceDecisionRequest({
     schemaVersion: 'governance-decision-request-v1',
-    operation: 'plan.cancel',
+    operation: options.operation ?? 'plan.cancel',
     repository: 'intact-software-systems/ar-eye-hunter',
     defaultBranch: 'main',
     expectedHeadOid: parentOid,
     force: true,
     reason: 'Administrator cancellation is required.',
-    target: { planPath, planDigest: computeSha256(planContent) },
-    payload: {},
+    target:
+      options.operation === 'plan.quarantine'
+        ? {
+            planPath,
+            planBlobOid: parentSnapshot.entries.find((entry) => entry.path === planPath)!.blobOid,
+          }
+        : { planPath, planDigest: computeSha256(planContent) },
+    payload:
+      options.operation === 'plan.supersede'
+        ? {
+            successorPlanPath: successorPath,
+            successorPlanBlobOid: identityForContent(successorMarkdown).blobOid,
+          }
+        : {},
   });
-  const transition = computeGovernanceDecisionTransition({ request, snapshot: parentSnapshot });
+  const transition = computeGovernanceDecisionTransition({
+    request,
+    snapshot: parentSnapshot,
+    readBlob: () => successorMarkdown,
+  });
   applyTransition(root, transition);
   if (options.extraPath) {
     writeFileSync(path.join(root, options.extraPath), 'after\n');
@@ -265,7 +454,7 @@ function createAppliedDecisionFixture(options: AppliedDecisionOptions = {}) {
   const receipt = createGovernanceDecisionReceipt({
     request,
     actor: { login: 'repository-admin', permission: 'admin' },
-    transport: { kind: 'local' },
+    transport: { kind: 'local-gh' },
     result: transition.result,
     bypassedInvariants: transition.bypassedInvariants,
     stateChanges,
@@ -314,6 +503,14 @@ function canonical(value: unknown): string {
       .join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function toPlanMarkdown(record: unknown): string {
+  return `# Governance decision successor fixture\n\n\`\`\`plan-adaptation-v1\n${JSON.stringify(
+    record,
+    null,
+    2,
+  )}\n\`\`\`\n`;
 }
 
 function readHead(root: string) {

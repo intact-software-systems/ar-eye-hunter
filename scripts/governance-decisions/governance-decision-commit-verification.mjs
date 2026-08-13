@@ -4,9 +4,11 @@ import {
   decodeGovernanceDecisionRequest,
 } from './governance-decision-request.mjs';
 import {
+  createGovernanceDecisionReceipt,
   serializeGovernanceDecisionReceipt,
   toGovernanceDecisionReceiptPath,
 } from './governance-decision-receipt.mjs';
+import { computeGovernanceDecisionTransition } from './governance-decision-transition.mjs';
 
 const receiptPathPattern = /^governance\/decisions\/[0-9a-f]{64}\.json$/u;
 
@@ -14,9 +16,21 @@ export function verifyGovernanceDecisionCommit(verificationInput) {
   if (typeof verificationInput.readRepositorySnapshot !== 'function') {
     throw new Error('commit verification requires an injected repository reader');
   }
-  const parentSnapshot = verificationInput.readRepositorySnapshot(verificationInput.parentOid);
   const commitSnapshot = verificationInput.readRepositorySnapshot(verificationInput.commitOid);
-  validateReadSnapshots(verificationInput, parentSnapshot, commitSnapshot);
+  if (
+    commitSnapshot?.headOid !== verificationInput.commitOid ||
+    !Array.isArray(commitSnapshot.entries)
+  ) {
+    throw new Error('repository reader returned the wrong commit snapshot');
+  }
+  if (!Array.isArray(commitSnapshot.parentOids) || commitSnapshot.parentOids.length !== 1) {
+    throw new Error('governance decision commit must have exactly one actual parent');
+  }
+  const parentOid = commitSnapshot.parentOids[0];
+  const parentSnapshot = verificationInput.readRepositorySnapshot(parentOid);
+  if (parentSnapshot?.headOid !== parentOid || !Array.isArray(parentSnapshot.entries)) {
+    throw new Error('repository reader returned the wrong parent snapshot');
+  }
   const changes = computeSnapshotChanges(parentSnapshot, commitSnapshot);
   if (changes.some((change) => receiptPathPattern.test(change.path) && change.before !== null)) {
     throw new Error('existing governance decision receipts are immutable');
@@ -39,13 +53,39 @@ export function verifyGovernanceDecisionCommit(verificationInput) {
     receipt,
     request,
     receiptPath: receiptChange.path,
-    parentOid: parentSnapshot.headOid,
+    parentOid,
   });
   const nonReceiptChanges = changes.filter((change) => change.path !== receiptChange.path);
+  validateChangedFileModes(parentSnapshot, commitSnapshot, changes);
   validateDeclaredChanges(receipt, nonReceiptChanges);
-  validateAllowedOperationPaths(request, receipt.stateChanges);
-  validateRequiredOperationChanges(request, receipt.stateChanges);
-  validateOperationResult(request.operation, receipt.result);
+  const normalizedReceipt = createGovernanceDecisionReceipt({
+    request,
+    actor: receipt.actor,
+    transport: receipt.transport,
+    result: receipt.result,
+    bypassedInvariants: receipt.bypassedInvariants,
+    stateChanges: receipt.stateChanges,
+  });
+  if (toCanonicalJson(normalizedReceipt) !== toCanonicalJson(receipt)) {
+    throw new Error('receipt evidence must match the exact normalized receipt contract');
+  }
+  const transition = computeGovernanceDecisionTransition({
+    request,
+    snapshot: parentSnapshot,
+    readSnapshot: verificationInput.readRepositorySnapshot,
+    readBlob: (blobOid) =>
+      readCommitBlob({
+        commitSnapshot,
+        successorPlanPath: request.payload.successorPlanPath,
+        blobOid,
+      }),
+  });
+  validateReplayedTransition({
+    transition,
+    receipt,
+    actualChanges: nonReceiptChanges,
+    commitSnapshot,
+  });
 
   return {
     decisionOnly: true,
@@ -54,6 +94,66 @@ export function verifyGovernanceDecisionCommit(verificationInput) {
     receiptPath: receiptChange.path,
     receipt,
   };
+}
+
+function validateReplayedTransition(replayInput) {
+  if (
+    toCanonicalJson(replayInput.transition.result) !==
+      toCanonicalJson(replayInput.receipt.result) ||
+    toCanonicalJson(replayInput.transition.bypassedInvariants) !==
+      toCanonicalJson(replayInput.receipt.bypassedInvariants) ||
+    toCanonicalJson(replayInput.transition.stateChanges) !==
+      toCanonicalJson(replayInput.receipt.stateChanges) ||
+    toCanonicalJson(replayInput.transition.stateChanges) !==
+      toCanonicalJson(replayInput.actualChanges)
+  ) {
+    throw new Error('commit does not equal the deterministic governance transition');
+  }
+  const actualEntries = new Map(
+    replayInput.commitSnapshot.entries.map((entry) => [entry.path, entry]),
+  );
+  for (const addition of replayInput.transition.additions) {
+    const actual = actualEntries.get(addition.path);
+    if (actual?.mode !== '100644' || actual.content !== addition.content) {
+      throw new Error('commit does not equal the deterministic governance transition');
+    }
+  }
+  if (
+    replayInput.transition.deletions.some((deletedPath) => actualEntries.has(deletedPath)) ||
+    replayInput.transition.additions.length + replayInput.transition.deletions.length !==
+      replayInput.actualChanges.length
+  ) {
+    throw new Error('commit does not equal the deterministic governance transition');
+  }
+}
+
+function readCommitBlob(blobInput) {
+  const successorEntry = blobInput.commitSnapshot.entries.find(
+    (entry) => entry.path === blobInput.successorPlanPath,
+  );
+  if (successorEntry?.blobOid !== blobInput.blobOid) {
+    throw new Error('successor path must contain the requested successor blob');
+  }
+  return successorEntry.content;
+}
+
+function validateChangedFileModes(parentSnapshot, commitSnapshot, changes) {
+  const beforeByPath = new Map(parentSnapshot.entries.map((entry) => [entry.path, entry]));
+  const afterByPath = new Map(commitSnapshot.entries.map((entry) => [entry.path, entry]));
+  for (const change of changes) {
+    if (!(
+      change.path === 'plans/README.md' ||
+      change.path.startsWith('plans/') ||
+      receiptPathPattern.test(change.path)
+    )) {
+      continue;
+    }
+    const beforeMode = beforeByPath.get(change.path)?.mode;
+    const afterMode = afterByPath.get(change.path)?.mode;
+    if ((beforeMode && beforeMode !== '100644') || (afterMode && afterMode !== '100644')) {
+      throw new Error(`changed governance path must be a regular 100644 file: ${change.path}`);
+    }
+  }
 }
 
 function parseCanonicalReceipt(content) {
@@ -137,61 +237,6 @@ function validateDeclaredChanges(receipt, changes) {
   }
 }
 
-function validateAllowedOperationPaths(request, stateChanges) {
-  const allowedPaths = new Set(['plans/README.md', request.target.planPath]);
-  if (request.operation === 'plan.supersede') {
-    allowedPaths.add(request.payload.successorPlanPath);
-  }
-  for (const stateChange of stateChanges) {
-    if (!allowedPaths.has(stateChange.path)) {
-      throw new Error(
-        `receipt declares a path that ${request.operation} cannot change: ${stateChange.path}`,
-      );
-    }
-  }
-}
-
-function validateRequiredOperationChanges(request, stateChanges) {
-  const byPath = new Map(stateChanges.map((change) => [change.path, change]));
-  const registryChange = byPath.get('plans/README.md');
-  if (registryChange?.after === null) {
-    throw new Error(`${request.operation} must retain and regenerate plans/README.md`);
-  }
-  const targetChange = byPath.get(request.target.planPath);
-  if (request.operation === 'plan.repair') {
-    if (targetChange?.before === null || targetChange?.after === null) {
-      throw new Error('plan.repair must replace its target plan');
-    }
-    return;
-  }
-  if (targetChange?.before === null || targetChange?.after !== null) {
-    throw new Error(`${request.operation} must delete its target plan`);
-  }
-  if (request.operation === 'plan.supersede') {
-    const successorChange = byPath.get(request.payload.successorPlanPath);
-    if (successorChange?.before !== null || successorChange?.after === null) {
-      throw new Error('plan.supersede must add exactly its successor plan');
-    }
-  }
-}
-
-function validateOperationResult(operation, result) {
-  const expectedStatus = {
-    'plan.repair': 'repaired',
-    'plan.cancel': 'not-achieved',
-    'plan.supersede': 'transferred',
-    'plan.complete': 'admin-attested',
-    'plan.quarantine': 'unknown',
-  }[operation];
-  if (
-    !isRecord(result) ||
-    Object.keys(result).length !== 1 ||
-    result.acceptanceStatus !== expectedStatus
-  ) {
-    throw new Error(`${operation} receipt result must record ${expectedStatus}`);
-  }
-}
-
 function computeSnapshotChanges(parentSnapshot, commitSnapshot) {
   const beforeByPath = new Map(parentSnapshot.entries.map((entry) => [entry.path, entry]));
   const afterByPath = new Map(commitSnapshot.entries.map((entry) => [entry.path, entry]));
@@ -214,18 +259,6 @@ function computeSnapshotChanges(parentSnapshot, commitSnapshot) {
 
 function toIdentity(entry) {
   return { blobOid: entry.blobOid, sha256: computeSha256(entry.content) };
-}
-
-function validateReadSnapshots(verificationInput, parentSnapshot, commitSnapshot) {
-  if (parentSnapshot?.headOid !== verificationInput.parentOid) {
-    throw new Error('repository reader returned the wrong parent snapshot');
-  }
-  if (commitSnapshot?.headOid !== verificationInput.commitOid) {
-    throw new Error('repository reader returned the wrong commit snapshot');
-  }
-  if (!Array.isArray(parentSnapshot.entries) || !Array.isArray(commitSnapshot.entries)) {
-    throw new Error('repository reader returned malformed snapshot entries');
-  }
 }
 
 function isSortedUnique(values) {

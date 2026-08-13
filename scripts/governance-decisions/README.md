@@ -43,7 +43,7 @@ publication capability is installed.
 
 - `npm run governance:decide -- preview --request <request.json>` prints the deterministic
   transition.
-- `npm run governance:decide -- verify-commit --commit <oid> --parent <oid>` verifies local
+- `npm run governance:decide -- verify-commit --commit <oid>` verifies local
   structure without authenticating a remote author.
 - `apply`, `publish-blob`, and `publish-request` decode now but fail at the single explicit trusted
   publication boundary owned by the next implementation slice.

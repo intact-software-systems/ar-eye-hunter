@@ -9,6 +9,7 @@ import {
   computeAffectedCodeDigest,
   computeCheckpointTriggers,
   computePlanFacts,
+  computePlanFactsFromTree,
   computeQualificationReasons,
   computeQualificationReasonsForPlan,
   computeUndeclaredChangedPaths,
@@ -25,6 +26,85 @@ afterEach(() => {
 });
 
 describe('canonical content facts', () => {
+  it('uses the same canonical facts for a renamed candidate tree and worktree', () => {
+    const fixture = createRepository();
+    mkdirSync(path.join(fixture.root, 'scripts/moved'), { recursive: true });
+    runGit(fixture.root, ['mv', 'packages/example/src/a.ts', 'scripts/moved/example.ts']);
+    const record = predecessorRecord([
+      predecessorDisposition({
+        path: 'packages/example/src/a.ts',
+        destination: 'scripts/moved/example.ts',
+      }),
+    ]);
+    const changes = readChangedPaths(fixture.root, fixture.base);
+
+    expect(
+      computePlanFactsFromTree({
+        baseOid: fixture.base,
+        baseEntries: readTree(fixture.root, fixture.base),
+        entries: readIndexTree(fixture.root),
+        record,
+        planPath: 'plans/example.md',
+      }),
+    ).toEqual(
+      computePlanFacts({
+        repoRoot: fixture.root,
+        base: fixture.base,
+        changes,
+        record,
+        planPath: 'plans/example.md',
+      }),
+    );
+  });
+
+  it('uses the same folder-change fact for a modified move between existing directories', () => {
+    const fixture = createRepository();
+    writeFixture(fixture.root, 'scripts/existing/keep.ts', 'export const keep = true;\n');
+    writeFixture(
+      fixture.root,
+      'packages/example/src/a.ts',
+      'export const value = 1;\nexport const stable = true;\n',
+    );
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'add existing destination']);
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    runGit(fixture.root, [
+      'mv',
+      'packages/example/src/a.ts',
+      'scripts/existing/example.ts',
+    ]);
+    writeFixture(
+      fixture.root,
+      'scripts/existing/example.ts',
+      'export const value = 1;\nexport const stable = true;\nexport const moved = true;\n',
+    );
+    runGit(fixture.root, ['add', '.']);
+    const record = predecessorRecord([
+      predecessorDisposition({
+        path: 'packages/example/src/a.ts',
+        destination: 'scripts/existing/example.ts',
+      }),
+    ]);
+    const worktreeFacts = computePlanFacts({
+      repoRoot: fixture.root,
+      base,
+      changes: readChangedPaths(fixture.root, base),
+      record,
+      planPath: 'plans/example.md',
+    });
+
+    expect(
+      computePlanFactsFromTree({
+        baseOid: base,
+        baseEntries: readTree(fixture.root, base),
+        entries: readIndexTree(fixture.root),
+        record,
+        planPath: 'plans/example.md',
+      }),
+    ).toEqual(worktreeFacts);
+    expect(worktreeFacts.computedTriggers).toContain('folder-change');
+  });
+
   it('compares computed facts semantically while preserving array order', () => {
     const fixture = createRepository();
     const recordWithoutFacts = {
@@ -210,6 +290,26 @@ describe('canonical content facts', () => {
     ).toBe('cf952557964e8fe54de27ab2551e23ede7b32f9271259dd786c5ba29b1611304');
   });
 });
+
+function readTree(root: string, revision: string) {
+  return runGit(root, ['ls-tree', '-rz', '--full-tree', revision])
+    .split('\0')
+    .filter(Boolean)
+    .map((line) => {
+      const match = line.match(/^(\d{6}) blob ([0-9a-f]{40})\t(.+)$/u)!;
+      return {
+        mode: match[1],
+        blobOid: match[2],
+        path: match[3],
+        content: runGit(root, ['cat-file', 'blob', match[2]]),
+      };
+    });
+}
+
+function readIndexTree(root: string) {
+  const treeOid = runGit(root, ['write-tree']).trim();
+  return readTree(root, treeOid);
+}
 
 describe('qualification and checkpoint facts', () => {
   it('accepts exact deleted and moved predecessor files with structured owner destinations', () => {

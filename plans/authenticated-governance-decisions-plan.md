@@ -181,7 +181,7 @@ legacy evidence.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "6c4fa409703a7d49ac0ac4eba91cfa5d1e76febf742497662db412ad495ad663",
+    "affectedCodeDigest": "cd6215668820b034a0e01c062738b6ac86e00476de959f0bc5a29ab78a6452cf",
     "computedTriggers": [
       "folder-change",
       "ownership-change",

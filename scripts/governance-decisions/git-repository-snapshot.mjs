@@ -3,6 +3,16 @@ import { execFileSync } from 'node:child_process';
 export function readGitRepositorySnapshot(snapshotInput) {
   const commitOid = readCommitOid(snapshotInput.repoRoot, snapshotInput.commitOid);
   const entries = readCommitEntries(snapshotInput.repoRoot, commitOid);
+  const parentOids = runGit(snapshotInput.repoRoot, [
+    'show',
+    '-s',
+    '--format=%P',
+    '--end-of-options',
+    commitOid,
+  ])
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
   const commitDate = runGit(snapshotInput.repoRoot, [
     'show',
     '-s',
@@ -10,7 +20,7 @@ export function readGitRepositorySnapshot(snapshotInput) {
     '--end-of-options',
     commitOid,
   ]).trim();
-  return { headOid: commitOid, commitDate, entries };
+  return { headOid: commitOid, parentOids, commitDate, entries };
 }
 
 function readCommitOid(repoRoot, revision) {

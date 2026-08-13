@@ -1,9 +1,9 @@
 const commandOptions = {
   preview: ['--request', '--repo'],
   apply: ['--request', '--repo'],
-  'publish-blob': ['--path', '--repo'],
+  'publish-blob': ['--file', '--repo'],
   'publish-request': ['--request', '--repo'],
-  'verify-commit': ['--commit', '--parent', '--repo'],
+  'verify-commit': ['--commit', '--repo'],
 };
 
 export function decodeGovernanceDecisionCommand(arguments_) {
@@ -20,17 +20,14 @@ export function decodeGovernanceDecisionCommand(arguments_) {
     return { command, requestPath: values['--request'], repoRoot };
   }
   if (command === 'publish-blob') {
-    requireOption(values, '--path', command);
-    return { command, path: values['--path'], repoRoot };
+    requireOption(values, '--file', command);
+    return { command, path: values['--file'], repoRoot };
   }
   requireOption(values, '--commit', command);
-  requireOption(values, '--parent', command);
   requireObjectId(values['--commit'], '--commit');
-  requireObjectId(values['--parent'], '--parent');
   return {
     command,
     commitOid: values['--commit'],
-    parentOid: values['--parent'],
     repoRoot,
   };
 }

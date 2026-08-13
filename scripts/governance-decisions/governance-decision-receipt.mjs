@@ -14,6 +14,16 @@ export function createGovernanceDecisionReceipt(receiptInput) {
     throw new Error('authenticated actor permission must be admin');
   }
   const request = decodeGovernanceDecisionRequest(receiptInput.request);
+  const transport = validateTransport(receiptInput.transport);
+  const result = validateResult(request.operation, receiptInput.result);
+  if (
+    !Array.isArray(receiptInput.bypassedInvariants) ||
+    receiptInput.bypassedInvariants.some(
+      (invariant) => typeof invariant !== 'string' || invariant.trim() === '',
+    )
+  ) {
+    throw new Error('bypassed invariants must be non-empty strings');
+  }
   const decisionId = computeGovernanceDecisionId(request);
   const stateChanges = receiptInput.stateChanges
     .map(toStateChange)
@@ -30,11 +40,54 @@ export function createGovernanceDecisionReceipt(receiptInput) {
       login: receiptInput.actor.login,
       permission: 'admin',
     },
-    transport: receiptInput.transport,
-    result: receiptInput.result,
+    transport,
+    result,
     bypassedInvariants: [...new Set(receiptInput.bypassedInvariants)].sort(compareText),
     stateChanges,
   };
+}
+
+function validateTransport(transport) {
+  if (transport?.kind === 'local-gh') {
+    requireExactKeys(transport, ['kind'], 'local-gh transport');
+    return { kind: 'local-gh' };
+  }
+  if (transport?.kind === 'workflow-dispatch') {
+    requireExactKeys(
+      transport,
+      ['kind', 'runId', 'runAttempt', 'workflowRef', 'workflowSha'],
+      'workflow-dispatch transport',
+    );
+    if (!Number.isSafeInteger(transport.runId) || transport.runId <= 0) {
+      throw new Error('workflow-dispatch transport.runId must be a positive integer');
+    }
+    if (!Number.isSafeInteger(transport.runAttempt) || transport.runAttempt <= 0) {
+      throw new Error('workflow-dispatch transport.runAttempt must be a positive integer');
+    }
+    if (typeof transport.workflowRef !== 'string' || transport.workflowRef.trim() === '') {
+      throw new Error('workflow-dispatch transport.workflowRef must be non-empty');
+    }
+    if (!/^[0-9a-f]{40}$/u.test(transport.workflowSha ?? '')) {
+      throw new Error('workflow-dispatch transport.workflowSha must be a Git object ID');
+    }
+    return { ...transport };
+  }
+  throw new Error('transport.kind must be local-gh or workflow-dispatch');
+}
+
+function validateResult(operation, result) {
+  const acceptanceStatus = {
+    'plan.repair': 'repaired',
+    'plan.cancel': 'not-achieved',
+    'plan.supersede': 'transferred',
+    'plan.complete': 'admin-attested',
+    'plan.quarantine': 'unknown',
+  }[operation];
+  requireExactKeys(result, ['acceptanceStatus'], `${operation} result`);
+  if (result.acceptanceStatus !== acceptanceStatus) {
+    throw new Error(`${operation} result must record ${acceptanceStatus}`);
+  }
+  return { acceptanceStatus };
 }
 
 export function serializeGovernanceDecisionReceipt(receipt) {

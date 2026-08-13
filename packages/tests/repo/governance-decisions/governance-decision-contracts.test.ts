@@ -96,7 +96,7 @@ describe('governance decision contracts', () => {
     const receipt = createGovernanceDecisionReceipt({
       request,
       actor: { login: 'repository-admin', permission: 'admin' },
-      transport: { kind: 'local', commitOid: '4'.repeat(40) },
+      transport: { kind: 'local-gh' },
       result: { acceptanceStatus: 'not-achieved' },
       bypassedInvariants: ['z-last', 'a-first'],
       stateChanges: [
@@ -128,7 +128,7 @@ describe('governance decision contracts', () => {
       createGovernanceDecisionReceipt({
         request,
         actor: { login: 'writer', permission: 'write' },
-        transport: { kind: 'local' },
+        transport: { kind: 'local-gh' },
         result: { acceptanceStatus: 'not-achieved' },
         bypassedInvariants: [],
         stateChanges: [],
@@ -138,7 +138,7 @@ describe('governance decision contracts', () => {
       createGovernanceDecisionReceipt({
         request,
         actor: { login: 'repository-admin', permission: 'admin', claimed: true },
-        transport: { kind: 'local' },
+        transport: { kind: 'local-gh' },
         result: { acceptanceStatus: 'not-achieved' },
         bypassedInvariants: [],
         stateChanges: [],
@@ -148,7 +148,7 @@ describe('governance decision contracts', () => {
       createGovernanceDecisionReceipt({
         request,
         actor: { login: 'repository-admin', permission: 'admin' },
-        transport: { kind: 'local' },
+        transport: { kind: 'local-gh' },
         result: { acceptanceStatus: 'not-achieved' },
         bypassedInvariants: [],
         stateChanges: [
@@ -165,6 +165,48 @@ describe('governance decision contracts', () => {
         ],
       }),
     ).toThrow('state change paths must be unique');
+    expect(() =>
+      createGovernanceDecisionReceipt({
+        request,
+        actor: { login: 'repository-admin', permission: 'admin' },
+        transport: { kind: 'local-gh', extra: true },
+        result: { acceptanceStatus: 'not-achieved' },
+        bypassedInvariants: [],
+        stateChanges: [],
+      }),
+    ).toThrow('local-gh transport must contain exactly: kind');
+    expect(() =>
+      createGovernanceDecisionReceipt({
+        request,
+        actor: { login: 'repository-admin', permission: 'admin' },
+        transport: { kind: 'workflow-dispatch', runId: 12 },
+        result: { acceptanceStatus: 'not-achieved' },
+        bypassedInvariants: [],
+        stateChanges: [],
+      }),
+    ).toThrow(
+      'workflow-dispatch transport must contain exactly: kind, runId, runAttempt, workflowRef, workflowSha',
+    );
+    expect(() =>
+      createGovernanceDecisionReceipt({
+        request,
+        actor: { login: 'repository-admin', permission: 'admin' },
+        transport: { kind: 'local-gh' },
+        result: { acceptanceStatus: 'admin-attested' },
+        bypassedInvariants: [],
+        stateChanges: [],
+      }),
+    ).toThrow('plan.cancel result must record not-achieved');
+    expect(() =>
+      createGovernanceDecisionReceipt({
+        request,
+        actor: { login: 'repository-admin', permission: 'admin' },
+        transport: { kind: 'local-gh' },
+        result: { acceptanceStatus: 'not-achieved' },
+        bypassedInvariants: [''],
+        stateChanges: [],
+      }),
+    ).toThrow('bypassed invariants must be non-empty strings');
   });
 });
 

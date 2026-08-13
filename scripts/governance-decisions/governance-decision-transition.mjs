@@ -8,6 +8,7 @@ import {
 } from '../plan-adaptation/adaptive-plan-record.mjs';
 import { toActivePlanRegistry } from '../plan-adaptation/active-plan-registry.mjs';
 import { validateCheckpoint } from '../plan-adaptation/adaptive-plan-policy.mjs';
+import { computePlanFactsFromTree } from '../plan-adaptation/plan-change-facts.mjs';
 import { computeSha256 } from './canonical-json.mjs';
 import {
   computeGovernanceDecisionId,
@@ -17,7 +18,6 @@ import {
   toContentIdentity,
   toGovernanceDecisionReceiptPath,
 } from './governance-decision-receipt.mjs';
-import { computePlanFactsFromTree } from './plan-facts-from-tree.mjs';
 
 export function computeGovernanceDecisionTransition(transitionInput) {
   const request = decodeGovernanceDecisionRequest(transitionInput.request);
@@ -36,7 +36,6 @@ export function computeGovernanceDecisionTransition(transitionInput) {
     entriesByPath,
     targetEntry,
     readBlob: transitionInput.readBlob,
-    computePlanFacts: transitionInput.computePlanFacts,
     readSnapshot: transitionInput.readSnapshot,
   });
   return toTransition({
@@ -76,6 +75,9 @@ function computePlanRepair(operationInput) {
       operationInput.request,
     ),
   ];
+  const replacementIssues = validateCheckpoint(repairedRecord.checkpoint, repairedRecord).map(
+    (issue) => `replacement checkpoint: ${issue}`,
+  );
 
   const candidateEntries = replaceEntryContent(
     operationInput.entriesByPath,
@@ -92,9 +94,7 @@ function computePlanRepair(operationInput) {
     planPath: operationInput.request.target.planPath,
     expectedHeadOid: operationInput.request.expectedHeadOid,
   };
-  repairedRecord.facts = operationInput.computePlanFacts
-    ? operationInput.computePlanFacts(factInput)
-    : computeFactsFromSnapshotReader(operationInput, factInput);
+  repairedRecord.facts = computeFactsFromSnapshotReader(operationInput, factInput);
   const repairedMarkdown = replaceAdaptivePlanRecord(
     operationInput.targetEntry.content,
     repairedRecord,
@@ -109,7 +109,7 @@ function computePlanRepair(operationInput) {
   return {
     candidateEntries,
     result: { acceptanceStatus: 'repaired' },
-    bypassedInvariants: issues,
+    bypassedInvariants: [...issues, ...replacementIssues],
   };
 }
 
@@ -192,7 +192,12 @@ function readGovernedPlan(operationInput) {
       `target plan contains non-bypassable schema defects: ${schemaIssues.join('; ')}`,
     );
   }
-  return { record, issues: validateCheckpoint(record.checkpoint, record).sort(compareText) };
+  return {
+    record,
+    issues: validateCheckpoint(record.checkpoint, record)
+      .map((issue) => `existing checkpoint: ${issue}`)
+      .sort(compareText),
+  };
 }
 
 function computeRegistry(entriesByPath, tolerateInvalidPlans, governedBypassPath) {
