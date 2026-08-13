@@ -349,9 +349,37 @@ exact default-branch count above with Critical 0 and Important 0.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "3f801ad88d53de5fb230efbb484a7b51f2768b94621e7d91185069bf6aa1c5bb",
-    "computedTriggers": [],
-    "undeclaredChangedPaths": []
+    "affectedCodeDigest": "f8a90261cc2b13e8cbe69df4ffc635bcfd661b1b313ae01e9467ab48268a1766",
+    "computedTriggers": [
+      "folder-change",
+      "ownership-change",
+      "public-contract-change",
+      "scope-growth"
+    ],
+    "undeclaredChangedPaths": [
+      "apps/api-v1/src/group-state/README.md",
+      "apps/api-v1/src/middleware-contract.ts",
+      "apps/api-v1/src/middleware.ts",
+      "apps/api-v1/test/rallar-server.test.ts",
+      "packages/shared-server/rallar-system/formation-metrics.ts",
+      "packages/shared-server/rallar-system/formation-metrics/formation-metrics.ts",
+      "packages/shared-server/rallar-system/group-state/README.md",
+      "packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts",
+      "packages/shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts",
+      "packages/shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts",
+      "packages/shared-server/rallar-system/services/AppGroupInboxService.ts",
+      "packages/shared-test/black-box-runner/README.md",
+      "packages/shared-web/browser/state-cache/README.md",
+      "packages/shared/api/README.md",
+      "packages/shared/rtc/group-formation-metrics.ts",
+      "packages/shared/services/WsQueueBoxServerService.ts",
+      "packages/shared/services/ws-queue-box-server-contracts.ts",
+      "packages/tests/shared-server/admin-operations-service.test.ts",
+      "packages/tests/shared-server/formation-metrics.test.ts",
+      "plans/rallar-bb-test-distributed-assertion-parity-plan.md",
+      "plans/rallar-group-formation-phase3-delta-dissemination-plan.md",
+      "playground/rtc-design/baselines/2026-08-13-phase3-delta-dissemination-results.md"
+    ]
   },
   "checkpoint": {
     "outcome": "The sole publish-later-evidence-ledger slice records complete planning and PR A-D facts, updates both reciprocal program records, and preserves the authenticated receipt and deleted implementation plan without code or performance changes.",
