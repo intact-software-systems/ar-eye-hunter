@@ -89,7 +89,9 @@ reviews outside the unavailable base-branch v2 gate.
 Plan-, documentation-, and agent-guidance-only pull requests may use the explicit exemption
 only when no production, test, script, workflow, package metadata, or runtime files changed.
 The exemption path set must exactly equal the observed changed paths. Mixed changes require
-the full record.
+the full record. Plan-only scope includes implementation-plan Markdown and canonical
+`plans/<plan-id>.closure.json` receipts. Adaptive governance authenticates the receipt against
+the deleted base record and generated registry transition; the exemption validates only its path.
 
 ## Exact legacy candidate evidence
 

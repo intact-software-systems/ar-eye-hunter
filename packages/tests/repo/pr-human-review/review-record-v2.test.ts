@@ -99,6 +99,69 @@ describe('PR Human Review Record v2', () => {
     ).toContain('documentation-only exemption path is not allowed: apps/api-v1/README.md');
   });
 
+  it('admits only canonical direct closure receipts through the plan-only exemption', () => {
+    const canonicalReceipt = 'plans/adaptive-agent-execution-governance.closure.json';
+
+    expect(
+      validateReviewRecord({
+        ...validationInput(reviewRecord()),
+        body: exemptRecordBody(canonicalReceipt, 'plan-only'),
+        changedPaths: [canonicalReceipt],
+      }),
+    ).toEqual([]);
+
+    for (const rejectedPath of [
+      'plans/arbitrary.json',
+      'plans/nested/fixture-plan.closure.json',
+      'plans/../fixture-plan.closure.json',
+      'scripts/fixture-plan.closure.json',
+    ]) {
+      expect(
+        validateReviewRecord({
+          ...validationInput(reviewRecord()),
+          body: exemptRecordBody(rejectedPath, 'plan-only'),
+          changedPaths: [rejectedPath],
+        }),
+      ).not.toEqual([]);
+    }
+
+    for (const noncanonicalPath of [
+      './plans/adaptive-agent-execution-governance.closure.json',
+      'plans//adaptive-agent-execution-governance.closure.json',
+    ]) {
+      expect(
+        validateReviewRecord({
+          ...validationInput(reviewRecord()),
+          body: exemptRecordBody(noncanonicalPath, 'plan-only'),
+          changedPaths: [canonicalReceipt],
+        }),
+      ).toContain('exemption changed paths must be normalized repository-relative paths');
+      expect(
+        validateReviewRecord({
+          ...validationInput(reviewRecord()),
+          body: exemptRecordBody(canonicalReceipt, 'plan-only'),
+          changedPaths: [noncanonicalPath],
+        }),
+      ).toContain('observed changed paths must be normalized repository-relative paths');
+    }
+
+    expect(
+      validateReviewRecord({
+        ...validationInput(reviewRecord()),
+        body: metadataOnlyBody({
+          version: 2,
+          scope: 'exempt',
+          exemption: {
+            kind: 'plan-only',
+            changedPaths: [canonicalReceipt, 'scripts/change.mjs'],
+          },
+          retainedLegacy: [],
+        }),
+        changedPaths: [canonicalReceipt, 'scripts/change.mjs'],
+      }),
+    ).toContain('plan-only exemption path is not allowed: scripts/change.mjs');
+  });
+
   it('requires the initial review to cover the plan goal, acceptance, capability tree, owner entries, and first horizon', () => {
     const missingGoal = reviewRecord({
       initialReview: { ...initialReview(), goal: '' },
@@ -385,11 +448,11 @@ function legacyLedger() {
   return { candidateCount: 0, items: [] as Record<string, unknown>[] };
 }
 
-function exemptRecordBody(changedPath: string): string {
+function exemptRecordBody(changedPath: string, kind = 'documentation-only'): string {
   return metadataOnlyBody({
     version: 2,
     scope: 'exempt',
-    exemption: { kind: 'documentation-only', changedPaths: [changedPath] },
+    exemption: { kind, changedPaths: [changedPath] },
     retainedLegacy: [],
   });
 }
