@@ -1,11 +1,10 @@
 # Rallar Group Topology Server Structure Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> `superpowers:subagent-driven-development` (recommended) or
-> `superpowers:executing-plans` to implement this plan task by task. Use
-> `superpowers:test-driven-development` for every contract or behavior seam,
-> `superpowers:requesting-code-review` at the review points, and
-> `superpowers:verification-before-completion` before publication.
+> **For agentic workers:** Use `rallar-repo:adaptive-plan-execution` for the
+> checkpoint lifecycle, `rallar-repo:publishing-plan-progress` for publication,
+> `rallar-repo:rallar-code-writing` for authored code, and
+> `rallar-repo:rallar-testing` for affected validation. The adaptive record at
+> the end of this plan is canonical; do not execute beyond its current slice.
 
 **Goal:** Make authoritative group-topology configuration ownership, AppInbox
 ingress, mutation phases, persistence, transaction exits, explicit
@@ -28,21 +27,23 @@ warning-only report modes, and the existing state-write performance harness.
 
 Date: 2026-08-08
 
-Status: Approved child in execution, revalidated against exact current main
-`c96f46f2eba10c8103b29b052c0edfbc42c05a37`, tree
-`85b531ff8fd5fb0e9722a79876061c40a9eaf6fd`. PRs A, B, and C are integrated,
+Status: Active adaptive child, revalidated against exact current main
+`dc44ab029dd415b356833d3b72e0207f79c4bc88`, tree
+`6048a6891d819dd1c32647cdf4def27027b360f3`. PRs A, B, and C are integrated,
 but the child is not complete. PR B remains the only fully accepted governed
 performance record. PR A's exact resulting-main Hetzner workflow failed. PR C
 merged with an exact tree match, and its correctness and resulting-main gates
 provide substantial evidence, but its Branch Release Gate and exact-SHA human
 review record failed and governed performance never began. Those deviations
-remain open rather than being relabeled as success. Section 0.8 preserves PR B
-closure and Section 0.9 freezes the PR C and current-main reconciliation. PR D
-and the later ledger remain unstarted. Concurrent RTC benchmark and other
-sibling work has landed on main outside this child; it is not topology-child
-completion evidence and requires compatibility review before PR D. No PR-C or
-PR-D performance measurement is authorized until the exact immutable candidate,
-tooling, environment, and failure envelope receives separate human approval.
+remain historical rather than being relabeled as success. Section 0.8 preserves
+PR B closure, Section 0.9 freezes the PR C integration evidence, and Section
+0.10 records the human decision to skip all remaining PR C/PR D performance
+measurement. PR D is replaced by one adaptive consolidation slice that first
+activates an honest topology capability declaration; the later ledger remains
+separate and unstarted. Concurrent RTC benchmark and other sibling work remains
+outside this child and is compatibility input, not topology-child evidence.
+No further performance envelope or measurement is required or authorized for
+this child.
 The human approved original planning Git blob
 `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, performance-amendment blob
 `f83cc311369fff2bf255116253ec0f4fe911a43f`, and pooler-order correction blob
@@ -373,25 +374,47 @@ non-consuming because no warmup or measurement began. None of these files or
 hashes may be reused, edited, or relabeled for the final feature or merge tree.
 
 Freshly fetched current main is
-`c96f46f2eba10c8103b29b052c0edfbc42c05a37`, tree
-`85b531ff8fd5fb0e9722a79876061c40a9eaf6fd`. Run Hetzner Supported Distributed
-Manifests run `31674331404`, attempt 1, succeeded on that exact commit. It is
-current-main compatibility evidence, not topology-child completion evidence.
-From PR C resulting main through current main, no
-topology production owner, API-v1 composition path, position-balanced pooler,
-global comparator, child evaluator, workload, schema, or threshold changed. PR
-#198 moved the shared RTC benchmark ownership and regression-reason control,
-which changed only import paths and formatting in the state-write benchmark,
-its option/reason controls, and the formatted harness test; Section 13.5 binds
-their replacement identities. Current main also introduced adaptive execution
-governance through PR #197 and refreshed the RTC benchmark Deno locks through
-PR #199. It retains the cognitive-metric changed-file gate, B01/B02/B03 and PR
-#196 RTC benchmark work, and independent black-box assertion work. Those
-changes do not alter this child's inspected production owners or performance
-semantics, but they remain compatibility and publication inputs rather than
-topology-child evidence. PR D therefore retains the architecture and behavior
-plan while requiring a fresh compatibility review and the stricter current
-governance.
+`dc44ab029dd415b356833d3b72e0207f79c4bc88`, tree
+`6048a6891d819dd1c32647cdf4def27027b360f3`. From PR C resulting main through
+current main, no topology production owner or topology semantic test changed.
+PR #198 moved the shared RTC benchmark ownership and regression-reason control,
+PR #197 introduced adaptive execution governance, PR #199 refreshed RTC
+benchmark Deno locks, and PR #201 corrected the prospective PR C pooler/oracle
+base binding. PRs #204-#206 then added authenticated adaptive-plan closure
+receipts and preserved repository navigation through last-plan closeout. Those
+changes remain sibling compatibility and publication input; none is
+topology-child progress. The adaptive slice below retains the architecture and
+behavior plan while applying the stricter current governance.
+
+### 0.10 Adaptive replan and performance disposition
+
+On 2026-08-13 the human explicitly authorized this child to skip the remaining
+performance test and replan under the adaptive planning tools now on main. This
+is a prospective workflow disposition, not a performance pass:
+
+- no PR C position was consumed, so there is no benchmark result to accept;
+- every rejected or superseded PR C envelope and preflight remains immutable
+  historical evidence and must not be reused or relabeled;
+- the failed PR C Branch Release Gate and exact-SHA review runs remain failed
+  historical publication evidence;
+- the successful PR C correctness and resulting-main evidence remains valid;
+- Sections 13.3 through 13.9 remain a historical description of the retired
+  protocol only and must not be executed for PR C or PR D; and
+- the skip is local to this child and does not weaken repository performance or
+  publication policy for other work.
+
+The adaptive migration closes the completed
+`adaptive-agent-execution-governance` record through the PR #206 final review
+and the canonical authenticated receipt
+`plans/adaptive-agent-execution-governance.closure.json`, then makes this plan
+the sole active adaptive plan. The current checkpoint chooses `consolidate`
+because the implemented topology owner lives at
+`packages/shared-server/rallar-system/topology` while its tests still live at
+the pre-governance path `packages/tests/shared-server/topology` and no exact
+focused capability command exists. The single current slice activates the
+topology capability by aligning that mirror, command, navigation, and the two
+retained PR C style findings without changing behavior. A new checkpoint is
+required before any final child-close or ledger slice.
 
 ## 1. Outcome, Scope, And Review Sizing
 
@@ -1654,18 +1677,20 @@ publication, or adding a compatibility path.
 - [x] Run the complete config, AppInbox, API, RTC handoff, memory black-box,
       PostgreSQL concurrency/medium-scale, and topology-replay correctness
       gates recorded in Section 0.9.
-- [ ] Run the governed performance protocol for the exact final PR C base and
-      integrated tree; no warmup or measurement has begun.
+- [x] Preserve the fact that no governed PR C position was consumed and apply
+      the 2026-08-13 human disposition to skip the remaining performance test;
+      do not claim a performance pass.
 - [x] Preserve the exact feature/merge tree identity, human merge, and
       successful exact resulting-main workflow.
-- [ ] Close the failed Branch Release Gate and exact-SHA review evidence through
-      explicit human disposition; neither failure may be relabeled as success.
+- [x] Retain the failed Branch Release Gate and exact-SHA review evidence as
+      historical publication deviations; neither failure is relabeled as
+      success or used as current PR D evidence.
 
-PR C crosses the mutation and concurrency domain and must run a new fixed
-governed performance protocol against the exact final pre-PR-C base recorded
-in Section 0.9. Because PR C is already integrated, this evidence is a
-post-merge closure check. It cannot retroactively make the failed feature gate
-or missing review record successful.
+PR C crossed the mutation and concurrency domain, but its prospective
+post-merge performance protocol is retired by the explicit Section 0.10 human
+disposition. The missing measurement remains a declared closure deviation. It
+does not retroactively make the failed feature gate or missing review record
+successful and does not weaken another child's performance requirements.
 
 The first PR C milestone is commit
 `db629f5ba7be38d3848c376a47b546e3cd02b1ff`, tree
@@ -1709,15 +1734,15 @@ repository-root invocation then passed. The missing fourth test in that run
 revealed the approved mirrored-test move was not yet implemented, so the
 AppInbox concurrency test moved to its planned canonical path and its two cases
 passed there. These setup failures remain retained honestly and are not counted
-as behavioral evidence. Governed performance remains unrun. The final feature
-and merge trees are identical and now provide the immutable candidate, but a
-new envelope and separate authorization remain required.
+as behavioral evidence. Governed performance remains unrun by design under
+Section 0.10. The final feature and merge trees remain immutable historical
+evidence; no replacement envelope is required or authorized.
 
 ### Task 5: PR D — alignment and final traceability
 
-- [ ] Begin only after PR C's exact post-merge performance evidence and an
-      explicit human disposition of its failed Branch Release and exact-SHA
-      review gates.
+- [x] Begin planning from the Section 0.10 performance skip while retaining the
+      failed PR C Branch Release and exact-SHA review evidence as historical
+      deviations rather than current passing evidence.
 - [ ] Reconcile the current-main RTC benchmark, black-box assertion, and style
       governance changes; record no material topology impact or the smallest
       exact plan delta before implementation.
@@ -1744,10 +1769,10 @@ new envelope and separate authorization remain required.
 - [ ] Run all final gates on one unchanged tree, freeze commit/tree, publish PR
       D, require Branch Release Gate, and stop for human merge.
 
-PR D may retain PR C's performance evidence only if every production/runtime
-and benchmark-harness blob is byte-identical to PR C's exact resulting-main
-tree. Any runtime difference requires a fresh fixed protocol before
-publication.
+PR D does not inherit or create PR C performance evidence. Its acceptance is
+behavior preservation, direct navigation, semantic coverage, current local
+validation, independent review, and current publication gates on one unchanged
+tree. No performance protocol is part of this child's remaining horizon.
 
 ### Task 6: Publish the later evidence ledger separately
 
@@ -1758,8 +1783,8 @@ publication.
 - [ ] Record planning/PR A/PR B/PR C/PR D evidence already existing at that
       time.
 - [ ] Record warning dispositions, human-sample outcome or explicit waiver,
-      compatibility owners, ratchet decisions, semantic coverage, and accepted
-      performance evidence.
+      compatibility owners, ratchet decisions, semantic coverage, and the
+      explicit skipped-performance disposition.
 - [ ] Preserve rejected/superseded evidence as historical evidence.
 - [ ] Keep the ledger's own future tree, commit, PR, release gate, merge, and
       default workflow outside the tree that produces them.
@@ -1818,6 +1843,13 @@ gate is rerun. A finding requiring a locked contract change stops for human
 approval.
 
 ## 13. Correctness, Concurrency, And Performance Protocol
+
+**Retired prospective protocol:** Section 0.10 supersedes every unexecuted PR C
+and PR D measurement instruction below. Sections 13.3 through 13.9 are retained
+only so historical envelopes, hashes, thresholds, and no-reroll decisions stay
+auditable. They authorize no envelope, preflight, warmup, measurement, pooling,
+comparison, evaluation, or rerun. Correctness and concurrency validation remain
+mandatory.
 
 ### 13.1 Classification
 
@@ -2308,20 +2340,12 @@ the sequence permanently. A post-measurement pooling or evaluation tooling
 failure preserves all immutable raw evidence and may be corrected or reinvoked
 only with separate narrow human authorization; measurements are never rerun.
 
-The accepted PR B disposition remains immutable historical evidence. For the
-post-merge PR C closure sequence, either failed child evaluation leaves PR C
-closure and PR D blocked with the exact evidence. Do not optimize
-speculatively, change a threshold, run a third block, or start PR D. If both
-blocks pass, retain the exact result and stop for explicit human disposition of
-the complete PR C closure, including the already failed Branch Release and
-review records. A passing post-merge measurement cannot retroactively turn
-either publication failure into success.
-
-For a future PR D sequence, either failure blocks PR D publication and the
-later ledger. If both blocks pass, only the exact measured PR D candidate may
-continue through its required review, Branch Release Gate, human merge, and
-resulting-main workflow. No sequence authorizes a force-push, merge, ledger,
-RTC/RTT work, or another child.
+The accepted PR B disposition remains immutable historical evidence. The PR C
+sequence never began and is now explicitly skipped; no position may be started
+or manufactured after this disposition. PR D has no measurement sequence in
+this child. Its behavior-neutral claim must instead be proved by semantic,
+concurrency, full-suite, review, and current publication evidence. No historical
+or skipped performance record may be presented as a pass.
 
 ## 14. Validation Matrix
 
@@ -2625,17 +2649,12 @@ Human decisions are required at these exact points:
    `b6fd5aebfa77ee489e65fa30fbee165e033c14f9`;
 6. the completed approval of artifact-owner target-path correction blob
    `cf4d92db310c928b2e020f926efa4f731a2fd3b6`;
-7. separately authorize the exact post-merge PR C candidate, tools,
-   conflict-reason input, environment, and measurement envelope;
-8. after that immutable sequence completes, accept or reject its exact evidence
-   without retroactively changing the PR C publication record;
-9. explicitly disposition PR A's failed exact resulting-main Hetzner run;
-10. explicitly disposition PR C's failed Branch Release Gate and exact-SHA
-    human-review record;
-11. authorize PR D only after items 7 through 10 close, then approve its
-    compatibility/ratchet decisions and exact merge;
-12. separately authorize the later evidence-ledger publication; and
-13. approve and close that ledger before this child authorizes, resumes, or
+7. the completed 2026-08-13 decision to skip PR C/PR D performance while
+   retaining the missing result and failed PR C publication evidence honestly;
+8. review the adaptive topology capability activation and approve its exact
+   merge only after current review and publication gates pass;
+9. separately authorize the later evidence-ledger publication; and
+10. approve and close that ledger before this child authorizes, resumes, or
     claims RTC/RTT or another Wave 2 child as its successor work.
 
 Implementation PRs remain draft until scoped review, Critical 0/Important 0,
@@ -2645,9 +2664,10 @@ on the default branch. After each human merge, verify the exact resulting-main
 SHA and required default workflow before creating the next branch.
 
 PRs A and C were merged despite immutable evidence that did not satisfy this
-rule. Their human merges are historical facts, not implicit waivers. The later
-ledger may close them only through the explicit dispositions above; it must not
-rewrite a failed workflow or missing review record as successful.
+rule. Their human merges and the Section 0.10 continuation decision are
+historical facts, not evidence that the failed gates passed. The later ledger
+must preserve every failed workflow, missing review record, and skipped
+measurement without rewriting any of them as successful.
 
 ## 16. Non-Circular Completion Evidence
 
@@ -2737,8 +2757,8 @@ measurements remain historical and are never relabeled for a changed tree.
       succeeded.
 - [x] PR C's exact feature tree was integrated unchanged and its exact
       resulting-main Hetzner workflow succeeded.
-- [ ] PR C's governed performance and explicit disposition of the failed
-      Branch Release and exact-SHA review records are complete.
+- [x] PR C performance is explicitly skipped with no pass claimed; the failed
+      Branch Release and exact-SHA review records remain historical deviations.
 - [ ] PR D review, gates, merge, and resulting-main workflow succeeded.
 - [ ] Separate evidence ledger independently reached `ledger-published`.
 - [ ] Concurrent RTC/RTT and other Wave 2 work is reconciled as sibling work
@@ -2778,17 +2798,17 @@ measurements remain historical and are never relabeled for a changed tree.
 
 ## 19. Progress Record
 
-| Milestone                         | State                          | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Auth prerequisite                 | ledger-published               | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and remains non-gating plan-only external evidence.                                                                                                                                                                                                                                                                                                                                                                      |
-| Group-topology child plan         | approved/in execution          | Planning PR #95 and approved blobs `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, `f83cc311369fff2bf255116253ec0f4fe911a43f`, `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc`, `b6fd5aebfa77ee489e65fa30fbee165e033c14f9`, and `cf4d92db310c928b2e020f926efa4f731a2fd3b6` remain historical authority. This revalidation uses current main `c96f46f2eba10c8103b29b052c0edfbc42c05a37`, tree `85b531ff8fd5fb0e9722a79876061c40a9eaf6fd`.                                                                                                                                                                                                                                                                        |
-| PR A protocol/core                | integrated/closure deviation   | PR #103 final feature `d86524adc051ab0b64cae160eb3a847f75d59d7a`, tree `fd8069eddc01f6a4784bc9a7a06b3e808f3aed5d`, passed Branch Release Gate `31337007511`. Merge `cd69565936d881c960dbe151cfe48917a4a2e1bb` has the same tree. Exact resulting-main Hetzner run `31358158337` failed during the `05a-rtc-realtime-stability-2-agent-5s` recipe and has no successful exact-SHA rerun. The accepted historical performance disposition remains unchanged; explicit closure disposition is pending.                                                                                                                                                                                                    |
-| PR B persistence                  | complete                       | PR #151 feature `17f9c237afd9fb006776aaa0335b86e1cb650c88`, tree `7199b061bf1a6fe3abb9c83c02313f5a676a6a5b`, measured base `cc98414867f22cc28f0137ef40a1887ab862f87d`, approved envelope SHA-256 `27a9c8e8acdcaa8f1d737ced31a46708a973c0f92e586526b3c7369467f12ae6`, and accepted one-candidate disposition retain the failed block-2 child evaluation honestly. Merge `1e5f5e55e6ff94c016bfe2cc11af92952a30e32f`, Branch Release Gate `31431692263`, and resulting-main Hetzner run `31432113008` succeeded. Open security classification issue #153 remains separately scoped.                                                                                                                       |
-| PR C authoritative shell          | integrated/closure blocked     | PR #155 final feature `8ec6b8150850d1b7a653d7e6552cb81528e5090a` and merge `bbcec6b9413678d85d0c97f63b18bb4216b5d767` share tree `a272104e0c7638165867e8431cec9afa21870c30`. Medium-scale `31576056918`, topology replay `31576056919`, and resulting-main Hetzner `31580601865` succeeded. Branch Release `31576055172` failed two style findings; review-record runs `31576055103` and `31580589561` failed. No governed performance position was consumed. New post-merge evidence and explicit human disposition remain required.                                                                                                                                                                  |
-| Current-main compatibility        | compatible with recorded delta | No inspected topology owner, API composition, state-write workload, schema, threshold, pooler, comparator, or evaluator changed from PR C resulting main through `c96f46f2eba10c8103b29b052c0edfbc42c05a37`. PR #198 moved shared RTC benchmark ownership, changing the harness, option/reason control, and formatted-test blobs without changing their governed behavior; Section 13.5 records the new identities. PR #197 added adaptive execution governance and PR #199 refreshed RTC benchmark Deno locks. Exact-current Hetzner run `31674331404`, attempt 1, succeeded. Concurrent RTC benchmark and black-box assertion work remains sibling compatibility input, not topology-child evidence. |
-| PR D alignment/final trace        | blocked                        | Requires PR C post-merge performance, explicit PR A/PR C publication dispositions, and a current-main compatibility checkpoint. It must correct the two retained PR C style findings and run every final gate on one unchanged tree.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Later topology ledger             | blocked                        | Requires all four implementation closure records and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| RTC/RTT and other sibling domains | active outside this child      | B01/B02/B03 RTC benchmark work and PR #196 are already on main. They remain outside this child's authority and cannot be claimed as its completion evidence.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Milestone                         | State                          | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth prerequisite                 | ledger-published               | PR #93 feature `aeff6435794dd70816789e4794b78e84fdfc89b0`, tree `8bdea4402dad08dbd1892f2bd8c95671d615b8ff`, accepted plan-only build-gate exception, resulting main `c2cb79c020bceee7f67e6fbc364ba96ea0d6a530` with the same tree. Hetzner run `31251480014` attempt 1 failed and remains non-gating plan-only external evidence.                                                                                                                                                                                                                                                |
+| Group-topology child plan         | adaptive consolidation         | Planning PR #95 and approved blobs `c9b5e92686ebbc5d4ff136dbea678c93fea1579f`, `f83cc311369fff2bf255116253ec0f4fe911a43f`, `ef3cb7c7faeb9757a03ef6c39ca589cacdffa9cc`, `b6fd5aebfa77ee489e65fa30fbee165e033c14f9`, and `cf4d92db310c928b2e020f926efa4f731a2fd3b6` remain historical authority. The active adaptive checkpoint uses current main `dc44ab029dd415b356833d3b72e0207f79c4bc88`, tree `6048a6891d819dd1c32647cdf4def27027b360f3`, and selects one topology capability-activation slice.                                                                               |
+| PR A protocol/core                | integrated/closure deviation   | PR #103 final feature `d86524adc051ab0b64cae160eb3a847f75d59d7a`, tree `fd8069eddc01f6a4784bc9a7a06b3e808f3aed5d`, passed Branch Release Gate `31337007511`. Merge `cd69565936d881c960dbe151cfe48917a4a2e1bb` has the same tree. Exact resulting-main Hetzner run `31358158337` failed during the `05a-rtc-realtime-stability-2-agent-5s` recipe and has no successful exact-SHA rerun. The accepted historical performance disposition remains unchanged; explicit closure disposition is pending.                                                                              |
+| PR B persistence                  | complete                       | PR #151 feature `17f9c237afd9fb006776aaa0335b86e1cb650c88`, tree `7199b061bf1a6fe3abb9c83c02313f5a676a6a5b`, measured base `cc98414867f22cc28f0137ef40a1887ab862f87d`, approved envelope SHA-256 `27a9c8e8acdcaa8f1d737ced31a46708a973c0f92e586526b3c7369467f12ae6`, and accepted one-candidate disposition retain the failed block-2 child evaluation honestly. Merge `1e5f5e55e6ff94c016bfe2cc11af92952a30e32f`, Branch Release Gate `31431692263`, and resulting-main Hetzner run `31432113008` succeeded. Open security classification issue #153 remains separately scoped. |
+| PR C authoritative shell          | integrated/closure deviation   | PR #155 final feature `8ec6b8150850d1b7a653d7e6552cb81528e5090a` and merge `bbcec6b9413678d85d0c97f63b18bb4216b5d767` share tree `a272104e0c7638165867e8431cec9afa21870c30`. Medium-scale `31576056918`, topology replay `31576056919`, and resulting-main Hetzner `31580601865` succeeded. Branch Release `31576055172` and review-record runs `31576055103`/`31580589561` remain failed. No governed performance position was consumed; the human explicitly skipped further measurement on 2026-08-13 without claiming a pass.                                                |
+| Current-main compatibility        | compatible with recorded delta | No topology production owner or topology semantic test changed from PR C resulting main through `dc44ab029dd415b356833d3b72e0207f79c4bc88`. PRs #197-#199, #201, and #204-#206 changed adaptive governance, RTC benchmark ownership/locks, historical performance-tooling controls, and authenticated plan closeout only. The successor record includes the new closeout verifier under repository-structure ownership. Sibling work remains compatibility input, not topology-child evidence.                                                                                   |
+| PR D alignment/final trace        | current adaptive slice         | Activate the topology capability by aligning the test mirror, exact focused command, durable navigation, and two retained style findings without changing behavior. Stop for a new checkpoint after this slice; child close and the later ledger are not in the current horizon.                                                                                                                                                                                                                                                                                                 |
+| Later topology ledger             | blocked                        | Requires all four implementation closure records and separate authorization.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| RTC/RTT and other sibling domains | active outside this child      | B01/B02/B03 RTC benchmark work and PR #196 are already on main. They remain outside this child's authority and cannot be claimed as its completion evidence.                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 ## 20. Self-Review Checklist
 
@@ -2837,3 +2857,311 @@ measurements remain historical and are never relabeled for a changed tree.
 - [x] Semantic tests remain primary and ratchets supplementary.
 - [x] Non-circular planning, implementation, and ledger evidence is preserved.
 - [x] No production behavior is authorized without explicit human approval.
+
+## 21. Adaptive Execution Record
+
+The record below is the canonical current horizon. Historical task lists remain
+evidence and acceptance context; they do not authorize work outside this
+record's single next slice.
+
+```plan-adaptation-v1
+{
+  "version": 1,
+  "planId": "rallar-group-topology-server-structure",
+  "status": "active",
+  "goal": "Complete group-topology human traceability by activating one directly navigable topology capability without changing runtime behavior or rewriting historical evidence.",
+  "acceptanceCriteria": [
+    "A human can trace topology configuration ingress, authority, persistence, transaction and retry exits, reconfiguration, planning, and downstream publication from one durable navigation owner.",
+    "The topology production root, canonical entry, mirrored test root, focused command, and navigation map satisfy current repository-structure governance.",
+    "The two retained PR C style findings are corrected without changing topology behavior, public APIs, persisted contracts, authority, transaction, retry, receipt, outbox, or publication semantics.",
+    "Canonical callers bypass compatibility-only wrappers while every retained public compatibility surface remains one direct hop with an explicit owner and removal condition.",
+    "Semantic and concurrency tests remain primary, all affected and final repository gates pass on one unchanged tree, and independent review has zero unresolved Critical or Important findings.",
+    "PR A and PR C failed publication evidence, PR B's accepted one-candidate performance disposition, and every rejected or superseded PR C performance artifact remain historically exact.",
+    "The 2026-08-13 skipped-performance decision is reported as a closure deviation and never as a performance pass.",
+    "The later evidence ledger remains a separately authorized slice after a fresh adaptive checkpoint."
+  ],
+  "distributedValidation": {
+    "required": true,
+    "reason": "The activation slice moves and validates tests for authoritative realtime topology ownership; its final implementation tree requires the repository's risk-selected distributed validation policy."
+  },
+  "capabilities": [
+    {
+      "owner": "plan adaptation",
+      "root": "scripts/plan-adaptation",
+      "entry": "scripts/plan-adaptation.mjs",
+      "testRoot": "packages/tests/repo/plan-adaptation",
+      "focusedCommand": "npm run test:plan-adaptation",
+      "navigationMap": "scripts/plan-adaptation/README.md",
+      "factContracts": [],
+      "contractPaths": [
+        "docs/superpowers/specs/2026-08-12-adaptive-agent-execution-governance-design.md"
+      ],
+      "controlFlowFamilies": [
+        "lifecycle mutation",
+        "read-only validation",
+        "close-out"
+      ]
+    },
+    {
+      "owner": "repository structure",
+      "root": "scripts/repo-structure-check",
+      "entry": "scripts/repo-structure-check.mjs",
+      "testRoot": "packages/tests/repo/repo-structure-check",
+      "focusedCommand": "npm run test:repo-structure",
+      "navigationMap": "scripts/repo-structure-check/README.md",
+      "factContracts": [
+        "scripts/plan-adaptation/active-plan-registry.mjs",
+        "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "scripts/plan-adaptation/plan-closure-receipt.mjs",
+        "scripts/plan-adaptation/plan-change-facts.mjs",
+        "scripts/repo-style-check/structural-facts.mjs"
+      ],
+      "controlFlowFamilies": [
+        "authored inventory and material-change classification",
+        "topology and structural-disposition evaluation",
+        "capability and cold-navigation validation",
+        "authenticated last-plan close-out validation",
+        "authenticated singleton-exception verification"
+      ]
+    },
+    {
+      "kind": "guidance",
+      "owner": "adaptive plan execution guidance",
+      "skillRoot": ".agents/skills/adaptive-plan-execution",
+      "skillEntry": ".agents/skills/adaptive-plan-execution/SKILL.md",
+      "contractTestRoot": "packages/tests/repo/adaptive-agent-execution",
+      "focusedCommand": "npm run test:adaptive-plan-execution",
+      "evaluationRoot": ".agents/evaluations/adaptive-agent-execution/v1",
+      "contractPaths": [
+        "packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts"
+      ]
+    },
+    {
+      "kind": "guidance",
+      "owner": "repository structure guidance",
+      "skillRoot": ".agents/skills/organizing-repository-structure",
+      "skillEntry": ".agents/skills/organizing-repository-structure/SKILL.md",
+      "contractTestRoot": "packages/tests/repo/organizing-repository-structure",
+      "focusedCommand": "npm run test:organizing-repository-structure",
+      "evaluationRoot": ".agents/evaluations/organizing-repository-structure/v1",
+      "contractPaths": [
+        ".agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs",
+        "packages/tests/repo/rallar-skill-plugin-publication-integrity.test.ts"
+      ]
+    },
+    {
+      "kind": "guidance",
+      "guidanceRole": "router",
+      "owner": "general agent guidance",
+      "routingEntry": "AGENTS.md",
+      "contractTestRoot": "packages/tests/repo/general-agent-guidance",
+      "focusedCommand": "npm run test:general-agent-guidance",
+      "evaluationRoot": null,
+      "contractPaths": [
+        ".agents/skills/adaptive-plan-execution/SKILL.md",
+        ".agents/skills/organizing-repository-structure/SKILL.md",
+        ".agents/skills/publishing-plan-progress/SKILL.md",
+        ".agents/skills/rallar-code-writing/SKILL.md",
+        ".agents/skills/rallar-testing/SKILL.md",
+        ".agents/skills/rallar-testing/references/test-commands.md",
+        "packages/tests/repo/rallar-authoritative-mutation-guidance-integrity.test.ts",
+        "packages/tests/repo/repo-code-style-authority-integrity.test.ts",
+        "packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts"
+      ]
+    },
+    {
+      "owner": "PR human review",
+      "root": "scripts/pr-human-review",
+      "entry": "scripts/pr-human-review.mjs",
+      "testRoot": "packages/tests/repo/pr-human-review",
+      "focusedCommand": "npm run test:pr-human-review",
+      "navigationMap": "scripts/pr-human-review/README.md",
+      "factContracts": [
+        "scripts/check-pr-human-review-legacy-stages.mjs",
+        "scripts/legacy-review/candidate-report.mjs",
+        "scripts/legacy-review/validate-supplied-evidence.mjs",
+        "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "scripts/plan-adaptation/plan-change-facts.mjs",
+        "scripts/review-legacy.mjs",
+        "packages/tests/repo/legacy-review.test.ts"
+      ],
+      "contractPaths": [
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/workflows/pr-human-review-record.yml",
+        "docs/README.md",
+        "docs/pr-human-review-record.md",
+        "docs/production-legacy-exceptions.md",
+        "docs/repo-human-style-guide.md"
+      ],
+      "controlFlowFamilies": [
+        "review input and evidence decoding",
+        "initial checkpoint and final freshness validation",
+        "trusted retained-legacy approval",
+        "legacy candidate-stage integration"
+      ]
+    },
+    {
+      "owner": "governance gate",
+      "root": "scripts/governance-gate",
+      "entry": "scripts/governance-gate.mjs",
+      "testRoot": "packages/tests/repo/governance-gate",
+      "focusedCommand": "npm run test:governance-gate",
+      "navigationMap": "scripts/governance-gate/README.md",
+      "factContracts": [
+        "packages/tests/repo/github-actions-runtime-governance.test.ts"
+      ],
+      "contractPaths": [
+        ".github/workflows/governance-gate.yml"
+      ],
+      "controlFlowFamilies": [
+        "local phase orchestration",
+        "focused contract validation",
+        "GitHub early-gate integration"
+      ]
+    },
+    {
+      "owner": "validation evidence",
+      "root": "scripts/validation-evidence",
+      "entry": "scripts/validation-evidence.mjs",
+      "testRoot": "packages/tests/repo/validation-evidence",
+      "focusedCommand": "npm run test:validation-evidence",
+      "navigationMap": "scripts/validation-evidence/README.md",
+      "factContracts": [
+        "scripts/pr-human-review/review-freshness.mjs"
+      ],
+      "contractPaths": [
+        ".github/workflows/branch-release-gate.yml",
+        ".github/workflows/release-gate.yml",
+        "apps/relic-hunter-server-v1/deno.lock"
+      ],
+      "controlFlowFamilies": [
+        "build-tree digest computation",
+        "trusted prior-run evidence validation",
+        "evidence production and branch-workflow reuse"
+      ]
+    },
+    {
+      "owner": "distributed validation risk",
+      "root": "scripts/distributed-validation-risk",
+      "entry": "scripts/distributed-validation-risk.mjs",
+      "testRoot": "packages/tests/repo/distributed-validation-risk",
+      "focusedCommand": "npm run test:distributed-validation-risk",
+      "navigationMap": "scripts/distributed-validation-risk/README.md",
+      "factContracts": [
+        "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "packages/tests/hetzner/distributed-recipe-workflow.test.ts"
+      ],
+      "contractPaths": [
+        ".github/workflows/hetzner-supported-distributed-manifests.yml",
+        "apps/api-v1/deno.json",
+        "apps/api-v1/deno.lock",
+        "deno.json",
+        "deno.lock"
+      ],
+      "controlFlowFamilies": [
+        "changed-path risk classification",
+        "structured plan requirement and manual override",
+        "main-push Hetzner workflow selection"
+      ]
+    },
+    {
+      "owner": "group topology authority",
+      "root": "packages/shared-server/rallar-system/topology",
+      "entry": "packages/shared-server/rallar-system/topology/group-topology-management-service.ts",
+      "testRoot": "packages/tests/shared-server/rallar-system/topology",
+      "focusedCommand": "npm run test:group-topology",
+      "navigationMap": "packages/shared-server/rallar-system/topology/README.md",
+      "factContracts": [],
+      "contractPaths": [],
+      "controlFlowFamilies": [
+        "configuration ingress and authority",
+        "persistence and exact reads",
+        "AppInbox transaction, retry, and outbox exits",
+        "reconfiguration and planning",
+        "downstream RTC replay and publication"
+      ],
+      "activation": {
+        "state": "planned",
+        "slice": "activate-group-topology-capability"
+      }
+    }
+  ],
+  "architecture": {
+    "currentHypothesis": "The implemented production ownership is coherent, but the pre-governance test mirror and lack of one exact focused command prevent an honest active capability declaration.",
+    "intendedHypothesis": "One consolidation slice aligns the existing tests and validation entry with the existing topology owner, fixes the two known style findings, and leaves runtime behavior unchanged.",
+    "invalidatedAssumptions": [
+      "A post-merge PR C performance result is required before final traceability work can continue.",
+      "The pre-governance packages/tests/shared-server/topology path is an acceptable declared mirror for packages/shared-server/rallar-system/topology."
+    ],
+    "freshInitialReview": {
+      "status": "pending",
+      "reason": "Independent initial review is required before implementation publication; no separate reviewer was started during this plan-only replan."
+    }
+  },
+  "completedSlicesSinceCheckpoint": [],
+  "facts": {
+    "diffBase": "dc44ab029dd415b356833d3b72e0207f79c4bc88",
+    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "computedTriggers": [
+      "invalid-assumption",
+      "scope-growth"
+    ],
+    "undeclaredChangedPaths": [
+      "plans/adaptive-agent-execution-governance-plan.md",
+      "plans/adaptive-agent-execution-governance.closure.json"
+    ]
+  },
+  "checkpoint": {
+    "outcome": "PRs A, B, and C are integrated. PR C correctness and resulting-main evidence are retained, its failed publication evidence remains failed, and the human explicitly skipped the unconsumed performance workflow. Current main leaves topology production behavior unchanged but introduces adaptive capability governance that the legacy test layout does not yet satisfy.",
+    "learning": "The remaining value is not another measurement campaign or broad reorganization. It is one behavior-neutral consolidation that makes the already implemented topology ownership directly navigable and governable under current main.",
+    "structure": "Keep packages/shared-server/rallar-system/topology as the production owner and its existing README as the navigation owner. Move the topology tests into the recognized mirrored hierarchy, add one exact focused command, correct the two retained style findings, and preserve every public, persisted, authority, transaction, retry, receipt, outbox, and downstream boundary.",
+    "decision": "consolidate",
+    "nextSlices": [
+      "activate-group-topology-capability"
+    ]
+  },
+  "structuralDispositions": [
+    {
+      "kind": "predecessor-path",
+      "path": "packages/tests/shared-server/topology",
+      "disposition": "move",
+      "destination": "packages/tests/shared-server/rallar-system/topology",
+      "owner": "group topology authority",
+      "rationale": "Current adaptive governance requires the test hierarchy to mirror the authoritative production root; the move preserves semantic test ownership and behavior rather than adding a compatibility test path."
+    },
+    {
+      "kind": "ownership-contract",
+      "target": "packages/shared-server/rallar-system/topology/group-topology-management-service.ts",
+      "disposition": "keep",
+      "rationale": "The public management service remains the direct compatibility facade while narrower config, reconfigure, planning, and inbox owners remain canonical internally."
+    },
+    {
+      "kind": "ownership-contract",
+      "target": "plans/rallar-group-topology-server-structure-plan.md#section-13",
+      "disposition": "keep",
+      "rationale": "Retain the old performance protocol only as historical evidence under the explicit retirement banner; it owns no future execution."
+    }
+  ],
+  "freshStructuralReview": {
+    "status": "failed",
+    "failures": [
+      {
+        "kind": "navigation",
+        "summary": "The active topology implementation has neither the recognized mirrored test root nor an exact focused capability command required by current governance.",
+        "recoverable": true,
+        "deepenedBySlices": [
+          "close-group-topology-child"
+        ]
+      }
+    ]
+  },
+  "coldNavigationEvidence": null,
+  "materialDecisions": [
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The human explicitly skipped the unconsumed PR C performance workflow and requested replanning under the adaptive tools now on main; the skip is retained as a closure deviation, not a pass."
+    }
+  ]
+}
+```
