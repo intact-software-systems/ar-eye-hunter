@@ -3533,9 +3533,10 @@ function explanationForFailure(
                 ? 'Group assertion has no participants'
                 : 'Group assertion failed',
             likelyCause: failure.message ||
-                'The coordinator-evaluated group assertion did not hold over the frozen participant set.',
-            nextAction:
-                'Read the redacted per-agent value table in failures.json; it names missing and violating agents for the typed source address.',
+                'The coordinator-evaluated group assertion did not hold over the frozen ' +
+                    'participant set.',
+            nextAction: 'Read the redacted per-agent value table in failures.json; it names ' +
+                'missing and violating agents for the typed source address.',
             evidence,
         };
     }
