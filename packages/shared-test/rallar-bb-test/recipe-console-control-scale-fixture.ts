@@ -222,7 +222,8 @@ function distributedRun(
                 passedParticipants: targetAgentIds.length,
                 failedParticipants: 0,
                 recipes: 1, requiredRecipes: 1, passedRecipes: 1,
-                failedRecipes: 0, blockingFailures: 0,
+                failedRecipes: 0, groupAssertions: 0, passedGroupAssertions: 0,
+                failedGroupAssertions: 0, blockingFailures: 0,
             },
         },
     };

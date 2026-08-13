@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "124e09924f1b20682f1a9407a0c3c91a2bfeeaff",
+      "source": {
+        "path": "packages/shared-test/rallar-bb-test/distributed-run.ts",
+        "blob": "0fa7cae8cdf82d976a8991ac897dc0e77f42b582"
+      },
+      "targets": [
+        "packages/shared-test/rallar-bb-test/distributed/distributed-run-rollup.ts"
+      ]
+    },
+    {
+      "mergeBase": "124e09924f1b20682f1a9407a0c3c91a2bfeeaff",
+      "source": {
+        "path": "apps/rallar-black-box-control-server/src/control-service.ts",
+        "blob": "89f719f4b80ff3769134946ac8c12f5daff71461"
+      },
+      "targets": [
+        "apps/rallar-black-box-control-server/src/control-distributed-recipe-results.ts"
+      ]
+    }
+  ]
+}

@@ -278,6 +278,9 @@ Deno.test('control distributed artifacts export filtered v2 analysis files', () 
         requiredRecipes: 1,
         passedRecipes: 0,
         failedRecipes: 1,
+        groupAssertions: 0,
+        passedGroupAssertions: 0,
+        failedGroupAssertions: 0,
         blockingFailures: 1,
       },
       failures: [{

@@ -11,6 +11,9 @@ import {
     RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
 } from './distributed-run.ts';
 import {
+    RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA,
+} from './distributed/group-assertions-schema.ts';
+import {
     formatJsonSchemaValidationErrors,
     isJsonRecordValue,
     validateJsonSchema,
@@ -1869,6 +1872,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             },
             additionalProperties: false,
         },
+        groupAssertions: RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA,
         metadata: recordSchema,
     },
     additionalProperties: false,

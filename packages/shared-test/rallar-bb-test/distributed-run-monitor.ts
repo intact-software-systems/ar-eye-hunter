@@ -292,7 +292,7 @@ export type DistributedRunReadinessRow = Readonly<{
 }>;
 
 export type DistributedRunFailureRow = Readonly<{
-    kind: 'run' | 'participant' | 'recipe' | 'command';
+    kind: 'run' | 'participant' | 'recipe' | 'group-assertion' | 'command';
     key: string;
     message: string;
     code?: string;

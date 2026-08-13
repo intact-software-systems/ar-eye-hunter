@@ -29,8 +29,21 @@ import {
   type RallarBlackBoxDistributedTargetResolution,
   rollupDistributedRunResult,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import {
+  evaluateDistributedGroupAssertions,
+} from '@shared-test/rallar-bb-test/distributed/group-assertions-evaluation.ts';
+import {
+  toDistributedGroupAssertionParticipants,
+  toDistributedGroupAssertionRecipeEvidence,
+} from '@shared-test/rallar-bb-test/distributed/group-assertions-evidence.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { createControlDistributedRunArtifactBundle } from './control-artifacts.ts';
+import {
+  resolveFirstStartedAtEpochMs,
+  resolveLastEndedAtEpochMs,
+  toDistributedRecipeResult,
+  toDistributedRunResultError,
+} from './control-distributed-recipe-results.ts';
 import type {
   ControlAgentSnapshot,
   ControlDistributedRunArtifactBundle,
@@ -734,6 +747,19 @@ export class RallarBlackBoxControlService {
     this.runs.clear();
     this.distributedRuns.clear();
     this.fleetReports.clear();
+    const evidenceCommandKeys = new Set<string>();
+    for (const distributedRunSnapshot of snapshot.distributedRuns ?? []) {
+      if ((distributedRunSnapshot.manifest.groupAssertions?.length ?? 0) === 0) {
+        continue;
+      }
+      distributedRunSnapshot.commandLinks
+        .filter((link) => link.phase === 'start')
+        .forEach((link) =>
+          evidenceCommandKeys.add(
+            resultCommandKey(distributedRunSnapshot.controlRunId, link.commandId),
+          )
+        );
+    }
     for (const runSnapshot of snapshot.runs) {
       const run: StoredRun = {
         runId: runSnapshot.runId,
@@ -786,7 +812,12 @@ export class RallarBlackBoxControlService {
         });
       }
       for (const result of runSnapshot.results) {
-        run.results.set(result.commandId, this.compactResultEnvelope(result));
+        run.results.set(
+          result.commandId,
+          evidenceCommandKeys.has(resultCommandKey(run.runId, result.commandId))
+            ? result
+            : this.compactResultEnvelope(result),
+        );
       }
       this.runs.set(run.runId, run);
     }
@@ -910,7 +941,12 @@ export class RallarBlackBoxControlService {
     agent.lastSeenAtEpochMs = this.now();
     agent.completedCommandIds.add(envelope.commandId);
     agent.resumeCompletedCommandIds.delete(envelope.commandId);
-    run.results.set(envelope.commandId, this.compactResultEnvelope(envelope));
+    run.results.set(
+      envelope.commandId,
+      this.isGroupAssertionEvidenceCommand(envelope.runId, envelope.commandId)
+        ? envelope
+        : this.compactResultEnvelope(envelope),
+    );
 
     const command = run.commands.get(envelope.commandId);
     if (command) {
@@ -919,6 +955,27 @@ export class RallarBlackBoxControlService {
     this.touch(run);
     this.trimRunToRuntimeBounds(run);
     this.refreshDistributedRunsForControlRun(run.runId);
+  }
+
+  // Group assertions read per-command evidence out of start-phase recipe
+  // results after completion, so those envelopes keep their full composite
+  // value instead of the compacted resultCount projection.
+  private isGroupAssertionEvidenceCommand(runId: string, commandId: string): boolean {
+    for (const distributedRun of this.distributedRuns.values()) {
+      if (
+        distributedRun.controlRunId !== runId ||
+        (distributedRun.manifest.groupAssertions?.length ?? 0) === 0
+      ) {
+        continue;
+      }
+      const linked = distributedRun.commandLinks.some((link) =>
+        link.phase === 'start' && link.commandId === commandId
+      );
+      if (linked) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private receiveEvent(envelope: ControlEventEnvelope): boolean {
@@ -1760,12 +1817,29 @@ export class RallarBlackBoxControlService {
     );
     const recipes = distributedRun.commandLinks
       .filter((link) => link.phase === 'start')
-      .map((link) => this.distributedRecipeResult(distributedRun, run, link));
+      .map((link) =>
+        toDistributedRecipeResult({
+          link,
+          dispatched: run?.commands.get(link.commandId)?.dispatchedAtEpochMs !== undefined,
+          result: run?.results.get(link.commandId),
+        })
+      );
+    const groupAssertions = evaluateDistributedGroupAssertions({
+      manifest: distributedRun.manifest,
+      participants: toDistributedGroupAssertionParticipants(distributedRun.targetResolution),
+      recipeResults: recipes,
+      recipeEvidence: toDistributedGroupAssertionRecipeEvidence({
+        commandLinks: distributedRun.commandLinks,
+        resultByCommandId: run?.results ?? new Map(),
+      }),
+      redaction: this.redaction,
+    });
 
     return rollupDistributedRunResult({
       stateHint: distributedRun.state,
       participants,
       recipes,
+      groupAssertions,
     });
   }
 
@@ -1805,7 +1879,7 @@ export class RallarBlackBoxControlService {
         roles,
         state: 'failed',
         ok: false,
-        error: this.resultError(failedResult),
+        error: toDistributedRunResultError(failedResult),
       };
     }
 
@@ -1865,8 +1939,8 @@ export class RallarBlackBoxControlService {
           roles,
           state: 'passed',
           ok: true,
-          startedAtEpochMs: this.firstStartedAt(startResults),
-          endedAtEpochMs: this.lastEndedAt(startResults),
+          startedAtEpochMs: resolveFirstStartedAtEpochMs(startResults),
+          endedAtEpochMs: resolveLastEndedAtEpochMs(startResults),
         };
       }
       return {
@@ -1887,7 +1961,7 @@ export class RallarBlackBoxControlService {
           roles,
           state: 'ready',
           ok: true,
-          acknowledgedAtEpochMs: this.lastEndedAt([...stageResults, ...barrierResults]),
+          acknowledgedAtEpochMs: resolveLastEndedAtEpochMs([...stageResults, ...barrierResults]),
         };
       }
       if (agent && !agent.connected) {
@@ -1910,7 +1984,7 @@ export class RallarBlackBoxControlService {
         sessionId: agent?.identity?.sessionId,
         roles,
         state: 'acknowledged',
-        acknowledgedAtEpochMs: this.lastEndedAt(stageResults),
+        acknowledgedAtEpochMs: resolveLastEndedAtEpochMs(stageResults),
       };
     }
 
@@ -1922,7 +1996,7 @@ export class RallarBlackBoxControlService {
         roles,
         state: 'ready',
         ok: true,
-        acknowledgedAtEpochMs: this.lastEndedAt(stageResults),
+        acknowledgedAtEpochMs: resolveLastEndedAtEpochMs(stageResults),
       };
     }
 
@@ -1959,84 +2033,6 @@ export class RallarBlackBoxControlService {
       this.now() >
         distributedRun.barrierStartedAtEpochMs +
           this.distributedRunBarrierTimeoutMs(distributedRun);
-  }
-
-  private distributedRecipeResult(
-    _distributedRun: StoredDistributedRun,
-    run: StoredRun | undefined,
-    link: ControlDistributedRunCommandLink,
-  ): RallarBlackBoxDistributedRecipeResult {
-    const command = run?.commands.get(link.commandId);
-    const result = run?.results.get(link.commandId);
-    const recipeKey = [
-      link.agentId,
-      link.recipeId ?? link.role ?? link.commandId,
-    ].join(':');
-
-    if (!result) {
-      return {
-        recipeKey,
-        recipeId: link.recipeId,
-        agentId: link.agentId,
-        role: link.role,
-        state: command?.dispatchedAtEpochMs ? 'running' : 'pending',
-      };
-    }
-
-    return {
-      recipeKey,
-      recipeId: link.recipeId,
-      agentId: link.agentId,
-      role: link.role,
-      state: result.ok ? 'passed' : 'failed',
-      ok: result.ok,
-      commandResultCount: this.nestedRecipeResultCount(result),
-      failureCount: result.ok ? 0 : 1,
-      startedAtEpochMs: result.result?.startedAtEpochMs,
-      endedAtEpochMs: result.result?.endedAtEpochMs,
-      error: result.ok ? undefined : this.resultError(result),
-    };
-  }
-
-  private resultError(result: ControlResultEnvelope): Readonly<{
-    code: string;
-    message: string;
-    details?: unknown;
-  }> {
-    return result.error ?? result.result?.error ?? {
-      code: 'RALLAR_BB_DISTRIBUTED_COMMAND_FAILED',
-      message: `Distributed command ${result.commandId} failed.`,
-    };
-  }
-
-  private nestedRecipeResultCount(result: ControlResultEnvelope): number {
-    const value = result.result?.value;
-    if (
-      value && typeof value === 'object' && Array.isArray((value as { results?: unknown }).results)
-    ) {
-      return (value as { results: readonly unknown[] }).results.length;
-    }
-    if (
-      value && typeof value === 'object' &&
-      typeof (value as { resultCount?: unknown }).resultCount === 'number'
-    ) {
-      return (value as { resultCount: number }).resultCount;
-    }
-    return result.result ? 1 : 0;
-  }
-
-  private firstStartedAt(results: readonly ControlResultEnvelope[]): number | undefined {
-    return results
-      .map((result) => result.result?.startedAtEpochMs)
-      .filter((value): value is number => typeof value === 'number')
-      .sort((left, right) => left - right)[0];
-  }
-
-  private lastEndedAt(results: readonly ControlResultEnvelope[]): number | undefined {
-    return results
-      .map((result) => result.result?.endedAtEpochMs)
-      .filter((value): value is number => typeof value === 'number')
-      .sort((left, right) => right - left)[0];
   }
 
   private ensureRun(runId: string): StoredRun {
@@ -2285,6 +2281,10 @@ function compactChildFailure(value: unknown): Record<string, unknown> {
       }
       : undefined,
   };
+}
+
+function resultCommandKey(runId: string, commandId: string): string {
+  return `${runId} ${commandId}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
