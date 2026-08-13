@@ -1743,28 +1743,28 @@ evidence; no replacement envelope is required or authorized.
 - [x] Begin planning from the Section 0.10 performance skip while retaining the
       failed PR C Branch Release and exact-SHA review evidence as historical
       deviations rather than current passing evidence.
-- [ ] Reconcile the current-main RTC benchmark, black-box assertion, and style
+- [x] Reconcile the current-main RTC benchmark, black-box assertion, and style
       governance changes; record no material topology impact or the smallest
       exact plan delta before implementation.
-- [ ] Add the temporary child source/style snapshot test-first with this child
+- [x] Add the temporary child source/style snapshot test-first with this child
       as owner and the later ledger as its removal/replacement decision point.
-- [ ] Correct the retained PR C style findings in
+- [x] Correct the retained PR C style findings in
       `planning/select-group-topology-planning-snapshot.ts` and
       `replay/create-rtc-topology-work-handler.ts` without changing topology
       behavior or adding a new exception.
-- [ ] Align only new/materially rewritten topology production, mirrored tests,
+- [x] Align only new/materially rewritten topology production, mirrored tests,
       navigation evidence, ratchets, and compatibility wrappers.
-- [ ] Enforce descriptive filename/primary-symbol alignment, named interfaces
+- [x] Enforce descriptive filename/primary-symbol alignment, named interfaces
       and inputs, direct callback semantics, imports/file order, 100-column
       guidance, 60-line functions, and 400-line modules.
-- [ ] Prove canonical imports bypass the retained public compatibility
+- [x] Prove canonical imports bypass the retained public compatibility
       surfaces; add no moved-private-path wrapper.
-- [ ] Preserve all semantic cases/assertions while completing the exact test
+- [x] Preserve all semantic cases/assertions while completing the exact test
       tree.
-- [ ] Finalize the five family traces and repeat the controlled human sample.
-- [ ] Record every supplementary ratchet as removed, replaced by semantic
+- [x] Finalize the five family traces and repeat the controlled human sample.
+- [x] Record every supplementary ratchet as removed, replaced by semantic
       evidence, or retained with owner/reason/later-ledger decision.
-- [ ] Give every remaining focused warning row an explicit human disposition.
+- [x] Give every remaining focused warning row an explicit human disposition.
 - [ ] Require independent whole-child review with Critical 0 and Important 0.
 - [ ] Run all final gates on one unchanged tree, freeze commit/tree, publish PR
       D, require Branch Release Gate, and stop for human merge.
@@ -1773,6 +1773,86 @@ PR D does not inherit or create PR C performance evidence. Its acceptance is
 behavior preservation, direct navigation, semantic coverage, current local
 validation, independent review, and current publication gates on one unchanged
 tree. No performance protocol is part of this child's remaining horizon.
+
+#### Task 5 capability-activation evidence
+
+Current main advanced during execution from the observed
+`20f0bd8ce8a905054feb8d60d61c6a169d149b1b` tree
+`50c5c2c16a2ee0264c4bd3263e9ff629a8d524a0` to merge base
+`aa124e03775492f9e37882bb9ed02b03dfe0dad6` tree
+`7fdefc3d98f875298c95a65d716de88a3741c00a`. The compatibility result is
+**Compatible — no plan delta**. The later commit refreshes only this plan's
+PR #203 sibling-facts checkpoint, and `aa124e03` removes contaminated
+uncommitted TypeScript paths from that older fact refresh. The wider reconciled
+current-main changes add RTC benchmark consumers of canonical replay owners,
+generic black-box assertions with no topology ownership, and governance that
+requires the recognized test mirror, focused command, and navigation contract.
+They change no topology behavior, owner, public/persisted contract, integration,
+or Task 5 acceptance criterion.
+
+The durable README now records construction/registration and runtime timelines
+for all five families: config/override mutation, explicit reconfigure, query,
+maintenance/expiry, and downstream RTC publication. Each trace names the
+invoker and retry owner, transaction or read phases, confirmed commit and
+after-commit effects, normal and inactive exits, retry re-entry, terminal
+failure, cleanup, caller-visible result, and canonical versus compatibility
+path. The controlled human comparison remains explicitly waived because no
+valid Task 1 sample exists. The traces are qualitative evidence only; no
+elapsed time, wrong-file count, compatibility-hop count, unresolved-question
+count, productivity, causal, or statistical claim is inferred.
+
+The complete current move baseline is 31 tracked predecessor files, 26 test
+modules, 85 `it`/`test` callsites, and 356 `expect` callsites. The historical
+13/68/281 row remains unchanged historical PR evidence. The focused capability
+suite executes all moved modules and preserves every semantic case, assertion,
+fixture, opt-in concurrency condition, Deno configuration, worker path, and
+process working directory. The recognized Postgres integration configuration
+and shared compatibility-consumer inventory now point to the canonical mirror.
+
+##### Focused warning dispositions
+
+On the final aligned production root, default/construction/layout/layout-
+details/output-contract/object-interface modes report respectively
+43/44/0/0/39/40 warning rows. The union is 49 displayed row instances; the two
+identical grouped `topology-app-inbox-command.ts` unknown-summary rows are
+counted separately. Every remaining row has this explicit disposition:
+
+| Path                                                              | Rule and rows                                                                          | Disposition                                                                                                                                                                                       |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config/maintenance/migrate-legacy-group-topology-config-keys.ts` | `boundary.unknown` × 2                                                                 | Accepted existing boundary evidence: raw legacy JSON is normalized and compared inside the migration owner before typed persistence. No row changed or worsened.                                  |
+| `config/mutation/group-topology-config-mutation-contracts.ts`     | `types.rename-alias` × 1                                                               | Accepted existing contract debt. Removing the exported domain-role name is outside this behavior/API-preserving slice; the later ledger owns the decision.                                        |
+| `config/mutation/topology-config-mutation-boundary.ts`            | `boundary.unknown` × 6                                                                 | Accepted existing untrusted-boundary evidence. Each raw value is narrowed before domain computation; no row changed or worsened.                                                                  |
+| `config/persistence/decode-stored-group-topology-config.ts`       | `boundary.unknown` × 6                                                                 | Accepted existing persistence-decoder evidence. Stored JSON remains untrusted until this owner validates it; no row changed or worsened.                                                          |
+| `config/persistence/group-topology-config-persistence-codec.ts`   | `boundary.unknown` × 5; `function.input-contract` × 2; `file.responsibility-count` × 1 | Accepted existing codec debt. Unknowns are owned at parse/decode boundaries; signatures and cohesive persisted-value exports are unchanged. Later ledger decides any API-neutral split.           |
+| `config/persistence/group-topology-config-storage-keys.ts`        | `file.responsibility-count` × 1; `abstraction.pass-through` × 3                        | Accepted existing cohesive storage vocabulary. The three apparent pass-throughs deliberately preserve topology slot meaning over shared group-state key encoding; no new hop or export was added. |
+| `config/persistence/read-exact-group-topology-config-mutation.ts` | `boundary.unknown` × 7; `function.input-contract` × 1                                  | Accepted existing exact-read boundary debt. Runtime-state values remain untrusted until injected decoders/validators narrow them; changing the existing read port is outside this slice.          |
+| `inbox/topology-app-inbox-authority.ts`                           | `boundary.unknown` × 2                                                                 | Accepted existing authenticated-proof boundary evidence. Durable values are decoded and verified before authority use; no row changed or worsened.                                                |
+| `inbox/topology-app-inbox-command.ts`                             | `boundary.unknown` × 7; `abstraction.pass-through` × 1                                 | Accepted existing durable-command boundary evidence. `isTopologyRecord` is the named raw-record narrowing boundary used by exact-key validation; no new wrapper was added.                        |
+| `rallar-rtc-topology-metrics.ts`                                  | `contract.object-interface` × 1                                                        | Accepted existing untouched RTC metrics contract debt; unrelated type-surface work is deferred to its owner, not absorbed here.                                                                   |
+| `replay/rtc-topology-reconnect-hydrator.ts`                       | `file.cognitive-load` × 1                                                              | Accepted existing untouched RTC lifecycle debt at score 80, below the review tier; no magnitude growth occurred.                                                                                  |
+| `replay/rtc-topology-replay-service.ts`                           | `file.cognitive-load` × 1                                                              | Accepted existing untouched replay lifecycle debt at score 80, below the review tier; no magnitude growth occurred.                                                                               |
+| `replay/rtc-topology-work-codec.ts`                               | `abstraction.pass-through` × 1                                                         | Demonstrated protocol boundary: the named conversion owns the canonical QueueBox context identity and its decode equality check.                                                                  |
+
+The materially changed planning and replay files now contribute zero focused
+warning rows. The snapshot test permanently checks the planning file's
+100-column bound and temporarily checks the replay file's 400-line bound; the
+replay module has 398 physical lines. No compatibility exception or new style
+exception was added.
+
+##### Supplementary-ratchet dispositions
+
+| Ratchet                              | Task 5 disposition                                                                                                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Focused source/style snapshot        | Retained through PR D with this child as owner. The later evidence ledger decides removal only after permanent semantic/size evidence owns every protected loss risk.                                                                  |
+| Exact per-PR structural lineage      | Retained unchanged as historical PR A/B/C evidence. This Git-native mirror move and its exact base/blob/path snapshot add no replacement private-path manifest; the later ledger decides removal after resulting-main evidence exists. |
+| Test ownership inventory             | Historical 13/68/281 evidence remains exact. Current 31-file/26-module/85-case/356-assertion preservation is bound by the temporary snapshot while behavior-named tests remain primary; the later ledger decides removal.              |
+| Consumer compatibility inventory     | Replaced for topology execution by permanent runtime export-identity, direct-import, API-composition, and deleted-private-path tests. The shared repository consumer inventory is updated only to the new worker path.                 |
+| README path/primary-symbol integrity | Retained permanently as the durable `repository-navigation-v1` owner and repository-structure governance input.                                                                                                                        |
+
+Issue [#207](https://github.com/intact-software-systems/ar-eye-hunter/issues/207)
+remains an existing plan-only follow-up. Its authenticated closure-receipt
+policy neither applies to this build-affecting PR nor blocks a Task 5 criterion,
+so no policy change is absorbed here.
 
 ### Task 6: Publish the later evidence ledger separately
 
@@ -3098,19 +3178,26 @@ record's current next slice.
       "testRoot": "packages/tests/shared-server/rallar-system/topology",
       "focusedCommand": "npm run test:group-topology",
       "navigationMap": "packages/shared-server/rallar-system/topology/README.md",
-      "factContracts": [],
-      "contractPaths": [],
+      "factContracts": [
+        "packages/shared-server/rallar-system/services/app-inbox-transaction-writer.ts",
+        "packages/tests/repo/auth-server-compatibility-consumer-inventory.ts",
+        "packages/tests/shared-server/integration/postgres/rtc-topology-delivery-concurrency.test.ts",
+        "packages/tests/shared-server/integration/postgres/rtc-topology-replay-consumer.test.ts",
+        "packages/tests/shared-server/integration/postgres/rtt-runtime-concurrency.test.ts",
+        "packages/tests/shared-server/integration/postgres/topology-app-outbox-concurrency.test.ts",
+        "packages/tests/shared-server/rallar-system/group-topology-capability-source-style-snapshot.ts"
+      ],
+      "contractPaths": [
+        "docs/test-structure-coupling-exceptions.md",
+        "packages/tests/shared-server/vitest.postgres-integration.config.mjs"
+      ],
       "controlFlowFamilies": [
         "configuration ingress and authority",
         "persistence and exact reads",
         "AppInbox transaction, retry, and outbox exits",
         "reconfiguration and planning",
         "downstream RTC replay and publication"
-      ],
-      "activation": {
-        "state": "planned",
-        "slice": "activate-group-topology-capability"
-      }
+      ]
     }
   ],
   "architecture": {
@@ -3122,30 +3209,72 @@ record's current next slice.
       "Canonical authenticated closure receipts were assumed to qualify for the PR Human Review Record v2 plan-only exemption. PR #202 proved the validator rejects that required data-only publication path."
     ],
     "freshInitialReview": {
-      "status": "pending",
-      "reason": "Independent initial review is required before implementation publication; no separate reviewer was started during this plan-only replan."
+      "status": "passed",
+      "base": "20f0bd8ce8a905054feb8d60d61c6a169d149b1b",
+      "criticalFindings": 0,
+      "importantFindings": 4,
+      "disposition": "Resolved within activate-group-topology-capability: refresh adaptive facts through the checkpoint; add the README navigation contract and symbol anchors; correct depth-sensitive cross-root test paths after the mirror move; and extend permanent canonical-import and compatibility evidence.",
+      "issue207": "Existing follow-up only; authenticated plan-only closure-receipt policy does not block this build-affecting slice or a declared Task 5 acceptance criterion."
+    },
+    "compatibilityReview": {
+      "initialBase": "20f0bd8ce8a905054feb8d60d61c6a169d149b1b",
+      "base": "939d63d28a1cf8dac0f3610415152074aa941db0",
+      "tree": "bc5720b20811cd047b58f7233ab9657fce321621",
+      "result": "Compatible — no plan delta",
+      "topologyImpact": "RTC benchmark ownership adds direct canonical replay consumers, generic black-box assertions do not own topology contracts, and repository/adaptive governance requires the mirrored test root, exact focused command, and machine-verifiable navigation contract. The later 49adc91c movement refreshes this plan's PR #203 sibling facts; aa124e03 removes contaminated uncommitted TypeScript paths from that older fact refresh; 939d63d2 publishes the already-recorded closure-receipt correction. No topology production behavior, ownership, semantic test, integration boundary, or acceptance criterion changed."
     }
   },
-  "completedSlicesSinceCheckpoint": [
-    "closure-receipt-publication"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "origin/main",
-    "affectedCodeDigest": "699160bac5a7ccbc6c4cb912cc4a34902266e561a886de27ddcdfabf3422b229",
+    "diffBase": "aa124e03775492f9e37882bb9ed02b03dfe0dad6",
+    "affectedCodeDigest": "27261391232b696929a9e808d6464f84b3eaab9d19c9849b2833d0876d82c572",
     "computedTriggers": [
+      "folder-change",
       "ownership-change",
-      "invalid-assumption"
+      "public-contract-change",
+      "invalid-assumption",
+      "scope-growth"
     ],
-    "undeclaredChangedPaths": []
+    "undeclaredChangedPaths": [
+      "packages/tests/shared-server/topology/concurrency/fixtures/postgres-topology-app-inbox-worker.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-app-inbox-concurrency.test.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-concurrency-fixtures.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-config-override-concurrency.test.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-mutation-worker-concurrency.test.ts",
+      "packages/tests/shared-server/topology/concurrency/postgres-topology-mutation-worker-fixtures.ts",
+      "packages/tests/shared-server/topology/config/group-topology-config-query-service.test.ts",
+      "packages/tests/shared-server/topology/config/group-topology-config-resolution.test.ts",
+      "packages/tests/shared-server/topology/config/maintenance/group-topology-config-generation-readiness.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-boundary.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-compute.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-idempotency.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-result.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-test-fixtures.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-transaction.test.ts",
+      "packages/tests/shared-server/topology/config/mutation/group-topology-config-mutation-validation.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-exact-read.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-generation.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-legacy-migration.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-mutation-record-corruption.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-persistence-test-fixtures.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-corruption.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-keys.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-read-write.test.ts",
+      "packages/tests/shared-server/topology/config/persistence/group-topology-config-repository-scope-isolation.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-authority.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-command.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-handler.test.ts",
+      "packages/tests/shared-server/topology/inbox/topology-app-inbox-ownership.test.ts",
+      "packages/tests/shared-server/topology/planning/group-topology-planning-service.test.ts",
+      "packages/tests/shared-server/topology/reconfigure/group-topology-reconfigure-mutation.test.ts"
+    ]
   },
   "checkpoint": {
-    "outcome": "The human explicitly authorized interrupting the single group-topology consolidation horizon to include the independently implemented and reviewed closure-receipt publication correction recorded by issue #207.",
-    "learning": "Receipt authentication and publication scope are separate policies. PR review should reuse plan adaptation's exact canonical receipt-path fact while leaving receipt contents and base-transition authentication with plan adaptation.",
-    "structure": "Retain activate-group-topology-capability unchanged as the planned consolidation slice and add closure-receipt-publication as the second bounded slice. Declare the one cross-owner receipt-path fact; add no new owner, parser, compatibility mode, or topology change.",
+    "outcome": "The final-review replay import correction and six individually reviewed structure-coupling dispositions pass focused tests and governance, and the global coupling registry is declared as the capability's exact non-code review contract.",
+    "learning": "A changed global governance registry should be attached to the capability that requires its entries through contractPaths, while the management public entry remains distinct from the narrower planning owner selected by canonical replay.",
+    "structure": "Keep the activated capability root, public management entry, direct replay planning import, mirrored test root, focused command, README navigation owner, declared coupling-registry and Postgres-config contracts, completed one-slice boundary, and empty next horizon.",
     "decision": "amend",
-    "nextSlices": [
-      "activate-group-topology-capability"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
@@ -3170,19 +3299,41 @@ record's current next slice.
     }
   ],
   "freshStructuralReview": {
-    "status": "failed",
-    "failures": [
+    "status": "complete",
+    "failures": []
+  },
+  "coldNavigationEvidence": {
+    "status": "passed",
+    "summary": "A cold code-derived navigation pass located the canonical owner for each of the five Task 5 families from the durable README without a private compatibility wrapper.",
+    "consolidationDecisionIndex": 2,
+    "probes": [
       {
-        "kind": "navigation",
-        "summary": "The active topology implementation has neither the recognized mirrored test root nor an exact focused capability command required by current governance.",
-        "recoverable": true,
-        "deepenedBySlices": [
-          "close-group-topology-child"
-        ]
+        "capabilityOwner": "group topology authority",
+        "path": "packages/shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts",
+        "symbol": "GroupTopologyConfigMutationService"
+      },
+      {
+        "capabilityOwner": "group topology authority",
+        "path": "packages/shared-server/rallar-system/topology/reconfigure/group-topology-reconfigure-mutation.ts",
+        "symbol": "GroupTopologyReconfigureMutation"
+      },
+      {
+        "capabilityOwner": "group topology authority",
+        "path": "packages/shared-server/rallar-system/topology/config/group-topology-config-query-service.ts",
+        "symbol": "GroupTopologyConfigQueryService"
+      },
+      {
+        "capabilityOwner": "group topology authority",
+        "path": "packages/shared-server/rallar-system/topology/config/maintenance/backfill-group-topology-config-generations.ts",
+        "symbol": "backfillAllGroupTopologyConfigGenerations"
+      },
+      {
+        "capabilityOwner": "group topology authority",
+        "path": "packages/shared-server/rallar-system/topology/replay/create-rtc-topology-work-handler.ts",
+        "symbol": "createRtcTopologyWorkHandler"
       }
     ]
   },
-  "coldNavigationEvidence": null,
   "materialDecisions": [
     {
       "date": "2026-08-13",
@@ -3204,6 +3355,67 @@ record's current next slice.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "The human explicitly authorized interrupting the single group-topology consolidation horizon to include the independently implemented and reviewed closure-receipt publication correction recorded by issue #207."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "consolidate",
+      "summary": "The existing group-topology production owner is now paired with the recognized mirrored test root, exact focused command, machine-verifiable navigation contract, temporary child source/style snapshot, corrected retained style rows, and expanded canonical-import evidence. Focused semantic tests pass without a topology behavior or contract change.",
+      "checkpointDigest": "cc61a93c3e645cae7a530634febbe139d5d8a6739bdfe270d8e8a7ddaa5dd4ee"
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The activated capability now passes both its exact focused suite and the repository structure checker after the recognized test mirror was aligned with its internal ownership boundaries."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The formatted capability activation still passes its exact focused suite and repository structure checker, with the temporary snapshot and navigation map normalized to repository formatting."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The capability activation is rebased onto main 49adc91cbcf00e97560716fc91ae4f4a31a291c1 after a compatibility review found no product, ownership, integration, or acceptance-contract change."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The activated capability now includes the five durable family traces, controlled-sample waiver, all focused warning dispositions, supplementary-ratchet decisions, and canonical Postgres/compatibility consumer paths; focused semantic and repository-structure checks pass."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The sole adaptive consolidation slice activate-group-topology-capability is complete. Cold navigation locates all five family owners from the durable README and machine-readable capability declaration; no second slice is exposed."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The completed activate-group-topology-capability slice preserves all moved semantic and concurrency behavior; the focused suite, isolated Postgres integration suite, exact topology Postgres modules, API black-box recipes, repository governance, and slice-relative style ratchet pass."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The completed activate-group-topology-capability slice preserves all moved semantic and concurrency behavior; after final formatting, the focused suite and all four affected downstream Postgres modules pass on the same source tree."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "Main advanced to aa124e03775492f9e37882bb9ed02b03dfe0dad6 through a plan-only fact cleanup; the rebased capability source remains behaviorally identical and all production, test, ownership, integration, and acceptance contracts remain valid."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "Independent final review found RTC replay importing planning-owned message materialization symbols through the public management facade; replay now imports the declaration owner directly, the ownership test rejects that facade hop, and the release gate's six structural candidates have individual compatibility-boundary dispositions."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The final-review replay import correction and six individually reviewed structure-coupling dispositions pass focused tests and governance, and the global coupling registry is declared as the capability's exact non-code review contract."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "PR #210 advanced main to 939d63d28a1cf8dac0f3610415152074aa941db0 with the already-recorded closure-receipt publication correction. Conflict resolution preserves that material decision before the completed group-topology activation checkpoint, retains the empty horizon, and changes no topology behavior, ownership, integration, or acceptance contract."
     }
   ]
 }

@@ -7,7 +7,10 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
   GroupStateSnapshotIncomparableError,
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import { isTuplePreservingGroupLivenessReduction } from '@shared/repository/group-state-snapshot-revision.ts';
+// prettier-ignore
+import {
+  isTuplePreservingGroupLivenessReduction,
+} from '@shared/repository/group-state-snapshot-revision.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';

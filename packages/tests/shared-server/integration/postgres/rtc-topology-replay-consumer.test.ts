@@ -4,9 +4,7 @@ import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-t
 import { PSqlRtcTopologyReplayRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-replay-repository.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
-import {
-  RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
+import { RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
 import {
   RtcTopologyReplayService,
   type RtcTopologyReplayServiceScheduler,
@@ -15,7 +13,7 @@ import {
 import {
   createPostgresSql,
   type PostgresSql,
-} from '../../topology/concurrency/postgres-topology-concurrency-fixtures.ts';
+} from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
@@ -68,11 +66,15 @@ describe('Postgres RTC topology replay consumer', () => {
         expect(handled.map((entry) => entry.publisherStreamId).sort()).toEqual(
           [streamA, streamB].sort(),
         );
-        expect(await readConsumerCursors(sqlC, streamC)).toEqual([
-          { publisher_stream_id: streamA, last_processed_sequence: 1 },
-          { publisher_stream_id: streamB, last_processed_sequence: 1 },
-          { publisher_stream_id: streamC, last_processed_sequence: 0 },
-        ].sort((left, right) => left.publisher_stream_id.localeCompare(right.publisher_stream_id)));
+        expect(await readConsumerCursors(sqlC, streamC)).toEqual(
+          [
+            { publisher_stream_id: streamA, last_processed_sequence: 1 },
+            { publisher_stream_id: streamB, last_processed_sequence: 1 },
+            { publisher_stream_id: streamC, last_processed_sequence: 0 },
+          ].sort((left, right) =>
+            left.publisher_stream_id.localeCompare(right.publisher_stream_id),
+          ),
+        );
         await replay.stop();
       });
     },
@@ -137,31 +139,34 @@ async function append(
   name: string,
 ): Promise<void> {
   await expect(
-    sql.begin(async (transaction) =>
-      await repository.appendOrValidate(transaction, {
-        publisherStreamId: streamId,
-        groupRef: {
-          applicationId: `replay-${name}`,
-          workspaceId: 'postgres',
-          groupId: 'room',
-        },
-        publicationId: `${name}-${crypto.randomUUID()}`,
-        outboxKey: {
-          topicId: 'rallar.overlay-topology.v1',
-          resourceId: `${name}-outbox`,
-          contextId: `${name}-room`,
-        },
-        retainUntilEpochMs: Date.now() + 60_000,
-      })
+    sql.begin(
+      async (transaction) =>
+        await repository.appendOrValidate(transaction, {
+          publisherStreamId: streamId,
+          groupRef: {
+            applicationId: `replay-${name}`,
+            workspaceId: 'postgres',
+            groupId: 'room',
+          },
+          publicationId: `${name}-${crypto.randomUUID()}`,
+          outboxKey: {
+            topicId: 'rallar.overlay-topology.v1',
+            resourceId: `${name}-outbox`,
+            contextId: `${name}-room`,
+          },
+          retainUntilEpochMs: Date.now() + 60_000,
+        }),
     ),
   ).resolves.toMatchObject({ status: 'appended', entry: { sequence: 1 } });
 }
 
 async function readConsumerCursors(sql: PSqlSql, consumerStreamId: string) {
-  return await sql<Readonly<{
-    publisher_stream_id: string;
-    last_processed_sequence: number;
-  }>[]>`
+  return await sql<
+    Readonly<{
+      publisher_stream_id: string;
+      last_processed_sequence: number;
+    }>[]
+  >`
     select
       publisher_stream_id::text,
       last_processed_sequence::integer as last_processed_sequence

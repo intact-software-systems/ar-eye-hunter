@@ -148,7 +148,7 @@ export const authCompatibilityConsumerInventory = [
       'packages/tests/shared-server/group-state/inbox/group-state-inbox-authority.test.ts',
       'packages/tests/shared-server/group-state/inbox/group-state-inbox-test-runtime.ts',
       'packages/tests/shared-server/group-state/inbox/group-state-transaction-boundary-fixture.ts',
-      'packages/tests/shared-server/topology/concurrency/fixtures/postgres-topology-app-inbox-worker.ts',
+      'packages/tests/shared-server/rallar-system/topology/concurrency/postgres-topology-app-inbox-worker.ts',
       'scripts/perf/api-v1-state-write-concurrency-bench.ts',
       'scripts/perf/group-list-fanout-bench.ts',
     ],

@@ -14,7 +14,7 @@ describe('group topology config mutation transaction shell', () => {
   it('exposes transaction-bound writes without a service-local retry lane or DB lock', () => {
     const source = readFileSync(
       new URL(
-        '../../../../../shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts',
+        '../../../../../../shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts',
         import.meta.url,
       ),
       'utf8',

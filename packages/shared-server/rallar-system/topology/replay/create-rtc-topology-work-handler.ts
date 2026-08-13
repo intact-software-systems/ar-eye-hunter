@@ -1,31 +1,27 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 // prettier-ignore
-import {
-  fromCanonicalGroupTopologyConfigPatch,
-} from '@shared/api/group-topology-config-canonical.ts';
+import { fromCanonicalGroupTopologyConfigPatch }
+  from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
 import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 // prettier-ignore
-import {
-  ResourceInboxRepository,
-} from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository }
+  from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
 // prettier-ignore
-import {
-  RuntimeStateWriteConflictError,
-} from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { RuntimeStateWriteConflictError }
+  from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import {
   hashRtcTopologyExecutionCommand,
   type RtcTopologyPublication,
   toRtcTopologyPublicationId,
 } from '../../repositories/RtcTopologyPublicationRepository.ts';
 // prettier-ignore
-import type {
-  RtcTopologyExecutionRepository,
-} from '../../repositories/RtcTopologyExecutionRepository.ts';
+import type { RtcTopologyExecutionRepository }
+  from '../../repositories/RtcTopologyExecutionRepository.ts';
 import { finishRtcTopologyReservation, finishRtcTopologyWork } from './finish-rtc-topology-work.ts';
 import type { RtcTopologyDeliveryAppendPort } from './rtc-topology-delivery-append-port.ts';
 import { RtcTopologyDeliveryLeaseLostError } from './rtc-topology-delivery-stream-service.ts';
@@ -36,7 +32,7 @@ import {
 import {
   materializeRtcOverlayTopologyBroadcastMessage,
   type RtcOverlayTopologyMessageFacts,
-} from '../group-topology-management-service.ts';
+} from '../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
 import type { RallarTimingSink } from '../../services/timing.ts';
 import {

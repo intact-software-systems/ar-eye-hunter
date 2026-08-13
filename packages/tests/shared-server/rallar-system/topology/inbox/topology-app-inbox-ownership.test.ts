@@ -2,13 +2,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
+import * as sharedServer from '@shared-server/mod.ts';
 import { toTopologyAppInboxCommand as compatibilityTopologyCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { GroupTopologyConfigRepository as canonicalConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { GroupTopologyManagementService as canonicalManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
 import { toTopologyAppInboxCommand as canonicalTopologyCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 
 const serverRoot = fileURLToPath(
-  new URL('../../../../shared-server/rallar-system/', import.meta.url),
+  new URL('../../../../../shared-server/rallar-system/', import.meta.url),
 );
-const testsRoot = fileURLToPath(new URL('../../', import.meta.url));
+const testsRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 const targetOwners = [
   'topology/inbox/topology-app-inbox-contracts.ts',
@@ -28,7 +31,19 @@ const materiallyChangedTestSupport = [
   'mutation-routing-reachability.ts',
   'authoritative-mutation-read-compute-validate-write.test.ts',
   'authoritative-mutation-runtime-source-inventory.ts',
-  'topology/inbox/topology-app-inbox-ownership.test.ts',
+  'rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts',
+] as const;
+
+const removedPredecessorOwners = [
+  'repositories/GroupTopologyConfigRepository.ts',
+  'repositories/group-topology-mutation-exact-read.ts',
+  'repositories/group-topology-stored-source-values.ts',
+  'services/group-topology-config-generation-backfill.ts',
+  'services/group-topology-config-mutation-read.ts',
+  'services/group-topology-config-mutations.ts',
+  'services/group-topology-config-service.ts',
+  'services/group-topology-management-service.ts',
+  'services/topology-mutation-authority-proof.ts',
 ] as const;
 
 describe('topology and RTC RTT AppInbox ownership', () => {
@@ -44,6 +59,38 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     expect(facade).not.toContain('function toCanonicalTopologyAppInboxPayload(');
     expect(facade).not.toContain('function toTopologyConfigMutationCommand(');
     expect(compatibilityTopologyCommand).toBe(canonicalTopologyCommand);
+  });
+
+  it('keeps package exports identical to the canonical topology owners', () => {
+    expect(sharedServer.GroupTopologyConfigRepository).toBe(canonicalConfigRepository);
+    expect(sharedServer.GroupTopologyManagementService).toBe(canonicalManagementService);
+  });
+
+  it('routes active composition and replay imports directly to canonical topology owners', () => {
+    const packageEntry = readRepositoryPath('packages/shared-server/mod.ts');
+    const apiComposition = readRepositoryPath('apps/api-v1/src/create-rallar-server.ts');
+    const replayOwner = readOwner('topology/replay/create-rtc-topology-work-handler.ts');
+
+    expect(packageEntry).toContain(
+      "from './rallar-system/topology/config/persistence/group-topology-config-repository.ts';",
+    );
+    expect(packageEntry).toContain(
+      "export * from './rallar-system/topology/group-topology-management-service.ts';",
+    );
+    expect(apiComposition).toContain(
+      "from '@shared-server/rallar-system/topology/group-topology-management-service.ts';",
+    );
+    expect(replayOwner).toContain(
+      "from '../planning/materialize-rtc-overlay-topology-broadcast-message.ts';",
+    );
+    expect(apiComposition).not.toContain('/services/group-topology-management-service.ts');
+    expect(replayOwner).not.toContain("from '../group-topology-management-service.ts';");
+  });
+
+  it('keeps moved private predecessor paths absent without compatibility wrappers', () => {
+    expect(
+      removedPredecessorOwners.filter((relativePath) => existsSync(`${serverRoot}${relativePath}`)),
+    ).toEqual([]);
   });
 
   it('keeps the public facade free of topology and RTC RTT mutation algorithms', () => {
@@ -100,4 +147,8 @@ describe('topology and RTC RTT AppInbox ownership', () => {
 function readOwner(relativePath: string): string {
   const filePath = `${serverRoot}${relativePath}`;
   return existsSync(filePath) ? readFileSync(filePath, 'utf8') : '';
+}
+
+function readRepositoryPath(repositoryPath: string): string {
+  return readFileSync(`${process.cwd()}/${repositoryPath}`, 'utf8');
 }
