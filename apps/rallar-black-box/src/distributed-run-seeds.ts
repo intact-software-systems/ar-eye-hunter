@@ -612,6 +612,9 @@ function rollup(input: SeedBuildInput): RallarBlackBoxDistributedRunRollup {
             requiredRecipes: 1,
             passedRecipes: input.ok ? 1 : 0,
             failedRecipes: input.ok ? 0 : 1,
+            groupAssertions: 0,
+            passedGroupAssertions: 0,
+            failedGroupAssertions: 0,
             blockingFailures: failedAgents.length,
         },
         failures: failedAgents.map(agent => ({
