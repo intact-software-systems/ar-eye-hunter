@@ -785,7 +785,9 @@ parallel registry.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "repository-structure-closeout-integration"
+  ],
   "facts": {
     "diffBase": "origin/main",
     "affectedCodeDigest": "be38adfca751eccfe2f974001fa6bd7398562bebbb1c6c6a78bb9ffb5e8b3e84",
@@ -800,9 +802,7 @@ parallel registry.
     "learning": "Cross-owner consumers of the final plan lifecycle must reuse the canonical closure verifier; checking only for an active record cannot distinguish an authenticated last-plan transition.",
     "structure": "Keep repository structure as the topology owner and reuse readAuthenticatedPlanClosureChanges as a declared plan-adaptation fact contract. Accept only one plan/receipt pair with the generated empty registry and no other changed surface.",
     "decision": "amend",
-    "nextSlices": [
-      "repository-structure-closeout-integration"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
