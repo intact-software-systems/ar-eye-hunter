@@ -572,13 +572,13 @@ adaptive horizon rule.
     ]
   },
   "checkpoint": {
-    "outcome": "The horizon landed green end to end: M12 overlay read-through (first production readStateGroupTopology callers, ws-reopen resync behind the session fence, late-joiner 22/22 and reconnect-resync 32/32 recipes) and the M2 server dual-emit slice (three dissemination modes defaulting to dual-emit with legacy damping forced to snapshot-per-change, the delta envelope with chained CAS revisions and persisted audience, the expansion-phase recomputation mirror, audience-first group-event delivery) with focused suites, api-v1 Deno, 21/21 memory black-box, 7/7 full-stack memory, and repo-governance all passing.",
-    "learning": "The one open cross-slice gap is browser envelope consumption: rooms.onEvent validation drops delta-envelope rows until the unwrap lands, which no current recipe or full-stack spec exercises, so the tree stays green while the gap is closed next; delta-primary emission is now selectable server-side, so the measurement runs only need the browser consumption slice and delta-mode recipe variants; the evidence-ledger plan on main still collides with the one-active-plan structure rule, keeping the CI governance gate red for that single environment-level cause.",
-    "structure": "The five declared capability owners remain sufficient; the delta envelope contract landed inside the shared contracts owner and the emission switch inside the server owner with no new folders or ownership moves; the consolidated formation-metrics module held.",
+    "outcome": "The M2 browser consumption and M13 admission slices landed together green: envelopes are decoded and applied under the recorded causal-gap contract with the divergence oracle counting conflicts, rooms.onEvent unwraps envelopes, the admission recipe drove real 429s with Retry-After on its first live run inside the 22/22 memory suite, the full unit suite is 7347 passing with the single external two-plan failure, and full-stack memory is 7/7.",
+    "learning": "Both implementation agents mis-attributed a seven-test regression as pre-existing because they verified only against branch HEAD; bisecting against origin/main proved the slice-1 encode+sendEncoded refactor had orphaned two mis-contracted socket fakes, repaired as obsolete coupled tests with the family back to 33/33 — cross-agent attribution must always reach the true base. The evidence-ledger plan on main keeps the one-active-plan collision in the navigation-evidence test and the governance gate; every local battery now carries exactly that one known failure until the ledger closes on main.",
+    "structure": "Owners unchanged; the browser delta application landed inside the state-cache subfeature and the admission limiter beside the existing api-v1 service owners; no moves or new folders beyond the two files their features own.",
     "decision": "continue",
     "nextSlices": [
-      "m2-browser-delta-consumption",
-      "m13-join-admission"
+      "delta-primary-tier-measurement",
+      "convergence-and-perf-gates"
     ]
   },
   "structuralDispositions": [
@@ -753,6 +753,11 @@ adaptive horizon rule.
       "date": "2026-08-13",
       "decision": "continue",
       "summary": "The horizon landed green end to end: M12 overlay read-through (first production readStateGroupTopology callers, ws-reopen resync behind the session fence, late-joiner 22/22 and reconnect-resync 32/32 recipes) and the M2 server dual-emit slice (three dissemination modes defaulting to dual-emit with legacy damping forced to snapshot-per-change, the delta envelope with chained CAS revisions and persisted audience, the expansion-phase recomputation mirror, audience-first group-event delivery) with focused suites, api-v1 Deno, 21/21 memory black-box, 7/7 full-stack memory, and repo-governance all passing."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "continue",
+      "summary": "The M2 browser consumption and M13 admission slices landed together green: envelopes are decoded and applied under the recorded causal-gap contract with the divergence oracle counting conflicts, rooms.onEvent unwraps envelopes, the admission recipe drove real 429s with Retry-After on its first live run inside the 22/22 memory suite, the full unit suite is 7347 passing with the single external two-plan failure, and full-stack memory is 7/7."
     }
   ]
 }
