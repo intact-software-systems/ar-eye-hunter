@@ -1666,6 +1666,54 @@
         ]
       },
       "description": "Live signaling-only provider check. Requires a signaling server URL."
+    },
+    {
+      "id": "api-v1-group-topology-late-joiner",
+      "recipe": "tests/api-v1/api-v1-group-topology-late-joiner.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-black-box-phase3-read-through"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-topology-late-joiner",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 late-joiner overlay read-through: after formation, a member who joins without a presence transition reads the current server overlay from GET topology immediately, with the served version equal to the pre-join publication (no new publication awaited)."
+    },
+    {
+      "id": "api-v1-group-state-reconnect-resync",
+      "recipe": "tests/api-v1/api-v1-group-state-reconnect-resync.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-black-box-phase3-read-through"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-state-reconnect-resync",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 reconnect resync: a client drops WS, misses a fingerprint-relevant group update and its publication, reconnects on a fresh socket, receives the unicast topology hydration push, and converges through the floored snapshot read and the topology read-through."
     }
   ]
 }

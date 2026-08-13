@@ -3,8 +3,19 @@ import type { StateSnapshotReadSource } from '@shared/api/state-snapshot-read.ts
 export type BrowserStateReadDiagnosticEvent = Readonly<{
   name: 'rallar.browser.state-read';
   feature: 'client' | 'group';
-  operation: 'point' | 'heartbeat' | 'collection';
-  result: 'found' | 'not-found' | 'error' | 'removed' | 'preserved';
+  operation: 'point' | 'heartbeat' | 'collection' | 'topology-read-through' | 'reopen-resync';
+  result:
+    | 'found'
+    | 'not-found'
+    | 'error'
+    | 'removed'
+    | 'preserved'
+    | 'adopted'
+    | 'no-overlay'
+    | 'revision-conflict'
+    | 'read-failed'
+    | 'resynced'
+    | 'stale-generation';
   source?: StateSnapshotReadSource;
   durationMs: number;
 }>;

@@ -555,10 +555,12 @@ adaptive horizon rule.
       ]
     }
   ],
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "overlay-read-through-on-connect-and-reconnect"
+  ],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
+    "affectedCodeDigest": "d782ceffe409c34ec5f516172b236479048317059fb7b6f190c908705a464a1f",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -577,7 +579,6 @@ adaptive horizon rule.
     "structure": "The five declared capability owners are unchanged and sufficient; the results document is declared as a contract path on the formation black-box recipes owner; no folder or ownership moves are needed for the next horizon.",
     "decision": "continue",
     "nextSlices": [
-      "overlay-read-through-on-connect-and-reconnect",
       "m2-dual-emit-delta-envelope"
     ]
   },

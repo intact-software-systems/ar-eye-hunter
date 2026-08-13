@@ -202,29 +202,18 @@ export function initialise(
                                 data.payload.resource,
                                 readActiveStateCacheScope(initialScope),
                             );
-                            const overlay = toOverlayInfoForSession(
+                            await acceptServerOverlayTopology({
                                 topology,
-                                myOwnClientData.sessionId,
-                            );
-                            if (
-                                isRtcTopologyCurrentStateMessage(
-                                    data,
-                                    topology,
-                                    myOwnClientData.sessionId,
-                                )
-                            ) {
-                                overlaysRepository.setCurrentServerOverlayById(
-                                    topology.overlayId,
-                                    overlay,
-                                );
-                            } else {
-                                overlaysRepository.setOverlayById(
-                                    topology.overlayId,
-                                    overlay,
-                                );
-                            }
-                            await overlaysRepository.waitForOverlayChangesIdle();
-                            await webRtcGroupManager.notifyOverlayTopologyChanged();
+                                sessionId: myOwnClientData.sessionId,
+                                webRtcGroupManager,
+                                adoption: isRtcTopologyCurrentStateMessage(
+                                        data,
+                                        topology,
+                                        myOwnClientData.sessionId,
+                                    )
+                                    ? 'current-state'
+                                    : 'publication',
+                            });
                             break;
                         }
                         default: {
@@ -234,6 +223,29 @@ export function initialise(
                 },
             },
         );
+}
+
+export interface AcceptServerOverlayTopologyInput {
+    readonly topology: RallarOverlayTopologySnapshot;
+    readonly sessionId: string;
+    readonly webRtcGroupManager: WebRtcGroupManager;
+    // 'current-state' marks a fresh durable current-state read (server hydration/repair
+    // push or a REST read-through) and force-adopts over an incomparable server overlay;
+    // 'publication' keeps the ordinary monotonic-tuple admission.
+    readonly adoption: 'current-state' | 'publication';
+}
+
+export async function acceptServerOverlayTopology(
+    input: AcceptServerOverlayTopologyInput,
+): Promise<void> {
+    const overlay = toOverlayInfoForSession(input.topology, input.sessionId);
+    if (input.adoption === 'current-state') {
+        overlaysRepository.setCurrentServerOverlayById(input.topology.overlayId, overlay);
+    } else {
+        overlaysRepository.setOverlayById(input.topology.overlayId, overlay);
+    }
+    await overlaysRepository.waitForOverlayChangesIdle();
+    await input.webRtcGroupManager.notifyOverlayTopologyChanged();
 }
 
 export async function hydrateStateCaches(
