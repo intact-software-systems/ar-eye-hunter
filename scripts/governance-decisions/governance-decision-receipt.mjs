@@ -15,7 +15,7 @@ export function createGovernanceDecisionReceipt(receiptInput) {
   }
   const request = decodeGovernanceDecisionRequest(receiptInput.request);
   const transport = validateTransport(receiptInput.transport);
-  const result = validateResult(request.operation, receiptInput.result);
+  const result = validateResult(request, receiptInput.result);
   if (
     !Array.isArray(receiptInput.bypassedInvariants) ||
     receiptInput.bypassedInvariants.some(
@@ -75,7 +75,32 @@ function validateTransport(transport) {
   throw new Error('transport.kind must be local-gh or workflow-dispatch');
 }
 
-function validateResult(operation, result) {
+function validateResult(request, result) {
+  const operation = request.operation;
+  if (operation === 'gate.accept-deviation') {
+    requireExactKeys(
+      result,
+      ['status', 'underlyingStatus', 'decisionId'],
+      'gate.accept-deviation result',
+    );
+    if (
+      result.status !== 'accepted-deviation' ||
+      result.underlyingStatus !== 'failed' ||
+      result.decisionId !== computeGovernanceDecisionId(request)
+    ) {
+      throw new Error('gate.accept-deviation result must retain the exact failed conclusion');
+    }
+    return { ...result };
+  }
+  if (operation === 'exception.decide') {
+    const status = result?.status;
+    requireExactKeys(result, ['status', 'decisionId'], 'exception.decide result');
+    const expectedStatus = request.target.action === 'approve' ? 'approved' : 'revoked';
+    if (status !== expectedStatus || result.decisionId !== computeGovernanceDecisionId(request)) {
+      throw new Error('exception.decide result status must be approved or revoked');
+    }
+    return { status, decisionId: result.decisionId };
+  }
   const acceptanceStatus = {
     'plan.repair': 'repaired',
     'plan.cancel': 'not-achieved',
@@ -92,6 +117,56 @@ function validateResult(operation, result) {
 
 export function serializeGovernanceDecisionReceipt(receipt) {
   return `${toCanonicalJson(receipt)}\n`;
+}
+
+export function decodeGovernanceDecisionReceipt(content) {
+  let receipt;
+  try {
+    receipt = JSON.parse(content);
+  } catch (error) {
+    throw new Error(`governance decision receipt contains invalid JSON: ${toError(error).message}`);
+  }
+  if (serializeGovernanceDecisionReceipt(receipt) !== content) {
+    throw new Error('receipt serialization must be canonical JSON plus one newline');
+  }
+  requireExactKeys(
+    receipt,
+    [
+      'schemaVersion',
+      'decisionId',
+      'requestDigest',
+      'request',
+      'actor',
+      'transport',
+      'result',
+      'bypassedInvariants',
+      'stateChanges',
+    ],
+    'receipt',
+  );
+  if (receipt.schemaVersion !== 'governance-decision-receipt-v1') {
+    throw new Error('receipt schemaVersion must be governance-decision-receipt-v1');
+  }
+  const request = decodeGovernanceDecisionRequest(receipt.request);
+  const decisionId = computeGovernanceDecisionId(request);
+  if (receipt.requestDigest !== decisionId) {
+    throw new Error('receipt requestDigest must equal the canonical request digest');
+  }
+  if (receipt.decisionId !== decisionId) {
+    throw new Error('receipt decisionId must equal the canonical request digest');
+  }
+  const normalized = createGovernanceDecisionReceipt({
+    request,
+    actor: receipt.actor,
+    transport: receipt.transport,
+    result: receipt.result,
+    bypassedInvariants: receipt.bypassedInvariants,
+    stateChanges: receipt.stateChanges,
+  });
+  if (toCanonicalJson(normalized) !== toCanonicalJson(receipt)) {
+    throw new Error('receipt evidence must match the exact normalized receipt contract');
+  }
+  return normalized;
 }
 
 export function toGovernanceDecisionReceiptPath(decisionId) {
@@ -149,4 +224,8 @@ function requireExactKeys(value, expectedKeys, name) {
   if (JSON.stringify(actualKeys) !== JSON.stringify(sortedExpectedKeys)) {
     throw new Error(`${name} must contain exactly: ${expectedKeys.join(', ')}`);
   }
+}
+
+function toError(value) {
+  return value instanceof Error ? value : new Error(String(value));
 }

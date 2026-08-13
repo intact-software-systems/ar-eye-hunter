@@ -142,6 +142,15 @@ jobs:
           node scripts/governance-decisions.mjs preview \
             --request "$RUNNER_TEMP/governance-decision-request.json"
 
+      - name: Read exact gate evidence with the workflow token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node scripts/governance-decisions/materialize-gate-evidence.mjs
+          "$RUNNER_TEMP/governance-decision-request.json"
+          "$RUNNER_TEMP/governance-gate-evidence.json"
+          "$GITHUB_WORKSPACE"
+
       - name: Create governance App token
         id: app-token
         uses: actions/create-github-app-token@v2
@@ -152,26 +161,15 @@ jobs:
           repositories: ar-eye-hunter
           permission-contents: write
 
-      - name: Recheck administrator with the App token
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          CONFIGURED_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
-          TOKEN_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
-        run: |
-          test "$CONFIGURED_APP_SLUG" = 'governance-decisions'
-          test "$TOKEN_APP_SLUG" = "$CONFIGURED_APP_SLUG"
-          permission_evidence="$(gh api \
-            "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" \
-            --jq '[.permission, .user.login] | @tsv')"
-          test "$permission_evidence" = "$(printf 'admin\t%s' "$GITHUB_ACTOR")"
-
       - name: Apply one atomic governance decision commit
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GOVERNANCE_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GOVERNANCE_CONFIGURED_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
           GOVERNANCE_PREFLIGHT_ACTOR: ${{ github.actor }}
           GOVERNANCE_PREFLIGHT_SHA: ${{ github.sha }}
           GOVERNANCE_PREFLIGHT_WORKFLOW_REF: ${{ github.workflow_ref }}
+          GOVERNANCE_GATE_EVIDENCE_PATH: ${{ runner.temp }}/governance-gate-evidence.json
         run: >-
           node scripts/governance-decisions.mjs apply
           --request "$RUNNER_TEMP/governance-decision-request.json"

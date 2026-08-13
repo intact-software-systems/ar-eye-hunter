@@ -5,7 +5,11 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { scanProductionSources } from '../../../scripts/repo-style-check/repository-scan.mjs';
-import { reviewedDispositions } from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
+import {
+  isReviewedDisposition,
+  readReviewedDispositionContext,
+  reviewedDispositions,
+} from '../../../scripts/repo-style-check/reviewed-dispositions.mjs';
 
 const repoRoot = process.cwd();
 const checkerPath = path.join(repoRoot, 'scripts/check-changed-repo-style.mjs');
@@ -173,6 +177,62 @@ describe('reviewed repository style dispositions', () => {
     expect(result.status, result.stdout).toBe(1);
     expect(result.stdout).toContain('FAIL: 1 new or worsened repository style finding');
     expect(result.stdout).toContain('boundary.unknown');
+  });
+
+  it('matches a receipt disposition only at exact native magnitude and candidate head', () => {
+    const file = path.join(repoRoot, 'packages/example/large-owner.ts');
+    const finding = {
+      file,
+      ruleId: 'file.cognitive-load',
+      symbol: undefined,
+      message: 'File cognitive load 112 reaches the required-separation-review tier.',
+    };
+    const decision = {
+      decisionId: 'd'.repeat(64),
+      projection: {
+        rule: 'file.cognitive-load',
+        path: 'packages/example/large-owner.ts',
+        symbol: null,
+        magnitude: 112,
+        candidateHead: 'a'.repeat(40),
+      },
+    };
+
+    expect(
+      isReviewedDisposition(repoRoot, finding, {
+        candidateHead: 'a'.repeat(40),
+        decisions: [decision],
+      }),
+    ).toBe(true);
+    expect(
+      isReviewedDisposition(repoRoot, finding, {
+        candidateHead: 'b'.repeat(40),
+        decisions: [decision],
+      }),
+    ).toBe(false);
+    expect(
+      isReviewedDisposition(
+        repoRoot,
+        { ...finding, message: finding.message.replace('112', '113') },
+        {
+          candidateHead: 'a'.repeat(40),
+          decisions: [decision],
+        },
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps trusted-main receipt verification issues visible and fail closed', () => {
+    const context = readReviewedDispositionContext(repoRoot, 'a'.repeat(40), {
+      readGovernanceDecisionIndex: () => ({
+        decisions: [],
+        duplicateDecisionIds: new Set(),
+        issues: ['forged receipt was excluded'],
+      }),
+    });
+
+    expect(context.decisions).toEqual([]);
+    expect(context.issues).toEqual(['forged receipt was excluded']);
   });
 
   it('documents the fail-closed reviewed-disposition contract', () => {

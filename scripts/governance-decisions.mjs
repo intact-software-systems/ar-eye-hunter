@@ -27,7 +27,6 @@ import { computeGovernanceDecisionTransition } from
 import { createGitHubGovernanceApi } from './governance-decisions/github-governance-api.mjs';
 import {
   authenticateGitHubAdministrator,
-  authenticateRecordedGitHubAdministrator,
   publishGovernanceDecisionCommit,
   publishImmutableGitBlob,
   validateLocalGovernancePublicationState,
@@ -74,6 +73,9 @@ function previewDecision(command) {
       readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
     readSnapshot: (commitOid) =>
       readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
+    ...(request.operation === 'gate.accept-deviation'
+      ? { readGateEvidence: readGateEvidenceForTransition(command, github) }
+      : {}),
     ...(request.operation === 'plan.supersede'
       ? {
           readBlob: github.readBlob,
@@ -82,15 +84,25 @@ function previewDecision(command) {
   });
 }
 
+function readGateEvidenceForTransition(command, github) {
+  const evidencePath = process.env.GOVERNANCE_GATE_EVIDENCE_PATH;
+  if (evidencePath === undefined) {
+    return github.readGateEvidence;
+  }
+  requireTrustedWorkflowIdentity();
+  return () => readJson(evidencePath);
+}
+
 function verifyCommit(command) {
+  const github = createGitHubGovernanceApi(command.repoRoot);
   const structuralVerification = verifyGovernanceDecisionCommit({
     commitOid: command.commitOid,
     readRepositoryChanges: (baseOid, headOid) =>
       readChangedPathsBetweenRevisions(command.repoRoot, baseOid, headOid),
     readRepositorySnapshot: (commitOid) =>
       readGitRepositorySnapshot({ repoRoot: command.repoRoot, commitOid }),
+    readGateEvidence: github.readGateEvidence,
   });
-  const github = createGitHubGovernanceApi(command.repoRoot);
   return verifyPublishedGovernanceDecisionCommit({
     commitOid: command.commitOid,
     structuralVerification,
@@ -157,18 +169,14 @@ function readPublicationIdentity(github) {
       transport: { kind: 'local-gh' },
     };
   }
-  const expectedWorkflowRef =
-    'intact-software-systems/ar-eye-hunter/' +
-    '.github/workflows/governance-decision.yml@refs/heads/main';
+  requireTrustedWorkflowIdentity();
+  const expectedWorkflowRef = trustedWorkflowRef();
   if (
-    process.env.GITHUB_REPOSITORY !== 'intact-software-systems/ar-eye-hunter' ||
-    process.env.GITHUB_REF !== 'refs/heads/main' ||
-    process.env.GITHUB_WORKFLOW_REF !== expectedWorkflowRef ||
-    process.env.GITHUB_WORKFLOW_SHA !== process.env.GITHUB_SHA ||
     process.env.GOVERNANCE_PREFLIGHT_ACTOR !== process.env.GITHUB_ACTOR ||
     process.env.GOVERNANCE_PREFLIGHT_SHA !== process.env.GITHUB_SHA ||
     process.env.GOVERNANCE_PREFLIGHT_WORKFLOW_REF !== process.env.GITHUB_WORKFLOW_REF ||
     process.env.GOVERNANCE_APP_SLUG !== trustedGovernanceAppSlug ||
+    process.env.GOVERNANCE_CONFIGURED_APP_SLUG !== process.env.GOVERNANCE_APP_SLUG ||
     !/^[0-9a-f]{40}$/u.test(process.env.GITHUB_SHA ?? '') ||
     typeof process.env.GITHUB_ACTOR !== 'string' ||
     process.env.GITHUB_ACTOR.trim() === ''
@@ -176,10 +184,7 @@ function readPublicationIdentity(github) {
     throw new Error('workflow publication requires the exact trusted main workflow identity');
   }
   return {
-    actor: authenticateRecordedGitHubAdministrator({
-      login: process.env.GITHUB_ACTOR,
-      readPermission: github.readPermission,
-    }),
+    actor: { login: process.env.GITHUB_ACTOR, permission: 'admin' },
     transport: {
       kind: 'workflow-dispatch',
       runId: toPositiveInteger(process.env.GITHUB_RUN_ID, 'GITHUB_RUN_ID'),
@@ -188,6 +193,26 @@ function readPublicationIdentity(github) {
       workflowSha: process.env.GITHUB_WORKFLOW_SHA,
     },
   };
+}
+
+function requireTrustedWorkflowIdentity() {
+  if (
+    process.env.GITHUB_ACTIONS !== 'true' ||
+    process.env.GITHUB_REPOSITORY !== 'intact-software-systems/ar-eye-hunter' ||
+    process.env.GITHUB_REF !== 'refs/heads/main' ||
+    process.env.GITHUB_WORKFLOW_REF !== trustedWorkflowRef() ||
+    process.env.GITHUB_WORKFLOW_SHA !== process.env.GITHUB_SHA ||
+    !/^[0-9a-f]{40}$/u.test(process.env.GITHUB_SHA ?? '')
+  ) {
+    throw new Error('workflow publication requires the exact trusted main workflow identity');
+  }
+}
+
+function trustedWorkflowRef() {
+  return (
+    'intact-software-systems/ar-eye-hunter/' +
+    '.github/workflows/governance-decision.yml@refs/heads/main'
+  );
 }
 
 function readCheckoutState(repoRoot, github) {

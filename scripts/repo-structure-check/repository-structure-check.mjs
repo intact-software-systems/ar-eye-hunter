@@ -343,6 +343,7 @@ function readAuthenticatedLastPlanCloseout(input) {
     repoRoot: input.repoRoot,
     base: input.base,
     changes,
+    readDecisionAdmissionEvidence: input.readDecisionAdmissionEvidence,
   });
   const authenticatedPathCount = changes.length - closure.changes.length;
   const registryChange = closure.changes.length === 1 ? closure.changes[0] : undefined;
@@ -359,8 +360,7 @@ function readAuthenticatedLastPlanCloseout(input) {
     closure.authenticatedDispositions.length === 0 ||
     (closure.authenticatedPlans.length <= 1 &&
       (closure.authenticatedPlans.length === 0 ||
-        closure.authenticatedPlans[0].planPath ===
-          closure.authenticatedDispositions[0]?.planPath));
+        closure.authenticatedPlans[0].planPath === closure.authenticatedDispositions[0]?.planPath));
   if (
     closure.issues.length > 0 ||
     authenticatedTransitionCount !== 1 ||

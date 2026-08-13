@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   retainedLedgerHash,
+  retainedLedgerProjection,
   validateRetainedLegacy,
 } from '../../../../scripts/pr-human-review/trusted-retained-legacy.mjs';
 
@@ -157,6 +158,83 @@ describe('trusted retained-legacy approval', () => {
     expect(errors).toEqual([]);
   });
 
+  it('accepts an exact receipt-bound retained ledger without PR review or registry authentication', () => {
+    const fixture = retainedFixture();
+    const { approval: _approval, item: _item, ...validationInput } = fixture;
+    const projection = retainedLedgerProjection({
+      items: fixture.finalReview.legacy.items,
+      approvalById: new Map([[fixture.approval.id, fixture.approval]]),
+    });
+    const errors: string[] = [];
+
+    validateRetainedLegacy({
+      ...validationInput,
+      trustedReviews: [],
+      registry: fixture.registry,
+      readGovernanceExceptions: (selector: Record<string, unknown>) => {
+        expect(selector).toEqual({
+          exceptionKind: 'production-legacy',
+          candidateHead: productionSha,
+        });
+        return [
+          {
+            decisionId: 'd'.repeat(64),
+            projection: {
+              retainedLedgerProjection: projection,
+              ledgerSha256: retainedLedgerHash({
+                items: fixture.finalReview.legacy.items,
+                approvalById: new Map([[fixture.approval.id, fixture.approval]]),
+              }),
+              approvedProductionSha: productionSha,
+              candidateHead: productionSha,
+            },
+          },
+        ];
+      },
+      errors,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
+  it('keeps malformed registry evidence visible beside a matching receipt approval', () => {
+    const fixture = retainedFixture();
+    const { approval: _approval, item: _item, ...validationInput } = fixture;
+    const errors: string[] = [];
+    validateRetainedLegacy({
+      ...validationInput,
+      trustedReviews: [],
+      registry: [
+        '# Production Legacy Exception Registry',
+        '### production-legacy-unrelated',
+        '- Purpose: This unrelated section omits required fields.',
+      ].join('\n'),
+      readGovernanceExceptions: () => [receiptApproval(fixture)],
+      errors,
+    });
+
+    expect(errors).toContain(
+      'retained legacy registry Repository-relative path and symbol is malformed: production-legacy-unrelated',
+    );
+  });
+
+  it('keeps malformed governance resolver evidence visible and unauthorized', () => {
+    const fixture = retainedFixture();
+    const { approval: _approval, item: _item, ...validationInput } = fixture;
+    const errors: string[] = [];
+
+    validateRetainedLegacy({
+      ...validationInput,
+      trustedReviews: [],
+      readGovernanceExceptions: () => ({ decisions: [] }),
+      errors,
+    });
+
+    expect(errors).toContain(
+      'governance exception resolver returned malformed production legacy evidence',
+    );
+  });
+
   it('requires every retained approval and trusted review to bind the complete sorted ledger', () => {
     const fixture = retainedFixture();
     const secondItem = {
@@ -231,6 +309,7 @@ function retainedFixture() {
     symbol: 'compatibilityEntry',
     classification: 'legacy',
     disposition: 'retained-pending-human-approval',
+    rationale: 'The named downstream client still requires this compatibility entry.',
   };
   const approval = {
     id: item.id,
@@ -318,5 +397,23 @@ function trustedReview(
       `ledger-sha256: ${approval.ledgerSha256}`,
       `legacy-ids: ${[...itemIds].sort().join(',')}`,
     ].join('\n'),
+  };
+}
+
+function receiptApproval(fixture: ReturnType<typeof retainedFixture>) {
+  return {
+    decisionId: 'd'.repeat(64),
+    projection: {
+      retainedLedgerProjection: retainedLedgerProjection({
+        items: fixture.finalReview.legacy.items,
+        approvalById: new Map([[fixture.approval.id, fixture.approval]]),
+      }),
+      ledgerSha256: retainedLedgerHash({
+        items: fixture.finalReview.legacy.items,
+        approvalById: new Map([[fixture.approval.id, fixture.approval]]),
+      }),
+      approvedProductionSha: productionSha,
+      candidateHead: productionSha,
+    },
   };
 }

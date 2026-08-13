@@ -23,6 +23,14 @@
     {
       "path": "scripts/governance-decisions/governance-decision-remote-verification.mjs",
       "symbol": "verifyPublishedGovernanceDecisionCommit"
+    },
+    {
+      "path": "scripts/governance-decisions/governance-decision-receipt-index.mjs",
+      "symbol": "readOriginMainGovernanceDecisionIndex"
+    },
+    {
+      "path": "scripts/governance-decisions/governance-decision-admission-verification.mjs",
+      "symbol": "verifyGovernanceDecisionAdmission"
     }
   ],
   "failures": [
@@ -67,18 +75,50 @@ dispatch context and publishes through the same transition and receipt path.
 - `npm run governance:decide -- verify-commit --commit <oid>` verifies both the exact structural
   transition and its remote GitHub identity.
 
+Preview is optional. A human administrator may apply directly. An AI must show the exact canonical
+request and expected main head, obtain one just-in-time approval for that atomic mutation, and then
+apply without further decision prompts. A changed request or expected head invalidates that
+approval. Never hand-write a decision receipt, directly edit or delete a plan, fabricate completion
+or review evidence, or manually change a generated registry as a substitute for this command.
+
+Gate deviations retain the exact failed run, attempt, gate, and candidate evidence. The reusable
+Governance Gate reports `accepted-deviation` separately from `passed`, and Branch Release Gate alone
+turns that exact verified resolution into merge eligibility. Exception approvals project into the
+existing repository-structure, production-legacy, code-style, and test-coupling contracts; existing
+PR-backed registries and static dispositions remain valid. Trusted historical receipts are read only
+from an explicit `origin/main` revision and structurally replayed with GitHub-verified User or App/run
+provenance. They also require durable admission evidence from the exact `main` push run of the
+trusted deploy workflow: its classifier job, `verify-commit` step, and fail-closed resolution step
+must all have completed for the exact decision commit and run attempt, and its uniquely named
+authenticated-admission marker must have succeeded. The trusted workflow runs that marker only
+when the unmasked `verify` outcome succeeded, `decision_only` is true, and `invalid_governance` is
+false; consumers do not treat the potentially masked Jobs API verify-step conclusion as proof by
+itself. That successful marker is the durable proof that the live administrator check occurred when
+the decision entered `main`.
+A pull-request-head receipt, a handcrafted squash/rebase-style receipt, or ambiguous run/job
+evidence fails closed. Historical reads intentionally do not re-query the actor's current permission
+after this exact admission has been proved.
+
 ## Workflow rollout boundary
 
 Create the protected `governance-decisions-main` environment before enabling apply. Its deployment
-branch policy permits only `main`, administrators cannot bypass it, `GOVERNANCE_APP_ID` is an
-environment variable, and `GOVERNANCE_APP_PRIVATE_KEY` is an environment secret.
-`GOVERNANCE_APP_SLUG` is a repository variable so credential-free decision classifiers can verify
+branch policy permits only `main` and administrators cannot bypass it. `GOVERNANCE_APP_ID` and
+`GOVERNANCE_APP_SLUG` are repository variables; `GOVERNANCE_APP_PRIVATE_KEY` is a repository Actions
+secret. `GOVERNANCE_APP_SLUG` is a repository variable so credential-free decision classifiers can verify
 the App author. The installed App has only Metadata read and Contents write. The apply job requires
 an exact Contents-write token, binds the token action's App-slug output to both the repository
 variable and the trusted `governance-decisions` slug, and passes that checked output into the
 publication command. The workflow's first job has no App credential and proves the exact main
 workflow source, main tip, request head, and current human administrator. The environment job
 repeats those checks before creating the App token.
+
+The default-branch ruleset bypass list must contain only the dedicated governance App and the
+repository-admin role for these fixed authenticated operations. It must not grant any additional
+bot, workflow, maintainer, or other role a bypass. Repository administrators are authorized by
+policy and agent guidance to use their bypass only through these fixed decisions; ordinary changes
+remain pull-request-based. The
+workflow's built-in token supplies read-only Actions evidence before the App token is created; the
+App remains limited to Metadata read and Contents write.
 
 Mirrored behavior tests live in `packages/tests/repo/governance-decisions/` and run with
 `npm run test:governance-decisions`.

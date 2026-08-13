@@ -129,6 +129,8 @@ export function checkAdaptivePlans(input) {
     repoRoot: input.repoRoot,
     base: input.base,
     changes,
+    readGateEvidence: input.readGateEvidence,
+    readDecisionAdmissionEvidence: input.readDecisionAdmissionEvidence,
   });
   const qualification = computeQualificationReasons(
     input.repoRoot,
@@ -160,13 +162,22 @@ export function checkAdaptivePlans(input) {
       typeof activePlan.record.facts?.diffBase === 'string'
         ? activePlan.record.facts.diffBase
         : input.base;
-    const changes =
-      factBase === input.base ? closureChanges.changes : readChangedPaths(input.repoRoot, factBase);
+    const factChanges =
+      factBase === input.base
+        ? closureChanges
+        : readAuthenticatedPlanTransitionChanges({
+            repoRoot: input.repoRoot,
+            base: factBase,
+            changes: readChangedPaths(input.repoRoot, factBase),
+            readGateEvidence: input.readGateEvidence,
+            readDecisionAdmissionEvidence: input.readDecisionAdmissionEvidence,
+          });
+    issues.push(...factChanges.issues);
     if (
       !hasCurrentPlanFacts({
         repoRoot: input.repoRoot,
         base: factBase,
-        changes,
+        changes: factChanges.changes,
         record: activePlan.record,
         planPath: activePlan.planPath,
       })

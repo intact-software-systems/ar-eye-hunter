@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
-import { verifyPublishedGovernanceDecisionCommit } from '../../../../scripts/governance-decisions/governance-decision-remote-verification.mjs';
+import {
+  verifyHistoricalGovernanceDecisionCommit,
+  verifyPublishedGovernanceDecisionCommit,
+} from '../../../../scripts/governance-decisions/governance-decision-remote-verification.mjs';
 
 describe('published governance decision verification', () => {
+  it('consumes historical verified identity without rechecking current actor permission', () => {
+    const result = verifyHistoricalGovernanceDecisionCommit({
+      commitOid: '9'.repeat(40),
+      structuralVerification: localVerification(),
+      readCommit: () => verifiedCommit({ login: 'repository-admin', type: 'User' }),
+      readPermission: () => {
+        throw new Error('historical verification must not query current permission');
+      },
+    });
+
+    expect(result).toMatchObject({ decisionOnly: true, authenticatedActor: 'repository-admin' });
+  });
   it('accepts a verified local commit linked to the recorded administrator', () => {
     const result = verifyPublishedGovernanceDecisionCommit({
       commitOid: '9'.repeat(40),

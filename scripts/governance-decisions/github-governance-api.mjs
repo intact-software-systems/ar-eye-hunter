@@ -20,10 +20,72 @@ export function createGitHubGovernanceApi(repoRoot) {
       ),
     readWorkflowRun: (runId) =>
       readGitHubJson(repoRoot, [`repos/${repository}/actions/runs/${runId}`]),
+    readDecisionAdmissionEvidence: (commitOid) =>
+      readDecisionAdmissionEvidence(repoRoot, commitOid),
+    readGateEvidence: (target) => ({
+      run: readGitHubJson(repoRoot, [
+        `repos/${repository}/actions/runs/${target.workflowRunId}/attempts/${target.runAttempt}`,
+      ]),
+      jobs: decodeGitHubWorkflowJobPages(
+        readGitHubJson(repoRoot, [
+          `repos/${repository}/actions/runs/${target.workflowRunId}/attempts/` +
+            `${target.runAttempt}/jobs?per_page=100`,
+          '--paginate',
+          '--slurp',
+        ]),
+      ),
+    }),
     writeBlob: (blob) =>
       readGitHubJson(repoRoot, [`repos/${repository}/git/blobs`, '--method', 'POST'], blob),
     writeCommit: (publication) => writeGovernanceCommit(repoRoot, publication),
   };
+}
+
+function readDecisionAdmissionEvidence(repoRoot, commitOid) {
+  if (!gitObjectIdPattern.test(commitOid)) {
+    throw new Error('governance admission requires a full commit OID');
+  }
+  const runs = decodeGitHubWorkflowRunPages(
+    readGitHubJson(repoRoot, [
+      `repos/${repository}/actions/workflows/deploy.yml/runs?` +
+        `event=push&branch=main&head_sha=${commitOid}&per_page=100`,
+      '--paginate',
+      '--slurp',
+    ]),
+  );
+  return {
+    workflowRuns: runs.map((run) => ({
+      run,
+      jobs: decodeGitHubWorkflowJobPages(
+        readGitHubJson(repoRoot, [
+          `repos/${repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs?` +
+            'per_page=100',
+          '--paginate',
+          '--slurp',
+        ]),
+      ),
+    })),
+  };
+}
+
+export function decodeGitHubWorkflowRunPages(pages) {
+  if (
+    !Array.isArray(pages) ||
+    pages.length === 0 ||
+    pages.some(
+      (page) =>
+        !Number.isSafeInteger(page?.total_count) ||
+        page.total_count < 0 ||
+        !Array.isArray(page.workflow_runs),
+    )
+  ) {
+    throw new Error('GitHub did not return exact workflow run pages');
+  }
+  const runs = pages.flatMap((page) => page.workflow_runs);
+  if (pages.some((page) => page.total_count !== runs.length)) {
+    throw new Error('GitHub did not return exact workflow run pages');
+  }
+  return runs;
 }
 
 export function decodeGitHubGitBlob(requestedOid, response) {
@@ -50,6 +112,26 @@ export function decodeGitHubGitBlob(requestedOid, response) {
   } catch {
     throw new Error('GitHub did not return the exact requested UTF-8 blob');
   }
+}
+
+export function decodeGitHubWorkflowJobPages(pages) {
+  if (
+    !Array.isArray(pages) ||
+    pages.length === 0 ||
+    pages.some(
+      (page) =>
+        !Number.isSafeInteger(page?.total_count) ||
+        page.total_count < 0 ||
+        !Array.isArray(page.jobs),
+    )
+  ) {
+    throw new Error('GitHub did not return exact workflow job pages');
+  }
+  const jobs = pages.flatMap((page) => page.jobs);
+  if (pages.some((page) => page.total_count !== jobs.length)) {
+    throw new Error('GitHub did not return exact workflow job pages');
+  }
+  return jobs;
 }
 
 function isCanonicalBase64(value) {

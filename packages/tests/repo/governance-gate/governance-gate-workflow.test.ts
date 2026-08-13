@@ -11,10 +11,9 @@ describe('governance gate workflow', () => {
 
     const workflow = load(readFileSync(workflowPath, 'utf8'));
 
-    expect(workflow).toEqual({
+    expect(workflow).toMatchObject({
       name: 'Governance Gate',
-      on: { workflow_call: null },
-      permissions: { contents: 'read' },
+      permissions: { contents: 'read', actions: 'read' },
       jobs: {
         'governance-gate': {
           name: 'Governance Gate',
@@ -27,11 +26,41 @@ describe('governance gate workflow', () => {
               with: { 'node-version': 24, cache: 'npm' },
             },
             { name: 'Install dependencies', run: 'npm ci --ignore-scripts' },
-            { name: 'Run governance gate', run: 'npm run check:governance-gate' },
+            {
+              name: 'Run governance gate',
+              id: 'local-gate',
+              'continue-on-error': true,
+              env: {
+                GH_TOKEN: '${{ github.token }}',
+                GOVERNANCE_APP_SLUG: '${{ vars.GOVERNANCE_APP_SLUG }}',
+              },
+              run: 'npm run check:governance-gate',
+            },
+            expect.objectContaining({
+              name: 'Resolve governance gate',
+              id: 'resolution',
+              if: '${{ always() }}',
+              env: {
+                GH_TOKEN: '${{ github.token }}',
+                GOVERNANCE_APP_SLUG: '${{ vars.GOVERNANCE_APP_SLUG }}',
+                LOCAL_GATE_OUTCOME: '${{ steps.local-gate.outcome }}',
+              },
+            }),
           ],
         },
       },
     });
+    expect(workflow.on.workflow_call.outputs).toMatchObject({
+      status: { value: '${{ jobs.governance-gate.outputs.status }}' },
+      underlying_status: {
+        value: '${{ jobs.governance-gate.outputs.underlying_status }}',
+      },
+      decision_id: { value: '${{ jobs.governance-gate.outputs.decision_id }}' },
+    });
+    const resolution = workflow.jobs['governance-gate'].steps.at(-1);
+    expect(resolution.run).toContain('node scripts/governance-gate-resolution.mjs');
+    expect(resolution.run).toContain('--current-run-attempt "$GITHUB_RUN_ATTEMPT"');
+    expect(resolution.run).toContain('--gate-name "Governance Gate / Governance Gate"');
   });
 
   it('binds every phase to the real owner-focused package command', () => {

@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { validateReviewRecord } from '../../../../scripts/pr-human-review/validate-record.mjs';
+import {
+  retainedLedgerHash,
+  retainedLedgerProjection,
+} from '../../../../scripts/pr-human-review/trusted-retained-legacy.mjs';
 
 const mergeBaseSha = 'a'.repeat(40);
 const initialHeadSha = 'b'.repeat(40);
@@ -238,6 +242,88 @@ describe('PR Human Review Record v2', () => {
     const errors = validateReviewRecord(input);
 
     expect(errors).toEqual([]);
+  });
+
+  it('accepts a receipt-authenticated retained ledger without PR-only approval fields', () => {
+    const item = {
+      id: 'production-legacy-example',
+      path: 'apps/example/compat.ts',
+      symbol: 'compatibilityEntry',
+      classification: 'legacy',
+      disposition: 'retained-pending-human-approval',
+    };
+    const approval = {
+      id: item.id,
+      path: item.path,
+      symbol: item.symbol,
+      purpose: 'Retain compatibility during the documented migration.',
+      consumerDependency: 'A named downstream consumer still calls this entry.',
+      unsafeRemovalReason: 'The downstream migration has not completed.',
+      minimization: 'The entry delegates directly to the canonical owner.',
+      canonicalOwner: 'apps/example/canonical.ts#createCanonicalEntry',
+      compatibilityTests: 'packages/tests/example/compatibility.test.ts',
+      owner: 'Example team',
+      removalCondition: 'Remove after the downstream migration completes.',
+      approvedProductionSha: currentHeadSha,
+      ledgerSha256: '',
+    };
+    approval.ledgerSha256 = retainedLedgerHash({ item, approval });
+    const initial = { ...initialReview(), legacy: { candidateCount: 1, items: [item] } };
+    const final = {
+      ...finalReview(),
+      legacy: {
+        candidateCount: 1,
+        items: [item],
+        candidatesInspected: 'Baseline, report, diff, and call paths.',
+      },
+    };
+    const record = reviewRecord({ initialReview: initial, finalReview: final });
+    (record.retainedLegacy as Array<Record<string, unknown>>).push(approval);
+    const projection = retainedLedgerProjection({
+      items: [item],
+      approvalById: new Map([[item.id, approval]]),
+    });
+    const errors = validateReviewRecord({
+      ...validationInput(record, false),
+      registry: '# Production Legacy Exception Registry\n',
+      readGovernanceExceptions: () => [
+        {
+          decisionId: 'e'.repeat(64),
+          projection: {
+            retainedLedgerProjection: projection,
+            ledgerSha256: approval.ledgerSha256,
+            approvedProductionSha: currentHeadSha,
+            candidateHead: currentHeadSha,
+          },
+        },
+      ],
+    });
+
+    expect(errors).toEqual([]);
+
+    const malformedErrors = validateReviewRecord({
+      ...validationInput(record, false),
+      registry: [
+        '# Production Legacy Exception Registry',
+        '### production-legacy-unrelated',
+        '- Purpose: This unrelated entry omits required fields.',
+      ].join('\n'),
+      readGovernanceExceptions: () => [
+        {
+          decisionId: 'e'.repeat(64),
+          projection: {
+            retainedLedgerProjection: projection,
+            ledgerSha256: approval.ledgerSha256,
+            approvedProductionSha: currentHeadSha,
+            candidateHead: currentHeadSha,
+          },
+        },
+      ],
+    });
+
+    expect(malformedErrors).toContain(
+      'retained legacy registry Repository-relative path and symbol is malformed: production-legacy-unrelated',
+    );
   });
 
   it('invalidates the final review when build content or current plan decisions change', () => {
@@ -508,7 +594,14 @@ function recordBody(record: ReturnType<typeof reviewRecord>): string {
           `- Behavior and judgment not proven by automation: ${final.automationGaps}`,
           `- Legacy candidates inspected (baseline, automated report, changed files, and production call paths): ${final.legacy.candidatesInspected}`,
           `- Legacy candidate count: ${final.legacy.candidateCount}`,
-          `- Legacy ledger and dispositions: ${JSON.stringify(final.legacy.items)}`,
+          `- Legacy ledger and dispositions: ${JSON.stringify(
+            retainedLedgerProjection({
+              items: final.legacy.items,
+              approvalById: new Map(
+                record.retainedLegacy.map((approval) => [approval?.id, approval]),
+              ),
+            }),
+          )}`,
           `- Critical findings unresolved: ${final.unresolvedFindings.critical}`,
           `- Important findings unresolved: ${final.unresolvedFindings.important}`,
           `- Verdict: ${final.verdict}`,

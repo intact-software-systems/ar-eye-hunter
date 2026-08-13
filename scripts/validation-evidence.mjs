@@ -141,6 +141,9 @@ function readJobs(jobsRoot, runId) {
 function runConclusion(options) {
   const issues = validateBranchReleaseConclusion({
     governanceResult: requiredOption(options, '--governance-result'),
+    governanceStatus: requiredOption(options, '--governance-status'),
+    governanceUnderlyingStatus: requiredOption(options, '--governance-underlying-status'),
+    governanceDecisionId: options.get('--governance-decision-id') ?? '',
     selectionResult: requiredOption(options, '--selection-result'),
     reuse: requiredOption(options, '--reuse'),
     releaseResult: requiredOption(options, '--release-result'),
@@ -159,7 +162,11 @@ function readOptions(args) {
   const options = new Map();
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index];
-    if (!name.startsWith('--') || options.has(name) || args[index + 1] === '') {
+    if (
+      !name.startsWith('--') ||
+      options.has(name) ||
+      (args[index + 1] === '' && name !== '--governance-decision-id')
+    ) {
       throw new Error(`invalid option: ${name}`);
     }
     options.set(name, args[index + 1]);

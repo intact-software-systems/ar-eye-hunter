@@ -4,6 +4,12 @@ const trustedWorkflowRef =
 export const trustedGovernanceAppSlug = 'governance-decisions';
 
 export function verifyPublishedGovernanceDecisionCommit(verificationInput) {
+  const verification = verifyHistoricalGovernanceDecisionCommit(verificationInput);
+  validateCurrentAdministrator(verification.receipt.actor, verificationInput.readPermission);
+  return { ...verification, authenticatedActor: verification.receipt.actor.login };
+}
+
+export function verifyHistoricalGovernanceDecisionCommit(verificationInput) {
   const verification = verificationInput.structuralVerification;
   if (verification?.decisionOnly !== true) {
     throw new Error('remote verification requires a structurally verified decision commit');
@@ -16,7 +22,6 @@ export function verifyPublishedGovernanceDecisionCommit(verificationInput) {
     throw new Error('governance decision commit must have GitHub verified identity');
   }
   const { actor, transport, request } = verification.receipt;
-  validateCurrentAdministrator(actor, verificationInput.readPermission);
   if (transport.kind === 'local-gh') {
     validateLocalAuthor(commit.author, actor);
   } else {

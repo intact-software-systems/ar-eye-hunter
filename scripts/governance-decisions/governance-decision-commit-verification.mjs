@@ -5,7 +5,7 @@ import {
 } from './governance-decision-request.mjs';
 import {
   createGovernanceDecisionReceipt,
-  serializeGovernanceDecisionReceipt,
+  decodeGovernanceDecisionReceipt,
   toGovernanceDecisionReceiptPath,
 } from './governance-decision-receipt.mjs';
 import { computeGovernanceDecisionTransition } from './governance-decision-transition.mjs';
@@ -80,6 +80,7 @@ export function verifyGovernanceDecisionCommit(verificationInput) {
         successorPlanPath: request.payload.successorPlanPath,
         blobOid,
       }),
+    readGateEvidence: verificationInput.readGateEvidence,
   });
   validateReplayedTransition({
     transition,
@@ -168,48 +169,7 @@ function validateChangedFileModes(parentSnapshot, commitSnapshot, changes) {
 }
 
 function parseCanonicalReceipt(content) {
-  let receipt;
-  try {
-    receipt = JSON.parse(content);
-  } catch (error) {
-    throw new Error(`governance decision receipt contains invalid JSON: ${toError(error).message}`);
-  }
-  if (serializeGovernanceDecisionReceipt(receipt) !== content) {
-    throw new Error('receipt serialization must be canonical JSON plus one newline');
-  }
-  requireExactKeys(
-    receipt,
-    [
-      'schemaVersion',
-      'decisionId',
-      'requestDigest',
-      'request',
-      'actor',
-      'transport',
-      'result',
-      'bypassedInvariants',
-      'stateChanges',
-    ],
-    'receipt',
-  );
-  if (receipt.schemaVersion !== 'governance-decision-receipt-v1') {
-    throw new Error('receipt schemaVersion must be governance-decision-receipt-v1');
-  }
-  if (
-    receipt.actor?.permission !== 'admin' ||
-    typeof receipt.actor.login !== 'string' ||
-    receipt.actor.login.trim() === ''
-  ) {
-    throw new Error('receipt actor must be an authenticated administrator');
-  }
-  requireExactKeys(receipt.actor, ['login', 'permission'], 'receipt actor');
-  if (!Array.isArray(receipt.stateChanges) || !Array.isArray(receipt.bypassedInvariants)) {
-    throw new Error('receipt must declare stateChanges and bypassedInvariants arrays');
-  }
-  if (!isSortedUnique(receipt.bypassedInvariants)) {
-    throw new Error('receipt bypassedInvariants must be sorted and unique');
-  }
-  return receipt;
+  return decodeGovernanceDecisionReceipt(content);
 }
 
 function validateReceiptIdentity(identityInput) {
@@ -307,8 +267,4 @@ function requireExactKeys(value, expectedKeys, name) {
   if (JSON.stringify(actualKeys) !== JSON.stringify(sortedExpectedKeys)) {
     throw new Error(`${name} must contain exactly: ${expectedKeys.join(', ')}`);
   }
-}
-
-function toError(value) {
-  return value instanceof Error ? value : new Error(String(value));
 }

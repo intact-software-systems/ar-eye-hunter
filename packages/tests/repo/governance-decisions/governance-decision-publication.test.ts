@@ -10,7 +10,11 @@ import {
   publishGovernanceDecisionCommit,
   publishImmutableGitBlob,
 } from '../../../../scripts/governance-decisions/github-governance-publication.mjs';
-import { decodeGitHubGitBlob } from '../../../../scripts/governance-decisions/github-governance-api.mjs';
+import {
+  decodeGitHubGitBlob,
+  decodeGitHubWorkflowJobPages,
+  decodeGitHubWorkflowRunPages,
+} from '../../../../scripts/governance-decisions/github-governance-api.mjs';
 
 const fixtureRoots: string[] = [];
 
@@ -212,6 +216,42 @@ describe('GitHub governance decision publication', () => {
         'GitHub did not return the exact requested UTF-8 blob',
       );
     }
+  });
+
+  it('decodes paginated workflow-attempt jobs without hiding duplicate gate names', () => {
+    const first = { id: 1, name: 'Governance Gate / Governance Gate' };
+    const second = { id: 2, name: 'Governance Gate / Governance Gate' };
+
+    expect(
+      decodeGitHubWorkflowJobPages([
+        { total_count: 2, jobs: [first] },
+        { total_count: 2, jobs: [second] },
+      ]),
+    ).toEqual([first, second]);
+    expect(() => decodeGitHubWorkflowJobPages({ jobs: [first] })).toThrow(
+      'GitHub did not return exact workflow job pages',
+    );
+    expect(() => decodeGitHubWorkflowJobPages([{ total_count: 2, jobs: [first] }])).toThrow(
+      'GitHub did not return exact workflow job pages',
+    );
+  });
+
+  it('decodes every workflow run page without hiding ambiguous admissions', () => {
+    const first = { id: 701, run_attempt: 1 };
+    const second = { id: 702, run_attempt: 2 };
+
+    expect(
+      decodeGitHubWorkflowRunPages([
+        { total_count: 2, workflow_runs: [first] },
+        { total_count: 2, workflow_runs: [second] },
+      ]),
+    ).toEqual([first, second]);
+    expect(() => decodeGitHubWorkflowRunPages({ workflow_runs: [first] })).toThrow(
+      'GitHub did not return exact workflow run pages',
+    );
+    expect(() =>
+      decodeGitHubWorkflowRunPages([{ total_count: 2, workflow_runs: [first] }]),
+    ).toThrow('GitHub did not return exact workflow run pages');
   });
 
   it('rejects a dirty or stale local checkout before publication', async () => {

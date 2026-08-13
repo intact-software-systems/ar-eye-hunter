@@ -1,5 +1,10 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
+import {
+  readOriginMainGovernanceDecisionIndex,
+  resolveGovernanceExceptionDecisions,
+} from './governance-decisions/governance-decision-receipt-index.mjs';
 import { readRevisionFile } from './test-structure-coupling-range-evidence.mjs';
 
 const registryPath = 'docs/test-structure-coupling-exceptions.md';
@@ -86,6 +91,65 @@ export function validateRegistry(registry, candidates) {
     }
   }
   return errors.toSorted();
+}
+
+export function readGovernedTestCouplingRegistry(reviewInput, registry, dependencies = {}) {
+  const candidateHead =
+    reviewInput.mode === 'changed-range'
+      ? reviewInput.head
+      : (dependencies.readHead?.() ?? readCurrentHead());
+  const selector = { exceptionKind: 'test-structure-coupling', candidateHead };
+  let decisions;
+  const errors = [...registry.errors];
+  if (typeof dependencies.readGovernanceExceptions === 'function') {
+    decisions = dependencies.readGovernanceExceptions(selector);
+  } else {
+    const index =
+      dependencies.readGovernanceDecisionIndex?.(process.cwd()) ??
+      readOriginMainGovernanceDecisionIndex(process.cwd());
+    errors.push(...index.issues.map((issue) => `governance decision receipt: ${issue}`));
+    decisions = resolveGovernanceExceptionDecisions(index, selector);
+  }
+  if (!Array.isArray(decisions)) {
+    return {
+      ...registry,
+      errors: [...errors, 'governance exception resolver returned malformed test evidence'],
+    };
+  }
+  const contracts = [...registry.contracts];
+  const entries = [...registry.entries];
+  for (const decision of decisions) {
+    const projection = decision?.projection;
+    if (!isPlainObject(projection)) {
+      return {
+        ...registry,
+        errors: [...errors, 'governance test exception projection must be an object'],
+      };
+    }
+    contracts.push(projection.semanticContract);
+    entries.push(toReceiptRegistryEntry(projection));
+  }
+  return { contracts, entries, errors };
+}
+
+function toReceiptRegistryEntry(projection) {
+  const disposition = projection.disposition;
+  return {
+    ...projection.candidate,
+    contract: projection.semanticContract.id,
+    disposition: disposition.kind,
+    ...(disposition.boundary === undefined ? {} : { boundary: disposition.boundary }),
+    owner: disposition.owner,
+    rationale: disposition.rationale,
+    semanticCoverage: disposition.semanticCoverage,
+    ...(disposition.removalCondition === undefined
+      ? {}
+      : { removalCondition: disposition.removalCondition }),
+  };
+}
+
+function readCurrentHead() {
+  return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 }
 
 function validateContracts(errors, contractValues) {

@@ -36,11 +36,143 @@ afterEach(() => {
 });
 
 describe('plan governance receipt authentication', () => {
+  it.each([
+    ['gate.accept-deviation', false],
+    ['gate.accept-deviation', true],
+    ['exception.decide', false],
+    ['exception.decide', true],
+  ] as const)(
+    'keeps a valid receipt-only %s decision neutral to plan facts (active plan: %s)',
+    (operation, activePlan) => {
+      const fixture = createReceiptOnlyDecisionCommit({ operation, activePlan });
+
+      expect(() =>
+        checkAdaptivePlans({
+          repoRoot: fixture.root,
+          base: fixture.parentOid,
+          readGateEvidence: () => failedGateEvidence(),
+          readDecisionAdmissionEvidence: (commitOid: string) =>
+            successfulAdmissionEvidence(commitOid),
+        }),
+      ).not.toThrow();
+      expect(
+        readAuthenticatedPlanTransitionChanges({
+          repoRoot: fixture.root,
+          base: fixture.diffBase,
+          changes: readChangedPaths(fixture.root, fixture.diffBase),
+          readGateEvidence: () => failedGateEvidence(),
+          readDecisionAdmissionEvidence: (commitOid: string) =>
+            successfulAdmissionEvidence(commitOid),
+        }),
+      ).toMatchObject({
+        authenticatedPlans: [],
+        authenticatedDispositions: [],
+        changes: expect.not.arrayContaining([
+          expect.objectContaining({ path: fixture.receiptPath }),
+        ]),
+        issues: [],
+      });
+    },
+  );
+
+  it('rejects a mixed non-plan receipt commit and never authenticates its plan change', () => {
+    const fixture = createReceiptOnlyDecisionCommit({
+      operation: 'exception.decide',
+      activePlan: true,
+      mutatePlanInDecisionCommit: true,
+    });
+    const authentication = readAuthenticatedPlanTransitionChanges({
+      repoRoot: fixture.root,
+      base: fixture.parentOid,
+      changes: readChangedPaths(fixture.root, fixture.parentOid),
+    });
+
+    expect(authentication.issues[0]).toContain('is not authenticated');
+    expect(authentication.changes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: fixture.planPath })]),
+    );
+    expect(() => checkAdaptivePlans({ repoRoot: fixture.root, base: fixture.parentOid })).toThrow(
+      'is not authenticated',
+    );
+  });
+
+  it('rejects a malformed receipt-only commit instead of making it plan-neutral', () => {
+    const fixture = createReceiptOnlyDecisionCommit({
+      operation: 'exception.decide',
+      activePlan: false,
+      malformedReceipt: true,
+    });
+
+    expect(() => checkAdaptivePlans({ repoRoot: fixture.root, base: fixture.parentOid })).toThrow(
+      'is not authenticated',
+    );
+  });
+
+  it('rejects a receipt-only decision merged from feature-branch history', () => {
+    const fixture = createReceiptOnlyDecisionCommit({
+      operation: 'exception.decide',
+      activePlan: false,
+      mergeFromFeature: true,
+    });
+
+    expect(() => checkAdaptivePlans({ repoRoot: fixture.root, base: fixture.parentOid })).toThrow(
+      'adding commit is not on the trusted main first-parent lineage',
+    );
+  });
+
+  it('rejects a structurally valid non-admin receipt on a pull-request head', () => {
+    const fixture = createReceiptOnlyDecisionCommit({
+      operation: 'exception.decide',
+      activePlan: false,
+      directFeatureHead: true,
+    });
+
+    expect(() =>
+      checkAdaptivePlans({
+        repoRoot: fixture.root,
+        base: fixture.parentOid,
+        readDecisionAdmissionEvidence: () => ({ workflowRuns: [] }),
+      }),
+    ).toThrow('authenticated main-push admission');
+  });
+
+  it('rejects a handcrafted one-parent first-parent receipt without authenticated admission', () => {
+    const fixture = createReceiptOnlyDecisionCommit({
+      operation: 'exception.decide',
+      activePlan: false,
+    });
+
+    expect(() =>
+      checkAdaptivePlans({
+        repoRoot: fixture.root,
+        base: fixture.parentOid,
+        readDecisionAdmissionEvidence: () => ({ workflowRuns: [] }),
+      }),
+    ).toThrow('authenticated main-push admission');
+  });
+
+  it('rejects a plan disposition without authenticated admission', () => {
+    const fixture = createCancelledPlanCommit();
+
+    expect(() =>
+      checkAdaptivePlans({
+        repoRoot: fixture.root,
+        base: fixture.parentOid,
+        readDecisionAdmissionEvidence: () => ({ workflowRuns: [] }),
+      }),
+    ).toThrow('authenticated main-push admission');
+  });
+
   it('accepts an exact receipt-backed plan cancellation without closure-v1 evidence', () => {
     const fixture = createCancelledPlanCommit();
 
     expect(() =>
-      checkAdaptivePlans({ repoRoot: fixture.root, base: fixture.parentOid }),
+      checkAdaptivePlans({
+        repoRoot: fixture.root,
+        base: fixture.parentOid,
+        readDecisionAdmissionEvidence: (commitOid: string) =>
+          successfulAdmissionEvidence(commitOid),
+      }),
     ).not.toThrow();
   });
 
@@ -52,37 +184,45 @@ describe('plan governance receipt authentication', () => {
     );
   });
 
-  it.each([
-    'plan.cancel',
-    'plan.complete',
-    'plan.supersede',
-    'plan.quarantine',
-  ] as const)('accepts a %s disposition and frees or transfers the plan slot', (operation) => {
-    const fixture = createPlanDispositionCommit({ operation });
+  it.each(['plan.cancel', 'plan.complete', 'plan.supersede', 'plan.quarantine'] as const)(
+    'accepts a %s disposition and frees or transfers the plan slot',
+    (operation) => {
+      const fixture = createPlanDispositionCommit({ operation });
 
-    expect(() =>
-      checkAdaptivePlans({ repoRoot: fixture.root, base: fixture.parentOid }),
-    ).not.toThrow();
-    if (['plan.cancel', 'plan.complete', 'plan.quarantine'].includes(operation)) {
-      expect(
-        checkRepositoryStructure({ repoRoot: fixture.root, base: fixture.parentOid }),
-      ).toMatchObject({ findings: [] });
-    }
-    if (operation !== 'plan.supersede') {
-      const nextPlanPath = 'plans/next-plan.md';
-      writeFileSync(
-        path.join(fixture.root, nextPlanPath),
-        toGovernanceDecisionFixturePlanMarkdown(fixture.parentOid),
-      );
       expect(() =>
-        initAdaptivePlan({
+        checkAdaptivePlans({
           repoRoot: fixture.root,
           base: fixture.parentOid,
-          planPath: nextPlanPath,
+          readDecisionAdmissionEvidence: (commitOid: string) =>
+            successfulAdmissionEvidence(commitOid),
         }),
       ).not.toThrow();
-    }
-  });
+      if (['plan.cancel', 'plan.complete', 'plan.quarantine'].includes(operation)) {
+        expect(
+          checkRepositoryStructure({
+            repoRoot: fixture.root,
+            base: fixture.parentOid,
+            readDecisionAdmissionEvidence: (commitOid: string) =>
+              successfulAdmissionEvidence(commitOid),
+          }),
+        ).toMatchObject({ findings: [] });
+      }
+      if (operation !== 'plan.supersede') {
+        const nextPlanPath = 'plans/next-plan.md';
+        writeFileSync(
+          path.join(fixture.root, nextPlanPath),
+          toGovernanceDecisionFixturePlanMarkdown(fixture.parentOid),
+        );
+        expect(() =>
+          initAdaptivePlan({
+            repoRoot: fixture.root,
+            base: fixture.parentOid,
+            planPath: nextPlanPath,
+          }),
+        ).not.toThrow();
+      }
+    },
+  );
 
   it('repairs a plan while retaining the structurally authenticated changed plan path', () => {
     const fixture = createRepairedPlanCommit();
@@ -90,6 +230,7 @@ describe('plan governance receipt authentication', () => {
       repoRoot: fixture.root,
       base: fixture.parentOid,
       changes: readChangedPaths(fixture.root, fixture.parentOid),
+      readDecisionAdmissionEvidence: (commitOid: string) => successfulAdmissionEvidence(commitOid),
     });
 
     expect(authentication.issues).toEqual([]);
@@ -98,16 +239,230 @@ describe('plan governance receipt authentication', () => {
     ]);
     expect(authentication.changes).toEqual([]);
     expect(() =>
-      checkAdaptivePlans({ repoRoot: fixture.root, base: fixture.parentOid }),
+      checkAdaptivePlans({
+        repoRoot: fixture.root,
+        base: fixture.parentOid,
+        readDecisionAdmissionEvidence: (commitOid: string) =>
+          successfulAdmissionEvidence(commitOid),
+      }),
     ).not.toThrow();
 
     mkdirSync(path.join(fixture.root, 'scripts'), { recursive: true });
-    writeFileSync(path.join(fixture.root, 'scripts/unrelated-later.mjs'), 'export const later = 1;\n');
+    writeFileSync(
+      path.join(fixture.root, 'scripts/unrelated-later.mjs'),
+      'export const later = 1;\n',
+    );
     expect(() =>
-      checkAdaptivePlans({ repoRoot: fixture.root, base: fixture.parentOid }),
+      checkAdaptivePlans({
+        repoRoot: fixture.root,
+        base: fixture.parentOid,
+        readDecisionAdmissionEvidence: (commitOid: string) =>
+          successfulAdmissionEvidence(commitOid),
+      }),
     ).toThrow('computed facts are stale');
   });
 });
+
+function createReceiptOnlyDecisionCommit(options: {
+  operation: 'gate.accept-deviation' | 'exception.decide';
+  activePlan: boolean;
+  mutatePlanInDecisionCommit?: boolean;
+  malformedReceipt?: boolean;
+  mergeFromFeature?: boolean;
+  directFeatureHead?: boolean;
+}) {
+  const root = mkdtempSync(path.join(tmpdir(), 'plan-non-plan-governance-receipt-'));
+  fixtureRoots.push(root);
+  runGit(root, ['init', '-q']);
+  runGit(root, ['config', 'user.name', 'Fixture']);
+  runGit(root, ['config', 'user.email', 'fixture@example.com']);
+  mkdirSync(path.join(root, 'plans'), { recursive: true });
+  writeFileSync(path.join(root, 'plans/README.md'), toActivePlanRegistry([]));
+  runGit(root, ['add', '.']);
+  runGit(root, ['commit', '-q', '-m', 'decision fixture base']);
+  const diffBase = runGit(root, ['rev-parse', 'HEAD']).trim();
+  const planPath = 'plans/receipt-neutral-plan.md';
+  if (options.activePlan) {
+    const record = JSON.parse(
+      JSON.stringify(parseAdaptivePlanRecord(toGovernanceDecisionFixturePlanMarkdown(), planPath)),
+    );
+    record.planId = 'receipt-neutral-plan';
+    record.facts.diffBase = diffBase;
+    record.facts.affectedCodeDigest = emptyDigest();
+    const markdown = `# Receipt neutral plan\n\n\`\`\`plan-adaptation-v1\n${JSON.stringify(
+      record,
+      null,
+      2,
+    )}\n\`\`\`\n`;
+    writeFileSync(path.join(root, planPath), markdown);
+    writeFileSync(path.join(root, 'plans/README.md'), toActivePlanRegistry([{ planPath, record }]));
+    runGit(root, ['add', '.']);
+    runGit(root, ['commit', '-q', '-m', 'active plan']);
+  }
+  const parentOid = runGit(root, ['rev-parse', 'HEAD']).trim();
+  const trustedBranch = runGit(root, ['branch', '--show-current']).trim();
+  if (options.mergeFromFeature || options.directFeatureHead) {
+    runGit(root, ['switch', '-c', 'receipt-feature']);
+  }
+  const request = receiptOnlyRequest(options.operation, parentOid);
+  const transition = computeGovernanceDecisionTransition({
+    request,
+    snapshot: readGitRepositorySnapshot({ repoRoot: root, commitOid: parentOid }),
+    readGateEvidence: () => failedGateEvidence(),
+  });
+  const receipt = createGovernanceDecisionReceipt({
+    request,
+    actor: { login: 'repository-admin', permission: 'admin' },
+    transport: { kind: 'local-gh' },
+    result: transition.result,
+    bypassedInvariants: transition.bypassedInvariants,
+    stateChanges: transition.stateChanges,
+  });
+  const receiptPath = transition.receiptPath;
+  mkdirSync(path.dirname(path.join(root, receiptPath)), { recursive: true });
+  writeFileSync(
+    path.join(root, receiptPath),
+    options.malformedReceipt ? '{malformed}\n' : serializeGovernanceDecisionReceipt(receipt),
+  );
+  if (options.mutatePlanInDecisionCommit) {
+    writeFileSync(path.join(root, planPath), `${readFile(root, planPath)}\n`);
+  }
+  runGit(root, ['add', '.']);
+  runGit(root, ['commit', '-q', '-m', 'receipt-only decision']);
+  if (options.mergeFromFeature) {
+    runGit(root, ['switch', trustedBranch]);
+    runGit(root, ['commit', '--allow-empty', '-q', '-m', 'advance trusted main']);
+    runGit(root, ['merge', '--no-ff', '-q', 'receipt-feature', '-m', 'merge receipt feature']);
+  }
+  return { root, diffBase, parentOid, planPath, receiptPath };
+}
+
+function receiptOnlyRequest(
+  operation: 'gate.accept-deviation' | 'exception.decide',
+  expectedHeadOid: string,
+) {
+  const common = {
+    schemaVersion: 'governance-decision-request-v1',
+    operation,
+    repository: 'intact-software-systems/ar-eye-hunter',
+    defaultBranch: 'main',
+    expectedHeadOid,
+    force: true,
+    reason: 'Authenticate one receipt-only governance decision.',
+  };
+  if (operation === 'gate.accept-deviation') {
+    return {
+      ...common,
+      target: {
+        workflowRunId: 81,
+        runAttempt: 2,
+        gateName: 'Governance Gate / Governance Gate',
+        candidateSha: '2'.repeat(40),
+      },
+      payload: {},
+    };
+  }
+  const projection = {
+    ruleId: 'topology.singleton-subtree',
+    target: 'packages/example/singleton',
+    owner: 'Example maintainers',
+    reviewOrRemovalCondition: 'Remove when the sibling capability is added.',
+  };
+  return {
+    ...common,
+    target: {
+      action: 'approve',
+      exceptionKind: 'repository-structure',
+      candidateHead: '2'.repeat(40),
+      projectionSha256: computeSha256(
+        JSON.stringify({
+          owner: projection.owner,
+          reviewOrRemovalCondition: projection.reviewOrRemovalCondition,
+          ruleId: projection.ruleId,
+          target: projection.target,
+        }),
+      ),
+    },
+    payload: { projection },
+  };
+}
+
+function failedGateEvidence() {
+  return {
+    run: {
+      id: 81,
+      run_attempt: 2,
+      head_sha: '2'.repeat(40),
+      status: 'completed',
+      conclusion: 'failure',
+    },
+    jobs: [
+      {
+        id: 91,
+        run_id: 81,
+        run_attempt: 2,
+        head_sha: '2'.repeat(40),
+        name: 'Governance Gate / Governance Gate',
+        status: 'completed',
+        conclusion: 'failure',
+      },
+    ],
+  };
+}
+
+function successfulAdmissionEvidence(commitOid: string) {
+  return {
+    workflowRuns: [
+      {
+        run: {
+          id: 701,
+          run_attempt: 1,
+          event: 'push',
+          head_sha: commitOid,
+          head_branch: 'main',
+          path: '.github/workflows/deploy.yml',
+          status: 'in_progress',
+          conclusion: null,
+        },
+        jobs: [
+          {
+            id: 702,
+            name: 'Classify authenticated governance decision',
+            status: 'completed',
+            conclusion: 'success',
+            run_id: 701,
+            run_attempt: 1,
+            head_sha: commitOid,
+            steps: [
+              {
+                name: 'Verify an exact decision-only commit',
+                status: 'completed',
+                conclusion: 'success',
+              },
+              {
+                name: 'Resolve fail-closed governance classification',
+                status: 'completed',
+                conclusion: 'success',
+              },
+              {
+                name: 'Record authenticated governance admission',
+                status: 'completed',
+                conclusion: 'success',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function readFile(root: string, repositoryPath: string): string {
+  return execFileSync('git', ['show', `HEAD:${repositoryPath}`], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+}
 
 function createCancelledPlanCommit(options: { omitReceipt?: boolean } = {}) {
   return createPlanDispositionCommit({ operation: 'plan.cancel', ...options });

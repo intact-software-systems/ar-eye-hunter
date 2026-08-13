@@ -13,6 +13,7 @@ on:
         type: boolean
 
 permissions:
+  actions: read
   contents: read
   deployments: write
 
@@ -75,6 +76,10 @@ jobs:
           --verification-outcome "$VERIFICATION_OUTCOME"
           --output "$GITHUB_OUTPUT"
 
+      - name: Record authenticated governance admission
+        if: ${{ steps.verify.outcome == 'success' && steps.resolve.outputs.decision_only == 'true' && steps.resolve.outputs.invalid_governance == 'false' }}
+        run: echo "Exact governance decision authenticated and admitted to main"
+
   invalid-governance-decision:
     name: Reject invalid governance-shaped commit
     needs: governance-decision
@@ -91,6 +96,9 @@ jobs:
     needs: governance-decision
     if: needs.governance-decision.outputs.decision_only == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     steps:
       - name: Check out the exact main commit
         uses: actions/checkout@v7
@@ -108,6 +116,8 @@ jobs:
 
       - name: Run focused governance verification
         env:
+          GH_TOKEN: ${{ github.token }}
+          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
           PLAN_ADAPTATION_BASE: ${{ github.event.before }}
         run: |
           npm run test:governance-decisions

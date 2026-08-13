@@ -118,6 +118,27 @@ describe('general agent guidance routing', () => {
       'test:repo-governance',
     ]);
   });
+
+  it('keeps authenticated governance decisions exact and separate from ordinary publication', () => {
+    const sources = [
+      readRepo('AGENTS.md'),
+      readRepo('.agents/skills/adaptive-plan-execution/SKILL.md'),
+      readRepo('.agents/skills/publishing-plan-progress/SKILL.md'),
+    ].map(normalize);
+
+    for (const source of sources) {
+      expect(source).toContain('exact canonical request');
+      expect(source).toContain('expected main head');
+      expect(source).toContain('one just-in-time approval');
+      expect(source).toMatch(/changed request or (?:expected )?head invalidates/iu);
+      expect(source).toMatch(/Never hand-write/iu);
+      expect(source).toMatch(/directly edit(?:\/delete| or delete) a plan/iu);
+      expect(source).toMatch(/generated (?:active-plan )?registr/iu);
+    }
+    expect(sources[2]).toContain(
+      'This does not approve any ordinary default-branch commit or push.',
+    );
+  });
 });
 
 function readRepo(repositoryPath: string): string {

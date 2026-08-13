@@ -74,6 +74,13 @@ standard.
   Each default-branch push requires a new permission request and approval.
   Commit and push permissions are independent; approval for one never grants
   approval for the other.
+- For a supported authenticated governance decision, an AI may use
+  `npm run governance:decide -- apply` after showing the exact canonical request
+  and expected main head and receiving one just-in-time approval for that exact
+  atomic mutation. A changed request or head invalidates approval and requires
+  a new one. Never hand-write governance receipts, directly edit/delete a plan,
+  fabricate completion or review evidence, or alter generated registries as
+  substitutes.
 - For package/app changes, read the relevant repo skill in `.agents/skills/**`:
   - `building-rallar-apps` first for greenfield apps and React/3D architecture;
     then use the authority, realtime, and testing specialists for the selected

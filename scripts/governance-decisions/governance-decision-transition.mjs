@@ -15,6 +15,7 @@ import {
   decodeGovernanceDecisionRequest,
 } from './governance-decision-request.mjs';
 import {
+  decodeGovernanceDecisionReceipt,
   toContentIdentity,
   toGovernanceDecisionReceiptPath,
 } from './governance-decision-receipt.mjs';
@@ -26,6 +27,24 @@ export function computeGovernanceDecisionTransition(transitionInput) {
   const receiptPath = toGovernanceDecisionReceiptPath(computeGovernanceDecisionId(request));
   if (entriesByPath.has(receiptPath)) {
     throw new Error('decision receipt path already exists');
+  }
+  if (request.operation === 'gate.accept-deviation') {
+    return toTransition({
+      request,
+      snapshot: transitionInput.snapshot,
+      entriesByPath,
+      receiptPath,
+      ...computeGateDeviation(request, entriesByPath, transitionInput),
+    });
+  }
+  if (request.operation === 'exception.decide') {
+    return toTransition({
+      request,
+      snapshot: transitionInput.snapshot,
+      entriesByPath,
+      receiptPath,
+      ...computeExceptionDecision(request, entriesByPath, transitionInput),
+    });
   }
   const targetEntry = readTargetEntry(entriesByPath, request.target.planPath);
   validateTargetIdentity(request, targetEntry);
@@ -46,6 +65,127 @@ export function computeGovernanceDecisionTransition(transitionInput) {
     receiptPath,
     ...computed,
   });
+}
+
+function computeGateDeviation(request, entriesByPath, transitionInput) {
+  if (typeof transitionInput.readGateEvidence !== 'function') {
+    throw new Error('gate.accept-deviation requires the exact failed gate evidence reader');
+  }
+  const evidence = transitionInput.readGateEvidence(request.target);
+  const gateJobs = Array.isArray(evidence?.jobs)
+    ? evidence.jobs.filter((job) => job?.name === request.target.gateName)
+    : [];
+  const runMatches =
+    evidence?.run?.id === request.target.workflowRunId &&
+    evidence.run.run_attempt === request.target.runAttempt &&
+    evidence.run.head_sha === request.target.candidateSha &&
+    evidence.run.status === 'completed' &&
+    evidence.run.conclusion === 'failure';
+  const job = gateJobs.length === 1 ? gateJobs[0] : undefined;
+  const jobMatches =
+    job?.run_id === request.target.workflowRunId &&
+    job.run_attempt === request.target.runAttempt &&
+    job.head_sha === request.target.candidateSha &&
+    job.status === 'completed' &&
+    job.conclusion === 'failure';
+  if (!runMatches || !jobMatches) {
+    throw new Error('gate.accept-deviation requires one exact completed failed gate');
+  }
+  const decisionId = computeGovernanceDecisionId(request);
+  return {
+    candidateEntries: cloneEntries(entriesByPath),
+    result: { status: 'accepted-deviation', underlyingStatus: 'failed', decisionId },
+    bypassedInvariants: [
+      `governance gate must pass: run ${request.target.workflowRunId} ` +
+        `attempt ${request.target.runAttempt} gate ${request.target.gateName} ` +
+        `candidate ${request.target.candidateSha}`,
+    ],
+  };
+}
+
+function computeExceptionDecision(request, entriesByPath, transitionInput) {
+  if (request.target.action === 'revoke') {
+    const prior = readPriorGovernanceDecision(
+      request.target.priorDecisionId,
+      entriesByPath,
+      transitionInput,
+    );
+    if (
+      prior?.request?.operation !== 'exception.decide' ||
+      prior.request.target?.action !== 'approve' ||
+      computeGovernanceDecisionId(decodeGovernanceDecisionRequest(prior.request)) !==
+        request.target.priorDecisionId
+    ) {
+      throw new Error('exception.decide revoke target must identify an existing approval');
+    }
+    const existingRevocations = readGovernanceDecisionRevocations(
+      request.target.priorDecisionId,
+      entriesByPath,
+      transitionInput,
+    );
+    if (existingRevocations.length > 0) {
+      throw new Error('exception.decide revoke target must identify an active approval');
+    }
+  }
+  const decisionId = computeGovernanceDecisionId(request);
+  return {
+    candidateEntries: cloneEntries(entriesByPath),
+    result: {
+      status: request.target.action === 'approve' ? 'approved' : 'revoked',
+      decisionId,
+    },
+    bypassedInvariants: [
+      request.target.action === 'approve'
+        ? `${request.target.exceptionKind} exception requires PR-backed authentication: ` +
+          request.target.candidateHead
+        : `exception revocation requires PR-backed registry mutation: ` +
+          request.target.priorDecisionId,
+    ],
+  };
+}
+
+function readGovernanceDecisionRevocations(priorDecisionId, entriesByPath, transitionInput) {
+  if (typeof transitionInput.readGovernanceDecisionRevocations === 'function') {
+    const decisionIds = transitionInput.readGovernanceDecisionRevocations(priorDecisionId);
+    if (!Array.isArray(decisionIds)) {
+      throw new Error('governance decision revocation reader returned malformed evidence');
+    }
+    return decisionIds;
+  }
+  const revocations = [];
+  for (const entry of entriesByPath.values()) {
+    if (!/^governance\/decisions\/[0-9a-f]{64}\.json$/u.test(entry.path)) {
+      continue;
+    }
+    try {
+      const receipt = decodeGovernanceDecisionReceipt(entry.content);
+      if (
+        receipt.request.operation === 'exception.decide' &&
+        receipt.request.target.action === 'revoke' &&
+        receipt.request.target.priorDecisionId === priorDecisionId
+      ) {
+        revocations.push(receipt.decisionId);
+      }
+    } catch {
+      throw new Error('exception.decide cannot resolve malformed prior receipt evidence');
+    }
+  }
+  return revocations;
+}
+
+function readPriorGovernanceDecision(decisionId, entriesByPath, transitionInput) {
+  if (typeof transitionInput.readGovernanceDecision === 'function') {
+    return transitionInput.readGovernanceDecision(decisionId);
+  }
+  const entry = entriesByPath.get(toGovernanceDecisionReceiptPath(decisionId));
+  if (entry?.mode !== '100644') {
+    return undefined;
+  }
+  try {
+    return decodeGovernanceDecisionReceipt(entry.content);
+  } catch {
+    return undefined;
+  }
 }
 
 function computeOperation(operationInput) {
