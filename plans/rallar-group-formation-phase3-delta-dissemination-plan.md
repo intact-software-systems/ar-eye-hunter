@@ -555,17 +555,16 @@ adaptive horizon rule.
       ]
     }
   ],
-  "completedSlicesSinceCheckpoint": [
-    "overlay-read-through-on-connect-and-reconnect"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "d782ceffe409c34ec5f516172b236479048317059fb7b6f190c908705a464a1f",
+    "affectedCodeDigest": "b8e4350b003fcc41aefe3d7f714ce5f277c34037b69f356743c4db35c2ef3201",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
       "public-contract-change",
-      "scope-growth"
+      "scope-growth",
+      "two-completed-slices"
     ],
     "undeclaredChangedPaths": [
       "plans/rallar-group-topology-evidence-ledger-plan.md",
@@ -574,12 +573,13 @@ adaptive horizon rule.
     ]
   },
   "checkpoint": {
-    "outcome": "Slice 1 landed and measured: per-topic WS egress-byte counters are live on the delivery path with zero behavior change, all tier suites pass (memory 19/19, postgres 19/19 plus 5/5 cluster, formation-large 1/1 with 1,323 step successes), and the baseline is recorded in the dated phase-3 results document: N=50 primary burst egress is 254,951,157 bytes with the two full-snapshot topics at 96.1 percent and idle steady state at exactly zero egress bytes.",
-    "learning": "The measured byte shares settle two open questions: group-directory.snapshot costs the same as group-state.snapshot (123.3 MB vs 121.6 MB at N=50), so delta-primary must replace both per-change snapshot rows or the reduction caps at roughly 2x; and group-state.event is only about one percent of burst egress, so the delta envelope has ample byte headroom. The Phase 2 idle property is re-verified through the new counter.",
-    "structure": "The five declared capability owners are unchanged and sufficient; the results document is declared as a contract path on the formation black-box recipes owner; no folder or ownership moves are needed for the next horizon.",
+    "outcome": "The horizon landed green end to end: M12 overlay read-through (first production readStateGroupTopology callers, ws-reopen resync behind the session fence, late-joiner 22/22 and reconnect-resync 32/32 recipes) and the M2 server dual-emit slice (three dissemination modes defaulting to dual-emit with legacy damping forced to snapshot-per-change, the delta envelope with chained CAS revisions and persisted audience, the expansion-phase recomputation mirror, audience-first group-event delivery) with focused suites, api-v1 Deno, 21/21 memory black-box, 7/7 full-stack memory, and repo-governance all passing.",
+    "learning": "The one open cross-slice gap is browser envelope consumption: rooms.onEvent validation drops delta-envelope rows until the unwrap lands, which no current recipe or full-stack spec exercises, so the tree stays green while the gap is closed next; delta-primary emission is now selectable server-side, so the measurement runs only need the browser consumption slice and delta-mode recipe variants; the evidence-ledger plan on main still collides with the one-active-plan structure rule, keeping the CI governance gate red for that single environment-level cause.",
+    "structure": "The five declared capability owners remain sufficient; the delta envelope contract landed inside the shared contracts owner and the emission switch inside the server owner with no new folders or ownership moves; the consolidated formation-metrics module held.",
     "decision": "continue",
     "nextSlices": [
-      "m2-dual-emit-delta-envelope"
+      "m2-browser-delta-consumption",
+      "m13-join-admission"
     ]
   },
   "structuralDispositions": [
@@ -749,6 +749,11 @@ adaptive horizon rule.
       "date": "2026-08-13",
       "decision": "continue",
       "summary": "Slice 1 landed and measured: per-topic WS egress-byte counters are live on the delivery path with zero behavior change, all tier suites pass (memory 19/19, postgres 19/19 plus 5/5 cluster, formation-large 1/1 with 1,323 step successes), and the baseline is recorded in the dated phase-3 results document: N=50 primary burst egress is 254,951,157 bytes with the two full-snapshot topics at 96.1 percent and idle steady state at exactly zero egress bytes."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "continue",
+      "summary": "The horizon landed green end to end: M12 overlay read-through (first production readStateGroupTopology callers, ws-reopen resync behind the session fence, late-joiner 22/22 and reconnect-resync 32/32 recipes) and the M2 server dual-emit slice (three dissemination modes defaulting to dual-emit with legacy damping forced to snapshot-per-change, the delta envelope with chained CAS revisions and persisted audience, the expansion-phase recomputation mirror, audience-first group-event delivery) with focused suites, api-v1 Deno, 21/21 memory black-box, 7/7 full-stack memory, and repo-governance all passing."
     }
   ]
 }
