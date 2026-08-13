@@ -3,6 +3,7 @@ import {
   canActivateGroupMember,
   canJoinGroup,
   type GroupGovernanceAction,
+  type GroupPolicyCapacityConfig,
 } from '../../../group-policy.ts';
 
 import type {
@@ -131,12 +132,14 @@ interface AssertUpsertActivationAllowedInput {
   readonly command: Extract<GroupMutationCommand, { operation: 'upsertMember' }>;
   readonly snapshot: GroupSnapshot;
   readonly nowEpochMs: number;
+  readonly capacity: GroupPolicyCapacityConfig | undefined;
 }
 
 export function assertUpsertActivationAllowed({
   command,
   snapshot,
   nowEpochMs,
+  capacity,
 }: AssertUpsertActivationAllowedInput): void {
   if (command.input.status !== 'active') return;
   assertAllowed(
@@ -148,11 +151,13 @@ export function assertUpsertActivationAllowed({
             sessionId: command.input.actorSessionId ?? undefined,
           },
           nowEpochMs,
+          capacity,
         })
       : canActivateGroupMember({
           snapshot,
           targetPrincipalId: command.targetPrincipalId,
           nowEpochMs,
+          capacity,
         }),
   );
 }

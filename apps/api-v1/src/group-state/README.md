@@ -27,12 +27,18 @@ api-v1 side a boundary change (flags, admission, response contracts) touches.
 6. [createStateApiResilienceMiddleware](../services/state-api-resilience-middleware.ts#createStateApiResilienceMiddleware)
    is the blanket `/api/state/*` sliding-window limiter and circuit breaker
    every route here already sits behind.
-7. [readApiGroupFormationDampingConfig](../runtime/group-formation/group-formation-damping-config.ts#readApiGroupFormationDampingConfig)
+7. [requireGroupAdmissionQuota](../services/group-admission-rate-limit.ts#requireGroupAdmissionQuota)
+   is the family-scoped join-admission limiter guard (join, invite-accept,
+   upsert-self member, presence connect) composing with the blanket
+   middleware; over-limit answers `429` with `Retry-After: 60`.
+8. [readApiGroupFormationDampingConfig](../runtime/group-formation/group-formation-damping-config.ts#readApiGroupFormationDampingConfig)
    is the flag-parsing convention (typed union intent, startup log) that new
-   group-formation flags follow.
-8. [toGroupStateErrorResponse](./group-state-route-errors.ts#toGroupStateErrorResponse)
-   maps typed policy denials (including `group-full`) and inbox failures to
-   HTTP responses.
+   group-formation flags follow;
+   [readApiGroupCapacityConfig](../runtime/group-formation/group-capacity-config.ts#readApiGroupCapacityConfig)
+   supplies the default member cap threaded into the group-state service.
+9. [toGroupStateErrorResponse](./group-state-route-errors.ts#toGroupStateErrorResponse)
+   maps typed policy denials (including `group-full`), admission rate limits,
+   and inbox failures to HTTP responses.
 
 ## Boundaries
 

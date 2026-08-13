@@ -15,6 +15,7 @@ import type {
   GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 
+import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import {
   type ResolvedGroupStateRouteDependencies,
   toGroupStateRouteScope,
@@ -50,6 +51,7 @@ function registerJoinGroupRoute(
         const authSession = await dependencies.requireApiAuthSession(context.req);
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
+        requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
         const written = toGroupStateResponse({
           kind: 'mutation',
           written: await dependencies.processGroupAppInbox<
@@ -86,6 +88,7 @@ function registerAcceptGroupInviteRoute(
         const authSession = await dependencies.requireApiAuthSession(context.req);
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
+        requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
         const written = toGroupStateResponse({
           kind: 'mutation',
           written: await dependencies.processGroupAppInbox<

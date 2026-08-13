@@ -108,6 +108,7 @@ import {
 import {
   readApiGroupStateDisseminationConfig,
 } from './runtime/group-formation/group-state-dissemination-config.ts';
+import { readApiGroupCapacityConfig } from './runtime/group-formation/group-capacity-config.ts';
 import {
   beginMiddlewareStartupGeneration,
   registerMiddlewareBackgroundTask,
@@ -278,6 +279,7 @@ function initialise(
       const durable = createGroupStateService({
         runtimeRepository: runtimeStateRepository,
         formationDamping: topologyIntent.damping,
+        capacity: readApiGroupCapacityConfig(),
         authSessionRepository,
         createGroupStateEventStore: createGroupStateEventRepository,
         serviceId: myServerId,
