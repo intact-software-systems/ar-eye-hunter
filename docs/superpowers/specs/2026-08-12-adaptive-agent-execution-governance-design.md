@@ -2,7 +2,7 @@
 
 Date: 2026-08-12
 
-Status: approved for implementation
+Status: implemented and closed
 
 ## Problem
 

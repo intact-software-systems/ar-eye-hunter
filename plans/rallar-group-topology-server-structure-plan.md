@@ -2858,11 +2858,37 @@ measurements remain historical and are never relabeled for a changed tree.
 - [x] Non-circular planning, implementation, and ledger evidence is preserved.
 - [x] No production behavior is authorized without explicit human approval.
 
+### 20.1 Authorized governance interruption: closure-receipt publication
+
+Issue [#207](https://github.com/intact-software-systems/ar-eye-hunter/issues/207)
+records that PR #202 merged the authenticated adaptive-plan closure receipt while
+PR Human Review Record v2 rejected that exact data-only path. On 2026-08-13 the
+human explicitly authorized interrupting and amending this plan without removing
+or rewriting the existing group-topology consolidation slice.
+
+**Owner:** `scripts/pr-human-review/`
+
+**Mirrored tests:** `packages/tests/repo/pr-human-review/`
+
+- [x] Capture RED proving that `plan-only` rejects a canonical direct
+      `plans/<plan-id>.closure.json` receipt.
+- [x] Reuse plan adaptation's canonical receipt-path predicate without moving
+      receipt content, digest, base-transition, or registry authentication out
+      of the plan-adaptation owner.
+- [x] Prove canonical receipt plus implementation-plan Markdown acceptance and
+      reject arbitrary JSON, nested, traversal, noncanonical raw, mismatched,
+      and mixed code paths.
+- [ ] Complete focused and broad governance, independent review, publication,
+      and merge before closing issue #207.
+
+**Legacy impact:** Extend the existing v2 exemption grammar directly. Add no
+receipt parser, compatibility scope, second validator, or group-topology change.
+
 ## 21. Adaptive Execution Record
 
 The record below is the canonical current horizon. Historical task lists remain
 evidence and acceptance context; they do not authorize work outside this
-record's single next slice.
+record's current next slice.
 
 ```plan-adaptation-v1
 {
@@ -2981,6 +3007,7 @@ record's single next slice.
         "scripts/legacy-review/candidate-report.mjs",
         "scripts/legacy-review/validate-supplied-evidence.mjs",
         "scripts/plan-adaptation/adaptive-plan-record.mjs",
+        "scripts/plan-adaptation/plan-closure-receipt.mjs",
         "scripts/plan-adaptation/plan-change-facts.mjs",
         "scripts/review-legacy.mjs",
         "packages/tests/repo/legacy-review.test.ts"
@@ -3091,32 +3118,30 @@ record's single next slice.
     "intendedHypothesis": "One consolidation slice aligns the existing tests and validation entry with the existing topology owner, fixes the two known style findings, and leaves runtime behavior unchanged.",
     "invalidatedAssumptions": [
       "A post-merge PR C performance result is required before final traceability work can continue.",
-      "The pre-governance packages/tests/shared-server/topology path is an acceptable declared mirror for packages/shared-server/rallar-system/topology."
+      "The pre-governance packages/tests/shared-server/topology path is an acceptable declared mirror for packages/shared-server/rallar-system/topology.",
+      "Canonical authenticated closure receipts were assumed to qualify for the PR Human Review Record v2 plan-only exemption. PR #202 proved the validator rejects that required data-only publication path."
     ],
     "freshInitialReview": {
       "status": "pending",
       "reason": "Independent initial review is required before implementation publication; no separate reviewer was started during this plan-only replan."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "closure-receipt-publication"
+  ],
   "facts": {
-    "diffBase": "dc44ab029dd415b356833d3b72e0207f79c4bc88",
-    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diffBase": "origin/main",
+    "affectedCodeDigest": "699160bac5a7ccbc6c4cb912cc4a34902266e561a886de27ddcdfabf3422b229",
     "computedTriggers": [
-      "invalid-assumption",
-      "scope-growth"
+      "ownership-change",
+      "invalid-assumption"
     ],
-    "undeclaredChangedPaths": [
-      "docs/superpowers/plans/2026-08-06-rallar-rtc-performance-baseline-plan.md",
-      "plans/adaptive-agent-execution-governance-plan.md",
-      "plans/adaptive-agent-execution-governance.closure.json",
-      "plans/rallar-architecture-quality-and-rtc-program-roadmap.md"
-    ]
+    "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The prior fact refresh captured two uncommitted TypeScript configuration paths. Current clean main contains only the merged sibling RTC plan and roadmap changes plus authenticated adaptive-governance closure evidence.",
-    "learning": "Adaptive facts must be prepared from a clean worktree; uncommitted paths contaminate the generated fact set even when they are not committed.",
-    "structure": "Keep the existing topology capability horizon unchanged while refreshing only deterministic facts from clean main.",
+    "outcome": "The human explicitly authorized interrupting the single group-topology consolidation horizon to include the independently implemented and reviewed closure-receipt publication correction recorded by issue #207.",
+    "learning": "Receipt authentication and publication scope are separate policies. PR review should reuse plan adaptation's exact canonical receipt-path fact while leaving receipt contents and base-transition authentication with plan adaptation.",
+    "structure": "Retain activate-group-topology-capability unchanged as the planned consolidation slice and add closure-receipt-publication as the second bounded slice. Declare the one cross-owner receipt-path fact; add no new owner, parser, compatibility mode, or topology change.",
     "decision": "amend",
     "nextSlices": [
       "activate-group-topology-capability"
@@ -3174,6 +3199,11 @@ record's single next slice.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "The prior fact refresh captured two uncommitted TypeScript configuration paths. Current clean main contains only the merged sibling RTC plan and roadmap changes plus authenticated adaptive-governance closure evidence."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The human explicitly authorized interrupting the single group-topology consolidation horizon to include the independently implemented and reviewed closure-receipt publication correction recorded by issue #207."
     }
   ]
 }
