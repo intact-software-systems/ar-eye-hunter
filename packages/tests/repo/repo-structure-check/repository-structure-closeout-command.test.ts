@@ -51,6 +51,16 @@ describe('repository structure close-out command', () => {
         },
       }),
     ).toThrow(/authenticated last-plan close-out/u);
+
+    const additionalSurfaceResult = runChecker(fixture, { includeBase: false });
+    expect(additionalSurfaceResult.status).toBe(2);
+    expect(additionalSurfaceResult.stderr).toContain('authenticated last-plan close-out');
+
+    rmSync(path.join(fixture.root, 'scripts/unrelated.mjs'));
+    writeFixture(fixture.root, 'plans/fixture-plan.closure.json', '{broken}\n');
+    const malformedReceiptResult = runChecker(fixture, { includeBase: false });
+    expect(malformedReceiptResult.status).toBe(2);
+    expect(malformedReceiptResult.stderr).toContain('close-out is not authenticated');
   });
 
   it('rejects an authenticated close-out when more than one active plan is removed', () => {
@@ -89,26 +99,6 @@ describe('repository structure close-out command', () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('authenticated last-plan close-out');
     expect(result.stderr).not.toContain('PASS: repository structure');
-  });
-
-  it('rejects a malformed last-plan close-out receipt', () => {
-    const { fixture } = createLastPlanCloseoutFixture();
-    writeFixture(fixture.root, 'plans/fixture-plan.closure.json', '{broken}\n');
-
-    const result = runChecker(fixture, { includeBase: false });
-
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain('close-out is not authenticated');
-  });
-
-  it('rejects additional changed surface beside an authenticated last-plan close-out', () => {
-    const { fixture } = createLastPlanCloseoutFixture();
-    writeFixture(fixture.root, 'scripts/unrelated.mjs', 'export const unrelated = true;\n');
-
-    const result = runChecker(fixture, { includeBase: false });
-
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain('authenticated last-plan close-out');
   });
 });
 

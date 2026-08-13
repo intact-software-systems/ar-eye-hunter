@@ -788,10 +788,12 @@ parallel registry.
       "evidence": "Fresh-context review passed on 2026-08-12 after two scoped correction rounds resolved exact Slice 2 ownership, legacy inventory and review bounds, canonical structural fact ownership, focused commands, navigation-map evidence, and terminology."
     }
   },
-  "completedSlicesSinceCheckpoint": [],
+  "completedSlicesSinceCheckpoint": [
+    "repository-navigation-closeout-integration"
+  ],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "d5abeb750ea4990f17e091ac5205daefc12f3ecd44e311a747ab8fdb3bdaabda",
+    "affectedCodeDigest": "62af92880bf8e21d52d95c3836b77b8310baf8351c952f1708e000d1748f5c8f",
     "computedTriggers": [
       "ownership-change",
       "invalid-assumption"
@@ -803,9 +805,7 @@ parallel registry.
     "learning": "One authenticated close-out fixture can cover ordinary structure, navigation composition, and post-read mutation rejection, but performance consolidation must not replace the public command boundary with only a direct API assertion.",
     "structure": "Keep the canonical plan-adaptation verifier as the sole close-out authentication owner and repository structure as the navigation composer. Retain both the no-argument CLI proof and direct navigation race proof while publishing the correction for uncontended remote validation.",
     "decision": "amend",
-    "nextSlices": [
-      "repository-navigation-closeout-integration"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
