@@ -34,6 +34,10 @@ legacy evidence.
       "focusedCommand": "npm run test:governance-decisions",
       "navigationMap": "scripts/governance-decisions/README.md",
       "factContracts": [
+        "packages/tests/hetzner/deploy-release-gate.test.ts",
+        "packages/tests/repo/repo-style-reviewed-dispositions.test.ts",
+        "scripts/check-changed-repo-style.mjs",
+        "scripts/check-test-structure-coupling.mjs",
         "scripts/plan-adaptation/plan-closure-receipt.mjs",
         "scripts/pr-human-review/trusted-retained-legacy.mjs",
         "scripts/repo-structure-check/structure-exceptions.mjs",
@@ -80,7 +84,8 @@ legacy evidence.
       "focusedCommand": "npm run test:governance-gate",
       "navigationMap": "scripts/governance-gate/README.md",
       "factContracts": [
-        "packages/tests/repo/github-actions-runtime-governance.test.ts"
+        "packages/tests/repo/github-actions-runtime-governance.test.ts",
+        "scripts/governance-gate-resolution.mjs"
       ],
       "contractPaths": [
         ".github/workflows/governance-gate.yml"
@@ -89,6 +94,25 @@ legacy evidence.
         "local phase orchestration",
         "focused contract validation",
         "GitHub early-gate integration"
+      ]
+    },
+    {
+      "owner": "validation evidence",
+      "root": "scripts/validation-evidence",
+      "entry": "scripts/validation-evidence.mjs",
+      "testRoot": "packages/tests/repo/validation-evidence",
+      "focusedCommand": "npm run test:validation-evidence",
+      "navigationMap": "scripts/validation-evidence/README.md",
+      "factContracts": [
+        "scripts/pr-human-review/review-freshness.mjs"
+      ],
+      "contractPaths": [
+        ".github/workflows/branch-release-gate.yml",
+        ".github/workflows/release-gate.yml"
+      ],
+      "controlFlowFamilies": [
+        "validation evidence selection and publication",
+        "governance-aware branch release conclusion"
       ]
     },
     {
@@ -123,6 +147,9 @@ legacy evidence.
         "scripts/check-pr-human-review-legacy-stages.mjs",
         "scripts/pr-human-review/trusted-retained-legacy.mjs"
       ],
+      "contractPaths": [
+        ".github/workflows/pr-human-review-record.yml"
+      ],
       "controlFlowFamilies": [
         "review evidence validation",
         "trusted retained-legacy approval"
@@ -143,6 +170,16 @@ legacy evidence.
         "changed-path risk classification",
         "workflow selection"
       ]
+    },
+    {
+      "kind": "guidance",
+      "owner": "adaptive plan execution guidance",
+      "skillRoot": ".agents/skills/adaptive-plan-execution",
+      "skillEntry": ".agents/skills/adaptive-plan-execution/SKILL.md",
+      "contractTestRoot": "packages/tests/repo/adaptive-agent-execution",
+      "focusedCommand": "npm run test:adaptive-plan-execution",
+      "evaluationRoot": ".agents/evaluations/adaptive-agent-execution/v1",
+      "contractPaths": []
     },
     {
       "kind": "guidance",
@@ -183,7 +220,7 @@ legacy evidence.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "c85aa01c39b09f294c0c3ca20123dda49968c4a867dd40043652c2eb86f13c48",
+    "affectedCodeDigest": "d81392d70e32067e5e2a6dacef9cadf5a296535025e2a40a0976c3c347a2c636",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -194,13 +231,11 @@ legacy evidence.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Authenticated local and workflow publication, remote verification, all five truthful plan dispositions, and fail-closed decision-only workflow classification are implemented and independently approved.",
-    "learning": "Safe PR-free publication requires repeated administrator and trusted-App binding immediately before mutation, plus explicit full-workflow fallback whenever authentication or classification is ambiguous.",
-    "structure": "The cohesive governance-decisions owner, narrow plan-consumer integration, and workflow classifiers expose the security boundaries directly; retain this structure for receipt-backed exceptions.",
+    "outcome": "All seven authenticated governance operations, both publication transports, truthful plan dispositions, accepted gate deviations, four fingerprint-bound exception consumers, decision-only workflow classification, and durable main-push admission verification are implemented and independently approved.",
+    "learning": "Historical receipt trust requires exact structural replay, verified actor or App provenance, and durable successful admission evidence from the live current-admin check; first-parent topology and continue-on-error step conclusions are not authentication evidence.",
+    "structure": "Retain the cohesive governance-decisions owner, its explicit admission verifier, narrow plan-transition integration, receipt index, native exception projections, governance aggregator, and fail-closed workflow classifiers because each exposes one real policy or side-effect boundary without generic indirection.",
     "decision": "continue",
-    "nextSlices": [
-      "authenticated-governance-exceptions"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
@@ -251,6 +286,11 @@ legacy evidence.
       "date": "2026-08-13",
       "decision": "continue",
       "summary": "Authenticated local and workflow publication, remote verification, all five truthful plan dispositions, and fail-closed decision-only workflow classification are implemented and independently approved."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "continue",
+      "summary": "All seven authenticated governance operations, both publication transports, truthful plan dispositions, accepted gate deviations, four fingerprint-bound exception consumers, decision-only workflow classification, and durable main-push admission verification are implemented and independently approved."
     }
   ]
 }
@@ -258,8 +298,20 @@ legacy evidence.
 
 ## Current horizon
 
-1. `governance-decision-core`
-2. `authenticated-plan-publication`
+The implementation slices are complete. The remaining rollout horizon is:
+
+1. Complete bootstrap PR review and merge through ordinary governance.
+2. Configure the dedicated App, protected environment, repository variables, secret, and ruleset.
+3. Preview both transports, apply `plan.complete`, and verify that no active plan remains.
+
+## Final publication compatibility
+
+The final refresh observed `origin/main` at `160e8f8840d02701c55509ca89ef6b9f5ad5f7f3`.
+Its only path overlap with this capability is the generated `plans/README.md`, because main now
+contains the user-owned active `rallar-group-topology-evidence-ledger` plan. No implementation path
+overlaps. Do not rebase, replace that plan, or publish a merge candidate while both plans would be
+active. Refresh again after that plan is legitimately disposed, regenerate this branch's active
+registry, and rerun the final unchanged-candidate checks before Branch Release Gate.
 
 ## Validation boundary
 
