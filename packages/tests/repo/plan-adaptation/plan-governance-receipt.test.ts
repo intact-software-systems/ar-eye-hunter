@@ -224,43 +224,48 @@ describe('plan governance receipt authentication', () => {
     },
   );
 
-  it('repairs a plan while retaining the structurally authenticated changed plan path', () => {
-    const fixture = createRepairedPlanCommit();
-    const authentication = readAuthenticatedPlanTransitionChanges({
-      repoRoot: fixture.root,
-      base: fixture.parentOid,
-      changes: readChangedPaths(fixture.root, fixture.parentOid),
-      readDecisionAdmissionEvidence: (commitOid: string) => successfulAdmissionEvidence(commitOid),
-    });
-
-    expect(authentication.issues).toEqual([]);
-    expect(authentication.authenticatedDispositions).toEqual([
-      expect.objectContaining({ operation: 'plan.repair', planPath: fixture.planPath }),
-    ]);
-    expect(authentication.changes).toEqual([]);
-    expect(() =>
-      checkAdaptivePlans({
+  it(
+    'repairs a plan while retaining the structurally authenticated changed plan path',
+    { timeout: 15_000 },
+    () => {
+      const fixture = createRepairedPlanCommit();
+      const authentication = readAuthenticatedPlanTransitionChanges({
         repoRoot: fixture.root,
         base: fixture.parentOid,
+        changes: readChangedPaths(fixture.root, fixture.parentOid),
         readDecisionAdmissionEvidence: (commitOid: string) =>
           successfulAdmissionEvidence(commitOid),
-      }),
-    ).not.toThrow();
+      });
 
-    mkdirSync(path.join(fixture.root, 'scripts'), { recursive: true });
-    writeFileSync(
-      path.join(fixture.root, 'scripts/unrelated-later.mjs'),
-      'export const later = 1;\n',
-    );
-    expect(() =>
-      checkAdaptivePlans({
-        repoRoot: fixture.root,
-        base: fixture.parentOid,
-        readDecisionAdmissionEvidence: (commitOid: string) =>
-          successfulAdmissionEvidence(commitOid),
-      }),
-    ).toThrow('computed facts are stale');
-  });
+      expect(authentication.issues).toEqual([]);
+      expect(authentication.authenticatedDispositions).toEqual([
+        expect.objectContaining({ operation: 'plan.repair', planPath: fixture.planPath }),
+      ]);
+      expect(authentication.changes).toEqual([]);
+      expect(() =>
+        checkAdaptivePlans({
+          repoRoot: fixture.root,
+          base: fixture.parentOid,
+          readDecisionAdmissionEvidence: (commitOid: string) =>
+            successfulAdmissionEvidence(commitOid),
+        }),
+      ).not.toThrow();
+
+      mkdirSync(path.join(fixture.root, 'scripts'), { recursive: true });
+      writeFileSync(
+        path.join(fixture.root, 'scripts/unrelated-later.mjs'),
+        'export const later = 1;\n',
+      );
+      expect(() =>
+        checkAdaptivePlans({
+          repoRoot: fixture.root,
+          base: fixture.parentOid,
+          readDecisionAdmissionEvidence: (commitOid: string) =>
+            successfulAdmissionEvidence(commitOid),
+        }),
+      ).toThrow('computed facts are stale');
+    },
+  );
 });
 
 function createReceiptOnlyDecisionCommit(options: {

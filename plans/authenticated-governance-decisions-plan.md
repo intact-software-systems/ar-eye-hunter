@@ -220,7 +220,7 @@ legacy evidence.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "d81392d70e32067e5e2a6dacef9cadf5a296535025e2a40a0976c3c347a2c636",
+    "affectedCodeDigest": "1c6031158337972130d02a9c0c83c99418d57da18e28b2c4e95624f88fde8596",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
