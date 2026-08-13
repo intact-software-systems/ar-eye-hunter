@@ -194,12 +194,12 @@ legacy evidence.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The deterministic decision core now validates exact requests and receipts, computes all five plan transitions, and structurally verifies decision-only commits with 25 focused tests passing.",
-    "learning": "Separating pure transition evidence from GitHub authentication kept the security rules directly testable and confirmed that publication can consume one deterministic addition/deletion contract.",
-    "structure": "The governance-decisions owner is directly navigable with one command entry, cohesive policy and snapshot boundaries, mirrored tests, and no undeclared paths; retain the current structure for authenticated publication.",
+    "outcome": "Authenticated local and workflow publication, remote verification, all five truthful plan dispositions, and fail-closed decision-only workflow classification are implemented and independently approved.",
+    "learning": "Safe PR-free publication requires repeated administrator and trusted-App binding immediately before mutation, plus explicit full-workflow fallback whenever authentication or classification is ambiguous.",
+    "structure": "The cohesive governance-decisions owner, narrow plan-consumer integration, and workflow classifiers expose the security boundaries directly; retain this structure for receipt-backed exceptions.",
     "decision": "continue",
     "nextSlices": [
-      "authenticated-plan-publication"
+      "authenticated-governance-exceptions"
     ]
   },
   "structuralDispositions": [
@@ -246,6 +246,11 @@ legacy evidence.
       "date": "2026-08-13",
       "decision": "continue",
       "summary": "The deterministic decision core now validates exact requests and receipts, computes all five plan transitions, and structurally verifies decision-only commits with 25 focused tests passing."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "continue",
+      "summary": "Authenticated local and workflow publication, remote verification, all five truthful plan dispositions, and fail-closed decision-only workflow classification are implemented and independently approved."
     }
   ]
 }
