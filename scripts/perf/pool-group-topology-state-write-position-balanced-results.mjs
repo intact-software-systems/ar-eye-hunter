@@ -6,7 +6,7 @@ import {
 } from './pool-api-v1-state-write-results.mjs';
 export const GROUP_TOPOLOGY_CONFLICT_REASON_SCHEMA =
   'rallar.group-topology.state-write-conflict-reasons.v1';
-export const GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT = '33fa104d2cbf347eab1d02a54107c01f064aad00';
+export const GROUP_TOPOLOGY_PERFORMANCE_BASE_COMMIT = '39ad65b499c4bf944acfe48446ad1c334d97d37d';
 export const GROUP_TOPOLOGY_CONFLICT_REASON =
   'Precommitted conflict hypothesis: accept this resource movement only when measured candidate ' +
   'attempts and RuntimeStateWriteConflictError depth increase and the unchanged evaluator proves ' +

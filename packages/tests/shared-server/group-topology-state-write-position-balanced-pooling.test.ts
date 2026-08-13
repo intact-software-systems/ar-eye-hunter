@@ -10,7 +10,7 @@ import { writeGroupTopologyStateWritePositionBalancedResults } from '../../../sc
 import { createStateWritePerformanceArtifact } from './state-write-performance-artifact-fixture.ts';
 
 const CANDIDATE_COMMIT = '74a62eb22583216e8c6651de069209d7e1a8ca67';
-const APPROVED_PR_C_BASE_COMMIT = '33fa104d2cbf347eab1d02a54107c01f064aad00';
+const APPROVED_PR_C_BASE_COMMIT = '39ad65b499c4bf944acfe48446ad1c334d97d37d';
 const FORMER_PR_B_BASE_COMMIT = 'cc98414867f22cc28f0137ef40a1887ab862f87d';
 const HISTORICAL_PR_A_BASE_COMMIT = '20020977507c3104949da07d27b95e89d3b91c96';
 const BASE_TREE = 'd6ff24a3d760ed7c5590cbe868f2a05693f0a860';
