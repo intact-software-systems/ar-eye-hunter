@@ -54,6 +54,8 @@ which returns sorted findings without choosing a folder layout for the agent.
   validates this map's fenced contract and composes the digest-bound JSON evidence record. The
   mode reuses canonical capability-declaration and adaptive-facts validation, then validates the
   fenced navigation contract; it never runs topology policy or selects a structural disposition.
+  During an authenticated last-plan close-out, it reads the declaration from the exact deleted
+  base plan and re-authenticates the close-out after composing evidence.
 - Production singleton exceptions enter through
   [structure-exceptions.mjs#readStructureExceptions](./structure-exceptions.mjs#readStructureExceptions).
   [structure-exceptions.mjs#readRepositoryExceptionContext](./structure-exceptions.mjs#readRepositoryExceptionContext)
@@ -70,8 +72,8 @@ The checker consumes, but does not own, five explicitly declared contracts:
   validates its configuration before structure policy uses it.
 - [plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges](../plan-adaptation/plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges)
   authenticates the exact last-plan close-out transition when no active plan remains. Repository
-  structure accepts that transition only when the generated registry is empty and no other changed
-  surface remains.
+  structure and navigation evidence accept that transition only when the generated registry is
+  empty and no other changed surface remains.
 - [plan-change-facts.mjs#computeAffectedCodeDigest](../plan-adaptation/plan-change-facts.mjs#computeAffectedCodeDigest)
   binds current structural dispositions to the affected-code surface.
 - [structural-facts.mjs#collectRepositoryStyleFacts](../repo-style-check/structural-facts.mjs#collectRepositoryStyleFacts)

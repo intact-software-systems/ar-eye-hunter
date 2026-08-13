@@ -560,6 +560,9 @@ are selected at the preceding checkpoint.
       boundary when the last active plan is removed, while continuing to reject
       zero-plan repositories, malformed receipts, and any additional changed
       surface.
+- [x] Keep repository navigation evidence available during that same authenticated
+      close-out by reading the sole deleted base record and re-authenticating after
+      evidence composition.
 - [x] Run focused plan-adaptation, adaptive governance, navigation, style,
       formatting, and diff checks; obtain an independent review; and complete
       this slice.
@@ -786,11 +789,11 @@ parallel registry.
     }
   },
   "completedSlicesSinceCheckpoint": [
-    "repository-structure-closeout-integration"
+    "repository-navigation-closeout-integration"
   ],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "be38adfca751eccfe2f974001fa6bd7398562bebbb1c6c6a78bb9ffb5e8b3e84",
+    "affectedCodeDigest": "62af92880bf8e21d52d95c3836b77b8310baf8351c952f1708e000d1748f5c8f",
     "computedTriggers": [
       "ownership-change",
       "invalid-assumption"
@@ -798,9 +801,9 @@ parallel registry.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The authenticated plan close command produced the intended receipt transition, but repository structure rejected the zero-active-plan tree and prevented the required governance-valid closeout branch.",
-    "learning": "Cross-owner consumers of the final plan lifecycle must reuse the canonical closure verifier; checking only for an active record cannot distinguish an authenticated last-plan transition.",
-    "structure": "Keep repository structure as the topology owner and reuse readAuthenticatedPlanClosureChanges as a declared plan-adaptation fact contract. Accept only one plan/receipt pair with the generated empty registry and no other changed surface.",
+    "outcome": "The close-out navigation repair is implemented and behaviorally green, while the final reviewer required retaining the no-argument repository-structure CLI boundary and local aggregate timing remains noisy under measured host contention.",
+    "learning": "One authenticated close-out fixture can cover ordinary structure, navigation composition, and post-read mutation rejection, but performance consolidation must not replace the public command boundary with only a direct API assertion.",
+    "structure": "Keep the canonical plan-adaptation verifier as the sole close-out authentication owner and repository structure as the navigation composer. Retain both the no-argument CLI proof and direct navigation race proof while publishing the correction for uncontended remote validation.",
     "decision": "amend",
     "nextSlices": []
   },
@@ -1040,6 +1043,16 @@ parallel registry.
       "date": "2026-08-13",
       "decision": "amend",
       "summary": "The authenticated plan close command produced the intended receipt transition, but repository structure rejected the zero-active-plan tree and prevented the required governance-valid closeout branch."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The authenticated close-out passed ordinary plan and repository-structure checks, but the final adaptive-governance aggregate proved that navigation evidence still required an active plan and could not validate the receipt tree."
+    },
+    {
+      "date": "2026-08-13",
+      "decision": "amend",
+      "summary": "The close-out navigation repair is implemented and behaviorally green, while the final reviewer required retaining the no-argument repository-structure CLI boundary and local aggregate timing remains noisy under measured host contention."
     }
   ]
 }

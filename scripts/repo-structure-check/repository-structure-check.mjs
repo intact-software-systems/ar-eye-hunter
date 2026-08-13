@@ -101,10 +101,11 @@ export function checkRepositoryStructure(input) {
 }
 
 export function readRepositoryNavigationEvidence(input) {
-  const activePlan = readRequiredStructurePlan(input.repoRoot);
-  const base = activePlan.record.facts.diffBase;
+  const context = readNavigationStructurePlan(input.repoRoot);
+  const { activePlan, base } = context;
   const changes = readChangedPaths(input.repoRoot, base);
   if (
+    !context.isCloseout &&
     !hasCurrentPlanFacts({
       repoRoot: input.repoRoot,
       base,
@@ -145,7 +146,9 @@ export function readRepositoryNavigationEvidence(input) {
   });
   input.afterEvidenceComposed?.();
   const finalChanges = readChangedPaths(input.repoRoot, base);
-  if (
+  if (context.isCloseout) {
+    readAuthenticatedLastPlanCloseout({ repoRoot: input.repoRoot, base });
+  } else if (
     !hasCurrentPlanFacts({
       repoRoot: input.repoRoot,
       base,
@@ -294,8 +297,18 @@ function toActiveEndpointChanges(change, plannedRoots) {
   return [change];
 }
 
-function readRequiredStructurePlan(repoRoot) {
-  return requireSingleActivePlan(readValidatedStructurePlans(repoRoot));
+function readNavigationStructurePlan(repoRoot) {
+  const activePlans = readValidatedStructurePlans(repoRoot);
+  if (activePlans.length > 0) {
+    const activePlan = requireSingleActivePlan(activePlans);
+    return { activePlan, base: activePlan.record.facts.diffBase, isCloseout: false };
+  }
+  const base = 'origin/main';
+  return {
+    activePlan: readAuthenticatedLastPlanCloseout({ repoRoot, base }),
+    base,
+    isCloseout: true,
+  };
 }
 
 function readValidatedStructurePlans(repoRoot) {
@@ -317,6 +330,12 @@ function requireSingleActivePlan(activePlans) {
 }
 
 function checkAuthenticatedLastPlanCloseout(input) {
+  readAuthenticatedLastPlanCloseout(input);
+  const repository = readRepositoryFiles(input.repoRoot, input.base);
+  return { mergeBase: repository.mergeBase, findings: [] };
+}
+
+function readAuthenticatedLastPlanCloseout(input) {
   const changes = readChangedPaths(input.repoRoot, input.base);
   const closure = readAuthenticatedPlanClosureChanges({
     repoRoot: input.repoRoot,
@@ -330,15 +349,19 @@ function checkAuthenticatedLastPlanCloseout(input) {
     readFileSync(registryPath, 'utf8') === toActivePlanRegistry([]) &&
     registryChange?.path === 'plans/README.md' &&
     registryChange.status.startsWith('M');
-  if (closure.issues.length > 0 || authenticatedPathCount !== 2 || !registryIsCurrent) {
+  if (
+    closure.issues.length > 0 ||
+    closure.authenticatedPlans.length !== 1 ||
+    authenticatedPathCount !== 2 ||
+    !registryIsCurrent
+  ) {
     const detail = closure.issues.length > 0 ? `: ${closure.issues.join('; ')}` : '';
     throw new Error(
       `repository structure requires exactly one active plan or an authenticated ` +
         `last-plan close-out${detail}`,
     );
   }
-  const repository = readRepositoryFiles(input.repoRoot, input.base);
-  return { mergeBase: repository.mergeBase, findings: [] };
+  return closure.authenticatedPlans[0];
 }
 
 function readChangedRepositoryStyleFacts(repoRoot, repository) {

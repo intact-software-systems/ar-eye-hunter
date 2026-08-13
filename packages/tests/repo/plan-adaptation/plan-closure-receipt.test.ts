@@ -147,6 +147,14 @@ describe('plan closure receipt', () => {
 
     const validReceipt = readFileSync(receiptPath, 'utf8');
     const closedRegistry = readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8');
+    const authenticatedCloseout = readAuthenticatedPlanClosureChanges({
+      repoRoot: fixture.root,
+      base: fixture.closeBase,
+      changes: readChangedPaths(fixture.root, fixture.closeBase),
+    });
+    expect(authenticatedCloseout.authenticatedPlans).toEqual([
+      { planPath: fixture.planPath, record: baseRecord },
+    ]);
     const misplacedPath = path.join(fixture.root, 'plans/misplaced.closure.json');
     const outsideReceipt = `${fixture.root}-outside-closure.json`;
     fixturePaths.push(outsideReceipt);
