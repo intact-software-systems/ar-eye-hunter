@@ -17,7 +17,7 @@ export function validateCapabilityDeclarations(input) {
     } else {
       validateCapabilityControlFlow(issues, capability);
       validateCapabilityPaths(issues, capability, authoredFileSet);
-      validateCapabilityCommand(issues, capability, input.packageScripts);
+      validateCapabilityCommand(issues, capability, input);
       validateFactContracts(issues, capability, authoredFileSet);
       validateCodeContractPaths({ issues, capability, authoredFileSet, repositoryFileSet });
       validateCapabilityComplexity({ issues, input, capability, authoredFileSet });
@@ -155,16 +155,60 @@ function validateCapabilityPaths(issues, capability, authoredFileSet) {
   }
 }
 
-function validateCapabilityCommand(issues, capability, packageScripts) {
-  const commandMatch = /^npm run ([a-z0-9:-]+)$/u.exec(capability.focusedCommand);
-  const resolvedCommand = commandMatch && packageScripts[commandMatch[1]];
+function validateCapabilityCommand(issues, capability, input) {
   const expectedCommand = `vitest run ${capability.testRoot}`;
-  if (resolvedCommand !== expectedCommand) {
+  if (!resolvesCapabilityFocusedCommand(capability, input, expectedCommand)) {
     issues.push(
       `${capability.owner} focused command ${capability.focusedCommand} must resolve exactly ` +
         `to ${expectedCommand}`,
     );
   }
+}
+
+function resolvesCapabilityFocusedCommand(capability, input, expectedCommand) {
+  const rootCommand = /^npm run ([a-z0-9:-]+)$/u.exec(capability.focusedCommand);
+  if (rootCommand !== null) {
+    return input.packageScripts[rootCommand[1]] === expectedCommand;
+  }
+  const workspaceCommand = /^npm --workspace (\S+) run ([a-z0-9:-]+)$/u.exec(
+    capability.focusedCommand,
+  );
+  if (workspaceCommand === null) {
+    return false;
+  }
+  const packageManifest = readCapabilityPackageManifest(capability, input);
+  const packageScript = packageManifest?.scripts?.[workspaceCommand[2]];
+  return (
+    packageManifest?.name === workspaceCommand[1] &&
+    resolveWorkspaceVitestRoot(capability.root, packageScript) === capability.testRoot
+  );
+}
+
+function readCapabilityPackageManifest(capability, input) {
+  const manifest = input.readFile(`${capability.root}/package.json`);
+  if (typeof manifest !== 'string') {
+    return undefined;
+  }
+  try {
+    return JSON.parse(manifest);
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveWorkspaceVitestRoot(capabilityRoot, packageScript) {
+  if (typeof packageScript !== 'string') {
+    return undefined;
+  }
+  const command = /^vitest run(?: --config \S+)? (?:"\$PWD\/([^"]+)"|\$PWD\/(\S+)|(\S+))$/u.exec(
+    packageScript,
+  );
+  const relativeTestRoot = command?.[1] ?? command?.[2] ?? command?.[3];
+  if (relativeTestRoot === undefined) {
+    return undefined;
+  }
+  const testRoot = path.posix.normalize(path.posix.join(capabilityRoot, relativeTestRoot));
+  return testRoot.startsWith(`${capabilityRoot}/`) ? testRoot : undefined;
 }
 
 function validateFactContracts(issues, capability, authoredFileSet) {
@@ -542,6 +586,12 @@ function isOwnedEntry(capability) {
 }
 
 function isRecognizedTestMirror(capability) {
+  if (
+    capability.root.startsWith('packages/') &&
+    capability.testRoot === `${capability.root}/tests`
+  ) {
+    return true;
+  }
   const [surface, ...ownerParts] = capability.root.split('/');
   if (ownerParts.length === 0) {
     return false;

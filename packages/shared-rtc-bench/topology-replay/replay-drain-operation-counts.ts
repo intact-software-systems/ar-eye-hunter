@@ -92,16 +92,43 @@ async function runWorkload(input: WorkloadInput): Promise<RtcTopologyReplayDrain
       throw error;
     },
   });
-  await service.start();
-  resetCounts(operations);
-  if (input.gap) repository.installGap();
-  else repository.publish(input.entryCount);
+  return executeRtcTopologyReplayServiceLifecycle(service, async () => {
+    resetCounts(operations);
+    if (input.gap) repository.installGap();
+    else repository.publish(input.entryCount);
 
-  service.wake('poll');
-  await service.whenIdle();
-  const result = { ...operations };
-  await service.stop();
-  return result;
+    service.wake('poll');
+    await service.whenIdle();
+    return { ...operations };
+  });
+}
+
+export async function executeRtcTopologyReplayServiceLifecycle<Result>(
+  service: Pick<RtcTopologyReplayService, 'start' | 'stop'>,
+  execute: () => Promise<Result>,
+): Promise<Result> {
+  await service.start();
+  let executionFailed = false;
+  let executionFailure = new Error('RTC topology replay workload failed before cleanup');
+  try {
+    return await execute();
+  } catch (error) {
+    executionFailed = true;
+    executionFailure = error instanceof Error ? error : new Error(String(error));
+    throw error;
+  } finally {
+    try {
+      await service.stop();
+    } catch (cleanupFailure) {
+      if (executionFailed) {
+        throw new AggregateError(
+          [executionFailure, cleanupFailure],
+          'RTC topology replay workload execution and cleanup failed',
+        );
+      }
+      throw cleanupFailure;
+    }
+  }
 }
 
 interface MutableOperationCounts {

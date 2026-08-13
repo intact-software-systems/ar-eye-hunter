@@ -28,6 +28,7 @@ import {
 import { readStructureExceptions } from './structure-exceptions.mjs';
 import {
   collectSemanticDepthFacts,
+  createSingletonSubtreeFact,
   validateStructuralDispositions,
 } from './structural-dispositions.mjs';
 
@@ -116,22 +117,23 @@ export function checkRepositoryStructure(input) {
     const baseDirectories = toCodeDirectories(baseFiles);
     const affectedCodeDigest = computeAffectedCodeDigest({
       repoRoot: input.repoRoot,
-      changes: factChanges,
+      changes: structureChanges,
       record: activePlan.record,
     });
+    const singletonFacts = collectSingletonFacts({
+      repository: scopedRepository,
+      targetDirectories,
+      baseDirectories,
+      exceptions: exceptionRegistry.exceptions,
+    });
     findings.push(
-      ...collectSingletonFindings({
-        repository: scopedRepository,
-        targetDirectories,
-        baseDirectories,
-        exceptions: exceptionRegistry.exceptions,
-      }),
       ...collectRedundantChainFindings(targetDirectories, baseDirectories),
       ...collectDispositionFindings({
         repoRoot: input.repoRoot,
         repository: scopedRepository,
         activePlan,
         affectedCodeDigest,
+        singletonFacts,
       }),
     );
   }
@@ -226,8 +228,8 @@ function collectCapabilityFindings(repoRoot, activePlan, repository) {
   }));
 }
 
-function collectSingletonFindings(input) {
-  const findings = [];
+function collectSingletonFacts(input) {
+  const facts = [];
   const { repository, targetDirectories, baseDirectories, exceptions } = input;
   for (const [directory, descendants] of targetDirectories) {
     const topologyChanged = repository.changes.some(
@@ -247,20 +249,20 @@ function collectSingletonFindings(input) {
       directory === path.posix.dirname(descendants[0]) &&
       ((!baseDirectories.has(directory) && !pathOnlyLineage) || topologyChanged)
     ) {
-      const finding = {
+      const fact = createSingletonSubtreeFact({
         target: directory,
-        ruleId: 'topology.singleton-subtree',
-        message:
+        descendant: descendants[0],
+        context:
           `${baseDirectories.has(directory) ? 'Materially changed' : 'New'} authored-code ` +
           `subtree has one code descendant (${descendants[0]}). ` +
           'A README does not create another code responsibility.',
-      };
-      if (!isApprovedException(exceptions, finding, isProductionAuthoredCodePath(descendants[0]))) {
-        findings.push(finding);
+      });
+      if (!isApprovedException(exceptions, fact, isProductionAuthoredCodePath(descendants[0]))) {
+        facts.push(fact);
       }
     }
   }
-  return findings;
+  return facts;
 }
 
 function collectRedundantChainFindings(targetDirectories, baseDirectories) {
@@ -299,6 +301,7 @@ function collectDispositionFindings(input) {
       capabilities: capabilities.filter((capability) => !isPlannedCapability(capability)),
       authoredFiles: repository.targetFiles,
     }).filter((fact) => isFactOnMateriallyChangedSurface(fact, repository.changes)),
+    ...input.singletonFacts,
   ];
   const declaredDispositions = activePlan.record.structuralDispositions;
   return validateStructuralDispositions({

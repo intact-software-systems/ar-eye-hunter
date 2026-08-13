@@ -11,6 +11,10 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
+import {
+  createRtcBaselineAcceptedWorkerSampleIdentity,
+  runRtcBaselineAcceptedWorkerSamples,
+} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 type Listener = (event?: Event) => void;
 interface ListenerInput {
@@ -74,9 +78,10 @@ export function createRtcPeerListenerCleanupSamples(input: {
   worker: AcceptedArguments;
   results: readonly RtcPeerListenerCleanupResult[];
 }): RtcBaselineSampleDto[] {
+  const worker = acceptedWorkerIdentity(input.worker);
   let priorFailureId: string | undefined;
   return input.worker.sampleIds.map((sampleId, index) => {
-    const identity = createIdentity(input.worker, sampleId, index + 1);
+    const identity = createRtcBaselineAcceptedWorkerSampleIdentity(worker, index);
     const result = input.results[index];
     if (priorFailureId !== undefined || result === undefined) {
       return createSample({
@@ -107,13 +112,27 @@ export async function runRtcPeerListenerCleanupAcceptedSamples(input: {
   worker: AcceptedArguments;
   run: () => Promise<RtcPeerListenerCleanupResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  const results: RtcPeerListenerCleanupResult[] = [];
-  for (let run = 0; run < input.worker.input.runs; run += 1) {
-    const result = await input.run();
-    results.push(result);
-    if (validateResult(input.worker.input, result).length > 0) break;
-  }
-  return createRtcPeerListenerCleanupSamples({ worker: input.worker, results });
+  return runRtcBaselineAcceptedWorkerSamples({
+    worker: acceptedWorkerIdentity(input.worker),
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input, result),
+    createSample: ({ identity, result, issues }) =>
+      createSample({
+        identity,
+        outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+        rawEvidence: result,
+        issues,
+      }),
+  });
+}
+
+function acceptedWorkerIdentity(worker: AcceptedArguments) {
+  return {
+    ...worker,
+    workloadId: 'RTC-B01' as const,
+    caseId: 'peer-listener-cleanup',
+    inputKey: 'peers-10000',
+  };
 }
 
 async function main(): Promise<void> {
@@ -273,22 +292,6 @@ function createExpectedSampleIds(phase: string, outerOrdinal: number): string[] 
     { length: 5 },
     (_value, index) => `${attemptPrefix}-${String(index + 1).padStart(3, '0')}`,
   );
-}
-
-function createIdentity(
-  worker: AcceptedArguments,
-  sampleId: string,
-  innerOrdinal: number,
-): RtcBaselineSampleIdentityDto {
-  return {
-    sampleId,
-    workloadId: 'RTC-B01' as const,
-    caseId: 'peer-listener-cleanup',
-    inputKey: 'peers-10000',
-    intendedPhase: worker.intendedPhase,
-    outerOrdinal: worker.outerOrdinal,
-    innerOrdinal,
-  };
 }
 
 function createSample(sampleInput: CreateRtcPeerListenerCleanupSampleInput): RtcBaselineSampleDto {

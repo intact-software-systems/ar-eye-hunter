@@ -11,6 +11,10 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
+import {
+  createRtcBaselineAcceptedWorkerSampleIdentity,
+  runRtcBaselineAcceptedWorkerSamples,
+} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 interface QueueInput {
   readonly candidates: number;
@@ -72,9 +76,10 @@ export function createRtcIceCandidateQueueSamples(input: {
   worker: AcceptedArguments;
   results: readonly RtcIceCandidateQueueResult[];
 }): RtcBaselineSampleDto[] {
+  const worker = acceptedWorkerIdentity(input.worker);
   let priorFailureId: string | undefined;
   return input.worker.sampleIds.map((sampleId, index) => {
-    const identity = createIdentity(input.worker, sampleId, index + 1);
+    const identity = createRtcBaselineAcceptedWorkerSampleIdentity(worker, index);
     const result = input.results[index];
     if (priorFailureId !== undefined || result === undefined) {
       return createSample({
@@ -105,13 +110,35 @@ export async function runRtcIceCandidateQueueAcceptedSamples(input: {
   worker: AcceptedArguments;
   run: () => Promise<RtcIceCandidateQueueResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  const results: RtcIceCandidateQueueResult[] = [];
-  for (let run = 0; run < input.worker.input.runs; run += 1) {
-    const result = await input.run();
-    results.push(result);
-    if (validateResult(input.worker.input, result).length > 0) break;
-  }
-  return createRtcIceCandidateQueueSamples({ worker: input.worker, results });
+  return runRtcBaselineAcceptedWorkerSamples({
+    worker: acceptedWorkerIdentity(input.worker),
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input, result),
+    createSample: ({ identity, result, issues }) =>
+      createSample({
+        identity,
+        outcome: classifyAcceptedSampleOutcome(result, issues),
+        rawEvidence: result,
+        issues,
+      }),
+  });
+}
+
+function classifyAcceptedSampleOutcome(
+  result: RtcIceCandidateQueueResult | null,
+  issues: RtcBaselineSampleDto['issues'],
+): CreateRtcIceCandidateQueueSampleInput['outcome'] {
+  if (result === null) return 'not-run';
+  return issues.length === 0 ? 'passed' : 'failed';
+}
+
+function acceptedWorkerIdentity(worker: AcceptedArguments) {
+  return {
+    ...worker,
+    workloadId: 'RTC-B01' as const,
+    caseId: 'ice-candidate-queue',
+    inputKey: 'candidates-25000',
+  };
 }
 
 async function main(): Promise<void> {
@@ -273,22 +300,6 @@ function createExpectedSampleIds(phase: string, outerOrdinal: number): string[] 
     { length: 5 },
     (_value, index) => `${attemptPrefix}-${String(index + 1).padStart(3, '0')}`,
   );
-}
-
-function createIdentity(
-  worker: AcceptedArguments,
-  sampleId: string,
-  innerOrdinal: number,
-): RtcBaselineSampleIdentityDto {
-  return {
-    sampleId,
-    workloadId: 'RTC-B01' as const,
-    caseId: 'ice-candidate-queue',
-    inputKey: 'candidates-25000',
-    intendedPhase: worker.intendedPhase,
-    outerOrdinal: worker.outerOrdinal,
-    innerOrdinal,
-  };
 }
 
 function createSample(sampleInput: CreateRtcIceCandidateQueueSampleInput): RtcBaselineSampleDto {

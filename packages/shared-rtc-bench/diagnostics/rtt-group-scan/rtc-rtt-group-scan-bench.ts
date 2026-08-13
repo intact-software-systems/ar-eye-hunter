@@ -2,10 +2,10 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
   configureGroupStateSnapshotRepository,
+  findGroupStateSnapshotsBySessionIds,
   getAllGroupStateSnapshots,
   setGroupStateSnapshots,
 } from '@shared/repository/group-state-snapshots-repository.ts';
-import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 
 type IndexedGroupFinder = (sessionIds: readonly string[]) => readonly GroupSnapshot[];
 
@@ -50,18 +50,10 @@ const rtts = Array.from(
     }) satisfies RttMeasurementInfo,
 );
 
-const maybeIndexedFinder = (
-  groupStateSnapshotsRepository as unknown as {
-    findGroupStateSnapshotsBySessionIds?: IndexedGroupFinder;
-  }
-).findGroupStateSnapshotsBySessionIds;
-
 const results: RunResult[] = [];
 for (let run = 1; run <= RUNS; run++) {
   results.push(measureLegacy(run, groups, rtts));
-  if (maybeIndexedFinder) {
-    results.push(measureIndexed(run, maybeIndexedFinder, rtts));
-  }
+  results.push(measureIndexed(run, findGroupStateSnapshotsBySessionIds, rtts));
 }
 
 await Deno.writeTextFile(
@@ -75,7 +67,7 @@ await Deno.writeTextFile(
         rttCount: RTTS,
         runs: RUNS,
       },
-      indexedFinderAvailable: maybeIndexedFinder !== undefined,
+      indexedFinderAvailable: true,
       results,
     },
     null,

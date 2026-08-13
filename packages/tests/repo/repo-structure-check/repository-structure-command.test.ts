@@ -4,6 +4,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  computeAffectedCodeDigest,
+  readChangedPaths,
+} from '../../../../scripts/plan-adaptation/plan-change-facts.mjs';
+
+import {
   cleanupRepositoryFixtures,
   createRecord,
   createRepositoryFixture,
@@ -164,6 +169,35 @@ describe('repository structure command', () => {
 
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('apps/new-feature [topology.singleton-subtree]');
+  });
+
+  it('accepts an exact digest-bound active-plan disposition for a singleton subtree', () => {
+    const fixture = createRepositoryFixture();
+    const target = 'apps/new-feature';
+    const descendant = `${target}/only-module.ts`;
+    writeFixture(fixture.root, descendant, 'export const value = true;\n');
+    const record = createRecord();
+    const affectedCodeDigest = computeAffectedCodeDigest({
+      repoRoot: fixture.root,
+      changes: readChangedPaths(fixture.root, fixture.base),
+      record,
+    });
+    (record.facts as Record<string, unknown>).affectedCodeDigest = affectedCodeDigest;
+    (record.structuralDispositions as Array<Record<string, unknown>>).push({
+      kind: 'current-fact',
+      ruleId: 'topology.singleton-subtree',
+      target,
+      identity: descendant,
+      magnitude: 1,
+      affectedCodeDigest,
+      disposition: 'keep',
+      rationale: 'This executable is one coherent capability owner at the exact candidate tree.',
+    });
+    writePlanRecord(fixture.root, record);
+
+    const result = runChecker(fixture);
+
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
   });
 
   it('defers planned code and guidance surfaces until source-record activation', () => {

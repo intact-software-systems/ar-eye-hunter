@@ -19,6 +19,9 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
+// prettier-ignore
+import { runRtcBaselineAcceptedWorkerSamples } from
+  '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 export interface RtcRttRepositoryFilterInput {
   readonly roomSessions: number;
@@ -94,23 +97,19 @@ export async function runRtcRttRepositoryFilterAcceptedSamples(input: {
   readonly worker: RtcRttRepositoryFilterAcceptedArguments;
   readonly run: () => Promise<RtcRttRepositoryFilterResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  const samples: RtcBaselineSampleDto[] = [];
-  let failureId: string | undefined;
-  for (let index = 0; index < input.worker.sampleIds.length; index += 1) {
-    const identity = createIdentity(input.worker, index);
-    if (failureId !== undefined) {
-      const issue = rtcBaselineIssue('$.rawEvidence', 'causal-not-run', failureId);
-      samples.push(createSample(identity, null, [issue]));
-      continue;
-    }
-    const result = await input.run();
-    const issues = validateResult(input.worker.input, result);
-    if (issues.length > 0) {
-      failureId = identity.sampleId;
-    }
-    samples.push(createSample(identity, result, issues));
-  }
-  return samples;
+  return runRtcBaselineAcceptedWorkerSamples({
+    worker: {
+      ...input.worker,
+      workloadId: 'RTC-B03',
+      caseId: 'rtt-repository-filter',
+      inputKey:
+        `room-${input.worker.input.roomSessions}-` +
+        `global-${input.worker.input.globalMeasurements}`,
+    },
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input, result),
+    createSample: ({ identity, result, issues }) => createSample(identity, result, issues),
+  });
 }
 
 function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
@@ -283,21 +282,6 @@ function createExpectedSampleIds(
   const prefix =
     `rtc-b03-rtt-repository-filter-${inputKey}-${phase}-` + String(outerOrdinal).padStart(3, '0');
   return Array.from({ length: 5 }, (_, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`);
-}
-
-function createIdentity(
-  worker: RtcRttRepositoryFilterAcceptedArguments,
-  index: number,
-): RtcBaselineSampleIdentityDto {
-  return {
-    sampleId: worker.sampleIds[index],
-    workloadId: 'RTC-B03',
-    caseId: 'rtt-repository-filter',
-    inputKey: `room-${worker.input.roomSessions}-global-${worker.input.globalMeasurements}`,
-    intendedPhase: worker.intendedPhase,
-    outerOrdinal: worker.outerOrdinal,
-    innerOrdinal: index + 1,
-  };
 }
 
 function createSample(

@@ -1,5 +1,4 @@
 import type {
-  RtcBaselineAttemptLocatorDto,
   RtcBaselineCohortIdentityDto,
   RtcBaselineCaptureManifestDto,
   RtcBaselineEnvironmentDto,
@@ -110,26 +109,6 @@ export interface RtcBaselineComparisonChoice {
   repeatRequired: boolean;
   stillNoisy: boolean;
   environment: RtcBaselineEnvironmentDto & { observation: RtcBaselineRuntimeObservationDto };
-}
-export interface RtcBaselineFinalizedReaderDependencies {
-  readJson(baselineId: string, path: string): Promise<RtcBaselineResult<RtcBaselineJson>>;
-  readBytes(baselineId: string, path: string): Promise<RtcBaselineResult<Uint8Array>>;
-  listArtifactPaths(baselineId: string): Promise<RtcBaselineResult<string[]>>;
-  sha256(bytes: Uint8Array): Promise<string>;
-}
-type RtcBaselineValidationRead = Promise<RtcBaselineResult<RtcBaselineFinalizedArtifactValidation>>;
-type RtcBaselinePrimaryRead = Promise<RtcBaselineResult<RtcBaselineVerifiedRepeatPrimary>>;
-type RtcBaselineRepeatRead = Promise<RtcBaselineResult<RtcBaselineRepeatRequirement>>;
-type RtcBaselinePairedRead = Promise<RtcBaselineResult<RtcBaselinePairedComparison>>;
-export interface RtcBaselineFinalizedReader {
-  readExternalAttempts(input: {
-    baselineId: string;
-    workloadId: RtcBaselineWorkloadId;
-  }): Promise<RtcBaselineResult<readonly RtcBaselineAttemptLocatorDto[]>>;
-  readBaselineValidation(input: RtcBaselineReaderInput): RtcBaselineValidationRead;
-  readVerifiedRepeatPrimary(input: RtcBaselineReaderInput): RtcBaselinePrimaryRead;
-  readRepeatRequirement(input: RtcBaselineReaderInput): RtcBaselineRepeatRead;
-  readPairedComparison(input: RtcBaselinePairedComparisonInput): RtcBaselinePairedRead;
 }
 export interface RtcBaselineVerifiedStoredArtifact {
   kind: RtcBaselineArtifactKind | null;

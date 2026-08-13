@@ -33,8 +33,13 @@ const executablePaths = [
 describe('shared RTC benchmark navigation contract', () => {
   it('documents each executable exactly once and discovers package tests', () => {
     const readme = fs.readFileSync(path.join(packageRoot, 'README.md'), 'utf8');
+    const executableCatalogRows = readme
+      .split('\n')
+      .filter((line) => line.startsWith('|') && line.includes('`'));
     const missingOrDuplicateRows = executablePaths.filter((entry) => {
-      const occurrences = readme.split(entry).length - 1;
+      const occurrences = executableCatalogRows.filter((row) =>
+        row.includes(`\`${entry}\``),
+      ).length;
       return occurrences !== 1;
     });
     const vitestConfig = fs.readFileSync(path.join(repoRoot, 'vitest.config.ts'), 'utf8');

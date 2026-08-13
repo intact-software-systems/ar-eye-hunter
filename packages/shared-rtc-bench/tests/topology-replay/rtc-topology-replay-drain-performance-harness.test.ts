@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  executeRtcTopologyReplayServiceLifecycle,
   RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY,
   runRtcTopologyReplayDrainOperationWorkloads,
 } from '../../topology-replay/replay-drain-operation-counts.ts';
@@ -69,5 +70,26 @@ describe('RTC topology replay drain operation-count harness', () => {
         },
       },
     });
+  });
+
+  it('stops a started replay service when workload execution throws', async () => {
+    const calls: string[] = [];
+    await expect(
+      executeRtcTopologyReplayServiceLifecycle(
+        {
+          start: async () => {
+            calls.push('start');
+          },
+          stop: async () => {
+            calls.push('stop');
+          },
+        },
+        async () => {
+          calls.push('workload');
+          throw new Error('workload failed');
+        },
+      ),
+    ).rejects.toThrow('workload failed');
+    expect(calls).toEqual(['start', 'workload', 'stop']);
   });
 });
