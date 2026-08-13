@@ -28,7 +28,7 @@ issue
 | D3 `loop` until-success polling | merged | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
 | D4 capability advertisement + preflight gating | merged | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
 | D5 parity and conformance deepening | merged | [#192](https://github.com/intact-software-systems/ar-eye-hunter/pull/192) |
-| D6 coordinator-evaluated group assertions | implemented, draft PR in review (Hetzner dispatch of `17-group-assertions-2-agent` pending explicit approval) | `codex/bb-test-d6-group-assertions` |
+| D6 coordinator-evaluated group assertions | implemented, draft PR in review (Hetzner dispatch of `17-group-assertions-2-agent` pending explicit approval) | [#216](https://github.com/intact-software-systems/ar-eye-hunter/pull/216) |
 
 Plan evidence base: authored 2026-08-11 after the W1–W8 assertion-coverage
 stack landed on `main` at `93483f47` (Branch Release Gate green on
