@@ -150,7 +150,7 @@ single-plan logic before adding new modules.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "ffc2f9a76a942d8c335d5d621a0e6c498ca42ebb",
-    "affectedCodeDigest": "8896c6e83255facb8ef54235c1232d59c62a97e77907c21ac9abc16a1cffa66b",
+    "affectedCodeDigest": "69be76f9cb6724962b9f87f56ef7fd324c869646b5045c53a97a0ce29c6a28cb",
     "computedTriggers": [
       "ownership-change",
       "lifecycle-change"
@@ -158,9 +158,9 @@ single-plan logic before adding new modules.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The implementation is complete with distinct selection modes for owned facts, unassigned qualifying preparation scope, and all materially changed structure-check scope.",
-    "learning": "Plan qualification and structural debt activation are separate questions: non-qualifying evidence stays out of plan facts, while materially changed legacy code still receives structural review.",
-    "structure": "Retain the catalog as the shared ownership boundary and keep plan-fact attribution separate from repository-structure material-change selection.",
+    "outcome": "The implementation and organizing-repository-structure evaluation contract are aligned with the catalog terminal, with no undeclared qualifying paths.",
+    "learning": "Aggregate package crossing should attribute unowned production modules, not sweep modified test contracts or evaluation metadata into mutable plan scope.",
+    "structure": "Keep qualification attribution in plan-change-facts and retain evaluation contracts beside their existing organizing-repository-structure owner.",
     "decision": "continue",
     "nextSlices": []
   },
@@ -211,6 +211,11 @@ single-plan logic before adding new modules.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "The implementation is complete with distinct selection modes for owned facts, unassigned qualifying preparation scope, and all materially changed structure-check scope."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The implementation and organizing-repository-structure evaluation contract are aligned with the catalog terminal, with no undeclared qualifying paths."
     }
   ]
 }

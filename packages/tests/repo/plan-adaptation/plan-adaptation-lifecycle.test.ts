@@ -195,6 +195,11 @@ describe('plan adaptation CLI lifecycle', () => {
       '.agents/evaluations/navigation/rubric.json',
       '{"result":"initial navigation evidence"}\n',
     );
+    writeFixture(
+      fixture.root,
+      'packages/tests/repo/navigation/contract.test.ts',
+      'export const expectedResult = "initial";\n',
+    );
     runGit(fixture.root, ['add', '.']);
     runGit(fixture.root, ['commit', '--quiet', '-m', 'two plan base']);
     const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
@@ -218,6 +223,11 @@ describe('plan adaptation CLI lifecycle', () => {
       fixture.root,
       '.agents/evaluations/navigation/rubric.json',
       '{"result":"updated navigation evidence"}\n',
+    );
+    writeFixture(
+      fixture.root,
+      'packages/tests/repo/navigation/contract.test.ts',
+      'export const expectedResult = "updated";\n',
     );
     const evaluationChange = runCli(fixture.root, ['check', '--base', base]);
     expect(evaluationChange.status, evaluationChange.stdout).toBe(0);
@@ -253,6 +263,9 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(draft.record.facts.undeclaredChangedPaths).toContain('packages/unassigned/new-owner.ts');
     expect(draft.record.facts.undeclaredChangedPaths).not.toContain(
       '.agents/evaluations/navigation/rubric.json',
+    );
+    expect(draft.record.facts.undeclaredChangedPaths).not.toContain(
+      'packages/tests/repo/navigation/contract.test.ts',
     );
   });
 

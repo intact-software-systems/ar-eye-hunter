@@ -114,7 +114,7 @@ export function computeUnassignedQualifyingPaths(input) {
         isAddedOrMoved(change) &&
         isProductionModule(change.path)) ||
       (reasons.has('package-or-capability-crossing') &&
-        allChangePaths(change).some((changedPath) => toCapabilityRoot(changedPath) !== undefined)),
+        allChangePaths(change).some((changedPath) => isProductionModule(changedPath))),
   );
   return allChangedPaths(qualifyingChanges).filter(
     (changedPath) =>
