@@ -3,7 +3,6 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { toActivePlanRegistry } from '../../../../scripts/plan-adaptation/active-plan-registry.mjs';
 import { computeAdaptivePlanRecordDigest } from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
 import { readRepositoryNavigationEvidence } from '../../../../scripts/repo-structure-check/repository-structure-check.mjs';
 import {
@@ -20,7 +19,7 @@ import {
 afterEach(cleanupRepositoryFixtures);
 
 describe('repository structure close-out command', () => {
-  it('keeps structure and navigation authenticated throughout a closed plan read', () => {
+  it('authenticates a closed plan without retaining it as a navigation source', () => {
     const { fixture, closeBase } = createLastPlanCloseoutFixture();
 
     const structureResult = runChecker(fixture, { includeBase: false });
@@ -30,31 +29,16 @@ describe('repository structure close-out command', () => {
       `PASS: repository structure (${closeBase} -> WORKTREE)`,
     );
 
-    const navigationEvidence = readRepositoryNavigationEvidence({
-      repoRoot: fixture.root,
-      owner: 'example capability',
-    });
-
-    expect(navigationEvidence).toMatchObject({
-      schemaVersion: 'repository-navigation-evidence-v1',
-      owner: 'example capability',
-      entry: { path: 'scripts/example.mjs', symbol: 'runExample' },
-      affectedCodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
-    });
-
     expect(() =>
       readRepositoryNavigationEvidence({
         repoRoot: fixture.root,
         owner: 'example capability',
-        afterEvidenceComposed() {
-          writeFixture(fixture.root, 'scripts/unrelated.mjs', 'export const unrelated = true;\n');
-        },
       }),
-    ).toThrow(/authenticated last-plan close-out/u);
+    ).toThrow(/not owned by an active plan/u);
 
+    writeFixture(fixture.root, 'scripts/unrelated.mjs', 'export const unrelated = true;\n');
     const additionalSurfaceResult = runChecker(fixture, { includeBase: false });
-    expect(additionalSurfaceResult.status).toBe(2);
-    expect(additionalSurfaceResult.stderr).toContain('authenticated last-plan close-out');
+    expect(additionalSurfaceResult.status, additionalSurfaceResult.stderr).toBe(0);
 
     rmSync(path.join(fixture.root, 'scripts/unrelated.mjs'));
     writeFixture(fixture.root, 'plans/fixture-plan.closure.json', '{broken}\n');
@@ -63,7 +47,7 @@ describe('repository structure close-out command', () => {
     expect(malformedReceiptResult.stderr).toContain('close-out is not authenticated');
   });
 
-  it('rejects an authenticated close-out when more than one active plan is removed', () => {
+  it('authenticates multiple exact plan closures without a shared registry projection', () => {
     const fixture = createRepositoryFixture();
     const firstRecord = createRecord();
     writePlanRecord(fixture.root, firstRecord);
@@ -76,29 +60,19 @@ describe('repository structure close-out command', () => {
       'plans/second-plan.md',
       `# Second plan\n\n${recordBlock(secondRecord)}\n`,
     );
-    writeFixture(
-      fixture.root,
-      'plans/README.md',
-      toActivePlanRegistry([
-        { planPath: 'plans/fixture-plan.md', record: firstRecord },
-        { planPath: 'plans/second-plan.md', record: secondRecord },
-      ]),
-    );
     runGit(fixture.root, ['add', '.']);
     runGit(fixture.root, ['commit', '--quiet', '-m', 'activate two plans']);
     const closeBase = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
 
     rmSync(path.join(fixture.root, 'plans/fixture-plan.md'));
     rmSync(path.join(fixture.root, 'plans/second-plan.md'));
-    writeFixture(fixture.root, 'plans/README.md', toActivePlanRegistry([]));
     writeClosureReceipt(fixture.root, 'plans/fixture-plan.md', firstRecord);
     writeClosureReceipt(fixture.root, 'plans/second-plan.md', secondRecord);
 
     const result = runChecker({ ...fixture, base: closeBase }, { includeBase: true });
 
-    expect(result.status).toBe(2);
-    expect(result.stderr).toContain('authenticated last-plan close-out');
-    expect(result.stderr).not.toContain('PASS: repository structure');
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('PASS: repository structure');
   });
 });
 
@@ -139,18 +113,12 @@ function createLastPlanCloseoutFixture() {
     ].join('\n'),
   );
   writePlanRecord(fixture.root, record);
-  writeFixture(
-    fixture.root,
-    'plans/README.md',
-    toActivePlanRegistry([{ planPath: 'plans/fixture-plan.md', record }]),
-  );
   runGit(fixture.root, ['add', '.']);
   runGit(fixture.root, ['commit', '--quiet', '-m', 'activate plan']);
   const closeBase = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
   runGit(fixture.root, ['update-ref', 'refs/remotes/origin/main', closeBase]);
 
   rmSync(path.join(fixture.root, 'plans/fixture-plan.md'));
-  writeFixture(fixture.root, 'plans/README.md', toActivePlanRegistry([]));
   writeClosureReceipt(fixture.root, 'plans/fixture-plan.md', record);
   return { fixture, closeBase };
 }

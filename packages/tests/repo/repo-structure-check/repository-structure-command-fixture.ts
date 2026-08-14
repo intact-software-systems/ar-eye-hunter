@@ -28,7 +28,12 @@ export function createRepositoryFixture(baseFiles: Record<string, string> = {}) 
   writeFixture(root, 'packages/tests/repo/example/first.test.ts', 'export {};\n');
   writeFixture(root, 'packages/tests/repo/example/second.test.ts', 'export {};\n');
   writeFixture(root, 'plans/fixture-plan.md', `# Fixture plan\n\n${recordBlock(createRecord())}\n`);
-  writeFixture(root, 'plans/README.md', '# Active adaptive plans\n');
+  writeFixture(root, 'plans/README.md', '# Adaptive plans\n\nStatic navigation.\n');
+  writeFixture(
+    root,
+    'plans/policy.json',
+    '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
+  );
   for (const [file, content] of Object.entries(baseFiles)) {
     writeFixture(root, file, content);
   }

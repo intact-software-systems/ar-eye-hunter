@@ -54,8 +54,8 @@ export function validateAdaptivePlanRecord(record) {
   if (typeof record.planId !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.planId)) {
     issues.push('record.planId must use lowercase letters, digits, and single hyphens');
   }
-  if (record.status !== 'active') {
-    issues.push('record.status must be active');
+  if (!['active', 'postponed'].includes(record.status)) {
+    issues.push('record.status must be active or postponed');
   }
   requireText(issues, record.goal, 'record.goal');
   requireTextArray(issues, record.acceptanceCriteria, 'record.acceptanceCriteria');

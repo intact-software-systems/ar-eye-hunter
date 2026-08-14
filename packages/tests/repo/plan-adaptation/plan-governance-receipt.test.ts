@@ -13,7 +13,6 @@ import {
 } from '../../../../scripts/governance-decisions/governance-decision-receipt.mjs';
 import { computeGovernanceDecisionTransition } from '../../../../scripts/governance-decisions/governance-decision-transition.mjs';
 import { readGitRepositorySnapshot } from '../../../../scripts/governance-decisions/git-repository-snapshot.mjs';
-import { toActivePlanRegistry } from '../../../../scripts/plan-adaptation/active-plan-registry.mjs';
 import { parseAdaptivePlanRecord } from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
 import {
   checkAdaptivePlans,
@@ -28,6 +27,7 @@ import { checkRepositoryStructure } from '../../../../scripts/repo-structure-che
 import { toGovernanceDecisionFixturePlanMarkdown } from '../governance-decisions/governance-decision-fixture';
 
 const fixtureRoots: string[] = [];
+const staticPlanNavigation = '# Adaptive plans\n\nStatic navigation.\n';
 
 afterEach(() => {
   for (const fixtureRoot of fixtureRoots.splice(0)) {
@@ -263,7 +263,7 @@ describe('plan governance receipt authentication', () => {
           readDecisionAdmissionEvidence: (commitOid: string) =>
             successfulAdmissionEvidence(commitOid),
         }),
-      ).toThrow('computed facts are stale');
+      ).toThrow('unassigned qualifying scope: scripts/unrelated-later.mjs');
     },
   );
 });
@@ -282,7 +282,8 @@ function createReceiptOnlyDecisionCommit(options: {
   runGit(root, ['config', 'user.name', 'Fixture']);
   runGit(root, ['config', 'user.email', 'fixture@example.com']);
   mkdirSync(path.join(root, 'plans'), { recursive: true });
-  writeFileSync(path.join(root, 'plans/README.md'), toActivePlanRegistry([]));
+  writePlanPolicy(root);
+  writeFileSync(path.join(root, 'plans/README.md'), staticPlanNavigation);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-q', '-m', 'decision fixture base']);
   const diffBase = runGit(root, ['rev-parse', 'HEAD']).trim();
@@ -300,7 +301,7 @@ function createReceiptOnlyDecisionCommit(options: {
       2,
     )}\n\`\`\`\n`;
     writeFileSync(path.join(root, planPath), markdown);
-    writeFileSync(path.join(root, 'plans/README.md'), toActivePlanRegistry([{ planPath, record }]));
+    writeFileSync(path.join(root, 'plans/README.md'), staticPlanNavigation);
     runGit(root, ['add', '.']);
     runGit(root, ['commit', '-q', '-m', 'active plan']);
   }
@@ -483,6 +484,7 @@ function createPlanDispositionCommit(options: {
   runGit(root, ['config', 'user.name', 'Fixture']);
   runGit(root, ['config', 'user.email', 'fixture@example.com']);
   mkdirSync(path.join(root, 'plans'), { recursive: true });
+  writePlanPolicy(root);
   const planPath = 'plans/blocked-plan.md';
   const planMarkdown =
     options.operation === 'plan.quarantine'
@@ -493,10 +495,7 @@ function createPlanDispositionCommit(options: {
       ? undefined
       : parseAdaptivePlanRecord(planMarkdown, planPath);
   writeFileSync(path.join(root, planPath), planMarkdown);
-  writeFileSync(
-    path.join(root, 'plans/README.md'),
-    record ? toActivePlanRegistry([{ planPath, record }]) : '# Active adaptive plans\n\nBefore.\n',
-  );
+  writeFileSync(path.join(root, 'plans/README.md'), staticPlanNavigation);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-q', '-m', 'active plan']);
   const parentOid = runGit(root, ['rev-parse', 'HEAD']).trim();
@@ -567,17 +566,18 @@ function createRepairedPlanCommit() {
   runGit(root, ['config', 'user.name', 'Fixture']);
   runGit(root, ['config', 'user.email', 'fixture@example.com']);
   mkdirSync(path.join(root, 'plans'), { recursive: true });
+  writePlanPolicy(root);
   const planPath = 'plans/repair-plan.md';
   const initialMarkdown = toGovernanceDecisionFixturePlanMarkdown('HEAD');
   writeFileSync(path.join(root, planPath), initialMarkdown);
-  writeFileSync(path.join(root, 'plans/README.md'), '# Active adaptive plans\n\nBefore.\n');
+  writeFileSync(path.join(root, 'plans/README.md'), staticPlanNavigation);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-q', '-m', 'repair base']);
   const diffBase = runGit(root, ['rev-parse', 'HEAD']).trim();
   const planMarkdown = toGovernanceDecisionFixturePlanMarkdown(diffBase);
   const record = parseAdaptivePlanRecord(planMarkdown, planPath);
   writeFileSync(path.join(root, planPath), planMarkdown);
-  writeFileSync(path.join(root, 'plans/README.md'), toActivePlanRegistry([{ planPath, record }]));
+  writeFileSync(path.join(root, 'plans/README.md'), staticPlanNavigation);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-q', '-m', 'repair parent']);
   const parentOid = runGit(root, ['rev-parse', 'HEAD']).trim();
@@ -632,6 +632,13 @@ function createRepairedPlanCommit() {
 
 function emptyDigest(): string {
   return createHash('sha256').digest('hex');
+}
+
+function writePlanPolicy(root: string) {
+  writeFileSync(
+    path.join(root, 'plans/policy.json'),
+    '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
+  );
 }
 
 function runGit(root: string, arguments_: string[]): string {

@@ -1,6 +1,6 @@
 # Adaptive Agent Execution Governance Design
 
-Date: 2026-08-12
+Date: 2026-08-12, amended 2026-08-14
 
 Status: implemented and closed
 
@@ -48,7 +48,7 @@ cold-navigation probe after that consolidation requires human direction.
 
 ## Canonical adaptive-plan record
 
-Every active qualifying plan contains exactly one fenced
+Every active or postponed plan contains exactly one fenced
 `plan-adaptation-v1` JSON record. It is the durable coordination surface for:
 
 - goal and acceptance criteria;
@@ -64,6 +64,11 @@ Every active qualifying plan contains exactly one fenced
 - fresh structural-review and cold-navigation evidence when required; and
 - a concise material-decision log.
 
+The record owns a `status` of `active` or `postponed`. Terminal outcomes remove the record and are
+represented by the existing closure or authenticated governance receipt. Tracked
+`plans/policy.json` uses `adaptive-plan-policy-v1` and sets the positive safe-integer active-plan
+capacity; the repository default is eight.
+
 Digests use sorted path, Git mode, and content tuples. They intentionally do not
 include the current commit SHA. The declared affected surface is checked
 against the actual diff so an agent cannot make a review appear fresh by
@@ -78,17 +83,19 @@ npm run plan:adapt -- prepare
 npm run plan:adapt -- apply
 npm run plan:adapt -- check
 npm run plan:adapt -- close
+npm run plan:adapt -- overview
+npm run plan:adapt -- postpone
+npm run plan:adapt -- resume
 ```
 
 `prepare` writes a Git-ignored draft containing computed facts. `apply`
 validates the five judgments and canonically replaces the record. `check` is
 read-only and is the CI entry. `close` is allowed only after final evidence has
-been recorded in the pull request; it removes the tactical plan and its active
-registry entry. Durable decisions remain with the code or document that owns
-them.
-
-`plans/README.md` is generated from active records and lists each plan's
-capability owner, status, current checkpoint decision, and next slice.
+been recorded in the pull request; it removes only the target tactical plan.
+`postpone` frees capacity without requiring current facts. `resume` refreshes target facts and
+requires available capacity and disjoint mutable ownership. `overview` generates the live catalog
+at ignored `.plan-adaptation/overview.md`. `plans/README.md` is static navigation and is never
+lifecycle state.
 
 ## Qualification and checkpoint triggers
 
@@ -117,6 +124,24 @@ A README does not make a one-code-file subtree meaningful. A new singleton
 production exception requires explicit human approval, an owner, and a review
 or removal condition. Path-only, formatting-only, and typo-only changes do not
 activate existing debt.
+
+Each active plan is evaluated from its own `diffBase`. Changed paths are attributed to mutable
+claims from capability and test roots, entries, navigation maps, fact contracts, exact contract
+paths, and planned reservations. Exact or root-prefix claims may not overlap between active plans;
+postponed plans reserve nothing. Unassigned qualifying paths fail with candidate plan IDs, while
+`prepare --plan` exposes unassigned scope to the selected plan for amendment. A disjoint plan merge
+does not stale another plan.
+
+If the comparison-base catalog is already over capacity or overlapping, only plan documents,
+policy, canonical closure receipts, or an exact authenticated plan disposition may proceed while
+the catalog remains invalid. The candidate must strictly reduce capacity excess or overlap count,
+worsen neither, and touch no product or governance source. This permits deliberate recovery in
+several small administrative changes without admitting ordinary work.
+
+Ordinary lifecycle and review evidence binds resulting tree content and plan digests, so a reviewed
+candidate may land through a regular merge, squash merge, or rebase merge. Authenticated governance
+receipts remain different: they are admitted only through one exact direct-main commit with its
+expected parent and authenticated transport.
 
 Declared capabilities require a canonical entry and a mirrored test root.
 Features with more than 20 production modules or at least three control-flow
@@ -175,8 +200,8 @@ final review outside the unavailable base-branch v2 gate.
 Local work runs affected behavior tests, relevant type/build boundaries,
 governance and structure checks, and explicitly required high-risk proofs.
 Broad unit/CI/build validation belongs to GitHub for each new build-tree
-digest. Distributed validation runs only when the risk classifier or active
-plan acceptance requires it.
+digest. Distributed validation runs only when the risk classifier or any active plan acceptance
+requires it; postponed plans contribute no requirement.
 
 Trusted `validation-evidence-v1` artifacts bind workflow/run identity, head,
 build-tree digest, conclusion, and completion time. A later commit may reuse a
@@ -203,7 +228,7 @@ seconds and the GitHub Governance Gate targets less than two minutes.
 
 Deterministic tests cover record parsing and replacement, content digests,
 qualifying diffs, trigger and horizon rules, undeclared paths, consolidation
-escalation, plan registry and deletion, structure findings and debt activation,
+escalation, plan catalog capacity and deletion, structure findings and debt activation,
 review v2 freshness, validation-evidence reuse, and distributed-risk routing.
 
 Versioned fresh-agent RED-GREEN-REFACTOR scenarios cover invalidated long
@@ -218,11 +243,11 @@ must comply.
 
 ### Merge-close authorization receipt
 
-The merged implementation exposed one final lifecycle ambiguity: deleting the
-only tactical plan removes the evidence that distinguishes an authorized close
+The merged implementation exposed one final lifecycle ambiguity: deleting a
+tactical plan removes the evidence that distinguishes an authorized close
 from an unplanned plan deletion. `close` therefore writes one deterministic
 `plans/<plan-id>.closure.json` receipt in the same file transaction that removes
-the tactical plan and regenerates `plans/README.md`.
+only the tactical plan.
 
 The receipt is data-only. It binds the plan ID and path, the exact digest of the
 removed active record, and the already-validated final PR URL and completed
@@ -235,28 +260,27 @@ and canonical `plans/<plan-id>.closure.json` paths, and its declared path set
 must still exactly equal the observed diff. Arbitrary JSON, mixed code changes,
 and unsafe or noncanonical receipt paths remain ineligible. Adaptive governance,
 not the exemption parser, authenticates the receipt against the deleted base
-record and generated registry transition.
+record and resulting tree.
 
 Its closed shape is `schemaVersion`, `planId`, `planPath`, `planDigest`,
 `pullRequestUrl`, and `finalReviewStatus`, in that deterministic order. The
 schema version is `plan-adaptation-closure-v1`, and the review status must be
 `complete`.
 
-On a close-out branch with no active plan, read-only governance may disregard
+On a close-out branch, read-only governance may disregard
 the deleted plan's `written-plan` qualification only when repository truth
 proves all of the following:
 
-- the comparison base contains the matching active plan and generated registry
-  entry;
+- the comparison base contains the matching active or postponed plan;
 - the current tree contains exactly one regular, non-symlink receipt at the
   canonical path and no tactical plan at the recorded path;
 - the receipt has the closed v1 shape and its record/review digests match the
   base plan; and
-- the current generated registry no longer contains that plan.
+- every other plan remains unchanged unless separately owned by the same ordinary change.
 
 Malformed, forged, misplaced, stale, partial, or unrelated receipts remain
 ordinary qualifying work and fail closed without an active plan. Any other
-qualification reason still requires an active plan. After the receipt lands on
+qualification reason still requires an owning active plan. After the receipt lands on
 the default branch, ordinary checks see no close-out diff and need no special
 state.
 

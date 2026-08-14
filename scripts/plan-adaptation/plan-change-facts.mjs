@@ -4,20 +4,16 @@ import { lstatSync, readFileSync, readlinkSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 
+import { capabilityOwnsPath } from './adaptive-plan-capabilities.mjs';
+
 const modulePattern = /\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/u;
 const productionRoots = new Set(['apps', 'examples', 'packages', 'scripts']);
 
 export function readChangedPaths(repoRoot, base) {
   validateGitBase(repoRoot, base);
-  const changes = parseRawChanges(runGit(repoRoot, [
-    'diff',
-    '--raw',
-    '-z',
-    '--find-renames',
-    '--end-of-options',
-    base,
-    '--',
-  ]));
+  const changes = parseRawChanges(
+    runGit(repoRoot, ['diff', '--raw', '-z', '--find-renames', '--end-of-options', base, '--']),
+  );
   const knownPaths = new Set(changes.map((change) => change.path));
   const untracked = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']);
   for (const untrackedPath of untracked.split('\0').filter(Boolean)) {
@@ -86,6 +82,67 @@ export function computeAffectedCodeDigest(digestInput) {
 
 export function computeQualificationReasons(repoRoot, base, changes) {
   return computeQualificationReasonsForPlan({ repoRoot, base, changes });
+}
+
+export function selectPlanChanges(input) {
+  const unassigned = new Set(
+    input.includeUnassigned === true ? computeUnassignedQualifyingPaths(input) : [],
+  );
+  return input.changes.filter((change) => {
+    const changedPaths = allChangePaths(change);
+    const owners = planOwnersForPaths(input.catalog, changedPaths);
+    if (owners.includes(input.planPath)) return true;
+    if (owners.length > 0) return false;
+    return (
+      input.includeUnassigned === 'all' ||
+      changedPaths.some((changedPath) => unassigned.has(changedPath))
+    );
+  });
+}
+
+export function computeUnassignedQualifyingPaths(input) {
+  const reasons = new Set(computeQualificationReasons(input.repoRoot, input.base, input.changes));
+  const basePaths = new Set(
+    runGit(input.repoRoot, ['ls-tree', '-r', '--name-only', '--end-of-options', input.base])
+      .split('\n')
+      .filter(Boolean),
+  );
+  const qualifyingChanges = input.changes.filter(
+    (change) =>
+      computeQualificationReasonsForPlan({ ...input, changes: [change], basePaths }).length > 0 ||
+      (reasons.has('three-production-modules') &&
+        isAddedOrMoved(change) &&
+        isProductionModule(change.path)) ||
+      (reasons.has('package-or-capability-crossing') &&
+        allChangePaths(change).some((changedPath) => isProductionModule(changedPath))),
+  );
+  return allChangedPaths(qualifyingChanges).filter(
+    (changedPath) =>
+      changedPath !== 'plans/README.md' &&
+      changedPath !== 'plans/policy.json' &&
+      planOwnersForPaths(input.catalog, [changedPath]).length === 0,
+  );
+}
+
+function planOwnersForPaths(catalog, changedPaths) {
+  const owners = new Set();
+  for (const plan of catalog.plans) {
+    if (changedPaths.includes(plan.planPath)) owners.add(plan.planPath);
+  }
+  for (const plan of catalog.activePlans) {
+    if (
+      changedPaths.some((changedPath) =>
+        plan.record.capabilities.some((capability) => capabilityOwnsPath(changedPath, capability)),
+      )
+    ) {
+      owners.add(plan.planPath);
+    }
+  }
+  return [...owners];
+}
+
+function allChangePaths(change) {
+  return [change.oldPath, change.path].filter(Boolean);
 }
 
 export function computeQualificationReasonsForPlan(input) {
@@ -328,25 +385,9 @@ function hasCapabilityCrossing(changes, record) {
 
 function toDeclaredCapabilityOwners(changedPath, capabilities) {
   return capabilities
-    .filter((capability) => isCapabilityOwnershipPath(changedPath, capability))
+    .filter((capability) => capabilityOwnsPath(changedPath, capability))
     .map((capability) => capability.owner)
     .filter((owner) => typeof owner === 'string');
-}
-
-function isCapabilityOwnershipPath(changedPath, capability) {
-  return capability.kind === 'guidance'
-    ? isGuidanceCapabilityPath(changedPath, capability)
-    : isCodeOwnershipPath(changedPath, capability);
-}
-
-function isCodeOwnershipPath(changedPath, capability) {
-  return (
-    changedPath === capability.entry ||
-    changedPath === capability.navigationMap ||
-    (typeof capability.root === 'string' && isWithin(changedPath, capability.root)) ||
-    (typeof capability.testRoot === 'string' && isWithin(changedPath, capability.testRoot)) ||
-    (capability.contractPaths ?? []).includes(changedPath)
-  );
 }
 
 function toCapabilityRoot(changedPath) {
@@ -384,39 +425,7 @@ function isAffectedCodePath(changedPath, record) {
   return (
     isProductionModule(changedPath) ||
     /(?:^|\/)package\.json$/u.test(changedPath) ||
-    (record?.capabilities ?? []).some(
-      (capability) =>
-        (capability.kind === 'guidance' && isGuidanceCapabilityPath(changedPath, capability)) ||
-        (capability.kind !== 'guidance' && isCodeCapabilityPath(changedPath, capability)),
-    )
-  );
-}
-
-function isCodeCapabilityPath(changedPath, capability) {
-  return (
-    changedPath === capability.entry ||
-    changedPath === capability.navigationMap ||
-    (typeof capability.root === 'string' && isWithin(changedPath, capability.root)) ||
-    (typeof capability.testRoot === 'string' && isWithin(changedPath, capability.testRoot)) ||
-    (capability.factContracts ?? []).includes(changedPath) ||
-    (capability.contractPaths ?? []).includes(changedPath)
-  );
-}
-
-function isGuidanceCapabilityPath(changedPath, capability) {
-  return (
-    changedPath ===
-      (capability.guidanceRole === 'router' ? capability.routingEntry : capability.skillEntry) ||
-    changedPath === capability.evaluationRoot ||
-    changedPath === capability.contractTestRoot ||
-    (capability.guidanceRole !== 'router' &&
-      typeof capability.skillRoot === 'string' &&
-      isWithin(changedPath, capability.skillRoot)) ||
-    (typeof capability.evaluationRoot === 'string' &&
-      isWithin(changedPath, capability.evaluationRoot)) ||
-    (typeof capability.contractTestRoot === 'string' &&
-      isWithin(changedPath, capability.contractTestRoot)) ||
-    (capability.contractPaths ?? []).includes(changedPath)
+    (record?.capabilities ?? []).some((capability) => capabilityOwnsPath(changedPath, capability))
   );
 }
 

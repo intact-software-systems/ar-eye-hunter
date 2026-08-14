@@ -35,6 +35,18 @@ describe('adaptive plan record', () => {
     ).toThrow('invalid JSON');
   });
 
+  it('accepts active and postponed as the only persisted plan statuses', () => {
+    const record = createRecord();
+    record.status = 'postponed';
+
+    expect(validateAdaptivePlanRecord(record)).toEqual([]);
+
+    record.status = 'complete';
+    expect(validateAdaptivePlanRecord(record)).toContain(
+      'record.status must be active or postponed',
+    );
+  });
+
   it('rejects unsafe or malformed canonical governance fields', () => {
     const record = createRecord();
     record.planId = '../outside';
@@ -84,7 +96,7 @@ describe('adaptive plan record', () => {
     expect(validateAdaptivePlanRecord(record)).toEqual(
       expect.arrayContaining([
         'record.planId must use lowercase letters, digits, and single hyphens',
-        'record.status must be active',
+        'record.status must be active or postponed',
         'record.capabilities[0].root must be a safe repository-relative path',
         'record.capabilities[0].entry must be a safe repository-relative path',
         'record.capabilities[0].factContracts must contain safe repository-relative paths',

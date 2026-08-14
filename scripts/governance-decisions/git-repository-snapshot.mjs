@@ -64,8 +64,8 @@ function readCommitEntries(repoRoot, commitOid) {
     .sort((left, right) => compareText(left.path, right.path));
 }
 
-function runGit(repoRoot, arguments_) {
-  return execFileSync('git', arguments_, { cwd: repoRoot, encoding: 'utf8' });
+function runGit(repoRoot, args) {
+  return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8', maxBuffer: 134_217_728 });
 }
 
 function compareText(left, right) {

@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -11,31 +11,36 @@ import {
 } from './adaptive-plan-record.mjs';
 import { hasConsolidationDecision, validateCheckpoint } from './adaptive-plan-policy.mjs';
 import {
-  readAdaptivePlans,
-  readActivePlans,
-  resolveActivePlanRegistryPath,
+  evaluateAdaptivePlanCatalog,
+  evaluateAdaptivePlanCatalogRecovery,
+  readAdaptivePlanCatalog,
+  readAdaptivePlanCatalogAtRevision,
+  resolvePlanAdaptationOutputRoot,
   resolvePlansRoot,
-  toActivePlanRegistry,
-} from './active-plan-registry.mjs';
+} from './adaptive-plan-catalog.mjs';
 import { writeFileTransaction } from './file-transaction.mjs';
 import { createPlanClosureReceipt } from './plan-closure-receipt.mjs';
 import { readAuthenticatedPlanTransitionChanges } from './plan-transition-authentication.mjs';
 import {
   computePlanFacts,
   computeQualificationReasons,
+  computeUnassignedQualifyingPaths,
   hasCurrentPlanFacts,
   readChangedPaths,
+  selectPlanChanges,
 } from './plan-change-facts.mjs';
 
 export function initAdaptivePlan(input) {
   const plan = readPlan(input);
+  requireActivePlan(plan, 'init');
   validateRecordAndCheckpoint(plan.record);
-  plan.record.facts = readCurrentFacts(input, plan.record);
-  writePlanAndRegistry({ input, markdown: plan.markdown, record: plan.record });
+  plan.record.facts = readCurrentFacts({ input, record: plan.record });
+  writePlan({ input, markdown: plan.markdown, record: plan.record });
 }
 
 export function completeAdaptivePlanSlice(input) {
   const plan = readPlan(input);
+  requireActivePlan(plan, 'complete-slice');
   validateRecordAndCheckpoint(plan.record);
   if (plan.record.completedSlicesSinceCheckpoint.includes(input.slice)) {
     throw new Error(`slice ${input.slice} is already complete since the prior checkpoint`);
@@ -59,15 +64,16 @@ export function completeAdaptivePlanSlice(input) {
   plan.record.checkpoint.nextSlices = plan.record.checkpoint.nextSlices.filter(
     (slice) => slice !== input.slice,
   );
-  plan.record.facts = readCurrentFacts(input, plan.record);
-  writePlanAndRegistry({ input, markdown: plan.markdown, record: plan.record });
+  plan.record.facts = readCurrentFacts({ input, record: plan.record });
+  writePlan({ input, markdown: plan.markdown, record: plan.record });
 }
 
 export function prepareAdaptivePlan(input) {
   const plan = readPlan(input);
+  requireActivePlan(plan, 'prepare');
   validateRecordAndCheckpoint(plan.record);
   const sourceRecordDigest = computeAdaptivePlanRecordDigest(plan.record);
-  plan.record.facts = readCurrentFacts(input, plan.record);
+  plan.record.facts = readCurrentFacts({ input, record: plan.record, includeUnassigned: true });
   plan.record.checkpoint = {
     outcome: '',
     learning: '',
@@ -93,6 +99,7 @@ export function prepareAdaptivePlan(input) {
 
 export function applyAdaptivePlan(input) {
   const plan = readPlan(input);
+  requireActivePlan(plan, 'apply');
   const draftPath = toDraftPath(input.repoRoot, plan.record.planId);
   const draft = readDraft(draftPath);
   if (
@@ -109,13 +116,13 @@ export function applyAdaptivePlan(input) {
     throw new Error('only one autonomous consolidation slice is allowed');
   }
   validateRecordAndCheckpoint(draft.record);
-  const currentFacts = readCurrentFacts(input, draft.record);
+  const currentFacts = readCurrentFacts({ input, record: draft.record, includeUnassigned: true });
   if (JSON.stringify(currentFacts) !== JSON.stringify(draft.record.facts)) {
     throw new Error('draft facts are stale; run prepare again');
   }
   appendMaterialDecision(draft.record);
   draft.record.completedSlicesSinceCheckpoint = [];
-  writePlanAndRegistry({
+  writePlan({
     input,
     markdown: plan.markdown,
     record: draft.record,
@@ -137,17 +144,39 @@ export function checkAdaptivePlans(input) {
     input.base,
     closureChanges.changes,
   );
-  const adaptivePlans = readAdaptivePlans(input.repoRoot);
-  const activePlans = adaptivePlans.filter(({ record }) => record.status === 'active');
+  const catalog = readAdaptivePlanCatalog(input.repoRoot);
+  const adaptivePlans = catalog.plans;
+  const activePlans = catalog.activePlans;
+  const recovery = readCatalogRecovery({
+    input, candidateCatalog: catalog, changes, authenticatedChanges: closureChanges,
+  });
   const issues = [];
+  if (!recovery.allowed) issues.push(...catalog.issues);
   issues.push(...closureChanges.issues);
   for (const adaptivePlan of adaptivePlans) {
     issues.push(...validateAdaptivePlanRecord(adaptivePlan.record));
     issues.push(...validateCheckpoint(adaptivePlan.record.checkpoint, adaptivePlan.record));
   }
+  if (recovery.attempted) {
+    issues.push(...recovery.issues);
+    if (issues.length > 0) throw new Error(issues.join('\n'));
+    return;
+  }
   if (qualification.length > 0 && activePlans.length === 0) {
     issues.push(
       `qualifying work requires an active plan-adaptation-v1 record: ${qualification.join(', ')}`,
+    );
+  }
+  const unassignedPaths = computeUnassignedQualifyingPaths({
+    repoRoot: input.repoRoot,
+    base: input.base,
+    changes: closureChanges.changes,
+    catalog,
+  });
+  if (unassignedPaths.length > 0) {
+    issues.push(
+      `unassigned qualifying scope: ${unassignedPaths.join(', ')}; candidate plans: ` +
+        activePlans.map(({ record }) => record.planId).join(', '),
     );
   }
   for (const activePlan of activePlans) {
@@ -173,11 +202,16 @@ export function checkAdaptivePlans(input) {
             readDecisionAdmissionEvidence: input.readDecisionAdmissionEvidence,
           });
     issues.push(...factChanges.issues);
+    const scopedChanges = selectPlanChanges({
+      changes: factChanges.changes,
+      catalog,
+      planPath: activePlan.planPath,
+    });
     if (
       !hasCurrentPlanFacts({
         repoRoot: input.repoRoot,
         base: factBase,
-        changes: factChanges.changes,
+        changes: scopedChanges,
         record: activePlan.record,
         planPath: activePlan.planPath,
       })
@@ -185,13 +219,21 @@ export function checkAdaptivePlans(input) {
       issues.push(`${activePlan.planPath} computed facts are stale`);
     }
   }
-  const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
-  const expectedRegistry = toActivePlanRegistry(activePlans);
-  if (!existsSync(registryPath) || readFileSync(registryPath, 'utf8') !== expectedRegistry) {
-    issues.push('plans/README.md is not the generated active-plan registry');
-  }
   if (issues.length > 0) {
     throw new Error(issues.join('\n'));
+  }
+}
+
+function readCatalogRecovery({ input, candidateCatalog, changes, authenticatedChanges }) {
+  try {
+    return evaluateAdaptivePlanCatalogRecovery({
+      baseCatalog: readAdaptivePlanCatalogAtRevision(input.repoRoot, input.base),
+      candidateCatalog,
+      authenticatedDisposition: authenticatedChanges.authenticatedDispositions.length > 0,
+      changedPaths: changes.flatMap((change) => [change.oldPath, change.path]).filter(Boolean),
+    });
+  } catch {
+    return { attempted: false, allowed: false, issues: [] };
   }
 }
 
@@ -207,17 +249,6 @@ export function closeAdaptivePlan(input) {
     );
   }
   const evidence = validateFinalEvidence(input, plan.record);
-  const activePlans = readActivePlans(input.repoRoot);
-  const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
-  const currentRegistry = readFileSync(registryPath, 'utf8');
-  if (
-    currentRegistry !== toActivePlanRegistry(activePlans) ||
-    !activePlans.some(
-      (entry) => entry.planPath === input.planPath && entry.record.planId === plan.record.planId,
-    )
-  ) {
-    throw new Error('close requires the plan to be the current active registry entry');
-  }
   const receipt = createPlanClosureReceipt({
     repoRoot: input.repoRoot,
     base: input.base,
@@ -226,17 +257,36 @@ export function closeAdaptivePlan(input) {
     evidence,
   });
   writeFileTransaction({
-    replacements: [
-      {
-        path: registryPath,
-        content: toActivePlanRegistry(
-          activePlans.filter((entry) => entry.planPath !== input.planPath),
-        ),
-      },
-      receipt,
-    ],
+    replacements: [receipt],
     removals: [plan.absolutePath],
   });
+}
+
+export function postponeAdaptivePlan(input) {
+  const plan = readPlan(input);
+  validateRecordAndCheckpoint(plan.record);
+  requireActivePlan(plan, 'postpone');
+  plan.record.status = 'postponed';
+  appendStatusDecision(plan.record, 'postpone', input.reason);
+  writePlan({ input, markdown: plan.markdown, record: plan.record });
+}
+
+export function resumeAdaptivePlan(input) {
+  const plan = readPlan(input);
+  validateRecordAndCheckpoint(plan.record);
+  if (plan.record.status !== 'postponed') throw new Error('resume requires a postponed plan');
+  plan.record.status = 'active';
+  const catalog = readAdaptivePlanCatalog(input.repoRoot);
+  const candidate = evaluateAdaptivePlanCatalog(
+    catalog.policy,
+    catalog.plans.map((entry) =>
+      entry.planPath === input.planPath ? { ...entry, record: plan.record } : entry,
+    ),
+  );
+  if (candidate.issues.length > 0) throw new Error(candidate.issues.join('\n'));
+  plan.record.facts = readCurrentFacts({ input, record: plan.record, catalog: candidate });
+  appendStatusDecision(plan.record, 'resume', input.reason);
+  writePlan({ input, markdown: plan.markdown, record: plan.record });
 }
 
 function readPlan(input) {
@@ -245,34 +295,47 @@ function readPlan(input) {
   return { absolutePath, markdown, record: parseAdaptivePlanRecord(markdown, input.planPath) };
 }
 
-function writePlanAndRegistry(transaction) {
+function writePlan(transaction) {
   const { input, markdown, record, removals = [] } = transaction;
   const planPath = resolveTacticalPlanPath(input.repoRoot, input.planPath);
-  const adaptivePlans = readAdaptivePlans(input.repoRoot).map((entry) => {
-    return entry.planPath === input.planPath ? { ...entry, record } : entry;
-  });
-  const activePlans = adaptivePlans.filter((entry) => entry.record.status === 'active');
   writeFileTransaction({
     replacements: [
       {
         path: planPath,
         content: replaceAdaptivePlanRecord(markdown, record, input.planPath),
       },
-      {
-        path: resolveActivePlanRegistryPath(input.repoRoot),
-        content: toActivePlanRegistry(activePlans),
-      },
     ],
     removals,
   });
 }
 
-function readCurrentFacts(input, record) {
+function requireActivePlan(plan, command) {
+  if (plan.record.status !== 'active') throw new Error(`${command} requires an active plan`);
+}
+
+function appendStatusDecision(record, decision, reason) {
+  record.materialDecisions.push({
+    date: new Date().toISOString().slice(0, 10),
+    decision,
+    summary: reason,
+  });
+}
+
+function readCurrentFacts({
+  input, record, includeUnassigned = false, catalog = readAdaptivePlanCatalog(input.repoRoot),
+}) {
   const changes = readChangedPaths(input.repoRoot, input.base);
   return computePlanFacts({
     repoRoot: input.repoRoot,
     base: input.base,
-    changes,
+    changes: selectPlanChanges({
+      repoRoot: input.repoRoot,
+      base: input.base,
+      changes,
+      catalog,
+      planPath: input.planPath,
+      includeUnassigned,
+    }),
     record,
     planPath: input.planPath,
   });
@@ -340,14 +403,7 @@ function toDraftPath(repoRoot, planId) {
   if (typeof planId !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(planId)) {
     throw new Error('record.planId must use lowercase letters, digits, and single hyphens');
   }
-  const realRepoRoot = realpathSync(repoRoot);
-  const draftRoot = path.join(realRepoRoot, '.plan-adaptation');
-  mkdirSync(draftRoot, { recursive: true });
-  const stat = lstatSync(draftRoot);
-  if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(draftRoot) !== draftRoot) {
-    throw new Error('draft directory must remain inside the repository');
-  }
-  return path.join(draftRoot, `${planId}.draft.json`);
+  return path.join(resolvePlanAdaptationOutputRoot(repoRoot), `${planId}.draft.json`);
 }
 
 function resolveTacticalPlanPath(repoRoot, planPath) {

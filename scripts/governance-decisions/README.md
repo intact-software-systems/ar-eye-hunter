@@ -79,7 +79,7 @@ Preview is optional. A human administrator may apply directly. An AI must show t
 request and expected main head, obtain one just-in-time approval for that atomic mutation, and then
 apply without further decision prompts. A changed request or expected head invalidates that
 approval. Never hand-write a decision receipt, directly edit or delete a plan, fabricate completion
-or review evidence, or manually change a generated registry as a substitute for this command.
+or review evidence, or manually construct a tracked plan overview as a substitute for this command.
 
 Gate deviations retain the exact failed run, attempt, gate, and candidate evidence. The reusable
 Governance Gate reports `accepted-deviation` separately from `passed`, and Branch Release Gate alone

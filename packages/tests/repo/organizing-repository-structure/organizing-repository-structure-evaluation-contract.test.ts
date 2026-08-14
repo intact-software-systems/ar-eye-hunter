@@ -146,7 +146,10 @@ describe('organizing repository structure evaluation contract', () => {
     });
     expect(flat.acceptedResults).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ symbol: 'writePlanAndRegistry' }),
+        expect.objectContaining({
+          path: 'scripts/plan-adaptation/adaptive-plan-catalog.mjs',
+          symbol: 'readAdaptivePlanCatalog',
+        }),
         expect.objectContaining({ symbol: 'prepareAdaptivePlan' }),
         expect.objectContaining({ symbol: 'checkAdaptivePlans' }),
         expect.objectContaining({ symbol: 'closeAdaptivePlan' }),

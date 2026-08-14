@@ -149,20 +149,20 @@ single-plan logic before adding new modules.
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "d450f2521f93754a39bca5453ee27c8b63988534",
-    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "computedTriggers": [],
+    "diffBase": "8dd96d4517e9f5a33728330f6c3bc9fba77bed6c",
+    "affectedCodeDigest": "f4473c94cdb0797732437d1db2d2ebce5fb34edec618d0b693cfd394f8e5995e",
+    "computedTriggers": [
+      "ownership-change",
+      "lifecycle-change"
+    ],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The administrator approved a bounded replacement of single-plan governance with a configurable eight-plan catalog and an ignored generated overview.",
-    "learning": "Concurrent plans need per-plan facts and exclusive mutable ownership; a tracked shared status projection creates conflicts without adding authority.",
-    "structure": "Replace active-plan-registry with one compact catalog owner and adapt existing consumers directly, without a compatibility layer, new workflow, receipt schema, or service.",
+    "outcome": "The second exact-head Branch Release Gate exposed the CI local-transport fixture inheriting GITHUB_ACTIONS and a nine-line budget overrun; the fixture now declares local transport explicitly and consolidated lifecycle calls leave production governance at 199 net lines.",
+    "learning": "Transport tests must override ambient CI identity variables, and release-driven readability corrections must be consolidated within the same fixed production-line budget.",
+    "structure": "No public interface or ownership changed; the test isolates its intended transport and the lifecycle keeps named input objects without adding another abstraction.",
     "decision": "amend",
-    "nextSlices": [
-      "multi-plan-catalog-and-lifecycle",
-      "multi-plan-consumers-and-migration"
-    ]
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
@@ -196,6 +196,46 @@ single-plan logic before adding new modules.
       "date": "2026-08-14",
       "decision": "amend",
       "summary": "Replace shared single-plan state with a compact configurable catalog, cap active plans at eight initially, and preserve direct-main receipt authentication unchanged."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The catalog and lifecycle slice now supports an exact eight-plan policy, per-plan status, ignored overview generation, plan-scoped facts, ownership isolation, and strict recovery."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "All catalog consumers now operate per active plan, target-only disposition preserves peers, the topology plan is postponed, and ordinary lifecycle evidence is independent of merge, squash, or rebase commit shape."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The implementation is complete with distinct selection modes for owned facts, unassigned qualifying preparation scope, and all materially changed structure-check scope."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The implementation and organizing-repository-structure evaluation contract are aligned with the catalog terminal, with no undeclared qualifying paths."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The complete governance implementation and its subprocess-heavy integration scenarios are ready for the broad acceptance matrix."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The exact-head Branch Release Gate exposed two new function input-contract findings; both private lifecycle functions now accept named input objects, and the 93 plan-adaptation tests plus the changed-style comparison pass."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "Current main at 8dd96d45 merged cleanly; its D6 product work is now baseline, while the catalog remains one active governance plan and one postponed topology plan with seven available slots."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The second exact-head Branch Release Gate exposed the CI local-transport fixture inheriting GITHUB_ACTIONS and a nine-line budget overrun; the fixture now declares local transport explicitly and consolidated lifecycle calls leave production governance at 199 net lines."
     }
   ]
 }

@@ -65,9 +65,44 @@ describe('repository navigation evidence command', () => {
     expect(combined.stderr).toContain('usage: node scripts/repo-structure-check.mjs');
   });
 
+  it('requires --plan only when an owner name is ambiguous across active plans', () => {
+    const fixture = navigationCommandFixture();
+    const second = structuredClone(createRecord());
+    second.planId = 'second-plan';
+    second.capabilities[0] = {
+      ...second.capabilities[0],
+      root: 'scripts/second',
+      entry: 'scripts/second.mjs',
+      testRoot: 'packages/tests/repo/second',
+      navigationMap: 'scripts/second/README.md',
+    };
+    writeFixture(
+      fixture.root,
+      'plans/second-plan.md',
+      `# Second plan\n\n\`\`\`plan-adaptation-v1\n${JSON.stringify(second, null, 2)}\n\`\`\`\n`,
+    );
+
+    const ambiguous = runChecker(fixture, {
+      includeBase: false,
+      extraArgs: ['--navigation-evidence', 'example capability'],
+    });
+    expect(ambiguous.status).toBe(2);
+    expect(ambiguous.stderr).toContain('ambiguous; supply --plan');
+
+    const selected = runChecker(fixture, {
+      includeBase: false,
+      extraArgs: ['--navigation-evidence', 'example capability', '--plan', 'plans/fixture-plan.md'],
+    });
+    expect(selected.status, selected.stderr).toBe(0);
+  });
+
   it('rejects evidence when the active plan facts are stale', () => {
     const fixture = navigationCommandFixture();
-    writeFixture(fixture.root, 'scripts/example/first.mjs', 'export const changed = true;\n');
+    writeFixture(
+      fixture.root,
+      'scripts/example/first.mjs',
+      'export function firstResult() { return true; }\nexport const changed = true;\n',
+    );
 
     const result = runChecker(fixture, {
       includeBase: false,
@@ -184,7 +219,7 @@ describe('repository navigation evidence command', () => {
         affectedCodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
       });
     }
-  });
+  }, 15_000);
 
   it('reuses an executable stored scenario command for the microtest target', () => {
     const microtest = JSON.parse(

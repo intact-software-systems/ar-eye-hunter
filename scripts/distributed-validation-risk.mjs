@@ -12,7 +12,7 @@ import {
   validateDistributedValidationResult,
 } from './distributed-validation-risk/distributed-validation-result.mjs';
 import {
-  readActiveAdaptivePlanDocuments,
+  readAdaptivePlanDocuments,
   readChangedPathRecords,
 } from './distributed-validation-risk/read-distributed-validation-input.mjs';
 
@@ -58,7 +58,7 @@ function runSelection(options) {
       eventName,
       changedPathRecords: changedPaths.records,
       changedPathIssues: changedPaths.issues,
-      planDocuments: readActiveAdaptivePlanDocuments(repoRoot),
+      planDocuments: readAdaptivePlanDocuments(repoRoot),
     });
   }
 

@@ -90,6 +90,7 @@ export function readCurrentPlanContext({ path, source }) {
   const currentSlices = new Set(record.checkpoint?.nextSlices ?? []);
   return {
     path,
+    status: record.status,
     digest: computeAdaptivePlanRecordDigest(record),
     goal: record.goal,
     acceptanceCriteria: record.acceptanceCriteria,

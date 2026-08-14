@@ -6,7 +6,7 @@ import {
   computeAdaptivePlanRecordDigest,
   parseAdaptivePlanRecord,
 } from './adaptive-plan-record.mjs';
-import { resolvePlansRoot, toActivePlanRegistry } from './active-plan-registry.mjs';
+import { resolvePlansRoot } from './adaptive-plan-catalog.mjs';
 
 const closureSchemaVersion = 'plan-adaptation-closure-v1';
 const closureKeys = [
@@ -22,13 +22,12 @@ export function createPlanClosureReceipt(closeInput) {
   const basePlan = readBasePlan(closeInput.repoRoot, closeInput.base, closeInput.planPath);
   const expectedDigest = computeAdaptivePlanRecordDigest(closeInput.record);
   if (
-    basePlan.record.status !== 'active' ||
+    !['active', 'postponed'].includes(basePlan.record.status) ||
     basePlan.record.planId !== closeInput.record.planId ||
     computeAdaptivePlanRecordDigest(basePlan.record) !== expectedDigest
   ) {
-    throw new Error('close requires the comparison base to contain the exact active plan');
+    throw new Error('close requires the comparison base to contain the exact eligible plan');
   }
-  validateBaseRegistry(closeInput.repoRoot, closeInput.base);
 
   const receipt = toPlanClosureReceipt({
     planPath: closeInput.planPath,
@@ -78,7 +77,7 @@ export function readAuthenticatedPlanClosureChanges(closureInput) {
 
   for (const receiptChange of changedReceipts) {
     if (!authenticatedPaths.has(receiptChange.path)) {
-      issues.push(`${receiptChange.path} does not authenticate a deleted active plan`);
+      issues.push(`${receiptChange.path} does not authenticate a deleted eligible plan`);
     }
   }
 
@@ -93,10 +92,9 @@ function validatePlanClosureReceipt(receiptInput) {
   if (!receiptInput.receiptChange?.status.startsWith('A')) {
     throw new Error(`expected a new ${receiptInput.receiptPath} receipt`);
   }
-  if (receiptInput.basePlan.record.status !== 'active') {
-    throw new Error('comparison base plan must be active');
+  if (!['active', 'postponed'].includes(receiptInput.basePlan.record.status)) {
+    throw new Error('comparison base plan must be active or postponed');
   }
-  validateBaseRegistry(receiptInput.repoRoot, receiptInput.base);
   const absoluteReceiptPath = path.join(receiptInput.repoRoot, receiptInput.receiptPath);
   const stat = lstatSync(absoluteReceiptPath);
   if (!stat.isFile() || stat.isSymbolicLink()) {
@@ -165,33 +163,6 @@ function readBasePlan(repoRoot, base, planPath) {
   }
   const markdown = readGitFile(repoRoot, base, planPath);
   return { planPath, record: parseAdaptivePlanRecord(markdown, planPath) };
-}
-
-function validateBaseRegistry(repoRoot, base) {
-  const activePlans = readBaseAdaptivePlans(repoRoot, base).filter(
-    ({ record }) => record.status === 'active',
-  );
-  if (readGitFile(repoRoot, base, 'plans/README.md') !== toActivePlanRegistry(activePlans)) {
-    throw new Error('comparison base active-plan registry is not generated from its plans');
-  }
-}
-
-function readBaseAdaptivePlans(repoRoot, base) {
-  return runGit(repoRoot, ['ls-tree', '-rz', '--name-only', base, '--', 'plans'])
-    .split('\0')
-    .filter(isTacticalPlanPath)
-    .flatMap((planPath) => {
-      const markdown = readGitFile(repoRoot, base, planPath);
-      return markdown.includes('```plan-adaptation-v1')
-        ? [{ planPath, record: parseAdaptivePlanRecord(markdown, planPath) }]
-        : [];
-    })
-    .sort((left, right) =>
-      Buffer.compare(
-        Buffer.from(String(left.record.planId)),
-        Buffer.from(String(right.record.planId)),
-      ),
-    );
 }
 
 function readGitFile(repoRoot, revision, relativePath) {

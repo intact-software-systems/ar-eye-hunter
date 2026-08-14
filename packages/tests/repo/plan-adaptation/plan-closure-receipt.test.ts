@@ -14,7 +14,6 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { toActivePlanRegistry } from '../../../../scripts/plan-adaptation/active-plan-registry.mjs';
 import { computeAdaptivePlanRecordDigest } from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
 import { readChangedPaths } from '../../../../scripts/plan-adaptation/plan-change-facts.mjs';
 import { readAuthenticatedPlanClosureChanges } from '../../../../scripts/plan-adaptation/plan-closure-receipt.mjs';
@@ -30,7 +29,29 @@ afterEach(() => {
 });
 
 describe('plan closure receipt', () => {
-  it('uses canonical plan-ID ordering when authenticating a multi-plan base', () => {
+  it.each(['merge', 'squash', 'rebase'] as const)(
+    'keeps the same reviewed plan tree valid after a %s merge',
+    (mergeMode) => {
+      const fixture = createMergedClosureRepository(mergeMode);
+      const record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+      writeFinalReviewEvidence(fixture.root, record);
+
+      const close = runCli(fixture.root, [
+        'close',
+        '--plan',
+        fixture.planPath,
+        '--base',
+        fixture.closeBase,
+        '--final-pr-evidence',
+        'final-pr-evidence.json',
+      ]);
+
+      expect(close.status, close.stdout).toBe(0);
+      expect(runCli(fixture.root, ['check', '--base', fixture.closeBase]).status).toBe(0);
+    },
+  );
+
+  it('closes one plan while preserving every other plan and static navigation', () => {
     const fixture = createClosureRepository({ includeSecondActivePlan: true });
     const record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
     writeFinalReviewEvidence(fixture.root, record);
@@ -46,8 +67,11 @@ describe('plan closure receipt', () => {
     ]);
 
     expect(close.status, close.stdout).toBe(0);
-    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toContain(
-      '| zzz-plan |',
+    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(
+      '# Adaptive plans\n\nStatic navigation.\n',
+    );
+    expect(readFileSync(path.join(fixture.root, 'plans/aaa-plan.md'), 'utf8')).toContain(
+      '"planId": "zzz-plan"',
     );
   });
 
@@ -61,7 +85,7 @@ describe('plan closure receipt', () => {
     });
 
     expect(result.issues).toContainEqual(
-      expect.stringContaining('comparison base plan must be active'),
+      expect.stringContaining('comparison base plan must be active or postponed'),
     );
   });
 
@@ -91,27 +115,6 @@ describe('plan closure receipt', () => {
     expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(baseRegistry);
     rmSync(receiptPath);
 
-    writeFileSync(path.join(fixture.root, 'plans/README.md'), '# Forged registry\n');
-    runGit(fixture.root, ['add', 'plans/README.md']);
-    runGit(fixture.root, ['commit', '--quiet', '-m', 'forge close base registry']);
-    const forgedRegistryBase = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
-    writeFileSync(path.join(fixture.root, 'plans/README.md'), baseRegistry);
-    const forgedRegistryClose = runCli(fixture.root, [
-      'close',
-      '--plan',
-      fixture.planPath,
-      '--base',
-      forgedRegistryBase,
-      '--final-pr-evidence',
-      'final-pr-evidence.json',
-    ]);
-    expect(forgedRegistryClose.status).toBe(1);
-    expect(forgedRegistryClose.stdout).toContain(
-      'comparison base active-plan registry is not generated from its plans',
-    );
-    expect(readFileSync(planPath, 'utf8')).toBe(baseMarkdown);
-    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(baseRegistry);
-
     const changedRecord = structuredClone(baseRecord);
     changedRecord.checkpoint.outcome = 'An uncommitted plan record must not be closable.';
     writeFixture(
@@ -130,7 +133,7 @@ describe('plan closure receipt', () => {
       'final-pr-evidence.json',
     ]);
     expect(changedPlanClose.status).toBe(1);
-    expect(changedPlanClose.stdout).toContain('comparison base to contain the exact active plan');
+    expect(changedPlanClose.stdout).toContain('comparison base to contain the exact eligible plan');
 
     writeFileSync(planPath, baseMarkdown);
     writeFinalReviewEvidence(fixture.root, baseRecord);
@@ -146,7 +149,6 @@ describe('plan closure receipt', () => {
     expect(close.status, close.stdout).toBe(0);
 
     const validReceipt = readFileSync(receiptPath, 'utf8');
-    const closedRegistry = readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8');
     const authenticatedCloseout = readAuthenticatedPlanClosureChanges({
       repoRoot: fixture.root,
       base: fixture.closeBase,
@@ -233,14 +235,9 @@ describe('plan closure receipt', () => {
     rmSync(misplacedPath, { force: true });
     rmSync(outsideReceipt, { force: true });
     writeFileSync(receiptPath, validReceipt);
-    writeFileSync(path.join(fixture.root, 'plans/README.md'), baseRegistry);
-    const partialRegistry = runCli(fixture.root, ['check', '--base', fixture.closeBase]);
-    expect(partialRegistry.status).toBe(1);
-    expect(partialRegistry.stdout).toContain(
-      'plans/README.md is not the generated active-plan registry',
-    );
-
-    writeFileSync(path.join(fixture.root, 'plans/README.md'), closedRegistry);
+    writeFileSync(path.join(fixture.root, 'plans/README.md'), '# Edited static navigation\n');
+    const staticNavigation = runCli(fixture.root, ['check', '--base', fixture.closeBase]);
+    expect(staticNavigation.status, staticNavigation.stdout).toBe(0);
     for (const file of ['first.mjs', 'second.mjs', 'third.mjs']) {
       writeFixture(fixture.root, `scripts/new-capability/${file}`, 'export const value = true;\n');
     }
@@ -261,16 +258,26 @@ function createClosureRepository(options: { readonly includeSecondActivePlan?: b
   runGit(root, ['config', 'user.name', 'Plan Closure Test']);
   runGit(root, ['config', 'user.email', 'plan-closure@example.test']);
   writeFixture(root, '.gitignore', '/.plan-adaptation/\n');
+  writeFixture(
+    root,
+    'plans/policy.json',
+    '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
+  );
+  writeFixture(root, 'plans/README.md', '# Adaptive plans\n\nStatic navigation.\n');
   writeFixture(root, 'scripts/plan-adaptation.mjs', 'console.log("fixture entry");\n');
   writeFixture(root, 'packages/tests/repo/plan-adaptation/fixture.test.ts', 'export {};\n');
   const planPath = 'plans/fixture-plan.md';
   writeFixture(root, planPath, `# Fixture plan\n\n${recordBlock(createRecord())}\n`);
   if (options.includeSecondActivePlan) {
-    writeFixture(
-      root,
-      'plans/aaa-plan.md',
-      `# Other plan\n\n${recordBlock(createRecord('zzz-plan'))}\n`,
-    );
+    const second = createRecord('zzz-plan');
+    second.capabilities[0] = {
+      ...second.capabilities[0],
+      owner: 'second plan',
+      root: 'scripts/second-plan',
+      entry: 'scripts/second-plan.mjs',
+      testRoot: 'packages/tests/repo/second-plan',
+    };
+    writeFixture(root, 'plans/aaa-plan.md', `# Other plan\n\n${recordBlock(second)}\n`);
   }
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '--quiet', '-m', 'base']);
@@ -279,6 +286,44 @@ function createClosureRepository(options: { readonly includeSecondActivePlan?: b
   expect(runCli(root, ['init', '--plan', planPath, '--base', base]).status).toBe(0);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '--quiet', '-m', 'record close base']);
+  return { root, planPath, closeBase: runGit(root, ['rev-parse', 'HEAD']).trim() };
+}
+
+function createMergedClosureRepository(mergeMode: 'merge' | 'squash' | 'rebase') {
+  const root = mkdtempSync(path.join(tmpdir(), `plan-${mergeMode}-closure-`));
+  fixturePaths.push(root);
+  runGit(root, ['init', '--quiet', '--initial-branch=main']);
+  runGit(root, ['config', 'user.name', 'Plan Merge Test']);
+  runGit(root, ['config', 'user.email', 'plan-merge@example.test']);
+  writeFixture(root, '.gitignore', '/.plan-adaptation/\n');
+  writeFixture(
+    root,
+    'plans/policy.json',
+    '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
+  );
+  writeFixture(root, 'plans/README.md', '# Adaptive plans\n\nStatic navigation.\n');
+  writeFixture(root, 'scripts/plan-adaptation.mjs', 'console.log("fixture entry");\n');
+  writeFixture(root, 'packages/tests/repo/plan-adaptation/fixture.test.ts', 'export {};\n');
+  const planPath = 'plans/fixture-plan.md';
+  writeFixture(root, planPath, `# Fixture plan\n\n${recordBlock(createRecord())}\n`);
+  runGit(root, ['add', '.']);
+  runGit(root, ['commit', '--quiet', '-m', 'base']);
+  const base = runGit(root, ['rev-parse', 'HEAD']).trim();
+  runGit(root, ['switch', '--quiet', '-c', 'reviewed-candidate']);
+  writeFixture(root, 'scripts/plan-adaptation/change.mjs', 'export const changed = true;\n');
+  expect(runCli(root, ['init', '--plan', planPath, '--base', base]).status).toBe(0);
+  runGit(root, ['add', '.']);
+  runGit(root, ['commit', '--quiet', '-m', 'reviewed candidate']);
+  const candidate = runGit(root, ['rev-parse', 'HEAD']).trim();
+  runGit(root, ['switch', '--quiet', 'main']);
+  if (mergeMode === 'merge') {
+    runGit(root, ['merge', '--quiet', '--no-ff', 'reviewed-candidate', '-m', 'merge candidate']);
+  } else if (mergeMode === 'squash') {
+    runGit(root, ['merge', '--quiet', '--squash', 'reviewed-candidate']);
+    runGit(root, ['commit', '--quiet', '-m', 'squash candidate']);
+  } else {
+    runGit(root, ['cherry-pick', '--quiet', candidate]);
+  }
   return { root, planPath, closeBase: runGit(root, ['rev-parse', 'HEAD']).trim() };
 }
 
@@ -291,7 +336,12 @@ function createInactiveClosureTransition() {
   const record = { ...createRecord(), status: 'closed' };
   const planPath = 'plans/fixture-plan.md';
   writeFixture(root, planPath, `# Fixture plan\n\n${recordBlock(record)}\n`);
-  writeFixture(root, 'plans/README.md', toActivePlanRegistry([]));
+  writeFixture(root, 'plans/README.md', '# Adaptive plans\n\nStatic navigation.\n');
+  writeFixture(
+    root,
+    'plans/policy.json',
+    '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
+  );
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '--quiet', '-m', 'inactive base plan']);
   const base = runGit(root, ['rev-parse', 'HEAD']).trim();

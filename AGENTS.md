@@ -79,7 +79,7 @@ standard.
   and expected main head and receiving one just-in-time approval for that exact
   atomic mutation. A changed request or head invalidates approval and requires
   a new one. Never hand-write governance receipts, directly edit/delete a plan,
-  fabricate completion or review evidence, or alter generated registries as
+  fabricate completion or review evidence, or construct a tracked plan overview as
   substitutes.
 - For package/app changes, read the relevant repo skill in `.agents/skills/**`:
   - `building-rallar-apps` first for greenfield apps and React/3D architecture;

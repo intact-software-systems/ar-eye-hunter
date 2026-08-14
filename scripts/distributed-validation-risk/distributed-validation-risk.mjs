@@ -155,40 +155,36 @@ function readPlanRequirements(planDocuments) {
   if (!Array.isArray(planDocuments)) {
     return { requirements: [], issues: ['plan documents must be an array'] };
   }
-  if (planDocuments.length > 1) {
-    return { requirements: [], issues: ['multiple active adaptive plans are ambiguous'] };
-  }
-  if (planDocuments.length === 0) {
-    return { requirements: [], issues: [] };
-  }
-
-  const document = planDocuments[0];
-  if (!isRecord(document) || !isSafeRepositoryPath(document.path)) {
-    return {
-      requirements: [],
-      issues: ['active adaptive plan path must be repository-relative'],
-    };
-  }
-  if (typeof document.markdown !== 'string') {
-    return { requirements: [], issues: ['active adaptive plan Markdown must be a string'] };
-  }
-
-  try {
-    const record = parseAdaptivePlanRecord(document.markdown, document.path);
-    const issues = validateAdaptivePlanRecord(record);
-    if (issues.length > 0) {
-      return { requirements: [], issues };
+  const requirements = [];
+  const issues = [];
+  for (const document of planDocuments) {
+    if (!isRecord(document) || !isSafeRepositoryPath(document.path)) {
+      issues.push('adaptive plan path must be repository-relative');
+      continue;
     }
-    if (record.distributedValidation === undefined) {
-      return { requirements: [], issues: [] };
+    if (typeof document.markdown !== 'string') {
+      issues.push(`${document.path} adaptive plan Markdown must be a string`);
+      continue;
     }
-    return {
-      requirements: [{ planId: record.planId, reason: record.distributedValidation.reason }],
-      issues: [],
-    };
-  } catch (error) {
-    return { requirements: [], issues: [toError(error).message] };
+    try {
+      const record = parseAdaptivePlanRecord(document.markdown, document.path);
+      issues.push(
+        ...validateAdaptivePlanRecord(record).map((issue) => `${document.path}: ${issue}`),
+      );
+      if (record.status === 'active' && record.distributedValidation !== undefined) {
+        requirements.push({
+          planId: record.planId,
+          reason: record.distributedValidation.reason,
+        });
+      }
+    } catch (error) {
+      issues.push(`${document.path}: ${toError(error).message}`);
+    }
   }
+  return {
+    requirements: requirements.sort((left, right) => left.planId.localeCompare(right.planId)),
+    issues,
+  };
 }
 
 function classifyRiskPaths(changedPathRecords) {

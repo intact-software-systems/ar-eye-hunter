@@ -117,7 +117,7 @@ describe('governance decision GitHub workflows', () => {
       expect(source).toMatch(/Never\s+hand-write/iu);
       expect(source).toMatch(/directly edit(?:\/delete| or delete) a plan/iu);
       expect(source).toMatch(/fabricate\s+completion/iu);
-      expect(source).toMatch(/generated (?:active-plan )?registr/iu);
+      expect(source).toMatch(/tracked (?:plan )?overview/iu);
     }
     expect(publicationSkill).toContain(
       'This does not approve any ordinary default-branch commit or push',

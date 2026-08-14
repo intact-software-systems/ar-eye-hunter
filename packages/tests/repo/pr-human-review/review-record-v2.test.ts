@@ -25,6 +25,17 @@ describe('PR Human Review Record v2', () => {
     expect(errors).toEqual([]);
   });
 
+  it('requires a code-changing review to identify an active plan', () => {
+    const input = validationInput(reviewRecord());
+
+    expect(
+      validateReviewRecord({
+        ...input,
+        currentPlan: { ...input.currentPlan, status: 'postponed' },
+      }),
+    ).toContain('code-changing review must identify an active adaptive plan');
+  });
+
   it('accepts the canonical template after its visible fields and metadata are filled', () => {
     const record = reviewRecord();
 
@@ -111,6 +122,14 @@ describe('PR Human Review Record v2', () => {
         ...validationInput(reviewRecord()),
         body: exemptRecordBody(canonicalReceipt, 'plan-only'),
         changedPaths: [canonicalReceipt],
+      }),
+    ).toEqual([]);
+
+    expect(
+      validateReviewRecord({
+        ...validationInput(reviewRecord()),
+        body: exemptRecordBody('plans/policy.json', 'plan-only'),
+        changedPaths: ['plans/policy.json'],
       }),
     ).toEqual([]);
 
@@ -408,6 +427,7 @@ function validationInput(record: ReturnType<typeof reviewRecord>, draft = true) 
     approvalHistory: {},
     currentPlan: {
       path: 'plans/example-plan.md',
+      status: 'active',
       digest: currentPlanDigest,
       goal: 'Keep multi-slice implementation adaptive and reviewable.',
       acceptanceCriteria: [

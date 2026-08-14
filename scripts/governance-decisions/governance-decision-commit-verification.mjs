@@ -88,7 +88,6 @@ export function verifyGovernanceDecisionCommit(verificationInput) {
     actualChanges: nonReceiptChanges,
     commitSnapshot,
   });
-
   return {
     decisionOnly: true,
     decisionId: receipt.decisionId,
@@ -153,11 +152,7 @@ function validateChangedFileModes(parentSnapshot, commitSnapshot, changes) {
   const beforeByPath = new Map(parentSnapshot.entries.map((entry) => [entry.path, entry]));
   const afterByPath = new Map(commitSnapshot.entries.map((entry) => [entry.path, entry]));
   for (const change of changes) {
-    if (!(
-      change.path === 'plans/README.md' ||
-      change.path.startsWith('plans/') ||
-      receiptPathPattern.test(change.path)
-    )) {
+    if (!(change.path.startsWith('plans/') || receiptPathPattern.test(change.path))) {
       continue;
     }
     const beforeMode = beforeByPath.get(change.path)?.mode;

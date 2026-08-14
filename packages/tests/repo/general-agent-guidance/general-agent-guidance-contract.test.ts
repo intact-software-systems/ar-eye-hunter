@@ -133,7 +133,7 @@ describe('general agent guidance routing', () => {
       expect(source).toMatch(/changed request or (?:expected )?head invalidates/iu);
       expect(source).toMatch(/Never hand-write/iu);
       expect(source).toMatch(/directly edit(?:\/delete| or delete) a plan/iu);
-      expect(source).toMatch(/generated (?:active-plan )?registr/iu);
+      expect(source).toMatch(/tracked (?:plan )?overview/iu);
     }
     expect(sources[2]).toContain(
       'This does not approve any ordinary default-branch commit or push.',

@@ -17,6 +17,7 @@ const exemptionPaths = {
   'plan-only': [
     /^docs\/superpowers\/plans\/.+\.md$/u,
     /^plans\/.+\.md$/u,
+    /^plans\/policy\.json$/u,
     isPlanClosureReceiptPath,
   ],
   'documentation-only': [
@@ -164,6 +165,9 @@ function validatePlanReference(plan, currentPlan, errors) {
   }
   if (plan.path !== currentPlan?.path) {
     errors.push('review adaptive plan path must match the current plan');
+  }
+  if (currentPlan?.status !== 'active') {
+    errors.push('code-changing review must identify an active adaptive plan');
   }
 }
 

@@ -114,6 +114,7 @@ function runValidator(fixture: ReturnType<typeof createFixture>) {
 function adaptivePlan(): string {
   const record = {
     version: 1,
+    status: 'active',
     goal: 'Keep the change reviewable.',
     acceptanceCriteria: ['The capability owner is recoverable.'],
     capabilities: [{ owner: 'example', entry: 'scripts/example.mjs' }],

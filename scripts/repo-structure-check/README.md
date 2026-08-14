@@ -66,17 +66,10 @@ which returns sorted findings without choosing a folder layout for the agent.
 
 The checker consumes, but does not own, five explicitly declared contracts:
 
-- [active-plan-registry.mjs#readAdaptivePlans](../plan-adaptation/active-plan-registry.mjs#readAdaptivePlans)
-  supplies the single active plan and generated registry.
-- [adaptive-plan-record.mjs#validateAdaptivePlanRecord](../plan-adaptation/adaptive-plan-record.mjs#validateAdaptivePlanRecord)
-  validates its configuration before structure policy uses it.
-- [plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges](../plan-adaptation/plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges)
-  authenticates either the exact normal closure or an exact governance plan disposition when no
-  active plan remains. Repository
-  structure and navigation evidence accept that transition only when the generated registry is
-  empty and no other changed surface remains.
-- [plan-change-facts.mjs#computeAffectedCodeDigest](../plan-adaptation/plan-change-facts.mjs#computeAffectedCodeDigest)
-  binds current structural dispositions to the affected-code surface.
+- The plan-adaptation catalog supplies validated active and postponed records without a tracked
+  shared registry. Its plan-transition authentication owner supplies exact normal closure and
+  governance dispositions, while its plan-scoped facts bind structural findings to the owning
+  active plan. These are consumed contracts, not repository-structure ownership.
 - [structural-facts.mjs#collectRepositoryStyleFacts](../repo-style-check/structural-facts.mjs#collectRepositoryStyleFacts)
   remains the canonical owner of density, prefix-clustering, and file-size facts.
 

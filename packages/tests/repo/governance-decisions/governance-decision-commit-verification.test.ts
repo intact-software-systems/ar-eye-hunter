@@ -159,24 +159,26 @@ describe('governance decision structural commit verification', () => {
     ).toThrow('target plan blob identity does not match expected head');
   });
 
-  it('rejects arbitrary declared registry bytes and non-regular changed files by replay', () => {
-    const fixture = createAppliedDecisionFixture();
+  it('rejects arbitrary declared successor bytes and non-regular changed files by replay', () => {
+    const fixture = createAppliedDecisionFixture({ operation: 'plan.supersede' });
     const commitSnapshot = readGitRepositorySnapshot({
       repoRoot: fixture.root,
       commitOid: fixture.commitOid,
     });
-    const registryEntry = commitSnapshot.entries.find((entry) => entry.path === 'plans/README.md')!;
+    const successorEntry = commitSnapshot.entries.find(
+      (entry) => entry.path === 'plans/successor.md',
+    )!;
     const receiptEntry = commitSnapshot.entries.find(
       (entry) => entry.path === fixture.transition.receiptPath,
     )!;
-    const arbitraryContent = 'arbitrary but declared registry\n';
+    const arbitraryContent = 'arbitrary but declared successor\n';
     const receipt = JSON.parse(receiptEntry.content);
-    receipt.stateChanges.find((change: any) => change.path === registryEntry.path).after =
+    receipt.stateChanges.find((change: any) => change.path === successorEntry.path).after =
       identityForContent(arbitraryContent);
     const declaredReceiptContent = `${canonical(receipt)}\n`;
-    const arbitraryRegistry = replaceCommitEntry(
-      replaceCommitEntry(commitSnapshot, registryEntry.path, {
-        ...registryEntry,
+    const arbitrarySuccessor = replaceCommitEntry(
+      replaceCommitEntry(commitSnapshot, successorEntry.path, {
+        ...successorEntry,
         content: arbitraryContent,
         blobOid: identityForContent(arbitraryContent).blobOid,
       }),
@@ -192,13 +194,13 @@ describe('governance decision structural commit verification', () => {
         commitOid: fixture.commitOid,
         readRepositorySnapshot: (commitOid) =>
           commitOid === fixture.commitOid
-            ? { ...arbitraryRegistry, parentOids: [fixture.parentOid] }
+            ? { ...arbitrarySuccessor, parentOids: [fixture.parentOid] }
             : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
-    ).toThrow('commit does not equal the deterministic governance transition');
+    ).toThrow('successor path must contain the requested successor blob');
 
-    const symlinkRegistry = replaceCommitEntry(commitSnapshot, registryEntry.path, {
-      ...registryEntry,
+    const symlinkSuccessor = replaceCommitEntry(commitSnapshot, successorEntry.path, {
+      ...successorEntry,
       mode: '120000',
     });
     expect(() =>
@@ -206,10 +208,10 @@ describe('governance decision structural commit verification', () => {
         commitOid: fixture.commitOid,
         readRepositorySnapshot: (commitOid) =>
           commitOid === fixture.commitOid
-            ? { ...symlinkRegistry, parentOids: [fixture.parentOid] }
+            ? { ...symlinkSuccessor, parentOids: [fixture.parentOid] }
             : readGitRepositorySnapshot({ repoRoot: fixture.root, commitOid }),
       }),
-    ).toThrow('changed governance path must be a regular 100644 file: plans/README.md');
+    ).toThrow('changed governance path must be a regular 100644 file: plans/successor.md');
   });
 
   it('rejects a non-canonical receipt even when its JSON value is otherwise valid', () => {

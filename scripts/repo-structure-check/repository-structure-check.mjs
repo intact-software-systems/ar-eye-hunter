@@ -3,10 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import { isProductionAuthoredCodePath, readRepositoryFiles } from './repository-files.mjs';
 import {
-  readAdaptivePlans,
-  resolveActivePlanRegistryPath,
-  toActivePlanRegistry,
-} from '../plan-adaptation/active-plan-registry.mjs';
+  evaluateAdaptivePlanCatalogRecovery,
+  readAdaptivePlanCatalog,
+  readAdaptivePlanCatalogAtRevision,
+} from '../plan-adaptation/adaptive-plan-catalog.mjs';
 import { validateAdaptivePlanRecord } from '../plan-adaptation/adaptive-plan-record.mjs';
 import { isPlannedCapability } from '../plan-adaptation/adaptive-plan-record.mjs';
 // prettier-ignore
@@ -16,6 +16,7 @@ import {
   computeAffectedCodeDigest,
   hasCurrentPlanFacts,
   readChangedPaths,
+  selectPlanChanges,
 } from '../plan-adaptation/plan-change-facts.mjs';
 import { collectRepositoryStyleFacts } from '../repo-style-check/structural-facts.mjs';
 import { validateCapabilityDeclarations } from './capability-declarations.mjs';
@@ -31,48 +32,37 @@ import {
 } from './structural-dispositions.mjs';
 
 export function resolveRepositoryStructureBase(repoRoot) {
-  const activePlans = readValidatedStructurePlans(repoRoot);
-  if (activePlans.length === 0) {
-    return 'origin/main';
-  }
-  return requireSingleActivePlan(activePlans).record.facts.diffBase;
+  const activePlans = readValidatedStructureCatalog(repoRoot).activePlans;
+  const bases = new Set(activePlans.map(({ record }) => record.facts.diffBase));
+  return bases.size === 1 ? [...bases][0] : 'origin/main';
 }
 
 export function checkRepositoryStructure(input) {
-  const activePlans = readValidatedStructurePlans(input.repoRoot);
+  const catalog = readStructureCatalog(input.repoRoot);
+  const activePlans = catalog.activePlans;
+  const authenticatedChanges = authenticatePlanTransitions(input);
+  if (catalog.issues.length > 0) {
+    const recovery = evaluateAdaptivePlanCatalogRecovery({
+      baseCatalog: readAdaptivePlanCatalogAtRevision(input.repoRoot, input.base),
+      candidateCatalog: catalog,
+      authenticatedDisposition: authenticatedChanges.authenticatedDispositions.length > 0,
+      changedPaths: readChangedPaths(input.repoRoot, input.base)
+        .flatMap((change) => [change.oldPath, change.path])
+        .filter(Boolean),
+    });
+    if (recovery.allowed) {
+      return { mergeBase: input.base, findings: [] };
+    }
+    throw new Error([...catalog.issues, ...recovery.issues].join('; '));
+  }
   if (activePlans.length === 0) {
-    return checkAuthenticatedLastPlanCloseout(input);
+    const repository = readRepositoryFiles(input.repoRoot, input.base);
+    return { mergeBase: repository.mergeBase, findings: [] };
   }
-  const activePlan = requireSingleActivePlan(activePlans);
-  if (input.base !== activePlan.record.facts.diffBase) {
-    throw new Error('repository structure base must match the active plan diffBase');
-  }
-  const repository = readRepositoryFiles(input.repoRoot, input.base);
-  const plannedRoots = activePlan.record.capabilities
+  const plannedRoots = activePlans
+    .flatMap(({ record }) => record.capabilities)
     .filter(isPlannedCapability)
     .flatMap(toPlannedCapabilityRoots);
-  const capabilityFindings = collectCapabilityFindings(input.repoRoot, activePlan, repository);
-  if (capabilityFindings.length > 0) {
-    return {
-      mergeBase: repository.mergeBase,
-      findings: capabilityFindings.toSorted(compareFindings),
-    };
-  }
-  const affectedCodeDigest = computeAffectedCodeDigest({
-    repoRoot: input.repoRoot,
-    changes: readChangedPaths(input.repoRoot, input.base),
-    record: activePlan.record,
-  });
-  const targetFiles = repository.targetFiles.filter(
-    (file) => !isUnderPlannedRoot(file, plannedRoots),
-  );
-  const baseFiles = repository.baseFiles.filter((file) => !isUnderPlannedRoot(file, plannedRoots));
-  const changes = repository.changes.flatMap((change) =>
-    toActiveEndpointChanges(change, plannedRoots),
-  );
-  const plannedSurfaceRepository = { ...repository, baseFiles, changes, targetFiles };
-  const targetDirectories = toCodeDirectories(targetFiles);
-  const baseDirectories = toCodeDirectories(baseFiles);
   const exceptionRegistry = readStructureExceptions(input.repoRoot);
   const findings = [
     ...exceptionRegistry.issues.map((message) => ({
@@ -80,44 +70,86 @@ export function checkRepositoryStructure(input) {
       ruleId: 'exception.invalid',
       message,
     })),
-    ...capabilityFindings,
-    ...collectSingletonFindings({
-      repository: plannedSurfaceRepository,
-      targetDirectories,
-      baseDirectories,
-      exceptions: exceptionRegistry.exceptions,
-    }),
-    ...collectRedundantChainFindings(targetDirectories, baseDirectories),
-    ...collectDispositionFindings({
-      repoRoot: input.repoRoot,
-      repository: plannedSurfaceRepository,
-      activePlan,
-      affectedCodeDigest,
-    }),
   ];
+  const mergeBases = new Set();
+  for (const [planIndex, activePlan] of activePlans.entries()) {
+    const base = activePlan.record.facts.diffBase;
+    const repository = readRepositoryFiles(input.repoRoot, base);
+    mergeBases.add(repository.mergeBase);
+    const factChanges = selectPlanChanges({
+      changes: readChangedPaths(input.repoRoot, base),
+      catalog,
+      planPath: activePlan.planPath,
+    });
+    const capabilityFindings = collectCapabilityFindings(input.repoRoot, activePlan, repository);
+    if (capabilityFindings.length > 0) {
+      findings.push(...capabilityFindings);
+      continue;
+    }
+    const structureChanges =
+      planIndex === 0
+        ? selectPlanChanges({
+            repoRoot: input.repoRoot,
+            base,
+            changes: readChangedPaths(input.repoRoot, base),
+            catalog,
+            planPath: activePlan.planPath,
+            includeUnassigned: 'all',
+          })
+        : factChanges;
+    const changedPaths = new Set(
+      structureChanges.flatMap((change) => [change.oldPath, change.path]).filter(Boolean),
+    );
+    const targetFiles = repository.targetFiles.filter(
+      (file) => !isUnderPlannedRoot(file, plannedRoots),
+    );
+    const baseFiles = repository.baseFiles.filter(
+      (file) => !isUnderPlannedRoot(file, plannedRoots),
+    );
+    const changes = repository.changes
+      .filter((change) =>
+        [change.source, change.target].filter(Boolean).some((file) => changedPaths.has(file)),
+      )
+      .flatMap((change) => toActiveEndpointChanges(change, plannedRoots));
+    const scopedRepository = { ...repository, baseFiles, changes, targetFiles };
+    const targetDirectories = toCodeDirectories(targetFiles);
+    const baseDirectories = toCodeDirectories(baseFiles);
+    const affectedCodeDigest = computeAffectedCodeDigest({
+      repoRoot: input.repoRoot,
+      changes: factChanges,
+      record: activePlan.record,
+    });
+    findings.push(
+      ...collectSingletonFindings({
+        repository: scopedRepository,
+        targetDirectories,
+        baseDirectories,
+        exceptions: exceptionRegistry.exceptions,
+      }),
+      ...collectRedundantChainFindings(targetDirectories, baseDirectories),
+      ...collectDispositionFindings({
+        repoRoot: input.repoRoot,
+        repository: scopedRepository,
+        activePlan,
+        affectedCodeDigest,
+      }),
+    );
+  }
 
   return {
-    mergeBase: repository.mergeBase,
-    findings: findings.toSorted(compareFindings),
+    mergeBase: mergeBases.size === 1 ? [...mergeBases][0] : 'plan-scoped',
+    findings: uniqueFindings(findings).toSorted(compareFindings),
   };
 }
 
 export function readRepositoryNavigationEvidence(input) {
-  const context = readNavigationStructurePlan(input.repoRoot);
-  const { activePlan, base } = context;
-  const changes = readChangedPaths(input.repoRoot, base);
-  if (
-    !context.isCloseout &&
-    !hasCurrentPlanFacts({
-      repoRoot: input.repoRoot,
-      base,
-      changes,
-      record: activePlan.record,
-      planPath: activePlan.planPath,
-    })
-  ) {
-    throw new Error(`${activePlan.planPath} computed facts are stale`);
-  }
+  const context = readNavigationStructurePlan(input.repoRoot, input.owner, input.planPath);
+  const { activePlan, base, catalog } = context;
+  const changes = selectPlanChanges({
+    changes: readChangedPaths(input.repoRoot, base),
+    catalog,
+    planPath: activePlan.planPath,
+  });
   const repository = readRepositoryFiles(input.repoRoot, base);
   const packageJson = JSON.parse(
     readSafeRepositoryFile(input.repoRoot, 'package.json', input.fileOperations),
@@ -137,6 +169,17 @@ export function readRepositoryNavigationEvidence(input) {
         declarationIssues.sort().join('; '),
     );
   }
+  if (
+    !hasCurrentPlanFacts({
+      repoRoot: input.repoRoot,
+      base,
+      changes,
+      record: activePlan.record,
+      planPath: activePlan.planPath,
+    })
+  ) {
+    throw new Error(`${activePlan.planPath} computed facts are stale`);
+  }
   const capability = selectNavigationCapability(activePlan.record.capabilities, input.owner);
   const evidence = createRepositoryNavigationEvidence({
     repoRoot: input.repoRoot,
@@ -147,10 +190,12 @@ export function readRepositoryNavigationEvidence(input) {
     fileOperations: input.fileOperations,
   });
   input.afterEvidenceComposed?.();
-  const finalChanges = readChangedPaths(input.repoRoot, base);
-  if (context.isCloseout) {
-    readAuthenticatedLastPlanCloseout({ repoRoot: input.repoRoot, base });
-  } else if (
+  const finalChanges = selectPlanChanges({
+    changes: readChangedPaths(input.repoRoot, base),
+    catalog,
+    planPath: activePlan.planPath,
+  });
+  if (
     !hasCurrentPlanFacts({
       repoRoot: input.repoRoot,
       base,
@@ -299,86 +344,73 @@ function toActiveEndpointChanges(change, plannedRoots) {
   return [change];
 }
 
-function readNavigationStructurePlan(repoRoot) {
-  const activePlans = readValidatedStructurePlans(repoRoot);
-  if (activePlans.length > 0) {
-    const activePlan = requireSingleActivePlan(activePlans);
-    return { activePlan, base: activePlan.record.facts.diffBase, isCloseout: false };
+function readNavigationStructurePlan(repoRoot, owner, requestedPlanPath) {
+  const catalog = readValidatedStructureCatalog(repoRoot);
+  const candidates = catalog.activePlans.filter(
+    (plan) =>
+      (requestedPlanPath === undefined || plan.planPath === requestedPlanPath) &&
+      plan.record.capabilities.some(
+        (capability) =>
+          !isPlannedCapability(capability) &&
+          capability.kind !== 'guidance' &&
+          capability.owner === owner,
+      ),
+  );
+  if (candidates.length === 0) {
+    throw new Error(`navigation evidence owner ${owner} is not owned by an active plan`);
   }
-  const base = 'origin/main';
-  return {
-    activePlan: readAuthenticatedLastPlanCloseout({ repoRoot, base }),
-    base,
-    isCloseout: true,
-  };
+  if (candidates.length > 1) {
+    throw new Error(`navigation evidence owner ${owner} is ambiguous; supply --plan`);
+  }
+  const activePlan = candidates[0];
+  return { activePlan, base: activePlan.record.facts.diffBase, catalog };
 }
 
-function readValidatedStructurePlans(repoRoot) {
-  const plans = readAdaptivePlans(repoRoot);
-  const schemaIssues = plans.flatMap(({ planPath, record }) =>
+function readValidatedStructureCatalog(repoRoot) {
+  const catalog = readStructureCatalog(repoRoot);
+  if (catalog.issues.length > 0) throw new Error(catalog.issues.join('; '));
+  return catalog;
+}
+
+function readStructureCatalog(repoRoot) {
+  const catalog = readAdaptivePlanCatalog(repoRoot);
+  const schemaIssues = catalog.plans.flatMap(({ planPath, record }) =>
     validateAdaptivePlanRecord(record).map((issue) => `${planPath}: ${issue}`),
   );
-  if (schemaIssues.length > 0) {
+  if (schemaIssues.length > 0)
     throw new Error(`invalid adaptive plan record: ${schemaIssues.join('; ')}`);
-  }
-  return plans.filter(({ record }) => record.status === 'active');
+  return catalog;
 }
 
-function requireSingleActivePlan(activePlans) {
-  if (activePlans.length !== 1) {
-    throw new Error('repository structure requires exactly one active plan');
-  }
-  return activePlans[0];
-}
-
-function checkAuthenticatedLastPlanCloseout(input) {
-  readAuthenticatedLastPlanCloseout({ ...input, requireReadablePlan: false });
-  const repository = readRepositoryFiles(input.repoRoot, input.base);
-  return { mergeBase: repository.mergeBase, findings: [] };
-}
-
-function readAuthenticatedLastPlanCloseout(input) {
+function authenticatePlanTransitions(input) {
   const changes = readChangedPaths(input.repoRoot, input.base);
+  if (!changes.some((change) => /^plans\/.+\.md$/u.test(change.path))) {
+    return { authenticatedDispositions: [], changes, issues: [] };
+  }
   const closure = readAuthenticatedPlanTransitionChanges({
     repoRoot: input.repoRoot,
     base: input.base,
     changes,
     readDecisionAdmissionEvidence: input.readDecisionAdmissionEvidence,
   });
-  const authenticatedPathCount = changes.length - closure.changes.length;
-  const registryChange = closure.changes.length === 1 ? closure.changes[0] : undefined;
-  const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
-  const registryIsCurrent =
-    readFileSync(registryPath, 'utf8') === toActivePlanRegistry([]) &&
-    (closure.changes.length === 0 ||
-      (registryChange?.path === 'plans/README.md' && registryChange.status.startsWith('M')));
-  const authenticatedTransitionCount =
-    closure.authenticatedDispositions.length > 0
-      ? closure.authenticatedDispositions.length
-      : closure.authenticatedPlans.length;
-  const planProjectionIsValid =
-    closure.authenticatedDispositions.length === 0 ||
-    (closure.authenticatedPlans.length <= 1 &&
-      (closure.authenticatedPlans.length === 0 ||
-        closure.authenticatedPlans[0].planPath === closure.authenticatedDispositions[0]?.planPath));
-  if (
-    closure.issues.length > 0 ||
-    authenticatedTransitionCount !== 1 ||
-    !planProjectionIsValid ||
-    authenticatedPathCount < 2 ||
-    !registryIsCurrent
-  ) {
-    const detail = closure.issues.length > 0 ? `: ${closure.issues.join('; ')}` : '';
-    throw new Error(
-      `repository structure requires exactly one active plan or an authenticated ` +
-        `last-plan close-out${detail}`,
-    );
-  }
-  const authenticatedPlan = closure.authenticatedPlans[0];
-  if (!authenticatedPlan && input.requireReadablePlan !== false) {
-    throw new Error('navigation evidence is unavailable for an unreadable quarantined plan');
-  }
-  return authenticatedPlan;
+  if (closure.issues.length > 0) throw new Error(closure.issues.join('; '));
+  const unauthenticatedDeletion = closure.changes.find(
+    (change) => change.status.startsWith('D') && /^plans\/.+\.md$/u.test(change.path),
+  );
+  if (unauthenticatedDeletion)
+    throw new Error(`${unauthenticatedDeletion.path} close-out is not authenticated`);
+  return closure;
+}
+
+function uniqueFindings(findings) {
+  return [
+    ...new Map(
+      findings.map((finding) => [
+        `${finding.target}\0${finding.ruleId}\0${finding.message}`,
+        finding,
+      ]),
+    ).values(),
+  ];
 }
 
 function readChangedRepositoryStyleFacts(repoRoot, repository) {

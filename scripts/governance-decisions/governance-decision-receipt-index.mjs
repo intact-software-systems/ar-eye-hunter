@@ -78,6 +78,10 @@ export function readTrustedGovernanceDecisionIndex(input) {
       const entryPath = entry.path;
       try {
         const receiptEvidence = readTrustedReceiptEvidence(input, entryPath);
+        const receipt = decodeGovernanceDecisionReceipt(receiptEvidence.content);
+        if (receipt.request.operation.startsWith('plan.')) {
+          return [];
+        }
         if (!trustedMainCommitSet.has(receiptEvidence.commitOid)) {
           throw new Error('adding commit is not on the trusted main first-parent lineage');
         }

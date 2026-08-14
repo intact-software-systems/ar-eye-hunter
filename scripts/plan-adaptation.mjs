@@ -6,9 +6,26 @@ import {
   closeAdaptivePlan,
   completeAdaptivePlanSlice,
   initAdaptivePlan,
+  postponeAdaptivePlan,
   prepareAdaptivePlan,
+  resumeAdaptivePlan,
 } from './plan-adaptation/plan-adaptation-lifecycle.mjs';
-import { readActivePlans } from './plan-adaptation/active-plan-registry.mjs';
+import {
+  readAdaptivePlanCatalog,
+  writeAdaptivePlanOverview,
+} from './plan-adaptation/adaptive-plan-catalog.mjs';
+
+const commandHandlers = {
+  apply: applyAdaptivePlan,
+  check: checkAdaptivePlans,
+  close: closeAdaptivePlan,
+  'complete-slice': completeAdaptivePlanSlice,
+  init: initAdaptivePlan,
+  overview: ({ repoRoot }) => writeAdaptivePlanOverview(repoRoot),
+  postpone: postponeAdaptivePlan,
+  prepare: prepareAdaptivePlan,
+  resume: resumeAdaptivePlan,
+};
 
 try {
   const input = readCommand(process.argv.slice(2));
@@ -19,47 +36,38 @@ try {
 }
 
 function runCommand(input) {
-  if (input.command === 'init') {
-    initAdaptivePlan(input);
-  } else if (input.command === 'complete-slice') {
-    completeAdaptivePlanSlice(input);
-  } else if (input.command === 'prepare') {
-    const draftPath = prepareAdaptivePlan(input);
-    console.log(`PASS: prepared ${draftPath}`);
-    return;
-  } else if (input.command === 'apply') {
-    applyAdaptivePlan(input);
-  } else if (input.command === 'check') {
-    checkAdaptivePlans(input);
-  } else if (input.command === 'close') {
-    closeAdaptivePlan(input);
-  }
-  console.log(`PASS: plan adaptation ${input.command}`);
+  const result = commandHandlers[input.command](input);
+  console.log(
+    input.command === 'prepare'
+      ? `PASS: prepared ${result}`
+      : `PASS: plan adaptation ${input.command}`,
+  );
 }
 
 function readCommand(args) {
   const command = args[0];
-  const commands = new Set(['init', 'complete-slice', 'prepare', 'apply', 'check', 'close']);
-  if (!commands.has(command)) {
-    throw new Error('expected command init, complete-slice, prepare, apply, check, or close');
+  if (!Object.hasOwn(commandHandlers, command)) {
+    throw new Error(
+      'expected command init, complete-slice, prepare, apply, check, close, overview, ' +
+        'postpone, or resume',
+    );
   }
   const options = readOptions(args.slice(1), allowedOptions(command));
-  const activePlan = readSingleActivePlan();
+  const selectedPlan = readSelectedPlan(command, options.plan);
   const base =
     options.base ??
     process.env.PLAN_ADAPTATION_BASE ??
-    activePlan?.record.facts?.diffBase ??
+    selectedPlan?.record.facts?.diffBase ??
     'origin/main';
-  const planPath = options.plan ?? process.env.PLAN_ADAPTATION_PLAN ?? activePlan?.planPath;
-  if (command !== 'check' && !planPath) {
-    throw new Error('no single active adaptive plan was found; supply --plan');
-  }
-  if (command === 'complete-slice' && !options.slice) {
+  const planPath = options.plan ?? process.env.PLAN_ADAPTATION_PLAN ?? selectedPlan?.planPath;
+  if (!['check', 'overview'].includes(command) && !planPath)
+    throw new Error('no single eligible adaptive plan was found; supply --plan');
+  if (command === 'complete-slice' && !options.slice)
     throw new Error('complete-slice requires --slice');
-  }
-  if (command === 'close' && !options['final-pr-evidence']) {
+  if (command === 'close' && !options['final-pr-evidence'])
     throw new Error('close requires --final-pr-evidence');
-  }
+  if (['postpone', 'resume'].includes(command) && !options.reason?.trim())
+    throw new Error(`${command} requires --reason`);
   return {
     command,
     repoRoot: process.cwd(),
@@ -67,25 +75,24 @@ function readCommand(args) {
     base,
     slice: options.slice,
     finalPrEvidence: options['final-pr-evidence'],
+    reason: options.reason,
   };
 }
 
-function readSingleActivePlan() {
-  const activePlans = readActivePlans(process.cwd());
-  if (activePlans.length === 1) {
-    return activePlans[0];
-  }
-  return undefined;
+function readSelectedPlan(command, explicitPlanPath) {
+  if (command === 'overview' || explicitPlanPath !== undefined) return undefined;
+  const catalog = readAdaptivePlanCatalog(process.cwd());
+  const collection = { close: 'plans', resume: 'postponedPlans' }[command] ?? 'activePlans';
+  const eligible = catalog[collection];
+  return eligible.length === 1 ? eligible[0] : undefined;
 }
 
 function allowedOptions(command) {
   const allowed = new Set(['base', 'plan']);
-  if (command === 'complete-slice') {
-    allowed.add('slice');
-  }
-  if (command === 'close') {
-    allowed.add('final-pr-evidence');
-  }
+  if (command === 'complete-slice') allowed.add('slice');
+  if (command === 'close') allowed.add('final-pr-evidence');
+  if (command === 'postpone' || command === 'resume') allowed.add('reason');
+  if (command === 'overview') return new Set();
   return allowed;
 }
 
