@@ -292,7 +292,7 @@ describe('repository structure command safety', () => {
     expect(dirtyCandidateResult.stdout).toContain(
       'trusted GitHub review does not cover dirty candidate paths',
     );
-  });
+  }, 15_000);
 
   it('enforces active-plan declaration reality through the command boundary', () => {
     const fixture = createRepositoryFixture();

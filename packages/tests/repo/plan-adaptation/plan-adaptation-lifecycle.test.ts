@@ -267,7 +267,7 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(draft.record.facts.undeclaredChangedPaths).not.toContain(
       'packages/tests/repo/navigation/contract.test.ts',
     );
-  });
+  }, 15_000);
 
   it('runs init, complete-slice, prepare, apply, check, and close through real files', () => {
     const fixture = createLifecycleRepository();

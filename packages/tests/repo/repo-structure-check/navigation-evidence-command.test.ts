@@ -219,7 +219,7 @@ describe('repository navigation evidence command', () => {
         affectedCodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
       });
     }
-  });
+  }, 15_000);
 
   it('reuses an executable stored scenario command for the microtest target', () => {
     const microtest = JSON.parse(

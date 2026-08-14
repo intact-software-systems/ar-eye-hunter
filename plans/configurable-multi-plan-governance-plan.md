@@ -150,7 +150,7 @@ single-plan logic before adding new modules.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "ffc2f9a76a942d8c335d5d621a0e6c498ca42ebb",
-    "affectedCodeDigest": "69be76f9cb6724962b9f87f56ef7fd324c869646b5045c53a97a0ce29c6a28cb",
+    "affectedCodeDigest": "afd6defac98eb09f3aa1279531f8151eec3f82e3fdc0483630d001857bbdcbd6",
     "computedTriggers": [
       "ownership-change",
       "lifecycle-change"
@@ -158,9 +158,9 @@ single-plan logic before adding new modules.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The implementation and organizing-repository-structure evaluation contract are aligned with the catalog terminal, with no undeclared qualifying paths.",
-    "learning": "Aggregate package crossing should attribute unowned production modules, not sweep modified test contracts or evaluation metadata into mutable plan scope.",
-    "structure": "Keep qualification attribution in plan-change-facts and retain evaluation contracts beside their existing organizing-repository-structure owner.",
+    "outcome": "The complete governance implementation and its subprocess-heavy integration scenarios are ready for the broad acceptance matrix.",
+    "learning": "Multi-plan and authenticated-history integration scenarios need explicit test budgets under the full parallel Vitest workload even when they are fast in focused runs.",
+    "structure": "Keep the real CLI integration coverage and assign longer budgets only to the three affected subprocess-heavy scenarios.",
     "decision": "continue",
     "nextSlices": []
   },
@@ -216,6 +216,11 @@ single-plan logic before adding new modules.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "The implementation and organizing-repository-structure evaluation contract are aligned with the catalog terminal, with no undeclared qualifying paths."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The complete governance implementation and its subprocess-heavy integration scenarios are ready for the broad acceptance matrix."
     }
   ]
 }
