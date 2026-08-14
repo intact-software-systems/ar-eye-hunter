@@ -1,9 +1,3 @@
-import {
-  isSafeRepositoryPath,
-  parseAdaptivePlanRecord,
-  validateAdaptivePlanRecord,
-} from '../plan-adaptation/adaptive-plan-record.mjs';
-
 const ordinaryStatusPattern = /^[ABDMRTXU]$/u;
 const copyOrRenameStatusPattern = /^[CR][0-9]{1,3}$/u;
 
@@ -50,13 +44,11 @@ export function classifyDistributedValidationRisk(input) {
       reason: 'Distributed validation selected: workflow_dispatch operator override.',
       riskFamilies: [],
       riskPaths: [],
-      planRequirements: [],
     };
   }
 
   const changedPathIssues = validateChangedPathRecords(input.changedPathRecords);
-  const planSelection = readPlanRequirements(input.planDocuments);
-  const issues = [...(input.changedPathIssues ?? []), ...changedPathIssues, ...planSelection.issues]
+  const issues = [...(input.changedPathIssues ?? []), ...changedPathIssues]
     .filter((issue) => typeof issue === 'string' && issue.trim() !== '')
     .sort();
   if (input.eventName !== 'push') {
@@ -67,7 +59,7 @@ export function classifyDistributedValidationRisk(input) {
   }
 
   const pathSelection = classifyRiskPaths(input.changedPathRecords);
-  return createSelection(pathSelection, planSelection.requirements);
+  return createSelection(pathSelection);
 }
 
 export function decodeGitChangedPathRecords(rawRecords) {
@@ -151,42 +143,6 @@ function validateChangedPathRecords(records) {
   return issues;
 }
 
-function readPlanRequirements(planDocuments) {
-  if (!Array.isArray(planDocuments)) {
-    return { requirements: [], issues: ['plan documents must be an array'] };
-  }
-  const requirements = [];
-  const issues = [];
-  for (const document of planDocuments) {
-    if (!isRecord(document) || !isSafeRepositoryPath(document.path)) {
-      issues.push('adaptive plan path must be repository-relative');
-      continue;
-    }
-    if (typeof document.markdown !== 'string') {
-      issues.push(`${document.path} adaptive plan Markdown must be a string`);
-      continue;
-    }
-    try {
-      const record = parseAdaptivePlanRecord(document.markdown, document.path);
-      issues.push(
-        ...validateAdaptivePlanRecord(record).map((issue) => `${document.path}: ${issue}`),
-      );
-      if (record.status === 'active' && record.distributedValidation !== undefined) {
-        requirements.push({
-          planId: record.planId,
-          reason: record.distributedValidation.reason,
-        });
-      }
-    } catch (error) {
-      issues.push(`${document.path}: ${toError(error).message}`);
-    }
-  }
-  return {
-    requirements: requirements.sort((left, right) => left.planId.localeCompare(right.planId)),
-    issues,
-  };
-}
-
 function classifyRiskPaths(changedPathRecords) {
   const familyNames = new Set();
   const paths = new Set();
@@ -206,42 +162,23 @@ function classifyRiskPaths(changedPathRecords) {
   };
 }
 
-function createSelection(pathSelection, planRequirements) {
-  const hasPathRisk = pathSelection.families.length > 0;
-  const hasPlanRequirement = planRequirements.length > 0;
-  if (!hasPathRisk && !hasPlanRequirement) {
+function createSelection(pathSelection) {
+  if (pathSelection.families.length === 0) {
     return {
       selected: false,
       reasonCode: 'no-distributed-risk',
-      reason: 'Distributed validation not selected: no distributed-risk paths or plan requirement.',
+      reason: 'Distributed validation not selected: no distributed-risk paths.',
       riskFamilies: [],
       riskPaths: [],
-      planRequirements: [],
     };
   }
 
-  const reasonCode =
-    hasPathRisk && hasPlanRequirement
-      ? 'path-risk-and-plan-requirement'
-      : hasPathRisk
-        ? 'path-risk'
-        : 'plan-requirement';
-  const reasonParts = [];
-  if (hasPathRisk) {
-    reasonParts.push(`path risk (${pathSelection.families.join(', ')})`);
-  }
-  if (hasPlanRequirement) {
-    reasonParts.push(
-      `active plan requirement (${planRequirements.map((item) => item.planId).join(', ')})`,
-    );
-  }
   return {
     selected: true,
-    reasonCode,
-    reason: `Distributed validation selected: ${reasonParts.join(' and ')}.`,
+    reasonCode: 'path-risk',
+    reason: `Distributed validation selected: path risk (${pathSelection.families.join(', ')}).`,
     riskFamilies: pathSelection.families,
     riskPaths: pathSelection.paths,
-    planRequirements,
   };
 }
 
@@ -253,7 +190,6 @@ function invalidInputSelection(issues) {
     reason: `Distributed validation selected fail-closed: ${uniqueIssues.join('; ')}.`,
     riskFamilies: [],
     riskPaths: [],
-    planRequirements: [],
   };
 }
 
@@ -347,10 +283,17 @@ function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function toSingleLine(value) {
-  return value.replace(/[\u0000-\u001f\u007f]+/gu, ' ').trim();
+function isSafeRepositoryPath(value) {
+  if (typeof value !== 'string' || value === '' || value.includes('\\') || value.includes('\0')) {
+    return false;
+  }
+  return (
+    !value.startsWith('/') &&
+    !value.endsWith('/') &&
+    value.split('/').every((part) => part !== '' && part !== '.' && part !== '..')
+  );
 }
 
-function toError(value) {
-  return value instanceof Error ? value : new Error(String(value));
+function toSingleLine(value) {
+  return value.replace(/[\u0000-\u001f\u007f]+/gu, ' ').trim();
 }

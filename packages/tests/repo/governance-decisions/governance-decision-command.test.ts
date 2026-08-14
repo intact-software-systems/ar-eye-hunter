@@ -1,5 +1,4 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -8,10 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { computeSha256 } from '../../../../scripts/governance-decisions/canonical-json.mjs';
 import { decodeGovernanceDecisionCommand } from '../../../../scripts/governance-decisions/governance-decision-command.mjs';
-import {
-  createGovernanceDecisionFixturePlanRecord,
-  toGovernanceDecisionFixturePlanMarkdown,
-} from './governance-decision-fixture';
+import { toGovernanceDecisionFixturePlanMarkdown } from './governance-decision-fixture';
 
 const fixtureRoots: string[] = [];
 const commandPath = path.resolve('scripts/governance-decisions.mjs');
@@ -23,7 +19,7 @@ afterEach(() => {
 });
 
 describe('governance decision command', () => {
-  it('decodes all five public command names with exact options', () => {
+  it('decodes the four current command names with exact options', () => {
     expect(
       decodeGovernanceDecisionCommand(['preview', '--request', 'request.json', '--repo', '/repo']),
     ).toEqual({ command: 'preview', requestPath: 'request.json', repoRoot: '/repo' });
@@ -45,11 +41,6 @@ describe('governance decision command', () => {
       requestPath: 'request.json',
       repoRoot: process.cwd(),
     });
-    expect(decodeGovernanceDecisionCommand(['publish-blob', '--file', 'plan.md'])).toEqual({
-      command: 'publish-blob',
-      path: 'plan.md',
-      repoRoot: process.cwd(),
-    });
     expect(
       decodeGovernanceDecisionCommand(['publish-request', '--request', 'request.json']),
     ).toEqual({
@@ -62,7 +53,7 @@ describe('governance decision command', () => {
     );
   });
 
-  it('previews a deterministic local transition without mutating the repository', () => {
+  it('rejects active plan mutations while historical verification remains available', () => {
     const fixture = createRepositoryFixture();
     const planContent = readFileSync(path.join(fixture.root, fixture.planPath));
     const requestPath = path.join(fixture.root, 'request.json');
@@ -80,107 +71,15 @@ describe('governance decision command', () => {
         payload: {},
       }),
     );
-    const beforeStatus = runGit(fixture.root, ['status', '--short']);
-
     const preview = spawnSync(
       process.execPath,
       [commandPath, 'preview', '--request', requestPath, '--repo', fixture.root],
       { encoding: 'utf8' },
     );
 
-    expect(preview.status).toBe(0);
-    const transition = JSON.parse(preview.stdout);
-    expect(transition.result).toEqual({ acceptanceStatus: 'not-achieved' });
-    expect(transition.deletions).toEqual([fixture.planPath]);
-    expect(runGit(fixture.root, ['status', '--short'])).toBe(beforeStatus);
+    expect(preview.status).toBe(1);
+    expect(preview.stderr).toContain('active plan governance operations are retired');
   });
-
-  it.each([
-    ['preview', 'local'],
-    ['preview', 'workflow'],
-    ['apply', 'local'],
-    ['apply', 'workflow'],
-  ] as const)(
-    'reads a remote-only supersession blob for %s through %s transport',
-    (command, kind) => {
-      const fixture = createRepositoryFixture();
-      const successor = createGovernanceDecisionFixturePlanRecord();
-      successor.planId = 'remote-successor';
-      successor.capabilities[0].activation.slice = 'remote-successor-slice';
-      successor.checkpoint.nextSlices = ['remote-successor-slice'];
-      const successorMarkdown =
-        `# Remote successor\n\n\`\`\`plan-adaptation-v1\n` +
-        `${JSON.stringify(successor, null, 2)}\n\`\`\`\n`;
-      const successorBlobOid = computeGitBlobOid(successorMarkdown);
-      expect(
-        spawnSync('git', ['cat-file', '-e', successorBlobOid], { cwd: fixture.root }).status,
-      ).not.toBe(0);
-
-      const requestRoot = mkdtempSync(path.join(tmpdir(), 'governance-command-request-'));
-      fixtureRoots.push(requestRoot);
-      const requestPath = path.join(requestRoot, 'supersede-request.json');
-      writeFileSync(
-        requestPath,
-        JSON.stringify({
-          schemaVersion: 'governance-decision-request-v1',
-          operation: 'plan.supersede',
-          repository: 'intact-software-systems/ar-eye-hunter',
-          defaultBranch: 'main',
-          expectedHeadOid: fixture.headOid,
-          force: true,
-          reason: 'Transfer the active plan to the immutable remote successor.',
-          target: {
-            planPath: fixture.planPath,
-            planDigest: computeSha256(readFileSync(path.join(fixture.root, fixture.planPath))),
-          },
-          payload: {
-            successorPlanPath: 'plans/remote-successor.md',
-            successorPlanBlobOid: successorBlobOid,
-          },
-        }),
-      );
-      const binRoot = path.join(requestRoot, 'bin');
-      mkdirSync(binRoot);
-      const ghPath = path.join(binRoot, 'gh');
-      writeFileSync(
-        ghPath,
-        fakeGitHubCli({
-          headOid: fixture.headOid,
-          successorBlobOid,
-          successorMarkdown,
-        }),
-      );
-      chmodSync(ghPath, 0o755);
-
-      const preview = spawnSync(
-        process.execPath,
-        [commandPath, command, '--request', requestPath, '--repo', fixture.root],
-        {
-          encoding: 'utf8',
-          env: {
-            ...process.env,
-            PATH: `${binRoot}:${process.env.PATH}`,
-            ...(kind === 'workflow'
-              ? workflowEnvironment(fixture.headOid)
-              : { GITHUB_ACTIONS: 'false' }),
-          },
-        },
-      );
-
-      expect(preview.stderr).toBe('');
-      expect(preview.status).toBe(0);
-      if (command === 'preview') {
-        expect(JSON.parse(preview.stdout)).toMatchObject({
-          result: { acceptanceStatus: 'transferred' },
-          additions: expect.arrayContaining([
-            { path: 'plans/remote-successor.md', content: successorMarkdown },
-          ]),
-        });
-      } else {
-        expect(JSON.parse(preview.stdout)).toEqual({ oid: '9'.repeat(40) });
-      }
-    },
-  );
 
   it('applies a gate deviation with pre-read Actions evidence and a distinct App publisher', () => {
     const fixture = createRepositoryFixture();
@@ -293,11 +192,6 @@ function createRepositoryFixture() {
 
 function runGit(root: string, arguments_: string[]) {
   return execFileSync('git', arguments_, { cwd: root, encoding: 'utf8' });
-}
-
-function computeGitBlobOid(content: string) {
-  const bytes = Buffer.from(content);
-  return createHash('sha1').update(`blob ${bytes.byteLength}\0`).update(bytes).digest('hex');
 }
 
 function fakeGitHubCli(input: {

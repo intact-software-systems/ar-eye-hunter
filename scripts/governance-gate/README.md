@@ -29,9 +29,10 @@ only ordered phase results or bounded phase-specific failure output.
 ## Control-flow families
 
 - [governance-gate-phases.mjs#governanceGatePhases](./governance-gate-phases.mjs#governanceGatePhases)
-  owns the four package-command boundaries. The adaptive-plan and repository-structure checks
-  consume their canonical current facts. Review Record v2 and adaptive governance run their
-  focused deterministic contract suites. Missing or empty commands fail before any phase starts.
+  owns two read-only package-command boundaries: changed repository structure and repository code
+  style. Missing or empty commands fail before any phase starts. Test suites, plan or PR evidence
+  lifecycles, governance mutations, network access, Git mutation, and mutable output paths are
+  rejected as gate phases.
 - [run-governance-gate.mjs#runGovernanceGate](./run-governance-gate.mjs#runGovernanceGate) runs
   those independent read-only phases concurrently so the local path stays bounded by the slowest
   focused suite instead of their sum. It retains output only for a failing phase and limits that

@@ -13,7 +13,6 @@ import {
 import { computeGovernanceDecisionTransition } from '../../../../scripts/governance-decisions/governance-decision-transition.mjs';
 import { readGitRepositorySnapshot } from '../../../../scripts/governance-decisions/git-repository-snapshot.mjs';
 import { parseAdaptivePlanRecord } from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
-import { initAdaptivePlan } from '../../../../scripts/plan-adaptation/plan-adaptation-lifecycle.mjs';
 import { toGovernanceDecisionFixturePlanMarkdown } from './governance-decision-fixture';
 
 const fixtures: string[] = [];
@@ -428,51 +427,6 @@ describe('governance decision transitions', () => {
     expect(() =>
       computeGovernanceDecisionTransition({ request, snapshot: receiptSnapshot }),
     ).toThrow('decision receipt path already exists');
-  });
-
-  it('leaves a disposed repository ready for ordinary plan initialization', () => {
-    const fixture = createRepositoryFixture();
-    const predecessorMarkdown = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
-    const snapshot = readGitRepositorySnapshot({
-      repoRoot: fixture.root,
-      commitOid: fixture.headOid,
-    });
-    const transition = computeGovernanceDecisionTransition({
-      request: dispositionRequest(fixture, 'plan.cancel'),
-      snapshot,
-    });
-    for (const deletion of transition.deletions) {
-      rmSync(path.join(fixture.root, deletion));
-    }
-    for (const addition of transition.additions) {
-      writeFileSync(path.join(fixture.root, addition.path), addition.content);
-    }
-    execFileSync('git', ['add', '-A'], { cwd: fixture.root });
-    execFileSync('git', ['commit', '-q', '-m', 'dispose plan'], { cwd: fixture.root });
-    const dispositionHead = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: fixture.root,
-      encoding: 'utf8',
-    }).trim();
-    const successorPath = 'plans/new-plan.md';
-    const successor = parseAdaptivePlanRecord(predecessorMarkdown, fixture.planPath);
-    successor.planId = 'new-plan';
-    writeFileSync(path.join(fixture.root, successorPath), toPlanMarkdown(successor));
-
-    initAdaptivePlan({
-      repoRoot: fixture.root,
-      base: dispositionHead,
-      planPath: successorPath,
-    });
-
-    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(
-      '# Adaptive plans\n\nStatic navigation.\n',
-    );
-    expect(
-      parseAdaptivePlanRecord(
-        readFileSync(path.join(fixture.root, successorPath), 'utf8'),
-        successorPath,
-      ).facts.diffBase,
-    ).toBe(dispositionHead);
   });
 
   it('never bypasses plan schema defects outside domain checkpoint policy', () => {

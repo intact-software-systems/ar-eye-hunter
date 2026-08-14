@@ -4,14 +4,6 @@ import {
   classifyDistributedValidationRisk,
   decodeGitChangedPathRecords,
 } from '../../../../scripts/distributed-validation-risk/distributed-validation-risk.mjs';
-import {
-  parseAdaptivePlanRecord,
-  replaceAdaptivePlanRecord,
-  validateAdaptivePlanRecord,
-} from '../../../../scripts/plan-adaptation/adaptive-plan-record.mjs';
-
-const activePlanPath = 'plans/distributed-validation-fixture.md';
-const activePlanMarkdown = createActivePlanMarkdown();
 
 describe('distributed validation risk classification', () => {
   it.each([
@@ -199,7 +191,6 @@ describe('distributed validation risk classification', () => {
     const result = classifyDistributedValidationRisk({
       eventName: 'push',
       changedPathRecords: [{ status: 'M', paths: [changedPath] }],
-      planDocuments: [],
     });
 
     expect(result).toMatchObject({
@@ -221,16 +212,14 @@ describe('distributed validation risk classification', () => {
     const result = classifyDistributedValidationRisk({
       eventName: 'push',
       changedPathRecords: [{ status: 'M', paths: [changedPath] }],
-      planDocuments: [],
     });
 
     expect(result).toEqual({
       selected: false,
       reasonCode: 'no-distributed-risk',
-      reason: 'Distributed validation not selected: no distributed-risk paths or plan requirement.',
+      reason: 'Distributed validation not selected: no distributed-risk paths.',
       riskFamilies: [],
       riskPaths: [],
-      planRequirements: [],
     });
   });
 
@@ -246,7 +235,6 @@ describe('distributed validation risk classification', () => {
           ],
         },
       ],
-      planDocuments: [],
     });
     const movedIn = classifyDistributedValidationRisk({
       eventName: 'push',
@@ -259,7 +247,6 @@ describe('distributed validation risk classification', () => {
           ],
         },
       ],
-      planDocuments: [],
     });
 
     expect(movedOut.riskPaths).toContain('apps/rallar-black-box-headless/src/main.ts');
@@ -274,7 +261,6 @@ describe('distributed validation risk classification', () => {
       changedPathRecords: [
         { status: 'D', paths: ['scripts/hetzner/controller/08-rollout-controller.sh'] },
       ],
-      planDocuments: [],
     });
     const copied = classifyDistributedValidationRisk({
       eventName: 'push',
@@ -287,7 +273,6 @@ describe('distributed validation risk classification', () => {
           ],
         },
       ],
-      planDocuments: [],
     });
 
     expect(deleted.riskPaths).toEqual(['scripts/hetzner/controller/08-rollout-controller.sh']);
@@ -327,75 +312,20 @@ describe('distributed validation risk classification', () => {
     const result = classifyDistributedValidationRisk({
       eventName: 'push',
       changedPathRecords: [{ status: input.status, paths: input.paths }],
-      planDocuments: [],
     });
 
     expect(result.selected).toBe(true);
     expect(result.riskPaths).toContain(input.expectedPath);
   });
 
-  it('selects explicit structured active-plan acceptance', () => {
-    const record = parseAdaptivePlanRecord(activePlanMarkdown);
-    record.distributedValidation = {
-      required: true,
-      reason: 'The acceptance proof requires the supported remote matrix.',
-    };
-    const planMarkdown = replaceAdaptivePlanRecord(activePlanMarkdown, record);
-
+  it('keeps a path with no distributed risk cheap without consulting plans', () => {
     const result = classifyDistributedValidationRisk({
       eventName: 'push',
       changedPathRecords: [{ status: 'M', paths: ['docs/operator-guide.md'] }],
-      planDocuments: [{ path: activePlanPath, markdown: planMarkdown }],
-    });
-
-    expect(result).toMatchObject({
-      selected: true,
-      reasonCode: 'plan-requirement',
-      planRequirements: [
-        {
-          planId: 'distributed-validation-fixture',
-          reason: 'The acceptance proof requires the supported remote matrix.',
-        },
-      ],
-    });
-  });
-
-  it('treats no active adaptive plan as no explicit requirement', () => {
-    const result = classifyDistributedValidationRisk({
-      eventName: 'push',
-      changedPathRecords: [{ status: 'M', paths: ['docs/operator-guide.md'] }],
-      planDocuments: [],
     });
 
     expect(result.selected).toBe(false);
     expect(result.reasonCode).toBe('no-distributed-risk');
-  });
-
-  it.each([
-    { required: false, reason: 'Attempted waiver.' },
-    { required: true, reason: '' },
-    { required: true, reason: 'Valid reason.', waiver: true },
-  ])('fails closed for malformed plan requirement %#', (distributedValidation) => {
-    const record = parseAdaptivePlanRecord(activePlanMarkdown);
-    record.distributedValidation = distributedValidation;
-
-    const result = classifyDistributedValidationRisk({
-      eventName: 'push',
-      changedPathRecords: [{ status: 'M', paths: ['docs/operator-guide.md'] }],
-      planDocuments: [
-        {
-          path: activePlanPath,
-          markdown: replaceAdaptivePlanRecord(activePlanMarkdown, record),
-        },
-      ],
-    });
-
-    expect(result).toMatchObject({
-      selected: true,
-      reasonCode: 'invalid-input',
-      riskFamilies: [],
-    });
-    expect(result.reason).toContain('fail-closed');
   });
 
   it('keeps a fail-closed reason on one output-safe line', () => {
@@ -406,45 +336,10 @@ describe('distributed validation risk classification', () => {
         { status: 'M', paths: [changedPath] },
         { status: 'D', paths: [changedPath] },
       ],
-      planDocuments: [],
     });
 
     expect(result.reasonCode).toBe('invalid-input');
     expect(result.reason).not.toMatch(/[\r\n]/u);
-  });
-
-  it('combines requirements from multiple active plans and excludes postponed plans', () => {
-    const firstRecord = parseAdaptivePlanRecord(activePlanMarkdown);
-    firstRecord.distributedValidation = { required: true, reason: 'First active requirement.' };
-    const secondRecord = parseAdaptivePlanRecord(activePlanMarkdown);
-    secondRecord.planId = 'second-active-plan';
-    secondRecord.distributedValidation = { required: true, reason: 'Second active requirement.' };
-    const postponedRecord = parseAdaptivePlanRecord(activePlanMarkdown);
-    postponedRecord.planId = 'postponed-plan';
-    postponedRecord.status = 'postponed';
-    postponedRecord.distributedValidation = { required: true, reason: 'Postponed requirement.' };
-    const firstPlan = replaceAdaptivePlanRecord(activePlanMarkdown, firstRecord);
-    const secondPlan = replaceAdaptivePlanRecord(activePlanMarkdown, secondRecord);
-    const postponedPlan = replaceAdaptivePlanRecord(activePlanMarkdown, postponedRecord);
-
-    const result = classifyDistributedValidationRisk({
-      eventName: 'push',
-      changedPathRecords: [{ status: 'M', paths: ['docs/operator-guide.md'] }],
-      planDocuments: [
-        { path: activePlanPath, markdown: firstPlan },
-        { path: 'plans/second-active-plan.md', markdown: secondPlan },
-        { path: 'plans/postponed-plan.md', markdown: postponedPlan },
-      ],
-    });
-
-    expect(result).toMatchObject({
-      selected: true,
-      reasonCode: 'plan-requirement',
-      planRequirements: [
-        { planId: 'distributed-validation-fixture', reason: 'First active requirement.' },
-        { planId: 'second-active-plan', reason: 'Second active requirement.' },
-      ],
-    });
   });
 
   it.each([
@@ -458,18 +353,16 @@ describe('distributed validation risk classification', () => {
     const result = classifyDistributedValidationRisk({
       eventName: 'push',
       changedPathRecords,
-      planDocuments: [],
     });
 
     expect(result).toMatchObject({ selected: true, reasonCode: 'invalid-input' });
     expect(result.reason).toContain('fail-closed');
   });
 
-  it('manual dispatch is an operator override even with malformed other inputs', () => {
+  it('manual dispatch is an operator override even without a comparison range', () => {
     const result = classifyDistributedValidationRisk({
       eventName: 'workflow_dispatch',
       changedPathRecords: [{ status: 'R100', paths: ['old.ts'] }],
-      planDocuments: [{ path: 'plans/broken.md', markdown: '```plan-adaptation-v1\n{' }],
     });
 
     expect(result).toEqual({
@@ -478,42 +371,7 @@ describe('distributed validation risk classification', () => {
       reason: 'Distributed validation selected: workflow_dispatch operator override.',
       riskFamilies: [],
       riskPaths: [],
-      planRequirements: [],
     });
-  });
-});
-
-describe('adaptive plan distributed validation requirement', () => {
-  it('accepts an optional exact positive requirement', () => {
-    const withoutRequirement = parseAdaptivePlanRecord(activePlanMarkdown);
-    const withRequirement = parseAdaptivePlanRecord(activePlanMarkdown);
-    withRequirement.distributedValidation = {
-      required: true,
-      reason: 'The acceptance proof requires the supported remote matrix.',
-    };
-
-    expect(validateAdaptivePlanRecord(withoutRequirement)).toEqual([]);
-    expect(validateAdaptivePlanRecord(withRequirement)).toEqual([]);
-  });
-
-  it.each([
-    {
-      value: { required: false, reason: 'Attempted waiver.' },
-      issue: 'record.distributedValidation.required must be true when present',
-    },
-    {
-      value: { required: true, reason: '' },
-      issue: 'record.distributedValidation.reason must be a non-empty string',
-    },
-    {
-      value: { required: true, reason: 'Valid.', waiver: true },
-      issue: 'record.distributedValidation contains unsupported fields: waiver',
-    },
-  ])('rejects malformed requirement $value', ({ value, issue }) => {
-    const record = parseAdaptivePlanRecord(activePlanMarkdown);
-    record.distributedValidation = value;
-
-    expect(validateAdaptivePlanRecord(record)).toContain(issue);
   });
 });
 
@@ -556,49 +414,3 @@ describe('Git changed-path record decoding', () => {
     });
   });
 });
-
-function createActivePlanMarkdown(): string {
-  const record = {
-    version: 1,
-    planId: 'distributed-validation-fixture',
-    status: 'active',
-    goal: 'Prove distributed validation plan selection.',
-    acceptanceCriteria: ['Distributed validation remains explicit and fail-closed.'],
-    capabilities: [
-      {
-        owner: 'distributed validation fixture',
-        root: 'scripts/distributed-validation-fixture',
-        entry: 'scripts/distributed-validation-fixture.mjs',
-        testRoot: 'packages/tests/repo/distributed-validation-fixture',
-        focusedCommand: 'npm run test:distributed-validation-fixture',
-        navigationMap: null,
-        factContracts: [],
-        controlFlowFamilies: ['fixture selection'],
-      },
-    ],
-    architecture: {
-      currentHypothesis: 'Distributed validation selection needs an explicit fixture.',
-      intendedHypothesis: 'A permanent fixture owns plan-selection tests.',
-      freshInitialReview: { status: 'complete', reviewer: 'fixture', verdict: 'pass' },
-    },
-    completedSlicesSinceCheckpoint: [],
-    facts: {
-      diffBase: 'HEAD',
-      affectedCodeDigest: null,
-      computedTriggers: ['written-plan'],
-      undeclaredChangedPaths: [],
-    },
-    checkpoint: {
-      outcome: 'The fixture is active.',
-      learning: 'The fixture must not depend on a tactical plan file.',
-      structure: 'The test owns its canonical plan record.',
-      decision: 'continue',
-      nextSlices: [],
-    },
-    structuralDispositions: [],
-    freshStructuralReview: null,
-    coldNavigationEvidence: null,
-    materialDecisions: [],
-  };
-  return `# Distributed validation fixture\n\n\`\`\`plan-adaptation-v1\n${JSON.stringify(record, null, 2)}\n\`\`\`\n`;
-}

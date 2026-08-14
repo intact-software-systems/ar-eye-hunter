@@ -31,10 +31,9 @@ describe('distributed validation risk command', () => {
       [
         'selected=false',
         'reason_code=no-distributed-risk',
-        'reason=Distributed validation not selected: no distributed-risk paths or plan requirement.',
+        'reason=Distributed validation not selected: no distributed-risk paths.',
         'risk_families_json=[]',
         'risk_paths_json=[]',
-        'plan_requirements_json=[]',
         '',
       ].join('\n'),
     );
@@ -180,9 +179,7 @@ function createGitFixture(): {
   execFileSync('git', ['init'], { cwd: root });
   execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
   execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: root });
-  mkdirSync(path.join(root, 'plans'), { recursive: true });
   mkdirSync(path.join(root, 'docs'), { recursive: true });
-  writeFileSync(path.join(root, 'plans/README.md'), '# No active adaptive plans\n');
   writeFileSync(path.join(root, 'docs/operator-guide.md'), 'version one\n');
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['commit', '-m', 'base'], { cwd: root });

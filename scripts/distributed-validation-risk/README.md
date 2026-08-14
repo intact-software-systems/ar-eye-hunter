@@ -29,11 +29,11 @@
 [scripts/distributed-validation-risk.mjs#runDistributedValidationRiskCommand](../distributed-validation-risk.mjs#runDistributedValidationRiskCommand)
 is the only command entry. It exposes two direct operations:
 
-- `select` reads the exact Git range and any active adaptive-plan record, then calls
+- `select` reads the exact Git range, then calls
   [distributed-validation-risk.mjs#classifyDistributedValidationRisk](./distributed-validation-risk.mjs#classifyDistributedValidationRisk).
   The pure classifier checks both endpoints of copies and renames, selects known distributed-risk
-  families, honors only a positive structured plan requirement, and selects fail-closed when
-  semantic input is malformed or ambiguous. `workflow_dispatch` is a direct operator override.
+  families, and selects fail-closed when changed-path input is malformed or ambiguous.
+  `workflow_dispatch` is a direct operator override.
 - `conclude` calls
   [distributed-validation-result.mjs#validateDistributedValidationResult](./distributed-validation-result.mjs#validateDistributedValidationResult)
   so an intentional no-risk skip is successful while classifier runtime failures and selected
@@ -55,10 +55,8 @@ is the only command entry. It exposes two direct operations:
   the root is not otherwise treated as distributed risk. The deployment policy explicitly includes
   `.github/workflows/deploy-hetzner-controller.yml` in addition to the supported Hetzner runner
   workflows and controller scripts.
-- Structured plan selection consumes each active record's canonical optional
-  `distributedValidation` contract after the plan catalog has validated it. Postponed plans and an
-  empty active catalog contribute no explicit requirement; a requirement can only add validation
-  and cannot waive path risk.
+- Additional manually selected validation is stated semantically in the pull request and invoked
+  through `workflow_dispatch`; no tracked plan record participates in automatic selection.
 - `.github/workflows/hetzner-supported-distributed-manifests.yml` runs selection first, conditions
   the unchanged shared preparation and supported-manifest runner matrix on that decision, and
   converges both selected and skipped routes through one always-visible result.

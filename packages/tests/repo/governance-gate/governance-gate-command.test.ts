@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { validateGovernanceGateCommands } from '../../../../scripts/governance-gate/governance-gate-phases.mjs';
+
 const repoRoot = path.resolve(__dirname, '../../../..');
 const commandEntry = path.join(repoRoot, 'scripts/governance-gate.mjs');
 const fixtureRoots: string[] = [];
 const requiredPhaseCommands = {
-  'check:plan-adaptation': ['adaptive-plan', 0],
   'check:repo-structure': ['repo-structure', 0],
-  'test:pr-human-review': ['pr-review-v2', 0],
-  'test:adaptive-governance': ['focused-contracts', 0],
+  'check:repo-style': ['repo-style', 0],
 } as const;
 
 afterEach(() => {
@@ -28,42 +28,30 @@ describe('governance gate command', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout.trim().split('\n')).toEqual([
-      'PASS: governance gate adaptive-plan',
       'PASS: governance gate repo-structure',
-      'PASS: governance gate pr-review-v2',
-      'PASS: governance gate focused-contracts',
-      'PASS: governance gate (4 phases)',
+      'PASS: governance gate repo-style',
+      'PASS: governance gate (2 phases)',
     ]);
-    expect(readExecutedPhases(fixtureRoot).sort()).toEqual([
-      'adaptive-plan',
-      'focused-contracts',
-      'pr-review-v2',
-      'repo-structure',
-    ]);
+    expect(readExecutedPhases(fixtureRoot).sort()).toEqual(['repo-structure', 'repo-style']);
   });
 
   it('fails before execution when a canonical package command is missing', () => {
     const fixtureRoot = createFixture({
-      'check:plan-adaptation': ['adaptive-plan', 0],
       'check:repo-structure': ['repo-structure', 0],
-      'test:adaptive-governance': ['focused-contracts', 0],
     });
 
     const result = runCommand(fixtureRoot);
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(
-      'FAIL: governance gate configuration: pr-review-v2: ' +
-        'missing package script test:pr-human-review',
+      'FAIL: governance gate configuration: repo-style: missing package script check:repo-style',
     );
     expect(existsSync(path.join(fixtureRoot, 'executed-phases.txt'))).toBe(false);
   });
 
   it.each([
-    ['adaptive-plan', 'check:plan-adaptation'],
     ['repo-structure', 'check:repo-structure'],
-    ['pr-review-v2', 'test:pr-human-review'],
-    ['focused-contracts', 'test:adaptive-governance'],
+    ['repo-style', 'check:repo-style'],
   ] as const)('attributes a non-zero %s result to its canonical command', (phase, command) => {
     const commands = { ...requiredPhaseCommands, [command]: [phase, 7] as const };
     const fixtureRoot = createFixture(commands);
@@ -74,6 +62,28 @@ describe('governance gate command', () => {
     expect(result.stderr).toContain(`FAIL: governance gate ${phase} (${command})`);
     expect(result.stderr).toContain(`${phase} fixture failure`);
     expect(result.stderr).not.toContain('fixture success');
+  });
+
+  it.each([
+    ['test command', 'test:repo-style', 'vitest run packages/tests/repo'],
+    ['plan lifecycle', 'check:repo-style', 'node scripts/plan-adaptation.mjs check'],
+    ['PR evidence lifecycle', 'check:repo-style', 'node scripts/pr-human-review.mjs'],
+    ['governance mutation', 'check:repo-style', 'npm run governance:decide'],
+    ['GitHub network access', 'check:repo-style', 'gh api repos/example/project'],
+    ['mutable output', 'check:repo-style', 'node scripts/check.mjs --output result.json'],
+  ])('rejects a %s phase before executing anything', (_name, command, script) => {
+    const fixtureRoot = createFixture({
+      [command]: ['repo-style', 0],
+    });
+    const packageJsonPath = path.join(fixtureRoot, 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    packageJson.scripts[command] = script;
+    writeFileSync(packageJsonPath, `${JSON.stringify(packageJson)}\n`);
+
+    expect(() =>
+      validateGovernanceGateCommands(fixtureRoot, [{ phase: 'unsafe', command }]),
+    ).toThrow(/unsafe:/u);
+    expect(existsSync(path.join(fixtureRoot, 'executed-phases.txt'))).toBe(false);
   });
 });
 

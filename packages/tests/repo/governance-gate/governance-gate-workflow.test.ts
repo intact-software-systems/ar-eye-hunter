@@ -67,12 +67,8 @@ describe('governance gate workflow', () => {
     const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
     expect(packageJson.scripts).toMatchObject({
-      'check:plan-adaptation': 'node scripts/plan-adaptation.mjs check',
       'check:repo-structure': 'node scripts/repo-structure-check.mjs',
-      'test:pr-human-review': 'vitest run packages/tests/repo/pr-human-review',
-      'test:adaptive-governance':
-        'vitest run --maxWorkers=4 packages/tests/repo/plan-adaptation ' +
-        'packages/tests/repo/repo-structure-check',
+      'check:repo-style': 'node scripts/repo-style-check.mjs --cognitive-metrics',
     });
   });
 

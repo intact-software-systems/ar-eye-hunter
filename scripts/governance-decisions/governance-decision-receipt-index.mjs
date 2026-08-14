@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 
-import { readChangedPathsBetweenRevisions } from '../plan-adaptation/plan-change-facts.mjs';
+import { readChangedPathsBetweenRevisions } from '../repository-changes/read-git-changes.mjs';
 import { verifyGovernanceDecisionCommit } from './governance-decision-commit-verification.mjs';
 import { decodeGovernanceDecisionReceipt } from './governance-decision-receipt.mjs';
 // prettier-ignore

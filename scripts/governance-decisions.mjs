@@ -32,7 +32,7 @@ import {
   validateLocalGovernancePublicationState,
 } from './governance-decisions/github-governance-publication.mjs';
 import { readGitRepositorySnapshot } from './governance-decisions/git-repository-snapshot.mjs';
-import { readChangedPathsBetweenRevisions } from './plan-adaptation/plan-change-facts.mjs';
+import { readChangedPathsBetweenRevisions } from './repository-changes/read-git-changes.mjs';
 
 try {
   const command = decodeGovernanceDecisionCommand(process.argv.slice(2));
@@ -50,9 +50,6 @@ function runCommand(command) {
   if (command.command === 'apply') {
     return applyDecision(command);
   }
-  if (command.command === 'publish-blob') {
-    return publishBlob(command);
-  }
   if (command.command === 'publish-request') {
     return publishRequest(command);
   }
@@ -60,7 +57,7 @@ function runCommand(command) {
 }
 
 function previewDecision(command) {
-  const request = decodeGovernanceDecisionRequest(readJson(command.requestPath));
+  const request = decodeCurrentGovernanceRequest(command.requestPath);
   const github = createGitHubGovernanceApi(command.repoRoot);
   const snapshot = readGitRepositorySnapshot({
     repoRoot: command.repoRoot,
@@ -114,7 +111,7 @@ function verifyCommit(command) {
 }
 
 function applyDecision(command) {
-  const request = decodeGovernanceDecisionRequest(readJson(command.requestPath));
+  const request = decodeCurrentGovernanceRequest(command.requestPath);
   const github = createGitHubGovernanceApi(command.repoRoot);
   const publicationIdentity = readPublicationIdentity(github);
   validateLocalGovernancePublicationState({
@@ -143,23 +140,22 @@ function applyDecision(command) {
   });
 }
 
-function publishBlob(command) {
-  const github = createGitHubGovernanceApi(command.repoRoot);
-  authenticateGitHubAdministrator(github);
-  return publishImmutableGitBlob({
-    bytes: readFileSync(command.path),
-    writeBlob: github.writeBlob,
-  });
-}
-
 function publishRequest(command) {
   const github = createGitHubGovernanceApi(command.repoRoot);
   authenticateGitHubAdministrator(github);
-  const request = decodeGovernanceDecisionRequest(readJson(command.requestPath));
+  const request = decodeCurrentGovernanceRequest(command.requestPath);
   return publishImmutableGitBlob({
     bytes: Buffer.from(toCanonicalJson(request)),
     writeBlob: github.writeBlob,
   });
+}
+
+function decodeCurrentGovernanceRequest(requestPath) {
+  const request = decodeGovernanceDecisionRequest(readJson(requestPath));
+  if (request.operation.startsWith('plan.')) {
+    throw new Error('active plan governance operations are retired');
+  }
+  return request;
 }
 
 function readPublicationIdentity(github) {

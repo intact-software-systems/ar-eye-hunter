@@ -116,13 +116,10 @@ jobs:
 
       - name: Run focused governance verification
         env:
-          GH_TOKEN: ${{ github.token }}
-          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
-          PLAN_ADAPTATION_BASE: ${{ github.event.before }}
+          STRUCTURE_BASE: ${{ github.event.before }}
         run: |
           npm run test:governance-decisions
-          npm run check:plan-adaptation
-          node scripts/repo-structure-check.mjs --base "$PLAN_ADAPTATION_BASE"
+          node scripts/repo-structure-check.mjs --base "$STRUCTURE_BASE"
 
   cloudflare-branch-controls:
     name: Enforce Cloudflare main-only branch controls

@@ -11,10 +11,7 @@ import {
 import {
   validateDistributedValidationResult,
 } from './distributed-validation-risk/distributed-validation-result.mjs';
-import {
-  readAdaptivePlanDocuments,
-  readChangedPathRecords,
-} from './distributed-validation-risk/read-distributed-validation-input.mjs';
+import { readChangedPathRecords } from './distributed-validation-risk/read-distributed-validation-input.mjs';
 
 await runDistributedValidationRiskCommand(process.argv.slice(2));
 
@@ -45,7 +42,6 @@ function runSelection(options) {
     result = classifyDistributedValidationRisk({
       eventName,
       changedPathRecords: [],
-      planDocuments: [],
     });
   } else {
     const repoRoot = path.resolve(requiredOption(options, '--repo-root'));
@@ -58,7 +54,6 @@ function runSelection(options) {
       eventName,
       changedPathRecords: changedPaths.records,
       changedPathIssues: changedPaths.issues,
-      planDocuments: readAdaptivePlanDocuments(repoRoot),
     });
   }
 
@@ -89,7 +84,6 @@ function toOutput(result) {
     `reason=${result.reason}`,
     `risk_families_json=${JSON.stringify(result.riskFamilies)}`,
     `risk_paths_json=${JSON.stringify(result.riskPaths)}`,
-    `plan_requirements_json=${JSON.stringify(result.planRequirements)}`,
   ].join('\n');
 }
 

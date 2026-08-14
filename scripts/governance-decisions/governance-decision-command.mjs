@@ -1,7 +1,6 @@
 const commandOptions = {
   preview: ['--request', '--repo'],
   apply: ['--request', '--repo'],
-  'publish-blob': ['--file', '--repo'],
   'publish-request': ['--request', '--repo'],
   'verify-commit': ['--commit', '--repo'],
 };
@@ -9,19 +8,13 @@ const commandOptions = {
 export function decodeGovernanceDecisionCommand(arguments_) {
   const [command, ...optionTokens] = arguments_;
   if (!Object.hasOwn(commandOptions, command)) {
-    throw new Error(
-      'command must be preview, apply, publish-blob, publish-request, or verify-commit',
-    );
+    throw new Error('command must be preview, apply, publish-request, or verify-commit');
   }
   const values = readOptions(optionTokens, commandOptions[command]);
   const repoRoot = values['--repo'] ?? process.cwd();
   if (command === 'preview' || command === 'apply' || command === 'publish-request') {
     requireOption(values, '--request', command);
     return { command, requestPath: values['--request'], repoRoot };
-  }
-  if (command === 'publish-blob') {
-    requireOption(values, '--file', command);
-    return { command, path: values['--file'], repoRoot };
   }
   requireOption(values, '--commit', command);
   requireObjectId(values['--commit'], '--commit');
