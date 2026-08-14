@@ -99,12 +99,6 @@ function readRepo(filePath: string): string {
   return readFileSync(path.join(repoRoot, filePath), 'utf8');
 }
 
-function expectAll(haystack: string, needles: readonly string[]): void {
-  for (const needle of needles) {
-    expect(haystack, needle).toContain(needle);
-  }
-}
-
 function expectAllNormalized(haystack: string, needles: readonly string[]): void {
   const normalized = haystack.replace(/\s+/g, ' ').trim();
   for (const needle of needles) {
