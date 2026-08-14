@@ -446,7 +446,8 @@ function readCliInput(args) {
   if (!Object.hasOwn(suiteDefinitions, args[1])) {
     return {
       issue:
-        'suite must be adaptive-agent-execution, organizing-repository-structure, or rallar-code-writing',
+        'suite must be adaptive-agent-execution, organizing-repository-structure, ' +
+        'or rallar-code-writing',
     };
   }
   return { suite: args[1], resultPath: args[2] };

@@ -103,7 +103,7 @@ Record v2 binds closure evidence to the reviewed candidate tree.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "origin/main",
-    "affectedCodeDigest": "7a8ac3f0bee399cd5cea1a9b29a69f38629d084fd187ef9563ec0ce75b7a6473",
+    "affectedCodeDigest": "33c3c55e8b7a147b991451f2185badaa835a2c666e71c57ebcfbe3c9ede1d69e",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
