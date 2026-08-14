@@ -88,9 +88,10 @@ describe('repo code style review evidence integrity', () => {
       'historical PR body is not a durable substitute',
     ]);
     expectAllNormalized(organizing, [
-      'mirrored tests, and map',
-      'generated navigation-evidence record',
-      'repository-owned evidence',
+      'mirrored tests, and any durable navigation map',
+      'generated navigation evidence record',
+      'Do not write a plan-owned disposition',
+      'A harmless base movement or a new commit identifier does not reopen a settled structure decision',
     ]);
   });
 });

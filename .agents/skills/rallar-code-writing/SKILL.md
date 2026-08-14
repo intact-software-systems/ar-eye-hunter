@@ -190,7 +190,7 @@ For written work that affects production, require a legacy baseline and exit cri
 impact judgment for each capability slice, and a final complete code and legacy review. The
 working plan owns when that review runs; this skill owns the code judgment. Trace every
 changed production path from canonical entry to result and classify affected legacy as `removed`,
-`minimized-boundary`, `resolved`, or `retained-pending-human-approval`. Unclassified affected
-legacy blocks code completion. A retained item requires explicit human approval of its purpose,
-consumer, unsafe-removal reason, minimization, owner, tests, review/removal condition, and current
-retained implementation. An issue or agent judgment does not replace that approval.
+`minimized-boundary`, `resolved`, or `retained`. Unclassified affected legacy blocks code
+completion. A retained item requires explicit authorized-maintainer approval and a durable registry
+entry containing its path, symbol, purpose, consumer, unsafe-removal reason, minimization, owner,
+tests, and review/removal condition. An issue or agent judgment does not replace that approval.

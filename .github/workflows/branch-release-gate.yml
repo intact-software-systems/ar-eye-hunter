@@ -1,11 +1,16 @@
 name: Branch Release Gate
 
 on:
-  push:
-    branches-ignore:
-      - main
-    paths-ignore:
-      - 'docs/superpowers/plans/**'
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+concurrency:
+  group: branch-release-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -15,6 +20,9 @@ jobs:
   governance-gate:
     name: Governance Gate
     uses: ./.github/workflows/governance-gate.yml
+    with:
+      candidate_ref: ${{ github.event.pull_request.head.sha }}
+
   validation-evidence:
     name: Select validation evidence
     needs: governance-gate
@@ -26,11 +34,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Select reusable validation evidence
+      - name: Select same-PR validation evidence
         id: selection
         continue-on-error: true
         env:
@@ -39,18 +48,18 @@ jobs:
           node scripts/validation-evidence.mjs select
           --repo-root "$GITHUB_WORKSPACE"
           --repository "$GITHUB_REPOSITORY"
+          --pull-request-number "${{ github.event.pull_request.number }}"
           --workflow-path ".github/workflows/branch-release-gate.yml"
-          --branch "$GITHUB_REF_NAME"
-          --head "$GITHUB_SHA"
+          --branch "${{ github.event.pull_request.head.ref }}"
+          --base-branch "${{ github.event.pull_request.base.ref }}"
+          --head "${{ github.event.pull_request.head.sha }}"
           --current-run-id "$GITHUB_RUN_ID"
           --now "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
           --output "$GITHUB_OUTPUT"
       - name: Fall back to broad validation
         id: fallback
         if: ${{ steps.selection.outcome != 'success' }}
-        run: |
-          echo "reuse=false" >> "$GITHUB_OUTPUT"
-          echo "reason=validation-evidence-selection-failed" >> "$GITHUB_OUTPUT"
+        run: echo "reuse=false" >> "$GITHUB_OUTPUT"
       - name: Resolve validation evidence selection
         id: resolution
         if: ${{ always() }}
@@ -58,7 +67,6 @@ jobs:
           SELECTION_OUTCOME: ${{ steps.selection.outcome }}
           SELECTION_REUSE: ${{ steps.selection.outputs.reuse }}
           SELECTION_DIGEST: ${{ steps.selection.outputs.build_tree_digest }}
-          FALLBACK_REUSE: ${{ steps.fallback.outputs.reuse }}
         run: |
           if [[ "$SELECTION_OUTCOME" == "success" && "$SELECTION_REUSE" == "true" ]]; then
             echo "reuse=true" >> "$GITHUB_OUTPUT"
@@ -66,6 +74,7 @@ jobs:
           else
             echo "reuse=false" >> "$GITHUB_OUTPUT"
           fi
+
   release-gate:
     name: Release Gate
     needs:
@@ -74,7 +83,9 @@ jobs:
     if: ${{ always() && needs.governance-gate.result == 'success' && needs.validation-evidence.outputs.reuse != 'true' }}
     uses: ./.github/workflows/release-gate.yml
     with:
-      changed_repo_style_base: origin/main
+      candidate_ref: ${{ github.event.pull_request.head.sha }}
+      changed_repo_style_base: ${{ github.event.pull_request.base.sha }}
+
   publish-validation-evidence:
     name: Publish validation evidence
     needs:
@@ -87,35 +98,32 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Read trusted current run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p .artifacts/validation-evidence
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
-            > .artifacts/validation-evidence/current-run.json
-          gh api --paginate --slurp \
-            "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?filter=latest&per_page=100" \
-            > .artifacts/validation-evidence/current-jobs.json
       - name: Create validation evidence
         run: >-
+          mkdir -p .artifacts/validation-evidence &&
           node scripts/validation-evidence.mjs create
           --repo-root "$GITHUB_WORKSPACE"
-          --run-envelope ".artifacts/validation-evidence/current-run.json"
-          --jobs-envelope ".artifacts/validation-evidence/current-jobs.json"
-          --release-gate-result "${{ needs.release-gate.result }}"
-          --output ".artifacts/validation-evidence/validation-evidence-v1.json"
+          --repository "$GITHUB_REPOSITORY"
+          --pull-request-number "${{ github.event.pull_request.number }}"
+          --workflow-path ".github/workflows/branch-release-gate.yml"
+          --run-id "$GITHUB_RUN_ID"
+          --run-attempt "$GITHUB_RUN_ATTEMPT"
+          --head "${{ github.event.pull_request.head.sha }}"
+          --completed-at "$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
+          --output ".artifacts/validation-evidence/validation-evidence-v2.json"
       - name: Upload validation evidence
         uses: actions/upload-artifact@v7
         with:
-          name: validation-evidence-v1
-          path: .artifacts/validation-evidence/validation-evidence-v1.json
+          name: validation-evidence-v2
+          path: .artifacts/validation-evidence/validation-evidence-v2.json
           if-no-files-found: error
           retention-days: 7
+
   branch-release-result:
     name: Branch Release Gate result
     needs:
@@ -128,6 +136,8 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -135,9 +145,6 @@ jobs:
         run: >-
           node scripts/validation-evidence.mjs conclude
           --governance-result "${{ needs.governance-gate.result }}"
-          --governance-status "${{ needs.governance-gate.outputs.status }}"
-          --governance-underlying-status "${{ needs.governance-gate.outputs.underlying_status }}"
-          --governance-decision-id "${{ needs.governance-gate.outputs.decision_id }}"
           --selection-result "${{ needs.validation-evidence.result }}"
           --reuse "${{ needs.validation-evidence.outputs.reuse }}"
           --release-result "${{ needs.release-gate.result }}"

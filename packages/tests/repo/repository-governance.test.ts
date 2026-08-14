@@ -34,6 +34,19 @@ describe('repository pull request governance', () => {
     expect(agents).toContain('Ordinary pull request completion creates no tracked governance file');
     expect(agents).toContain('GitHub reports the pull request as merged');
   });
+
+  it('keeps ordinary PR delivery free of shared progress and approval tracking files', () => {
+    const packageJson = readRepo('package.json');
+    const workflow = readRepo('.github/workflows/branch-release-gate.yml');
+    const delivery = readRepo('scripts/pull-request-delivery.mjs');
+    const activeDelivery = `${packageJson}\n${workflow}\n${delivery}`;
+
+    expect(activeDelivery).not.toMatch(
+      /plan-adaptation|active-plan|pr-human-review|closure receipt|ownership reservation/iu,
+    );
+    expect(workflow).toContain('github.event.pull_request.number');
+    expect(workflow).not.toContain('merge_group');
+  });
 });
 
 function readRepo(repositoryPath: string): string {

@@ -92,6 +92,27 @@ describe('pull request delivery command', () => {
     );
   });
 
+  it('keeps unrelated pull requests isolated because each branch resolves its own live PR', async () => {
+    const firstGithub = createGithubFixture([{ ...openPullRequest, number: 101 }]);
+    const secondGithub = createGithubFixture([
+      { ...openPullRequest, number: 102, reviewDecision: 'APPROVED' },
+    ]);
+
+    const first = await runCommand(['status'], firstGithub);
+    const second = await runCommand(['status'], secondGithub);
+
+    expect(first.output[0]).toContain('PR #101');
+    expect(first.output.join('\n')).not.toContain('102');
+    expect(second.output[0]).toContain('PR #102');
+    expect(second.output.join('\n')).not.toContain('101');
+    for (const github of [firstGithub, secondGithub]) {
+      expect(github.calls.flatMap((call) => call.arguments)).not.toEqual(
+        expect.arrayContaining(['101', '102']),
+      );
+      expect(github.mutations).toEqual([]);
+    }
+  });
+
   it('reports a real conflict before performing readiness mutations', async () => {
     const github = createGithubFixture([
       {
@@ -190,6 +211,12 @@ describe('pull request delivery command', () => {
     const result = await runCommand(['ready'], github);
 
     expect(result.action).toBe('DONE');
+    expect(result.output).toEqual([
+      'PR #222 https://github.com/example/repository/pull/222',
+      'Action: DONE',
+      'Terminal: GitHub reports this pull request merged; no governance action is permitted.',
+    ]);
+    expect(result.output.join('\n')).not.toMatch(/archive|receipt|plan|refresh|rebase/iu);
     expect(github.mutations).toEqual([]);
   });
 

@@ -1,9 +1,5 @@
 import path from 'node:path';
 
-import {
-  readOriginMainGovernanceDecisionIndex,
-  resolveGovernanceExceptionDecisions,
-} from '../governance-decisions/governance-decision-receipt-index.mjs';
 import { findingMagnitude } from './finding-magnitude.mjs';
 
 export const reviewedDispositions = Object.freeze([
@@ -46,21 +42,19 @@ export const reviewedDispositions = Object.freeze([
 ]);
 
 export function readReviewedDispositionContext(repoRoot, candidateHead, dependencies = {}) {
-  const index =
-    dependencies.readGovernanceDecisionIndex?.(repoRoot) ??
-    readOriginMainGovernanceDecisionIndex(repoRoot);
-  const resolved = resolveGovernanceExceptionDecisions(index, {
-    exceptionKind: 'repository-code-style',
-    candidateHead,
-  });
+  const index = dependencies.readGovernanceDecisionIndex?.(repoRoot) ?? {
+    decisions: [],
+    duplicateDecisionIds: new Set(),
+    issues: [],
+  };
+  const resolved = dependencies.resolveGovernanceExceptions?.(index, candidateHead) ?? [];
   const decisions = resolved.filter(isCodeStyleDecision);
-  const malformed = resolved.length - decisions.length;
   return {
     candidateHead,
     decisions,
     issues: [
       ...index.issues,
-      ...(malformed === 0
+      ...(resolved.length === decisions.length
         ? []
         : ['governance exception resolver returned malformed repository code style evidence']),
     ],

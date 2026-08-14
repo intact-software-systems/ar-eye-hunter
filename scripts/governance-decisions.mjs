@@ -155,6 +155,9 @@ function decodeCurrentGovernanceRequest(requestPath) {
   if (request.operation.startsWith('plan.')) {
     throw new Error('active plan governance operations are retired');
   }
+  if (request.operation === 'gate.accept-deviation' || request.operation === 'exception.decide') {
+    throw new Error('ordinary pull request governance operations are retired');
+  }
   return request;
 }
 

@@ -213,27 +213,21 @@ describe('governance decision GitHub workflows', () => {
     expect(distributed.jobs.selection.if).toContain('always()');
   });
 
-  it('gives every trusted-receipt consumer read-only provenance credentials', () => {
+  it('keeps receipt provenance on the retained Tier-3 path and out of ordinary PR checks', () => {
     const governanceGate = readWorkflow('.github/workflows/governance-gate.yml');
     const releaseGate = readWorkflow('.github/workflows/release-gate.yml');
     const deploy = readWorkflow('.github/workflows/deploy.yml');
 
-    expect(governanceGate.permissions).toEqual({ contents: 'read', actions: 'read' });
+    expect(governanceGate.permissions).toEqual({ contents: 'read' });
     expect(releaseGate.permissions).toEqual({ contents: 'read', actions: 'read' });
     expect(deploy.permissions).toMatchObject({ contents: 'read', actions: 'read' });
-    const environment = {
-      GH_TOKEN: '${{ github.token }}',
-      GOVERNANCE_APP_SLUG: '${{ vars.GOVERNANCE_APP_SLUG }}',
-    };
     for (const name of [
       'Check changed repository style',
       'Check changed test structure coupling',
     ]) {
       expect(
-        releaseGate.jobs['release-gate'].steps.find((step: any) => step.name === name),
-      ).toMatchObject({
-        env: environment,
-      });
+        releaseGate.jobs['release-gate'].steps.find((step: any) => step.name === name).env,
+      ).toBeUndefined();
     }
     expect(deploy.jobs['governance-decision-checks']).toMatchObject({
       permissions: { actions: 'read', contents: 'read' },

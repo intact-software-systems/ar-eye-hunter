@@ -81,15 +81,14 @@ approval. Never hand-write a decision receipt, directly edit or delete a plan, f
 or review evidence, or manually construct tracked governance evidence as a substitute for this
 command. This exception path is not ordinary pull request completion evidence.
 
-Gate deviations retain the exact failed run, attempt, gate, and candidate evidence. The reusable
-Governance Gate reports `accepted-deviation` separately from `passed`, and Branch Release Gate alone
-turns that exact verified resolution into merge eligibility. Exception approvals project into the
-existing repository-structure, production-legacy, code-style, and test-coupling contracts; existing
-durable registries and static dispositions remain valid. Trusted historical receipts are read only
-from an explicit `origin/main` revision and structurally replayed with GitHub-verified User or App/run
-provenance. The replay reader still understands already-published plan-operation receipts, but no
-current command creates, adapts, supersedes, completes, cancels, or quarantines plans. Historical
-receipts also require durable admission evidence from the exact `main` push run of the
+Ordinary pull-request delivery never creates a governance decision. Current commands reject plan
+operations, gate deviations, and exception decisions; an administrator uses GitHub's role-based PR
+bypass when an independent review is unavailable. Existing durable registries and static
+dispositions remain valid. Trusted historical receipts are read only from an explicit `origin/main`
+revision and structurally replayed with GitHub-verified User or App/run provenance. The replay reader
+still understands already-published plan, gate-deviation, and exception receipts for historical
+verification, but no current command creates them. Historical receipts also require durable
+admission evidence from the exact `main` push run of the
 trusted deploy workflow: its classifier job, `verify-commit` step, and fail-closed resolution step
 must all have completed for the exact decision commit and run attempt, and its uniquely named
 authenticated-admission marker must have succeeded. The trusted workflow runs that marker only

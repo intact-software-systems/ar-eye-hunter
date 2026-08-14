@@ -13,54 +13,35 @@ describe('governance gate workflow', () => {
 
     expect(workflow).toMatchObject({
       name: 'Governance Gate',
-      permissions: { contents: 'read', actions: 'read' },
+      permissions: { contents: 'read' },
+      on: {
+        workflow_call: {
+          inputs: {
+            candidate_ref: { required: true, type: 'string' },
+          },
+        },
+      },
       jobs: {
         'governance-gate': {
           name: 'Governance Gate',
           'runs-on': 'ubuntu-latest',
           'timeout-minutes': 2,
           steps: [
-            { uses: 'actions/checkout@v7', with: { 'fetch-depth': 0 } },
+            {
+              uses: 'actions/checkout@v7',
+              with: { ref: '${{ inputs.candidate_ref }}', 'fetch-depth': 0 },
+            },
             {
               uses: 'actions/setup-node@v7',
               with: { 'node-version': 24, cache: 'npm' },
             },
             { name: 'Install dependencies', run: 'npm ci --ignore-scripts' },
-            {
-              name: 'Run governance gate',
-              id: 'local-gate',
-              'continue-on-error': true,
-              env: {
-                GH_TOKEN: '${{ github.token }}',
-                GOVERNANCE_APP_SLUG: '${{ vars.GOVERNANCE_APP_SLUG }}',
-              },
-              run: 'npm run check:governance-gate',
-            },
-            expect.objectContaining({
-              name: 'Resolve governance gate',
-              id: 'resolution',
-              if: '${{ always() }}',
-              env: {
-                GH_TOKEN: '${{ github.token }}',
-                GOVERNANCE_APP_SLUG: '${{ vars.GOVERNANCE_APP_SLUG }}',
-                LOCAL_GATE_OUTCOME: '${{ steps.local-gate.outcome }}',
-              },
-            }),
+            { name: 'Run governance gate', run: 'npm run check:governance-gate' },
           ],
         },
       },
     });
-    expect(workflow.on.workflow_call.outputs).toMatchObject({
-      status: { value: '${{ jobs.governance-gate.outputs.status }}' },
-      underlying_status: {
-        value: '${{ jobs.governance-gate.outputs.underlying_status }}',
-      },
-      decision_id: { value: '${{ jobs.governance-gate.outputs.decision_id }}' },
-    });
-    const resolution = workflow.jobs['governance-gate'].steps.at(-1);
-    expect(resolution.run).toContain('node scripts/governance-gate-resolution.mjs');
-    expect(resolution.run).toContain('--current-run-attempt "$GITHUB_RUN_ATTEMPT"');
-    expect(resolution.run).toContain('--gate-name "Governance Gate / Governance Gate"');
+    expect(workflow.on.workflow_call.outputs).toBeUndefined();
   });
 
   it('binds every phase to the real owner-focused package command', () => {
@@ -84,12 +65,16 @@ describe('governance gate workflow', () => {
         'governance-gate': {
           name: 'Governance Gate',
           uses: './.github/workflows/governance-gate.yml',
+          with: { candidate_ref: '${{ github.event.pull_request.head.sha }}' },
         },
         'release-gate': {
           name: 'Release Gate',
           needs: ['governance-gate', 'validation-evidence'],
           uses: './.github/workflows/release-gate.yml',
-          with: { changed_repo_style_base: 'origin/main' },
+          with: {
+            candidate_ref: '${{ github.event.pull_request.head.sha }}',
+            changed_repo_style_base: '${{ github.event.pull_request.base.sha }}',
+          },
         },
       },
     });
