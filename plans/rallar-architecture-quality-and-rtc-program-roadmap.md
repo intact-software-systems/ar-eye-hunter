@@ -12,9 +12,10 @@ RTC foundation, B01, B02, and B03 are published; PR #196 published the
 three-layer benchmark-organization stack before B04; and Task 4A is now
 `verified` through PRs #198 and #199. Task 4B is explicitly active on its
 separate follow-on branch; both implementation slices, independent final review,
-and draft PR #217 are complete. An exact human-approved registry-only correction
-for the first Branch Release Gate is under final validation. B04, baseline
-capture, and Phase 2 remain inactive.
+and draft PR #217 are complete. Its human-approved registry correction is
+rebased onto the authenticated current-main governance closeout and is undergoing
+fresh exact-tree validation and review. B04, baseline capture, and Phase 2 remain
+inactive.
 
 **Human owner:** Product/technical owner
 
@@ -22,14 +23,16 @@ capture, and Phase 2 remain inactive.
 
 **Last reconciliation:** 2026-08-14 on
 `codex/shared-rtc-bench-task-4b`, after fetching exact current `origin/main`
-`8dd96d4517e9f5a33728330f6c3bc9fba77bed6c`, tree
-`13b4c65b76f9b8e3bdbe9ac50bf889130a565de2`. A read-only merge-tree audit of
-the Task 4B head reports only the expected generated `plans/README.md` conflict;
-the two repository-structure overlaps auto-merge, and no shared RTC package or
-frozen RTC contract changed. The unrelated active plans are not absorbed,
-amended, or closed, and Task 4B is not automatically rebased. **Compatible for
-the Task 4B feature; generated plan-registry coordination remains a
-publication/merge concern.**
+`acd4866bb8fb90f6843956336fbbd4c7adafe778`, tree
+`91a31e1f53359b6c97a6864e801b302243cf9463`. The human-requested Task 4B rebase
+preserves current main's configurable multi-plan model and integrates the
+repository-structure singleton facts without changing the shared RTC package.
+The administrator completed the merged governance plan through authenticated
+receipt `0bde818dac1bf9edc7e029f6cdc2fca9cb7acf2ab67b27a69ccd9abb677e3a03`, so its
+temporary mutable-owner reservation is gone. No shared RTC package, frozen RTC
+contract, authoritative RTC plan, or roadmap path changed between the previous
+compatibility base and this main. **Compatible — no Task 4B feature delta; final
+exact-tree validation, review, and release evidence remain.**
 
 **Stable design:**
 [Rallar architecture quality and RTC program design](../docs/superpowers/specs/2026-08-06-rallar-architecture-quality-and-rtc-program-design.md)
@@ -111,22 +114,26 @@ program's `ledger-published` state.
 | Human traceability         | client state `ledger-published`; auth PR A and PR B externally `verified`             | Approved auth-plan anchor `123990bceac9732660e1113101addd5b194d8347` remains supported by [PR #76's closure record](https://github.com/intact-software-systems/ar-eye-hunter/pull/76#issuecomment-5205571315). [PR #78](https://github.com/intact-software-systems/ar-eye-hunter/pull/78) published PR A and merged as `a90042398448776b0972aaaaa0f5cca762163fde`; its exact branch/default evidence remains in the [PR #78 closure handoff](https://github.com/intact-software-systems/ar-eye-hunter/pull/78#issuecomment-5215094789). [PR #81](https://github.com/intact-software-systems/ar-eye-hunter/pull/81) then published PR B feature `1f7d7b0682c93c7c831fc2a31c0f635829d50734`, tree `2a5d756b83f44b6b8bbae166e8571f761371af29`; [Branch Release Gate 31185044360](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31185044360), attempt 1, job `92887353726`, succeeded. It merged as `8152de39faf2d630158143366596d61346e20457`, tree `2a5d756b83f44b6b8bbae166e8571f761371af29`; [Run Hetzner Supported Distributed Manifests 31187663870](https://github.com/intact-software-systems/ar-eye-hunter/actions/runs/31187663870), attempt 1, succeeded with jobs `92896224485`, `92896279297`, `92896661802`, `92897074068`, `92897537193`, `92897911043`, and `92898310196`. Auth-plan blob `262fa38044a382f58c7cf1fa34a755159a9c9272` still predicts pending PR B publication in Task 5/progress, so the human-program owner retains that read-only reconciliation duty. | Human-program owner reconciles its authoritative plan/progress with verified PR B closure. PR C remains inactive. The stable auth-tree prerequisite for later RTC-B06 is satisfied, but B06 remains held behind its own separate approval, reservation, publication, and capture gates. |
 | Ontology                   | Task 1 `verified`                                                                     | [PR #89](https://github.com/intact-software-systems/ar-eye-hunter/pull/89) published the exact 17-path Task 1 candidate at `ff9e77405b4986836272a3c48dc0659241ff5d83`, tree `07d58cd0936406f6ab632b6d219431fadc2605e0`; Branch Release Gate 31214805578 attempt 1/job `92985722492` succeeded. It merged as `f7ea9b2f4b3277f7f5ae72e7f490812c8058bb41`, tree `e5b7eb5a40ad0f6fff50c1afb4ae1583cbd7dd23`; resulting-main run 31242891941 attempt 1 and all seven jobs succeeded. The approved plan blob remains `7e142365f9b18f59966aa440cb5b9cdd228935b0`; the old `d68d511...` prototype remains untouched historical input.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Preserve Task 1 publication. Tasks 2-11, runtime activation, and generated artifacts remain held.                                                                                                                                                                                       |
 | RTC performance            | foundation-B03 and Task 4A `verified`; Task 4B closeout in progress; B04/capture held | Foundation PR #150, B01 PR #162, B02 PR #169, and B03 PR #193 are merged. PR #196 merged as `55d7f44c24d0345798a5b2c1dc7ffa0d2b5269af`; resulting-main run 31597501992 succeeded. The human approved exact plan blob `b78e00e982d186264bc5ba6b4b2a943f15a328f3` and explicitly authorized Task 4A. PR #198 final head `51314f099eaf754f18dc3df11b84b1bec2b10d3e`, tree `3393d7680f20e01c34dac550414b757bca7c97c3`, passed Branch Release Gate 31637171160 and merged tree-identically as `03f690f3ae9d821876d50035ef7463def0985059`. Its resulting-main run 31640463428 exposed missing generated Deno lock metadata before any recipe. PR #199 corrected only those three locks at exact head `10a161addffc6821cb6240f28e23e0773d7ee19b`, tree `d8af997cbcc9ad1476470687228eee1b16595ef6`, and passed Branch Release Gate 31642081827. The same lock blobs first reached main through concurrent PR #197; run 31674269978 attempt 1 failed provider parity after frozen preparation, while attempt 2 passed selection, frozen preparation, and all five supported manifests on the exact shared tree. PR #199 merged as `c96f46f2eba10c8103b29b052c0edfbc42c05a37`, tree `85b531ff8fd5fb0e9722a79876061c40a9eaf6fd`; exact resulting-main run 31674331404 succeeded through its no-delta selector. No benchmark was captured.                                                                                                                                                                              | Complete Task 4B independent final review and draft publication; do not merge. Keep B04, capture, B06, B07, production, optimization, raw artifacts, ontology implementation, and Phase 2 held.                                                                                         |
-| Cross-program coordination | Phase 0 `verified`; Phase 1 `in-progress`                                             | Phase 0 remains anchored by PR #77; historical RTC activation revisions remain publication evidence. Current `origin/main` is `160e8f8840d02701c55509ca89ef6b9f5ad5f7f3`, tree `c2e1383f2c41e0304bc535aa08c3b8bf62519032`. Compatibility review from Task 4A resulting main found no material conflict with package ownership, exact Deno lock blobs, frozen RTC contracts, or ontology Task 4's shared-web reservation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Preserve Task 4A and complete only the activated Task 4B review/publication gates on its separate branch without rebasing into or absorbing the unrelated active plan.                                                                                                                  |
+| Cross-program coordination | Phase 0 `verified`; Phase 1 `in-progress`                                             | Phase 0 remains anchored by PR #77; historical RTC activation revisions remain publication evidence. Current `origin/main` is `acd4866bb8fb90f6843956336fbbd4c7adafe778`, tree `91a31e1f53359b6c97a6864e801b302243cf9463`. The authenticated completion of configurable multi-plan governance released its temporary ownership reservation, and the Task 4B compatibility review found no material conflict with package ownership, exact Deno lock blobs, frozen RTC contracts, or ontology Task 4's shared-web reservation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Preserve Task 4A and complete only the activated Task 4B exact-tree review/publication gates on its rebased separate branch.                                                                                                                                                            |
 
 Task 4B live evidence supersedes the two stale activation predictions in this
 historical table: the human activated only Task 4B from exact plan blob
 `c1edd59d9d57799f7b955013acf624a76312740f` on base
 `8ee348e215a3e30d9b4959ce90369aea1b55b620`. Both authorized slices are locally
 complete. The authoritative plan now contains the code-derived trace for all 25
-executables, 18 exact legacy dispositions with no retained item, fifteen corrected
+executables, 18 exact legacy dispositions with no retained item, sixteen corrected
 Critical/Important findings, and old/new assertion parity for the exact three
 capability tests. Package tests pass 31 files/281 tests and repository-structure
-tests pass 10 files/121 tests. Independent review of the first published head
+tests pass 10 files/126 tests. Independent review of the first published head
 reported zero unresolved Critical/Important findings; draft PR #217 exists, and
 the registry-only correction for exact-head gate run 31743694243 passes its
-focused and full checks. Final unchanged-tree validation, corrected-head review,
-and exact-head remote evidence remain pending. No benchmark or accepted capture
-ran, and Task 5/B04 remains inactive.
+focused and full checks. The human also approved removing PR #219's obsolete
+completed-plan line-budget assertion after current-main validation proved it was
+the sole unit failure; its real policy/navigation test remains. The final local
+unchanged-tree unit, CI, build, governance, package, structure, navigation, and
+style matrix passes. Corrected-head independent review and exact-head remote
+evidence remain pending. No benchmark or accepted capture ran, and Task 5/B04
+remains inactive.
 
 The roadmap records externally observed human-program state but does not edit or
 advance its plans. Both concern plans and the ontology activation are published

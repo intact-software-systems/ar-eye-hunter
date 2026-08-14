@@ -241,14 +241,52 @@ no test, product code, benchmark behavior, or coupling checker. Focused GREEN
 classifies all nine current occurrences in the architecture test; full GREEN
 classifies all 133 current repository candidates with no stale entry.
 
-Publication-time `origin/main` advanced again to
-`8dd96d4517e9f5a33728330f6c3bc9fba77bed6c`, tree
-`13b4c65b76f9b8e3bdbe9ac50bf889130a565de2`. Its only Task 4B path overlaps are
-generated `plans/README.md` and two repository-structure files; a read-only
-merge-tree audit reports only the expected generated-registry conflict, while
-the repository-structure README and implementation auto-merge. The new active
-plans remain unrelated and are not absorbed or amended. No automatic rebase is
-warranted; final compatibility must be reviewed again at the corrected head.
+For merge readiness the human explicitly requested a rebase onto current
+`origin/main`. The compatible base is now
+`acd4866bb8fb90f6843956336fbbd4c7adafe778`, tree
+`91a31e1f53359b6c97a6864e801b302243cf9463`. PR #219 introduced configurable
+multi-plan governance; Task 4B preserved its static `plans/README.md` and
+integrated digest-bound singleton facts into the plan-scoped repository checker.
+The administrator then completed that merged plan through authenticated receipt
+`0bde818dac1bf9edc7e029f6cdc2fca9cb7acf2ab67b27a69ccd9abb677e3a03`, releasing
+the temporary mutable-owner collision. No shared RTC package, authoritative RTC
+plan, or roadmap path changed between `8dd96d4517e9f5a33728330f6c3bc9fba77bed6c`
+and this base. Task 4B replaced only its deleted `active-plan-registry.mjs`
+fact-contract reference with current `adaptive-plan-catalog.mjs` and rebound the
+unchanged structural judgments/navigation evidence to the generated current
+affected-code digest. **Compatible — no Task 4B package or frozen RTC contract
+delta; final exact-tree validation and review remain required.**
+
+### Current-main completed-plan ratchet correction
+
+The first full unit run on the rebased tree passed 835 files and 7,548 tests but
+failed the second case in
+`packages/tests/repo/repository-governance.test.ts`. That case measured every
+future non-test governance change against configurable-governance base
+`d450f2521f93754a39bca5453ee27c8b63988534`; PR #219 completed at 199 of its
+one-time 200-line allowance, so Task 4B's already approved repository-structure
+correction made the historical counter report 275. It asserted no runtime,
+policy, navigation, structure, or compatibility behavior and had no continuing
+owner or removal trigger after the plan was authentically completed.
+
+The human explicitly approved only that existing test path. The correction
+removes the completed-plan net-line assertion, its hardcoded base, and its unused
+command import while preserving the real administrator-policy/static-navigation
+test. Focused RED failed 1 of 2 tests at 275; focused GREEN passes the remaining
+behavior test. `TASK4B-FINDING-016` records the correction; no production,
+benchmark, capture, schema, CLI, timing, or validation behavior changed.
+
+Final local validation on the corrected rebased tree passes the focused
+governance test 1/1, repository governance 33 files/407 tests, repository
+structure 10 files/126 tests, package tests 31 files/281 tests, package
+typecheck, all 25 package Deno entries, exact navigation for all three declared
+capability owners, adaptive governance, changed-file style, all 133 classified
+test-structure coupling candidates, browser-soak syntax, and diff checks. The
+unchanged-tree unit run passes 836 files with 3 skipped and 7,548 tests with 5
+skipped. `test:ci` passes the same unit suite, 146 Deno tests, the guarded
+Playwright projects at 39 passed/46 skipped and 211 passed/1 skipped, and 7/7
+full-stack memory tests. The workspace build passes with its existing
+warning-only large-chunk reports. No benchmark or accepted capture ran.
 
 ```plan-adaptation-v1
 {
@@ -295,7 +333,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "focusedCommand": "npm run test:repo-structure",
       "navigationMap": "scripts/repo-structure-check/README.md",
       "factContracts": [
-        "scripts/plan-adaptation/active-plan-registry.mjs",
+        "scripts/plan-adaptation/adaptive-plan-catalog.mjs",
         "scripts/plan-adaptation/adaptive-plan-record.mjs",
         "scripts/plan-adaptation/plan-closure-receipt.mjs",
         "scripts/plan-adaptation/plan-change-facts.mjs",
@@ -316,7 +354,9 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "testRoot": "packages/tests/repo/plan-adaptation",
       "focusedCommand": "npm run test:plan-adaptation",
       "navigationMap": "scripts/plan-adaptation/README.md",
-      "factContracts": [],
+      "factContracts": [
+        "packages/tests/repo/repository-governance.test.ts"
+      ],
       "contractPaths": [],
       "controlFlowFamilies": [
         "adaptive record and capability policy",
@@ -338,8 +378,8 @@ warranted; final compatibility must be reviewed again at the corrected head.
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+    "diffBase": "origin/main",
+    "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
     "computedTriggers": [
       "folder-change",
       "ownership-change",
@@ -348,9 +388,9 @@ warranted; final compatibility must be reviewed again at the corrected head.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The exact reviewed Task 4B head is published in draft PR #217. Branch Release Gate run 31743694243 exposed eight unclassified current navigation-test coupling occurrences and three stale location-bound records; the exact human-approved registry-only correction now passes focused and full coupling checks.",
-    "learning": "An exact-text navigation assertion can be semantically required and still require an occurrence-specific coupling disposition; moving or expanding the assertion invalidates location-bound registry evidence even when the public contract is unchanged.",
-    "structure": "Keep both existing Shared RTC navigation contracts and the required architecture test unchanged. Correct only their exact occurrence records in the central test-structure-coupling registry; do not weaken assertions or change the checker.",
+    "outcome": "The final local unchanged-tree matrix passes after TASK4B-FINDING-016: focused governance 1/1, repository governance 33/407, repository structure 10/126, package 31/281, unit 7,548 with 5 skipped, CI including Deno and Playwright, and all workspace builds. Exact corrected-head review and remote Branch Release Gate remain.",
+    "learning": "The current-main compatibility correction is behavior-preserving: the only failed unit assertion was completed-plan bookkeeping, while all semantic governance, package, RTC lifecycle, browser, and build gates pass after its approved removal.",
+    "structure": "The final evidence update changes only the authoritative Task 4B plan and RTC roadmap record. Existing capability ownership, 24 structural dispositions, three exact navigation declarations, package topology, production code, and benchmark contracts remain unchanged at affected-code digest 856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139.",
     "decision": "continue",
     "nextSlices": []
   },
@@ -379,7 +419,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/baseline/acceptance",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Acceptance is a real baseline lifecycle boundary for sample failure accounting and accepted artifact persistence; flattening it into baseline would hide first-failure ownership. Reopen when acceptance no longer owns those two coupled protocol concerns."
     },
@@ -389,7 +429,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/baseline/command",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Command owns the baseline CLI entry, exact grammar, and option decoding as one caller boundary; its depth makes command ownership visible beside contracts and runtime. Reopen if another command family appears."
     },
@@ -399,7 +439,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/baseline/contracts",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Contracts owns accepted schemas, decoding, and validation shared by command, runtime, and evidence without owning side effects. Reopen on an unrelated schema family, not physical size."
     },
@@ -409,7 +449,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/baseline/evidence",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Evidence owns confinement, storage, finalization, checksum verification, statistics, and finalized reading for one accepted-evidence lifecycle. Reopen if a second artifact lifecycle gains independent entry and failure ownership."
     },
@@ -419,7 +459,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/baseline/runtime",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Runtime composes adapters, the accepted envelope, and observations behind the command without absorbing schema or storage ownership. Reopen if runtime begins choosing workload policy or another environment adapter family is introduced."
     },
@@ -429,7 +469,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/diagnostics/rtt-group-scan",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "The maintained RTT group-scan comparison is one explicitly non-accepted diagnostic capability, separated from room-graph and traffic diagnostics by measured production call path and output. Reopen when it is removed or another scan owner appears."
     },
@@ -439,7 +479,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/diagnostics/rtt-group-scan",
       "identity": "packages/shared-rtc-bench/diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts",
       "magnitude": 1,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "One executable fully owns the historical-versus-indexed group scan; an artificial sibling would add indirection without a second responsibility. Remove the subtree when the comparison decision disappears, or split only if a distinct scan lifecycle emerges."
     },
@@ -449,7 +489,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/architecture",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Architecture tests own package inventory, navigation, and boundary contracts rather than a workload behavior. Their dedicated folder keeps structural failures separate from benchmark semantics. Reopen when one contract changes owner."
     },
@@ -459,7 +499,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/baseline/acceptance",
       "identity": null,
       "magnitude": 3,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Acceptance tests mirror the production baseline/acceptance protocol and directly own first-failure plus persistence assertions. Flattening them would separate tests from their production capability map. Reopen if acceptance production ownership changes."
     },
@@ -469,7 +509,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/baseline/runtime",
       "identity": null,
       "magnitude": 3,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Runtime tests mirror the baseline/runtime composition owner and directly prove the confined Deno adapter boundary beside the envelope behavior. Flattening them would detach execution-environment assertions from their production owner; reopen if another runtime family appears."
     },
@@ -479,7 +519,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/topology-delivery",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "This test folder mirrors the standalone topology-delivery diagnostic owner and keeps PostgreSQL policy, statistics, and cleanup proofs outside accepted workload tests. Reopen if delivery becomes accepted evidence or gains a second lifecycle."
     },
@@ -489,7 +529,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/topology-delivery",
       "identity": "packages/shared-rtc-bench/tests/topology-delivery/rtc-topology-delivery-log-performance-harness.test.ts",
       "magnitude": 1,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "The single focused harness coherently proves policy, statistics, and partial-registration cleanup for one standalone delivery command. Splitting assertions would create extra navigation hops without a second test responsibility."
     },
@@ -499,7 +539,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/topology-replay",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "This test folder mirrors the standalone replay operation-count owner, which is intentionally separate from accepted latency evidence and topology delivery. Reopen if replay gains an independent schema or lifecycle test family."
     },
@@ -509,7 +549,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/topology-replay",
       "identity": "packages/shared-rtc-bench/tests/topology-replay/rtc-topology-replay-drain-performance-harness.test.ts",
       "magnitude": 1,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "The one harness owns exact operation counts and started-service cleanup for the one replay diagnostic. An additional file would divide one causal lifecycle; split only when a separately testable replay contract appears."
     },
@@ -519,7 +559,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/workloads/data-channel",
       "identity": null,
       "magnitude": 3,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "The mandated data-channel test path mirrors workloads/data-channel and exposes B02 grammar, timing, lifecycle, adversarial, failure, and diagnostic-output assertions under one capability name. Reopen if B02 divides into independently owned protocols."
     },
@@ -529,7 +569,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/workloads/data-channel",
       "identity": "packages/shared-rtc-bench/tests/workloads/data-channel/rtc-data-channel-benchmark-lifecycle.test.ts",
       "magnitude": 1,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Task 4B explicitly requires this one B02 lifecycle owner, and assertion parity shows its cases form one data-channel capability. Creating a sibling solely for topology compliance would weaken navigation; split on a real second lifecycle only."
     },
@@ -539,7 +579,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/workloads/signaling",
       "identity": null,
       "magnitude": 3,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "The mandated signaling test path mirrors workloads/signaling and exposes B01 grammar, counters, cleanup, identity, failure persistence, and diagnostic confinement together. Reopen when signaling acquires a separately owned protocol lifecycle."
     },
@@ -549,7 +589,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/workloads/signaling",
       "identity": "packages/shared-rtc-bench/tests/workloads/signaling/rtc-signaling-benchmark-lifecycle.test.ts",
       "magnitude": 1,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Task 4B explicitly requires this one B01 lifecycle owner, and its relocated assertions share signaling setup, cleanup, and failure semantics. An artificial sibling would obscure the capability; split only at a real ownership boundary."
     },
@@ -559,7 +599,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/workloads/topology",
       "identity": null,
       "magnitude": 3,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "The mandated topology test path mirrors workloads/topology and exposes B03 graph, repository, inactive-state, adversarial, identity, and diagnostic assertions together. Reopen when one B03 family becomes a distinct accepted capability."
     },
@@ -569,7 +609,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/tests/workloads/topology",
       "identity": "packages/shared-rtc-bench/tests/workloads/topology/rtc-topology-benchmark-lifecycle.test.ts",
       "magnitude": 1,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Task 4B explicitly requires this one B03 lifecycle owner, and parity proves the graph and repository assertions belong to the same topology capability. Split only if a future authorization establishes separate capability ownership."
     },
@@ -579,7 +619,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/topology-replay",
       "identity": "packages/shared-rtc-bench/topology-replay/replay-drain-operation-counts.ts",
       "magnitude": 1,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "One executable coherently owns deterministic replay-drain setup, production service execution, cleanup, operation-count validation, and output. Splitting this single command would fragment its lifecycle; reopen on a second replay command or schema."
     },
@@ -589,7 +629,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/workloads/data-channel",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Data-channel groups the four B02 measurements around the authoritative QRtcDataChannel lifecycle while each executable keeps its timing and validation local. Reopen when a workload stops sharing that production capability."
     },
@@ -599,7 +639,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/workloads/signaling",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Signaling groups the three B01 measurements around QRtcPeerConnection setup, cleanup, and diagnostics while preserving visible per-workload clocks and validators. Reopen on a new signaling authority boundary."
     },
@@ -609,7 +649,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "target": "packages/shared-rtc-bench/workloads/topology",
       "identity": null,
       "magnitude": 2,
-      "affectedCodeDigest": "2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3",
+      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
       "disposition": "keep",
       "rationale": "Topology groups the six B03 measurements around production graph and RTT repository operations, with deterministic setup helpers adjacent and operationally inert. Reopen if setup begins owning production decisions or a workload gains independent lifecycle ownership."
     }
@@ -617,7 +657,7 @@ warranted; final compatibility must be reviewed again at the corrected head.
   "freshStructuralReview": null,
   "coldNavigationEvidence": {
     "status": "passed",
-    "summary": "Exact generated navigation evidence for the declared shared RTC benchmark package owner resolves the canonical command entry, result owner, failure owner, colocated test root, exact workspace focused command, and README map on affected-code digest 2b4aad27974990637273949f8713a063b6013ff53120cca8b33aa747b9f8c1d3.",
+    "summary": "Exact generated navigation evidence for the declared shared RTC benchmark package owner resolves the canonical command entry, result owner, failure owner, colocated test root, exact workspace focused command, and README map on affected-code digest 856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139.",
     "probes": [
       {
         "capabilityOwner": "shared RTC benchmark package",
@@ -697,6 +737,41 @@ warranted; final compatibility must be reviewed again at the corrected head.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "The exact reviewed Task 4B head is published in draft PR #217. Branch Release Gate run 31743694243 exposed eight unclassified current navigation-test coupling occurrences and three stale location-bound records; the exact human-approved registry-only correction now passes focused and full coupling checks."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "Task 4B is rebased onto origin/main acd4866bb8fb90f6843956336fbbd4c7adafe778, where the administrator completed the merged configurable multi-plan governance plan through authenticated receipt 0bde818dac1bf9edc7e029f6cdc2fca9cb7acf2ab67b27a69ccd9abb677e3a03. The previously resolved repository-structure integration remains intact, and no Task 4B package contract or completed slice changed."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The current-main compatibility probe reproduced one focused navigation failure because Task 4B's repository-structure capability declaration named the deleted active-plan-registry.mjs predecessor. The current checker imports adaptive-plan-catalog.mjs, so the declaration now names that exact current fact contract; package tests, typecheck, and Deno checks remain green."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The current-main structure check now resolves every declared contract and reports only that the 24 existing structural dispositions and stored cold-navigation summary are bound to Task 4B's prior affected-code digest. Their current targets, magnitudes, identities, dispositions, rationales, and reopening triggers are unchanged, so they are rebound to the tool-generated current digest 24115777aa709f848df61ed6c6659d7c08c6cde9c79f70f204fd9aabd4213263."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The authoritative Task 4B plan and RTC roadmap now record the exact compatible main acd4866bb8fb90f6843956336fbbd4c7adafe778, its authenticated governance completion receipt, the resolved multi-plan/singleton-fact integration, and the absence of shared RTC package or frozen-contract changes. Those authorized contract-record edits produce affected-code digest 24115777aa709f848df61ed6c6659d7c08c6cde9c79f70f204fd9aabd4213263; all 24 unchanged structural dispositions and stored navigation evidence are rebound to it."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The final unit matrix reproduced one obsolete coupled test from completed PR #219: repository-governance.test.ts measures all later governance work against that plan's fixed d450f252 baseline and fails at 275 after 7,548 other tests pass. The human explicitly approved editing only this existing test owner to remove the completed-plan size ratchet while preserving its live catalog policy/navigation assertion."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The exact human-approved completed-plan ratchet correction is recorded as TASK4B-FINDING-016: focused RED failed 1 of 2 repository-governance tests at 275 lines, focused GREEN passes the remaining semantic behavior test, and no production or benchmark behavior changed. The current affected-code digest is e5b41ed1ebfe26ecf935d77bfdc14c952a2453498774a15068664b48ef75789d."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The final local unchanged-tree matrix passes after TASK4B-FINDING-016: focused governance 1/1, repository governance 33/407, repository structure 10/126, package 31/281, unit 7,548 with 5 skipped, CI including Deno and Playwright, and all workspace builds. Exact corrected-head review and remote Branch Release Gate remain."
     }
   ]
 }
