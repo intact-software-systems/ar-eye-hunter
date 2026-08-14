@@ -386,6 +386,7 @@ describe('PR Human Review Record v2', () => {
       'testEvidence',
       'compatibilityEvidence',
       'proportionalValidation',
+      'touchedFileStandardsClosure',
       'legacyClosure',
     ]) {
       const incomplete = finalReview() as unknown as Record<string, unknown>;
@@ -397,6 +398,31 @@ describe('PR Human Review Record v2', () => {
       ).toContain(`final review ${field} is required`);
     }
   });
+
+  it('requires non-placeholder touched-file standards closure evidence that matches the visible review', () => {
+    const record = reviewRecord({
+      finalReview: {
+        ...finalReview(),
+        touchedFileStandardsClosure: 'TODO: complete this review before readiness',
+      },
+    });
+    const contradictedVisibleEvidence = recordBody(record).replace(
+      `- Touched-file standards closure: ${record.finalReview?.touchedFileStandardsClosure}`,
+      '- Touched-file standards closure: The reviewer inspected only the changed production files.',
+    );
+
+    const errors = validateReviewRecord({
+      ...validationInput(record, false),
+      body: contradictedVisibleEvidence,
+    });
+
+    expect(errors).toContain(
+      'final review touchedFileStandardsClosure contains placeholder evidence',
+    );
+    expect(errors).toContain(
+      'visible final review contradicts metadata: touchedFileStandardsClosure',
+    );
+  }, 30_000);
 
   it('binds visible initial, checkpoint, and final evidence to metadata', () => {
     const record = reviewRecord({ finalReview: finalReview() });
@@ -541,6 +567,8 @@ function finalReview() {
     testEvidence: 'Focused semantic and repository-governance tests passed.',
     compatibilityEvidence: 'Public behavior and trusted retained-legacy semantics were preserved.',
     proportionalValidation: 'Focused local governance ran; broad build validation remains in CI.',
+    touchedFileStandardsClosure:
+      'Every changed human-authored code file was reviewed in full, recursive modified-support-file remediation is complete, and every remaining signal is a demonstrated false positive or linked human-approved exception.',
     legacyClosure: 'Every affected legacy candidate has one final disposition.',
     completeFindings: 'No Critical or Important correctness or contract findings remain.',
     automationGaps: 'Automation cannot approve semantic review quality.',
@@ -609,6 +637,7 @@ function recordBody(record: ReturnType<typeof reviewRecord>): string {
           `- Test evidence: ${final.testEvidence}`,
           `- Compatibility evidence: ${final.compatibilityEvidence}`,
           `- Proportional validation: ${final.proportionalValidation}`,
+          `- Touched-file standards closure: ${final.touchedFileStandardsClosure}`,
           `- Legacy closure: ${final.legacyClosure}`,
           `- Complete review findings and resolution/status: ${final.completeFindings}`,
           `- Behavior and judgment not proven by automation: ${final.automationGaps}`,

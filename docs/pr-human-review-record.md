@@ -20,7 +20,8 @@ visible fields bind directly to this metadata. Placeholder evidence is invalid.
 - The complete code, structure, tests, and legacy review is required before readiness. A
   fresh reviewer verifies declared outcomes, every declared owner-to-result path,
   navigation evidence, test evidence, compatibility evidence, proportional validation,
-  legacy closure, and all correctness, safety, contract, and structural findings.
+  touched-file standards closure, legacy closure, and all correctness, safety, contract, and
+  structural findings.
 
 Only the final review gates readiness: it must pass with zero unresolved Critical or
 Important findings.
@@ -39,6 +40,10 @@ This section contains only the current adaptive-plan digest.
 ### Complete code, structure, tests, and legacy review
 
 The fresh final reviewer follows every declared capability from owner and entry to result.
+Its required `finalReview.touchedFileStandardsClosure` string has exact visible-field
+agreement and confirms every changed human-authored code file reviewed in full, recursive
+modified-support-file remediation complete, and every remaining signal is a demonstrated false
+positive or linked human-approved exception.
 
 ## Content-sensitive freshness
 

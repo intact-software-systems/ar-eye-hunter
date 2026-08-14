@@ -15,6 +15,58 @@ stay outcome-shaped until a checkpoint earns their activation.
 
 **REQUIRED SUB-SKILL:** Use `rallar-testing` to select surface-specific commands.
 
+## Maintenance stewardship boundary
+
+For every code or human-authored support-file change, route standards judgment
+to `rallar-code-writing` and keep touched-file standards closure inside each
+slice. Implement the requested behavior while resolving pre-existing and new
+noncompliance throughout each touched file. When remediation changes a support
+file, that file enters the closure recursively. Independent untouched code
+remains outside the closure. Checker tolerance is not authority and does not
+define touched-file standards closure.
+
+When giving a next-action decision before edits, and again in the final
+handoff, state all three closure facts explicitly:
+
+- every changed human-authored file is reviewed and remediated in full;
+- every support file modified by that remediation enters closure recursively
+  until closure; and
+- independent untouched code remains outside closure.
+
+The `touched-file standards closure` label alone, an extraction label, or a
+consolidation label is not a substitute for those explicit statements.
+
+Before edits, state that the requested behavior remains the intended outcome
+and name two distinct planned validations: a direct test that exercises that
+behavior, and a concrete validation of the affected application or package,
+such as its build or typecheck. In the final handoff, report each result as
+passed, failed, or skipped. Remediation may sequence the work, but it must not
+replace or indefinitely defer the requested behavior.
+
+Scope growth caused by this recursive closure is deterministic execution work,
+not a reason to request permission to retain old findings. Reflect the expanded
+affected surface at the next required checkpoint without using a third active
+slice. Escalate only for a genuine exception for a remaining real standards
+violation, a public compatibility or migration decision, an unresolved
+correctness or safety conflict, or a failed post-consolidation navigation probe.
+Do not escalate for pre-existing debt, deadline pressure, diff size, cleanup
+volume, ownership recovery, package boundaries, substantial remediation, or
+reprioritization alone.
+
+Only a navigation probe that fails after one autonomous coherent consolidation
+of the changed capability qualifies as the fourth escalation. Failures
+involving pre-work plan state, active-plan cardinality failures, stale or
+unrelated governance state, and checker or resource failures must be classified
+and reported as validation or environment evidence. They do not justify seeking
+permission, retaining a real standards violation, or deferring safe in-scope
+implementation unless their concrete consequence is already one of the four
+escalation conditions.
+
+If consolidation must run first, it is the sole active slice. Keep the
+requested behavior named as the next outcome during consolidation; when the
+post-consolidation navigation check passes, make it the immediately following
+active slice.
+
 ## Control loop
 
 1. Qualify the work. An adaptive plan is required for a written plan,
@@ -65,14 +117,15 @@ live overview belongs only in ignored `.plan-adaptation/overview.md`.
 | Outcome and assumptions still hold                                     | `continue`    |
 | Goal holds but horizon or approach changed                             | `amend`       |
 | Ownership or navigation needs repair first                             | `consolidate` |
-| A required decision is unsafe or a post-consolidation cold probe fails | `stop`        |
+| A required decision is unsafe or the qualifying navigation probe fails | `stop`        |
 
 Never continue when repository ownership/navigation cannot be recovered or the
 next slice deepens a known structural failure. One autonomous consolidation may
 replace the next feature slice. `consolidate` must expose exactly one
 consolidation slice in `nextSlices`. Feature work stays inactive until the
-post-consolidation checkpoint; a failed cold-navigation probe then requires
-human direction.
+post-consolidation checkpoint. Only a navigation probe after that one autonomous
+coherent consolidation can require human direction under the fourth escalation
+condition.
 
 Select validation from changed behavior, boundaries, and risk: focused local
 tests and `npm run check:adaptive-governance` first; broad GitHub CI when the

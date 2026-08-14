@@ -69,6 +69,45 @@ describe('adaptive plan execution skill contract', () => {
       '`consolidate` must expose exactly one consolidation slice in `nextSlices`',
     );
     expect(skill).toContain('Feature work stays inactive until the post-consolidation checkpoint');
+    expect(skill).toContain('If consolidation must run first, it is the sole active slice');
+    expect(skill).toContain(
+      'Keep the requested behavior named as the next outcome during consolidation',
+    );
+    expect(skill).toContain(
+      'when the post-consolidation navigation check passes, make it the immediately following active slice',
+    );
+  });
+
+  it('states closure explicitly and treats pre-work failures as evidence', () => {
+    const skill = normalizeWhitespace(readRepo(`${skillRoot}/SKILL.md`));
+
+    expect(skill).toContain(
+      'When giving a next-action decision before edits, and again in the final handoff',
+    );
+    expect(skill).toContain('every changed human-authored file is reviewed and remediated in full');
+    expect(skill).toContain(
+      'every support file modified by that remediation enters closure recursively until closure',
+    );
+    expect(skill).toContain('independent untouched code remains outside closure');
+    expect(skill).toContain(
+      'Only a navigation probe that fails after one autonomous coherent consolidation',
+    );
+    expect(skill).toContain('active-plan cardinality failures');
+    expect(skill).toContain('classified and reported as validation or environment evidence');
+    expect(skill).toContain('do not justify seeking permission');
+    expect(skill).toContain('deferring safe in-scope implementation');
+    expect(skill).toContain(
+      'Before edits, state that the requested behavior remains the intended outcome',
+    );
+    expect(skill).toContain('name two distinct planned validations');
+    expect(skill).toContain('a direct test that exercises that behavior');
+    expect(skill).toContain(
+      'a concrete validation of the affected application or package, such as its build or typecheck',
+    );
+    expect(skill).toContain('report each result as passed, failed, or skipped');
+    expect(skill).toContain(
+      'Remediation may sequence the work, but it must not replace or indefinitely defer the requested behavior',
+    );
   });
 
   it('routes authenticated plan disposition through one exact approval', () => {

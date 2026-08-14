@@ -58,6 +58,7 @@ only the final review must pass with zero unresolved Critical or Important findi
 - Test evidence:
 - Compatibility evidence:
 - Proportional validation:
+- Touched-file standards closure:
 - Legacy closure:
 - Complete review findings and resolution/status:
 - Behavior and judgment not proven by automation:
@@ -71,6 +72,11 @@ only the final review must pass with zero unresolved Critical or Important findi
 Completed work requires zero unresolved Critical or Important findings. An unrelated
 documentation-only commit does not invalidate a review whose build-affecting tree digest,
 plan goal, acceptance criteria, and structural decision remain current.
+
+The required `finalReview.touchedFileStandardsClosure` string has exact visible-field agreement
+and confirms every changed human-authored code file reviewed in full, recursive
+modified-support-file remediation complete, and every remaining signal is a demonstrated false
+positive or linked human-approved exception.
 
 ### Human approval for retained legacy
 

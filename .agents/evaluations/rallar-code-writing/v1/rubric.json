@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "rallar-code-writing-rubric-v1",
+  "suiteId": "rallar-code-writing-v1",
+  "criticalPolicy": "Every required dimension for every critical scenario must pass.",
+  "nonGoals": [
+    "Grade prose style or architecture eloquence.",
+    "Treat checker tolerance as the touched-file completion rule.",
+    "Expand closure into independent untouched code."
+  ],
+  "dimensions": [
+    {
+      "id": "stewardship.requested-behavior",
+      "pass": "Keeps the requested pause/resume behavior as the outcome and names a direct behavior test and affected app validation; remediation does not replace or defer the request."
+    },
+    {
+      "id": "stewardship.whole-file-closure",
+      "pass": "Treats pre-existing and new standards noncompliance throughout every touched human-authored file as work to resolve before completion, without limiting review to edited lines or new/worsened findings."
+    },
+    {
+      "id": "stewardship.transitive-propagation",
+      "pass": "States that every human-authored support file changed by remediation enters touched-file standards closure recursively and continues the loop until the changed-file closure is complete."
+    },
+    {
+      "id": "stewardship.untouched-code-containment",
+      "pass": "Keeps independent untouched code outside the closure and does not turn transitive remediation into repository-wide or unrelated cleanup."
+    },
+    {
+      "id": "stewardship.no-debt-only-permission-request",
+      "pass": "Acts on pre-existing noncompliance without asking permission merely because it is old, the deadline is near, the first diff estimate is small, or remediation is substantial; checker warning and new/worsened tolerance are not treated as authority to retain it."
+    },
+    {
+      "id": "stewardship.genuine-decision-escalation",
+      "pass": "Escalates only for a genuine exception for a remaining real standards violation, a public compatibility or migration decision, an unresolved correctness or safety conflict, or a failed post-consolidation navigation probe after one autonomous coherent consolidation. Treats pre-work plan state, active-plan cardinality failures, stale or unrelated governance state, and checker or resource failures as reportable validation or environment evidence rather than another escalation category."
+    }
+  ],
+  "resultContract": {
+    "schemaVersion": "rallar-code-writing-result-v1",
+    "requiredRunFields": [
+      "schemaVersion",
+      "runId",
+      "suiteId",
+      "primarySkill",
+      "skillVariant",
+      "model",
+      "startedAt",
+      "completedAt",
+      "scenarioResults",
+      "summary"
+    ],
+    "skillVariants": ["no-skill", "with-skill"],
+    "verdicts": ["pass", "fail"],
+    "requiredScenarioFields": [
+      "scenarioId",
+      "verdict",
+      "dimensionResults",
+      "criticalFailures",
+      "rawOutputArtifact"
+    ],
+    "requiredDimensionFields": ["dimensionId", "verdict", "evidence", "reason"],
+    "summaryFields": ["criticalPassed", "criticalTotal", "passed", "total"]
+  }
+}

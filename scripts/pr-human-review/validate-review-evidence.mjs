@@ -181,6 +181,7 @@ export function validateFinalReview(input) {
     'testEvidence',
     'compatibilityEvidence',
     'proportionalValidation',
+    'touchedFileStandardsClosure',
     'legacyClosure',
     'completeFindings',
     'automationGaps',
@@ -305,6 +306,11 @@ function finalVisibleFields(review, retainedLegacy) {
     ['Test evidence', review.testEvidence, 'testEvidence'],
     ['Compatibility evidence', review.compatibilityEvidence, 'compatibilityEvidence'],
     ['Proportional validation', review.proportionalValidation, 'proportionalValidation'],
+    [
+      'Touched-file standards closure',
+      review.touchedFileStandardsClosure,
+      'touchedFileStandardsClosure',
+    ],
     ['Legacy closure', review.legacyClosure, 'legacyClosure'],
     ['Complete review findings and resolution/status', review.completeFindings, 'completeFindings'],
     ['Behavior and judgment not proven by automation', review.automationGaps, 'automationGaps'],
@@ -494,7 +500,8 @@ function validateText(value, label, errors) {
 function isPlaceholder(value) {
   const normalizedValue = value.trim().toLowerCase();
   return (
-    ['todo', 'tbd', 'not applicable', 'not yet required', '...', '-'].includes(normalizedValue) ||
+    /^(?:todo|tbd|not applicable|not yet required)\b/u.test(normalizedValue) ||
+    ['...', '-'].includes(normalizedValue) ||
     normalizedValue.includes('<placeholder>') ||
     normalizedValue.includes('[placeholder]')
   );
