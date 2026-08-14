@@ -28,6 +28,16 @@ describe('pull request delivery action', () => {
       expected: 'WORK',
     },
     {
+      name: 'reports a real source conflict before draft implementation state',
+      pullRequest: {
+        ...openPullRequest,
+        isDraft: true,
+        mergeable: 'CONFLICTING',
+        mergeStateStatus: 'DIRTY',
+      },
+      expected: 'REPAIR_CONFLICT',
+    },
+    {
       name: 'stops when the pull request was closed without merging',
       pullRequest: { ...openPullRequest, state: 'CLOSED' },
       expected: 'STOP_CLOSED',

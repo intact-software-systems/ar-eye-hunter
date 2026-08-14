@@ -15,16 +15,16 @@ export function deriveDeliveryAction(pullRequest) {
     return 'STOP_WRONG_BASE';
   }
 
+  if (pullRequest.mergeable === 'CONFLICTING' || pullRequest.mergeStateStatus === 'DIRTY') {
+    return 'REPAIR_CONFLICT';
+  }
+
   if (pullRequest.isDraft) {
     return 'WORK';
   }
 
   if (pullRequest.mergeable === 'UNKNOWN' || pullRequest.mergeStateStatus === 'UNKNOWN') {
     return 'WAIT_GITHUB';
-  }
-
-  if (pullRequest.mergeable === 'CONFLICTING' || pullRequest.mergeStateStatus === 'DIRTY') {
-    return 'REPAIR_CONFLICT';
   }
 
   if (pullRequest.checks === 'FAILING') {
