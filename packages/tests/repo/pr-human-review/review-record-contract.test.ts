@@ -41,8 +41,27 @@ describe('PR Human Review Record v2 contract', () => {
       'test evidence',
       'compatibility evidence',
       'proportional validation',
+      'touched-file standards closure',
       'legacy closure',
       'zero unresolved Critical or Important findings',
+    ]);
+  });
+
+  it('requires complete touched-file standards closure evidence in the visible template and durable contract', () => {
+    const template = readRepo(templatePath);
+    const contract = readRepo(contractPath);
+
+    for (const source of [template, contract]) {
+      expectAllNormalized(source, [
+        'touched-file standards closure',
+        'every changed human-authored code file reviewed in full',
+        'recursive modified-support-file remediation complete',
+        'every remaining signal is a demonstrated false positive or linked human-approved exception',
+      ]);
+    }
+    expectAllNormalized(contract, [
+      'finalReview.touchedFileStandardsClosure',
+      'exact visible-field agreement',
     ]);
   });
 
