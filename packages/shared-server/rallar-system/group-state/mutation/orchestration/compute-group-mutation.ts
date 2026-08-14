@@ -122,6 +122,7 @@ export function validateFacts(facts: GroupMutationFacts): void {
       'joinCodeVerifier',
       'internalAuthority',
       'formationDamping',
+      'capacity',
       'authenticatedAuthority',
       'attemptCount',
     ],
@@ -145,11 +146,23 @@ export function validateFacts(facts: GroupMutationFacts): void {
   if (!['damped', 'legacy'].includes(facts.formationDamping)) {
     throw new TypeError('Group mutation formation damping is invalid');
   }
+  validateCapacityFacts(facts.capacity);
   validateAuthenticatedAuthority(facts.authenticatedAuthority);
   validateResolvedJoinCodePair(facts);
   if (facts.internalAuthority !== 'none' && facts.authenticatedAuthority !== null) {
     throw new TypeError('Internal group authority cannot also be authenticated authority');
   }
+}
+
+function validateCapacityFacts(capacity: GroupMutationFacts['capacity']): void {
+  if (capacity === undefined) return;
+  const record = requireRecord(capacity, 'Group mutation capacity facts');
+  assertExactKeys(record, ['defaultMaxMembers'], 'Group mutation capacity facts');
+  if (record.defaultMaxMembers === null) return;
+  requirePositiveSafeInteger(
+    record.defaultMaxMembers,
+    'Group mutation capacity defaultMaxMembers',
+  );
 }
 
 function validateAuthenticatedAuthority(

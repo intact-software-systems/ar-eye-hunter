@@ -74,7 +74,7 @@ describe('durable WS outbox owner misses', () => {
     await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
     expect(readEntry(outbox).status).toBe(EntityStatus.COMPLETED);
-    expect(ownerSocket.send).toHaveBeenCalledWith('writer-session', expect.anything());
+    expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
   });
 
   it('redrives a durable send after a shared admission claim conflict', async () => {
@@ -113,7 +113,7 @@ describe('durable WS outbox owner misses', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(claimCalls).toBeGreaterThanOrEqual(3);
-    expect(ownerSocket.send).toHaveBeenCalledWith('writer-session', expect.anything());
+    expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
   });
 
   it('publishes a wrong-claimant outbox key so the socket owner delivers it', async () => {
@@ -228,7 +228,7 @@ describe('durable WS outbox owner misses', () => {
     expect(remoteSocket.sendEncoded).toHaveBeenCalledOnce();
     expect(remoteSocket.sendEncoded).toHaveBeenCalledWith(
       'writer-session',
-      expect.stringContaining('published-after-readiness'),
+      expect.objectContaining({ text: expect.stringContaining('published-after-readiness') }),
     );
   });
 
@@ -360,7 +360,7 @@ function createSocket() {
   const socket = {
     connections: new Map([['writer-session', { id: 'writer-session', isOpen: true }]]),
     onMessageDo: () => undefined,
-    encode: vi.fn((message: ALMessage) => JSON.stringify(message)),
+    encode: vi.fn((message: ALMessage) => ({ text: JSON.stringify(message) })),
     send,
     sendEncoded,
   } as unknown as JsonWebSocketServer;

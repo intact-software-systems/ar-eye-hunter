@@ -15,7 +15,7 @@ import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerS
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/crdt/InMemoryRallarCrdtLogRepository.ts';
 import {
   createGroupFormationMetricsRecorder,
-} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
+} from '@shared-server/rallar-system/formation-metrics.ts';
 import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
 
 import type { Middleware } from '../src/middleware-contract.ts';

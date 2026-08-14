@@ -123,6 +123,7 @@ function createAuthorityDependencies(
     randomId,
     serviceId: dependencies.serviceId,
     formationDamping: dependencies.formationDamping,
+    capacity: dependencies.capacity,
     readCausalRevision: async (ref) =>
       await repositoryFor(dependencies.runtimeRepository).readCausalRevision(ref),
   };
@@ -144,6 +145,7 @@ function createInternalMutationPreparer(
       joinCodeVerifier: null,
       internalAuthority,
       formationDamping: dependencies.formationDamping,
+      ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
       authenticatedAuthority: null,
     };
     const causalToken = await sha256CanonicalJson({ command, facts });

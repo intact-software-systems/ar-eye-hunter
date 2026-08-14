@@ -6,7 +6,12 @@ import type {
     ClientEvent,
     ClientSnapshot,
 } from '@shared/api/client-types.ts';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type {
+    GroupEvent,
+    GroupSnapshot,
+    GroupStateCausalRevision,
+} from '@shared/api/group-types.ts';
+import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import {
     DEFAULT_STATE_APPLICATION_ID,
@@ -20,6 +25,7 @@ import {
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { findOverlayById, setOverlayById } from '@shared/repository/overlays-repository.ts';
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import * as dataCaches from '@shared-web/browser/data-caches.ts';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
@@ -380,7 +386,7 @@ describe('browser data caches state scope filtering', () => {
         unsubscribe();
     });
 
-    it('ignores state event websocket messages in the snapshot cache layer', async () => {
+    it('ignores bare group and client state event websocket messages in the snapshot cache layer', async () => {
         const manager = createWebRtcGroupManager();
         const clientData: ClientInfo = {
             clientId: 'alice',
@@ -791,7 +797,7 @@ describe('browser data caches state scope filtering', () => {
         },
     );
 
-    it('uses snapshot hydration as convergence after state event details are missed', async () => {
+    it('pulls the floored group snapshot when a delta envelope arrives over a causal gap', async () => {
         const manager = createWebRtcGroupManager();
         const clientData: ClientInfo = {
             clientId: 'alice',
@@ -811,20 +817,21 @@ describe('browser data caches state scope filtering', () => {
         };
         const listener = vi.fn();
         const unsubscribe = dataCaches.onStateCacheChange(listener);
-        const clientSnapshot = createClientSnapshot(
-            'alice',
-            'session-a',
-            DEFAULT_STATE_APPLICATION_ID,
-            DEFAULT_STATE_WORKSPACE_ID,
-            2,
-        );
-        const groupSnapshot = createGroupSnapshot(
+        const resulting = createGroupSnapshot(
             'room-a',
             DEFAULT_STATE_APPLICATION_ID,
             DEFAULT_STATE_WORKSPACE_ID,
             ['session-a'],
             2,
         );
+        const envelope = createGroupStateDeltaEnvelope(
+            resulting,
+            { groupRevision: 1, presenceRevision: 1 },
+        );
+        configureApiClient({ apiBaseUrl: 'https://api.example.test' });
+        vi.stubGlobal('localStorage', { getItem: () => null });
+        const fetchMock = vi.fn(async () => groupSnapshotResponse(resulting));
+        vi.stubGlobal('fetch', fetchMock);
 
         dataCaches.initialise(
             webSocketQueueBox,
@@ -835,52 +842,27 @@ describe('browser data caches state scope filtering', () => {
         await onInboxMessage?.(
             newALBroadcastMessage(
                 'server-1',
-                newALEventRoute(AppTopics.groupStateEvent, 'room-a', 'event-1'),
+                newALEventRoute(AppTopics.groupStateEvent, 'room-a', envelope.event.eventId),
                 'all',
                 AppTopics.groupStateEvent,
-                createGroupEvent('room-a', 'event-1'),
-            ),
-        );
-        await onInboxMessage?.(
-            newALBroadcastMessage(
-                'server-1',
-                newALEventRoute(AppTopics.clientStateEvent, 'alice', 'event-2'),
-                'all',
-                AppTopics.clientStateEvent,
-                createClientEvent('alice', 'event-2'),
+                envelope,
             ),
         );
 
-        expect(listener).not.toHaveBeenCalled();
-        expect(clientStateSnapshotsRepository.getAllClientStateSnapshots()).toEqual(
-            [],
+        expect(fetchMock).toHaveBeenCalledOnce();
+        expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+            'https://api.example.test/api/state/apps/rallar-server/workspaces/default' +
+                '/groups/room-a?minGroupRevision=2&minPresenceRevision=2',
         );
-        expect(groupStateSnapshotsRepository.getAllGroupStateSnapshots()).toEqual(
-            [],
-        );
-
-        await dataCaches.hydrateStateCaches(
-            manager,
-            clientData,
-            [clientSnapshot],
-            [groupSnapshot],
-        );
-
-        expect(
-            clientStateSnapshotsRepository.getAllClientStateSnapshots(),
-        ).toEqual([clientSnapshot]);
         expect(
             groupStateSnapshotsRepository.getAllGroupStateSnapshots(),
-        ).toEqual([groupSnapshot]);
-        expect(listener).toHaveBeenCalledWith({
-            clients: [clientSnapshot],
-            groups: [],
-        });
+        ).toEqual([resulting]);
         expect(listener).toHaveBeenCalledWith({
             clients: [],
-            groups: [groupSnapshot],
+            groups: [resulting],
         });
 
+        vi.unstubAllGlobals();
         unsubscribe();
     });
 
@@ -1263,6 +1245,58 @@ function withGroupCausalRevision(
             presenceVersion: causalRevision.presenceRevision,
         },
     };
+}
+
+function createGroupStateDeltaEnvelope(
+    resulting: GroupSnapshot,
+    predecessorCausalRevision: GroupStateCausalRevision,
+): GroupStateDeltaEnvelope {
+    const activeSessionIds = resulting.activeSessions.map(
+        (session) => session.sessionId,
+    );
+    return {
+        event: {
+            applicationId: resulting.group.applicationId,
+            workspaceId: resulting.group.workspaceId,
+            groupId: resulting.group.groupId,
+            eventId: `event-${resulting.group.groupId}-${resulting.stateRevision}`,
+            eventType: 'session-heartbeat',
+            snapshotVersion: resulting.group.snapshotVersion,
+            causalRevision: resulting.causalRevision,
+            occurredAtEpochMs: 1,
+            actor: { kind: 'service', serviceId: 'summary-worker' },
+            reason: null,
+            traceId: null,
+            requestId: 'request-delta',
+            payload: {},
+        },
+        predecessorCausalRevision,
+        resultingCausalRevision: resulting.causalRevision,
+        members: [],
+        removedMemberPrincipalIds: [],
+        sessions: [],
+        removedSessionIds: [],
+        activeSessionIds,
+        group: resulting.group,
+        memberCount: resulting.memberCount,
+        onlineMemberCount: resulting.onlineMemberCount,
+        audienceSessionIds: activeSessionIds,
+    };
+}
+
+function groupSnapshotResponse(snapshot: GroupSnapshot): Response {
+    return new Response(JSON.stringify(snapshot), {
+        status: 200,
+        headers: {
+            'content-type': 'application/json',
+            'cache-control': 'no-store',
+            'rallar-state-source': 'durable',
+            'rallar-group-revision': String(snapshot.causalRevision.groupRevision),
+            'rallar-presence-revision': String(
+                snapshot.causalRevision.presenceRevision,
+            ),
+        },
+    });
 }
 
 function createGroupEvent(

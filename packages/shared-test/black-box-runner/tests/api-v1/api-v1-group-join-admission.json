@@ -1,0 +1,286 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_JOINADM_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-joinadm"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_JOINADM_WORKSPACE_ID",
+      "default": "workspace-joinadm-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_JOINADM_GROUP_ID",
+      "default": "joinadm-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_JOINADM_PASSWORD",
+      "default": "api-v1-joinadm-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "joinadm-founder-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "founder client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "joinadm-founder-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "founderClientId": "body.clientId",
+          "founderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "founderSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveFounderAuthHeader",
+      "type": "set",
+      "output": "founderAuthHeader",
+      "secret": true,
+      "redactAs": "founderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.founderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerProbe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "joinadm-probe-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "storm probe client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginProbe",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "joinadm-probe-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "probeClientId": "body.clientId",
+          "probeAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "probeSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveProbeAuthHeader",
+      "type": "set",
+      "output": "probeAuthHeader",
+      "secret": true,
+      "redactAs": "probeAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.probeAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "create-joinadm-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "Join admission group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{founderClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "stormProbeUpsertSelfJoin",
+      "type": "loop",
+      "count": 70,
+      "steps": [
+        {
+          "name": "stormProbeJoinAttempt{loop.iteration}",
+          "type": "http",
+          "connection": "api",
+          "request": {
+            "method": "PUT",
+            "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}",
+            "headers": {
+              "Authorization": "{probeAuthHeader}",
+              "x-client-id": "{probeClientId}"
+            },
+            "body": {
+              "requestId": "storm-join-{loop.iteration}-{runId}",
+              "status": "active"
+            }
+          },
+          "expect": {
+            "statusCode": [
+              200,
+              429
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "probeOverLimitJoinAnswers429WithRetryAfter",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{probeClientId}",
+        "headers": {
+          "Authorization": "{probeAuthHeader}",
+          "x-client-id": "{probeClientId}"
+        },
+        "body": {
+          "requestId": "storm-join-over-limit-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 429,
+        "headers": {
+          "Retry-After": "60"
+        },
+        "body": {
+          "error": "string",
+          "code": "group-admission-rate-limited"
+        }
+      }
+    },
+    {
+      "name": "founderControlJoinStillAdmitted",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{founderClientId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "control-join-founder-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    }
+  ]
+}

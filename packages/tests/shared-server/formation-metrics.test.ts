@@ -5,7 +5,7 @@ import {
   createGroupFormationMetricsRecorder,
   emptyGroupFormationMetrics,
   toGroupFormationOperationKind,
-} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
+} from '@shared-server/rallar-system/formation-metrics.ts';
 // prettier-ignore
 import {
   APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
@@ -87,10 +87,19 @@ describe('group formation metrics recorder', () => {
       kind: 'live-send',
       topicId: AppTopics.overlayTopology,
       recipientCount: 5,
-      sentCount: 5,
+      sentCount: 4,
+      payloadBytes: 100,
     });
-    recorder.wsDelivery({ kind: 'outbox-send', topicId: AppTopics.groupStateSnapshot });
-    recorder.wsDelivery({ kind: 'outbox-send', topicId: AppTopics.groupStateSnapshot });
+    recorder.wsDelivery({
+      kind: 'outbox-send',
+      topicId: AppTopics.groupStateSnapshot,
+      payloadBytes: 250,
+    });
+    recorder.wsDelivery({
+      kind: 'outbox-send',
+      topicId: AppTopics.groupStateSnapshot,
+      payloadBytes: 250,
+    });
     recorder.wsDelivery({ kind: 'no-local-recipient', topicId: AppTopics.groupStateEvent });
 
     const metrics = recorder.readMetrics();
@@ -102,6 +111,10 @@ describe('group formation metrics recorder', () => {
       [AppTopics.overlayTopology]: 5,
       [AppTopics.groupStateSnapshot]: 2,
     });
+    expect(metrics.wsEgressBytesByTopicId).toEqual({
+      [AppTopics.overlayTopology]: 400,
+      [AppTopics.groupStateSnapshot]: 500,
+    });
     expect(metrics.wsOutboxNoLocalRecipientCount).toBe(1);
   });
 
@@ -109,7 +122,11 @@ describe('group formation metrics recorder', () => {
     const recorder = createGroupFormationMetricsRecorder();
 
     for (let index = 0; index < 60; index += 1) {
-      recorder.wsDelivery({ kind: 'outbox-send', topicId: `unexpected-topic-${index}` });
+      recorder.wsDelivery({
+        kind: 'outbox-send',
+        topicId: `unexpected-topic-${index}`,
+        payloadBytes: 1,
+      });
     }
 
     const metrics = recorder.readMetrics();
@@ -145,7 +162,11 @@ describe('group formation metrics recorder', () => {
 
     recorder.groupMutation({ operation: 'joinGroup', outcome: 'write' });
     recorder.topologyOutboxWritten();
-    recorder.wsDelivery({ kind: 'outbox-send', topicId: AppTopics.groupStateEvent });
+    recorder.wsDelivery({
+      kind: 'outbox-send',
+      topicId: AppTopics.groupStateEvent,
+      payloadBytes: 42,
+    });
 
     const observed = recorder.readMetrics();
     expect(observed.groupMutationCount.join.write).toBe(1);

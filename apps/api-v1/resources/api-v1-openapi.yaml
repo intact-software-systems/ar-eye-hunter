@@ -766,6 +766,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/invites/accept:
     post:
@@ -799,6 +801,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/join-code/rotate:
     post:
@@ -1195,6 +1199,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}:
     put:
@@ -1230,6 +1236,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{sessionId}/heartbeat:
     post:
@@ -2729,6 +2737,11 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     TooManyRequests:
       description: Rate limit exceeded.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying the rate-limited request.
+          schema:
+            type: integer
       content:
         application/json:
           schema:

@@ -16,10 +16,21 @@ export type GroupPolicyActor = Readonly<{
     serviceId?: string;
 }>;
 
+/**
+ * Operational capacity defaults threaded from runtime configuration. The
+ * config is absent when the runtime supplies no operational defaults;
+ * `defaultMaxMembers: null` states explicitly that the default cap is
+ * disabled. A stored `group.maxMembers` always wins over the default.
+ */
+export type GroupPolicyCapacityConfig = Readonly<{
+    defaultMaxMembers: number | null;
+}>;
+
 export type CanJoinGroupInput = Readonly<{
     snapshot: GroupSnapshot;
     actor: GroupPolicyActor;
     nowEpochMs?: number;
+    capacity?: GroupPolicyCapacityConfig;
     inviteToken?: string;
     expectedInviteToken?: string;
     joinCode?: string;
@@ -40,6 +51,7 @@ export type CanActivateGroupMemberInput = Readonly<{
     snapshot: GroupSnapshot;
     targetPrincipalId: string;
     nowEpochMs?: number;
+    capacity?: GroupPolicyCapacityConfig;
 }>;
 
 export type CanMutateActiveGroupInput = Readonly<{
@@ -140,7 +152,7 @@ export function canJoinGroup(input: CanJoinGroupInput): GroupPolicyResult {
         return memberDenial;
     }
 
-    if (wouldExceedMemberCap(input.snapshot, member)) {
+    if (wouldExceedMemberCap(input.snapshot, member, input.capacity)) {
         return deny('group-full', 'Group member capacity has been reached.');
     }
 
@@ -208,7 +220,7 @@ export function canActivateGroupMember(
     }
 
     const member = findMember(input.snapshot, input.targetPrincipalId);
-    if (wouldExceedMemberCap(input.snapshot, member)) {
+    if (wouldExceedMemberCap(input.snapshot, member, input.capacity)) {
         return deny('group-full', 'Group member capacity has been reached.');
     }
 
@@ -506,8 +518,9 @@ function requireActiveGroup(
 function wouldExceedMemberCap(
     snapshot: GroupSnapshot,
     member: GroupMember | undefined,
+    capacity: GroupPolicyCapacityConfig | undefined,
 ): boolean {
-    const cap = snapshot.group.maxMembers;
+    const cap = snapshot.group.maxMembers ?? capacity?.defaultMaxMembers ?? null;
     if (cap === null || member?.status === 'active') {
         return false;
     }

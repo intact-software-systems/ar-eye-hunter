@@ -15,6 +15,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import type { GroupPolicyCapacityConfig } from '../../group-policy.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
 // prettier-ignore
@@ -236,6 +237,12 @@ export type GroupMutationFacts = Readonly<{
   joinCodeVerifier: string | null;
   internalAuthority: 'none' | 'expiry' | 'session-cleanup';
   formationDamping: 'damped' | 'legacy';
+  /**
+   * Operational capacity defaults captured at preparation time; absent when
+   * the runtime configured no defaults, which preserves stored-cap-only
+   * admission and keeps pre-existing durable preparations valid.
+   */
+  capacity?: GroupPolicyCapacityConfig;
   authenticatedAuthority: Readonly<{
     principalId: string;
     sessionId: string;

@@ -57,6 +57,9 @@ export function resolveStateSyncRecipients(
         case 'group-directory':
             return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
         case 'group-event': {
+            if (payload.audienceSessionIds !== undefined) {
+                return toOpenConnectionRecipients(webSocketServer, payload.audienceSessionIds);
+            }
             const groupRef = {
                 ...payload.scope,
                 groupId: payload.groupId,
@@ -227,6 +230,26 @@ function resolveGroupRecipients(
         }));
 
     return dedupRecipients([...clientRecipients, ...presenceRecipients]);
+}
+
+/**
+ * Delta-envelope rows persist their computed audience at write time; delivery
+ * intersects it with locally open connections only. Sessions without a local
+ * open connection are dropped silently — late joiners converge through their
+ * join-time snapshot pull, never through event fanout.
+ */
+function toOpenConnectionRecipients(
+    webSocketServer: JsonWebSocketServer,
+    audienceSessionIds: readonly string[],
+): readonly WsServerResolvedRecipient[] {
+    return dedupRecipients(
+        audienceSessionIds
+            .filter((sessionId) => webSocketServer.connections.get(sessionId)?.isOpen)
+            .map((sessionId) => ({
+                peerId: sessionId,
+                connectionId: sessionId,
+            })),
+    );
 }
 
 function toOpenClientSessionRecipients(

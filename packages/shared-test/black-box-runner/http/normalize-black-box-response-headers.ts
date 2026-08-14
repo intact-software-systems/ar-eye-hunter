@@ -4,6 +4,7 @@ const RESPONSE_HEADER_ALLOW_LIST = [
   'rallar-presence-revision',
   'rallar-state-revision',
   'rallar-state-source',
+  'retry-after',
 ] as const;
 
 export function normalizeBlackBoxResponseHeaders(

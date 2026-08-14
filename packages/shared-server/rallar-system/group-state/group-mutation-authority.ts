@@ -5,6 +5,7 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
+import type { GroupPolicyCapacityConfig } from '../group-policy.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
 import {
   canonicalJson,
@@ -42,6 +43,7 @@ export interface GroupMutationAuthorityDependencies {
   readonly randomId: () => string;
   readonly serviceId: string;
   readonly formationDamping: 'damped' | 'legacy';
+  readonly capacity?: GroupPolicyCapacityConfig;
   readonly readCausalRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | undefined>;
 }
 
@@ -93,6 +95,7 @@ export async function prepareGroupMutation(
     joinCodeVerifier: await toJoinCodeVerifier(resolvedJoinCode),
     internalAuthority: 'none',
     formationDamping: dependencies.formationDamping,
+    ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
     authenticatedAuthority: {
       principalId: verified.session.clientId,
       sessionId: verified.session.sessionId,

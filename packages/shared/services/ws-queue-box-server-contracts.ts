@@ -67,10 +67,14 @@ export type WsDeliveryDiagnosticsEvent =
         topicId: string;
         recipientCount: number;
         sentCount: number;
+        // Serialized message length in UTF-16 code units (exact bytes for ASCII JSON),
+        // measured once from the shared encoding; egress bytes = payloadBytes * sentCount.
+        payloadBytes: number;
     }>
     | Readonly<{
         kind: 'outbox-send';
         topicId: string;
+        payloadBytes: number;
     }>
     | Readonly<{
         kind: 'no-local-recipient';

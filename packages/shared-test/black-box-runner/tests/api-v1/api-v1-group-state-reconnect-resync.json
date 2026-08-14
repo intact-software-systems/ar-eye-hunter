@@ -1,0 +1,717 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_RECONNECT_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-reconnect"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_RECONNECT_WORKSPACE_ID",
+      "default": "workspace-reconnect-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_RECONNECT_GROUP_ID",
+      "default": "reconnect-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_RECONNECT_PASSWORD",
+      "default": "api-v1-reconnect-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "wsAlpha1": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsBeta": {
+      "type": "ws",
+      "timeoutMs": 10000
+    },
+    "wsAlpha2": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerAlpha",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "reconnect-alpha-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "alpha client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginAlpha",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "reconnect-alpha-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "alphaClientId": "body.clientId",
+          "alphaAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "alphaSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAlphaAuthHeader",
+      "type": "set",
+      "output": "alphaAuthHeader",
+      "secret": true,
+      "redactAs": "alphaAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.alphaAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerBeta",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "reconnect-beta-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "beta client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginBeta",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "reconnect-beta-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "betaClientId": "body.clientId",
+          "betaAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "betaSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBetaAuthHeader",
+      "type": "set",
+      "output": "betaAuthHeader",
+      "secret": true,
+      "redactAs": "betaAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.betaAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "requestId": "create-reconnect-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "Reconnect group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "joinAlpha",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{alphaClientId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "requestId": "join-reconnect-alpha-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "joinBeta",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{betaClientId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "body": {
+          "requestId": "join-reconnect-beta-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "createAlphaWsTicketFirst",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "alphaWsTicketFirst": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{alphaSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveAlphaWsUrlFirst",
+      "type": "set",
+      "output": "alphaWsUrlFirst",
+      "secret": true,
+      "redactAs": "alphaWsUrlFirst",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.alphaSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.alphaWsTicketFirst"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "createBetaWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "outputs": {
+          "betaWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{betaSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveBetaWsUrl",
+      "type": "set",
+      "output": "betaWsUrl",
+      "secret": true,
+      "redactAs": "betaWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.betaSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.betaWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAlphaFirstWs",
+      "type": "ws.open",
+      "connection": "wsAlpha1",
+      "request": {
+        "url": "{alphaWsUrlFirst}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "openBetaWs",
+      "type": "ws.open",
+      "connection": "wsBeta",
+      "request": {
+        "url": "{betaWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "connectAlphaPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{alphaSessionId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "requestId": "presence-reconnect-alpha-{runId}",
+          "generationId": "generation-reconnect-alpha-{runId}",
+          "principalId": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectBetaPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{betaSessionId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "body": {
+          "requestId": "presence-reconnect-beta-{runId}",
+          "generationId": "generation-reconnect-beta-{runId}",
+          "principalId": "{betaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "waitFormationOverlayOnAlpha",
+      "type": "ws.wait",
+      "connection": "wsAlpha1",
+      "expect": {
+        "connection": "wsAlpha1",
+        "withinMs": 20000,
+        "message": {
+          "route": {
+            "topicId": "overlay.topology"
+          },
+          "payload": {
+            "typeId": "overlay.topology"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "waitFormationOverlayOnBeta",
+      "type": "ws.wait",
+      "connection": "wsBeta",
+      "expect": {
+        "connection": "wsBeta",
+        "withinMs": 20000,
+        "consume": true,
+        "message": {
+          "route": {
+            "topicId": "overlay.topology"
+          },
+          "payload": {
+            "typeId": "overlay.topology"
+          }
+        }
+      }
+    },
+    {
+      "name": "dropAlphaWs",
+      "type": "ws.close",
+      "connection": "wsAlpha1"
+    },
+    {
+      "name": "updateGroupWhileAlphaOffline",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "body": {
+          "requestId": "offline-update-{runId}",
+          "displayName": "Reconnect group updated {runId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "displayName": "Reconnect group updated {runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "waitReplanPublicationOnBeta",
+      "type": "ws.wait",
+      "connection": "wsBeta",
+      "expect": {
+        "connection": "wsBeta",
+        "withinMs": 20000,
+        "message": {
+          "route": {
+            "topicId": "overlay.topology"
+          },
+          "payload": {
+            "typeId": "overlay.topology"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "captureUpdatedTopologyVersion",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "outputs": {
+          "updatedTopologyVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "snapshot": {
+            "state": "active",
+            "version": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "captureUpdatedGroupRevisions",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+        "headers": {
+          "Authorization": "{betaAuthHeader}",
+          "x-client-id": "{betaClientId}"
+        },
+        "outputs": {
+          "updatedGroupRevision": "body.causalRevision.groupRevision",
+          "updatedPresenceRevision": "body.causalRevision.presenceRevision"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "displayName": "Reconnect group updated {runId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "createAlphaWsTicketSecond",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "alphaWsTicketSecond": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{alphaSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveAlphaWsUrlSecond",
+      "type": "set",
+      "output": "alphaWsUrlSecond",
+      "secret": true,
+      "redactAs": "alphaWsUrlSecond",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.alphaSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.alphaWsTicketSecond"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "reopenAlphaWs",
+      "type": "ws.open",
+      "connection": "wsAlpha2",
+      "request": {
+        "url": "{alphaWsUrlSecond}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "waitReconnectTopologyHydrationOnAlpha",
+      "type": "ws.wait",
+      "connection": "wsAlpha2",
+      "expect": {
+        "connection": "wsAlpha2",
+        "withinMs": 20000,
+        "message": {
+          "route": {
+            "topicId": "overlay.topology"
+          },
+          "payload": {
+            "typeId": "overlay.topology"
+          },
+          "targets": {
+            "mode": "unicast",
+            "toPeerId": "{alphaSessionId}"
+          }
+        },
+        "consume": true
+      }
+    },
+    {
+      "name": "flooredResyncReadAfterReconnect",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}?minGroupRevision={updatedGroupRevision}&minPresenceRevision={updatedPresenceRevision}",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "displayName": "Reconnect group updated {runId}"
+          },
+          "causalRevision": {
+            "groupRevision": "{updatedGroupRevision}"
+          }
+        }
+      }
+    },
+    {
+      "name": "topologyReadThroughAfterReconnect",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{alphaAuthHeader}",
+          "x-client-id": "{alphaClientId}"
+        },
+        "outputs": {
+          "reconnectTopologyVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupRef": {
+            "groupId": "{groupId}"
+          },
+          "snapshot": {
+            "state": "active",
+            "version": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAlphaSecondWs",
+      "type": "ws.close",
+      "connection": "wsAlpha2"
+    },
+    {
+      "name": "closeBetaWs",
+      "type": "ws.close",
+      "connection": "wsBeta"
+    }
+  ]
+}

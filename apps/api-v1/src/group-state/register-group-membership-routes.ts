@@ -15,6 +15,7 @@ import type {
   GroupStateWritten,
 } from '@shared-server/rallar-system/services/group-state-service.ts';
 
+import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
   type ResolvedGroupStateRouteDependencies,
@@ -243,6 +244,7 @@ function registerUpsertSelfGroupMemberRoute(
         const scope = toGroupStateRouteScope(context);
         const groupId = context.req.param('groupId');
         const principalId = context.req.param('principalId');
+        requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
         authorization.assertSelfPrincipal(authSession.clientId, principalId);
         const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);
         const command = toGroupStateCommand({
