@@ -55,6 +55,13 @@ handoff, state all three closure facts explicitly:
 The `touched-file standards closure` label alone, an extraction label, or a
 consolidation label is not a substitute for those explicit statements.
 
+Before edits, state that the requested behavior remains the intended outcome
+and name two distinct planned validations: a direct test that exercises that
+behavior, and a concrete validation of the affected application or package,
+such as its build or typecheck. In the final handoff, report each result as
+passed, failed, or skipped. Remediation may sequence the work, but it must not
+replace or indefinitely defer the requested behavior.
+
 Escalate only for a genuine exception for a remaining real standards violation,
 a public compatibility or migration decision, an unresolved correctness or
 safety conflict, or a failed post-consolidation navigation probe. Do not
@@ -71,6 +78,11 @@ and reported as validation or environment evidence. They do not justify seeking
 permission, retaining a real standards violation, or deferring safe in-scope
 implementation unless their concrete consequence is already one of the four
 escalation conditions.
+
+If consolidation must run first, it is the sole active slice. Keep the
+requested behavior named as the next outcome during consolidation; when the
+post-consolidation navigation check passes, make it the immediately following
+active slice.
 
 **REQUIRED SUB-SKILL:** Use `organizing-repository-structure` for repository shape decisions.
 

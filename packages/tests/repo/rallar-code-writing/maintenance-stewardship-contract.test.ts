@@ -80,6 +80,49 @@ describe('rallar code-writing maintenance stewardship contract', () => {
     }
   });
 
+  it('keeps requested behavior as the outcome and requires two distinct proofs', () => {
+    const responseContractPaths = [
+      '.agents/skills/rallar-code-writing/SKILL.md',
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+    ];
+    const outcomeAndProofFacts = [
+      'Before edits, state that the requested behavior remains the intended outcome',
+      'name two distinct planned validations',
+      'a direct test that exercises that behavior',
+      'a concrete validation of the affected application or package, such as its build or typecheck',
+      'In the final handoff, report each result as passed, failed, or skipped',
+      'Remediation may sequence the work, but it must not replace or indefinitely defer the requested behavior',
+    ];
+
+    for (const repositoryPath of responseContractPaths) {
+      const source = normalize(readRepo(repositoryPath));
+
+      expect(source).toContain(
+        'When giving a next-action decision before edits, and again in the final handoff',
+      );
+      expectAll(source, outcomeAndProofFacts);
+    }
+  });
+
+  it('keeps requested behavior immediately after a consolidation-first slice', () => {
+    const responseContractPaths = [
+      '.agents/skills/rallar-code-writing/SKILL.md',
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+    ];
+
+    for (const repositoryPath of responseContractPaths) {
+      const source = normalize(readRepo(repositoryPath));
+
+      expect(source).toContain('If consolidation must run first, it is the sole active slice');
+      expect(source).toContain(
+        'Keep the requested behavior named as the next outcome during consolidation',
+      );
+      expect(source).toContain(
+        'when the post-consolidation navigation check passes, make it the immediately following active slice',
+      );
+    }
+  });
+
   it('permits escalation only for four genuine decisions', () => {
     const sources = guidancePaths.map(readRepo).map(normalize);
     const escalationConditions = [
@@ -197,6 +240,19 @@ describe('rallar code-writing maintenance stewardship contract', () => {
       'reviewed and remediated in full',
       'enters closure recursively',
       'four escalation conditions',
+      'requested behavior remains the outcome',
+      'remediation sequences that outcome',
+      'direct behavior proof',
+      'affected app/package proof',
+      'two distinct proofs',
+      'immediately following active slice',
+      'name a direct behavior test',
+      'direct test that exercises that behavior',
+      'affected app validation',
+      'affected application or package',
+      'build or typecheck',
+      'report each result',
+      'never replace or indefinitely defer',
     ];
 
     for (const fragment of forbiddenAnswerFragments) {

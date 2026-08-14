@@ -36,6 +36,13 @@ handoff, state all three closure facts explicitly:
 The `touched-file standards closure` label alone, an extraction label, or a
 consolidation label is not a substitute for those explicit statements.
 
+Before edits, state that the requested behavior remains the intended outcome
+and name two distinct planned validations: a direct test that exercises that
+behavior, and a concrete validation of the affected application or package,
+such as its build or typecheck. In the final handoff, report each result as
+passed, failed, or skipped. Remediation may sequence the work, but it must not
+replace or indefinitely defer the requested behavior.
+
 Scope growth caused by this recursive closure is deterministic execution work,
 not a reason to request permission to retain old findings. Reflect the expanded
 affected surface at the next required checkpoint without using a third active
@@ -54,6 +61,11 @@ and reported as validation or environment evidence. They do not justify seeking
 permission, retaining a real standards violation, or deferring safe in-scope
 implementation unless their concrete consequence is already one of the four
 escalation conditions.
+
+If consolidation must run first, it is the sole active slice. Keep the
+requested behavior named as the next outcome during consolidation; when the
+post-consolidation navigation check passes, make it the immediately following
+active slice.
 
 ## Control loop
 
