@@ -38,7 +38,7 @@ produces one stable Branch Release Gate result for either successful route.
 ## Control-flow families
 
 - Build-tree digest computation remains owned by
-  [review-freshness.mjs#computeBuildAffectingTreeDigest](../pr-human-review/review-freshness.mjs#computeBuildAffectingTreeDigest).
+  [build-affecting-tree.mjs#computeBuildAffectingTreeDigest](./build-affecting-tree.mjs#computeBuildAffectingTreeDigest).
   Selection and creation call that fact contract directly; this capability has no second path
   classifier.
 - Trusted prior-run validation starts at

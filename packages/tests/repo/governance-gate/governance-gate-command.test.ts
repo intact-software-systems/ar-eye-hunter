@@ -12,6 +12,7 @@ const fixtureRoots: string[] = [];
 const requiredPhaseCommands = {
   'check:repo-structure': ['repo-structure', 0],
   'check:repo-style': ['repo-style', 0],
+  'check:retained-legacy': ['retained-legacy', 0],
 } as const;
 
 afterEach(() => {
@@ -30,9 +31,14 @@ describe('governance gate command', () => {
     expect(result.stdout.trim().split('\n')).toEqual([
       'PASS: governance gate repo-structure',
       'PASS: governance gate repo-style',
-      'PASS: governance gate (2 phases)',
+      'PASS: governance gate retained-legacy',
+      'PASS: governance gate (3 phases)',
     ]);
-    expect(readExecutedPhases(fixtureRoot).sort()).toEqual(['repo-structure', 'repo-style']);
+    expect(readExecutedPhases(fixtureRoot).sort()).toEqual([
+      'repo-structure',
+      'repo-style',
+      'retained-legacy',
+    ]);
   });
 
   it('fails before execution when a canonical package command is missing', () => {
@@ -52,6 +58,7 @@ describe('governance gate command', () => {
   it.each([
     ['repo-structure', 'check:repo-structure'],
     ['repo-style', 'check:repo-style'],
+    ['retained-legacy', 'check:retained-legacy'],
   ] as const)('attributes a non-zero %s result to its canonical command', (phase, command) => {
     const commands = { ...requiredPhaseCommands, [command]: [phase, 7] as const };
     const fixtureRoot = createFixture(commands);
@@ -68,6 +75,11 @@ describe('governance gate command', () => {
     ['test command', 'test:repo-style', 'vitest run packages/tests/repo'],
     ['plan lifecycle', 'check:repo-style', 'node scripts/plan-adaptation.mjs check'],
     ['PR evidence lifecycle', 'check:repo-style', 'node scripts/pr-human-review.mjs'],
+    [
+      'legacy evidence lifecycle',
+      'check:repo-style',
+      'node scripts/review-legacy.mjs --output result.json',
+    ],
     ['governance mutation', 'check:repo-style', 'npm run governance:decide'],
     ['GitHub network access', 'check:repo-style', 'gh api repos/example/project'],
     ['mutable output', 'check:repo-style', 'node scripts/check.mjs --output result.json'],

@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { computeBuildAffectingTreeDigest } from '../../../../scripts/pr-human-review/review-freshness.mjs';
+import { computeBuildAffectingTreeDigest } from '../../../../scripts/validation-evidence/build-affecting-tree.mjs';
 
 const repository = 'intact-software-systems/ar-eye-hunter';
 const workflowPath = '.github/workflows/branch-release-gate.yml';
@@ -19,10 +19,13 @@ afterEach(() => {
 });
 
 describe('validation evidence reuse', () => {
-  it('reuses prior successful evidence after an unrelated documentation-only commit', () => {
+  it.each([
+    ['unrelated documentation', 'docs/unrelated-guide.md'],
+    ['historical plan documentation', 'plans/example-plan.md'],
+  ])('reuses prior successful evidence after a changed %s', (_label, changedPath) => {
     const fixture = createEvidenceFixture();
     const candidateHead = commit(fixture.repoRoot, 'docs only', {
-      'docs/unrelated-guide.md': 'clarified prose\n',
+      [changedPath]: 'clarified prose\n',
     });
 
     const selection = runSelection(fixture, candidateHead);
@@ -47,7 +50,6 @@ describe('validation evidence reuse', () => {
     ['root build configuration', 'tsconfig.json'],
     ['agent contract', 'AGENTS.md'],
     ['plugin contract', '.codex-plugin/plugin.json'],
-    ['adaptive plan contract', 'plans/example-plan.md'],
   ])('runs broad validation when %s changes', (_label, changedPath) => {
     const fixture = createEvidenceFixture();
     const candidateHead = commit(fixture.repoRoot, `change ${changedPath}`, {

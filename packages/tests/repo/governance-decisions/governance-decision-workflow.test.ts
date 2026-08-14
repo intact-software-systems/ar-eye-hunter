@@ -216,7 +216,6 @@ describe('governance decision GitHub workflows', () => {
   it('gives every trusted-receipt consumer read-only provenance credentials', () => {
     const governanceGate = readWorkflow('.github/workflows/governance-gate.yml');
     const releaseGate = readWorkflow('.github/workflows/release-gate.yml');
-    const legacy = readWorkflow('.github/workflows/pr-human-review-record.yml');
     const deploy = readWorkflow('.github/workflows/deploy.yml');
 
     expect(governanceGate.permissions).toEqual({ contents: 'read', actions: 'read' });
@@ -236,12 +235,6 @@ describe('governance decision GitHub workflows', () => {
         env: environment,
       });
     }
-    expect(legacy.permissions).toMatchObject({ actions: 'read', contents: 'read' });
-    expect(
-      legacy.jobs.validate.steps.find(
-        (step: any) => step.name === 'Validate PR Human Review Record v2',
-      ),
-    ).toMatchObject({ env: environment });
     expect(deploy.jobs['governance-decision-checks']).toMatchObject({
       permissions: { actions: 'read', contents: 'read' },
     });

@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { computeBuildAffectingTreeDigest } from '../../../../scripts/pr-human-review/review-freshness.mjs';
+import { computeBuildAffectingTreeDigest } from '../../../../scripts/validation-evidence/build-affecting-tree.mjs';
 
 const repoRoot = path.resolve(__dirname, '../../../..');
 const fixtureRoots: string[] = [];

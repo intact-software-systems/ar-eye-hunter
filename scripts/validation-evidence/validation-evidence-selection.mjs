@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 
-import { computeBuildAffectingTreeDigest } from '../pr-human-review/review-freshness.mjs';
+import { computeBuildAffectingTreeDigest } from './build-affecting-tree.mjs';
 import { readValidationEvidence } from './validation-evidence-record.mjs';
 
 export const VALIDATION_EVIDENCE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;

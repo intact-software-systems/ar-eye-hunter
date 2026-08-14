@@ -1,4 +1,4 @@
-import { computeBuildAffectingTreeDigest } from '../pr-human-review/review-freshness.mjs';
+import { computeBuildAffectingTreeDigest } from './build-affecting-tree.mjs';
 
 const fullCommitSha = /^[0-9a-f]{40}$/u;
 const workflowPath = /^\.github\/workflows\/[a-z0-9][a-z0-9._-]*\.ya?ml$/u;
