@@ -8,8 +8,8 @@ import {
   parseRtcBaselineCommandOptions,
   readRtcBaselineLiteral,
   readRtcBaselineRequiredOption,
-  type RtcBaselineCliIssue as Issue,
-  type RtcBaselineCliOptions as Options,
+  type RtcBaselineCliIssue,
+  type RtcBaselineCliOptions,
 } from './rtc-baseline-cli-options.ts';
 
 const workloads = [
@@ -80,7 +80,7 @@ const required: Record<keyof typeof allowed, readonly string[]> = {
 };
 
 interface AddIssueInput {
-  issues: Issue[];
+  issues: RtcBaselineCliIssue[];
   path: string;
   code: string;
   message: string;
@@ -96,7 +96,11 @@ function singleWorkload(value: string, path = '$.workload') {
     : issue(path, 'unsupported-workload', `Workload ${value} is not in the frozen catalog.`);
 }
 
-function validateTypedOptions(command: keyof typeof allowed, options: Options, issues: Issue[]) {
+function validateTypedOptions(
+  command: keyof typeof allowed,
+  options: RtcBaselineCliOptions,
+  issues: RtcBaselineCliIssue[],
+) {
   for (const name of ['baseline-id', 'comparison-baseline-id'] as const) {
     const value = options[name];
     if (value !== undefined && !baselinePattern.test(value)) {
@@ -184,7 +188,7 @@ function validateTypedOptions(command: keyof typeof allowed, options: Options, i
   }
 }
 
-function parseInitialize(options: Options, issues: Issue[]) {
+function parseInitialize(options: RtcBaselineCliOptions, issues: RtcBaselineCliIssue[]) {
   const workloadIds: RtcBaselineWorkloadId[] = [];
   if (Object.hasOwn(options, 'workloads')) {
     const values = options.workloads!.split(',');
@@ -262,8 +266,8 @@ function parseInitialize(options: Options, issues: Issue[]) {
 
 function parseAttempt(
   command: 'record-browser' | 'record-external',
-  options: Options,
-  issues: Issue[],
+  options: RtcBaselineCliOptions,
+  issues: RtcBaselineCliIssue[],
 ) {
   const outer = parseRtcBaselineBoundedInteger(
     options['outer-ordinal'] ?? '',
@@ -294,7 +298,11 @@ function parseAttempt(
   };
 }
 
-function buildCommand(name: keyof typeof allowed, options: Options, issues: Issue[]) {
+function buildCommand(
+  name: keyof typeof allowed,
+  options: RtcBaselineCliOptions,
+  issues: RtcBaselineCliIssue[],
+) {
   if (name === 'initialize') return parseInitialize(options, issues);
   if (name === 'capture') {
     return {

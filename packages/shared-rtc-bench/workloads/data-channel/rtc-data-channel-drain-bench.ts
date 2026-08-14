@@ -10,6 +10,9 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
+// prettier-ignore
+import { runRtcBaselineAcceptedWorkerSamples } from
+  '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 export type RtcDataChannelDrainDepth = 32 | 1000 | 5000;
 const frozenDepthByValue: Readonly<Record<string, RtcDataChannelDrainDepth>> = {
@@ -134,27 +137,18 @@ export async function runRtcDataChannelDrainAcceptedSamples(input: {
   readonly worker: RtcDataChannelDrainAcceptedArguments;
   readonly run: () => Promise<RtcDataChannelDrainResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  const samples: RtcBaselineSampleDto[] = [];
-  let failureId: string | undefined;
-  for (let index = 0; index < input.worker.sampleIds.length; index += 1) {
-    const sampleId = input.worker.sampleIds[index];
-    const result = failureId === undefined ? await input.run() : null;
-    const issues =
-      result === null
-        ? [rtcBaselineIssue('$.rawEvidence', 'causal-not-run', failureId ?? 'Missing inner run.')]
-        : validateResult(input.worker.input.queueDepth, result);
-    if (result !== null && issues.length > 0) failureId = sampleId;
-    samples.push({
+  return runRtcBaselineAcceptedWorkerSamples({
+    worker: {
+      ...input.worker,
+      workloadId: 'RTC-B02',
+      caseId: 'data-channel-drain',
+      inputKey: `depth-${input.worker.input.queueDepth}`,
+    },
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input.queueDepth, result),
+    createSample: ({ identity, result, issues }) => ({
       schema: 'rallar.rtc-baseline.sample.v1',
-      identity: {
-        sampleId,
-        workloadId: 'RTC-B02',
-        caseId: 'data-channel-drain',
-        inputKey: `depth-${input.worker.input.queueDepth}`,
-        intendedPhase: input.worker.intendedPhase,
-        outerOrdinal: input.worker.outerOrdinal,
-        innerOrdinal: index + 1,
-      },
+      identity,
       outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
       evidenceClass: 'synthetic-path',
       metrics:
@@ -165,9 +159,8 @@ export async function runRtcDataChannelDrainAcceptedSamples(input: {
       rawReferences: [],
       issues,
       runtimeObservation: null,
-    });
-  }
-  return samples;
+    }),
+  });
 }
 function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
   const depth = parseFrozenDepth(options['queue-depth'] ?? '5000', 'queue-depth');

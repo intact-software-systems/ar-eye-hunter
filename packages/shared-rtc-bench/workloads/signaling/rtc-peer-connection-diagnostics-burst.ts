@@ -10,6 +10,9 @@ import {
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
 import {
+  runRtcBaselineAcceptedWorkerSamples,
+} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+import {
   createRtcPeerConnectionDiagnosticsDependencies,
   runRtcPeerConnectionDiagnostics,
   type RtcPeerConnectionDiagnosticsResult,
@@ -73,50 +76,31 @@ export function parseRtcPeerConnectionDiagnosticsArguments(arguments_: readonly 
   return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
 }
 
-export function createRtcPeerConnectionDiagnosticsSamples(input: {
-  worker: AcceptedArguments;
-  results: readonly RtcPeerConnectionDiagnosticsResult[];
-}): RtcBaselineSampleDto[] {
-  let priorFailureId: string | undefined;
-  return input.worker.sampleIds.map((sampleId, index) => {
-    const identity = createIdentity(input.worker, sampleId, index + 1);
-    const result = input.results[index];
-    if (priorFailureId !== undefined || result === undefined) {
-      return createSample({
-        identity,
-        outcome: 'not-run',
-        rawEvidence: null,
-        issues: [
-          rtcBaselineIssue(
-            '$.rawEvidence',
-            'causal-not-run',
-            priorFailureId ?? 'Missing inner run.',
-          ),
-        ],
-      });
-    }
-    const issues = validateResult(input.worker.input, result);
-    if (issues.length > 0) priorFailureId = sampleId;
-    return createSample({
-      identity,
-      outcome: issues.length === 0 ? 'passed' : 'failed',
-      rawEvidence: result,
-      issues,
-    });
-  });
-}
-
 export async function runRtcPeerConnectionDiagnosticsAcceptedSamples(input: {
   worker: AcceptedArguments;
   run: () => Promise<RtcPeerConnectionDiagnosticsResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  const results: RtcPeerConnectionDiagnosticsResult[] = [];
-  for (let run = 0; run < input.worker.input.runs; run += 1) {
-    const result = await input.run();
-    results.push(result);
-    if (validateResult(input.worker.input, result).length > 0) break;
-  }
-  return createRtcPeerConnectionDiagnosticsSamples({ worker: input.worker, results });
+  return runRtcBaselineAcceptedWorkerSamples({
+    worker: acceptedWorkerIdentity(input.worker),
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input, result),
+    createSample: ({ identity, result, issues }) =>
+      createSample({
+        identity,
+        outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+        rawEvidence: result,
+        issues,
+      }),
+  });
+}
+
+function acceptedWorkerIdentity(worker: AcceptedArguments) {
+  return {
+    ...worker,
+    workloadId: 'RTC-B01' as const,
+    caseId: 'peer-connection-diagnostics-burst',
+    inputKey: 'pairs-500',
+  };
 }
 
 async function main(): Promise<void> {
@@ -276,22 +260,6 @@ function createExpectedSampleIds(prefix: string, phase: string, outerOrdinal: nu
     { length: 5 },
     (_value, index) => `${attemptPrefix}-${String(index + 1).padStart(3, '0')}`,
   );
-}
-
-function createIdentity(
-  worker: AcceptedArguments,
-  sampleId: string,
-  innerOrdinal: number,
-): RtcBaselineSampleIdentityDto {
-  return {
-    sampleId,
-    workloadId: 'RTC-B01' as const,
-    caseId: 'peer-connection-diagnostics-burst',
-    inputKey: 'pairs-500',
-    intendedPhase: worker.intendedPhase,
-    outerOrdinal: worker.outerOrdinal,
-    innerOrdinal,
-  };
 }
 
 function createSample(

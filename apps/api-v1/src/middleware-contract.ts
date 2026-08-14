@@ -12,7 +12,7 @@ import type {
 } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 import type {
   RallarGroupFormationMetricsRecorder,
-} from '@shared-server/rallar-system/formation-metrics/formation-metrics.ts';
+} from '@shared-server/rallar-system/formation-metrics.ts';
 
 export type Middleware =
   & Omit<

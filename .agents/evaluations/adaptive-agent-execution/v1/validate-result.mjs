@@ -14,6 +14,10 @@ const suiteDefinitions = {
     evaluationRoot: path.resolve(evaluationRoot, '../../organizing-repository-structure/v1'),
     passLabel: 'organizing repository structure evaluation result',
   },
+  'rallar-code-writing': {
+    evaluationRoot: path.resolve(evaluationRoot, '../../rallar-code-writing/v1'),
+    passLabel: 'rallar code-writing evaluation result',
+  },
 };
 
 export function validateEvaluationResult(input) {
@@ -346,7 +350,9 @@ function readCliInput(args) {
   }
   if (!Object.hasOwn(suiteDefinitions, args[1])) {
     return {
-      issue: 'suite must be adaptive-agent-execution or organizing-repository-structure',
+      issue:
+        'suite must be adaptive-agent-execution, organizing-repository-structure, ' +
+        'or rallar-code-writing',
     };
   }
   return { suite: args[1], resultPath: args[2] };

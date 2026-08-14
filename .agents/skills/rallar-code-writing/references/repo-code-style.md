@@ -12,6 +12,7 @@ restating a different version of these rules.
 - [Minimum cognitive indirection](#minimum-cognitive-indirection)
 - [Production code, tests, and legacy](#production-code-tests-and-legacy)
 - [Scope and adoption](#scope-and-adoption)
+- [Touched-file standards closure](#touched-file-standards-closure)
 - [Formatting and spacing](#formatting-and-spacing)
 - [Predictable file layout](#predictable-file-layout)
 - [Feature ownership and repository organization](#feature-ownership-and-repository-organization)
@@ -50,9 +51,9 @@ pass-through abstractions, hides a decision, fragments one coherent dataflow,
 or otherwise makes the code harder to review, debug, or change.
 
 The rules below are defaults derived from this principle together with the
-repository's correctness and operational requirements. When two rules pull in
-different directions, state the concrete tradeoff and ask the human rather than
-inventing another abstraction.
+repository's correctness and operational requirements. Resolve concrete
+tradeoffs through the direct owner-to-result path. Escalate only under the
+enumerated touched-file standards closure conditions below.
 
 ## Minimum cognitive indirection
 
@@ -99,10 +100,10 @@ logic. A retained item requires explicit authorized-maintainer approval and a du
 entry for its exact path and symbol; agent judgment, automation, an issue, silence, or approval for
 older code does not suffice.
 
-Unrelated, untouched repository legacy is outside the completion gate unless the work depends on
-it, expands it, materially touches it, or makes it part of a changed production call path. Newly
-discovered in-scope legacy must be reviewed in the current pull request and cannot be deferred
-through an issue to complete the work.
+Independent untouched code remains outside the closure. Unrelated repository legacy is outside the
+completion gate unless the work depends on it, expands it, materially touches it, or makes it part
+of a changed production call path. Newly discovered in-scope legacy must be reviewed in the current
+pull request and cannot be deferred through an issue to complete the work.
 
 ## Scope and adoption
 
@@ -115,13 +116,14 @@ through an issue to complete the work.
 - TypeScript-specific rules apply additionally to TypeScript and
   JavaScript-family source where their syntax and tooling apply. A closer domain
   guide may add stricter rules, but may not relax this baseline.
-- Apply the standard to all new code and to code changed during a task. Do not expand an unrelated task into a
-  repository-wide cleanup.
+- Apply the standard to all new code and to the complete contents of every touched file. Do not expand an unrelated
+  task into a repository-wide cleanup.
 - The manual review gate is active now. The full-repository checker remains warning-only while legacy debt remains.
   No global strict checker mode is available. Feature-branch CI blocks only new or worsened findings against the merge
   base. For the file metrics — `file.cognitive-load`, `file.responsibility-count`, and the `file.length` navigation
   backstop — worsened means crossing a metric tier or same-tier growth of more than
   max(10% of the merge-base magnitude, 25 units); every other rule treats any magnitude growth as worsened.
+- Checker tolerance is not authority to retain noncompliance and does not define touched-file standards closure.
 - Tests, mocks, stories, fixtures, and generated artifacts are excluded from the default production-code checker, but
   not from the human-readable standard.
 - A deliberate exception requires explicit human approval and a short rationale in the task handoff. Existing violations
@@ -130,6 +132,48 @@ through an issue to complete the work.
 Apply the first principle by keeping inputs, decisions, side effects, and
 failures traceable without repeated jumps through generic helpers or
 reconstruction of partially optional types.
+
+## Touched-file standards closure
+
+Touched-file standards closure is the positive execution path for maintenance,
+features, fixes, refactors, tests, tooling, and documentation-owned code
+contracts. Touched means every changed human-authored source, test, script,
+fixture, example, and configuration file; generated and third-party files are
+excluded.
+
+Use this loop to implement the requested behavior and close the complete
+touched-file standards surface:
+
+1. Recover the requested behavior, current owner, representative dataflow, and
+   applicable standards before editing.
+2. Implement the requested behavior and resolve pre-existing and new
+   noncompliance throughout each touched file.
+3. When remediation changes a support file, that file enters the closure
+   recursively; repeat until no changed human-authored file remains outside the
+   closure.
+4. Keep independent untouched code outside the closure. Do not turn local
+   propagation into repository-wide cleanup.
+5. Validate both the requested behavior and closure, including human review;
+   warning-only or merge-base tolerance is evidence input, not the completion
+   rule.
+
+You must resolve the entire touched-file closure and validate both the requested
+behavior and closure before completion. Do not ask for
+permission merely because the noncompliance pre-existed or because remediation
+is larger than the first diff estimate.
+
+Escalate only for:
+
+1. a genuine exception for a remaining real standards violation;
+2. a public compatibility or migration decision;
+3. an unresolved correctness or safety conflict; or
+4. a failed post-consolidation navigation probe.
+
+Do not escalate for pre-existing debt, deadline pressure, diff size, cleanup
+volume, ownership recovery, package boundaries, substantial remediation, or
+reprioritization alone. A product-semantics question is an escalation only when
+it concretely creates the correctness, safety, public compatibility, or
+migration decision above.
 
 ## Formatting and spacing
 
@@ -290,9 +334,10 @@ data-literal discount replaces registry entries for declarative files: large
 schema, manifest, and lookup data needs no exception while the code around it
 stays navigable.
 
-An existing file already inside a warning tier must not worsen its tier without
-explicit human approval. When a change materially touches more than one
-responsibility, split it along those responsibilities as part of the change.
+An existing file already inside a warning tier enters touched-file standards
+closure when changed. Resolve its applicable tier and cohesion noncompliance
+throughout the touched file, using a coherent responsibility split when needed.
+Only a genuine remaining standards exception may retain a real violation.
 
 For a general function, count from its declaration through its closing brace,
 including blank lines and comments:
@@ -870,8 +915,8 @@ signal and require human interpretation. They identify reviewable syntax, not
 proof of a dependency cycle, an unjustified callback, or a boundary-free facade.
 
 For changed production code, record a construction-warning disposition for
-every construction-detail warning by path, rule, and symbol: fixed,
-demonstrated false positive, or accepted existing debt with no new/worsened
-magnitude and an owner. The review rule is that silence or a warning-only exit
-code is not a disposition. This human-review requirement does not make every
-optional warning globally blocking.
+every construction-detail warning by path, rule, and symbol: resolved
+throughout the touched file or demonstrated false positive. The review rule is
+that silence or a warning-only exit code is not a disposition. This human-review
+requirement does not make every optional warning globally blocking; touched-file
+standards closure does.

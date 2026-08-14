@@ -20,7 +20,6 @@ describe('repository pull request governance', () => {
     expect(template).toContain('None');
     expect(template).not.toMatch(/```|sha|digest|reviewer|plan-adaptation|changed paths/iu);
   });
-
   it('keeps historical plans inert rather than a shared active catalog', () => {
     const navigation = readRepo('plans/README.md');
 

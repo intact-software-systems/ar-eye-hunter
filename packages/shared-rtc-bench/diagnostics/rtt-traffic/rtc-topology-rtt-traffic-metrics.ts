@@ -10,7 +10,9 @@ import {
 } from '@shared/mod.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
+// prettier-ignore
+import * as clientStateSnapshotsRepository from
+  '@shared/repository/client-state-snapshots-repository.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
 // prettier-ignore
 import { RallarRtcTopologyService } from

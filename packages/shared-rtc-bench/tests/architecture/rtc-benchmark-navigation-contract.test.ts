@@ -33,8 +33,13 @@ const executablePaths = [
 describe('shared RTC benchmark navigation contract', () => {
   it('documents each executable exactly once and discovers package tests', () => {
     const readme = fs.readFileSync(path.join(packageRoot, 'README.md'), 'utf8');
+    const executableCatalogRows = readme
+      .split('\n')
+      .filter((line) => line.startsWith('|') && line.includes('`'));
     const missingOrDuplicateRows = executablePaths.filter((entry) => {
-      const occurrences = readme.split(entry).length - 1;
+      const occurrences = executableCatalogRows.filter((row) =>
+        row.includes(`\`${entry}\``),
+      ).length;
       return occurrences !== 1;
     });
     const vitestConfig = fs.readFileSync(path.join(repoRoot, 'vitest.config.ts'), 'utf8');
@@ -43,6 +48,24 @@ describe('shared RTC benchmark navigation contract', () => {
       `missing/duplicate README rows:\n${missingOrDuplicateRows.join('\n')}`,
     ).toEqual([]);
     expect(vitestConfig).toContain('packages/shared-rtc-bench/tests/**/*.test.ts');
+    expect(readme).toContain('`createRtcPeerConnectionDiagnosticsDependencies`');
+    expect(readme).not.toContain('`createRtcPeerConnectionDiagnosticsFakeRuntime`');
+    expect(readme).toContain('`QRtcDataChannel.sendJson` queue replacement behavior');
+    expect(readme).toContain('Construction, connect, and reset loop');
+    for (const command of [
+      'initialize',
+      'capture',
+      'list-external-attempts',
+      'record-browser',
+      'record-external',
+      'record-external-cohort',
+      'repeat-required',
+      'compare-paired',
+      'validate',
+      'finalize',
+    ]) {
+      expect(readme).toContain(`\`${command}\``);
+    }
   });
 
   it('keeps diagnostics outside accepted baseline catalog and checked by Deno', () => {

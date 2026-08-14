@@ -7,6 +7,8 @@ import {
   isGroupPolicyDeniedError,
 } from '@shared-server/rallar-system/group-policy.ts';
 
+import { isGroupAdmissionRateLimitedError } from '../services/group-admission-rate-limit.ts';
+
 interface GroupAppInboxRouteFailure {
   readonly code: string;
   readonly message: string;
@@ -32,10 +34,22 @@ export function toGroupAppInboxError(failure: string): Error {
 
 export function toGroupStateErrorResponse(
   context: {
-    json(value: unknown, status?: number): Response;
+    json(
+      value: unknown,
+      status?: number,
+      headers?: Record<string, string>,
+    ): Response;
   },
   error: unknown,
 ): Response {
+  if (isGroupAdmissionRateLimitedError(error)) {
+    return context.json(
+      { error: error.message, code: error.code },
+      error.status,
+      { 'Retry-After': String(error.retryAfterSeconds) },
+    );
+  }
+
   if (isGroupPolicyDeniedError(error)) {
     return context.json(
       {

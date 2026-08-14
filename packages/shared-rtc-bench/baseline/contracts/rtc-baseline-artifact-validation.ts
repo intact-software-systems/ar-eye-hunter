@@ -18,7 +18,6 @@ import type {
 } from '../evidence/rtc-baseline-evidence-layout.ts';
 type AccountingIdentity = RtcBaselineSampleIdentityDto | RtcBaselineCohortIdentityDto;
 type FailureIdentity = Pick<RtcBaselineFinalizationFailureDto, 'baselineId'>;
-type RuntimeObservation = RtcBaselineRuntimeObservationDto;
 export interface RtcBaselineAccountingOutcomeRecord {
   identity: AccountingIdentity;
 }
@@ -172,7 +171,9 @@ export function validateRtcBaselineExternalCohort(cohort: RtcBaselineExternalCoh
   });
   return issues;
 }
-export function validateRtcBaselineRuntimeObservation(observation: RuntimeObservation) {
+export function validateRtcBaselineRuntimeObservation(
+  observation: RtcBaselineRuntimeObservationDto,
+) {
   const { startedAtUtc, endedAtUtc } = observation.timing;
   return Date.parse(endedAtUtc) < Date.parse(startedAtUtc)
     ? [semanticIssue('$.timing.endedAtUtc', 'invalid-timing-order')]

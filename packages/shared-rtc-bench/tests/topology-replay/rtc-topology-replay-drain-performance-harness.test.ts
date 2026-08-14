@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  executeRtcTopologyReplayServiceLifecycle,
   RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY,
   runRtcTopologyReplayDrainOperationWorkloads,
 } from '../../topology-replay/replay-drain-operation-counts.ts';
@@ -69,5 +70,66 @@ describe('RTC topology replay drain operation-count harness', () => {
         },
       },
     });
+  });
+
+  it('stops a started replay service when workload execution throws', async () => {
+    const calls: string[] = [];
+    await expect(
+      executeRtcTopologyReplayServiceLifecycle(
+        {
+          start: async () => {
+            calls.push('start');
+          },
+          stop: async () => {
+            calls.push('stop');
+          },
+        },
+        async () => {
+          calls.push('workload');
+          throw new Error('workload failed');
+        },
+      ),
+    ).rejects.toThrow('workload failed');
+    expect(calls).toEqual(['start', 'workload', 'stop']);
+  });
+
+  it('stops a replay service when start rejects after installing resources', async () => {
+    const calls: string[] = [];
+    await expect(
+      executeRtcTopologyReplayServiceLifecycle(
+        {
+          start: async () => {
+            calls.push('start');
+            throw new Error('start failed');
+          },
+          stop: async () => {
+            calls.push('stop');
+          },
+        },
+        async () => {
+          calls.push('workload');
+          return 'not reached';
+        },
+      ),
+    ).rejects.toThrow('start failed');
+    expect(calls).toEqual(['start', 'stop']);
+  });
+
+  it('preserves start and cleanup failures together', async () => {
+    const startFailure = new Error('start failed');
+    const cleanupFailure = new Error('cleanup failed');
+    const result = executeRtcTopologyReplayServiceLifecycle(
+      {
+        start: async () => {
+          throw startFailure;
+        },
+        stop: async () => {
+          throw cleanupFailure;
+        },
+      },
+      async () => 'not reached',
+    );
+
+    await expect(result).rejects.toMatchObject({ errors: [startFailure, cleanupFailure] });
   });
 });

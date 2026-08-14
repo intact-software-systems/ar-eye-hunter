@@ -10,7 +10,7 @@ import type {
   WsDeliveryDiagnosticsSink,
 } from '@shared/services/ws-queue-box-server-contracts.ts';
 
-import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../services/rtc-topology-outbox-entry.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from './services/rtc-topology-outbox-entry.ts';
 
 export {
   GROUP_FORMATION_MUTATION_OUTCOMES,
@@ -70,6 +70,7 @@ interface MutableGroupFormationMetrics {
   topologyRecomputeTriggeredCount: number;
   wsOutboxSendCountByTopicId: Record<string, number>;
   wsOutboxRecipientCountByTopicId: Record<string, number>;
+  wsEgressBytesByTopicId: Record<string, number>;
   wsOutboxNoLocalRecipientCount: number;
   rttAcceptedWriteCount: number;
   rttRecomputeIntentCount: number;
@@ -155,9 +156,15 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
           event.topicId,
           event.recipientCount,
         );
+        incrementByTopic(
+          metrics.wsEgressBytesByTopicId,
+          event.topicId,
+          event.payloadBytes * event.sentCount,
+        );
       } else if (event.kind === 'outbox-send') {
         incrementByTopic(metrics.wsOutboxSendCountByTopicId, event.topicId, 1);
         incrementByTopic(metrics.wsOutboxRecipientCountByTopicId, event.topicId, 1);
+        incrementByTopic(metrics.wsEgressBytesByTopicId, event.topicId, event.payloadBytes);
       } else if (event.kind === 'no-local-recipient') {
         metrics.wsOutboxNoLocalRecipientCount += 1;
       }
@@ -199,6 +206,7 @@ function createMutableGroupFormationMetrics(): MutableGroupFormationMetrics {
     topologyRecomputeTriggeredCount: 0,
     wsOutboxSendCountByTopicId: {},
     wsOutboxRecipientCountByTopicId: {},
+    wsEgressBytesByTopicId: {},
     wsOutboxNoLocalRecipientCount: 0,
     rttAcceptedWriteCount: 0,
     rttRecomputeIntentCount: 0,

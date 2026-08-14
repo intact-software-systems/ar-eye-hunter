@@ -1,0 +1,540 @@
+{
+  "variables": {
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_LATEJOIN_APPLICATION_ID",
+      "default": "api-v1-black-box-{runId}-latejoin"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_LATEJOIN_WORKSPACE_ID",
+      "default": "workspace-latejoin-{runId}"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_LATEJOIN_GROUP_ID",
+      "default": "latejoin-group-{runId}"
+    },
+    "clientPassword": {
+      "env": "RALLAR_BB_LATEJOIN_PASSWORD",
+      "default": "api-v1-latejoin-password",
+      "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "api": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 10000
+    },
+    "wsFounder": {
+      "type": "ws",
+      "timeoutMs": 10000
+    }
+  },
+  "steps": [
+    {
+      "name": "registerFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "latejoin-founder-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "founder client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "latejoin-founder-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "founderClientId": "body.clientId",
+          "founderAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "founderSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveFounderAuthHeader",
+      "type": "set",
+      "output": "founderAuthHeader",
+      "secret": true,
+      "redactAs": "founderAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.founderAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "latejoin-member-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "member client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "latejoin-member-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "memberClientId": "body.clientId",
+          "memberAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "memberSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveMemberAuthHeader",
+      "type": "set",
+      "output": "memberAuthHeader",
+      "secret": true,
+      "redactAs": "memberAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.memberAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "registerLate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/register",
+        "body": {
+          "username": "latejoin-late-{runId}",
+          "password": "{clientPassword}",
+          "displayName": "late client"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "clientId": "string"
+        }
+      }
+    },
+    {
+      "name": "loginLate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "latejoin-late-{runId}",
+          "password": "{clientPassword}"
+        },
+        "outputs": {
+          "lateClientId": "body.clientId",
+          "lateAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "lateSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveLateAuthHeader",
+      "type": "set",
+      "output": "lateAuthHeader",
+      "secret": true,
+      "redactAs": "lateAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.lateAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroup",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "create-latejoin-{runId}",
+          "groupId": "{groupId}",
+          "displayName": "Late joiner group {runId}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{founderClientId}"
+        }
+      },
+      "expect": {
+        "status": 201,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "joinFounder",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{founderClientId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "join-latejoin-founder-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "joinMember",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{memberClientId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "requestId": "join-latejoin-member-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "createFounderWsTicket",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "outputs": {
+          "founderWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{founderSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveFounderWsUrl",
+      "type": "set",
+      "output": "founderWsUrl",
+      "secret": true,
+      "redactAs": "founderWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.founderSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.founderWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openFounderWs",
+      "type": "ws.open",
+      "connection": "wsFounder",
+      "request": {
+        "url": "{founderWsUrl}",
+        "timeoutMs": 10000
+      }
+    },
+    {
+      "name": "connectFounderPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{founderSessionId}",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "body": {
+          "requestId": "presence-latejoin-founder-{runId}",
+          "generationId": "generation-latejoin-founder-{runId}",
+          "principalId": "{founderClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectMemberPresence",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{memberSessionId}",
+        "headers": {
+          "Authorization": "{memberAuthHeader}",
+          "x-client-id": "{memberClientId}"
+        },
+        "body": {
+          "requestId": "presence-latejoin-member-{runId}",
+          "generationId": "generation-latejoin-member-{runId}",
+          "principalId": "{memberClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "waitFormationOverlayPublication",
+      "type": "ws.wait",
+      "connection": "wsFounder",
+      "expect": {
+        "connection": "wsFounder",
+        "withinMs": 20000,
+        "message": {
+          "route": {
+            "topicId": "overlay.topology"
+          },
+          "payload": {
+            "typeId": "overlay.topology"
+          }
+        }
+      }
+    },
+    {
+      "name": "captureFormationTopology",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{founderAuthHeader}",
+          "x-client-id": "{founderClientId}"
+        },
+        "outputs": {
+          "formationTopologyVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupRef": {
+            "groupId": "{groupId}"
+          },
+          "snapshot": {
+            "state": "active",
+            "version": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "joinLate",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{lateClientId}",
+        "headers": {
+          "Authorization": "{lateAuthHeader}",
+          "x-client-id": "{lateClientId}"
+        },
+        "body": {
+          "requestId": "join-latejoin-late-{runId}",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "readTopologyAsLateJoinerWithoutNewPublication",
+      "type": "http",
+      "connection": "api",
+      "request": {
+        "method": "GET",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology",
+        "headers": {
+          "Authorization": "{lateAuthHeader}",
+          "x-client-id": "{lateClientId}"
+        },
+        "outputs": {
+          "lateJoinerTopologyVersion": "body.snapshot.version"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "groupRef": {
+            "groupId": "{groupId}"
+          },
+          "snapshot": {
+            "state": "active",
+            "version": "{formationTopologyVersion}"
+          }
+        }
+      }
+    },
+    {
+      "name": "closeFounderWs",
+      "type": "ws.close",
+      "connection": "wsFounder"
+    }
+  ]
+}

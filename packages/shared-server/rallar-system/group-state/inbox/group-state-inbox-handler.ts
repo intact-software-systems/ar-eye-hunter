@@ -27,7 +27,7 @@ import type {
 import type {
   GroupFormationGroupMutationSink,
   GroupFormationMutationOutcome,
-} from '../../formation-metrics/formation-metrics.ts';
+} from '../../formation-metrics.ts';
 import {
   readGroupStateInboxResult,
   type GroupStateInboxDurableResult,

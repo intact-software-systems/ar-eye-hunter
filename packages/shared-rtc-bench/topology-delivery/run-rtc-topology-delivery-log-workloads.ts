@@ -40,6 +40,12 @@ interface RetryDuplicateLoserInput {
   readonly firstAttempt: Promise<RtcTopologyDeliveryAppendResult>;
 }
 
+interface RegisterRtcTopologyDeliveryBenchmarkStreamsInput {
+  readonly streams: readonly string[];
+  readonly register: (streamId: string) => Promise<string>;
+  readonly cleanup: (streamIds: readonly string[]) => Promise<void>;
+}
+
 export async function runRtcTopologyDeliveryLogWorkloads(
   database: BenchmarkSql,
 ): Promise<readonly WorkloadResult[]> {
@@ -58,7 +64,7 @@ async function runAppendWorkload(
 ): Promise<WorkloadResult> {
   const repository = new PSqlRtcTopologyDeliveryRepository(database);
   const streams = Array.from({ length: streamCount }, () => crypto.randomUUID());
-  await registerStreams(repository, streams);
+  await registerStreams(database, repository, streams);
   const applicationId = `delivery-bench-${name}-${crypto.randomUUID()}`;
   const startedAt = performance.now();
   try {
@@ -91,7 +97,7 @@ async function runDuplicatePublicationRace(database: BenchmarkSql): Promise<Work
   const name = 'duplicate-publication-race';
   const repository = new PSqlRtcTopologyDeliveryRepository(database);
   const streams = [crypto.randomUUID(), crypto.randomUUID()];
-  await registerStreams(repository, streams);
+  await registerStreams(database, repository, streams);
   const applicationId = `delivery-bench-${name}-${crypto.randomUUID()}`;
   const latenciesMs: number[] = [];
   let transactionRetries = 0;
@@ -147,7 +153,7 @@ async function runRollbackWorkload(database: BenchmarkSql): Promise<WorkloadResu
   const name = 'surrounding-transaction-rollback';
   const repository = new PSqlRtcTopologyDeliveryRepository(database);
   const streams = [crypto.randomUUID()];
-  await registerStreams(repository, streams);
+  await registerStreams(database, repository, streams);
   const applicationId = `delivery-bench-${name}-${crypto.randomUUID()}`;
   const startedAt = performance.now();
   try {
@@ -274,17 +280,45 @@ async function retryDuplicateLoser(
 }
 
 async function registerStreams(
+  database: BenchmarkSql,
   repository: PSqlRtcTopologyDeliveryRepository,
   streams: readonly string[],
 ): Promise<void> {
-  for (const streamId of streams) {
-    const result = await repository.registerStream({
-      streamId,
-      leaseDurationMs: RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY.leaseDurationMs,
-    });
-    if (result.status !== 'registered') {
-      throw new Error(`RTC topology delivery benchmark stream collision: ${streamId}`);
+  return registerRtcTopologyDeliveryBenchmarkStreams({
+    streams,
+    register: async (streamId) =>
+      (
+        await repository.registerStream({
+          streamId,
+          leaseDurationMs: RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY.leaseDurationMs,
+        })
+      ).status,
+    cleanup: (registered) => cleanupStreams(database, registered),
+  });
+}
+
+export async function registerRtcTopologyDeliveryBenchmarkStreams(
+  input: RegisterRtcTopologyDeliveryBenchmarkStreamsInput,
+): Promise<void> {
+  const registered: string[] = [];
+  try {
+    for (const streamId of input.streams) {
+      const status = await input.register(streamId);
+      if (status !== 'registered') {
+        throw new Error(`RTC topology delivery benchmark stream collision: ${streamId}`);
+      }
+      registered.push(streamId);
     }
+  } catch (registrationFailure) {
+    try {
+      await input.cleanup(registered);
+    } catch (cleanupFailure) {
+      throw new AggregateError(
+        [registrationFailure, cleanupFailure],
+        'RTC topology delivery benchmark registration and cleanup failed',
+      );
+    }
+    throw registrationFailure;
   }
 }
 

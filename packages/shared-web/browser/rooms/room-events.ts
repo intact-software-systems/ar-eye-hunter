@@ -157,11 +157,11 @@ class RoomEvents implements RallarRoomEventsPort {
   }
 
   async dispatch(message: UnvalidatedRallarMessage): Promise<void> {
-    const event = message.payload;
-    if (!isGroupEventPayload(event)) {
+    const event = resolveDispatchedGroupEvent(message.payload);
+    if (event === undefined) {
       return;
     }
-    const groupMessage = message as RallarMessage<GroupEvent>;
+    const groupMessage: RallarMessage<GroupEvent> = { ...message, payload: event };
     const subscriptions = this.matchingSubscriptions(event);
     if (subscriptions.length === 0 || this.hasSeen(event)) {
       return;
@@ -268,6 +268,27 @@ function isGroupEventPayload(value: unknown): value is GroupEvent {
   } catch {
     return false;
   }
+}
+
+// Under dual-emit/delta-primary the `group-state.event` payload is a
+// GroupStateDeltaEnvelope wrapping the GroupEvent; legacy rows carry the bare
+// event. The envelope's wrapper keys are disjoint from GroupEvent's, so a
+// light structural check routes both forms to the same validated GroupEvent.
+function resolveDispatchedGroupEvent(value: unknown): GroupEvent | undefined {
+  if (isGroupEventPayload(value)) {
+    return value;
+  }
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    !('event' in value) ||
+    !('predecessorCausalRevision' in value) ||
+    !('resultingCausalRevision' in value)
+  ) {
+    return undefined;
+  }
+  return isGroupEventPayload(value.event) ? value.event : undefined;
 }
 
 function isSameStateGroupRef(

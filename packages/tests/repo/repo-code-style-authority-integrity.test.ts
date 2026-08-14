@@ -65,7 +65,8 @@ describe('repo code style authority integrity', () => {
     ]);
     expectAllNormalized(canonicalStyle, [
       'Newly discovered in-scope legacy must be reviewed in the current pull request',
-      'Unrelated, untouched repository legacy is outside the completion gate',
+      'Independent untouched code remains outside the closure',
+      'Unrelated repository legacy is outside the completion gate',
       '`removed`, `minimized-boundary`, `resolved`, or `retained`',
     ]);
   });

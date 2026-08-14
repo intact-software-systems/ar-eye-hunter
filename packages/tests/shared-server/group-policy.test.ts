@@ -420,6 +420,56 @@ describe('group policy helpers', () => {
         expect([...GROUP_POLICY_REASON_CODES].filter((code) => !coveredCodes.has(code)))
             .toEqual([]);
     });
+
+    it('applies the configured default member cap only when the stored cap is null', () => {
+        const capacity = {defaultMaxMembers: 256};
+        expect(canJoinGroup({
+            snapshot: snapshot({activeMemberCount: 256}),
+            actor: actor('carol'),
+            capacity,
+        })).toMatchObject(denied('group-full'));
+        expect(canJoinGroup({
+            snapshot: snapshot({activeMemberCount: 255}),
+            actor: actor('carol'),
+            capacity,
+        })).toEqual({allowed: true});
+        expect(canActivateGroupMember({
+            snapshot: snapshot({activeMemberCount: 256}),
+            targetPrincipalId: 'carol',
+            nowEpochMs: NOW,
+            capacity,
+        })).toMatchObject(denied('group-full'));
+        expect(canJoinGroup({
+            snapshot: snapshot({activeMemberCount: 256}),
+            actor: ACTOR,
+            capacity,
+        })).toEqual({allowed: true});
+    });
+
+    it('keeps null-cap groups uncapped when the default member cap is disabled or absent', () => {
+        expect(canJoinGroup({
+            snapshot: snapshot({activeMemberCount: 100_000}),
+            actor: actor('carol'),
+            capacity: {defaultMaxMembers: null},
+        })).toEqual({allowed: true});
+        expect(canJoinGroup({
+            snapshot: snapshot({activeMemberCount: 100_000}),
+            actor: actor('carol'),
+        })).toEqual({allowed: true});
+    });
+
+    it('lets an explicit stored member cap win over the configured default', () => {
+        expect(canJoinGroup({
+            snapshot: snapshot({maxMembers: 1, activeMemberCount: 1}),
+            actor: actor('carol'),
+            capacity: {defaultMaxMembers: 256},
+        })).toMatchObject(denied('group-full'));
+        expect(canJoinGroup({
+            snapshot: snapshot({maxMembers: 500, activeMemberCount: 256}),
+            actor: actor('carol'),
+            capacity: {defaultMaxMembers: 256},
+        })).toEqual({allowed: true});
+    });
 });
 
 function denied(code: GroupPolicyReasonCode) {

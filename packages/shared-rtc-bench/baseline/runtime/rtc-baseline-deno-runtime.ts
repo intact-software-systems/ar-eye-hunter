@@ -62,10 +62,8 @@ import {
   deriveRtcBaselineCaptureManifest,
 } from '../catalog/rtc-baseline-workload-manifest.ts';
 
-const rootPath = 'tmp/perf/rtc-baseline';
+export const RTC_BASELINE_DENO_ROOT_PATH = 'tmp/perf/rtc-baseline';
 const encoder = new TextEncoder();
-export type RtcBaselineDenoRuntime = RtcBaselineEnvelope;
-
 function failure(path: string, code: string, message: string) {
   return { ok: false as const, issues: [{ path, code, message }] };
 }
@@ -100,8 +98,11 @@ function appendUniqueSamples(
 
 export function createRtcBaselineDenoRuntime(
   adapters: DenoRtcBaselineAdapters,
-): RtcBaselineDenoRuntime {
-  const store = createRtcBaselineFileStore({ rootPath, filePort: adapters.filePort });
+): RtcBaselineEnvelope {
+  const store = createRtcBaselineFileStore({
+    rootPath: RTC_BASELINE_DENO_ROOT_PATH,
+    filePort: adapters.filePort,
+  });
 
   async function readManifestArtifact(baselineId: string) {
     const json = await store.readJson(baselineId, 'manifest.json');

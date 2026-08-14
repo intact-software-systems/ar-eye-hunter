@@ -16,6 +16,8 @@ import type {
   RtcBaselineSampleFailureOwner,
   RtcBaselineSampleFailureOutcomeArtifact,
   RtcBaselineSampleIdentityDto,
+  RtcBaselineSampleDto,
+  RtcBaselineWorkloadId,
 } from '../contracts/rtc-baseline-contracts.ts';
 import {
   RTC_BASELINE_ACCEPTED_ARTIFACT_DIRECTORIES,
@@ -52,6 +54,66 @@ import {
   rtcBaselineFailureArtifactPath,
   rtcBaselineSampleArtifactPath,
 } from '../evidence/rtc-baseline-evidence-layout.ts';
+
+export interface RtcBaselineAcceptedWorkerIdentityInput {
+  readonly workloadId: RtcBaselineWorkloadId;
+  readonly caseId: string;
+  readonly inputKey: string;
+  readonly intendedPhase: RtcBaselineSampleIdentityDto['intendedPhase'];
+  readonly outerOrdinal: number;
+  readonly sampleIds: readonly string[];
+}
+
+interface CreateRtcBaselineAcceptedWorkerSampleInput<Result> {
+  readonly identity: RtcBaselineSampleIdentityDto;
+  readonly result: Result | null;
+  readonly issues: readonly RtcBaselineIssueDto[];
+}
+
+export function createRtcBaselineAcceptedWorkerSampleIdentity(
+  worker: RtcBaselineAcceptedWorkerIdentityInput,
+  index: number,
+): RtcBaselineSampleIdentityDto {
+  return {
+    sampleId: worker.sampleIds[index]!,
+    workloadId: worker.workloadId,
+    caseId: worker.caseId,
+    inputKey: worker.inputKey,
+    intendedPhase: worker.intendedPhase,
+    outerOrdinal: worker.outerOrdinal,
+    innerOrdinal: index + 1,
+  };
+}
+
+export async function runRtcBaselineAcceptedWorkerSamples<Result>(input: {
+  readonly worker: RtcBaselineAcceptedWorkerIdentityInput;
+  readonly run: () => Promise<Result> | Result;
+  readonly validate: (result: Result) => readonly RtcBaselineIssueDto[];
+  readonly createSample: (
+    input: CreateRtcBaselineAcceptedWorkerSampleInput<Result>,
+  ) => RtcBaselineSampleDto;
+}): Promise<RtcBaselineSampleDto[]> {
+  const samples: RtcBaselineSampleDto[] = [];
+  let failureId: string | undefined;
+  for (let index = 0; index < input.worker.sampleIds.length; index += 1) {
+    const identity = createRtcBaselineAcceptedWorkerSampleIdentity(input.worker, index);
+    if (failureId !== undefined) {
+      samples.push(
+        input.createSample({
+          identity,
+          result: null,
+          issues: [rtcBaselineIssue('$.rawEvidence', 'causal-not-run', failureId)],
+        }),
+      );
+      continue;
+    }
+    const result = await input.run();
+    const issues = input.validate(result);
+    if (issues.length > 0) failureId = identity.sampleId;
+    samples.push(input.createSample({ identity, result, issues }));
+  }
+  return samples;
+}
 
 export function deriveRtcBaselineSampleIdentities(
   outerAttempts: readonly RtcBaselineOuterAttemptDto[],

@@ -53,6 +53,7 @@ export function computeJoin(
         sessionId: command.input.actorSessionId ?? undefined,
       },
       nowEpochMs: facts.nowEpochMs,
+      capacity: facts.capacity,
       inviteToken: command.input.inviteToken ?? undefined,
       joinCode: command.input.joinCode ?? undefined,
       joinCodeVerifier: facts.joinCodeVerifier ?? undefined,
@@ -238,7 +239,12 @@ export function computeUpsertMember(
   assertUpsertAuthority({ command, read, facts, isSelf });
   assertUpsertRoleChange(command, read, isSelf);
   const snapshot = toPolicySnapshot(read, facts.nowEpochMs);
-  assertUpsertActivationAllowed({ command, snapshot, nowEpochMs: facts.nowEpochMs });
+  assertUpsertActivationAllowed({
+    command,
+    snapshot,
+    nowEpochMs: facts.nowEpochMs,
+    capacity: facts.capacity,
+  });
   const existing = findTargetMember(read);
   const role = command.input.role ?? existing?.role ?? 'member';
   const invitedByPrincipalId =

@@ -37,8 +37,12 @@ import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-cont
 import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 
-import { createWebSocketTicket, readApiConfig, readIceCandidates, } from '@shared-web/browser/api-integration.ts';
+import { readSession } from '@shared/api/auth.ts';
+
+import { createWebSocketTicket, defaultStateScope, readApiConfig, readIceCandidates, } from '@shared-web/browser/api-integration.ts';
 import { refreshStateSnapshots } from '@shared-web/browser/api-workflows.ts';
+import { hydrateGroupTopologyOverlays } from '@shared-web/browser/state-read/hydrate-group-topology-overlays.ts';
+import { initGroupStateResyncOnReopen } from '@shared-web/browser/state-read/group-state-resync-on-reopen.ts';
 import { toResilienceDto } from './resilience-config.ts';
 
 import * as cache from './data-caches.ts';
@@ -336,6 +340,41 @@ export async function initialiseMiddleware(
         groupSnapshots,
         stateCacheOptions,
     );
+
+    await hydrateGroupTopologyOverlays({
+        groupSnapshots,
+        sessionId: clientData.sessionId,
+        webRtcGroupManager,
+        scope: options.scope ?? defaultStateScope(),
+        apiRequest: { authSession: session },
+    });
+
+    initGroupStateResyncOnReopen({
+        socket: webSocketQueueBox.socket,
+        resyncStateSnapshots: async () => {
+            const refreshed = await refreshStateSnapshots(options.scope, {
+                command: toCommandOptions(options),
+            });
+            await cache.hydrateStateCaches(
+                webRtcGroupManager,
+                clientData,
+                refreshed.clients,
+                refreshed.groups,
+                stateCacheOptions,
+            );
+            return refreshed.groups;
+        },
+        resyncGroupTopologies: async (refreshedGroups) => {
+            await hydrateGroupTopologyOverlays({
+                groupSnapshots: refreshedGroups,
+                sessionId: clientData.sessionId,
+                webRtcGroupManager,
+                scope: options.scope ?? defaultStateScope(),
+                apiRequest: { authSession: session },
+            });
+        },
+        isCurrentGeneration: () => readSession()?.sessionId === clientData.sessionId,
+    });
 
     const heartbeatHandle = await heartbeat.initHeartbeat(clientData, {
         authSession: session,

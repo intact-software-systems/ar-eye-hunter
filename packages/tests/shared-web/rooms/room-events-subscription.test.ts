@@ -7,6 +7,7 @@ import {
   findRoomWsCallback,
   readRoomEventMocks,
   resetRoomEventTestRuntime,
+  toRoomEventEnvelopeMessage,
   toRoomEventMessage,
 } from './room-event-test-runtime.ts';
 
@@ -67,6 +68,35 @@ describe('room event subscription compatibility', () => {
         receivedAtEpochMs: expect.any(Number),
       }),
     );
+  });
+
+  it('dispatches the unwrapped event from a delta envelope and dedupes across bare and envelope forms', async () => {
+    const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+    const facade = createRallarFacade();
+    const listener = vi.fn();
+    facade.setDefaults({ applicationId: 'app-1', workspaceId: 'workspace-1' });
+    facade.rooms.onEvent(listener, { roomId: 'room-1' });
+    await facade.connect();
+    const callback = findRoomWsCallback();
+    const wrapped = createRoomEvent('room-1', 'event-wrapped', 'member-joined');
+    const duplicated = createRoomEvent('room-1', 'event-duplicated', 'member-left');
+
+    await callback?.onMessage?.(toRoomEventEnvelopeMessage(wrapped));
+    await callback?.onMessage?.(toRoomEventMessage(duplicated));
+    await callback?.onMessage?.(toRoomEventEnvelopeMessage(duplicated));
+    await callback?.onMessage?.(toRoomEventEnvelopeMessage(wrapped));
+
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener.mock.calls.map((call) => call[0].eventId)).toEqual([
+      'event-wrapped',
+      'event-duplicated',
+    ]);
+    expect(listener.mock.calls[0]?.[0]).toEqual(wrapped);
+    expect(listener.mock.calls[0]?.[1]).toMatchObject({
+      transport: 'ws',
+      typeId: AppTopics.groupStateEvent,
+      payload: wrapped,
+    });
   });
 
   it('drops malformed room events and stops after unsubscribe', async () => {

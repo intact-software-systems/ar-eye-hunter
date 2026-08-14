@@ -1,6 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
+import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
@@ -27,6 +28,12 @@ export type StateSyncPayload =
     kind: 'group-event';
     scope: StateSyncScope;
     groupId: string;
+    /**
+     * The persisted immutable delivery audience carried by a delta-envelope
+     * row. Undefined for legacy bare-event and overlay rows, whose audience
+     * still resolves through the snapshot caches.
+     */
+    audienceSessionIds: readonly string[] | undefined;
 }>
     | Readonly<{
     kind: 'invalid';
@@ -97,17 +104,27 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                 };
             }
             case AppTopics.groupStateEvent: {
-                const event = JSON.parse(message.payload.resource);
-                if (
-                    !isGroupEvent(event) ||
-                    !hasMatchingExplicitGroupAudience(message, event)
-                ) {
+                const payload = JSON.parse(message.payload.resource);
+                if (isGroupEvent(payload)) {
+                    if (!hasMatchingExplicitGroupAudience(message, payload)) {
+                        return { kind: 'invalid' };
+                    }
+                    return {
+                        kind: 'group-event',
+                        scope: payload,
+                        groupId: payload.groupId,
+                        audienceSessionIds: undefined,
+                    };
+                }
+                validateGroupStateDeltaEnvelope(payload);
+                if (!hasMatchingExplicitGroupAudience(message, payload.event)) {
                     return { kind: 'invalid' };
                 }
                 return {
                     kind: 'group-event',
-                    scope: event,
-                    groupId: event.groupId,
+                    scope: payload.event,
+                    groupId: payload.event.groupId,
+                    audienceSessionIds: payload.audienceSessionIds,
                 };
             }
             case AppTopics.overlayTopology: {
@@ -122,6 +139,7 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                     kind: 'group-event',
                     scope: snapshot.groupRef,
                     groupId: snapshot.groupRef.groupId,
+                    audienceSessionIds: undefined,
                 };
             }
             default:

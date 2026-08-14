@@ -73,8 +73,8 @@ describe('governance gate command', () => {
 
   it.each([
     ['test command', 'test:repo-style', 'vitest run packages/tests/repo'],
-    ['plan lifecycle', 'check:repo-style', 'node scripts/plan-adaptation.mjs check'],
-    ['PR evidence lifecycle', 'check:repo-style', 'node scripts/pr-human-review.mjs'],
+    ['retired plan tooling', 'check:repo-style', 'node scripts/plan-adaptation.mjs check'],
+    ['retired PR evidence tooling', 'check:repo-style', 'node scripts/pr-human-review.mjs'],
     [
       'legacy evidence lifecycle',
       'check:repo-style',

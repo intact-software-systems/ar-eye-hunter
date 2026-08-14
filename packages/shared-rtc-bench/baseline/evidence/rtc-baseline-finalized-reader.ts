@@ -10,18 +10,16 @@ import {
   validateRtcBaselineRawArtifactMembership,
   validateRtcBaselineRepeatLinkIdentity,
   validateRtcBaselineRepeatPrimaryDigest,
-  type RtcBaselineReaderInput as BaselineInput,
+  type RtcBaselineReaderInput,
   type RtcBaselineComparisonChoice,
-  type RtcBaselineComparisonChoiceInput as ComparisonChoiceInput,
+  type RtcBaselineComparisonChoiceInput,
   type RtcBaselineFinalizedArtifactValidation,
-  type RtcBaselineFinalizedReader as RtcBaselineFinalizedReaderContract,
-  type RtcBaselineFinalizedReaderDependencies,
   type RtcBaselinePairedComparison,
   type RtcBaselinePairedComparisonInput,
-  type RtcBaselineRepeatRequirement as RepeatRequirement,
+  type RtcBaselineRepeatRequirement,
   type RtcBaselineSummaryArtifactRecord,
-  type RtcBaselineVerifiedArtifacts as VerifiedArtifacts,
-  type RtcBaselineVerifiedRepeatPrimary as RepeatPrimary,
+  type RtcBaselineVerifiedArtifacts,
+  type RtcBaselineVerifiedRepeatPrimary,
   type RtcBaselineVerifiedStoredArtifact,
 } from './rtc-baseline-evidence-layout.ts';
 import {
@@ -39,12 +37,15 @@ import {
   validateRtcBaselineStoredOutcomeReconciliation,
 } from '../catalog/rtc-baseline-workload-manifest.ts';
 import type {
+  RtcBaselineAttemptLocatorDto,
   RtcBaselineCaptureManifestDto,
   RtcBaselineEnvironmentDto,
   RtcBaselineExternalCohortDto,
-  RtcBaselineIssueDto as Issue,
-  RtcBaselineResult as Result,
+  RtcBaselineIssueDto,
+  RtcBaselineJson,
+  RtcBaselineResult,
   RtcBaselineSampleDto,
+  RtcBaselineWorkloadId,
 } from '../contracts/rtc-baseline-contracts.ts';
 import {
   validateRtcBaselineCompleteAccounting,
@@ -58,14 +59,44 @@ import {
   type RtcBaselineFailureOutcomeArtifact,
 } from '../acceptance/rtc-baseline-failure-accounting.ts';
 export type { RtcBaselineFinalizedArtifactValidation } from './rtc-baseline-evidence-layout.ts';
-export type RtcBaselineFinalizedReader = RtcBaselineFinalizedReaderContract;
 export type {
   RtcBaselinePairedComparison,
   RtcBaselineRepeatRequirement,
   RtcBaselineVerifiedRepeatPrimary,
 } from './rtc-baseline-evidence-layout.ts';
-const issue = (path: string, code: string, message: string): Issue => ({ path, code, message });
-function failed(path: string, code: string, message: string): Result<never> {
+
+export interface RtcBaselineFinalizedReaderDependencies {
+  readJson(baselineId: string, path: string): Promise<RtcBaselineResult<RtcBaselineJson>>;
+  readBytes(baselineId: string, path: string): Promise<RtcBaselineResult<Uint8Array>>;
+  listArtifactPaths(baselineId: string): Promise<RtcBaselineResult<string[]>>;
+  sha256(bytes: Uint8Array): Promise<string>;
+}
+
+export interface RtcBaselineFinalizedReader {
+  readExternalAttempts(input: {
+    baselineId: string;
+    workloadId: RtcBaselineWorkloadId;
+  }): Promise<RtcBaselineResult<readonly RtcBaselineAttemptLocatorDto[]>>;
+  readBaselineValidation(
+    input: RtcBaselineReaderInput,
+  ): Promise<RtcBaselineResult<RtcBaselineFinalizedArtifactValidation>>;
+  readVerifiedRepeatPrimary(
+    input: RtcBaselineReaderInput,
+  ): Promise<RtcBaselineResult<RtcBaselineVerifiedRepeatPrimary>>;
+  readRepeatRequirement(
+    input: RtcBaselineReaderInput,
+  ): Promise<RtcBaselineResult<RtcBaselineRepeatRequirement>>;
+  readPairedComparison(
+    input: RtcBaselinePairedComparisonInput,
+  ): Promise<RtcBaselineResult<RtcBaselinePairedComparison>>;
+}
+
+const issue = (path: string, code: string, message: string): RtcBaselineIssueDto => ({
+  path,
+  code,
+  message,
+});
+function failed(path: string, code: string, message: string): RtcBaselineResult<never> {
   return { ok: false, issues: [issue(path, code, message)] };
 }
 export function createRtcBaselineFinalizedReader(
@@ -75,7 +106,7 @@ export function createRtcBaselineFinalizedReader(
     baselineId: string,
     relativePath: string,
     expectedSha256: string,
-  ): Promise<Result<RtcBaselineVerifiedStoredArtifact>> {
+  ): Promise<RtcBaselineResult<RtcBaselineVerifiedStoredArtifact>> {
     const bytes = await dependencies.readBytes(baselineId, relativePath);
     if (!bytes.ok) return bytes;
     if ((await dependencies.sha256(bytes.value)) !== expectedSha256)
@@ -89,7 +120,7 @@ export function createRtcBaselineFinalizedReader(
   async function validateRtcBaselineVerifiedRepeatLink(
     baselineId: string,
     summary: RtcBaselineSummaryArtifactRecord,
-  ): Promise<Result<void>> {
+  ): Promise<RtcBaselineResult<void>> {
     const identity = validateRtcBaselineRepeatLinkIdentity(baselineId, summary.repeatLink);
     if (!identity.ok || summary.repeatLink === null) return identity;
     const primaryId = summary.repeatLink.primaryBaselineId;
@@ -113,7 +144,9 @@ export function createRtcBaselineFinalizedReader(
   }
   const validateRepeatLink = validateRtcBaselineVerifiedRepeatLink;
   const readExternalAttempts = createRtcBaselineExternalAttemptReader(dependencies.readJson);
-  async function readVerifiedArtifacts(input: BaselineInput): Promise<Result<VerifiedArtifacts>> {
+  async function readVerifiedArtifacts(
+    input: RtcBaselineReaderInput,
+  ): Promise<RtcBaselineResult<RtcBaselineVerifiedArtifacts>> {
     const checksumBytes = await dependencies.readBytes(input.baselineId, 'SHA256SUMS');
     if (!checksumBytes.ok) return checksumBytes;
     const listed = await dependencies.listArtifactPaths(input.baselineId);
@@ -242,13 +275,15 @@ export function createRtcBaselineFinalizedReader(
       },
     };
   }
-  async function readBaselineValidation(input: BaselineInput) {
+  async function readBaselineValidation(input: RtcBaselineReaderInput) {
     const verified = await readVerifiedArtifacts(input);
     if (!verified.ok) return verified;
     const linked = await validateRepeatLink(input.baselineId, verified.value.summary);
     return linked.ok ? { ok: true as const, value: verified.value.validation } : linked;
   }
-  async function readVerifiedRepeatPrimary(input: BaselineInput): Promise<Result<RepeatPrimary>> {
+  async function readVerifiedRepeatPrimary(
+    input: RtcBaselineReaderInput,
+  ): Promise<RtcBaselineResult<RtcBaselineVerifiedRepeatPrimary>> {
     const verified = await readVerifiedArtifacts(input);
     if (!verified.ok) return verified;
     if (
@@ -271,7 +306,9 @@ export function createRtcBaselineFinalizedReader(
       },
     };
   }
-  async function readRepeatRequirement(input: BaselineInput): Promise<Result<RepeatRequirement>> {
+  async function readRepeatRequirement(
+    input: RtcBaselineReaderInput,
+  ): Promise<RtcBaselineResult<RtcBaselineRepeatRequirement>> {
     const validated = await readVerifiedArtifacts(input);
     if (!validated.ok) return validated;
     const summary = validated.value.summary;
@@ -286,7 +323,7 @@ export function createRtcBaselineFinalizedReader(
       );
     return { ok: true as const, value: { workloadIds } };
   }
-  async function comparisonChoice(input: ComparisonChoiceInput) {
+  async function comparisonChoice(input: RtcBaselineComparisonChoiceInput) {
     const { primaryBaselineId, comparisonBaselineId, inputPath, workloadId } = input;
     const primary = await readVerifiedArtifacts({ baselineId: primaryBaselineId });
     if (!primary.ok) return primary;
@@ -340,7 +377,7 @@ export function createRtcBaselineFinalizedReader(
   }
   async function readPairedComparison(
     input: RtcBaselinePairedComparisonInput,
-  ): Promise<Result<RtcBaselinePairedComparison>> {
+  ): Promise<RtcBaselineResult<RtcBaselinePairedComparison>> {
     const primary = await comparisonChoice({
       primaryBaselineId: input.primaryBaselineId,
       comparisonBaselineId: input.primaryComparisonCohortId,

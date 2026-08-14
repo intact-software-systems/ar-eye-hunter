@@ -14,7 +14,7 @@ import type { GroupStateService } from '../group-state/group-state-service-contr
 // prettier-ignore
 import type {
   GroupFormationGroupMutationSink,
-} from '../formation-metrics/formation-metrics.ts';
+} from '../formation-metrics.ts';
 import { GroupStateInboxHandler } from '../group-state/inbox/group-state-inbox-handler.ts';
 // prettier-ignore
 import { toGroupMutationDescriptor } from

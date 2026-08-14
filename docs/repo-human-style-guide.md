@@ -31,6 +31,25 @@ it exposes a real domain, lifecycle, policy, translation, compatibility,
 protocol, or side-effect boundary. Review the owner-to-result path, not merely
 syntax or file count.
 
+## Touched-file standards closure
+
+Review touched-file standards closure as the positive execution path. The
+authoritative standard defines touched as every changed human-authored source,
+test, script, fixture, example, and configuration file; generated and
+third-party files are excluded. The change must implement the requested
+behavior and resolve pre-existing and new noncompliance throughout each touched
+file. When remediation changes a support file, that file enters the closure
+recursively. Independent untouched code remains outside the closure.
+
+Escalate only for a genuine exception for a remaining real standards violation,
+a public compatibility or migration decision, an unresolved correctness or
+safety conflict, or a failed post-consolidation navigation probe. Do not
+escalate for pre-existing debt, deadline pressure, diff size, cleanup volume,
+ownership recovery, package boundaries, substantial remediation, or
+reprioritization alone. A product-semantics question qualifies only when it is
+concretely one of the listed correctness, safety, compatibility, or migration
+decisions.
+
 Production code is the primary design artifact; tests are secondary evidence.
 Tests protect independently stated observable behavior, public contracts, safety
 and correctness invariants, and approved architecture boundaries. When an
@@ -43,7 +62,7 @@ production review. It reports heuristic, changed-surface candidates only; a
 clean report does not prove that no legacy exists and a report does not decide
 whether a candidate is legitimate. Review the actual call paths, then give each
 reported candidate exactly one pull-request disposition: `removed`,
-`minimized-boundary`, `resolved`, or `retained-pending-human-approval`. A
+`minimized-boundary`, `resolved`, or `retained`. A
 retained item still needs explicit human approval and a durable registry entry.
 
 ## Human review sequence
@@ -240,9 +259,11 @@ records a non-obvious invariant, external constraint, safety reason, or tradeoff
 
 ### 9. Check change scope
 
-- New and changed code follows the standard.
-- Unrelated legacy code is not reformatted or refactored without authorization.
-- An existing over-threshold file does not grow silently.
+- Resolve pre-existing and new noncompliance throughout each touched file.
+- Every support file changed by remediation enters the closure recursively.
+- Independent untouched code remains outside the closure.
+- An existing over-threshold file is remediated coherently or records a genuine
+  remaining standards exception.
 - Any deliberate exception has explicit human approval and appears in the
   completion handoff and, when required by the hard size tier, the
   [repo code-style exception registry](./repo-code-style-exceptions.md).
@@ -279,6 +300,10 @@ change invalidates that approval and requires the complete review again.
 
 The TypeScript checker automates only syntax it can parse. The preceding human
 review sequence remains language-neutral and applies to all human-authored code.
+The full-repository checker remains warning-only, and feature-branch CI blocks
+new or worsened findings against the merge base. Checker tolerance is not
+authority to retain noncompliance and does not define touched-file standards
+closure.
 
 Run from the repository root:
 
@@ -362,10 +387,10 @@ real boundary.
 
 For changed production code, the review map lists every construction-detail
 warning by path, rule, and symbol and records one construction-warning
-disposition: fixed, demonstrated false positive, or accepted existing debt with
-no new/worsened magnitude and an owner. The review rule is that silence or a
-warning-only exit code is not a disposition. This evidence does not make every
-optional warning globally blocking.
+disposition: resolved throughout the touched file or demonstrated false
+positive. The review rule is that silence or a warning-only exit code is not a
+disposition. This evidence does not make every optional warning globally
+blocking; touched-file standards closure remains the completion rule.
 
 Run output-contract naming checks only when useful for the workstream:
 

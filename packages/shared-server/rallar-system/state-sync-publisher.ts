@@ -12,6 +12,7 @@ import type {
     GroupSnapshot,
     GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
+import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
@@ -65,6 +66,11 @@ export type ComputedGroupStateSyncEffect =
         effectKind: 'member-state';
         payloadKind: 'event';
         payload: GroupEvent;
+    }>
+    | Readonly<{
+        effectKind: 'member-state';
+        payloadKind: 'delta-envelope';
+        payload: GroupStateDeltaEnvelope;
     }>;
 
 export type ComputedClientStateSync = Readonly<{
@@ -129,11 +135,11 @@ export function computeGroupStateSyncEntries(
         validateGroupStateSyncEffect(computed, effect);
     }
     return computed.effects.map((effect) => {
-        const topicId = effect.payloadKind === 'event'
-            ? AppTopics.groupStateEvent
-            : effect.effectKind === 'scope-directory'
-            ? AppTopics.groupDirectorySnapshot
-            : AppTopics.groupStateSnapshot;
+        const topicId = effect.payloadKind === 'snapshot'
+            ? effect.effectKind === 'scope-directory'
+                ? AppTopics.groupDirectorySnapshot
+                : AppTopics.groupStateSnapshot
+            : AppTopics.groupStateEvent;
         return toStateSyncEntry({
             computed,
             effect,

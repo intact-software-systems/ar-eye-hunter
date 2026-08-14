@@ -318,7 +318,7 @@ exact default-branch count above with Critical 0 and Important 0.
       "focusedCommand": "npm run test:repo-structure",
       "navigationMap": "scripts/repo-structure-check/README.md",
       "factContracts": [
-        "scripts/plan-adaptation/active-plan-registry.mjs",
+        "scripts/plan-adaptation/adaptive-plan-catalog.mjs",
         "scripts/plan-adaptation/adaptive-plan-record.mjs",
         "scripts/plan-adaptation/plan-change-facts.mjs",
         "scripts/plan-adaptation/plan-closure-receipt.mjs",
@@ -348,16 +348,16 @@ exact default-branch count above with Critical 0 and Important 0.
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "8ee348e215a3e30d9b4959ce90369aea1b55b620",
-    "affectedCodeDigest": "3f801ad88d53de5fb230efbb484a7b51f2768b94621e7d91185069bf6aa1c5bb",
+    "diffBase": "acd4866bb8fb90f6843956336fbbd4c7adafe778",
+    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "computedTriggers": [],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The sole publish-later-evidence-ledger slice records complete planning and PR A-D facts, updates both reciprocal program records, and preserves the authenticated receipt and deleted implementation plan without code or performance changes.",
-    "learning": "Evidence-ledger publication must keep successful correctness gates, failed publication evidence, human closure deviations, waived navigation sampling, retained ratchets, and skipped performance work as distinct non-circular facts; remote main movement through PR #212 changes none of those contracts.",
-    "structure": "Plan adaptation owns the active record and generated registry, repository structure owns capability and navigation validation, and exactly two declared non-code contracts own reciprocal program reconciliation; the completed plan exposes no second slice.",
-    "decision": "continue",
+    "outcome": "The completed evidence-ledger outcome remains valid; only its repository-structure fact contract was invalidated by the configurable-governance catalog migration.",
+    "learning": "The retired active-plan-registry.mjs contract was consolidated into adaptive-plan-catalog.mjs while this plan was postponed.",
+    "structure": "Keep the existing plan-adaptation and repository-structure owners and navigation maps, replace the predecessor fact contract with its canonical catalog successor, and add no implementation slice.",
+    "decision": "amend",
     "nextSlices": []
   },
   "structuralDispositions": [],
@@ -373,6 +373,21 @@ exact default-branch count above with Critical 0 and Important 0.
       "date": "2026-08-14",
       "decision": "postpone",
       "summary": "Postpone while configurable multi-plan governance replaces the shared plan-adaptation ownership boundary."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "resume",
+      "summary": "Configurable governance rollout completed; resume topology ledger for re-authenticated review and canonical closure."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The completed evidence-ledger outcome remains valid; only its repository-structure fact contract was invalidated by the configurable-governance catalog migration."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "postpone",
+      "summary": "Serialize mutable governance ownership after PR #217 advanced main; preserve the completed ledger for authenticated canonical closure."
     }
   ]
 }

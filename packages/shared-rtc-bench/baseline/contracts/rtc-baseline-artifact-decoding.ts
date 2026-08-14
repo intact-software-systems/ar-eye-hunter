@@ -26,8 +26,6 @@ type Rule =
   | { kind: 'optional'; value: Rule }
   | { kind: 'nullable'; value: Rule };
 type StringFormat = Extract<Rule, { kind: 'string' }>['format'];
-type EnvironmentArtifact = Artifact.RtcBaselineEnvironmentDto;
-type ManifestArtifact = Artifact.RtcBaselineCaptureManifestDto;
 const jsonValue = (): Rule => ({ kind: 'json' });
 const scalar = (nullable: boolean): Rule => ({ kind: 'scalar', nullable });
 const string = (values?: readonly string[]): Rule => ({ kind: 'string', values });
@@ -379,8 +377,12 @@ function decoder<T>(rule: Rule) {
   return (value: RtcBaselineJson) => decode<T>(value, rule);
 }
 
-export const decodeRtcBaselineEnvironment = decoder<EnvironmentArtifact>(shapes.environment);
-export const decodeRtcBaselineManifest = decoder<ManifestArtifact>(shapes.manifest);
+export const decodeRtcBaselineEnvironment = decoder<Artifact.RtcBaselineEnvironmentDto>(
+  shapes.environment,
+);
+export const decodeRtcBaselineManifest = decoder<Artifact.RtcBaselineCaptureManifestDto>(
+  shapes.manifest,
+);
 export const decodeRtcBaselineSample = decoder<Artifact.RtcBaselineSampleDto>(shapes.sample);
 export const decodeRtcBaselineExternalAttempt = decoder<Artifact.RtcBaselineExternalAttemptDto>(
   shapes['external-attempt'],

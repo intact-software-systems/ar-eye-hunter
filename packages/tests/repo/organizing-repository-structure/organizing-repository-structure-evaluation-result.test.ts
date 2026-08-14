@@ -42,6 +42,16 @@ describe('organizing repository structure evaluation result validation', () => {
     expect(validation.stdout).toContain('PASS: adaptive agent evaluation result');
   });
 
+  it('rejects unknown suite selectors without reading the result', () => {
+    const resultPath = writeResult(createValidationInput().result);
+    const validation = runCli(['--suite', 'unknown-suite', resultPath]);
+
+    expect(validation.status).toBe(1);
+    expect(validation.stdout).toContain(
+      'FAIL: suite must be adaptive-agent-execution, organizing-repository-structure, or rallar-code-writing',
+    );
+  });
+
   it('still requires a non-empty raw answer artifact', () => {
     const input = createValidationInput();
     input.result.scenarioResults[0].rawOutputArtifact = 'missing-output.txt';

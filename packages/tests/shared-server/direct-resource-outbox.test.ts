@@ -874,6 +874,10 @@ function createSocket(): TestSocket {
     send: (connectionId: string) => {
       sent.push(connectionId);
     },
+    encode: (message: unknown) => ({ text: JSON.stringify(message) }),
+    sendEncoded: (connectionId: string) => {
+      sent.push(connectionId);
+    },
   } as unknown as TestSocket;
 }
 

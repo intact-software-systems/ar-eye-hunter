@@ -188,6 +188,32 @@ export function toRoomEventMessage(event: GroupEvent) {
   );
 }
 
+// Mirrors the dual-emit wire form: the `group-state.event` row payload is a
+// GroupStateDeltaEnvelope wrapping the GroupEvent instead of the bare event.
+// Room dispatch unwraps on the wrapper discriminants plus the validated
+// wrapped event, so the state-slice fields stay minimal here.
+export function toRoomEventEnvelopeMessage(event: GroupEvent) {
+  return newALBroadcastMessage(
+    'server-1',
+    newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
+    'all',
+    AppTopics.groupStateEvent,
+    {
+      event,
+      predecessorCausalRevision: { groupRevision: 1, presenceRevision: 0 },
+      resultingCausalRevision: event.causalRevision,
+      members: [],
+      removedMemberPrincipalIds: [],
+      sessions: [],
+      removedSessionIds: [],
+      activeSessionIds: [],
+      memberCount: 0,
+      onlineMemberCount: 0,
+      audienceSessionIds: [],
+    },
+  );
+}
+
 export function createRoomEvent(
   groupId: string,
   eventId: string,

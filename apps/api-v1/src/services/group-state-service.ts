@@ -14,19 +14,23 @@ import { getApiTimingSink } from './timing-service.ts';
 import {
   readApiGroupFormationDampingConfig,
 } from '../runtime/group-formation/group-formation-damping-config.ts';
+import { readApiGroupCapacityConfig } from '../runtime/group-formation/group-capacity-config.ts';
 
 export { createGroupStateService, type GroupStateService, type GroupStateServiceDependencies };
 
-export type ApiGroupStateService = GroupStateService & Pick<
-  CachedGroupStateService,
-  'readCurrentSnapshot'
->;
+export type ApiGroupStateService =
+  & GroupStateService
+  & Pick<
+    CachedGroupStateService,
+    'readCurrentSnapshot'
+  >;
 
 export function getGroupStateService(): ApiGroupStateService {
   const runtimeRepository = createRuntimeStateRepository();
   const durable = createGroupStateService({
     runtimeRepository,
     formationDamping: readApiGroupFormationDampingConfig().damping,
+    capacity: readApiGroupCapacityConfig(),
     authSessionRepository: createAuthSessionRepository(runtimeRepository),
     createGroupStateEventStore: createGroupStateEventRepository,
     serviceId: myServerId,

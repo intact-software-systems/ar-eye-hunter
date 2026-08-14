@@ -10,8 +10,8 @@ export const governanceGatePhases = [
 ];
 
 const forbiddenScriptPatterns = [
-  { pattern: /(?:^|\/)plan-adaptation(?:[/.\s]|$)/u, reason: 'active plan lifecycle' },
-  { pattern: /(?:^|\/)pr-human-review(?:[/.\s]|$)/u, reason: 'PR evidence lifecycle' },
+  { pattern: /(?:^|\/)plan-adaptation(?:[/.\s]|$)/u, reason: 'retired plan tooling' },
+  { pattern: /(?:^|\/)pr-human-review(?:[/.\s]|$)/u, reason: 'retired PR evidence tooling' },
   { pattern: /(?:^|\s)governance:decide(?:\s|$)/u, reason: 'governance mutation' },
   { pattern: /(?:^|[;&|\s])(?:gh|curl|wget)(?:\s|$)/u, reason: 'network access' },
   { pattern: /https?:\/\//u, reason: 'network access' },

@@ -37,6 +37,7 @@ import type {
 import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
+import type { GroupPolicyCapacityConfig } from '../group-policy.ts';
 import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
 import type { StateEventListQuery } from '../state-event-listing.ts';
 import type {
@@ -193,6 +194,11 @@ export type GroupStateRuntime = Readonly<{
 export type GroupStateServiceDependencies = Readonly<{
   runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
   formationDamping: 'damped' | 'legacy';
+  /**
+   * Operational capacity defaults from runtime configuration; absent when the
+   * runtime configures none, which keeps stored-cap-only admission.
+   */
+  capacity?: GroupPolicyCapacityConfig;
   createGroupStateEventStore?: (
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
   ) => GroupStateEventStore;
