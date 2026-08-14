@@ -116,11 +116,7 @@ export function applyAdaptivePlan(input) {
     throw new Error('only one autonomous consolidation slice is allowed');
   }
   validateRecordAndCheckpoint(draft.record);
-  const currentFacts = readCurrentFacts({
-    input,
-    record: draft.record,
-    includeUnassigned: true,
-  });
+  const currentFacts = readCurrentFacts({ input, record: draft.record, includeUnassigned: true });
   if (JSON.stringify(currentFacts) !== JSON.stringify(draft.record.facts)) {
     throw new Error('draft facts are stale; run prepare again');
   }
@@ -152,10 +148,7 @@ export function checkAdaptivePlans(input) {
   const adaptivePlans = catalog.plans;
   const activePlans = catalog.activePlans;
   const recovery = readCatalogRecovery({
-    input,
-    candidateCatalog: catalog,
-    changes,
-    authenticatedChanges: closureChanges,
+    input, candidateCatalog: catalog, changes, authenticatedChanges: closureChanges,
   });
   const issues = [];
   if (!recovery.allowed) issues.push(...catalog.issues);
@@ -329,10 +322,7 @@ function appendStatusDecision(record, decision, reason) {
 }
 
 function readCurrentFacts({
-  input,
-  record,
-  includeUnassigned = false,
-  catalog = readAdaptivePlanCatalog(input.repoRoot),
+  input, record, includeUnassigned = false, catalog = readAdaptivePlanCatalog(input.repoRoot),
 }) {
   const changes = readChangedPaths(input.repoRoot, input.base);
   return computePlanFacts({

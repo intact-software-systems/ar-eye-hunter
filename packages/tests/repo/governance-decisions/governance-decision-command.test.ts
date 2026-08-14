@@ -160,7 +160,9 @@ describe('governance decision command', () => {
           env: {
             ...process.env,
             PATH: `${binRoot}:${process.env.PATH}`,
-            ...(kind === 'workflow' ? workflowEnvironment(fixture.headOid) : {}),
+            ...(kind === 'workflow'
+              ? workflowEnvironment(fixture.headOid)
+              : { GITHUB_ACTIONS: 'false' }),
           },
         },
       );

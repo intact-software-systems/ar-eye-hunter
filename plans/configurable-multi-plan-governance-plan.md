@@ -150,7 +150,7 @@ single-plan logic before adding new modules.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "8dd96d4517e9f5a33728330f6c3bc9fba77bed6c",
-    "affectedCodeDigest": "461f3e737f08d2f1669aa1f8e2b9e6ac4293f08f144485902bf525112ef5fcf5",
+    "affectedCodeDigest": "f4473c94cdb0797732437d1db2d2ebce5fb34edec618d0b693cfd394f8e5995e",
     "computedTriggers": [
       "ownership-change",
       "lifecycle-change"
@@ -158,10 +158,10 @@ single-plan logic before adding new modules.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Current main at 8dd96d45 merged cleanly; its D6 product work is now baseline, while the catalog remains one active governance plan and one postponed topology plan with seven available slots.",
-    "learning": "A disjoint main advance must become the selected plan's exact new facts base so already-merged nonadaptive work is baseline rather than unassigned candidate scope.",
-    "structure": "The combined tree introduces no adaptive ownership collision and requires no capability, navigation, policy, or consumer boundary change.",
-    "decision": "continue",
+    "outcome": "The second exact-head Branch Release Gate exposed the CI local-transport fixture inheriting GITHUB_ACTIONS and a nine-line budget overrun; the fixture now declares local transport explicitly and consolidated lifecycle calls leave production governance at 199 net lines.",
+    "learning": "Transport tests must override ambient CI identity variables, and release-driven readability corrections must be consolidated within the same fixed production-line budget.",
+    "structure": "No public interface or ownership changed; the test isolates its intended transport and the lifecycle keeps named input objects without adding another abstraction.",
+    "decision": "amend",
     "nextSlices": []
   },
   "structuralDispositions": [
@@ -231,6 +231,11 @@ single-plan logic before adding new modules.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "Current main at 8dd96d45 merged cleanly; its D6 product work is now baseline, while the catalog remains one active governance plan and one postponed topology plan with seven available slots."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The second exact-head Branch Release Gate exposed the CI local-transport fixture inheriting GITHUB_ACTIONS and a nine-line budget overrun; the fixture now declares local transport explicitly and consolidated lifecycle calls leave production governance at 199 net lines."
     }
   ]
 }
