@@ -115,7 +115,11 @@ function readActionDetail(action) {
     case 'STOP_CLOSED':
       return 'Blocker: The pull request is closed without merge.';
     case 'DONE':
-      return 'Terminal: GitHub reports this pull request merged; no governance action is permitted.';
+      // prettier-ignore
+      return (
+        'Terminal: GitHub reports this pull request merged; ' +
+        'no governance action is permitted.'
+      );
     case 'STOP_WRONG_BASE':
       return 'Blocker: The pull request does not target the repository default branch.';
     case 'WAIT_GITHUB':

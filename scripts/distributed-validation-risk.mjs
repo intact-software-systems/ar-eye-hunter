@@ -11,7 +11,10 @@ import {
 import {
   validateDistributedValidationResult,
 } from './distributed-validation-risk/distributed-validation-result.mjs';
-import { readChangedPathRecords } from './distributed-validation-risk/read-distributed-validation-input.mjs';
+// prettier-ignore
+import {
+  readChangedPathRecords,
+} from './distributed-validation-risk/read-distributed-validation-input.mjs';
 
 await runDistributedValidationRiskCommand(process.argv.slice(2));
 
