@@ -57,6 +57,29 @@ describe('rallar code-writing maintenance stewardship contract', () => {
     }
   });
 
+  it('requires next-action decisions and final handoffs to spell out closure', () => {
+    const responseContractPaths = [
+      '.agents/skills/rallar-code-writing/SKILL.md',
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+    ];
+    const closureFacts = [
+      'every changed human-authored file is reviewed and remediated in full',
+      'every support file modified by that remediation enters closure recursively until closure',
+      'independent untouched code remains outside closure',
+    ];
+
+    for (const repositoryPath of responseContractPaths) {
+      const source = normalize(readRepo(repositoryPath));
+
+      expect(source).toContain(
+        'When giving a next-action decision before edits, and again in the final handoff',
+      );
+      expectAll(source, closureFacts);
+      expect(source).toContain('The `touched-file standards closure` label alone');
+      expect(source).toContain('is not a substitute for those explicit statements');
+    }
+  });
+
   it('permits escalation only for four genuine decisions', () => {
     const sources = guidancePaths.map(readRepo).map(normalize);
     const escalationConditions = [
@@ -78,6 +101,43 @@ describe('rallar code-writing maintenance stewardship contract', () => {
         'accepted existing debt with no new/worsened magnitude and an owner',
       );
     }
+  });
+
+  it('distinguishes the post-consolidation probe from reportable pre-work failures', () => {
+    const responseContractPaths = [
+      '.agents/skills/rallar-code-writing/SKILL.md',
+      '.agents/skills/adaptive-plan-execution/SKILL.md',
+    ];
+    const preWorkEvidence = [
+      'pre-work plan state',
+      'active-plan cardinality failures',
+      'stale or unrelated governance state',
+      'checker or resource failures',
+    ];
+
+    for (const repositoryPath of responseContractPaths) {
+      const source = normalize(readRepo(repositoryPath));
+
+      expect(source).toContain(
+        'Only a navigation probe that fails after one autonomous coherent consolidation',
+      );
+      expect(source).toContain('qualifies as the fourth escalation');
+      expectAll(source, preWorkEvidence);
+      expect(source).toContain('classified and reported as validation or environment evidence');
+      expect(source).toContain('do not justify seeking permission');
+      expect(source).toContain('retaining a real standards violation');
+      expect(source).toContain('deferring safe in-scope implementation');
+      expect(source).toContain(
+        'unless their concrete consequence is already one of the four escalation conditions',
+      );
+    }
+
+    const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
+    const escalationDimension = rubric.dimensions.find(
+      ({ id }) => id === 'stewardship.genuine-decision-escalation',
+    );
+    expect(escalationDimension?.pass).toContain('after one autonomous coherent consolidation');
+    expectAll(escalationDimension?.pass ?? '', preWorkEvidence);
   });
 
   it('defines one critical versioned pressure scenario and a binary rubric', () => {
@@ -128,6 +188,12 @@ describe('rallar code-writing maintenance stewardship contract', () => {
       'exact conditions that would require human direction',
       'ask permission merely because the findings pre-exist',
       'checker tolerance as the completion rule',
+      'every changed human-authored file',
+      'every support file modified',
+      'independent untouched code remains outside',
+      'one autonomous coherent consolidation',
+      'retaining a real standards violation',
+      'deferring safe in-scope implementation',
     ];
 
     for (const fragment of forbiddenAnswerFragments) {
@@ -141,6 +207,25 @@ describe('rallar code-writing maintenance stewardship contract', () => {
       expect(scenario.prompt, `leaked rubric text: ${dimensionId}`).not.toContain(passText);
       expect(scenario.prompt, `leaked dimension ID: ${dimensionId}`).not.toContain(dimensionId);
     }
+  });
+
+  it('keeps the pressure scenario deterministic, non-mutating, and workspace-independent', () => {
+    const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
+    const prompt = normalize(suite.scenarios[0].prompt);
+
+    expect(prompt).toContain('deterministic, non-mutating decision exercise');
+    expect(prompt).toContain('Use only the facts stated in this scenario');
+    expect(prompt).toContain('do not edit files');
+    expect(prompt).toContain('run commands');
+    expect(prompt).toContain('inspect the current workspace or governance state');
+    expect(prompt).toContain('mutate plans or governance');
+    expect(prompt).toContain('make external calls');
+    expect(prompt).toContain(
+      'Unrelated current workspace and governance state is outside this scenario',
+    );
+    expect(prompt).not.toContain('current repository task');
+    expect(prompt).not.toContain('current repository facts');
+    expect(prompt).not.toContain('repository evidence you inspect');
   });
 
   it('reuses the canonical versioned evaluation-result validator', () => {

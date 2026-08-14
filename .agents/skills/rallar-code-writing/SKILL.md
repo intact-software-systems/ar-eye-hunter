@@ -44,6 +44,17 @@ do not turn propagation into repository-wide cleanup. Checker tolerance is not
 authority to retain touched-file noncompliance and does not define touched-file
 standards closure.
 
+When giving a next-action decision before edits, and again in the final
+handoff, state all three closure facts explicitly:
+
+- every changed human-authored file is reviewed and remediated in full;
+- every support file modified by that remediation enters closure recursively
+  until closure; and
+- independent untouched code remains outside closure.
+
+The `touched-file standards closure` label alone, an extraction label, or a
+consolidation label is not a substitute for those explicit statements.
+
 Escalate only for a genuine exception for a remaining real standards violation,
 a public compatibility or migration decision, an unresolved correctness or
 safety conflict, or a failed post-consolidation navigation probe. Do not
@@ -51,6 +62,15 @@ escalate for pre-existing debt, deadline pressure, diff size, cleanup volume,
 ownership recovery, package boundaries, substantial remediation, or
 reprioritization alone. Do not request permission merely to leave old findings
 in a touched file.
+
+Only a navigation probe that fails after one autonomous coherent consolidation
+of the changed capability qualifies as the fourth escalation. Failures
+involving pre-work plan state, active-plan cardinality failures, stale or
+unrelated governance state, and checker or resource failures must be classified
+and reported as validation or environment evidence. They do not justify seeking
+permission, retaining a real standards violation, or deferring safe in-scope
+implementation unless their concrete consequence is already one of the four
+escalation conditions.
 
 **REQUIRED SUB-SKILL:** Use `organizing-repository-structure` for repository shape decisions.
 

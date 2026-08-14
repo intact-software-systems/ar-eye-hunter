@@ -71,6 +71,26 @@ describe('adaptive plan execution skill contract', () => {
     expect(skill).toContain('Feature work stays inactive until the post-consolidation checkpoint');
   });
 
+  it('states closure explicitly and treats pre-work failures as evidence', () => {
+    const skill = normalizeWhitespace(readRepo(`${skillRoot}/SKILL.md`));
+
+    expect(skill).toContain(
+      'When giving a next-action decision before edits, and again in the final handoff',
+    );
+    expect(skill).toContain('every changed human-authored file is reviewed and remediated in full');
+    expect(skill).toContain(
+      'every support file modified by that remediation enters closure recursively until closure',
+    );
+    expect(skill).toContain('independent untouched code remains outside closure');
+    expect(skill).toContain(
+      'Only a navigation probe that fails after one autonomous coherent consolidation',
+    );
+    expect(skill).toContain('active-plan cardinality failures');
+    expect(skill).toContain('classified and reported as validation or environment evidence');
+    expect(skill).toContain('do not justify seeking permission');
+    expect(skill).toContain('deferring safe in-scope implementation');
+  });
+
   it('routes authenticated plan disposition through one exact approval', () => {
     const skill = normalizeWhitespace(readRepo(`${skillRoot}/SKILL.md`));
 
