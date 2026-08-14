@@ -150,7 +150,7 @@ single-plan logic before adding new modules.
   "completedSlicesSinceCheckpoint": [],
   "facts": {
     "diffBase": "ffc2f9a76a942d8c335d5d621a0e6c498ca42ebb",
-    "affectedCodeDigest": "461f3e737f08d2f1669aa1f8e2b9e6ac4293f08f144485902bf525112ef5fcf5",
+    "affectedCodeDigest": "afd6defac98eb09f3aa1279531f8151eec3f82e3fdc0483630d001857bbdcbd6",
     "computedTriggers": [
       "ownership-change",
       "lifecycle-change"
@@ -158,10 +158,10 @@ single-plan logic before adding new modules.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The exact-head Branch Release Gate exposed two new function input-contract findings; both private lifecycle functions now accept named input objects, and the 93 plan-adaptation tests plus the changed-style comparison pass.",
-    "learning": "The warning-only repository style command does not substitute for the release gate's base-to-candidate changed-style comparison, so final publication validation must run both contracts.",
-    "structure": "No ownership, navigation, capability boundary, or public lifecycle behavior changed; the correction only makes existing lifecycle dataflow explicit at two private call boundaries.",
-    "decision": "amend",
+    "outcome": "The complete governance implementation and its subprocess-heavy integration scenarios are ready for the broad acceptance matrix.",
+    "learning": "Multi-plan and authenticated-history integration scenarios need explicit test budgets under the full parallel Vitest workload even when they are fast in focused runs.",
+    "structure": "Keep the real CLI integration coverage and assign longer budgets only to the three affected subprocess-heavy scenarios.",
+    "decision": "continue",
     "nextSlices": []
   },
   "structuralDispositions": [
@@ -221,16 +221,6 @@ single-plan logic before adding new modules.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "The complete governance implementation and its subprocess-heavy integration scenarios are ready for the broad acceptance matrix."
-    },
-    {
-      "date": "2026-08-14",
-      "decision": "amend",
-      "summary": "The exact-head Branch Release Gate exposed two new function input-contract findings; both private lifecycle functions now accept named input objects, and the 93 plan-adaptation tests plus the changed-style comparison pass."
-    },
-    {
-      "date": "2026-08-14",
-      "decision": "amend",
-      "summary": "The exact-head Branch Release Gate exposed two new function input-contract findings; both private lifecycle functions now accept named input objects, and the 93 plan-adaptation tests plus the changed-style comparison pass."
     }
   ]
 }
