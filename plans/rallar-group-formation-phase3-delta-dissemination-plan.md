@@ -570,7 +570,7 @@ adaptive horizon rule.
     "undeclaredChangedPaths": [
       "plans/rallar-group-topology-evidence-ledger-plan.md",
       "plans/repo-human-traceability-program-execution-plan.md",
-      "plans/repo-human-traceability-refactoring-program-plan.md"
+      "plans/repo-human-traceability-refactoring-program-plan.md",
       "packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts",
       "plans/rallar-group-topology-evidence-ledger-plan.md",
       "scripts/perf/api-v1-state-write-concurrency-bench.ts"
