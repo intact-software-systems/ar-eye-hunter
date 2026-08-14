@@ -7,93 +7,87 @@ description: Use when executing a written or multi-slice repository plan, when i
 
 ## Core principle
 
-Use deterministic tooling for facts and agent judgment for decisions. Keep only
-the next two independently testable capability slices concrete; later outcomes
-stay outcome-shaped until a checkpoint earns their activation.
+Keep planning useful and local to the work. The GitHub pull request is the remote delivery entity;
+the repository does not mirror its state in an active-plan catalog, progress ledger, ownership
+reservation, digest record, or completion ledger.
 
-**REQUIRED SUB-SKILL:** Use `publishing-plan-progress` for publication only.
+Keep at most the next two independently testable slices concrete. Later work stays outcome-shaped
+until evidence earns it. A slice is a useful capability or structural increment, not a commit, task
+number, or file batch.
 
-**REQUIRED SUB-SKILL:** Use `rallar-testing` to select surface-specific commands.
+**REQUIRED SUB-SKILL:** Use `publishing-plan-progress` for publication.
 
-## Control loop
+**REQUIRED SUB-SKILL:** Use `rallar-testing` to select affected validation.
 
-1. Qualify the work. An adaptive plan is required for a written plan,
-   directory creation or movement, three or more added/moved production
-   modules, package or capability crossings, or public ownership changes. Run
-   `npm run plan:adapt -- init --plan <plan-path>` when the work has no owning active record.
-   Keep one canonical `plan-adaptation-v1` block with the goal, acceptance,
-   affected capability roots, canonical entries, test roots, navigation maps,
-   and at most two slices. A fresh agent reviews the initial capability-tree
-   hypothesis, owner, entry, and first horizon.
-2. Execute one slice. A slice is an independently testable capability increment
-   or structural consolidation, not a task, commit, or file batch. Run focused
-   checks, then
-   `npm run plan:adapt -- complete-slice --plan <plan-path> --slice <slice-name>`.
-3. Reflect when facts require it. Run `npm run plan:adapt -- prepare --plan <plan-path>` after an
-   ownership, folder, public-surface, lifecycle, or navigation change; an
-   invalid assumption; scope growth; or two completed slices. It writes the
-   ignored draft containing computed triggers, undeclared paths, and the
-   affected-code digest. A new SHA or unrelated prose edit is not itself a
-   checkpoint trigger.
-4. Write exactly five judgments in the draft: `outcome`, `learning`,
-   `structure`, `decision`, and `nextSlices`. Then run
-   `npm run plan:adapt -- apply --plan <plan-path>`. Choose `continue`, `amend`, `consolidate`, or
-   `stop`; the next horizon remains at most two slices.
-5. Run `npm run plan:adapt -- check` for read-only validation of every active plan. After the final
-   fresh review and PR evidence, run `npm run plan:adapt -- close` to remove the
-   target tactical plan:
-   `npm run plan:adapt -- close --plan <plan-path> --final-pr-evidence <pull-request-evidence>`.
-6. Use `npm run plan:adapt -- overview` for the ignored live catalog view. When work must release
-   capacity or mutable ownership, use
-   `npm run plan:adapt -- postpone --plan <plan-path> --reason <reason>`; use
-   `npm run plan:adapt -- resume --plan <plan-path> --reason <reason>` only after capacity and
-   ownership are valid. Supply `--plan` whenever more than one eligible record exists.
+## Working-plan loop
 
-When an administrator explicitly chooses one of the fixed authenticated
-governance operations, use `governance:decide`; preview is optional. An AI must
-show the exact canonical request and expected main head and obtain one
-just-in-time approval before `apply`. A changed request or head invalidates the
-approval. Never hand-write a receipt, directly edit/delete a plan, fabricate
-completion or review evidence, or alter plan status or an overview by hand as
-a substitute. Do not construct a tracked overview; `plans/README.md` is static navigation and the
-live overview belongs only in ignored `.plan-adaptation/overview.md`.
+1. State the goal, observable acceptance criteria, important constraints, affected owners, and the
+   next one or two slices in the agent's working plan. A durable design document may explain a large
+   architectural decision, but it is not a live status database.
+2. Before implementation, recover the current owner, entry, dataflow, failure boundary, and tests
+   from the repository. Do not use a historical plan as the only navigation map.
+3. Implement one slice test-first and run its focused checks.
+4. Reflect when evidence changes the goal, acceptance, scope, ownership, structure, compatibility,
+   or validation risk. Update the working plan and the semantic PR explanation only when the change
+   is material. Do not create a tracked transition record.
+5. After two completed slices, choose the next one or two useful slices from current evidence. Do
+   not perform a bookkeeping checkpoint.
+6. Finish only after affected validation, code/structure review, production-legacy review, and the
+   live PR delivery state support the claimed outcome.
 
-## Decision and validation judgment
+## Pull-request state comes first
 
-| Evidence                                                               | Decision      |
-| ---------------------------------------------------------------------- | ------------- |
-| Outcome and assumptions still hold                                     | `continue`    |
-| Goal holds but horizon or approach changed                             | `amend`       |
-| Ownership or navigation needs repair first                             | `consolidate` |
-| A required decision is unsafe or a post-consolidation cold probe fails | `stop`        |
+Run `npm run pr:delivery -- status` before broad final validation and whenever the next delivery
+action is uncertain.
 
-Never continue when repository ownership/navigation cannot be recovered or the
-next slice deepens a known structural failure. One autonomous consolidation may
-replace the next feature slice. `consolidate` must expose exactly one
-consolidation slice in `nextSlices`. Feature work stays inactive until the
-post-consolidation checkpoint; a failed cold-navigation probe then requires
-human direction.
+- `REPAIR_CONFLICT` means stop and repair the real source conflict before validation or publication
+  work.
+- `REPAIR_CHECK` means diagnose the failing check; do not edit governance metadata.
+- `WAIT_CI` and `WAIT_GITHUB` mean wait for GitHub without creating local evidence records.
+- `AWAIT_REVIEW_OR_ADMIN_MERGE` supports either native review or an intentional role-based
+  administrator merge.
+- `DONE` is terminal and permits no post-merge governance work.
 
-Select validation from changed behavior, boundaries, and risk: focused local
-tests and `npm run check:adaptive-governance` first; broad GitHub CI when the
-build-affecting tree changed; distributed validation only for classified
-distributed risk or plan acceptance. Explanatory Markdown that does not alter
-the build tree does not justify a full local rerun. Never claim remote evidence
-reuse that the current workflow has not actually produced.
+`BEHIND` is not a repair state when GitHub reports the pull request mergeable. Base-branch movement
+alone is not work. Do not update the branch, merge `main`, rebase, repeat review, rerun unrelated
+checks, or refresh metadata merely because the base changed.
 
-Classify every CI failure before editing: `regression`,
-`infrastructure/flaky`, `obsolete coupled test`, or `invalid plan assumption`.
-Only the last automatically amends the plan.
+## Material adaptation
 
-## Automation boundary and red flags
+Change the working plan when new evidence invalidates an assumption, changes acceptance, expands or
+shrinks scope, moves ownership, exposes an unsafe compatibility boundary, or changes the validation
+risk. Explain the smallest resulting change in the PR when it matters to review.
 
-The commands own qualification facts, triggers, digests, undeclared paths,
-horizon counts, catalog capacity, mutable-ownership conflicts, and serialization. The agent owns the five
-judgments, structural dispositions, validation scope, and whether new evidence
-changes the plan. Automation never chooses a folder or architecture.
+Do not change the working plan for a new commit identifier, a harmless base movement, an unrelated
+prose edit, or a check rerun with no new behavior evidence.
 
-Stop and checkpoint when you are about to execute a third slice, continue
-through a known navigation failure, hand-compute facts instead of using the
-draft, treat every red CI job as an invalid plan, rerun every suite for an
-unrelated Markdown edit, or use commit SHA freshness in place of the
-affected-code digest.
+Consolidate ownership before continuing feature work when repository navigation cannot recover a
+truthful owner-to-result path. If one focused consolidation still cannot establish safe ownership,
+stop for human direction.
+
+## Failure classification and validation
+
+Classify each failing check before editing:
+
+- `regression` — production behavior or an independent contract broke;
+- `infrastructure/flaky` — the environment or nondeterministic dependency failed;
+- `obsolete coupled test` — a test protects private topology rather than independent behavior;
+- `invalid assumption` — the working plan's product or architecture premise is false.
+
+Only a regression or invalid assumption changes implementation. An invalid assumption also changes
+the working plan. Replace obsolete coupling with semantic coverage; never restore inferior
+production structure merely to satisfy it.
+
+Select validation from changed behavior, boundaries, and risk. Run focused affected checks first,
+broad CI for a build-affecting change, and distributed validation only for classified distributed
+risk or explicit acceptance. Report passed, failed, and skipped checks. Do not copy workflow IDs,
+commit IDs, digests, or check snapshots into tracked governance state.
+
+## Completion boundary
+
+At handoff, the PR body contains Goal, Changes, Acceptance, Validation, Risk and rollback, and
+Follow-up. Run `npm run pr:delivery -- ready` once. Native auto-merge may wait for review and checks;
+an authorized administrator may merge through GitHub when independent approval is unavailable.
+
+After GitHub reports `merged`, stop. Do not close or archive a plan, write a receipt, update a
+catalog, refresh evidence, rebase, or make a governance-only commit.

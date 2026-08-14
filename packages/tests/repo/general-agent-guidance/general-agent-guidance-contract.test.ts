@@ -4,8 +4,10 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
-const generalGuidancePaths = [
+const deliveryGuidancePaths = [
   'AGENTS.md',
+  '.agents/skills/adaptive-plan-execution/SKILL.md',
+  '.agents/skills/organizing-repository-structure/SKILL.md',
   '.agents/skills/publishing-plan-progress/SKILL.md',
   '.agents/skills/rallar-code-writing/SKILL.md',
   '.agents/skills/rallar-testing/SKILL.md',
@@ -13,90 +15,55 @@ const generalGuidancePaths = [
 ] as const;
 
 describe('general agent guidance routing', () => {
-  it('routes adaptation, structure, testing, and publication to one owner each', () => {
+  it('uses the pull request as the remote delivery entity', () => {
     const agents = normalize(readRepo('AGENTS.md'));
-    const codeWriting = normalize(readRepo('.agents/skills/rallar-code-writing/SKILL.md'));
-    const testing = normalize(readRepo('.agents/skills/rallar-testing/SKILL.md'));
-    const testCommands = normalize(
-      readRepo('.agents/skills/rallar-testing/references/test-commands.md'),
-    );
+    const adaptive = normalize(readRepo('.agents/skills/adaptive-plan-execution/SKILL.md'));
     const publishing = normalize(readRepo('.agents/skills/publishing-plan-progress/SKILL.md'));
 
-    expect(agents).toContain(
-      'Use `adaptive-plan-execution` for written or multi-slice plans, ' +
-        '`organizing-repository-structure` for repository shape, `rallar-testing` for ' +
-        'surface-specific commands, and `publishing-plan-progress` for publication.',
-    );
-    expect(codeWriting).toContain(
-      '**REQUIRED SUB-SKILL:** Use `organizing-repository-structure` for repository shape decisions.',
-    );
-    expect(codeWriting).toContain(
-      '**REQUIRED SUB-SKILL:** Use `adaptive-plan-execution` when code work qualifies for an adaptive plan.',
-    );
-    expect(testing).toContain(
-      '`adaptive-plan-execution` owns plan-level validation scope and checkpoint decisions.',
-    );
-    expect(testCommands).toContain('`adaptive-plan-execution` owns plan-level validation scope.');
-    expect(publishing).toContain(
-      '**REQUIRED SUB-SKILL:** Use `adaptive-plan-execution` for plan adaptation and checkpoint decisions.',
-    );
+    expect(agents).toContain('The GitHub pull request is the remote delivery entity.');
+    expect(adaptive).toContain('Keep at most the next two independently testable slices concrete.');
+    expect(adaptive).toContain('Base-branch movement alone is not work.');
+    expect(publishing).toContain('npm run pr:delivery -- status');
+    expect(publishing).toContain('before broad final validation');
+    expect(publishing).toContain('npm run pr:delivery -- ready');
+    expect(publishing).toContain('`DONE` permits no post-merge governance work');
   });
 
-  it('does not duplicate adaptive, structural, startup, or unconditional local-suite policy', () => {
+  it('does not route ordinary delivery through tracked governance bookkeeping', () => {
     const sources = Object.fromEntries(
-      generalGuidancePaths.map((repositoryPath) => [repositoryPath, readRepo(repositoryPath)]),
+      deliveryGuidancePaths.map((repositoryPath) => [repositoryPath, readRepo(repositoryPath)]),
     );
-    const publishing = sources['.agents/skills/publishing-plan-progress/SKILL.md'];
 
-    expect(publishing).not.toContain('plan-adaptation-v1');
-    expect(publishing).not.toContain('complete-slice');
-    expect(publishing).not.toContain('structuralDispositions');
-    expect(publishing).not.toContain('Plan Authoring And Production Legacy Closure');
-    expect(publishing).not.toContain('Active-Plan Boundary');
-
-    expect(sources['AGENTS.md']).not.toMatch(/During every task, first search[\s\S]*?Issues/iu);
     for (const [repositoryPath, source] of Object.entries(sources)) {
-      expect(source, repositoryPath).not.toContain('npm run test:unit');
-      expect(source, repositoryPath).not.toContain('npm run test:ci');
-      expect(source, repositoryPath).not.toContain('npm run build');
-    }
-
-    for (const repositoryPath of [
-      'AGENTS.md',
-      '.agents/skills/rallar-code-writing/SKILL.md',
-      '.agents/skills/rallar-testing/SKILL.md',
-      '.agents/skills/rallar-testing/references/test-commands.md',
-    ]) {
-      const source = sources[repositoryPath];
-      expect(source, repositoryPath).not.toContain('exact head SHA');
-      expect(source, repositoryPath).not.toContain('exact commit SHA');
-      expect(source, repositoryPath).not.toContain('attached to an older commit');
+      expect(source, repositoryPath).not.toContain('npm run plan:adapt');
+      expect(source, repositoryPath).not.toContain('plan-adaptation-v1');
+      expect(source, repositoryPath).not.toContain('PR Human Review Record');
+      expect(source, repositoryPath).not.toContain('build-affecting tree digest');
+      expect(source, repositoryPath).not.toMatch(/close(?:d|) plan|closure receipt/iu);
     }
   });
 
-  it('preserves publication safety, completion publication, and high-risk proofs', () => {
-    const agents = normalize(readRepo('AGENTS.md'));
+  it('detects real conflicts before validation and ignores harmless base movement', () => {
+    const adaptive = normalize(readRepo('.agents/skills/adaptive-plan-execution/SKILL.md'));
     const publishing = normalize(readRepo('.agents/skills/publishing-plan-progress/SKILL.md'));
+
+    expect(adaptive).toContain('`REPAIR_CONFLICT`');
+    expect(adaptive).toContain('`BEHIND`');
+    expect(publishing).toContain('`REPAIR_CONFLICT`');
+    expect(publishing).toContain('Do not update the branch, merge `main`, or rebase');
+  });
+
+  it('preserves default-branch safety, meaningful legacy review, and high-risk proofs', () => {
+    const agents = normalize(readRepo('AGENTS.md'));
     const testing = normalize(readRepo('.agents/skills/rallar-testing/SKILL.md'));
     const testCommands = normalize(
       readRepo('.agents/skills/rallar-testing/references/test-commands.md'),
     );
 
-    expectAll(publishing, [
-      'draft pull request',
-      'Compatibility Review',
-      'Follow-Up Issue Handoff',
-      'Default Branch Commit and Push Permission',
-      'Branch Release Gate',
-      'Run Hetzner Supported Distributed Manifests',
-      'build-affecting tree digest',
-    ]);
     expectAll(agents, [
       'No AI or agent may create or place a commit on `main`',
       'No AI or agent may push `main`',
-      'When adding or changing REST API behavior',
-      'For shared-web public surface work',
-      'For game/realtime changes',
+      'Retained production legacy',
       'Report commands that passed, failed, or were skipped',
     ]);
     expect(readRepo('AGENTS.md')).toContain(
@@ -108,36 +75,22 @@ describe('general agent guidance routing', () => {
       'test:api-v1:black-box:postgres:topology-replay',
       'perf:api-v1:state-write',
       'UI Behavior Rule',
-      'test:repo-governance',
     ]);
     expectAll(testCommands, [
       'test:api-v1:black-box:postgres:medium-scale',
       'test:api-v1:black-box:postgres:topology-replay',
       'perf:api-v1:state-write',
       'UI Workflow Testing',
-      'test:repo-governance',
     ]);
   });
 
-  it('keeps authenticated governance decisions exact and separate from ordinary publication', () => {
-    const sources = [
-      readRepo('AGENTS.md'),
-      readRepo('.agents/skills/adaptive-plan-execution/SKILL.md'),
-      readRepo('.agents/skills/publishing-plan-progress/SKILL.md'),
-    ].map(normalize);
+  it('keeps authenticated exception authority separate from pull request completion', () => {
+    const agents = normalize(readRepo('AGENTS.md'));
 
-    for (const source of sources) {
-      expect(source).toContain('exact canonical request');
-      expect(source).toContain('expected main head');
-      expect(source).toContain('one just-in-time approval');
-      expect(source).toMatch(/changed request or (?:expected )?head invalidates/iu);
-      expect(source).toMatch(/Never hand-write/iu);
-      expect(source).toMatch(/directly edit(?:\/delete| or delete) a plan/iu);
-      expect(source).toMatch(/tracked (?:plan )?overview/iu);
-    }
-    expect(sources[2]).toContain(
-      'This does not approve any ordinary default-branch commit or push.',
+    expect(agents).toContain(
+      'Authenticated governance exceptions are separate from ordinary pull request delivery',
     );
+    expect(agents).toContain('cannot be used as pull request completion evidence');
   });
 });
 

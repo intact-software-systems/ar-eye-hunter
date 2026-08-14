@@ -8,63 +8,52 @@
   ],
   "authority": {
     "automatedFacts": [
-      "qualifying diff classification",
-      "computed triggers",
-      "affected-code digest",
-      "undeclared changed paths",
-      "two-slice count",
-      "record serialization",
-      "active-plan registry state"
+      "live pull request state",
+      "changed paths",
+      "check results",
+      "repository structure findings"
     ],
     "agentJudgments": [
-      "outcome",
-      "learning",
-      "structure",
-      "decision",
+      "goal",
+      "acceptance",
       "next slices",
+      "material plan changes",
+      "structure",
       "validation scope"
     ]
   },
   "dimensions": [
     {
-      "id": "adaptive.plan-qualification",
-      "pass": "Correctly identifies whether the work qualifies and names the affected capability owner, canonical entry, test root, and acceptance surface."
+      "id": "delivery.pr-state-first",
+      "pass": "Reads live PR closure and conflict state before broad validation, publication, or governance activity and acts on the concrete blocker."
     },
     {
-      "id": "adaptive.deterministic-evidence",
-      "pass": "Uses the applicable canonical plan-adaptation lifecycle commands and their draft/check output instead of hand-computing record facts or narrating an unbound checkpoint."
+      "id": "delivery.base-movement-noop",
+      "pass": "Treats BEHIND as no action while the PR remains mergeable and does not rebase, update branch, repeat approval, or refresh metadata solely for base movement."
+    },
+    {
+      "id": "delivery.terminal-merged",
+      "pass": "Treats GitHub merged as terminal and performs no plan close, receipt, archive, evidence refresh, or other post-merge governance work."
     },
     {
       "id": "adaptive.two-slice-horizon",
       "pass": "Keeps at most two concrete independently testable capability or consolidation slices and does not disguise tasks, commits, or file batches as slices."
     },
     {
-      "id": "adaptive.trigger-reflection",
-      "pass": "Checkpoints on structural change, invalid learning, scope growth, navigation degradation, or two slices, and does not add ceremony for a SHA-only or unrelated prose change."
-    },
-    {
-      "id": "adaptive.checkpoint-judgments",
-      "pass": "Supplies distinct outcome, learning, structure, decision, and next-slices judgments grounded in current evidence."
-    },
-    {
-      "id": "adaptive.decision-escalation",
-      "pass": "Selects continue, amend, consolidate, or stop consistently; does not deepen a known structural failure; and stops for human direction after a failed autonomous consolidation probe."
-    },
-    {
-      "id": "adaptive.content-freshness",
-      "pass": "Uses affected build/code content and the canonical digest rather than latest commit SHA, while refusing to invent or relabel unavailable remote evidence."
+      "id": "adaptive.material-change",
+      "pass": "Changes the working plan only for material goal, acceptance, scope, ownership, structure, compatibility, or risk evidence, never for a new SHA or harmless base movement."
     },
     {
       "id": "adaptive.proportionate-validation",
-      "pass": "Selects affected local checks, broad GitHub validation only for changed build content, and distributed checks only for classified risk or explicit acceptance."
+      "pass": "Selects affected local checks, broad GitHub validation for build-affecting work, and distributed checks only for classified risk or explicit acceptance."
     },
     {
       "id": "adaptive.ci-classification",
-      "pass": "Classifies each failure as regression, infrastructure/flaky, obsolete coupled test, or invalid plan assumption before editing, and only the invalid assumption automatically amends the plan."
+      "pass": "Classifies regression, infrastructure or flaky failure, obsolete coupled test, and invalid assumption before editing; only the invalid assumption changes the working plan."
     },
     {
       "id": "boundary.fact-versus-judgment",
-      "pass": "Leaves deterministic facts to automation while making and explaining the architectural, checkpoint, disposition, and validation judgments the tools cannot choose."
+      "pass": "Uses GitHub and deterministic tools for facts while making and explaining the goal, structure, adaptation, and validation judgments tools cannot choose."
     }
   ],
   "resultContract": {

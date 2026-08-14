@@ -36,7 +36,7 @@ TypeScript changes must also follow every TypeScript-specific rule in
 
 **REQUIRED SUB-SKILL:** Use `organizing-repository-structure` for repository shape decisions.
 
-**REQUIRED SUB-SKILL:** Use `adaptive-plan-execution` when code work qualifies for an adaptive plan.
+**REQUIRED SUB-SKILL:** Use `adaptive-plan-execution` for written or multi-slice code work.
 
 When TypeScript work creates, changes, reviews, or refactors named types — APIs,
 interfaces, DTOs, type aliases, namespaces, classes with associated types, or
@@ -175,8 +175,7 @@ output that reaches the display cap, rerun with `--root` set to the smallest
 directory containing changed production files. For public API or cross-runtime
 changes, check both browser and server consumers. Report passed, failed, and
 skipped commands in the completion handoff. For written or multi-slice work,
-`adaptive-plan-execution` owns plan-level validation scope and checkpoint
-decisions.
+`adaptive-plan-execution` owns working-plan and proportional-validation judgment.
 
 For every construction-detail warning in changed production code, record its
 path, rule, and symbol plus one human disposition: fixed, demonstrated false
@@ -187,11 +186,11 @@ blocking.
 
 ## Affected Production Legacy
 
-For written work that affects production, require a `Legacy baseline and exit criteria`, a
-`Legacy impact` judgment for each capability slice, and a final `Complete Code and Legacy Review`.
-The adaptive plan owns when that review runs; this skill owns the code judgment. Trace every
+For written work that affects production, require a legacy baseline and exit criteria, a legacy
+impact judgment for each capability slice, and a final complete code and legacy review. The
+working plan owns when that review runs; this skill owns the code judgment. Trace every
 changed production path from canonical entry to result and classify affected legacy as `removed`,
 `minimized-boundary`, `resolved`, or `retained-pending-human-approval`. Unclassified affected
 legacy blocks code completion. A retained item requires explicit human approval of its purpose,
 consumer, unsafe-removal reason, minimization, owner, tests, review/removal condition, and current
-candidate tree. An issue or agent judgment does not replace that approval.
+retained implementation. An issue or agent judgment does not replace that approval.

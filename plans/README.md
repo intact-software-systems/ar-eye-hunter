@@ -1,9 +1,7 @@
-# Adaptive plans
+# Historical plans
 
-Each direct `plans/*.md` tactical plan owns its canonical `active` or `postponed` status. Terminal
-outcomes are represented by closure or authenticated governance receipts rather than retained
-status records.
+Documents in this directory are inert historical reference material. They may explain earlier
+goals and decisions, but they do not control current repository work or pull-request delivery.
 
-Repository capacity is configured in `plans/policy.json`. Run
-`npm run plan:adapt -- overview` to generate the current catalog at the ignored
-`.plan-adaptation/overview.md` path.
+Current multi-slice work uses the agent's working plan and the live GitHub pull request. Ordinary
+delivery does not update these files or create a completion record here.

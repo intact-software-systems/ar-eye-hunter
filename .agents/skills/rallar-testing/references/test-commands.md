@@ -191,9 +191,9 @@ concurrency cases. Run `test:postgres:presence-expiry` separately and last
 because it retains fixed-ID outbox evidence that can affect later global
 outbox workers. Release Gate follows this same order.
 
-## Plan-Level Validation Routing
+## Working-Plan Validation Routing
 
-`adaptive-plan-execution` owns plan-level validation scope. Use this catalog for
+`adaptive-plan-execution` owns working-plan validation scope. Use this catalog for
 the affected behavior, type, build, browser, and explicitly required high-risk
 proofs; do not expand a Markdown-only change into unrelated local suites.
 

@@ -1,62 +1,45 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { readAdaptivePlanCatalog } from '../../../scripts/plan-adaptation/adaptive-plan-catalog.mjs';
-
 const repositoryRoot = path.resolve(__dirname, '../../..');
-const governanceBaseline = 'd450f2521f93754a39bca5453ee27c8b63988534';
 
-describe('repository adaptive-plan governance', () => {
-  it('keeps the administrator policy and static plan navigation coherent', () => {
-    const catalog = readAdaptivePlanCatalog(repositoryRoot);
-    const navigation = readFileSync(path.join(repositoryRoot, 'plans/README.md'), 'utf8');
+describe('repository pull request governance', () => {
+  it('keeps ordinary pull request intent semantic and human-readable', () => {
+    const template = readRepo('.github/PULL_REQUEST_TEMPLATE.md');
 
-    expect(catalog.policy).toEqual({
-      schemaVersion: 'adaptive-plan-policy-v1',
-      maxActivePlans: 8,
-    });
-    expect(navigation).toContain('npm run plan:adapt -- overview');
-    expect(navigation).not.toContain('plan-adaptation-v1');
-    expect(navigation).not.toContain('Active adaptive plans');
+    expect(template.match(/^## .+$/gmu)?.map((heading) => heading.replace('## ', ''))).toEqual([
+      'Goal',
+      'Changes',
+      'Acceptance',
+      'Validation',
+      'Risk and rollback',
+      'Follow-up',
+    ]);
+    expect(template).toContain('None');
+    expect(template).not.toMatch(/```|sha|digest|reviewer|plan-adaptation|changed paths/iu);
   });
 
-  it('keeps non-test governance growth within the compact implementation budget', () => {
-    const numstat = execFileSync(
-      'git',
-      ['diff', '--numstat', governanceBaseline, '--', 'scripts', '.github', 'package.json'],
-      { cwd: repositoryRoot, encoding: 'utf8' },
-    );
-    const netLines =
-      numstat
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .reduce((total, line) => {
-          const [added, deleted] = line.split('\t');
-          return total + Number(added) - Number(deleted);
-        }, 0) +
-      execFileSync(
-        'git',
-        ['ls-files', '--others', '--exclude-standard', '--', 'scripts', '.github'],
-        {
-          cwd: repositoryRoot,
-          encoding: 'utf8',
-        },
-      )
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .reduce(
-          (total, repositoryPath) =>
-            total +
-            readFileSync(path.join(repositoryRoot, repositoryPath), 'utf8').split('\n').length -
-            1,
-          0,
-        );
+  it('keeps historical plans inert rather than a shared active catalog', () => {
+    const navigation = readRepo('plans/README.md');
 
-    expect(netLines).toBeLessThanOrEqual(200);
+    expect(navigation).toContain('inert historical reference material');
+    expect(navigation).not.toMatch(/plan:adapt|active plan|capacity|mutable ownership|overview/iu);
+  });
+
+  it('records no ordinary completion ledger outside the pull request', () => {
+    const agents = normalize(readRepo('AGENTS.md'));
+
+    expect(agents).toContain('Ordinary pull request completion creates no tracked governance file');
+    expect(agents).toContain('GitHub reports the pull request as merged');
   });
 });
+
+function readRepo(repositoryPath: string): string {
+  return readFileSync(path.join(repositoryRoot, repositoryPath), 'utf8');
+}
+
+function normalize(value: string): string {
+  return value.replace(/\s+/gu, ' ').trim();
+}
