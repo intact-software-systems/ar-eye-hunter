@@ -112,12 +112,12 @@ Record v2 binds closure evidence to the reviewed candidate tree.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "PR #221 is published as a draft on a conflict-free branch, its initial Human Review Record v2 validates locally and remotely, and current focused, governance, structure, formatting, changed-style, and behavioral evaluation checks pass.",
-    "learning": "The current default branch carried malformed and stale active-plan metadata; deterministic normalization plus full touched-file formatting restored governance without changing that plan's decisions or product owners.",
-    "structure": "All stewardship capability owners remain canonical, the inherited group-formation plan now declares its cross-owner fact contract and current computed facts, and no runtime or public-contract ownership moved.",
-    "decision": "continue",
+    "outcome": "Draft publication and local validation are complete, but pre-readiness plan deletion is incompatible with the code-changing PR Human Review Record v2 requirement for one current active plan.",
+    "learning": "The normal close command cannot precede readiness for a mixed code-changing PR; the active plan must remain through merge and an administrator can apply authenticated plan.complete on the resulting default-branch head.",
+    "structure": "The implementation and owner tree are unchanged; only the publication lifecycle horizon changes so final PR validation retains its active plan evidence.",
+    "decision": "amend",
     "nextSlices": [
-      "close-maintenance-stewardship-plan"
+      "finalize-merge-ready-publication"
     ]
   },
   "structuralDispositions": [
@@ -169,6 +169,11 @@ Record v2 binds closure evidence to the reviewed candidate tree.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "PR #221 is published as a draft on a conflict-free branch, its initial Human Review Record v2 validates locally and remotely, and current focused, governance, structure, formatting, changed-style, and behavioral evaluation checks pass."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "Draft publication and local validation are complete, but pre-readiness plan deletion is incompatible with the code-changing PR Human Review Record v2 requirement for one current active plan."
     }
   ]
 }
@@ -188,12 +193,18 @@ Record v2 binds closure evidence to the reviewed candidate tree.
 - Publish the validated feature branch and create one draft PR with complete Human Review Record v2
   metadata and exact validation evidence.
 
-## Active slice: `close-maintenance-stewardship-plan`
+## Active slice: `finalize-merge-ready-publication`
 
 - Obtain current Branch Release Gate evidence, bind final PR evidence to the unchanged candidate
   tree, and complete the final fresh review.
-- Use the official close command to remove only this tactical plan and create its canonical closure
-  receipt, publish that exact-head result, refresh required CI, and mark the PR ready to merge.
+- Refresh required CI and mark the PR ready to merge while this active plan remains available to the
+  code-changing PR Human Review Record v2 validator.
+
+## Post-merge outcome
+
+- An administrator applies authenticated `plan.complete` against the resulting exact default-branch
+  head. This mirrors the deployed governance workflow and avoids invalidating the PR's required
+  active-plan evidence before merge.
 
 ## Validation
 
