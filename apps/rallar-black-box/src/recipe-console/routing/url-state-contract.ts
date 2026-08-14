@@ -1,5 +1,6 @@
-import type { DistributedFailureExplanation } from
-    '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import {
+    RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES,
+} from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
     DIAGNOSTIC_BRIDGE_SOURCE_VIEWS,
     DIAGNOSTIC_BRIDGE_TRANSPORTS,
@@ -37,16 +38,10 @@ export const RECIPE_CONSOLE_RUN_STATUSES = [
     'timed-out',
 ] as const;
 
-export const RECIPE_CONSOLE_FAILURE_CATEGORIES = [
-    'targeting',
-    'readiness',
-    'barrier',
-    'command',
-    'rtc-stream-performance',
-    'diagnostic',
-    'runtime',
-    'unknown',
-] as const satisfies readonly DistributedFailureExplanation['category'][];
+// Every category the analyzer can emit must stay filterable, so the console
+// reuses the analyzer's own vocabulary instead of transcribing it.
+export const RECIPE_CONSOLE_FAILURE_CATEGORIES =
+    RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES;
 
 export const RECIPE_CONSOLE_TIMING_METRICS = [
     'command-duration',

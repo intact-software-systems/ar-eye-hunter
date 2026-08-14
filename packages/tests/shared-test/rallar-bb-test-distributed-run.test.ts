@@ -643,4 +643,148 @@ describe('rallar-bb-test distributed run contract', () => {
             participants: [{ agentId: 'alice-agent', state: 'running' }],
         }).state).toBe('cancelled');
     });
+
+    it('validates groupAssertions against recipe keys, roles, and aggregate bounds', () => {
+        const groupAssertionManifest = validManifest({
+            groupAssertions: [
+                {
+                    groupAssertionId: 'members-agree',
+                    aggregate: 'allEqual',
+                    source: { recipeId: 'health-only', commandId: 'health-1', path: 'value.ok' },
+                    scope: { role: 'receiver' },
+                    minParticipants: 1,
+                },
+                {
+                    groupAssertionId: 'delivery-quorum',
+                    aggregate: 'countMatching',
+                    source: { recipeId: 'health-only', commandId: 'health-1', path: 'value.ok' },
+                    predicate: { operator: 'equals', expected: true },
+                    count: { gte: 1 },
+                },
+            ],
+        });
+        expect(validateDistributedRunManifestContract(groupAssertionManifest))
+            .toEqual({ ok: true, errors: [] });
+
+        const invalid = validateDistributedRunManifestContract(validManifest({
+            recipes: [
+                {
+                    recipeId: 'inline-probe',
+                    recipe: {
+                        recipeId: 'inline-probe',
+                        commands: [{ kind: 'health', commandId: 'probe-health' }],
+                    },
+                },
+            ],
+            groupAssertions: [
+                {
+                    groupAssertionId: 'dup',
+                    aggregate: 'allEqual',
+                    source: { recipeId: 'unknown-recipe', commandId: 'x', path: 'value' },
+                },
+                {
+                    groupAssertionId: 'dup',
+                    aggregate: 'allEqual',
+                    source: { recipeId: 'inline-probe', commandId: 'not-authored', path: 'value' },
+                    scope: { role: 'ghost-role' },
+                },
+                {
+                    groupAssertionId: 'bad-bounds',
+                    aggregate: 'countMatching',
+                    source: { recipeId: 'inline-probe', commandId: 'probe-health', path: 'value' },
+                    predicate: { operator: 'exists' },
+                    count: {},
+                    minParticipants: 0,
+                },
+                {
+                    groupAssertionId: 'bad-tolerance',
+                    aggregate: 'allEqualWithin',
+                    source: { recipeId: 'inline-probe', commandId: 'probe-health', path: 'value' },
+                    tolerance: -1,
+                },
+            ],
+        }));
+        expect(invalid.ok).toBe(false);
+        if (!invalid.ok) {
+            expect(invalid.errors.map(error => error.path)).toEqual(expect.arrayContaining([
+                '$.groupAssertions[0].source.recipeId',
+                '$.groupAssertions[1].groupAssertionId',
+                '$.groupAssertions[1].source.commandId',
+                '$.groupAssertions[1].scope.role',
+                '$.groupAssertions[2].count',
+                '$.groupAssertions[2].minParticipants',
+                '$.groupAssertions[3].tolerance',
+            ]));
+        }
+    });
+
+    it('rolls failed group assertions into blocking failures and summary counts', () => {
+        const rollup = rollupDistributedRunResult({
+            participants: [
+                { agentId: 'alice-agent', state: 'passed', required: true },
+                { agentId: 'bob-agent', state: 'passed', required: true },
+            ],
+            recipes: [
+                { recipeKey: 'alice:health', agentId: 'alice-agent', state: 'passed' },
+                { recipeKey: 'bob:health', agentId: 'bob-agent', state: 'passed' },
+            ],
+            groupAssertions: [
+                {
+                    groupAssertionId: 'members-agree',
+                    aggregate: 'allEqual',
+                    ok: false,
+                    participants: { expected: 2, required: 2, withEvidence: 2 },
+                    missingAgentIds: [],
+                    violatingAgentIds: ['bob-agent'],
+                    perAgent: [],
+                    error: {
+                        code: 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED',
+                        message: 'Group assertion members-agree failed.',
+                    },
+                },
+                {
+                    groupAssertionId: 'no-leaks',
+                    aggregate: 'noneMatch',
+                    ok: true,
+                    participants: { expected: 2, required: 2, withEvidence: 2 },
+                    missingAgentIds: [],
+                    violatingAgentIds: [],
+                    perAgent: [],
+                },
+            ],
+        });
+
+        expect(rollup.state).toBe('failed');
+        expect(rollup.ok).toBe(false);
+        expect(rollup.summary.groupAssertions).toBe(2);
+        expect(rollup.summary.passedGroupAssertions).toBe(1);
+        expect(rollup.summary.failedGroupAssertions).toBe(1);
+        expect(rollup.failures).toEqual([
+            {
+                kind: 'group-assertion',
+                key: 'members-agree',
+                state: 'failed',
+                required: true,
+                error: {
+                    code: 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED',
+                    message: 'Group assertion members-agree failed.',
+                },
+            },
+        ]);
+
+        const passing = rollupDistributedRunResult({
+            recipes: [{ recipeKey: 'alice:health', agentId: 'alice-agent', state: 'passed' }],
+            groupAssertions: [{
+                groupAssertionId: 'members-agree',
+                aggregate: 'allEqual',
+                ok: true,
+                participants: { expected: 1, required: 1, withEvidence: 1 },
+                missingAgentIds: [],
+                violatingAgentIds: [],
+                perAgent: [],
+            }],
+        });
+        expect(passing.state).toBe('passed');
+        expect(passing.summary.failedGroupAssertions).toBe(0);
+    });
 });

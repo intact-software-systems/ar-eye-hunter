@@ -5,10 +5,15 @@ Read `analysis/analysis.json` first.
 Important files:
 
 - `distributed-run.json`: lifecycle state, rollup, manifest, command links.
+  For manifests with `groupAssertions`, the rollup carries per-assertion
+  results with redacted per-agent value tables naming missing and violating
+  agents.
 - `control-run.json`: agents, commands, results, events, stats, reports.
 - `results.jsonl`: redacted command results.
 - `events.jsonl`: redacted runtime and diagnostic events.
-- `failures.json`: failure bundle.
+- `failures.json`: failure bundle. Group-assertion failures appear as
+  `source: distributed-rollup` entries with
+  `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_*` codes.
 - `fleet-report.json`: grouped agent/region/failure/timing summary.
 - `analysis/summary.md`: human summary.
 - `analysis/fix-proposal.md`: failure-only proposal.

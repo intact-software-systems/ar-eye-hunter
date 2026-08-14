@@ -63,6 +63,19 @@ pass/fail verdict. A semantics divergence between the dialects fails
 step-presence/status comparison in `provider-parity.ts` remains the
 transport-level companion.
 
+## Group Assertion Conformance
+
+`conformance/group-assertion-conformance.ts` proves the coordinator-side
+aggregate vocabulary: every aggregate (`allMatch`, `noneMatch`,
+`countMatching`, `allEqual`, `allEqualWithin`) carries at least one passing
+case and one deliberately-broken control, plus evidence-rule cases for
+missing, duplicate, and unresolved evidence, the `minParticipants`
+relaxation, role scoping, and the empty-scope fail-closed path. The cases
+run through the production `evaluateDistributedGroupAssertions` entry in
+`rallar-bb-test-group-assertion-conformance.test.ts`, which also pins the
+three-vocabulary comparison boundary (`deepEqualJson` vs `sameJsonValue` vs
+`json-compare` exact).
+
 ## Reports
 
 Use `toRallarBlackBoxCompositeConformanceReport(...)` to build an artifact

@@ -195,11 +195,16 @@ function discriminatedOneOfSchema(
     }
 
     const kind = value.kind;
-    if (typeof kind !== 'string') {
-        return undefined;
+    if (typeof kind === 'string') {
+        return candidates.find(candidate => candidate.properties?.kind?.const === kind);
     }
 
-    return candidates.find(candidate => candidate.properties?.kind?.const === kind);
+    const aggregate = value.aggregate;
+    if (typeof aggregate === 'string') {
+        return candidates.find(candidate => candidate.properties?.aggregate?.const === aggregate);
+    }
+
+    return undefined;
 }
 
 function matchesType(value: unknown, expected: string | readonly string[]): boolean {

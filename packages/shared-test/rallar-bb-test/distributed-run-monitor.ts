@@ -1,5 +1,6 @@
 import type {
     RallarBlackBoxDistributedBarrierPolicy,
+    RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRoleAssignment,
     RallarBlackBoxDistributedRoleAssignmentPolicy,
@@ -224,6 +225,7 @@ export type BuildDistributedRunManifestInput = Readonly<{
     startMode: 'manual' | 'auto-after-ready' | 'scheduled';
     startDeadlineEpochMs?: number;
     expectedParticipantCount?: number;
+    groupAssertions?: readonly RallarBlackBoxDistributedGroupAssertion[];
 }>;
 
 export type DistributedRunProgressStatus =
@@ -292,7 +294,7 @@ export type DistributedRunReadinessRow = Readonly<{
 }>;
 
 export type DistributedRunFailureRow = Readonly<{
-    kind: 'run' | 'participant' | 'recipe' | 'command';
+    kind: 'run' | 'participant' | 'recipe' | 'group-assertion' | 'command';
     key: string;
     message: string;
     code?: string;
@@ -550,16 +552,23 @@ export type DistributedRunCompareSummary = Readonly<{
     }>;
 }>;
 
+export const RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES = [
+    'targeting',
+    'readiness',
+    'barrier',
+    'command',
+    'group-assertion',
+    'rtc-stream-performance',
+    'diagnostic',
+    'runtime',
+    'unknown',
+] as const;
+
+export type RallarBlackBoxDistributedFailureCategory =
+    typeof RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES[number];
+
 export type DistributedFailureExplanation = Readonly<{
-    category:
-        | 'targeting'
-        | 'readiness'
-        | 'barrier'
-        | 'command'
-        | 'rtc-stream-performance'
-        | 'diagnostic'
-        | 'runtime'
-        | 'unknown';
+    category: RallarBlackBoxDistributedFailureCategory;
     title: string;
     likelyCause: string;
     nextAction: string;
@@ -1704,6 +1713,7 @@ export function buildDistributedRunManifest(
             includeResultJsonl: true,
             includeFailureBundle: true,
         },
+        groupAssertions: input.groupAssertions,
         metadata: {
             createdBy: 'rallar-black-box-spa',
             rolePattern: input.rolePattern,
@@ -3517,6 +3527,22 @@ function explanationForFailure(
             title: 'Agent disconnected during barrier',
             likelyCause: 'An agent left the control run while the distributed run waited at the barrier.',
             nextAction: 'Restart the disconnected agent with the same control run and a unique agent ID, then rerun the recipe.',
+            evidence,
+        };
+    }
+    if (code.startsWith('RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_')) {
+        return {
+            category: 'group-assertion',
+            title: code === 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING'
+                ? 'Group assertion evidence missing'
+                : code === 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS'
+                ? 'Group assertion has no participants'
+                : 'Group assertion failed',
+            likelyCause: failure.message ||
+                'The coordinator-evaluated group assertion did not hold over the frozen ' +
+                    'participant set.',
+            nextAction: 'Read the redacted per-agent value table in failures.json; it names ' +
+                'missing and violating agents for the typed source address.',
             evidence,
         };
     }

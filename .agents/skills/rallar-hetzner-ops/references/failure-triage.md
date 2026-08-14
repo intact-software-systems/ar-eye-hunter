@@ -49,3 +49,13 @@ describe absent distributed artifacts as missing evidence when
   minimal fix area `agent assertion capability rollout`. Roll the fleet
   forward (Hetzner: rerun `08-rollout-controller.sh` + worker restart) or
   remove the gated feature from the manifest.
+- `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED`,
+  `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING`, and
+  `RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_NO_PARTICIPANTS` — a
+  coordinator-evaluated group assertion failed, lacked usable evidence from a
+  frozen participant, or scoped to a role nobody holds. Category
+  `group-assertion`; minimal fix area `group assertion contract or fleet
+  evidence`. Read the redacted per-agent value table in `failures.json`
+  (source `distributed-rollup`): it names missing and violating agents for
+  the typed `{recipeId, commandId, path}` source before any recipe or
+  fleet change.

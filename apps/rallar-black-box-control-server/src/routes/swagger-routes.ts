@@ -113,6 +113,54 @@ const CONTROL_OPENAPI_SPEC: JsonRecord = {
                   },
                 ],
               },
+              examples: {
+                groupAssertions: {
+                  summary: 'Manifest with coordinator-evaluated group assertions',
+                  description: 'groupAssertions are evaluated by the distributed-run rollup ' +
+                    'after every dispatched recipe result completed; failures carry redacted ' +
+                    'per-agent value tables.',
+                  value: {
+                    schemaVersion: 1,
+                    distributedRunId: 'group-assertions-example',
+                    group: {
+                      applicationId: 'rallar-server',
+                      workspaceId: 'default',
+                      groupId: 'bb-group',
+                    },
+                    recipes: [{
+                      recipeId: 'probe-recipe',
+                      recipe: {
+                        schemaVersion: 1,
+                        recipeId: 'probe-recipe',
+                        commands: [{
+                          kind: 'http.request',
+                          commandId: 'probe-read',
+                          request: {
+                            method: 'GET',
+                            path:
+                              '/api/state/apps/rallar-server/workspaces/default/groups/bb-group',
+                          },
+                          response: { acceptedStatusCodes: [200] },
+                        }],
+                      },
+                    }],
+                    targetPolicy: {
+                      mode: 'all-online-group-members',
+                      expectedParticipantCount: 2,
+                    },
+                    groupAssertions: [{
+                      groupAssertionId: 'members-converge',
+                      aggregate: 'allEqual',
+                      source: {
+                        recipeId: 'probe-recipe',
+                        commandId: 'probe-read',
+                        path: 'body.memberCount',
+                      },
+                    }],
+                    startMode: 'manual',
+                  },
+                },
+              },
             },
           },
         },

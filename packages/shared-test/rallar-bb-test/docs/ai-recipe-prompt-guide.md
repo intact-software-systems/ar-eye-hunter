@@ -378,6 +378,47 @@ Constraints:
   the last attempt, so no extra assert after the loop is needed.
 ```
 
+## Prompt: Group Assertions
+
+Use this when a distributed run must state a fleet-level invariant — "we all
+agree", "no agent saw it", "exactly one leader" — instead of per-agent checks.
+
+```text
+Generate one Rallar black-box distributed run manifest as JSON.
+
+Use:
+- RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
+
+Goal:
+- Declare coordinator-evaluated groupAssertions over every targeted agent's
+  recipe evidence.
+
+Constraints:
+- Output JSON only with schemaVersion 1.
+- groupAssertions sit beside targetPolicy; each entry needs a unique
+  groupAssertionId and a typed source {recipeId, commandId, path}: the
+  manifest recipe key, an authored commandId inside that recipe, and a
+  payload path into that command result's value.
+- Aggregates are allMatch, noneMatch, countMatching (with count.equals /
+  count.gte / count.lte against the frozen participant denominator),
+  allEqual (deep equality: object-key-order insensitive, array-order
+  sensitive), and allEqualWithin (numeric, absolute tolerance >= 0).
+- Predicates use the assert operator vocabulary (equals through
+  matchesShapeComplete).
+- When the expected value is known, use allMatch equals X — allEqual alone
+  passes when every agent agrees on the same wrong value; compose the two
+  for convergence claims.
+- The participant set freezes at target resolution; missing, duplicate, or
+  unresolved evidence fails by default. scope.role narrows to a declared
+  role; minParticipants (integer >= 1) is the only explicit relaxation and
+  only excuses missing agents.
+- Address commands must carry explicit authored commandIds; a command inside
+  a loop yields duplicate evidence and fails, so give the assertion its own
+  single-shot read command after the polling loop.
+- Group assertions are correctness gates only; keep performance and SLO
+  bounds out of them.
+```
+
 ## Prompt: Black-box-runner RTC Scenario
 
 Use this when you want a provider-neutral black-box-runner scenario instead of
@@ -500,5 +541,8 @@ Before running AI-generated JSON against live browsers:
   that the expected peers can become ready without waiting for a later
   sequential command.
 - Check that sends are role-scoped when only one browser should send.
+- Check that every groupAssertion source names an authored commandId outside
+  loop/parallel cloning and that known expectations use allMatch beside
+  allEqual.
 - Check that no secrets are embedded in the JSON.
 - Keep the first run small, then scale participant count or payload volume.

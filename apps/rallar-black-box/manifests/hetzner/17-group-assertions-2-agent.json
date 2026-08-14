@@ -1,0 +1,292 @@
+{
+  "schemaVersion": 1,
+  "distributedRunId": "hetzner-group-assertions-2-agent",
+  "controlRunId": "hetzner-manifest-template-control-run",
+  "displayName": "Group assertions 2-agent",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "hetzner-headless-room"
+  },
+  "recipes": [
+    {
+      "recipeId": "group-assertions-recipe",
+      "recipe": {
+        "recipeId": "group-assertions-recipe",
+        "name": "Group assertions recipe",
+        "continueOnFailure": false,
+        "metadata": {
+          "profile": "group-assertions",
+          "group": {
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "groupId": "hetzner-headless-room"
+          }
+        },
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "group-assertions-ensure-group",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the backend group exists before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "POST",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups",
+              "body": {
+                "requestId": "group-assertions:ensure-group:rallar-server:default:hetzner-headless-room:{auth.sessionId}",
+                "groupId": "hetzner-headless-room",
+                "displayName": "hetzner-headless-room",
+                "kind": "room",
+                "joinMode": "open"
+              }
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200,
+                201,
+                409
+              ]
+            }
+          },
+          {
+            "kind": "http.request",
+            "commandId": "group-assertions-ensure-member",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Ensure the logged-in browser client is an active group member before RTC room join.",
+              "idempotent": true,
+              "group": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              }
+            },
+            "request": {
+              "method": "PUT",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room/members/{auth.clientId}",
+              "body": {
+                "requestId": "group-assertions:ensure-member:rallar-server:default:hetzner-headless-room:{auth.clientId}:{auth.sessionId}",
+                "status": "active"
+              }
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200,
+                201
+              ]
+            }
+          },
+          {
+            "kind": "rtc.connect",
+            "commandId": "group-assertions-connect",
+            "connection": "groupAssertionsRtc",
+            "actor": "{auth.clientId}",
+            "roomId": "hetzner-headless-room",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "timeoutMs": 15000,
+            "readiness": {
+              "minReadyPeers": 1,
+              "timeoutMs": 10000,
+              "intervalMs": 100
+            }
+          },
+          {
+            "kind": "rtc.send",
+            "commandId": "group-assertions-send-control",
+            "connection": "groupAssertionsRtc",
+            "applicationId": "rallar-server",
+            "workspaceId": "default",
+            "roomRef": {
+              "applicationId": "rallar-server",
+              "workspaceId": "default",
+              "groupId": "hetzner-headless-room"
+            },
+            "transport": "realtime",
+            "send": {
+              "roomId": "hetzner-headless-room",
+              "roomRef": {
+                "applicationId": "rallar-server",
+                "workspaceId": "default",
+                "groupId": "hetzner-headless-room"
+              },
+              "data": {
+                "topic": "black-box.group-assertions.control",
+                "marker": "same-room-positive-control",
+                "actor": "{auth.clientId}"
+              }
+            },
+            "timeoutMs": 3000
+          },
+          {
+            "kind": "wait",
+            "commandId": "group-assertions-positive-control",
+            "timeoutMs": 10000,
+            "metadata": {
+              "purpose": "Same-room positive control: the control frame must arrive before any absence claim."
+            },
+            "match": {
+              "kind": "message",
+              "connection": "groupAssertionsRtc",
+              "topic": "rallar.browser.realtime.message",
+              "payloadPath": "data.topic",
+              "equals": "black-box.group-assertions.control"
+            }
+          },
+          {
+            "kind": "wait",
+            "commandId": "group-assertions-no-leak-probe",
+            "absent": true,
+            "timeoutMs": 4000,
+            "metadata": {
+              "purpose": "Per-agent absence window; the coordinator noneMatch assertion then proves no agent anywhere recorded a leak-probe match."
+            },
+            "match": {
+              "kind": "message",
+              "connection": "groupAssertionsRtc",
+              "topic": "rallar.browser.realtime.message",
+              "payloadPath": "data.topic",
+              "equals": "black-box.group-assertions.leak-probe"
+            }
+          },
+          {
+            "kind": "loop",
+            "commandId": "group-assertions-membership-poll",
+            "until": "first-success",
+            "count": 20,
+            "intervalMs": 500,
+            "commands": [
+              {
+                "kind": "http.request",
+                "commandId": "group-assertions-membership-read",
+                "timeoutMs": 5000,
+                "request": {
+                  "method": "GET",
+                  "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room"
+                },
+                "response": {
+                  "body": "json",
+                  "acceptedStatusCodes": [
+                    200
+                  ]
+                }
+              },
+              {
+                "kind": "assert",
+                "commandId": "group-assertions-membership-converged",
+                "source": "lastResult.value.body.memberCount",
+                "operator": "gte",
+                "expected": 2
+              }
+            ]
+          },
+          {
+            "kind": "http.request",
+            "commandId": "group-assertions-members-read",
+            "timeoutMs": 5000,
+            "metadata": {
+              "purpose": "Final converged snapshot read; the coordinator allEqual and allMatch assertions compare this value across every agent."
+            },
+            "request": {
+              "method": "GET",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/hetzner-headless-room"
+            },
+            "response": {
+              "body": "json",
+              "acceptedStatusCodes": [
+                200
+              ]
+            }
+          },
+          {
+            "kind": "stats",
+            "commandId": "group-assertions-stats"
+          }
+        ]
+      },
+      "profile": "rtc",
+      "required": true
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "ackTimeoutMs": 30000,
+  "barrier": {
+    "enabled": true,
+    "timeoutMs": 15000
+  },
+  "startMode": "manual",
+  "artifactPolicy": {
+    "retainArtifacts": true,
+    "includeDistributedMetadata": true,
+    "includeEventJsonl": true,
+    "includeResultJsonl": true,
+    "includeFailureBundle": true
+  },
+  "groupAssertions": [
+    {
+      "groupAssertionId": "members-converge-all-equal",
+      "description": "Every agent read the same converged member count.",
+      "aggregate": "allEqual",
+      "source": {
+        "recipeId": "group-assertions-recipe",
+        "commandId": "group-assertions-members-read",
+        "path": "body.memberCount"
+      }
+    },
+    {
+      "groupAssertionId": "members-expected-count",
+      "description": "The converged member count matches the fleet size.",
+      "aggregate": "allMatch",
+      "source": {
+        "recipeId": "group-assertions-recipe",
+        "commandId": "group-assertions-members-read",
+        "path": "body.memberCount"
+      },
+      "predicate": {
+        "operator": "equals",
+        "expected": 2
+      }
+    },
+    {
+      "groupAssertionId": "no-agent-observed-leak",
+      "description": "No agent anywhere matched the leak-probe marker during its absence window.",
+      "aggregate": "noneMatch",
+      "source": {
+        "recipeId": "group-assertions-recipe",
+        "commandId": "group-assertions-no-leak-probe",
+        "path": "matched"
+      },
+      "predicate": {
+        "operator": "equals",
+        "expected": true
+      }
+    }
+  ],
+  "metadata": {
+    "createdBy": "rallar-black-box-spa",
+    "rolePattern": "all-agents",
+    "manifestSuite": "hetzner-distributed",
+    "diagnostic": false,
+    "expectedFailure": false
+  },
+  "description": "Coordinator-evaluated group assertions: allEqual convergence over the shared group snapshot and noneMatch isolation over per-agent absence windows."
+}
