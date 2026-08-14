@@ -11,24 +11,25 @@ and PR B are externally `verified`; Ontology Task 1 is published and verified;
 RTC foundation, B01, B02, and B03 are published; PR #196 published the
 three-layer benchmark-organization stack before B04; and Task 4A is now
 `verified` through PRs #198 and #199. Task 4B is explicitly active on its
-separate follow-on branch with both implementation slices complete locally;
-independent final review, draft-PR publication, and exact-head release evidence
-remain pending. B04, baseline capture, and Phase 2 remain inactive.
+separate follow-on branch; both implementation slices, independent final review,
+and draft PR #217 are complete. An exact human-approved registry-only correction
+for the first Branch Release Gate is under final validation. B04, baseline
+capture, and Phase 2 remain inactive.
 
 **Human owner:** Product/technical owner
 
 **Current roadmap coordinator:** The active primary agent for this roadmap task
 
-**Last reconciliation:** 2026-08-13 on
+**Last reconciliation:** 2026-08-14 on
 `codex/shared-rtc-bench-task-4b`, after fetching exact current `origin/main`
-`160e8f8840d02701c55509ca89ef6b9f5ad5f7f3`, tree
-`c2e1383f2c41e0304bc535aa08c3b8bf62519032`. The delta from Task 4B base
-`8ee348e215a3e30d9b4959ce90369aea1b55b620` changes only unrelated adaptive
-plans and their generated registry; no shared RTC benchmark, RTC authoritative
-plan, RTC roadmap, or repository-structure owner changed. The concurrent active
-plan is not absorbed, amended, or closed, and Task 4B is not automatically
-rebased. **Compatible for the Task 4B feature; generated plan-registry
-coordination remains a publication/merge concern.**
+`8dd96d4517e9f5a33728330f6c3bc9fba77bed6c`, tree
+`13b4c65b76f9b8e3bdbe9ac50bf889130a565de2`. A read-only merge-tree audit of
+the Task 4B head reports only the expected generated `plans/README.md` conflict;
+the two repository-structure overlaps auto-merge, and no shared RTC package or
+frozen RTC contract changed. The unrelated active plans are not absorbed,
+amended, or closed, and Task 4B is not automatically rebased. **Compatible for
+the Task 4B feature; generated plan-registry coordination remains a
+publication/merge concern.**
 
 **Stable design:**
 [Rallar architecture quality and RTC program design](../docs/superpowers/specs/2026-08-06-rallar-architecture-quality-and-rtc-program-design.md)
@@ -117,12 +118,15 @@ historical table: the human activated only Task 4B from exact plan blob
 `c1edd59d9d57799f7b955013acf624a76312740f` on base
 `8ee348e215a3e30d9b4959ce90369aea1b55b620`. Both authorized slices are locally
 complete. The authoritative plan now contains the code-derived trace for all 25
-executables, 18 exact legacy dispositions with no retained item, fourteen corrected
+executables, 18 exact legacy dispositions with no retained item, fifteen corrected
 Critical/Important findings, and old/new assertion parity for the exact three
 capability tests. Package tests pass 31 files/281 tests and repository-structure
-tests pass 10 files/121 tests; final unchanged-tree validation, independent
-review, draft PR, and exact-head remote evidence remain pending. No benchmark or
-accepted capture ran, and Task 5/B04 remains inactive.
+tests pass 10 files/121 tests. Independent review of the first published head
+reported zero unresolved Critical/Important findings; draft PR #217 exists, and
+the registry-only correction for exact-head gate run 31743694243 passes its
+focused and full checks. Final unchanged-tree validation, corrected-head review,
+and exact-head remote evidence remain pending. No benchmark or accepted capture
+ran, and Task 5/B04 remains inactive.
 
 The roadmap records externally observed human-program state but does not edit or
 advance its plans. Both concern plans and the ontology activation are published
