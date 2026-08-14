@@ -117,6 +117,32 @@ describe('rallar code-writing maintenance stewardship contract', () => {
     expect(JSON.stringify(rubric)).not.toMatch(/points|score|weighted/iu);
   });
 
+  it('keeps expected stewardship actions in the rubric instead of the pressure prompt', () => {
+    const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
+    const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
+    const scenario = suite.scenarios[0];
+    const forbiddenAnswerFragments = [
+      'standards compliance across every file you touch',
+      'remediation scope propagates',
+      'independent code stays out of scope',
+      'exact conditions that would require human direction',
+      'ask permission merely because the findings pre-exist',
+      'checker tolerance as the completion rule',
+    ];
+
+    for (const fragment of forbiddenAnswerFragments) {
+      expect(scenario.prompt.toLowerCase(), `leaked expected action: ${fragment}`).not.toContain(
+        fragment,
+      );
+    }
+    for (const dimensionId of stewardshipDimensions) {
+      const passText = rubric.dimensions.find((dimension) => dimension.id === dimensionId)?.pass;
+      expect(passText, dimensionId).toBeDefined();
+      expect(scenario.prompt, `leaked rubric text: ${dimensionId}`).not.toContain(passText);
+      expect(scenario.prompt, `leaked dimension ID: ${dimensionId}`).not.toContain(dimensionId);
+    }
+  });
+
   it('reuses the canonical versioned evaluation-result validator', () => {
     expect(existsSync(path.join(repoRoot, `${evaluationRoot}/validate-result.mjs`))).toBe(false);
     expect(

@@ -13,6 +13,15 @@ const canonicalValidator = '.agents/evaluations/adaptive-agent-execution/v1/vali
 const rawArtifact =
   'packages/tests/repo/rallar-code-writing/rallar-code-writing-evaluation-result.test.ts';
 const temporaryDirectories: string[] = [];
+const scenarioId = 'pre-existing-noncompliance-under-release-pressure';
+const stewardshipDimensions = [
+  'stewardship.requested-behavior',
+  'stewardship.whole-file-closure',
+  'stewardship.transitive-propagation',
+  'stewardship.untouched-code-containment',
+  'stewardship.no-debt-only-permission-request',
+  'stewardship.genuine-decision-escalation',
+] as const;
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -37,17 +46,40 @@ describe('rallar code-writing evaluation result validation', () => {
     expect(validation.stdout).toContain('PASS: rallar code-writing evaluation result');
   });
 
-  it('fails the scenario when any non-compensable dimension fails', () => {
-    const input = createValidationInput();
-    const result = input.result as any;
-    result.scenarioResults[0].dimensionResults[1].verdict = 'fail';
-    result.scenarioResults[0].verdict = 'fail';
-    result.scenarioResults[0].criticalFailures = ['stewardship.whole-file-closure'];
-    result.summary = { criticalPassed: 0, criticalTotal: 1, passed: 0, total: 1 };
+  it.each(stewardshipDimensions)('treats %s as independently non-compensable', (dimensionId) => {
+    const consistentInput = createValidationInput();
+    failDimension(consistentInput.result, dimensionId);
+    consistentInput.result.scenarioResults[0].verdict = 'fail';
+    consistentInput.result.scenarioResults[0].criticalFailures = [dimensionId];
+    consistentInput.result.summary = {
+      criticalPassed: 0,
+      criticalTotal: 1,
+      passed: 0,
+      total: 1,
+    };
 
-    expect(validateEvaluationResult(input)).toEqual([]);
+    expect(validateEvaluationResult(consistentInput)).toEqual([]);
+
+    const inconsistentInput = createValidationInput();
+    failDimension(inconsistentInput.result, dimensionId);
+
+    expect(validateEvaluationResult(inconsistentInput)).toEqual(
+      expect.arrayContaining([
+        `${scenarioId} verdict must be fail when a required dimension fails`,
+        `${scenarioId} criticalFailures must exactly list failed required dimensions`,
+        'result.summary.passed must equal 0',
+        'result.summary.criticalPassed must equal 0',
+      ]),
+    );
   });
 });
+
+function failDimension(result: any, dimensionId: string): void {
+  const dimensionResult = result.scenarioResults[0].dimensionResults.find(
+    (entry: any) => entry.dimensionId === dimensionId,
+  );
+  dimensionResult.verdict = 'fail';
+}
 
 function createValidationInput(): any {
   const suite = readJson(`${evaluationRoot}/scenarios.json`) as any;
