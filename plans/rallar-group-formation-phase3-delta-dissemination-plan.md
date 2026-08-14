@@ -558,15 +558,15 @@ adaptive horizon rule.
   ],
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "5f7791bf044b17a42fe4808820d6b93e7d573483",
+    "diffBase": "45a0234a9690e2dc712f68e79db339c06111b856",
     "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "computedTriggers": [],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "Main advanced to 5f7791bf044b17a42fe4808820d6b93e7d573483 with the one-comma parse repair; that exact change is compatible, while the current-fact, navigation, and governance-budget repairs remain necessary.",
-    "learning": "When current main independently resolves part of an in-flight repair, rebase first and authenticate only the remaining delta against the new exact base.",
-    "structure": "Preserve the exact comma repair from main, keep the phase-3 owners and next slice unchanged, and retain the remaining repair within the plan record, static navigation, and repository-governance test boundary.",
+    "outcome": "The phase-3 repair remains compatible with exact main 45a0234a9690e2dc712f68e79db339c06111b856; the intervening RTC benchmark merge changes no declared phase-3 capability and the current facts remain empty.",
+    "learning": "An unrelated main advance can expose structural findings through an older plan comparison base even when it does not change that plan's capability; refresh the plan to the exact compatible main before validating the catalog.",
+    "structure": "Keep the phase-3 capability declarations, predecessor consolidation, and convergence-and-perf-gates horizon unchanged; bind the record to exact current main with no current structural facts.",
     "decision": "amend",
     "nextSlices": [
       "convergence-and-perf-gates"
@@ -624,6 +624,11 @@ adaptive horizon rule.
       "date": "2026-08-14",
       "decision": "amend",
       "summary": "Main advanced to 5f7791bf044b17a42fe4808820d6b93e7d573483 with the one-comma parse repair; that exact change is compatible, while the current-fact, navigation, and governance-budget repairs remain necessary."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The phase-3 repair remains compatible with exact main 45a0234a9690e2dc712f68e79db339c06111b856; the intervening RTC benchmark merge changes no declared phase-3 capability and the current facts remain empty."
     }
   ]
 }

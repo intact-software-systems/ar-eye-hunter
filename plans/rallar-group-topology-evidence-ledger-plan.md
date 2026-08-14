@@ -280,7 +280,7 @@ exact default-branch count above with Critical 0 and Important 0.
 {
   "version": 1,
   "planId": "rallar-group-topology-evidence-ledger",
-  "status": "active",
+  "status": "postponed",
   "goal": "Publish the already-existing group-topology implementation and closure evidence into one non-circular ledger without code or performance changes.",
   "acceptanceCriteria": [
     "Only the new plan, generated plan registry, and two reciprocal program planning records change.",
@@ -383,6 +383,11 @@ exact default-branch count above with Critical 0 and Important 0.
       "date": "2026-08-14",
       "decision": "amend",
       "summary": "The completed evidence-ledger outcome remains valid; only its repository-structure fact contract was invalidated by the configurable-governance catalog migration."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "postpone",
+      "summary": "Serialize mutable governance ownership after PR #217 advanced main; preserve the completed ledger for authenticated canonical closure."
     }
   ]
 }
