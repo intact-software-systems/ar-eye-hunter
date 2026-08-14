@@ -4,7 +4,10 @@ import type {
   RtcBaselineResolvedConfigurationValueDto,
   RtcBaselineResult,
 } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
-import { createRtcBaselineDenoRuntime } from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
+import {
+  createRtcBaselineDenoRuntime,
+  RTC_BASELINE_DENO_ROOT_PATH,
+} from '../../../baseline/runtime/rtc-baseline-deno-runtime.ts';
 const baselineId = '20260807-0123456789ab-e2-browser';
 const browserWorker =
   'packages/shared-rtc-bench/workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs';
@@ -154,6 +157,10 @@ function persistedEnvironment(manifest_: typeof manifest, observation: unknown) 
 }
 const entry = (name: string, kind: 'file' | 'directory') => ({ name, kind });
 describe('RTC baseline Deno runtime composition', () => {
+  it('declares the confined accepted-evidence root', () => {
+    expect(RTC_BASELINE_DENO_ROOT_PATH).toBe('tmp/perf/rtc-baseline');
+  });
+
   it('runs each synthetic outer with its exact catalog executable and flags', async () => {
     const workerCalls: unknown[] = [];
     const { sampleIds, environmentId: _environmentId, ...outerIdentity } = b01Outer;

@@ -11,6 +11,9 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
+// prettier-ignore
+import { runRtcBaselineAcceptedWorkerSamples } from
+  '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 interface RtcDataChannelCloseRetentionInput {
   readonly queueDepth: number;
@@ -116,24 +119,17 @@ export async function runRtcDataChannelCloseRetentionAcceptedSamples(input: {
   readonly worker: RtcDataChannelCloseRetentionAcceptedArguments;
   readonly run: () => Promise<RtcDataChannelCloseRetentionResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  const samples: RtcBaselineSampleDto[] = [];
-  let failureId: string | undefined;
-  for (let index = 0; index < input.worker.sampleIds.length; index += 1) {
-    const identity = createIdentity(input.worker, index);
-    if (failureId !== undefined) {
-      samples.push(
-        createSample(identity, null, [
-          rtcBaselineIssue('$.rawEvidence', 'causal-not-run', failureId),
-        ]),
-      );
-      continue;
-    }
-    const result = await input.run();
-    const issues = validateResult(input.worker.input.queueDepth, result);
-    if (issues.length > 0) failureId = identity.sampleId;
-    samples.push(createSample(identity, result, issues));
-  }
-  return samples;
+  return runRtcBaselineAcceptedWorkerSamples({
+    worker: {
+      ...input.worker,
+      workloadId: 'RTC-B02',
+      caseId: 'data-channel-close-retention',
+      inputKey: 'queue-32',
+    },
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input.queueDepth, result),
+    createSample: ({ identity, result, issues }) => createSample(identity, result, issues),
+  });
 }
 
 function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
@@ -225,21 +221,6 @@ function createExpectedSampleIds(phase: 'warmup' | 'retained', outerOrdinal: num
     { length: 5 },
     (_value, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`,
   );
-}
-
-function createIdentity(
-  worker: RtcDataChannelCloseRetentionAcceptedArguments,
-  index: number,
-): RtcBaselineSampleIdentityDto {
-  return {
-    sampleId: worker.sampleIds[index],
-    workloadId: 'RTC-B02',
-    caseId: 'data-channel-close-retention',
-    inputKey: 'queue-32',
-    intendedPhase: worker.intendedPhase,
-    outerOrdinal: worker.outerOrdinal,
-    innerOrdinal: index + 1,
-  };
 }
 
 function createSample(

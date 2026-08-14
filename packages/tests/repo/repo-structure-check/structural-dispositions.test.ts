@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   collectSemanticDepthFacts,
+  createSingletonSubtreeFact,
   validateStructuralDispositions,
 } from '../../../../scripts/repo-structure-check/structural-dispositions.mjs';
 
@@ -126,6 +127,43 @@ describe('repository structural dispositions', () => {
         magnitude: 2,
       },
     ]);
+  });
+
+  it('binds an active-plan singleton judgment to its sole descendant and digest', () => {
+    const affectedCodeDigest = 'd'.repeat(64);
+    const fact = createSingletonSubtreeFact({
+      target: 'packages/example/tests/workloads/signaling',
+      descendant: 'packages/example/tests/workloads/signaling/lifecycle.test.ts',
+      context: 'New authored-code subtree has one code descendant.',
+    });
+    const exactDisposition = currentFactDisposition({
+      ruleId: fact.ruleId,
+      target: fact.target,
+      identity: fact.identity,
+      magnitude: fact.magnitude,
+      affectedCodeDigest,
+    });
+
+    expect(
+      validateStructuralDispositions({
+        facts: [fact],
+        affectedCodeDigest,
+        declaredDispositions: [exactDisposition],
+      }),
+    ).toEqual([]);
+
+    expect(
+      validateStructuralDispositions({
+        facts: [fact],
+        affectedCodeDigest,
+        declaredDispositions: [{ ...exactDisposition, identity: 'another.test.ts' }],
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('does not match a current structural fact'),
+        expect.stringContaining('New authored-code subtree has one code descendant.'),
+      ]),
+    );
   });
 });
 

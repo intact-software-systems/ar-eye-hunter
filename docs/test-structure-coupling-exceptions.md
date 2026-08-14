@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 128 entries were reviewed by independently meaningful behavior,
+The current 133 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -55,7 +55,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Black-box schema and recipe matrix               |      10 | Published fixtures, examples, compatibility corpus, evidence tiers, and catalog promises are validated directly. |
 | State-write recipe evidence                      |       5 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
 | Shared-web package boundaries                    |       9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction.                         |
-| Shared RTC benchmark navigation                  |       4 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
+| Shared RTC benchmark navigation                  |       9 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
 | Group topology canonical import direction        |       6 | Active composition and package exports bypass compatibility-only predecessor paths.                              |
 
 The full current candidate tree validates this registry even when the command
@@ -831,9 +831,9 @@ moved or changed test.
       "id": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
       "domain": "Shared RTC benchmark package navigation",
       "owner": "Shared RTC benchmark maintainers",
-      "summary": "The private benchmark package publishes one durable navigation row per executable and participates in root test discovery. Executable assertion: “documents each executable exactly once and discovers package tests”.",
+      "summary": "The private benchmark package publishes one durable navigation row per executable, names exact command, setup, measured-operation, and timing facts, and participates in root test discovery. Executable assertion: “documents each executable exactly once and discovers package tests”.",
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests",
-      "coverageRelation": "The architecture assertion compares the approved executable inventory with the shipped package README and independently verifies root Vitest discovery for the package test tree."
+      "coverageRelation": "The architecture assertion compares the approved executable inventory with the shipped package README, locks the exact baseline grammar and code-derived setup, measured-operation, and timing claims, and independently verifies root Vitest discovery for the package test tree."
     },
     {
       "id": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
@@ -2487,9 +2487,74 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
     },
     {
-      "id": "test-structure-coupling-0950fee7f048f987",
+      "id": "test-structure-coupling-23e33f1c591b5efd",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
-      "line": 50,
+      "line": 51,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Requires the package navigation map to name the actual diagnostics dependency factory used during executable setup.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
+    },
+    {
+      "id": "test-structure-coupling-3099540a296a159e",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 52,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Rejects the former nonexistent diagnostics setup name so the published executable trace cannot direct developers to an owner that does not exist.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
+    },
+    {
+      "id": "test-structure-coupling-38bdcd772dead320",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 53,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Requires the data-channel catalog row to identify sendJson as the measured public production operation rather than an internal or nonexistent send surface.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
+    },
+    {
+      "id": "test-structure-coupling-cdf345896c0cc689",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 54,
+      "column": 5,
+      "kind": "symbol-assertion",
+      "contract": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Keeps the published listener benchmark timing boundary explicit across construction, connection, and reset instead of implying a narrower interval.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
+    },
+    {
+      "id": "test-structure-coupling-cd650742e3bdb6e7",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 67,
+      "column": 7,
+      "kind": "symbol-assertion",
+      "contract": "shared-rtc-bench-navigation--documents-each-executable-exactly-once-and-discovers-package-tests",
+      "disposition": "durable-boundary",
+      "boundary": "public",
+      "owner": "Shared RTC benchmark maintainers",
+      "rationale": "Requires the durable package map to expose every accepted-baseline command in the exact ten-command grammar owned by the command parser.",
+      "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#documents each executable exactly once and discovers package tests"
+    },
+    {
+      "id": "test-structure-coupling-a5a1cbe5425bcd56",
+      "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
+      "line": 73,
       "column": 50,
       "kind": "production-source-read",
       "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
@@ -2500,9 +2565,9 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
     },
     {
-      "id": "test-structure-coupling-a434e7b60d1fead3",
+      "id": "test-structure-coupling-b985d1e99f70025a",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
-      "line": 51,
+      "line": 74,
       "column": 25,
       "kind": "production-source-read",
       "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",
@@ -2513,9 +2578,9 @@ moved or changed test.
       "semanticCoverage": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts#keeps diagnostics outside accepted baseline catalog and checked by Deno"
     },
     {
-      "id": "test-structure-coupling-08589be62a062796",
+      "id": "test-structure-coupling-0ea66b1a5ba02c32",
       "path": "packages/shared-rtc-bench/tests/architecture/rtc-benchmark-navigation-contract.test.ts",
-      "line": 58,
+      "line": 81,
       "column": 7,
       "kind": "symbol-assertion",
       "contract": "shared-rtc-bench-navigation--keeps-diagnostics-outside-accepted-baseline-catalog-and-checked-by-deno",

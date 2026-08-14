@@ -1,4 +1,6 @@
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+// prettier-ignore
+import { RallarRtcTopologyService } from
+  '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 // prettier-ignore
 import { createDeterministicRtcTopologyGroupSnapshot } from
   './create-deterministic-rtc-topology-group-snapshot.ts';
@@ -14,6 +16,9 @@ import {
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
+// prettier-ignore
+import { runRtcBaselineAcceptedWorkerSamples } from
+  '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 
 interface RtcTopologyStarInput {
   readonly sessions: number;
@@ -74,26 +79,17 @@ export async function runRtcTopologyStarAcceptedSamples(input: {
   readonly worker: RtcTopologyStarAcceptedArguments;
   readonly run: () => Promise<RtcTopologyStarResult> | RtcTopologyStarResult;
 }): Promise<RtcBaselineSampleDto[]> {
-  const samples: RtcBaselineSampleDto[] = [];
-  let failureId: string | undefined;
-  for (let index = 0; index < input.worker.sampleIds.length; index += 1) {
-    const identity = createIdentity(input.worker, index);
-    if (failureId !== undefined) {
-      samples.push(
-        createSample(identity, null, [
-          rtcBaselineIssue('$.rawEvidence', 'causal-not-run', failureId),
-        ]),
-      );
-      continue;
-    }
-    const result = await input.run();
-    const issues = validateResult(input.worker.input.sessions, result);
-    if (issues.length > 0) {
-      failureId = identity.sampleId;
-    }
-    samples.push(createSample(identity, result, issues));
-  }
-  return samples;
+  return runRtcBaselineAcceptedWorkerSamples({
+    worker: {
+      ...input.worker,
+      workloadId: 'RTC-B03',
+      caseId: 'topology-star',
+      inputKey: `sessions-${input.worker.input.sessions}`,
+    },
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input.sessions, result),
+    createSample: ({ identity, result, issues }) => createSample(identity, result, issues),
+  });
 }
 
 function parseDiagnosticArguments(options: Readonly<Record<string, string>>) {
@@ -194,21 +190,6 @@ function createExpectedSampleIds(
     { length: 5 },
     (_value, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`,
   );
-}
-
-function createIdentity(
-  worker: RtcTopologyStarAcceptedArguments,
-  index: number,
-): RtcBaselineSampleIdentityDto {
-  return {
-    sampleId: worker.sampleIds[index],
-    workloadId: 'RTC-B03',
-    caseId: 'topology-star',
-    inputKey: `sessions-${worker.input.sessions}`,
-    intendedPhase: worker.intendedPhase,
-    outerOrdinal: worker.outerOrdinal,
-    innerOrdinal: index + 1,
-  };
 }
 
 function createSample(

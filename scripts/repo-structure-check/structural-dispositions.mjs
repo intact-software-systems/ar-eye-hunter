@@ -29,15 +29,22 @@ export function validateStructuralDispositions(input) {
   issues.push(
     ...input.facts
       .filter((fact) => !satisfiedFacts.has(factIdentity(fact)))
-      .map(toDispositionTarget)
-      .sort(compareCodeUnits)
-      .map(
-        (target) =>
-          `${target} requires an explicit keep/split/move/consolidate disposition; ` +
-          'automation does not choose one',
-      ),
+      .toSorted((left, right) =>
+        compareCodeUnits(toDispositionTarget(left), toDispositionTarget(right)),
+      )
+      .map(toMissingDispositionMessage),
   );
   return issues;
+}
+
+export function createSingletonSubtreeFact(input) {
+  return {
+    ruleId: 'topology.singleton-subtree',
+    target: input.target,
+    identity: input.descendant,
+    magnitude: 1,
+    context: input.context,
+  };
 }
 
 export function collectSemanticDepthFacts(input) {
@@ -74,6 +81,17 @@ export function collectSemanticDepthFacts(input) {
 function toDispositionTarget(fact) {
   const identity = fact.identity == null ? '' : `:${fact.identity}`;
   return `${fact.target} [${fact.ruleId}${identity}]`;
+}
+
+function toMissingDispositionMessage(fact) {
+  const target =
+    typeof fact.context === 'string' && fact.context.trim() !== ''
+      ? `${fact.target} [${fact.ruleId}] ${fact.context}`
+      : toDispositionTarget(fact);
+  return (
+    `${target} requires an explicit keep/split/move/consolidate disposition; ` +
+    'automation does not choose one'
+  );
 }
 
 function factIdentity(fact) {

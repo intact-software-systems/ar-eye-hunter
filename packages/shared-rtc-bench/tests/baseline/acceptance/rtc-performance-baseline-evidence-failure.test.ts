@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createRtcBaselineEvidenceAcceptance } from '../../../baseline/acceptance/rtc-baseline-evidence-acceptance.ts';
+import {
+  createRtcBaselineAcceptedWorkerSampleIdentity,
+  runRtcBaselineAcceptedWorkerSamples,
+} from '../../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
 import type { RtcBaselineRuntimeObservationDto } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
 
 const firstIdentity = {
@@ -207,6 +211,62 @@ function manifestForOperation(kind: 'capture' | 'browser' | 'external' | 'cohort
 }
 
 describe('RTC baseline failure accounting', () => {
+  it('owns exact accepted-worker identity and first-failure remainder mechanics', async () => {
+    const worker = {
+      workloadId: 'RTC-B01' as const,
+      caseId: 'case',
+      inputKey: 'input',
+      intendedPhase: 'retained' as const,
+      outerOrdinal: 1,
+      sampleIds: identities.slice(0, 2).map((identity) => identity.sampleId),
+    };
+    expect(createRtcBaselineAcceptedWorkerSampleIdentity(worker, 1)).toEqual(identities[1]);
+
+    const run = vi
+      .fn<() => Promise<{ durationMs: number }>>()
+      .mockResolvedValueOnce({ durationMs: -1 })
+      .mockResolvedValue({ durationMs: 2 });
+    const samples = await runRtcBaselineAcceptedWorkerSamples({
+      worker,
+      run,
+      validate: (result) =>
+        result.durationMs < 0
+          ? [{ path: '$.durationMs', code: 'invalid-duration', message: 'Expected non-negative.' }]
+          : [],
+      createSample: ({ identity, result, issues }) => ({
+        schema: 'rallar.rtc-baseline.sample.v1',
+        identity,
+        outcome: result === null ? 'not-run' : issues.length === 0 ? 'passed' : 'failed',
+        evidenceClass: 'synthetic-path',
+        metrics: [],
+        rawEvidence: result,
+        rawReferences: [],
+        issues,
+        runtimeObservation: null,
+      }),
+    });
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(samples.map((sample) => [sample.identity, sample.outcome, sample.issues])).toEqual([
+      [
+        identities[0],
+        'failed',
+        [{ path: '$.durationMs', code: 'invalid-duration', message: 'Expected non-negative.' }],
+      ],
+      [
+        identities[1],
+        'not-run',
+        [
+          {
+            path: '$.rawEvidence',
+            code: 'causal-not-run',
+            message: identities[0].sampleId,
+          },
+        ],
+      ],
+    ]);
+  });
+
   it('rejects surplus worker outcomes before accepting any inner result', async () => {
     const issue = {
       path: '$.worker.outcomes',

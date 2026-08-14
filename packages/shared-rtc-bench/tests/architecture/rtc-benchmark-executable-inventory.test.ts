@@ -109,7 +109,9 @@ const owningTests = [
   'tests/diagnostics/room-graph/rtc-room-graph-no-rtt-diagnostic.test.ts',
   'tests/diagnostics/rtt-group-scan/rtc-rtt-group-scan-diagnostic.test.ts',
   'tests/diagnostics/rtt-traffic/rtc-topology-rtt-traffic-diagnostic.test.ts',
-  'tests/workloads/rtc-performance-baseline-harnesses.test.ts',
+  'tests/workloads/data-channel/rtc-data-channel-benchmark-lifecycle.test.ts',
+  'tests/workloads/signaling/rtc-signaling-benchmark-lifecycle.test.ts',
+  'tests/workloads/topology/rtc-topology-benchmark-lifecycle.test.ts',
   'tests/workloads/multicast/rtc-multicast-serialization-bench.test.ts',
   'tests/workloads/group-coordination/webrtc-group-coordination-benches.test.ts',
   'tests/workloads/browser-lifecycle/rtc-data-channel-browser-soak.test.ts',
@@ -137,7 +139,7 @@ describe('shared RTC benchmark executable inventory', () => {
     expect(missing, `missing package targets/tests:\n${missing.join('\n')}`).toEqual([]);
   });
 
-  it('locks the exact Task 4A source and test checkpoint', () => {
+  it('locks the current package source and capability-owned test inventory', () => {
     const actualSources = packageRelative(
       ['baseline', 'diagnostics', 'topology-delivery', 'topology-replay', 'workloads'].flatMap(
         (directory) => filesBelow(path.join(packageRoot, directory)),

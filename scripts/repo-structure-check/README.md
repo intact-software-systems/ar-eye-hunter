@@ -34,12 +34,13 @@ which returns sorted findings without choosing a folder layout for the agent.
   [repository-files.mjs#isMaterialChange](./repository-files.mjs#isMaterialChange) distinguishes
   material edits from unchanged renames and token-equivalent JavaScript or TypeScript changes.
 - Topology checks converge in
-  [repository-structure-check.mjs#collectSingletonFindings](./repository-structure-check.mjs#collectSingletonFindings)
+  [repository-structure-check.mjs#collectSingletonFacts](./repository-structure-check.mjs#collectSingletonFacts)
   and
   [repository-structure-check.mjs#collectRedundantChainFindings](./repository-structure-check.mjs#collectRedundantChainFindings).
   [structural-dispositions.mjs#validateStructuralDispositions](./structural-dispositions.mjs#validateStructuralDispositions)
-  requires an exact human disposition for current style or semantic-depth facts; it never selects
-  `keep`, `split`, `move`, or `consolidate` itself.
+  requires an exact human disposition for current style, semantic-depth, or active-plan singleton
+  facts; it never selects `keep`, `split`, `move`, or `consolidate` itself. A singleton disposition
+  is bound to the exact target, sole code descendant, magnitude, and affected-code digest.
 - Capability ownership and cold-navigation evidence are validated by
   [capability-declarations.mjs#validateCapabilityDeclarations](./capability-declarations.mjs#validateCapabilityDeclarations).
   This is also the owner of entry, mirrored-test, focused-command, map-link, and source-symbol
@@ -60,7 +61,8 @@ which returns sorted findings without choosing a folder layout for the agent.
   [structure-exceptions.mjs#readStructureExceptions](./structure-exceptions.mjs#readStructureExceptions).
   [structure-exceptions.mjs#readRepositoryExceptionContext](./structure-exceptions.mjs#readRepositoryExceptionContext)
   binds a nonempty registry to the exact clean Git head and authenticated GitHub review; missing or
-  ambiguous trust evidence fails closed.
+  ambiguous trust evidence fails closed. This static between-plan exception path remains separate
+  from current-fact judgments inside an active adaptive plan.
 
 ## Declared cross-owner facts
 

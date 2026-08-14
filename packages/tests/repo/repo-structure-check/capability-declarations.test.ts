@@ -90,6 +90,106 @@ describe('repository capability declarations', () => {
     );
   });
 
+  it('accepts colocated package tests through the package workspace command', () => {
+    const packageCapability = capability({
+      owner: 'package capability',
+      root: 'packages/example-package',
+      entry: 'packages/example-package/example-package.ts',
+      testRoot: 'packages/example-package/tests',
+      focusedCommand: 'npm --workspace @example/package run test',
+    });
+    const authoredFiles = [
+      'packages/example-package/example-package.ts',
+      'packages/example-package/tests/example-package.test.ts',
+    ];
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [packageCapability],
+      authoredFiles,
+      packageScripts: {},
+      readFile: (file: string) =>
+        file === 'packages/example-package/package.json'
+          ? JSON.stringify({
+              name: '@example/package',
+              private: true,
+              scripts: { test: 'vitest run --config ../../vitest.config.ts "$PWD/tests"' },
+            })
+          : undefined,
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toEqual([]);
+  });
+
+  it('rejects colocated tests and workspace commands for a public package', () => {
+    const packageCapability = capability({
+      owner: 'package capability',
+      root: 'packages/example-package',
+      entry: 'packages/example-package/example-package.ts',
+      testRoot: 'packages/example-package/tests',
+      focusedCommand: 'npm --workspace @example/package run test',
+    });
+    const authoredFiles = [
+      'packages/example-package/example-package.ts',
+      'packages/example-package/tests/example-package.test.ts',
+    ];
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [packageCapability],
+      authoredFiles,
+      packageScripts: {},
+      readFile: (file: string) =>
+        file === 'packages/example-package/package.json'
+          ? JSON.stringify({
+              name: '@example/package',
+              private: false,
+              scripts: { test: 'vitest run --config ../../vitest.config.ts "$PWD/tests"' },
+            })
+          : undefined,
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('must use a recognized mirrored test hierarchy'),
+        expect.stringContaining('must resolve exactly to vitest run packages/example-package/tests'),
+      ]),
+    );
+  });
+
+  it('rejects a workspace package script that targets a different test root', () => {
+    const packageCapability = capability({
+      owner: 'package capability',
+      root: 'packages/example-package',
+      entry: 'packages/example-package/example-package.ts',
+      testRoot: 'packages/example-package/tests',
+      focusedCommand: 'npm --workspace @example/package run test',
+    });
+    const authoredFiles = [
+      'packages/example-package/example-package.ts',
+      'packages/example-package/tests/example-package.test.ts',
+    ];
+    const issues = validateCapabilityDeclarations({
+      repoRoot: '/repo',
+      capabilities: [packageCapability],
+      authoredFiles,
+      packageScripts: {},
+      readFile: (file: string) =>
+        file === 'packages/example-package/package.json'
+          ? JSON.stringify({
+              name: '@example/package',
+              scripts: { test: 'vitest run "$PWD/specs"' },
+            })
+          : undefined,
+      coldNavigationEvidence: null,
+    });
+
+    expect(issues).toContain(
+      'package capability focused command npm --workspace @example/package run test must ' +
+        'resolve exactly to vitest run packages/example-package/tests',
+    );
+  });
+
   it('requires the focused command to run exactly the declared mirrored test root', () => {
     const issues = validateCapabilityDeclarations({
       repoRoot: '/repo',
