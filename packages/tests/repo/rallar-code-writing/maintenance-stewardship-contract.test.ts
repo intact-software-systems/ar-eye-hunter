@@ -194,6 +194,9 @@ describe('rallar code-writing maintenance stewardship contract', () => {
       'one autonomous coherent consolidation',
       'retaining a real standards violation',
       'deferring safe in-scope implementation',
+      'reviewed and remediated in full',
+      'enters closure recursively',
+      'four escalation conditions',
     ];
 
     for (const fragment of forbiddenAnswerFragments) {
@@ -214,15 +217,20 @@ describe('rallar code-writing maintenance stewardship contract', () => {
     const prompt = normalize(suite.scenarios[0].prompt);
 
     expect(prompt).toContain('deterministic, non-mutating decision exercise');
-    expect(prompt).toContain('Use only the facts stated in this scenario');
-    expect(prompt).toContain('do not edit files');
-    expect(prompt).toContain('run commands');
-    expect(prompt).toContain('inspect the current workspace or governance state');
-    expect(prompt).toContain('mutate plans or governance');
-    expect(prompt).toContain('make external calls');
+    expect(prompt).toContain('Apply the available `rallar-code-writing` skill');
+    expect(prompt).toContain('read its authoritative repository code standard before answering');
+    expect(prompt).toContain('You may read applicable agent guidance');
     expect(prompt).toContain(
-      'Unrelated current workspace and governance state is outside this scenario',
+      'The facts stated in this scenario are the only task and repository-state facts',
     );
+    expect(prompt).toContain(
+      'Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state',
+    );
+    expect(prompt).toContain('do not edit files');
+    expect(prompt).toContain('mutate plans or governance');
+    expect(prompt).toContain('run validation commands');
+    expect(prompt).toContain('call external systems');
+    expect(prompt).not.toContain('do not edit files, run commands');
     expect(prompt).not.toContain('current repository task');
     expect(prompt).not.toContain('current repository facts');
     expect(prompt).not.toContain('repository evidence you inspect');
