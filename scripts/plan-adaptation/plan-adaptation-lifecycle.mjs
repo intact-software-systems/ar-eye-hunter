@@ -34,7 +34,7 @@ export function initAdaptivePlan(input) {
   const plan = readPlan(input);
   requireActivePlan(plan, 'init');
   validateRecordAndCheckpoint(plan.record);
-  plan.record.facts = readCurrentFacts(input, plan.record);
+  plan.record.facts = readCurrentFacts({ input, record: plan.record });
   writePlan({ input, markdown: plan.markdown, record: plan.record });
 }
 
@@ -64,7 +64,7 @@ export function completeAdaptivePlanSlice(input) {
   plan.record.checkpoint.nextSlices = plan.record.checkpoint.nextSlices.filter(
     (slice) => slice !== input.slice,
   );
-  plan.record.facts = readCurrentFacts(input, plan.record);
+  plan.record.facts = readCurrentFacts({ input, record: plan.record });
   writePlan({ input, markdown: plan.markdown, record: plan.record });
 }
 
@@ -73,7 +73,7 @@ export function prepareAdaptivePlan(input) {
   requireActivePlan(plan, 'prepare');
   validateRecordAndCheckpoint(plan.record);
   const sourceRecordDigest = computeAdaptivePlanRecordDigest(plan.record);
-  plan.record.facts = readCurrentFacts(input, plan.record, true);
+  plan.record.facts = readCurrentFacts({ input, record: plan.record, includeUnassigned: true });
   plan.record.checkpoint = {
     outcome: '',
     learning: '',
@@ -116,7 +116,11 @@ export function applyAdaptivePlan(input) {
     throw new Error('only one autonomous consolidation slice is allowed');
   }
   validateRecordAndCheckpoint(draft.record);
-  const currentFacts = readCurrentFacts(input, draft.record, true);
+  const currentFacts = readCurrentFacts({
+    input,
+    record: draft.record,
+    includeUnassigned: true,
+  });
   if (JSON.stringify(currentFacts) !== JSON.stringify(draft.record.facts)) {
     throw new Error('draft facts are stale; run prepare again');
   }
@@ -147,7 +151,12 @@ export function checkAdaptivePlans(input) {
   const catalog = readAdaptivePlanCatalog(input.repoRoot);
   const adaptivePlans = catalog.plans;
   const activePlans = catalog.activePlans;
-  const recovery = readCatalogRecovery(input, catalog, changes, closureChanges);
+  const recovery = readCatalogRecovery({
+    input,
+    candidateCatalog: catalog,
+    changes,
+    authenticatedChanges: closureChanges,
+  });
   const issues = [];
   if (!recovery.allowed) issues.push(...catalog.issues);
   issues.push(...closureChanges.issues);
@@ -222,7 +231,7 @@ export function checkAdaptivePlans(input) {
   }
 }
 
-function readCatalogRecovery(input, candidateCatalog, changes, authenticatedChanges) {
+function readCatalogRecovery({ input, candidateCatalog, changes, authenticatedChanges }) {
   try {
     return evaluateAdaptivePlanCatalogRecovery({
       baseCatalog: readAdaptivePlanCatalogAtRevision(input.repoRoot, input.base),
@@ -282,7 +291,7 @@ export function resumeAdaptivePlan(input) {
     ),
   );
   if (candidate.issues.length > 0) throw new Error(candidate.issues.join('\n'));
-  plan.record.facts = readCurrentFacts(input, plan.record, false, candidate);
+  plan.record.facts = readCurrentFacts({ input, record: plan.record, catalog: candidate });
   appendStatusDecision(plan.record, 'resume', input.reason);
   writePlan({ input, markdown: plan.markdown, record: plan.record });
 }
@@ -319,12 +328,12 @@ function appendStatusDecision(record, decision, reason) {
   });
 }
 
-function readCurrentFacts(
+function readCurrentFacts({
   input,
   record,
   includeUnassigned = false,
   catalog = readAdaptivePlanCatalog(input.repoRoot),
-) {
+}) {
   const changes = readChangedPaths(input.repoRoot, input.base);
   return computePlanFacts({
     repoRoot: input.repoRoot,
