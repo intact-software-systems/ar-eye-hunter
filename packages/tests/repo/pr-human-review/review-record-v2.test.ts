@@ -401,7 +401,10 @@ describe('PR Human Review Record v2', () => {
 
   it('requires non-placeholder touched-file standards closure evidence that matches the visible review', () => {
     const record = reviewRecord({
-      finalReview: { ...finalReview(), touchedFileStandardsClosure: 'TODO' },
+      finalReview: {
+        ...finalReview(),
+        touchedFileStandardsClosure: 'TODO: complete this review before readiness',
+      },
     });
     const contradictedVisibleEvidence = recordBody(record).replace(
       `- Touched-file standards closure: ${record.finalReview?.touchedFileStandardsClosure}`,

@@ -500,7 +500,8 @@ function validateText(value, label, errors) {
 function isPlaceholder(value) {
   const normalizedValue = value.trim().toLowerCase();
   return (
-    ['todo', 'tbd', 'not applicable', 'not yet required', '...', '-'].includes(normalizedValue) ||
+    /^(?:todo|tbd|not applicable|not yet required)\b/u.test(normalizedValue) ||
+    ['...', '-'].includes(normalizedValue) ||
     normalizedValue.includes('<placeholder>') ||
     normalizedValue.includes('[placeholder]')
   );
