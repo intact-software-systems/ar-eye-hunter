@@ -552,17 +552,23 @@ export type DistributedRunCompareSummary = Readonly<{
     }>;
 }>;
 
+export const RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES = [
+    'targeting',
+    'readiness',
+    'barrier',
+    'command',
+    'group-assertion',
+    'rtc-stream-performance',
+    'diagnostic',
+    'runtime',
+    'unknown',
+] as const;
+
+export type RallarBlackBoxDistributedFailureCategory =
+    typeof RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES[number];
+
 export type DistributedFailureExplanation = Readonly<{
-    category:
-        | 'targeting'
-        | 'readiness'
-        | 'barrier'
-        | 'command'
-        | 'group-assertion'
-        | 'rtc-stream-performance'
-        | 'diagnostic'
-        | 'runtime'
-        | 'unknown';
+    category: RallarBlackBoxDistributedFailureCategory;
     title: string;
     likelyCause: string;
     nextAction: string;
