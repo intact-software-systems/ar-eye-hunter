@@ -165,6 +165,41 @@ iteration entries record the backoff-aware schedule, so drift/jitter
 observability stays valid; configured thresholds still evaluate on success.
 Orchestration lives in `loop/loop-until.ts`.
 
+## Group Assertions
+
+Distributed run manifests may declare a `groupAssertions` block evaluated
+coordinator-side by the control server after every dispatched recipe result
+completed — invariants over the collected evidence of every targeted agent
+(`allMatch`, `noneMatch`, `countMatching`, `allEqual`, `allEqualWithin`).
+Typed sources are `{ recipeId, commandId, path }`; predicates reuse
+`assert/assert-value-operators.ts`, so the agent and coordinator vocabularies
+cannot drift. Contract, participation rules, and failure codes live in
+`distributed-run-contract.md`; evaluation lives in
+`distributed/group-assertions-evaluation.ts` with the schema branch in
+`distributed/rallar-black-box-group-assertions-schema.ts`.
+
+### Comparison Vocabulary Boundary
+
+Three comparison vocabularies exist deliberately, and a fourth is prohibited:
+
+- `sameJsonValue` (`wait/wait-event-match.ts`) — `JSON.stringify` equality;
+  the agent-side match primitive behind `wait` matching and the historical
+  `equals` / `notEquals` / `contains` assert operators.
+- `json-compare` (`CompareJson`) — structural shape modes behind
+  `matchesShape` (`compatible`) and `matchesShapeComplete`
+  (`compatible-complete`); its `exact` mode matches arrays
+  order-insensitively.
+- `deepEqualJson` (`distributed/group-assertions-aggregates.ts`) — group
+  agreement equality for `allEqual`: object-key-order insensitive,
+  array-order sensitive. Explicitly not `sameJsonValue` (which is
+  key-order sensitive via serialization) and not `json-compare` `exact`
+  (which is array-order insensitive).
+
+Pick the vocabulary by claim: event matching -> `sameJsonValue`; shape
+containment -> `json-compare` modes; cross-agent agreement ->
+`deepEqualJson`. The assertion-outcome parity and group-assertion
+conformance suites pin these semantics.
+
 ## Validation
 
 Use `validateJsonSchema(schema, value)` for lightweight browser-safe validation.
@@ -202,6 +237,8 @@ Current automated coverage validates:
 - the v1 golden compatibility corpus for valid recipes, invalid recipes,
   distributed manifests with inline recipes, and representative AI-generated
   examples
+- group-assertion contract validation, rollup integration, and a conformance
+  case per aggregate with a deliberately-broken control
 - JSON examples in the schema compatibility guide
 
 ## Compatibility Rules
@@ -337,9 +374,12 @@ and `assert` can read them through `diagnostics` or `recentDiagnostics`.
 runtime sources: `state`, `config`, `currentConfig`, `lastResult`, `events`,
 `messages`, `diagnostics`, `reports`, `recentEvents`, `recentMessages`,
 `recentDiagnostics`, `latestStats`, `stats`, `failures`, and `resultCache`.
-Supported operators are `equals`, `notEquals`, `contains`, `exists`, `gte`, and
-`lte`. It is not a JavaScript evaluator; source strings are dot paths into those
-read-only roots. Assertion values and errors pass through normal redaction.
+Supported operators are the full set documented under "Assert Operators"
+above, from the historical `equals` / `notEquals` / `contains` / `exists` /
+`gte` / `lte` through the extended `gt` / `lt` / `between` / `length` /
+`matches` / `matchesShape` / `matchesShapeComplete`. It is not a JavaScript
+evaluator; source strings are dot paths into those read-only roots. Assertion
+values and errors pass through normal redaction.
 
 Distributed-run manifests can opt into a control-server barrier:
 `"barrier": { "enabled": true, "timeoutMs": 5000 }`. The barrier is not a new

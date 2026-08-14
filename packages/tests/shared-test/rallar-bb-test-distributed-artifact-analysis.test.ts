@@ -2390,6 +2390,64 @@ describe('Hetzner distributed run artifact analysis', () => {
         await expect(readFile(path.join(outDir, 'fix-proposal.md'), 'utf8')).resolves.toContain('Suggested verification');
     });
 
+    it('names group-assertion failures with their own category and fix area', async () => {
+        const artifactDir = await mkdtemp(path.join(tmpdir(), 'rallar-distributed-ga-artifacts-'));
+        const outDir = path.join(artifactDir, 'analysis');
+        await writeFile(path.join(artifactDir, 'distributed-run.json'), JSON.stringify({
+            distributedRunId: 'dist-ga',
+            controlRunId: 'run-ga',
+            state: 'failed',
+            startedAtEpochMs: 1,
+            completedAtEpochMs: 5,
+            rollup: {
+                ok: false,
+                failures: [{
+                    kind: 'group-assertion',
+                    key: 'members-converge',
+                    state: 'failed',
+                    required: true,
+                    error: {
+                        code: 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED',
+                        message: 'Group assertion members-converge failed: 2 distinct values across 2 participants.',
+                        details: {
+                            aggregate: 'allEqual',
+                            violatingAgentIds: ['agent-b'],
+                            perAgent: [
+                                { agentId: 'agent-a', evidence: 'resolved', verdict: 'agreeing', value: 2 },
+                                { agentId: 'agent-b', evidence: 'resolved', verdict: 'violating', value: 3 },
+                            ],
+                        },
+                    },
+                }],
+                summary: { blockingFailures: 1, failedGroupAssertions: 1 },
+            },
+            manifest: { recipes: [], group: { groupId: 'bb-group' } },
+            targetAgentIds: ['agent-a', 'agent-b'],
+            commandLinks: [],
+        }));
+        await writeFile(path.join(artifactDir, 'control-run.json'), JSON.stringify({
+            runId: 'run-ga',
+            agents: [],
+            commands: [],
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: [],
+        }));
+
+        await analyzeDistributedRunArtifactDirectory(artifactDir, outDir);
+
+        const analysis = JSON.parse(await readFile(path.join(outDir, 'analysis.json'), 'utf8')) as {
+            failure?: { category?: string; minimalFixArea?: string };
+        };
+        expect(analysis.failure?.category).toBe('group-assertion');
+        expect(analysis.failure?.minimalFixArea).toBe('group assertion contract or fleet evidence');
+        await expect(readFile(path.join(outDir, 'fix-proposal.md'), 'utf8')).resolves.toContain(
+            'rallar-bb-test-group-assertion-conformance.test.ts',
+        );
+    });
+
     it('writes passed-run performance files with percentile and diagnostic severity counts', async () => {
         const artifactDir = await mkdtemp(path.join(tmpdir(), 'rallar-distributed-passed-artifacts-'));
         const outDir = path.join(artifactDir, 'analysis');

@@ -77,6 +77,69 @@ recipes.
 }
 ```
 
+## Distributed Group Assertions Example
+
+```json
+{
+  "schemaVersion": 1,
+  "distributedRunId": "compat-group-assertions-v1",
+  "displayName": "Compatibility group assertions",
+  "group": {
+    "applicationId": "rallar-server",
+    "workspaceId": "default",
+    "groupId": "bb-group"
+  },
+  "recipes": [
+    {
+      "recipeId": "probe-v1",
+      "required": true,
+      "recipe": {
+        "schemaVersion": 1,
+        "recipeId": "probe-v1",
+        "commands": [
+          {
+            "kind": "http.request",
+            "commandId": "probe-read-v1",
+            "request": {
+              "method": "GET",
+              "path": "/api/state/apps/rallar-server/workspaces/default/groups/bb-group"
+            },
+            "response": { "acceptedStatusCodes": [200] }
+          }
+        ]
+      }
+    }
+  ],
+  "targetPolicy": {
+    "mode": "all-online-group-members",
+    "expectedParticipantCount": 2
+  },
+  "groupAssertions": [
+    {
+      "groupAssertionId": "members-converge",
+      "aggregate": "allEqual",
+      "source": {
+        "recipeId": "probe-v1",
+        "commandId": "probe-read-v1",
+        "path": "body.memberCount"
+      }
+    },
+    {
+      "groupAssertionId": "members-expected",
+      "aggregate": "allMatch",
+      "source": {
+        "recipeId": "probe-v1",
+        "commandId": "probe-read-v1",
+        "path": "body.memberCount"
+      },
+      "predicate": { "operator": "equals", "expected": 2 }
+    }
+  ],
+  "ackTimeoutMs": 5000,
+  "startMode": "manual"
+}
+```
+
 ## Validation Flow
 
 Use the lightweight schema validator before staging or executing generated
@@ -99,9 +162,11 @@ The stable v1 corpus lives at:
 `packages/shared-test/rallar-bb-test/fixtures/schema/v1/golden-compatibility-corpus.json`
 
 It contains valid and invalid examples for primitive commands, nested
-`loop`/`parallel`, `wait`/`assert`, distributed manifests with inline recipes,
-and representative AI-generated recipes. Schema changes should update this
-corpus deliberately, not incidentally.
+`loop`/`parallel`, `wait`/`assert`, distributed manifests with inline recipes
+(including a `groupAssertions` manifest exercising every aggregate plus
+invalid missing-predicate, unknown-aggregate, and empty-count cases), and
+representative AI-generated recipes. Schema changes should update this corpus
+deliberately, not incidentally.
 
 Run the focused compatibility checks with:
 
@@ -379,4 +444,61 @@ Verification:
 npx vitest run packages/tests/shared-test/rallar-bb-test-assertion-capability-gate.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
 npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+```
+
+```text
+Title: Distributed manifests gain coordinator-evaluated groupAssertions
+Date: 2026-08-13
+Owner: rallar-bb-test distributed assertion parity plan (D6)
+
+Change type:
+- Compatible optional addition
+
+Affected schemas:
+- RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
+
+Old shape:
+Distributed run manifests could only express per-agent recipe evidence;
+cross-agent invariants ("we all agree", "no agent saw it") were checked by
+humans reading artifacts.
+
+New shape:
+An optional manifest-level groupAssertions array beside targetPolicy/barrier,
+evaluated coordinator-side by the control-server rollup after every
+dispatched recipe result completed. Aggregates: allMatch, noneMatch,
+countMatching (count.equals/gte/lte), allEqual (deepEqualJson: key-order
+insensitive, array-order sensitive), allEqualWithin (absolute tolerance).
+Typed sources { recipeId, commandId, path }; predicates reuse
+assert/assert-value-operators.ts; scope.role narrows participants and
+minParticipants is the only explicit relaxation of the participant set
+frozen at target resolution. Missing, duplicate, or unresolved evidence
+fails by default. Failure codes
+RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED /
+_EVIDENCE_MISSING / _NO_PARTICIPANTS carry redacted per-agent value tables
+into failures.json and the artifact analyzer. Correctness-only in v1: no
+performance/SLO aggregate may fail a run.
+
+Migration:
+None for existing manifests; the field is optional. A manifest that uses
+groupAssertions requires a control server built from this change — older
+servers reject the unknown field at manifest validation (fail closed).
+Agents are unchanged and the agent capability gate does not apply.
+
+Golden corpus updates:
+Added golden-distributed-group-assertions-v1 (every aggregate) plus invalid
+group-assertion-missing-predicate, group-assertion-unknown-aggregate, and
+group-assertion-count-without-bounds cases.
+
+Prompt/documentation updates:
+distributed-run-contract.md gained the Group Assertions contract;
+schema-and-capabilities.md documents the three-vocabulary comparison
+boundary (sameJsonValue vs json-compare vs deepEqualJson);
+ai-recipe-prompt-guide.md gained a Group Assertions prompt; the Hetzner
+failure-triage and artifact-analysis references name the new codes.
+
+Verification:
+npx vitest run packages/tests/shared-test/rallar-bb-test-group-assertion-conformance.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-distributed-run.test.ts
+npx vitest run packages/tests/shared-test/rallar-bb-test-schema.test.ts
+cd apps/rallar-black-box-control-server && deno task check && deno task test
 ```

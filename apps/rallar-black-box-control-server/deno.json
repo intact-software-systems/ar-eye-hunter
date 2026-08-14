@@ -11,7 +11,7 @@
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-env --allow-read --allow-write src/main.ts",
     "start": "deno run --allow-net --allow-env --allow-read --allow-write src/main.ts",
-    "check": "deno check src/main.ts test/control-service.test.ts test/control-retention.test.ts test/retention-cleanup.test.ts test/retention-main-wiring.test.ts test/retention-plan-token.test.ts test/retention-query.test.ts test/swagger-routes.test.ts test/control-artifacts.test.ts test/cors.test.ts test/api-black-box.test.ts",
+    "check": "deno check src/main.ts test/control-service.test.ts test/control-service-group-assertions.test.ts test/control-retention.test.ts test/retention-cleanup.test.ts test/retention-main-wiring.test.ts test/retention-plan-token.test.ts test/retention-query.test.ts test/swagger-routes.test.ts test/control-artifacts.test.ts test/cors.test.ts test/api-black-box.test.ts",
     "test": "deno test --allow-run --allow-net --allow-env --allow-read --allow-write"
   },
   "deploy": {

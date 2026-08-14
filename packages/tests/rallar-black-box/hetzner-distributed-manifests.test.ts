@@ -128,6 +128,7 @@ describe('Hetzner distributed manifest catalog', () => {
             'apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json',
             'apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json',
             'apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json',
+            'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json',
         ]);
         expect(diagnosticPaths).toEqual([
             'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
@@ -279,6 +280,7 @@ describe('Hetzner distributed manifest catalog', () => {
             ['apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json', { peers: 1, timeoutMs: 45_000 }],
             ['apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json', { peers: 1, timeoutMs: 45_000 }],
             ['apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
+            ['apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json', { peers: 1, timeoutMs: 10_000 }],
         ]);
 
         for (const entry of buildHetznerDistributedManifestCatalog().filter(candidate => !candidate.diagnostic)) {

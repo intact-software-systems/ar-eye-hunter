@@ -1,4 +1,5 @@
 import type {
+    RallarBlackBoxDistributedGroupAssertion,
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
@@ -20,6 +21,10 @@ import {
 import {
     createHetznerProviderParityRecipe,
 } from './hetzner/create-hetzner-provider-parity-recipe.ts';
+import {
+    createHetznerGroupAssertions,
+    createHetznerGroupAssertionsRecipe,
+} from './hetzner/create-hetzner-group-assertions-recipe.ts';
 import {
     createHetznerRtcAbsenceWaitRecipe,
 } from './hetzner/create-hetzner-rtc-absence-wait-recipe.ts';
@@ -55,6 +60,7 @@ export const HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER = [
     'apps/rallar-black-box/manifests/hetzner/14-rtc-messages-principal-30-agent-30s-20hz-mesh.json',
     'apps/rallar-black-box/manifests/hetzner/15-rtc-messages-all-peer-30-agent-30s-5hz-tree.json',
     'apps/rallar-black-box/manifests/hetzner/16-rtc-absence-wait-2-agent.json',
+    'apps/rallar-black-box/manifests/hetzner/17-group-assertions-2-agent.json',
 ] as const;
 
 export type HetznerDistributedManifestEntry = Readonly<{
@@ -85,6 +91,7 @@ type ManifestCatalogInput = Readonly<{
     expectedFailure?: boolean;
     stress?: boolean;
     barrier?: boolean;
+    groupAssertions?: readonly RallarBlackBoxDistributedGroupAssertion[];
     metadata?: Readonly<Record<string, unknown>>;
 }>;
 
@@ -389,6 +396,18 @@ export function buildHetznerDistributedManifestCatalog(): readonly HetznerDistri
             live: true,
         }),
         buildManifestEntry({
+            filePath: HETZNER_DISTRIBUTED_MANIFEST_EXTENDED_ORDER[16],
+            title: 'Group assertions 2-agent',
+            description: 'Coordinator-evaluated group assertions: allEqual convergence over the ' +
+                'shared group snapshot and noneMatch isolation over per-agent absence windows.',
+            distributedRunId: 'hetzner-group-assertions-2-agent',
+            recipe: createHetznerGroupAssertionsRecipe(HETZNER_DISTRIBUTED_MANIFEST_GROUP),
+            agentCount: 2,
+            profiles: ['rtc', 'group-assertions', 'isolation', 'extended'],
+            live: true,
+            groupAssertions: createHetznerGroupAssertions(2),
+        }),
+        buildManifestEntry({
             filePath: 'apps/rallar-black-box/manifests/hetzner/diagnostic/barrier-health-2-agent.json',
             title: 'Barrier health 2-agent',
             description: 'Diagnostic run that validates synchronized barrier orchestration before start.',
@@ -569,6 +588,7 @@ function buildManifestEntry(input: ManifestCatalogInput): HetznerDistributedMani
             : undefined,
         startMode: 'manual',
         expectedParticipantCount: input.agentCount,
+        groupAssertions: input.groupAssertions,
     });
 
     return {

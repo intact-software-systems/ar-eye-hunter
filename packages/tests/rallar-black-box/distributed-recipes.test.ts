@@ -19,6 +19,7 @@ import {
     distributedRecipeTargetRows,
     filterDistributedRuns,
     type DistributedRecipeCatalogItem,
+    type DistributedRunFailureRow,
 } from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import {
     RALLAR_BLACK_BOX_RECIPE_FIXTURES,
@@ -2129,7 +2130,7 @@ describe('distributed recipes helpers', () => {
             controlRun: evidenceControlRun,
             artifactBundle: distributedArtifactBundle,
         });
-        const failure = (kind: 'run' | 'participant' | 'recipe' | 'command', key: string) => {
+        const failure = (kind: DistributedRunFailureRow['kind'], key: string) => {
             const row = monitor.failures.find(candidate =>
                 candidate.kind === kind && candidate.key === key
             );
@@ -2139,7 +2140,7 @@ describe('distributed recipes helpers', () => {
             }
             return row;
         };
-        const destinations = (kind: 'run' | 'participant' | 'recipe' | 'command', key: string) =>
+        const destinations = (kind: DistributedRunFailureRow['kind'], key: string) =>
             deriveDistributedRunFailureEvidenceDestinations({
                 failure: failure(kind, key),
                 monitor,
