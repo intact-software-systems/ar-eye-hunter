@@ -15,6 +15,26 @@ stay outcome-shaped until a checkpoint earns their activation.
 
 **REQUIRED SUB-SKILL:** Use `rallar-testing` to select surface-specific commands.
 
+## Maintenance stewardship boundary
+
+For every code or human-authored support-file change, route standards judgment
+to `rallar-code-writing` and keep touched-file standards closure inside each
+slice. Implement the requested behavior while resolving pre-existing and new
+noncompliance throughout each touched file. When remediation changes a support
+file, that file enters the closure recursively. Independent untouched code
+remains outside the closure. Checker tolerance is not authority and does not
+define touched-file standards closure.
+
+Scope growth caused by this recursive closure is deterministic execution work,
+not a reason to request permission to retain old findings. Reflect the expanded
+affected surface at the next required checkpoint without using a third active
+slice. Escalate only for a genuine exception for a remaining real standards
+violation, a public compatibility or migration decision, an unresolved
+correctness or safety conflict, or a failed post-consolidation navigation probe.
+Do not escalate for pre-existing debt, deadline pressure, diff size, cleanup
+volume, ownership recovery, package boundaries, substantial remediation, or
+reprioritization alone.
+
 ## Control loop
 
 1. Qualify the work. An adaptive plan is required for a written plan,

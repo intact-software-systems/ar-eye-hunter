@@ -17,6 +17,19 @@ Every coding and architecture rule is interpreted through this principle. A
 mechanically compliant change is not successful when it makes the code harder
 for a human to understand, review, debug, or modify.
 
+Maintenance work follows touched-file standards closure. Resolve pre-existing
+and new noncompliance throughout each touched file while implementing the
+requested behavior. Every support file changed by that remediation enters the
+closure recursively. Independent untouched code remains outside the closure.
+Do not treat warning-only full-repository checks or new/worsened changed checks
+as authority to retain touched-file noncompliance.
+
+Escalate only for a genuine exception for a remaining real standards violation,
+a public compatibility or migration decision, an unresolved correctness or
+safety conflict, or a failed post-consolidation navigation probe. Do not
+escalate for pre-existing debt, deadline pressure, diff size, cleanup volume,
+ownership recovery, package boundaries, or reprioritization alone.
+
 Avoid cognitive indirection: semantic hops through vocabulary, ownership,
 files, abstractions, dataflow, decisions, callbacks, side effects, failures,
 tests, compatibility layers, or legacy paths. Keep a hop only when it exposes a

@@ -97,6 +97,7 @@
     "test:adaptive-plan-execution": "vitest run packages/tests/repo/adaptive-agent-execution",
     "test:organizing-repository-structure": "vitest run packages/tests/repo/organizing-repository-structure",
     "test:general-agent-guidance": "vitest run packages/tests/repo/general-agent-guidance",
+    "test:rallar-code-writing": "vitest run packages/tests/repo/rallar-code-writing packages/tests/repo/repo-code-style-authority-integrity.test.ts packages/tests/repo/repo-code-style-review-evidence-integrity.test.ts",
     "check:adaptive-agent-evaluation": "node .agents/evaluations/adaptive-agent-execution/v1/validate-result.mjs",
     "check:repo-structure": "node scripts/repo-structure-check.mjs",
     "test:repo-structure": "vitest run packages/tests/repo/repo-structure-check",

@@ -14,8 +14,8 @@ modify most directly.
 
 A mechanically compliant change is not acceptable when it adds indirection,
 hides a decision, fragments one dataflow, weakens names, or makes ownership
-less obvious. When a detailed rule conflicts with human understandability,
-stop and explain the conflict instead of satisfying the rule mechanically.
+less obvious. Resolve a detailed-rule tradeoff through the direct
+owner-to-result path and use only the escalation conditions below.
 
 Production code is the primary design artifact; tests are secondary evidence.
 Tests protect independently stated observable behavior, public contracts, safety
@@ -33,6 +33,24 @@ coding standard; local guidance may tighten it but may not relax it.
 
 TypeScript changes must also follow every TypeScript-specific rule in
 `references/repo-code-style.md`.
+
+## Maintenance stewardship
+
+Use touched-file standards closure for every change. Implement the requested
+behavior while resolving pre-existing and new noncompliance throughout each
+touched file. When remediation changes a support file, that file enters the
+closure recursively. Independent untouched code remains outside the closure;
+do not turn propagation into repository-wide cleanup. Checker tolerance is not
+authority to retain touched-file noncompliance and does not define touched-file
+standards closure.
+
+Escalate only for a genuine exception for a remaining real standards violation,
+a public compatibility or migration decision, an unresolved correctness or
+safety conflict, or a failed post-consolidation navigation probe. Do not
+escalate for pre-existing debt, deadline pressure, diff size, cleanup volume,
+ownership recovery, package boundaries, substantial remediation, or
+reprioritization alone. Do not request permission merely to leave old findings
+in a touched file.
 
 **REQUIRED SUB-SKILL:** Use `organizing-repository-structure` for repository shape decisions.
 
@@ -179,11 +197,11 @@ skipped commands in the completion handoff. For written or multi-slice work,
 decisions.
 
 For every construction-detail warning in changed production code, record its
-path, rule, and symbol plus one human disposition: fixed, demonstrated false
-positive, or accepted existing debt with no new/worsened magnitude and an
-owner. The review rule is that silence or a warning-only exit code is not a
-disposition. This review does not make every optional warning globally
-blocking.
+path, rule, and symbol plus one human disposition: resolved throughout the
+touched file or demonstrated false positive. The review rule is that silence or
+a warning-only exit code is not a disposition. This review does not make every
+optional warning globally blocking; touched-file standards closure remains the
+completion rule.
 
 ## Affected Production Legacy
 

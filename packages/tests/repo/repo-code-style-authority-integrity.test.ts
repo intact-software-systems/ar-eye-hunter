@@ -65,7 +65,7 @@ describe('repo code style authority integrity', () => {
     ]);
     expectAllNormalized(canonicalStyle, [
       'Unapproved production legacy may exist only while an active plan explicitly owns its disposition',
-      'Unrelated, untouched repository legacy is outside the completion gate',
+      'Independent untouched code remains outside the closure',
       '`removed`, `minimized-boundary`, `resolved`, or `retained-pending-human-approval`',
     ]);
   });

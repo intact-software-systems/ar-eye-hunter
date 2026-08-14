@@ -24,7 +24,7 @@ describe('repo code style review evidence integrity', () => {
         'construction-warning disposition',
         'path, rule, and symbol',
         'demonstrated false positive',
-        'accepted existing debt with no new/worsened magnitude and an owner',
+        'resolved throughout the touched file',
         'silence or a warning-only exit code is not a disposition',
       ]);
     }
