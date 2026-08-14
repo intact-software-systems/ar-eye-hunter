@@ -112,12 +112,12 @@ Record v2 binds closure evidence to the reviewed candidate tree.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The shared evaluation protocol ownership is explicit, every keep judgment has a reopening condition, the inherited governance blocker is normalized, and fresh review passes with no findings.",
-    "learning": "Draft-first publication preserves one review surface while allowing exact remote checks and final evidence to mature before plan closure and ready-for-review transition.",
-    "structure": "Canonical guidance, evaluation, and PR-review owners remain unchanged; the adaptive evaluator is the thin shared protocol owner and specialist suites remain schema and artifact consumers.",
+    "outcome": "PR #221 is published as a draft on a conflict-free branch, its initial Human Review Record v2 validates locally and remotely, and current focused, governance, structure, formatting, changed-style, and behavioral evaluation checks pass.",
+    "learning": "The current default branch carried malformed and stale active-plan metadata; deterministic normalization plus full touched-file formatting restored governance without changing that plan's decisions or product owners.",
+    "structure": "All stewardship capability owners remain canonical, the inherited group-formation plan now declares its cross-owner fact contract and current computed facts, and no runtime or public-contract ownership moved.",
     "decision": "continue",
     "nextSlices": [
-      "publish-validated-maintenance-stewardship"
+      "close-maintenance-stewardship-plan"
     ]
   },
   "structuralDispositions": [
@@ -164,6 +164,11 @@ Record v2 binds closure evidence to the reviewed candidate tree.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "The shared evaluation protocol ownership is explicit, every keep judgment has a reopening condition, the inherited governance blocker is normalized, and fresh review passes with no findings."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "PR #221 is published as a draft on a conflict-free branch, its initial Human Review Record v2 validates locally and remotely, and current focused, governance, structure, formatting, changed-style, and behavioral evaluation checks pass."
     }
   ]
 }
@@ -178,15 +183,15 @@ Record v2 binds closure evidence to the reviewed candidate tree.
 - Refresh plan facts, structure declarations, and navigation evidence, then checkpoint before
   publication.
 
-## Active slice: `publish-validated-maintenance-stewardship`
+## Completed slice: `publish-validated-maintenance-stewardship`
 
 - Publish the validated feature branch and create one draft PR with complete Human Review Record v2
   metadata and exact validation evidence.
+
+## Active slice: `close-maintenance-stewardship-plan`
+
 - Obtain current Branch Release Gate evidence, bind final PR evidence to the unchanged candidate
   tree, and complete the final fresh review.
-
-## Later outcome
-
 - Use the official close command to remove only this tactical plan and create its canonical closure
   receipt, publish that exact-head result, refresh required CI, and mark the PR ready to merge.
 
