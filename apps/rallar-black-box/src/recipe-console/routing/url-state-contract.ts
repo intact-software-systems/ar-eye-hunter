@@ -42,6 +42,7 @@ export const RECIPE_CONSOLE_FAILURE_CATEGORIES = [
     'readiness',
     'barrier',
     'command',
+    'group-assertion',
     'rtc-stream-performance',
     'diagnostic',
     'runtime',

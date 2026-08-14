@@ -28,6 +28,7 @@ export function distributedFailureCategoryTone(
     if (
         category === 'command' ||
         category === 'diagnostic' ||
+        category === 'group-assertion' ||
         category === RTC_STREAM_PERFORMANCE_CATEGORY
     ) {
         return 'bad';

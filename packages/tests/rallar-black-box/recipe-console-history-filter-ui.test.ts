@@ -82,6 +82,21 @@ describe('Recipe Console History filter presentation', () => {
         });
     });
 
+    it('offers and applies the group-assertion failure category', async () => {
+        const onApply = vi.fn();
+        await renderFilters({ urlState: BASE_STATE, onApply });
+
+        const categories = labelled<HTMLSelectElement>('Failure category');
+        const offered = [...categories.options].map(option => option.value);
+        expect(offered).toContain('group-assertion');
+
+        await setControlValue(categories, 'group-assertion');
+        await submit(categories.form);
+
+        expect(onApply).toHaveBeenCalledTimes(1);
+        expect(onApply.mock.calls[0][0]).toMatchObject({ failureCategory: 'group-assertion' });
+    });
+
     it('resets the visible draft and emits one full empty replacement patch', async () => {
         const onReset = vi.fn();
         await renderFilters({
