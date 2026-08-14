@@ -149,7 +149,7 @@ single-plan logic before adding new modules.
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "ffc2f9a76a942d8c335d5d621a0e6c498ca42ebb",
+    "diffBase": "8dd96d4517e9f5a33728330f6c3bc9fba77bed6c",
     "affectedCodeDigest": "461f3e737f08d2f1669aa1f8e2b9e6ac4293f08f144485902bf525112ef5fcf5",
     "computedTriggers": [
       "ownership-change",
@@ -158,10 +158,10 @@ single-plan logic before adding new modules.
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The exact-head Branch Release Gate exposed two new function input-contract findings; both private lifecycle functions now accept named input objects, and the 93 plan-adaptation tests plus the changed-style comparison pass.",
-    "learning": "The warning-only repository style command does not substitute for the release gate's base-to-candidate changed-style comparison, so final publication validation must run both contracts.",
-    "structure": "No ownership, navigation, capability boundary, or public lifecycle behavior changed; the correction only makes existing lifecycle dataflow explicit at two private call boundaries.",
-    "decision": "amend",
+    "outcome": "Current main at 8dd96d45 merged cleanly; its D6 product work is now baseline, while the catalog remains one active governance plan and one postponed topology plan with seven available slots.",
+    "learning": "A disjoint main advance must become the selected plan's exact new facts base so already-merged nonadaptive work is baseline rather than unassigned candidate scope.",
+    "structure": "The combined tree introduces no adaptive ownership collision and requires no capability, navigation, policy, or consumer boundary change.",
+    "decision": "continue",
     "nextSlices": []
   },
   "structuralDispositions": [
@@ -226,6 +226,11 @@ single-plan logic before adding new modules.
       "date": "2026-08-14",
       "decision": "amend",
       "summary": "The exact-head Branch Release Gate exposed two new function input-contract findings; both private lifecycle functions now accept named input objects, and the 93 plan-adaptation tests plus the changed-style comparison pass."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "Current main at 8dd96d45 merged cleanly; its D6 product work is now baseline, while the catalog remains one active governance plan and one postponed topology plan with seven available slots."
     }
   ]
 }
