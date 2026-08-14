@@ -378,20 +378,16 @@ warning-only large-chunk reports. No benchmark or accepted capture ran.
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "origin/main",
-    "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-    "computedTriggers": [
-      "folder-change",
-      "ownership-change",
-      "lifecycle-change"
-    ],
+    "diffBase": "45a0234a9690e2dc712f68e79db339c06111b856",
+    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "computedTriggers": [],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The final local unchanged-tree matrix passes after TASK4B-FINDING-016: focused governance 1/1, repository governance 33/407, repository structure 10/126, package 31/281, unit 7,548 with 5 skipped, CI including Deno and Playwright, and all workspace builds. Exact corrected-head review and remote Branch Release Gate remain.",
-    "learning": "The current-main compatibility correction is behavior-preserving: the only failed unit assertion was completed-plan bookkeeping, while all semantic governance, package, RTC lifecycle, browser, and build gates pass after its approved removal.",
-    "structure": "The final evidence update changes only the authoritative Task 4B plan and RTC roadmap record. Existing capability ownership, 24 structural dispositions, three exact navigation declarations, package topology, production code, and benchmark contracts remain unchanged at affected-code digest 856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139.",
-    "decision": "continue",
+    "outcome": "The three singleton findings belonged to the older-base phase-3 structural scan, not to Task 4B current facts; the Task 4B exact-main refresh remains empty.",
+    "learning": "Plan-scoped structure findings must be assigned to the active plan whose comparison base exposes them; copying them into a different plan produces non-matching dispositions.",
+    "structure": "Keep only the three durable Task 4B ownership contracts and no current-fact dispositions on the exact-main empty affected-code digest.",
+    "decision": "amend",
     "nextSlices": []
   },
   "structuralDispositions": [
@@ -412,265 +408,10 @@ warning-only large-chunk reports. No benchmark or accepted capture ran.
       "target": "scripts/plan-adaptation",
       "disposition": "keep",
       "rationale": "Declare the existing plan-adaptation owner because stored repository-structure scenarios execute its exact navigation command during the governance suite. No plan-adaptation source is changed; reopen if Task 4B begins depending on or modifying its lifecycle policy."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/baseline/acceptance",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Acceptance is a real baseline lifecycle boundary for sample failure accounting and accepted artifact persistence; flattening it into baseline would hide first-failure ownership. Reopen when acceptance no longer owns those two coupled protocol concerns."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/baseline/command",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Command owns the baseline CLI entry, exact grammar, and option decoding as one caller boundary; its depth makes command ownership visible beside contracts and runtime. Reopen if another command family appears."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/baseline/contracts",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Contracts owns accepted schemas, decoding, and validation shared by command, runtime, and evidence without owning side effects. Reopen on an unrelated schema family, not physical size."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/baseline/evidence",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Evidence owns confinement, storage, finalization, checksum verification, statistics, and finalized reading for one accepted-evidence lifecycle. Reopen if a second artifact lifecycle gains independent entry and failure ownership."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/baseline/runtime",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Runtime composes adapters, the accepted envelope, and observations behind the command without absorbing schema or storage ownership. Reopen if runtime begins choosing workload policy or another environment adapter family is introduced."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/diagnostics/rtt-group-scan",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "The maintained RTT group-scan comparison is one explicitly non-accepted diagnostic capability, separated from room-graph and traffic diagnostics by measured production call path and output. Reopen when it is removed or another scan owner appears."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "topology.singleton-subtree",
-      "target": "packages/shared-rtc-bench/diagnostics/rtt-group-scan",
-      "identity": "packages/shared-rtc-bench/diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts",
-      "magnitude": 1,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "One executable fully owns the historical-versus-indexed group scan; an artificial sibling would add indirection without a second responsibility. Remove the subtree when the comparison decision disappears, or split only if a distinct scan lifecycle emerges."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/architecture",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Architecture tests own package inventory, navigation, and boundary contracts rather than a workload behavior. Their dedicated folder keeps structural failures separate from benchmark semantics. Reopen when one contract changes owner."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/baseline/acceptance",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Acceptance tests mirror the production baseline/acceptance protocol and directly own first-failure plus persistence assertions. Flattening them would separate tests from their production capability map. Reopen if acceptance production ownership changes."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/baseline/runtime",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Runtime tests mirror the baseline/runtime composition owner and directly prove the confined Deno adapter boundary beside the envelope behavior. Flattening them would detach execution-environment assertions from their production owner; reopen if another runtime family appears."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/topology-delivery",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "This test folder mirrors the standalone topology-delivery diagnostic owner and keeps PostgreSQL policy, statistics, and cleanup proofs outside accepted workload tests. Reopen if delivery becomes accepted evidence or gains a second lifecycle."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "topology.singleton-subtree",
-      "target": "packages/shared-rtc-bench/tests/topology-delivery",
-      "identity": "packages/shared-rtc-bench/tests/topology-delivery/rtc-topology-delivery-log-performance-harness.test.ts",
-      "magnitude": 1,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "The single focused harness coherently proves policy, statistics, and partial-registration cleanup for one standalone delivery command. Splitting assertions would create extra navigation hops without a second test responsibility."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/topology-replay",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "This test folder mirrors the standalone replay operation-count owner, which is intentionally separate from accepted latency evidence and topology delivery. Reopen if replay gains an independent schema or lifecycle test family."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "topology.singleton-subtree",
-      "target": "packages/shared-rtc-bench/tests/topology-replay",
-      "identity": "packages/shared-rtc-bench/tests/topology-replay/rtc-topology-replay-drain-performance-harness.test.ts",
-      "magnitude": 1,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "The one harness owns exact operation counts and started-service cleanup for the one replay diagnostic. An additional file would divide one causal lifecycle; split only when a separately testable replay contract appears."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/workloads/data-channel",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "The mandated data-channel test path mirrors workloads/data-channel and exposes B02 grammar, timing, lifecycle, adversarial, failure, and diagnostic-output assertions under one capability name. Reopen if B02 divides into independently owned protocols."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "topology.singleton-subtree",
-      "target": "packages/shared-rtc-bench/tests/workloads/data-channel",
-      "identity": "packages/shared-rtc-bench/tests/workloads/data-channel/rtc-data-channel-benchmark-lifecycle.test.ts",
-      "magnitude": 1,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Task 4B explicitly requires this one B02 lifecycle owner, and assertion parity shows its cases form one data-channel capability. Creating a sibling solely for topology compliance would weaken navigation; split on a real second lifecycle only."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/workloads/signaling",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "The mandated signaling test path mirrors workloads/signaling and exposes B01 grammar, counters, cleanup, identity, failure persistence, and diagnostic confinement together. Reopen when signaling acquires a separately owned protocol lifecycle."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "topology.singleton-subtree",
-      "target": "packages/shared-rtc-bench/tests/workloads/signaling",
-      "identity": "packages/shared-rtc-bench/tests/workloads/signaling/rtc-signaling-benchmark-lifecycle.test.ts",
-      "magnitude": 1,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Task 4B explicitly requires this one B01 lifecycle owner, and its relocated assertions share signaling setup, cleanup, and failure semantics. An artificial sibling would obscure the capability; split only at a real ownership boundary."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/tests/workloads/topology",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "The mandated topology test path mirrors workloads/topology and exposes B03 graph, repository, inactive-state, adversarial, identity, and diagnostic assertions together. Reopen when one B03 family becomes a distinct accepted capability."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "topology.singleton-subtree",
-      "target": "packages/shared-rtc-bench/tests/workloads/topology",
-      "identity": "packages/shared-rtc-bench/tests/workloads/topology/rtc-topology-benchmark-lifecycle.test.ts",
-      "magnitude": 1,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Task 4B explicitly requires this one B03 lifecycle owner, and parity proves the graph and repository assertions belong to the same topology capability. Split only if a future authorization establishes separate capability ownership."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "topology.singleton-subtree",
-      "target": "packages/shared-rtc-bench/topology-replay",
-      "identity": "packages/shared-rtc-bench/topology-replay/replay-drain-operation-counts.ts",
-      "magnitude": 1,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "One executable coherently owns deterministic replay-drain setup, production service execution, cleanup, operation-count validation, and output. Splitting this single command would fragment its lifecycle; reopen on a second replay command or schema."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/workloads/data-channel",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Data-channel groups the four B02 measurements around the authoritative QRtcDataChannel lifecycle while each executable keeps its timing and validation local. Reopen when a workload stops sharing that production capability."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/workloads/signaling",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Signaling groups the three B01 measurements around QRtcPeerConnection setup, cleanup, and diagnostics while preserving visible per-workload clocks and validators. Reopen on a new signaling authority boundary."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-rtc-bench/workloads/topology",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139",
-      "disposition": "keep",
-      "rationale": "Topology groups the six B03 measurements around production graph and RTT repository operations, with deterministic setup helpers adjacent and operationally inert. Reopen if setup begins owning production decisions or a workload gains independent lifecycle ownership."
     }
   ],
   "freshStructuralReview": null,
-  "coldNavigationEvidence": {
-    "status": "passed",
-    "summary": "Exact generated navigation evidence for the declared shared RTC benchmark package owner resolves the canonical command entry, result owner, failure owner, colocated test root, exact workspace focused command, and README map on affected-code digest 856f11d4a43d6f4f3eff9d9d1df15890ca73b0ac0e5aa88dd3eb59d9abac4139.",
-    "probes": [
-      {
-        "capabilityOwner": "shared RTC benchmark package",
-        "symbol": "runRtcBaselineCli",
-        "path": "packages/shared-rtc-bench/baseline/command/rtc-baseline-cli.ts"
-      },
-      {
-        "capabilityOwner": "shared RTC benchmark package",
-        "symbol": "createRtcBaselineEnvelope",
-        "path": "packages/shared-rtc-bench/baseline/runtime/rtc-baseline-envelope.ts"
-      }
-    ]
-  },
+  "coldNavigationEvidence": null,
   "materialDecisions": [
     {
       "date": "2026-08-13",
@@ -772,6 +513,21 @@ warning-only large-chunk reports. No benchmark or accepted capture ran.
       "date": "2026-08-14",
       "decision": "continue",
       "summary": "The final local unchanged-tree matrix passes after TASK4B-FINDING-016: focused governance 1/1, repository governance 33/407, repository structure 10/126, package 31/281, unit 7,548 with 5 skipped, CI including Deno and Playwright, and all workspace builds. Exact corrected-head review and remote Branch Release Gate remain."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "Task 4B is present on exact main 45a0234a9690e2dc712f68e79db339c06111b856 with its completed feature and validation evidence unchanged; this refresh only rebinds the active plan to the merged repository state."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The exact-main fact refresh is valid; repository structure retains three current singleton-test facts for the mandated B01, B02, and B03 lifecycle owners."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The three singleton findings belonged to the older-base phase-3 structural scan, not to Task 4B current facts; the Task 4B exact-main refresh remains empty."
     }
   ]
 }

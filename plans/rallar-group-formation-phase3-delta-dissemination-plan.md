@@ -67,7 +67,7 @@ Facts that bound the M2 design:
   source silently black-holes event delivery on servers that never served
   a REST read for the group.
 - **A revision-floored resync pull already exists.** `GET
-  /api/state/apps/:app/workspaces/:ws/groups/:groupId` accepts
+/api/state/apps/:app/workspaces/:ws/groups/:groupId` accepts
   `minGroupRevision` + `minPresenceRevision`
   (`state-snapshot-read-query.ts:33-51`), answers
   `409 state-revision-floor-not-satisfied` when unmet, stamps
@@ -101,18 +101,18 @@ Complete inventory of consumers of per-change `group-state.snapshot`
 broadcasts (every entry must have a delta-mode or pull replacement before
 snapshot-per-change can be dropped):
 
-| # | Consumer | Site | Dependency | Delta-mode disposition |
-| --- | --- | --- | --- | --- |
-| 1 | Cache write arm | `data-caches.ts:135-151` (single catch-all inbox switch; `group-directory.snapshot` arm `:152-168` is a byte-identical duplicate feeding the same cache) | writes group snapshot cache via revision decide | delta arm writes the same cache through the same decide |
-| 2 | Readiness engine | snapshot write → `onGroupStateSnapshotChange` (`data-caches.ts:319-345`) → `notifyStateCacheChange` → `onStateCacheChange` | `waitForPresence` (`rooms/room-presence.ts:52-141`), room state store, RTC room readiness (`rallar-runtime/realtime.ts:811-826`) re-evaluate only on cache change | preserved automatically iff deltas produce cache writes |
-| 3 | Bootstrap overlay restamping + RTC group sync | same observer → `acceptGroupSnapshotUpdate` (`group-snapshot-rtc-sync.ts:41-67`) | `createAndSetBootstrapOverlays` + `webRtcGroupManager.acceptGroupUpdate` | preserved iff deltas produce cache writes |
-| 4 | Heartbeat target selection | `heartbeat.ts:104-111` reads `getAllGroupStateSnapshots()` | groups absent from cache stop heartbeating | preserved iff cache entries stay fresh (60 s TTL, `browser-cache-repositories.ts:8-20`; heartbeat itself refreshes full snapshots every 20 s, `heartbeat.ts:99-148`) |
-| 5 | Server delivery-audience resolution | `ws-server-target-resolver.ts:23-45` + process cache refresh (`ws-system-topics.ts:157-171`) | snapshot payload is the self-healing audience source | delta rows must carry a persisted immutable computed audience (doctrine-blessed) — see D2 |
-| 6 | `rooms.onEvent` user events | `state-events.ts:196-238` → `room-events.ts:159-176` | consumes `group-state.event` (dedupe by eventId, no cache writes) | unaffected; delta envelope must keep the `GroupEvent` shape it validates |
-| 7 | Black-box recipes waiting on snapshot broadcasts | exactly two (repo-exhaustive): `api-v1-cross-application-ws-isolation.json:461-538` (ws.wait on `group-state.snapshot` frames + a negative cross-scope wait; memory + postgres profiles) and `api-v1-rtc-topology-convergence.json:622-690` (waits on both revision snapshots on two servers and asserts on snapshot **payload contents**; cluster profile). No recipe references `group-state.event`. | ws.wait steps on `group-state.snapshot` | dual-emit keeps both green; `delta-primary` tier runs need delta-mode recipe variants, including a delta-mode cross-scope isolation negative |
-| 8 | Tests pinning "events are ignored" | `data-caches.test.ts:383,794` | encode the current snapshot-primary contract | rewritten with the delta arm |
-| 9 | Server RTT group-resolution fallback | `topology/rtt/init-rtc-rtt-topic.ts:130` (`findGroupStateSnapshotsBySessionIds`) | reads the server process cache the snapshot topics' `onState` handlers refresh | M2 must keep server process caches truthful under delta-primary: a delta `onState` apply, post-commit observation on the mutating server, or a verified durable fallback (initial-review finding 4) |
-| 10 | Shared-graph group creation | `packages/shared-graph/group-graphs-create-service.ts:40` | same server process cache | same disposition as #9 |
+| #   | Consumer                                         | Site                                                                                                                                                                                                                                                                                                                                                                                                   | Dependency                                                                                                                                                        | Delta-mode disposition                                                                                                                                                                              |
+| --- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Cache write arm                                  | `data-caches.ts:135-151` (single catch-all inbox switch; `group-directory.snapshot` arm `:152-168` is a byte-identical duplicate feeding the same cache)                                                                                                                                                                                                                                               | writes group snapshot cache via revision decide                                                                                                                   | delta arm writes the same cache through the same decide                                                                                                                                             |
+| 2   | Readiness engine                                 | snapshot write → `onGroupStateSnapshotChange` (`data-caches.ts:319-345`) → `notifyStateCacheChange` → `onStateCacheChange`                                                                                                                                                                                                                                                                             | `waitForPresence` (`rooms/room-presence.ts:52-141`), room state store, RTC room readiness (`rallar-runtime/realtime.ts:811-826`) re-evaluate only on cache change | preserved automatically iff deltas produce cache writes                                                                                                                                             |
+| 3   | Bootstrap overlay restamping + RTC group sync    | same observer → `acceptGroupSnapshotUpdate` (`group-snapshot-rtc-sync.ts:41-67`)                                                                                                                                                                                                                                                                                                                       | `createAndSetBootstrapOverlays` + `webRtcGroupManager.acceptGroupUpdate`                                                                                          | preserved iff deltas produce cache writes                                                                                                                                                           |
+| 4   | Heartbeat target selection                       | `heartbeat.ts:104-111` reads `getAllGroupStateSnapshots()`                                                                                                                                                                                                                                                                                                                                             | groups absent from cache stop heartbeating                                                                                                                        | preserved iff cache entries stay fresh (60 s TTL, `browser-cache-repositories.ts:8-20`; heartbeat itself refreshes full snapshots every 20 s, `heartbeat.ts:99-148`)                                |
+| 5   | Server delivery-audience resolution              | `ws-server-target-resolver.ts:23-45` + process cache refresh (`ws-system-topics.ts:157-171`)                                                                                                                                                                                                                                                                                                           | snapshot payload is the self-healing audience source                                                                                                              | delta rows must carry a persisted immutable computed audience (doctrine-blessed) — see D2                                                                                                           |
+| 6   | `rooms.onEvent` user events                      | `state-events.ts:196-238` → `room-events.ts:159-176`                                                                                                                                                                                                                                                                                                                                                   | consumes `group-state.event` (dedupe by eventId, no cache writes)                                                                                                 | unaffected; delta envelope must keep the `GroupEvent` shape it validates                                                                                                                            |
+| 7   | Black-box recipes waiting on snapshot broadcasts | exactly two (repo-exhaustive): `api-v1-cross-application-ws-isolation.json:461-538` (ws.wait on `group-state.snapshot` frames + a negative cross-scope wait; memory + postgres profiles) and `api-v1-rtc-topology-convergence.json:622-690` (waits on both revision snapshots on two servers and asserts on snapshot **payload contents**; cluster profile). No recipe references `group-state.event`. | ws.wait steps on `group-state.snapshot`                                                                                                                           | dual-emit keeps both green; `delta-primary` tier runs need delta-mode recipe variants, including a delta-mode cross-scope isolation negative                                                        |
+| 8   | Tests pinning "events are ignored"               | `data-caches.test.ts:383,794`                                                                                                                                                                                                                                                                                                                                                                          | encode the current snapshot-primary contract                                                                                                                      | rewritten with the delta arm                                                                                                                                                                        |
+| 9   | Server RTT group-resolution fallback             | `topology/rtt/init-rtc-rtt-topic.ts:130` (`findGroupStateSnapshotsBySessionIds`)                                                                                                                                                                                                                                                                                                                       | reads the server process cache the snapshot topics' `onState` handlers refresh                                                                                    | M2 must keep server process caches truthful under delta-primary: a delta `onState` apply, post-commit observation on the mutating server, or a verified durable fallback (initial-review finding 4) |
+| 10  | Shared-graph group creation                      | `packages/shared-graph/group-graphs-create-service.ts:40`                                                                                                                                                                                                                                                                                                                                              | same server process cache                                                                                                                                         | same disposition as #9                                                                                                                                                                              |
 
 Additional discovered coupling: PR #152's equal-tuple decide
 (`group-state-snapshot-revision.ts:35-41`) treats lease-insensitive-equal
@@ -132,7 +132,7 @@ only `incomparable` escalates (full-collection reread,
 ### Overlay read-through shapes (M12)
 
 - `readStateGroupTopology` (`api-integration.ts:798-810`) calls `GET
-  .../groups/:groupId/topology` (`graph-topology-routes.ts:136`), returns
+.../groups/:groupId/topology` (`graph-topology-routes.ts:136`), returns
   `GroupTopologyManagementView` — **zero production callers** (verified).
 - Adoption path with identical precedence: `toOverlayInfoForSession`
   (stamps `provenance: 'server'`) →
@@ -160,15 +160,15 @@ only `incomparable` escalates (full-collection reread,
 ### Issues #156 and #159 interaction
 
 - **#156 (open):** the durable topology replay proof (standalone workflow
-  + release-gate step) runs pinned to `RALLAR_GROUP_FORMATION_DAMPING:
-  legacy` and correlates on **topology publication** message ids. Phase 3
-  changes group-state row emission, not the damping flag or topology
-  publication identity; the proof's drivers (description/member-role
-  mutations) also do not depend on `group-state.snapshot` rows. Phase 3
-  therefore neither fixes nor further pins #156; the new dissemination
-  flag must leave the `legacy` damping mode's emission exactly as today so
-  the pinned proof keeps its contract. Any M2 flag interaction with the
-  proof workflows is re-checked at the M2 slice.
+  - release-gate step) runs pinned to `RALLAR_GROUP_FORMATION_DAMPING:
+legacy` and correlates on **topology publication** message ids. Phase 3
+    changes group-state row emission, not the damping flag or topology
+    publication identity; the proof's drivers (description/member-role
+    mutations) also do not depend on `group-state.snapshot` rows. Phase 3
+    therefore neither fixes nor further pins #156; the new dissemination
+    flag must leave the `legacy` damping mode's emission exactly as today so
+    the pinned proof keeps its contract. Any M2 flag interaction with the
+    proof workflows is re-checked at the M2 slice.
 - **#159 (closed):** the churn-read race (single-attempt final read vs
   async presence-summary freshness) was fixed by giving shared-group final
   reads convergence-floor treatment. M12's read-through and M2's pulls
@@ -338,7 +338,7 @@ rather than duplicates):
   per-namespace keyed cache — not introducing a parallel token-bucket
   implementation.
 - `maxMembers` already exists end-to-end: `Group.maxMembers:
-  number | null` (`group-types.ts:59`), enforced by
+number | null` (`group-types.ts:59`), enforced by
   `wouldExceedMemberCap` (`group-policy.ts:506-516`) in `canJoinGroup`
   / `canActivateGroupMember` / presence admission, surfacing as the
   typed `group-full` denial (403). Today `null` means uncapped.
@@ -487,6 +487,7 @@ adaptive horizon rule.
         "apps/api-v1/src/group-state/to-group-state-command.ts",
         "apps/api-v1/src/group-state/to-group-state-response.ts",
         "apps/api-v1/src/middleware.ts",
+        "packages/shared/api/group-state-delta.ts",
         "packages/shared/queuebox/DequeueResourceEntryController.ts",
         "packages/shared/services/QueueMessageReader.ts"
       ],
@@ -555,32 +556,18 @@ adaptive horizon rule.
       ]
     }
   ],
-  "completedSlicesSinceCheckpoint": [
-    "delta-primary-tier-measurement"
-  ],
+  "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "origin/main",
-    "affectedCodeDigest": "594fca018a9da8418b4da730557d3f1c2772a06019bc288fbb2747e671d2f0b4",
-    "computedTriggers": [
-      "folder-change",
-      "ownership-change",
-      "public-contract-change",
-      "scope-growth"
-    ],
-    "undeclaredChangedPaths": [
-      "plans/rallar-group-topology-evidence-ledger-plan.md",
-      "plans/repo-human-traceability-program-execution-plan.md",
-      "plans/repo-human-traceability-refactoring-program-plan.md",
-      "packages/tests/rallar-black-box-headless/headless-bundle-boundary.test.ts",
-      "plans/rallar-group-topology-evidence-ledger-plan.md",
-      "scripts/perf/api-v1-state-write-concurrency-bench.ts"
-    ]
+    "diffBase": "45a0234a9690e2dc712f68e79db339c06111b856",
+    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "computedTriggers": [],
+    "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The M2 browser consumption and M13 admission slices landed together green: envelopes are decoded and applied under the recorded causal-gap contract with the divergence oracle counting conflicts, rooms.onEvent unwraps envelopes, the admission recipe drove real 429s with Retry-After on its first live run inside the 22/22 memory suite, the full unit suite is 7347 passing with the single external two-plan failure, and full-stack memory is 7/7.",
-    "learning": "Both implementation agents mis-attributed a seven-test regression as pre-existing because they verified only against branch HEAD; bisecting against origin/main proved the slice-1 encode+sendEncoded refactor had orphaned two mis-contracted socket fakes, repaired as obsolete coupled tests with the family back to 33/33 — cross-agent attribution must always reach the true base. The evidence-ledger plan on main keeps the one-active-plan collision in the navigation-evidence test and the governance gate; every local battery now carries exactly that one known failure until the ledger closes on main.",
-    "structure": "Owners unchanged; the browser delta application landed inside the state-cache subfeature and the admission limiter beside the existing api-v1 service owners; no moves or new folders beyond the two files their features own.",
-    "decision": "continue",
+    "outcome": "The phase-3 repair remains compatible with exact main 45a0234a9690e2dc712f68e79db339c06111b856; the intervening RTC benchmark merge changes no declared phase-3 capability and the current facts remain empty.",
+    "learning": "An unrelated main advance can expose structural findings through an older plan comparison base even when it does not change that plan's capability; refresh the plan to the exact compatible main before validating the catalog.",
+    "structure": "Keep the phase-3 capability declarations, predecessor consolidation, and convergence-and-perf-gates horizon unchanged; bind the record to exact current main with no current structural facts.",
+    "decision": "amend",
     "nextSlices": [
       "convergence-and-perf-gates"
     ]
@@ -593,156 +580,6 @@ adaptive horizon rule.
       "destination": "packages/shared-server/rallar-system/formation-metrics.ts",
       "owner": "group-state dissemination server",
       "rationale": "The formation-metrics directory held exactly one code file; materially touching it for the egress-byte counters triggered the singleton-subtree rule, and consolidating the recorder up beside the other flat rallar-system feature modules removes the one-file folder without changing any behavior or export symbol."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.directory-density",
-      "target": "packages/shared-server/rallar-system",
-      "identity": null,
-      "magnitude": 21,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "Pre-existing flat feature-module layout surfaced by touching single files in place; phase 3 adds one consolidated module and reorganizing this directory is outside the delta-dissemination outcome."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system",
-      "identity": "rtc",
-      "magnitude": 7,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system",
-      "identity": "state",
-      "magnitude": 4,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.directory-density",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": null,
-      "magnitude": 74,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "Pre-existing flat feature-module layout surfaced by touching single files in place; phase 3 adds one consolidated module and reorganizing this directory is outside the delta-dissemination outcome."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": "auth",
-      "magnitude": 4,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": "client",
-      "magnitude": 8,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": "crdt",
-      "magnitude": 17,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": "group",
-      "magnitude": 8,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": "inbox",
-      "magnitude": 12,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "layout.feature-prefix-cluster",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": "rtc",
-      "magnitude": 10,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "The prefix names a real subsystem family whose canonical owner directories already exist; renaming or refoldering the family is repository-structure work outside this plan."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-server/rallar-system/group-state",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-server/rallar-system/group-state/inbox",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-server/rallar-system/group-state/presence",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-server/rallar-system/rtc-topology/inbox",
-      "identity": null,
-      "magnitude": 3,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
-    },
-    {
-      "kind": "current-fact",
-      "ruleId": "structure.semantic-depth",
-      "target": "packages/shared-server/rallar-system/services",
-      "identity": null,
-      "magnitude": 2,
-      "affectedCodeDigest": "048d4758af28f5108597320bff8221c1ea7de3629269b72d64d742b94b3e5508",
-      "disposition": "keep",
-      "rationale": "Canonical feature or subfeature directory established by the group-state and topology structure plans; the depth names a real boundary (inbox, presence, compatibility services) and phase 3 edits files in place."
     }
   ],
   "freshStructuralReview": null,
@@ -762,6 +599,36 @@ adaptive horizon rule.
       "date": "2026-08-13",
       "decision": "continue",
       "summary": "The M2 browser consumption and M13 admission slices landed together green: envelopes are decoded and applied under the recorded causal-gap contract with the divergence oracle counting conflicts, rooms.onEvent unwraps envelopes, the admission recipe drove real 429s with Retry-After on its first live run inside the 22/22 memory suite, the full unit suite is 7347 passing with the single external two-plan failure, and full-stack memory is 7/7."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "PR #214's completed phase-3 horizon is present on exact main 102c24b274390da213fd9e28dcecd12a32e4fc07; this checkpoint refresh only restores parseable current plan facts, static plan navigation, and accurate governance-budget ownership without changing phase-3 product behavior."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The refreshed phase-3 plan remains valid; repository navigation exposed one missing cross-owner declaration for the shared delta contract already linked by the server group-state README."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The 15 existing phase-3 structural dispositions remain valid after the exact-main fact refresh; only their stored affected-code fingerprint was stale."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The exact-main refresh has no affected code, so the 15 prior current-fact dispositions no longer match any plan-scoped structural finding; the completed predecessor-path consolidation remains historical plan evidence."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "Main advanced to 5f7791bf044b17a42fe4808820d6b93e7d573483 with the one-comma parse repair; that exact change is compatible, while the current-fact, navigation, and governance-budget repairs remain necessary."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "amend",
+      "summary": "The phase-3 repair remains compatible with exact main 45a0234a9690e2dc712f68e79db339c06111b856; the intervening RTC benchmark merge changes no declared phase-3 capability and the current facts remain empty."
     }
   ]
 }
