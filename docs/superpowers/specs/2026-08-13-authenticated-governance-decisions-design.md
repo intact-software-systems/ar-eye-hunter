@@ -57,7 +57,10 @@ append-only; revocation is a new decision.
 Plan dispositions never synthesize a normal `plan-adaptation-closure-v1` receipt. Cancellation
 records `not-achieved`, forced completion records `admin-attested`, supersession records
 `transferred`, and quarantine records `unknown`. Plan adaptation recognizes the governance receipt
-as a distinct authenticated transition while preserving normal closure behavior.
+as a distinct authenticated transition while preserving normal closure behavior. Repair changes
+only the target plan; cancellation, completion, and quarantine delete only the target; supersession
+replaces only its predecessor with its successor. No plan operation writes a shared registry or
+tracked overview, and other active or postponed plans remain untouched.
 
 Gate deviations preserve the failed underlying evidence and expose `accepted-deviation` as a
 separate governance result. Exception approvals bind to an exact selector, candidate head, and
@@ -72,7 +75,9 @@ Each exception consumer owns its canonical candidate projection:
   candidate head.
 
 The governance-decisions capability canonicalizes and fingerprints those fixed projections and
-resolves applicable/revoked receipts. Each checker retains its domain policy and existing registry.
+resolves applicable/revoked receipts. Its historical exception/gate index deliberately ignores
+plan-disposition receipts, which remain owned by plan-transition authentication. Each checker
+retains its domain policy and existing registry.
 A valid registry entry or a currently applicable receipt may authorize the exact candidate; a
 receipt never masks malformed unrelated registry data. Revoke targets one prior approval decision
 ID. Receipt-path collision always fails, even when the bytes match; callers create a new request

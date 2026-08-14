@@ -6,9 +6,12 @@ import {
   replaceAdaptivePlanRecord,
   validateAdaptivePlanRecord,
 } from '../plan-adaptation/adaptive-plan-record.mjs';
-import { toActivePlanRegistry } from '../plan-adaptation/active-plan-registry.mjs';
+import { readAdaptivePlanCatalogFromEntries } from '../plan-adaptation/adaptive-plan-catalog.mjs';
 import { validateCheckpoint } from '../plan-adaptation/adaptive-plan-policy.mjs';
-import { computePlanFactsFromTree } from '../plan-adaptation/plan-change-facts.mjs';
+import {
+  computePlanFactsFromTree,
+  selectPlanChanges,
+} from '../plan-adaptation/plan-change-facts.mjs';
 import { computeSha256 } from './canonical-json.mjs';
 import {
   computeGovernanceDecisionId,
@@ -244,8 +247,6 @@ function computePlanRepair(operationInput) {
     operationInput.request.target.planPath,
     toEntry(operationInput.request.target.planPath, repairedMarkdown),
   );
-  const registry = computeRegistry(candidateEntries, false, operationInput.request.target.planPath);
-  candidateEntries.set('plans/README.md', toEntry('plans/README.md', registry));
   return {
     candidateEntries,
     result: { acceptanceStatus: 'repaired' },
@@ -260,8 +261,6 @@ function computePlanRemoval(operationInput, acceptanceStatus, tolerateInvalidPla
   }
   const candidateEntries = cloneEntries(operationInput.entriesByPath);
   candidateEntries.delete(operationInput.request.target.planPath);
-  const registry = computeRegistry(candidateEntries, tolerateInvalidPlans);
-  candidateEntries.set('plans/README.md', toEntry('plans/README.md', registry));
   return {
     candidateEntries,
     result: { acceptanceStatus },
@@ -293,6 +292,9 @@ function computePlanSupersession(operationInput) {
     ...validateAdaptivePlanRecord(successorRecord),
     ...validateCheckpoint(successorRecord.checkpoint, successorRecord),
   ];
+  if (successorRecord.status !== 'active') {
+    successorIssues.push('successor plan must be active');
+  }
   if (successorIssues.length > 0) {
     throw new Error(`successor plan is invalid:\n${successorIssues.join('\n')}`);
   }
@@ -301,10 +303,6 @@ function computePlanSupersession(operationInput) {
   candidateEntries.set(
     operationInput.request.payload.successorPlanPath,
     toEntry(operationInput.request.payload.successorPlanPath, successorMarkdown),
-  );
-  candidateEntries.set(
-    'plans/README.md',
-    toEntry('plans/README.md', computeRegistry(candidateEntries, false)),
   );
   return {
     candidateEntries,
@@ -322,9 +320,11 @@ function readGovernedPlan(operationInput) {
     record.version !== 1 ||
     typeof record.planId !== 'string' ||
     !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(record.planId) ||
-    record.status !== 'active'
+    !['active', 'postponed'].includes(record.status)
   ) {
-    throw new Error('target plan must have valid immutable schema identity and active status');
+    throw new Error(
+      'target plan must have valid immutable schema identity and active or postponed status',
+    );
   }
   const schemaIssues = validateAdaptivePlanRecord(record);
   if (schemaIssues.length > 0) {
@@ -338,34 +338,6 @@ function readGovernedPlan(operationInput) {
       .map((issue) => `existing checkpoint: ${issue}`)
       .sort(compareText),
   };
-}
-
-function computeRegistry(entriesByPath, tolerateInvalidPlans, governedBypassPath) {
-  const activePlans = [];
-  for (const entry of entriesByPath.values()) {
-    if (
-      !/^plans\/[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u.test(entry.path) ||
-      !entry.content.includes('```plan-adaptation-v1')
-    ) {
-      continue;
-    }
-    try {
-      const record = parseAdaptivePlanRecord(entry.content, entry.path);
-      const issues = validateAdaptivePlanRecord(record);
-      if (issues.length > 0 && entry.path !== governedBypassPath) {
-        throw new Error(issues.join('\n'));
-      }
-      if (record.status === 'active') {
-        activePlans.push({ planPath: entry.path, record });
-      }
-    } catch (error) {
-      if (!tolerateInvalidPlans) {
-        throw error;
-      }
-    }
-  }
-  activePlans.sort((left, right) => compareText(left.record.planId, right.record.planId));
-  return toActivePlanRegistry(activePlans);
 }
 
 function toTransition(transitionInput) {
@@ -493,11 +465,16 @@ function computeFactsFromSnapshotReader(operationInput, factInput) {
     candidateEntries: factInput.entries,
     candidatePaths: [factInput.planPath],
   });
+  const catalog = readAdaptivePlanCatalogFromEntries(factInput.entries);
   return computePlanFactsFromTree({
     baseOid,
     baseEntries: baseSnapshot.entries,
     entries: factInput.entries,
-    changes: candidateChanges,
+    changes: selectPlanChanges({
+      changes: candidateChanges,
+      catalog,
+      planPath: factInput.planPath,
+    }),
     record: factInput.record,
     planPath: factInput.planPath,
   });

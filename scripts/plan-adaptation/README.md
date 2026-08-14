@@ -9,8 +9,8 @@
   },
   "results": [
     {
-      "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-      "symbol": "writePlanAndRegistry"
+      "path": "scripts/plan-adaptation/adaptive-plan-catalog.mjs",
+      "symbol": "readAdaptivePlanCatalog"
     },
     {
       "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
@@ -35,7 +35,7 @@
 ```
 
 [scripts/plan-adaptation.mjs#runCommand](../plan-adaptation.mjs#runCommand) is the only command
-entry. It decodes six commands and routes each to its lifecycle owner:
+entry. It routes catalog and plan-scoped lifecycle commands to their direct owners:
 
 - `init` refreshes facts through
   [plan-adaptation-lifecycle.mjs#initAdaptivePlan](./plan-adaptation-lifecycle.mjs#initAdaptivePlan).
@@ -48,8 +48,12 @@ entry. It decodes six commands and routes each to its lifecycle owner:
 - `check` is read-only and exits through
   [plan-adaptation-lifecycle.mjs#checkAdaptivePlans](./plan-adaptation-lifecycle.mjs#checkAdaptivePlans).
 - `close` validates final PR evidence and the exact comparison-base plan, atomically writes a
-  durable receipt while removing the tactical plan and registry entry, and exits through
+  durable receipt while removing only the tactical plan, and exits through
   [plan-adaptation-lifecycle.mjs#closeAdaptivePlan](./plan-adaptation-lifecycle.mjs#closeAdaptivePlan).
+- `overview` writes the ignored live catalog view through
+  [adaptive-plan-catalog.mjs#writeAdaptivePlanOverview](./adaptive-plan-catalog.mjs#writeAdaptivePlanOverview).
+- `postpone` frees capacity without requiring fresh facts, while `resume` validates capacity and
+  mutable ownership before refreshing the target plan.
 
 - [adaptive-plan-record.mjs#parseAdaptivePlanRecord](./adaptive-plan-record.mjs#parseAdaptivePlanRecord)
   owns the single fenced JSON record, canonical replacement, non-capability record validation, and
@@ -62,24 +66,25 @@ entry. It decodes six commands and routes each to its lifecycle owner:
   digests.
 - [adaptive-plan-policy.mjs#validateCheckpoint](./adaptive-plan-policy.mjs#validateCheckpoint) owns
   the five checkpoint judgments, two-slice horizon, and bounded consolidation rules.
-- [active-plan-registry.mjs#readActivePlans](./active-plan-registry.mjs#readActivePlans) reads active
-  records and generates `plans/README.md`.
+- [adaptive-plan-catalog.mjs#readAdaptivePlanCatalog](./adaptive-plan-catalog.mjs#readAdaptivePlanCatalog)
+  validates `plans/policy.json`, separates active and postponed plans, and detects capacity and
+  mutable-ownership conflicts. `plans/README.md` remains static.
 - [file-transaction.mjs#writeFileTransaction](./file-transaction.mjs#writeFileTransaction) stages
   same-directory replacements and rolls back multi-file lifecycle changes when any replacement
   fails.
 - [plan-closure-receipt.mjs#createPlanClosureReceipt](./plan-closure-receipt.mjs#createPlanClosureReceipt)
   translates the validated close input into the canonical data-only receipt.
   [plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges](./plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges)
-  verifies the base plan, generated base registry, receipt identity, and complete current-tree
-  transition, and returns the exact authenticated base plan for read-only close-out consumers before
-  qualification ignores the authenticated plan deletion.
+  verifies the base plan, receipt identity, and complete current-tree transition, and returns the
+  exact authenticated base plan for read-only close-out consumers before qualification ignores the
+  authenticated plan deletion.
 - [plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges](./plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges)
   composes unchanged closure-v1 authentication with receipt-backed plan dispositions. Governance
   receipts are replayed structurally from their exact parent commit; historical trusted receipts
   require no current actor-permission lookup.
-- [plan-adaptation-lifecycle.mjs#writePlanAndRegistry](./plan-adaptation-lifecycle.mjs#writePlanAndRegistry)
-  is the common mutation exit for `init`, `complete-slice`, and `apply`. Destructive close calls
-  `writeFileTransaction` directly after its separate final-evidence, comparison-base, registry,
+- [plan-adaptation-lifecycle.mjs#writePlan](./plan-adaptation-lifecycle.mjs#writePlan) is the common
+  mutation exit for `init`, `complete-slice`, `apply`, `postpone`, and `resume`. Destructive close
+  calls `writeFileTransaction` directly after its separate final-evidence, comparison-base,
   receipt, and target validation.
 
 The mirrored semantic tests are under `packages/tests/repo/plan-adaptation/` and run through

@@ -20,7 +20,7 @@ stay outcome-shaped until a checkpoint earns their activation.
 1. Qualify the work. An adaptive plan is required for a written plan,
    directory creation or movement, three or more added/moved production
    modules, package or capability crossings, or public ownership changes. Run
-   `npm run plan:adapt -- init --plan <plan-path>` when no active record exists.
+   `npm run plan:adapt -- init --plan <plan-path>` when the work has no owning active record.
    Keep one canonical `plan-adaptation-v1` block with the goal, acceptance,
    affected capability roots, canonical entries, test roots, navigation maps,
    and at most two slices. A fresh agent reviews the initial capability-tree
@@ -28,8 +28,8 @@ stay outcome-shaped until a checkpoint earns their activation.
 2. Execute one slice. A slice is an independently testable capability increment
    or structural consolidation, not a task, commit, or file batch. Run focused
    checks, then
-   `npm run plan:adapt -- complete-slice --slice <slice-name>`.
-3. Reflect when facts require it. Run `npm run plan:adapt -- prepare` after an
+   `npm run plan:adapt -- complete-slice --plan <plan-path> --slice <slice-name>`.
+3. Reflect when facts require it. Run `npm run plan:adapt -- prepare --plan <plan-path>` after an
    ownership, folder, public-surface, lifecycle, or navigation change; an
    invalid assumption; scope growth; or two completed slices. It writes the
    ignored draft containing computed triggers, undeclared paths, and the
@@ -37,20 +37,26 @@ stay outcome-shaped until a checkpoint earns their activation.
    checkpoint trigger.
 4. Write exactly five judgments in the draft: `outcome`, `learning`,
    `structure`, `decision`, and `nextSlices`. Then run
-   `npm run plan:adapt -- apply`. Choose `continue`, `amend`, `consolidate`, or
+   `npm run plan:adapt -- apply --plan <plan-path>`. Choose `continue`, `amend`, `consolidate`, or
    `stop`; the next horizon remains at most two slices.
-5. Run `npm run plan:adapt -- check` for read-only validation. After the final
+5. Run `npm run plan:adapt -- check` for read-only validation of every active plan. After the final
    fresh review and PR evidence, run `npm run plan:adapt -- close` to remove the
-   tactical plan and registry entry:
-   `npm run plan:adapt -- close --final-pr-evidence <pull-request-evidence>`.
+   target tactical plan:
+   `npm run plan:adapt -- close --plan <plan-path> --final-pr-evidence <pull-request-evidence>`.
+6. Use `npm run plan:adapt -- overview` for the ignored live catalog view. When work must release
+   capacity or mutable ownership, use
+   `npm run plan:adapt -- postpone --plan <plan-path> --reason <reason>`; use
+   `npm run plan:adapt -- resume --plan <plan-path> --reason <reason>` only after capacity and
+   ownership are valid. Supply `--plan` whenever more than one eligible record exists.
 
 When an administrator explicitly chooses one of the fixed authenticated
 governance operations, use `governance:decide`; preview is optional. An AI must
 show the exact canonical request and expected main head and obtain one
 just-in-time approval before `apply`. A changed request or head invalidates the
 approval. Never hand-write a receipt, directly edit/delete a plan, fabricate
-completion or review evidence, or alter the generated active-plan registry as
-a substitute.
+completion or review evidence, or alter plan status or an overview by hand as
+a substitute. Do not construct a tracked overview; `plans/README.md` is static navigation and the
+live overview belongs only in ignored `.plan-adaptation/overview.md`.
 
 ## Decision and validation judgment
 
@@ -82,7 +88,7 @@ Only the last automatically amends the plan.
 ## Automation boundary and red flags
 
 The commands own qualification facts, triggers, digests, undeclared paths,
-horizon counts, serialization, and registry state. The agent owns the five
+horizon counts, catalog capacity, mutable-ownership conflicts, and serialization. The agent owns the five
 judgments, structural dispositions, validation scope, and whether new evidence
 changes the plan. Automation never chooses a folder or architecture.
 

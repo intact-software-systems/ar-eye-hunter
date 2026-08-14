@@ -25,14 +25,244 @@ afterEach(() => {
 });
 
 describe('plan adaptation CLI lifecycle', () => {
+  it('writes the live overview only to the ignored plan-adaptation directory', () => {
+    const fixture = createLifecycleRepository();
+    const readmePath = path.join(fixture.root, 'plans/README.md');
+    const readmeBefore = readFileSync(readmePath, 'utf8');
+
+    const result = runCli(fixture.root, ['overview']);
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(readFileSync(readmePath, 'utf8')).toBe(readmeBefore);
+    expect(readFileSync(path.join(fixture.root, '.plan-adaptation/overview.md'), 'utf8')).toContain(
+      'Capacity: 1/8 active, 0 postponed, 7 available.',
+    );
+    expect(runGit(fixture.root, ['check-ignore', '.plan-adaptation/overview.md'])).toContain(
+      '.plan-adaptation/overview.md',
+    );
+  });
+
+  it('postpones without current facts and resumes with refreshed target facts', () => {
+    const fixture = createLifecycleRepository();
+    const readmePath = path.join(fixture.root, 'plans/README.md');
+    const readmeBefore = readFileSync(readmePath, 'utf8');
+
+    const postponed = runCli(fixture.root, [
+      'postpone',
+      '--plan',
+      fixture.planPath,
+      '--reason',
+      'Serialize conflicting governance ownership.',
+    ]);
+
+    expect(postponed.status, postponed.stdout).toBe(0);
+    let record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+    expect(record.status).toBe('postponed');
+    expect(record.materialDecisions.at(-1)).toEqual(
+      expect.objectContaining({
+        decision: 'postpone',
+        summary: 'Serialize conflicting governance ownership.',
+      }),
+    );
+    expect(readFileSync(readmePath, 'utf8')).toBe(readmeBefore);
+    expect(
+      runCli(fixture.root, ['prepare', '--plan', fixture.planPath, '--base', fixture.base]).stdout,
+    ).toContain('prepare requires an active plan');
+
+    const resumed = runCli(fixture.root, [
+      'resume',
+      '--plan',
+      fixture.planPath,
+      '--base',
+      fixture.base,
+      '--reason',
+      'Ownership is disjoint again.',
+    ]);
+
+    expect(resumed.status, resumed.stdout).toBe(0);
+    record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
+    expect(record.status).toBe('active');
+    expect(record.facts.diffBase).toBe(fixture.base);
+    expect(record.facts.affectedCodeDigest).toMatch(/^[a-f0-9]{64}$/u);
+    expect(record.facts.affectedCodeDigest).not.toBe(
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    );
+    expect(record.materialDecisions.at(-1)).toEqual(
+      expect.objectContaining({ decision: 'resume', summary: 'Ownership is disjoint again.' }),
+    );
+    expect(readFileSync(readmePath, 'utf8')).toBe(readmeBefore);
+  });
+
+  it('rejects resume when it would exceed capacity or restore mutable overlap', () => {
+    const fixture = createLifecycleRepository();
+    const second = createRecord();
+    second.planId = 'second-plan';
+    second.status = 'postponed';
+    second.capabilities[0].owner = 'second owner';
+    writeFixture(fixture.root, 'plans/second-plan.md', `# Second plan\n\n${recordBlock(second)}\n`);
+    writeFixture(
+      fixture.root,
+      'plans/policy.json',
+      '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":1}\n',
+    );
+
+    expect(
+      runCli(fixture.root, [
+        'resume',
+        '--plan',
+        'plans/second-plan.md',
+        '--base',
+        fixture.base,
+        '--reason',
+        'Try to resume.',
+      ]).stdout,
+    ).toContain('active plan capacity 2/1 exceeded');
+
+    writeFixture(
+      fixture.root,
+      'plans/policy.json',
+      '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
+    );
+    expect(
+      runCli(fixture.root, [
+        'resume',
+        '--plan',
+        'plans/second-plan.md',
+        '--base',
+        fixture.base,
+        '--reason',
+        'Try to resume.',
+      ]).stdout,
+    ).toContain('mutable ownership overlap');
+  });
+
+  it('allows only plan-only progress while a catalog remains invalid', () => {
+    const fixture = createLifecycleRepository();
+    for (const planId of ['second-plan', 'third-plan']) {
+      const record = createRecord();
+      record.planId = planId;
+      record.capabilities[0].owner = `${planId} owner`;
+      writeFixture(fixture.root, `plans/${planId}.md`, `# ${planId}\n\n${recordBlock(record)}\n`);
+    }
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'invalid overlapping catalog']);
+    const invalidBase = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+
+    expect(
+      runCli(fixture.root, [
+        'postpone',
+        '--plan',
+        'plans/third-plan.md',
+        '--reason',
+        'Reduce the catalog overlap.',
+      ]).status,
+    ).toBe(0);
+    expect(runCli(fixture.root, ['check', '--base', invalidBase]).status).toBe(0);
+
+    writeFixture(fixture.root, 'packages/unrelated/product.ts', 'export const product = true;\n');
+    const unrelated = runCli(fixture.root, ['check', '--base', invalidBase]);
+    expect(unrelated.status).toBe(1);
+    expect(unrelated.stdout).toContain('catalog recovery may change only plan governance paths');
+
+    rmSync(path.join(fixture.root, 'packages/unrelated/product.ts'));
+    expect(
+      runCli(fixture.root, [
+        'postpone',
+        '--plan',
+        'plans/second-plan.md',
+        '--reason',
+        'Resolve the final catalog overlap.',
+      ]).status,
+    ).toBe(0);
+    expect(runCli(fixture.root, ['check', '--base', invalidBase]).status).toBe(0);
+  });
+
+  it('isolates facts for disjoint active plans and reports unassigned qualifying scope', () => {
+    const fixture = createLifecycleRepository();
+    const second = createRecord();
+    second.planId = 'second-plan';
+    second.capabilities[0] = {
+      ...second.capabilities[0],
+      owner: 'second owner',
+      root: 'packages/second',
+      entry: 'packages/second/index.ts',
+      testRoot: 'packages/tests/second',
+      navigationMap: null,
+    };
+    writeFixture(fixture.root, 'plans/second-plan.md', `# Second plan\n\n${recordBlock(second)}\n`);
+    writeFixture(
+      fixture.root,
+      '.agents/evaluations/navigation/rubric.json',
+      '{"result":"initial navigation evidence"}\n',
+    );
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'two plan base']);
+    const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    writeFixture(
+      fixture.root,
+      'scripts/plan-adaptation/first-change.mjs',
+      'export const first = true;\n',
+    );
+    writeFixture(fixture.root, 'packages/second/change.ts', 'export const second = true;\n');
+
+    expect(runCli(fixture.root, ['init', '--plan', fixture.planPath, '--base', base]).status).toBe(
+      0,
+    );
+    expect(
+      runCli(fixture.root, ['init', '--plan', 'plans/second-plan.md', '--base', base]).status,
+    ).toBe(0);
+    const evidenceOnlyChange = runCli(fixture.root, ['check', '--base', base]);
+    expect(evidenceOnlyChange.status, evidenceOnlyChange.stdout).toBe(0);
+
+    writeFixture(
+      fixture.root,
+      '.agents/evaluations/navigation/rubric.json',
+      '{"result":"updated navigation evidence"}\n',
+    );
+    const evaluationChange = runCli(fixture.root, ['check', '--base', base]);
+    expect(evaluationChange.status, evaluationChange.stdout).toBe(0);
+
+    writeFixture(
+      fixture.root,
+      'scripts/plan-adaptation/later-first-change.mjs',
+      'export const later = true;\n',
+    );
+    expect(runCli(fixture.root, ['init', '--plan', fixture.planPath, '--base', base]).status).toBe(
+      0,
+    );
+    const refreshedFirstPlan = runCli(fixture.root, ['check', '--base', base]);
+    expect(refreshedFirstPlan.status, refreshedFirstPlan.stdout).toBe(0);
+
+    writeFixture(
+      fixture.root,
+      'packages/unassigned/new-owner.ts',
+      'export const unassigned = true;\n',
+    );
+    const unassigned = runCli(fixture.root, ['check', '--base', base]);
+    expect(unassigned.status).toBe(1);
+    expect(unassigned.stdout).toContain(
+      'unassigned qualifying scope: packages/unassigned/new-owner.ts; candidate plans: fixture-plan, second-plan',
+    );
+
+    expect(
+      runCli(fixture.root, ['prepare', '--plan', fixture.planPath, '--base', base]).status,
+    ).toBe(0);
+    const draft = JSON.parse(
+      readFileSync(path.join(fixture.root, '.plan-adaptation/fixture-plan.draft.json'), 'utf8'),
+    );
+    expect(draft.record.facts.undeclaredChangedPaths).toContain('packages/unassigned/new-owner.ts');
+    expect(draft.record.facts.undeclaredChangedPaths).not.toContain(
+      '.agents/evaluations/navigation/rubric.json',
+    );
+  });
+
   it('runs init, complete-slice, prepare, apply, check, and close through real files', () => {
     const fixture = createLifecycleRepository();
     const common = ['--plan', fixture.planPath, '--base', fixture.base];
+    const readmeBefore = readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8');
 
     expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
-    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toContain(
-      '| fixture-plan | plan adaptation  | active | continue            | slice-one, slice-two |',
-    );
+    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(readmeBefore);
 
     expect(runCli(fixture.root, ['complete-slice', ...common, '--slice', 'slice-one']).status).toBe(
       0,
@@ -42,9 +272,7 @@ describe('plan adaptation CLI lifecycle', () => {
     );
     expect(completedPlan.completedSlicesSinceCheckpoint).toEqual(['slice-one']);
     expect(completedPlan.checkpoint.nextSlices).toEqual(['slice-two']);
-    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toContain(
-      '| fixture-plan | plan adaptation  | active | continue            | slice-two  |',
-    );
+    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(readmeBefore);
     expect(runCli(fixture.root, ['prepare', ...common]).status).toBe(0);
 
     const draftPath = path.join(fixture.root, '.plan-adaptation/fixture-plan.draft.json');
@@ -105,9 +333,7 @@ describe('plan adaptation CLI lifecycle', () => {
       ]).status,
     ).toBe(0);
     expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(false);
-    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).not.toContain(
-      'fixture-plan',
-    );
+    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(readmeBefore);
     expect(
       JSON.parse(readFileSync(path.join(fixture.root, 'plans/fixture-plan.closure.json'), 'utf8')),
     ).toEqual({
@@ -371,6 +597,7 @@ describe('plan adaptation CLI lifecycle', () => {
       runCli(fixture.root, ['init', '--plan', 'plans/symlink-plan.md', '--base', fixture.base])
         .stdout,
     ).toContain('plan path must not be a symbolic link');
+    rmSync(symlinkPlan);
 
     const markdown = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
     const unsafeIdRecord = parseRecord(markdown);
@@ -398,7 +625,7 @@ describe('plan adaptation CLI lifecycle', () => {
         '--base',
         draftSymlinkFixture.base,
       ]).stdout,
-    ).toContain('draft directory must remain inside the repository');
+    ).toContain('.plan-adaptation directory must remain inside the repository');
     expect(existsSync(path.join(outsideDraftRoot, 'fixture-plan.draft.json'))).toBe(false);
 
     const outputPath = path.join(fixture.root, 'git-output.txt');
@@ -413,7 +640,7 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(existsSync(outputPath)).toBe(false);
   });
 
-  it('rejects symlinked plans and registry paths before reading repository records', () => {
+  it('rejects symlinked plan roots without treating the static README as lifecycle state', () => {
     const plansRootFixture = createLifecycleRepository();
     const outsidePlansRoot = `${plansRootFixture.root}-outside-plans`;
     fixtureRoots.push(outsidePlansRoot);
@@ -439,9 +666,10 @@ describe('plan adaptation CLI lifecycle', () => {
     renameSync(registryPath, outsideRegistry);
     symlinkSync(outsideRegistry, registryPath);
 
+    const outsideBefore = readFileSync(outsideRegistry, 'utf8');
     const registryResult = runCli(registryFixture.root, ['check', ...common]);
-    expect(registryResult.status).toBe(1);
-    expect(registryResult.stdout).toContain('active plan registry must be a regular file');
+    expect(registryResult.status, registryResult.stdout).toBe(0);
+    expect(readFileSync(outsideRegistry, 'utf8')).toBe(outsideBefore);
   });
 
   it('rejects apply when the source plan record changed after prepare', () => {
@@ -466,7 +694,7 @@ describe('plan adaptation CLI lifecycle', () => {
     expect(existsSync(draftPath)).toBe(true);
   });
 
-  it('preserves plan and draft when apply cannot replace the registry', () => {
+  it('applies the prepared plan without reading or replacing the static README', () => {
     const fixture = createLifecycleRepository();
     const common = ['--plan', fixture.planPath, '--base', fixture.base];
     expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
@@ -475,19 +703,19 @@ describe('plan adaptation CLI lifecycle', () => {
     const draft = JSON.parse(readFileSync(draftPath, 'utf8'));
     draft.record.checkpoint = completeCheckpoint();
     writeFileSync(draftPath, JSON.stringify(draft));
-    const planBefore = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
     rmSync(path.join(fixture.root, 'plans/README.md'));
     mkdirSync(path.join(fixture.root, 'plans/README.md'));
 
     const result = runCli(fixture.root, ['apply', ...common]);
 
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('active plan registry must be a regular file');
-    expect(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8')).toBe(planBefore);
-    expect(existsSync(draftPath)).toBe(true);
+    expect(result.status, result.stdout).toBe(0);
+    expect(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8')).toContain(
+      'The prepared result is complete.',
+    );
+    expect(existsSync(draftPath)).toBe(false);
   });
 
-  it('validates the complete fact schema and preserves the plan when close cannot update registry', () => {
+  it('validates the complete fact schema and closes independently of static README content', () => {
     const fixture = createLifecycleRepository();
     const common = ['--plan', fixture.planPath, '--base', fixture.base];
     expect(runCli(fixture.root, ['init', ...common]).status).toBe(0);
@@ -500,7 +728,10 @@ describe('plan adaptation CLI lifecycle', () => {
     );
 
     writeFixture(fixture.root, fixture.planPath, markdown);
-    const record = parseRecord(markdown);
+    runGit(fixture.root, ['add', fixture.planPath]);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'initialize plan facts']);
+    const closeBase = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    const record = parseRecord(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'));
     const evidenceRelativePath = 'final-pr-evidence.json';
     const evidencePath = path.join(fixture.root, evidenceRelativePath);
     writeFileSync(
@@ -512,39 +743,28 @@ describe('plan adaptation CLI lifecycle', () => {
         finalReview: { status: 'complete', planDigest: recordDigest(record) },
       }),
     );
-    const registryPath = path.join(fixture.root, 'plans/README.md');
-    const registryBefore = readFileSync(registryPath, 'utf8');
-    writeFileSync(registryPath, '# Stale active registry\n');
-    const staleRegistryResult = runCli(fixture.root, [
+    const readmePath = path.join(fixture.root, 'plans/README.md');
+    writeFileSync(readmePath, '# Independently edited navigation\n');
+    const closeResult = runCli(fixture.root, [
       'close',
-      ...common,
+      '--plan',
+      fixture.planPath,
+      '--base',
+      closeBase,
       '--final-pr-evidence',
       evidenceRelativePath,
     ]);
-    expect(staleRegistryResult.stdout).toContain(
-      'close requires the plan to be the current active registry entry',
-    );
-    expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(true);
+    expect(closeResult.status, closeResult.stdout).toBe(0);
+    expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(false);
 
-    writeFileSync(registryPath, registryBefore);
-    rmSync(registryPath);
-    mkdirSync(registryPath);
-    const result = runCli(fixture.root, [
-      'close',
-      ...common,
-      '--final-pr-evidence',
-      evidenceRelativePath,
-    ]);
-    expect(result.status).toBe(1);
-    expect(existsSync(path.join(fixture.root, fixture.planPath))).toBe(true);
-
+    const unsafe = createLifecycleRepository();
     expect(
-      runCli(fixture.root, [
+      runCli(unsafe.root, [
         'close',
         '--plan',
         'plans/README.md',
         '--base',
-        fixture.base,
+        unsafe.base,
         '--final-pr-evidence',
         evidenceRelativePath,
       ]).stdout,
@@ -559,6 +779,16 @@ function createLifecycleRepository() {
   runGit(root, ['config', 'user.name', 'Plan Adaptation Test']);
   runGit(root, ['config', 'user.email', 'plan-adaptation@example.test']);
   writeFixture(root, '.gitignore', '/.plan-adaptation/\n');
+  writeFixture(
+    root,
+    'plans/policy.json',
+    '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
+  );
+  writeFixture(
+    root,
+    'plans/README.md',
+    '# Adaptive plans\n\nRun `npm run plan:adapt -- overview` for live status.\n',
+  );
   writeFixture(root, 'scripts/plan-adaptation.mjs', 'console.log("fixture entry");\n');
   writeFixture(root, 'packages/tests/repo/plan-adaptation/fixture.test.ts', 'export {};\n');
   writeFixture(root, 'plans/fixture-plan.md', `# Fixture plan\n\n${recordBlock(createRecord())}\n`);

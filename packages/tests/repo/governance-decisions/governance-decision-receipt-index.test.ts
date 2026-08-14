@@ -193,6 +193,30 @@ describe('trusted governance decision receipt index', () => {
     );
   });
 
+  it('leaves plan dispositions to the plan-transition authentication owner', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'trusted-governance-plan-receipt-'));
+    fixtureRoots.push(root);
+    runGit(root, ['init', '--initial-branch=main']);
+    runGit(root, ['config', 'user.name', 'Receipt Fixture']);
+    runGit(root, ['config', 'user.email', 'receipt@example.invalid']);
+    const disposition = planDispositionEvidence();
+    writeEvidence(root, disposition);
+    runGit(root, ['add', '.']);
+    runGit(root, ['commit', '-m', 'plan disposition']);
+    const trustedRevision = runGit(root, ['rev-parse', 'HEAD']).trim();
+    runGit(root, ['update-ref', 'refs/remotes/origin/main', trustedRevision]);
+
+    const indexed = readTrustedGovernanceDecisionIndex({
+      root,
+      trustedRevision,
+      verifyDecisionCommit: () => {
+        throw new Error('plan receipts belong to plan-transition authentication');
+      },
+    });
+
+    expect(indexed).toMatchObject({ decisions: [], issues: [] });
+  });
+
   it('rejects a receipt added on merged feature history instead of direct trusted-main lineage', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'trusted-governance-merged-history-'));
     fixtureRoots.push(root);
@@ -427,6 +451,15 @@ function gateEvidence() {
     underlyingStatus: 'failed',
     decisionId,
   });
+}
+
+function planDispositionEvidence() {
+  const request = decodeGovernanceDecisionRequest({
+    ...commonRequest('plan.cancel'),
+    target: { planPath: 'plans/example-plan.md', planDigest: '3'.repeat(64) },
+    payload: {},
+  });
+  return receiptEvidence(request, { acceptanceStatus: 'not-achieved' });
 }
 
 function receiptEvidence(request: any, result: object) {

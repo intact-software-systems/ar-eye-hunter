@@ -6,7 +6,17 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = process.cwd();
 const skillRoot = '.agents/skills/adaptive-plan-execution';
-const planCommands = ['apply', 'check', 'close', 'complete-slice', 'init', 'prepare'] as const;
+const planCommands = [
+  'apply',
+  'check',
+  'close',
+  'complete-slice',
+  'init',
+  'overview',
+  'postpone',
+  'prepare',
+  'resume',
+] as const;
 
 describe('adaptive plan execution skill contract', () => {
   it('publishes one concise discoverable skill through the repository skill tree', () => {
@@ -42,9 +52,11 @@ describe('adaptive plan execution skill contract', () => {
     expect(existsSync(path.join(repoRoot, 'scripts/plan-adaptation.mjs'))).toBe(true);
     expect(skill).toContain('`plan-adaptation-v1`');
     expect(skill).toContain('npm run plan:adapt -- init --plan <plan-path>');
-    expect(skill).toContain('npm run plan:adapt -- complete-slice --slice <slice-name>');
     expect(skill).toContain(
-      'npm run plan:adapt -- close --final-pr-evidence <pull-request-evidence>',
+      'npm run plan:adapt -- complete-slice --plan <plan-path> --slice <slice-name>',
+    );
+    expect(skill).toContain(
+      'npm run plan:adapt -- close --plan <plan-path> --final-pr-evidence <pull-request-evidence>',
     );
     expect(skill).toContain('npm run check:adaptive-governance');
     expect(skill).not.toContain('npm run test:repo-governance');
@@ -67,7 +79,8 @@ describe('adaptive plan execution skill contract', () => {
     expect(skill).toContain('A changed request or head invalidates the approval');
     expect(skill).toContain('Never hand-write a receipt');
     expect(skill).toContain('directly edit/delete a plan');
-    expect(skill).toContain('generated active-plan registry');
+    expect(skill).toContain('plans/README.md` is static navigation');
+    expect(skill).toContain('Supply `--plan` whenever more than one eligible record exists');
   });
 });
 

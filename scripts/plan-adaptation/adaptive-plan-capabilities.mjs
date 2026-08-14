@@ -67,6 +67,26 @@ function topologyRoots(capability) {
   return guidanceRoots.filter((root) => typeof root === 'string');
 }
 
+export function mutableCapabilityClaims(capability) {
+  const roots = topologyRoots(capability).map((value) => ({ kind: 'root', value }));
+  const paths =
+    capability.kind === 'guidance'
+      ? [guidanceEntry(capability), ...(capability.contractPaths ?? [])]
+      : [
+          capability.entry,
+          capability.navigationMap,
+          ...(capability.factContracts ?? []),
+          ...(capability.contractPaths ?? []),
+        ];
+  return [...roots, ...paths.filter(Boolean).map((value) => ({ kind: 'path', value }))];
+}
+
+export function capabilityOwnsPath(repositoryPath, capability) {
+  return mutableCapabilityClaims(capability).some((claim) =>
+    claim.kind === 'root' ? isWithin(repositoryPath, claim.value) : repositoryPath === claim.value,
+  );
+}
+
 function rootsOverlap(left, right) {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
@@ -378,22 +398,7 @@ function selectContractConflictDeclarer(capability, otherCapability, contractPat
   return capability;
 }
 
-function isOwnedByCapability(repositoryPath, capability) {
-  const roots = topologyRoots(capability);
-  if (roots.some((root) => isWithin(repositoryPath, root))) {
-    return true;
-  }
-  if (capability.kind === 'guidance') {
-    return repositoryPath === guidanceEntry(capability);
-  }
-  return (
-    repositoryPath === capability.entry ||
-    repositoryPath === capability.navigationMap ||
-    (Array.isArray(capability.contractPaths) &&
-      capability.contractPaths.includes(repositoryPath)) ||
-    isFactContract(repositoryPath, capability)
-  );
-}
+const isOwnedByCapability = capabilityOwnsPath;
 
 export function guidanceRole(capability) {
   return capability?.guidanceRole === 'router' ? 'router' : 'skill';

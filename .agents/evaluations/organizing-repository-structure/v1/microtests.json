@@ -63,8 +63,8 @@
       "acceptedResultSymbols": [
         {
           "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "writePlanAndRegistry"
+          "path": "scripts/plan-adaptation/adaptive-plan-catalog.mjs",
+          "symbol": "readAdaptivePlanCatalog"
         },
         {
           "kind": "symbol",

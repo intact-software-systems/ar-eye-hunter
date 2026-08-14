@@ -149,20 +149,20 @@ single-plan logic before adding new modules.
   },
   "completedSlicesSinceCheckpoint": [],
   "facts": {
-    "diffBase": "d450f2521f93754a39bca5453ee27c8b63988534",
-    "affectedCodeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-    "computedTriggers": [],
+    "diffBase": "ffc2f9a76a942d8c335d5d621a0e6c498ca42ebb",
+    "affectedCodeDigest": "8896c6e83255facb8ef54235c1232d59c62a97e77907c21ac9abc16a1cffa66b",
+    "computedTriggers": [
+      "ownership-change",
+      "lifecycle-change"
+    ],
     "undeclaredChangedPaths": []
   },
   "checkpoint": {
-    "outcome": "The administrator approved a bounded replacement of single-plan governance with a configurable eight-plan catalog and an ignored generated overview.",
-    "learning": "Concurrent plans need per-plan facts and exclusive mutable ownership; a tracked shared status projection creates conflicts without adding authority.",
-    "structure": "Replace active-plan-registry with one compact catalog owner and adapt existing consumers directly, without a compatibility layer, new workflow, receipt schema, or service.",
-    "decision": "amend",
-    "nextSlices": [
-      "multi-plan-catalog-and-lifecycle",
-      "multi-plan-consumers-and-migration"
-    ]
+    "outcome": "The implementation is complete with distinct selection modes for owned facts, unassigned qualifying preparation scope, and all materially changed structure-check scope.",
+    "learning": "Plan qualification and structural debt activation are separate questions: non-qualifying evidence stays out of plan facts, while materially changed legacy code still receives structural review.",
+    "structure": "Retain the catalog as the shared ownership boundary and keep plan-fact attribution separate from repository-structure material-change selection.",
+    "decision": "continue",
+    "nextSlices": []
   },
   "structuralDispositions": [
     {
@@ -196,6 +196,21 @@ single-plan logic before adding new modules.
       "date": "2026-08-14",
       "decision": "amend",
       "summary": "Replace shared single-plan state with a compact configurable catalog, cap active plans at eight initially, and preserve direct-main receipt authentication unchanged."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The catalog and lifecycle slice now supports an exact eight-plan policy, per-plan status, ignored overview generation, plan-scoped facts, ownership isolation, and strict recovery."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "All catalog consumers now operate per active plan, target-only disposition preserves peers, the topology plan is postponed, and ordinary lifecycle evidence is independent of merge, squash, or rebase commit shape."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "continue",
+      "summary": "The implementation is complete with distinct selection modes for owned facts, unassigned qualifying preparation scope, and all materially changed structure-check scope."
     }
   ]
 }

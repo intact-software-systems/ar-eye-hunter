@@ -55,11 +55,10 @@ is the only command entry. It exposes two direct operations:
   the root is not otherwise treated as distributed risk. The deployment policy explicitly includes
   `.github/workflows/deploy-hetzner-controller.yml` in addition to the supported Hetzner runner
   workflows and controller scripts.
-- Structured plan selection consumes the canonical optional `distributedValidation` contract
-  validated by
-  [adaptive-plan-record.mjs#validateAdaptivePlanRecord](../plan-adaptation/adaptive-plan-record.mjs#validateAdaptivePlanRecord).
-  No active plan means no explicit requirement; a requirement can only add validation and cannot
-  waive path risk.
+- Structured plan selection consumes each active record's canonical optional
+  `distributedValidation` contract after the plan catalog has validated it. Postponed plans and an
+  empty active catalog contribute no explicit requirement; a requirement can only add validation
+  and cannot waive path risk.
 - `.github/workflows/hetzner-supported-distributed-manifests.yml` runs selection first, conditions
   the unchanged shared preparation and supported-manifest runner matrix on that decision, and
   converges both selected and skipped routes through one always-visible result.

@@ -135,8 +135,8 @@
       "acceptedResults": [
         {
           "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "writePlanAndRegistry"
+          "path": "scripts/plan-adaptation/adaptive-plan-catalog.mjs",
+          "symbol": "readAdaptivePlanCatalog"
         },
         {
           "kind": "symbol",
@@ -162,7 +162,7 @@
         "symbol": "test:plan-adaptation"
       },
       "navigationMap": { "kind": "path", "path": "scripts/plan-adaptation/README.md" },
-      "rationale": "The flat peers name real record, policy, fact, registry, transaction, and lifecycle responsibilities under one capability; one-file subdirectories add no boundary, while a flat-forever rule would ignore future evidence."
+      "rationale": "The flat peers name real record, policy, fact, catalog, transaction, and lifecycle responsibilities under one capability; one-file subdirectories add no boundary, while a flat-forever rule would ignore future evidence."
     },
     "repository-depends-on-plan": {
       "acceptedDispositions": ["keep"],

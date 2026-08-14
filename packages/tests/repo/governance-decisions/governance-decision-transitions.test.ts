@@ -28,7 +28,7 @@ describe('governance decision transitions', () => {
   it.each([
     ['plan.cancel', 'not-achieved'],
     ['plan.complete', 'admin-attested'],
-  ])('removes the exact plan for %s and regenerates the active registry', (operation, status) => {
+  ])('removes only the exact target plan for %s', (operation, status) => {
     const fixture = createRepositoryFixture();
     const beforePlan = readFileSync(path.join(fixture.root, fixture.planPath), 'utf8');
     const request = dispositionRequest(fixture, operation);
@@ -41,13 +41,8 @@ describe('governance decision transitions', () => {
 
     expect(transition.result).toEqual({ acceptanceStatus: status });
     expect(transition.deletions).toEqual([fixture.planPath]);
-    expect(transition.additions.map((addition) => addition.path)).toEqual(['plans/README.md']);
-    expect(transition.additions[0].content).toContain('# Active adaptive plans');
-    expect(transition.additions[0].content).not.toContain('authenticated-governance-decisions');
-    expect(transition.stateChanges.map((change) => change.path)).toEqual([
-      'plans/README.md',
-      fixture.planPath,
-    ]);
+    expect(transition.additions).toEqual([]);
+    expect(transition.stateChanges.map((change) => change.path)).toEqual([fixture.planPath]);
     expect(readFileSync(path.join(fixture.root, fixture.planPath), 'utf8')).toBe(beforePlan);
   });
 
@@ -88,6 +83,7 @@ describe('governance decision transitions', () => {
     expect(repaired.architecture).toEqual(original.architecture);
     expect(repaired.completedSlicesSinceCheckpoint).toEqual(['old-slice']);
     expect(repaired.checkpoint).toEqual(request.payload.checkpoint);
+    expect(transition.additions.map((addition) => addition.path)).toEqual([fixture.planPath]);
     expect(repaired.facts.affectedCodeDigest).toMatch(/^[0-9a-f]{64}$/u);
     expect(repaired.materialDecisions).toHaveLength(original.materialDecisions.length + 1);
     expect(repaired.materialDecisions.at(-1)).toMatchObject({
@@ -175,6 +171,66 @@ describe('governance decision transitions', () => {
     );
 
     expect(repaired.facts.computedTriggers).toContain('lifecycle-change');
+  });
+
+  it('computes repair facts only from the target plan ownership', () => {
+    const fixture = createRepositoryFixture();
+    const baseSnapshot = readGitRepositorySnapshot({
+      repoRoot: fixture.root,
+      commitOid: fixture.headOid,
+    });
+    const target = parseAdaptivePlanRecord(
+      readFileSync(path.join(fixture.root, fixture.planPath), 'utf8'),
+      fixture.planPath,
+    );
+    target.facts.diffBase = fixture.headOid;
+    const targetMarkdown = toPlanMarkdown(target);
+    const second = structuredClone(target);
+    second.planId = 'second-plan';
+    second.capabilities[0] = {
+      ...second.capabilities[0],
+      owner: 'second owner',
+      root: 'scripts/second',
+      entry: 'scripts/second.mjs',
+      testRoot: 'packages/tests/repo/second',
+      navigationMap: null,
+    };
+    const secondPath = 'plans/second-plan.md';
+    const secondMarkdown = toPlanMarkdown(second);
+    const currentSnapshot = replaceSnapshotEntry(
+      {
+        ...baseSnapshot,
+        entries: [
+          ...baseSnapshot.entries,
+          snapshotEntry(secondPath, secondMarkdown),
+          snapshotEntry('scripts/second/change.mjs', 'export const second = true;\n'),
+        ],
+      },
+      fixture.planPath,
+      targetMarkdown,
+    );
+
+    const transition = computeGovernanceDecisionTransition({
+      request: repairRequest(fixture, targetMarkdown),
+      snapshot: currentSnapshot,
+      readSnapshot: () => baseSnapshot,
+      readChanges: () => [
+        { status: 'M', path: fixture.planPath, oldMode: '100644', newMode: '100644' },
+        { status: 'A', path: secondPath, oldMode: '000000', newMode: '100644' },
+        {
+          status: 'A',
+          path: 'scripts/second/change.mjs',
+          oldMode: '000000',
+          newMode: '100644',
+        },
+      ],
+    });
+    const repaired = parseAdaptivePlanRecord(
+      transition.additions.find((addition) => addition.path === fixture.planPath)!.content,
+      fixture.planPath,
+    );
+
+    expect(repaired.facts.undeclaredChangedPaths).toEqual([]);
   });
 
   it('reports a forced second autonomous consolidation as a bypassed invariant', () => {
@@ -265,10 +321,7 @@ describe('governance decision transitions', () => {
     expect(readBlobCalls).toEqual([successorBlobOid]);
     expect(transition.result).toEqual({ acceptanceStatus: 'transferred' });
     expect(transition.deletions).toEqual([fixture.planPath]);
-    expect(transition.additions.map((addition) => addition.path)).toEqual([
-      'plans/README.md',
-      successorPath,
-    ]);
+    expect(transition.additions.map((addition) => addition.path)).toEqual([successorPath]);
     expect(transition.additions.find((addition) => addition.path === successorPath)?.content).toBe(
       successorMarkdown,
     );
@@ -411,8 +464,8 @@ describe('governance decision transitions', () => {
       planPath: successorPath,
     });
 
-    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toContain(
-      '| new-plan',
+    expect(readFileSync(path.join(fixture.root, 'plans/README.md'), 'utf8')).toBe(
+      '# Adaptive plans\n\nStatic navigation.\n',
     );
     expect(
       parseAdaptivePlanRecord(
@@ -458,9 +511,10 @@ function createRepositoryFixture(options: { planMarkdown?: string; planPath?: st
   execFileSync('mkdir', ['-p', 'plans'], { cwd: root });
   const planMarkdown = options.planMarkdown ?? toGovernanceDecisionFixturePlanMarkdown();
   writeFileSync(path.join(root, planPath), planMarkdown);
+  writeFileSync(path.join(root, 'plans/README.md'), '# Adaptive plans\n\nStatic navigation.\n');
   writeFileSync(
-    path.join(root, 'plans/README.md'),
-    '# Active adaptive plans\n\nFixture registry before transition.\n',
+    path.join(root, 'plans/policy.json'),
+    '{"schemaVersion":"adaptive-plan-policy-v1","maxActivePlans":8}\n',
   );
   writeFileSync(path.join(root, 'unrelated.txt'), 'preserve me\n');
   execFileSync('git', ['add', '.'], { cwd: root });
@@ -544,4 +598,8 @@ function replaceSnapshotEntry(snapshot: any, entryPath: string, content: string,
         : entry,
     ),
   };
+}
+
+function snapshotEntry(entryPath: string, content: string) {
+  return { path: entryPath, mode: '100644', content, blobOid: computeGitBlobOid(content) };
 }

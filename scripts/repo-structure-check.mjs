@@ -13,6 +13,7 @@ try {
     const evidence = readRepositoryNavigationEvidence({
       repoRoot,
       owner: input.navigationEvidenceOwner,
+      planPath: input.planPath,
     });
     console.log(JSON.stringify(evidence));
     process.exitCode = 0;
@@ -30,18 +31,20 @@ try {
 function readInput(args) {
   const usage =
     'usage: node scripts/repo-structure-check.mjs ' +
-    '[--base <git-ref> | --navigation-evidence <capability-owner>]';
+    '[--base <git-ref> | --navigation-evidence <capability-owner> [--plan <plans/file.md>]]';
   if (args.length === 0) {
     return {};
   }
-  if (args.length !== 2 || args[1] === '') {
-    throw new Error(usage);
-  }
-  if (args[0] === '--base') {
+  if (args.length === 2 && args[0] === '--base' && args[1] !== '') {
     return { base: args[1] };
   }
-  if (args[0] === '--navigation-evidence') {
-    return { navigationEvidenceOwner: args[1] };
+  if (
+    (args.length === 2 || args.length === 4) &&
+    args[0] === '--navigation-evidence' &&
+    args[1] !== '' &&
+    (args.length === 2 || (args[2] === '--plan' && args[3] !== ''))
+  ) {
+    return { navigationEvidenceOwner: args[1], planPath: args[3] };
   }
   throw new Error(usage);
 }

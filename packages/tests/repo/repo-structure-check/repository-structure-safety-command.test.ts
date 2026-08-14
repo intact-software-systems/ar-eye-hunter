@@ -26,13 +26,12 @@ import {
 afterEach(cleanupRepositoryFixtures);
 
 describe('repository structure command safety', () => {
-  it('requires exactly one schema-valid active record with a diff base', () => {
+  it('accepts zero or multiple disjoint active records and rejects invalid records or overlap', () => {
     const fixture = createRepositoryFixture();
 
     writeFixture(fixture.root, 'plans/fixture-plan.md', '# No adaptive record\n');
     const zeroResult = runChecker(fixture);
-    expect(zeroResult.status).toBe(2);
-    expect(zeroResult.stderr).toContain('repository structure requires exactly one active plan');
+    expect(zeroResult.status, zeroResult.stderr).toBe(0);
 
     writeFixture(
       fixture.root,
@@ -44,17 +43,48 @@ describe('repository structure command safety', () => {
     expect(malformedResult.stderr).toContain('contains invalid JSON');
 
     writePlanRecord(fixture.root, createRecord());
-    const secondRecord = { ...createRecord(), planId: 'second-plan' };
+    const secondRecord = structuredClone(createRecord());
+    secondRecord.planId = 'second-plan';
+    secondRecord.capabilities[0] = {
+      ...secondRecord.capabilities[0],
+      owner: 'second capability',
+      root: 'scripts/second',
+      entry: 'scripts/second.mjs',
+      testRoot: 'packages/tests/repo/second',
+      focusedCommand: 'npm run test:second',
+    };
+    writeFixture(fixture.root, 'scripts/second.mjs', 'export const second = true;\n');
+    writeFixture(fixture.root, 'scripts/second/first.mjs', 'export const first = true;\n');
+    writeFixture(fixture.root, 'scripts/second/second.mjs', 'export const second = true;\n');
+    writeFixture(fixture.root, 'packages/tests/repo/second/first.test.ts', 'export {};\n');
+    writeFixture(fixture.root, 'packages/tests/repo/second/second.test.ts', 'export {};\n');
+    writeFixture(
+      fixture.root,
+      'package.json',
+      JSON.stringify({
+        scripts: {
+          ...fixtureScripts(),
+          'test:second': 'vitest run packages/tests/repo/second',
+        },
+      }),
+    );
     writeFixture(
       fixture.root,
       'plans/second-plan.md',
       `# Second plan\n\n${recordBlock(secondRecord)}\n`,
     );
     const multipleResult = runChecker(fixture);
-    expect(multipleResult.status).toBe(2);
-    expect(multipleResult.stderr).toContain(
-      'repository structure requires exactly one active plan',
+    expect(multipleResult.status, `${multipleResult.stdout}\n${multipleResult.stderr}`).toBe(0);
+    expect(multipleResult.stderr).not.toContain('exactly one active plan');
+    secondRecord.capabilities[0] = structuredClone(createRecord().capabilities[0]);
+    writeFixture(
+      fixture.root,
+      'plans/second-plan.md',
+      `# Second plan\n\n${recordBlock(secondRecord)}\n`,
     );
+    const overlapResult = runChecker(fixture);
+    expect(overlapResult.status).toBe(2);
+    expect(overlapResult.stderr).toContain('mutable ownership overlap');
     rmSync(path.join(fixture.root, 'plans/second-plan.md'));
 
     const missingBaseRecord = createRecord();
@@ -67,6 +97,32 @@ describe('repository structure command safety', () => {
     const missingBaseResult = runChecker(fixture);
     expect(missingBaseResult.status).toBe(2);
     expect(missingBaseResult.stderr).toContain('record.facts.diffBase must be a non-empty string');
+  });
+
+  it('accepts a plan-only change that strictly reduces an invalid base catalog', () => {
+    const fixture = createRepositoryFixture();
+    for (const planId of ['second-plan', 'third-plan']) {
+      const record = structuredClone(createRecord());
+      record.planId = planId;
+      record.capabilities[0].owner = `${planId} owner`;
+      writeFixture(fixture.root, `plans/${planId}.md`, `# ${planId}\n\n${recordBlock(record)}\n`);
+    }
+    runGit(fixture.root, ['add', '.']);
+    runGit(fixture.root, ['commit', '--quiet', '-m', 'invalid overlapping catalog']);
+    const invalidBase = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+    const postponed = structuredClone(createRecord());
+    postponed.planId = 'third-plan';
+    postponed.status = 'postponed';
+    postponed.capabilities[0].owner = 'third-plan owner';
+    writeFixture(
+      fixture.root,
+      'plans/third-plan.md',
+      `# third-plan\n\n${recordBlock(postponed)}\n`,
+    );
+
+    const result = runChecker({ root: fixture.root, base: invalidBase });
+
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it('skips excluded symlink nodes before authored-path inspection', () => {
@@ -183,7 +239,8 @@ describe('repository structure command safety', () => {
     expect(callerEvidenceResult.status).toBe(2);
     expect(callerEvidenceResult.stderr).toContain(
       'usage: node scripts/repo-structure-check.mjs ' +
-        '[--base <git-ref> | --navigation-evidence <capability-owner>]',
+        '[--base <git-ref> | --navigation-evidence <capability-owner> ' +
+        '[--plan <plans/file.md>]]',
     );
     expect(existsSync(fakeGitHub.logPath)).toBe(false);
 

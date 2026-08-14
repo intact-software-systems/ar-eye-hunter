@@ -413,22 +413,38 @@ describe('distributed validation risk classification', () => {
     expect(result.reason).not.toMatch(/[\r\n]/u);
   });
 
-  it('fails closed for ambiguous active plan records', () => {
+  it('combines requirements from multiple active plans and excludes postponed plans', () => {
+    const firstRecord = parseAdaptivePlanRecord(activePlanMarkdown);
+    firstRecord.distributedValidation = { required: true, reason: 'First active requirement.' };
     const secondRecord = parseAdaptivePlanRecord(activePlanMarkdown);
     secondRecord.planId = 'second-active-plan';
+    secondRecord.distributedValidation = { required: true, reason: 'Second active requirement.' };
+    const postponedRecord = parseAdaptivePlanRecord(activePlanMarkdown);
+    postponedRecord.planId = 'postponed-plan';
+    postponedRecord.status = 'postponed';
+    postponedRecord.distributedValidation = { required: true, reason: 'Postponed requirement.' };
+    const firstPlan = replaceAdaptivePlanRecord(activePlanMarkdown, firstRecord);
     const secondPlan = replaceAdaptivePlanRecord(activePlanMarkdown, secondRecord);
+    const postponedPlan = replaceAdaptivePlanRecord(activePlanMarkdown, postponedRecord);
 
     const result = classifyDistributedValidationRisk({
       eventName: 'push',
       changedPathRecords: [{ status: 'M', paths: ['docs/operator-guide.md'] }],
       planDocuments: [
-        { path: activePlanPath, markdown: activePlanMarkdown },
+        { path: activePlanPath, markdown: firstPlan },
         { path: 'plans/second-active-plan.md', markdown: secondPlan },
+        { path: 'plans/postponed-plan.md', markdown: postponedPlan },
       ],
     });
 
-    expect(result).toMatchObject({ selected: true, reasonCode: 'invalid-input' });
-    expect(result.reason).toContain('multiple active adaptive plans');
+    expect(result).toMatchObject({
+      selected: true,
+      reasonCode: 'plan-requirement',
+      planRequirements: [
+        { planId: 'distributed-validation-fixture', reason: 'First active requirement.' },
+        { planId: 'second-active-plan', reason: 'Second active requirement.' },
+      ],
+    });
   });
 
   it.each([

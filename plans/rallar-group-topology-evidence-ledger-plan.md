@@ -280,7 +280,7 @@ exact default-branch count above with Critical 0 and Important 0.
 {
   "version": 1,
   "planId": "rallar-group-topology-evidence-ledger",
-  "status": "active",
+  "status": "postponed",
   "goal": "Publish the already-existing group-topology implementation and closure evidence into one non-circular ledger without code or performance changes.",
   "acceptanceCriteria": [
     "Only the new plan, generated plan registry, and two reciprocal program planning records change.",
@@ -368,6 +368,11 @@ exact default-branch count above with Critical 0 and Important 0.
       "date": "2026-08-13",
       "decision": "continue",
       "summary": "The sole publish-later-evidence-ledger slice records complete planning and PR A-D facts, updates both reciprocal program records, and preserves the authenticated receipt and deleted implementation plan without code or performance changes."
+    },
+    {
+      "date": "2026-08-14",
+      "decision": "postpone",
+      "summary": "Postpone while configurable multi-plan governance replaces the shared plan-adaptation ownership boundary."
     }
   ]
 }

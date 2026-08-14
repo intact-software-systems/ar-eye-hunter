@@ -13,7 +13,7 @@ export function readChangedPathRecords(repoRoot, base, head) {
   return decodeGitChangedPathRecords(rawRecords);
 }
 
-export function readActiveAdaptivePlanDocuments(repoRoot) {
+export function readAdaptivePlanDocuments(repoRoot) {
   const plansRoot = path.join(repoRoot, 'plans');
   let entries;
   try {

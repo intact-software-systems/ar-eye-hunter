@@ -50,9 +50,8 @@ exits zero with the v2 PASS line or prints each deterministic evidence failure a
   owns candidate item and aggregate shape.
 - [trusted-retained-legacy.mjs#validateRetainedLegacy](./trusted-retained-legacy.mjs#validateRetainedLegacy)
   owns whole-ledger hashing, trusted human approval, post-approval history, and registry proof.
-- [scripts/check-pr-human-review-legacy-stages.mjs#runStage](../check-pr-human-review-legacy-stages.mjs#runStage)
-  invokes the reusable legacy scanner for the initial and final reviewed Git ranges and rejects a
-  non-exact candidate set.
+- The sibling `scripts/check-pr-human-review-legacy-stages.mjs` command invokes the reusable legacy
+  scanner for the initial and final reviewed Git ranges and rejects a non-exact candidate set.
 
 The durable contract is `docs/pr-human-review-record.md`; the visible input template is
 `.github/PULL_REQUEST_TEMPLATE.md`; the trusted workflow is
