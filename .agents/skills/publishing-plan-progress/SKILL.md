@@ -87,6 +87,13 @@ Approval to commit is not approval to push, and approval to push is not approval
 gates apply whenever any source branch targets the remote default ref; they do not apply to a
 non-default destination ref.
 
+The fixed `governance:decide apply` capability is separate from ordinary Git commit and push
+publication. An AI may use it only after showing the exact canonical request and expected main head
+and receiving one just-in-time approval for that atomic decision; a changed request or head
+invalidates the approval. This does not approve any ordinary default-branch commit or push. Never
+hand-write a receipt, directly edit/delete a plan, fabricate completion or review evidence, or alter
+the generated active-plan registry as a substitute.
+
 ## Draft Pull Request Record
 
 Keep one draft pull request current with the plan link, requested review, milestone checklist,

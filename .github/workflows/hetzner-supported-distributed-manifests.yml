@@ -14,8 +14,75 @@ concurrency:
   queue: max
 
 jobs:
+  governance-decision:
+    name: Classify authenticated governance decision
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      decision_only: ${{ steps.resolve.outputs.decision_only }}
+      invalid_governance: ${{ steps.resolve.outputs.invalid_governance }}
+    steps:
+      - name: Check out the exact main commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Detect a governance-shaped commit
+        id: candidate
+        continue-on-error: true
+        run: |
+          printf 'governance_candidate=true\n' >> "$GITHUB_OUTPUT"
+          node scripts/governance-decisions/classify-governance-push.mjs candidate \
+            --commit "$GITHUB_SHA" \
+            --output "$GITHUB_OUTPUT"
+
+      - name: Verify an exact decision-only commit
+        id: verify
+        if: ${{ github.event_name == 'push' && steps.candidate.outcome == 'success' && steps.candidate.outputs.governance_candidate == 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
+        run: npm run governance:decide -- verify-commit --commit "$GITHUB_SHA"
+
+      - name: Resolve fail-closed governance classification
+        id: resolve
+        if: ${{ always() }}
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CANDIDATE_OUTCOME: ${{ steps.candidate.outcome }}
+          GOVERNANCE_CANDIDATE: ${{ steps.candidate.outputs.governance_candidate || 'true' }}
+          VERIFICATION_OUTCOME: ${{ steps.verify.outcome }}
+        run: >-
+          node scripts/governance-decisions/classify-governance-push.mjs resolve
+          --event-name "$EVENT_NAME"
+          --candidate-outcome "$CANDIDATE_OUTCOME"
+          --candidate "$GOVERNANCE_CANDIDATE"
+          --verification-outcome "$VERIFICATION_OUTCOME"
+          --output "$GITHUB_OUTPUT"
+
+  invalid-governance-decision:
+    name: Reject invalid governance-shaped commit
+    needs: governance-decision
+    if: needs.governance-decision.outputs.invalid_governance == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Report invalid governance evidence
+        run: |
+          echo "::error::Governance-shaped commit failed authenticated decision verification"
+          exit 1
+
   selection:
     name: Select distributed validation
+    needs: governance-decision
+    if: ${{ always() && !cancelled() }}
     runs-on: ubuntu-24.04
     outputs:
       selected: ${{ steps.selection.outputs.selected }}
@@ -33,13 +100,19 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE: ${{ github.event.before || '' }}
           HEAD: ${{ github.sha }}
+          DECISION_ONLY: ${{ needs.governance-decision.outputs.decision_only }}
         run: |
-          node scripts/distributed-validation-risk.mjs select \
-            --repo-root "$GITHUB_WORKSPACE" \
-            --event-name "$EVENT_NAME" \
-            --base "$BASE" \
-            --head "$HEAD" \
-            --output "$GITHUB_OUTPUT"
+          if [ "$DECISION_ONLY" = 'true' ]; then
+            printf 'selected=false\nreason_code=governance-decision\n' >> "$GITHUB_OUTPUT"
+            printf 'reason=Distributed validation not selected: authenticated governance decision.\n' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/distributed-validation-risk.mjs select \
+              --repo-root "$GITHUB_WORKSPACE" \
+              --event-name "$EVENT_NAME" \
+              --base "$BASE" \
+              --head "$HEAD" \
+              --output "$GITHUB_OUTPUT"
+          fi
 
       - name: Publish selection reason
         env:

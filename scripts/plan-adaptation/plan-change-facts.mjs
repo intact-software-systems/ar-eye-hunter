@@ -9,7 +9,7 @@ const productionRoots = new Set(['apps', 'examples', 'packages', 'scripts']);
 
 export function readChangedPaths(repoRoot, base) {
   validateGitBase(repoRoot, base);
-  const output = runGit(repoRoot, [
+  const changes = parseRawChanges(runGit(repoRoot, [
     'diff',
     '--raw',
     '-z',
@@ -17,18 +17,7 @@ export function readChangedPaths(repoRoot, base) {
     '--end-of-options',
     base,
     '--',
-  ]);
-  const tokens = output.split('\0').filter(Boolean);
-  const changes = [];
-  for (let index = 0; index < tokens.length;) {
-    const metadata = parseRawMetadata(tokens[index++]);
-    const status = metadata.status;
-    if (status.startsWith('R') || status.startsWith('C')) {
-      changes.push({ ...metadata, oldPath: tokens[index++], path: tokens[index++] });
-    } else {
-      changes.push({ ...metadata, path: tokens[index++] });
-    }
-  }
+  ]));
   const knownPaths = new Set(changes.map((change) => change.path));
   const untracked = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z']);
   for (const untrackedPath of untracked.split('\0').filter(Boolean)) {
@@ -42,6 +31,38 @@ export function readChangedPaths(repoRoot, base) {
     }
   }
   return changes.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export function readChangedPathsBetweenRevisions(repoRoot, base, head) {
+  validateGitBase(repoRoot, base);
+  validateGitBase(repoRoot, head);
+  return parseRawChanges(
+    runGit(repoRoot, [
+      'diff',
+      '--raw',
+      '-z',
+      '--find-renames',
+      '--end-of-options',
+      base,
+      head,
+      '--',
+    ]),
+  ).sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function parseRawChanges(output) {
+  const tokens = output.split('\0').filter(Boolean);
+  const changes = [];
+  for (let index = 0; index < tokens.length;) {
+    const metadata = parseRawMetadata(tokens[index++]);
+    const status = metadata.status;
+    if (status.startsWith('R') || status.startsWith('C')) {
+      changes.push({ ...metadata, oldPath: tokens[index++], path: tokens[index++] });
+    } else {
+      changes.push({ ...metadata, path: tokens[index++] });
+    }
+  }
+  return changes;
 }
 
 export function computeAffectedCodeDigest(digestInput) {
@@ -74,7 +95,7 @@ export function computeQualificationReasonsForPlan(input) {
   if (changedPaths.some((changedPath) => isWrittenPlan(changedPath))) {
     reasons.push('written-plan');
   }
-  if (hasDirectoryCreationOrMovement(repoRoot, base, changes)) {
+  if (hasDirectoryCreationOrMovement(input)) {
     reasons.push('directory-creation-or-movement');
   }
   const productionModules = changes.filter(
@@ -207,6 +228,31 @@ export function computePlanFacts(input) {
   };
 }
 
+export function computePlanFactsFromTree(input) {
+  if (!Array.isArray(input.changes)) {
+    throw new Error('candidate-tree plan facts require canonical Git changes');
+  }
+  const entriesByPath = new Map(input.entries.map((entry) => [entry.path, entry]));
+  const changes = input.changes.map((change) => {
+    if (change.status.startsWith('D')) {
+      return { ...change };
+    }
+    const entry = entriesByPath.get(change.path);
+    if (!entry || entry.mode !== change.newMode) {
+      throw new Error(`canonical Git change does not match candidate tree: ${change.path}`);
+    }
+    return { ...change, content: entry.content };
+  });
+  return computePlanFacts({
+    repoRoot: undefined,
+    base: input.baseOid,
+    basePaths: input.baseEntries.map((entry) => entry.path),
+    changes,
+    record: input.record,
+    planPath: input.planPath,
+  });
+}
+
 export function hasCurrentPlanFacts(input) {
   return isDeepStrictEqual(computePlanFacts(input), input.record.facts);
 }
@@ -223,11 +269,12 @@ function toContentTuples(repoRoot, change, record) {
     tuples.push({ path: change.path, mode: '000000', content: Buffer.alloc(0) });
     return tuples;
   }
-  const absolutePath = path.join(repoRoot, change.path);
   const content =
-    change.newMode === '120000'
-      ? Buffer.from(readlinkSync(absolutePath))
-      : readFileSync(absolutePath);
+    change.content !== undefined
+      ? Buffer.from(change.content)
+      : change.newMode === '120000'
+        ? Buffer.from(readlinkSync(path.join(repoRoot, change.path)))
+        : readFileSync(path.join(repoRoot, change.path));
   tuples.push({ path: change.path, mode: change.newMode, content });
   return tuples;
 }
@@ -238,13 +285,14 @@ function allChangedPaths(changes) {
   ].sort();
 }
 
-function hasDirectoryCreationOrMovement(repoRoot, base, changes) {
+function hasDirectoryCreationOrMovement(input) {
   const basePaths = new Set(
-    runGit(repoRoot, ['ls-tree', '-r', '--name-only', '--end-of-options', base])
-      .split('\n')
-      .filter(Boolean),
+    input.basePaths ??
+      runGit(input.repoRoot, ['ls-tree', '-r', '--name-only', '--end-of-options', input.base])
+        .split('\n')
+        .filter(Boolean),
   );
-  return changes.some((change) => {
+  return input.changes.some((change) => {
     if (change.status.startsWith('R')) {
       return path.dirname(change.oldPath) !== path.dirname(change.path);
     }

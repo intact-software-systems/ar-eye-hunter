@@ -36,6 +36,7 @@ export function readValidatorInput(args) {
     source: readFileSync(options.plan, 'utf8'),
   });
   return {
+    repoRoot,
     body,
     changedPaths: readLines(options['changed-paths']),
     registry: readFileSync(options.registry, 'utf8'),
@@ -95,6 +96,7 @@ function readGitHubEventInput(options) {
     ]),
   );
   return {
+    repoRoot: process.cwd(),
     body: pullRequest.body,
     changedPaths,
     registry: readFileSync(options.registry ?? 'docs/production-legacy-exceptions.md', 'utf8'),

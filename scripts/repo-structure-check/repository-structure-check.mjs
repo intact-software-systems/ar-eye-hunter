@@ -9,7 +9,9 @@ import {
 } from '../plan-adaptation/active-plan-registry.mjs';
 import { validateAdaptivePlanRecord } from '../plan-adaptation/adaptive-plan-record.mjs';
 import { isPlannedCapability } from '../plan-adaptation/adaptive-plan-record.mjs';
-import { readAuthenticatedPlanClosureChanges } from '../plan-adaptation/plan-closure-receipt.mjs';
+// prettier-ignore
+import { readAuthenticatedPlanTransitionChanges } from
+  '../plan-adaptation/plan-transition-authentication.mjs';
 import {
   computeAffectedCodeDigest,
   hasCurrentPlanFacts,
@@ -330,29 +332,40 @@ function requireSingleActivePlan(activePlans) {
 }
 
 function checkAuthenticatedLastPlanCloseout(input) {
-  readAuthenticatedLastPlanCloseout(input);
+  readAuthenticatedLastPlanCloseout({ ...input, requireReadablePlan: false });
   const repository = readRepositoryFiles(input.repoRoot, input.base);
   return { mergeBase: repository.mergeBase, findings: [] };
 }
 
 function readAuthenticatedLastPlanCloseout(input) {
   const changes = readChangedPaths(input.repoRoot, input.base);
-  const closure = readAuthenticatedPlanClosureChanges({
+  const closure = readAuthenticatedPlanTransitionChanges({
     repoRoot: input.repoRoot,
     base: input.base,
     changes,
+    readDecisionAdmissionEvidence: input.readDecisionAdmissionEvidence,
   });
   const authenticatedPathCount = changes.length - closure.changes.length;
   const registryChange = closure.changes.length === 1 ? closure.changes[0] : undefined;
   const registryPath = resolveActivePlanRegistryPath(input.repoRoot);
   const registryIsCurrent =
     readFileSync(registryPath, 'utf8') === toActivePlanRegistry([]) &&
-    registryChange?.path === 'plans/README.md' &&
-    registryChange.status.startsWith('M');
+    (closure.changes.length === 0 ||
+      (registryChange?.path === 'plans/README.md' && registryChange.status.startsWith('M')));
+  const authenticatedTransitionCount =
+    closure.authenticatedDispositions.length > 0
+      ? closure.authenticatedDispositions.length
+      : closure.authenticatedPlans.length;
+  const planProjectionIsValid =
+    closure.authenticatedDispositions.length === 0 ||
+    (closure.authenticatedPlans.length <= 1 &&
+      (closure.authenticatedPlans.length === 0 ||
+        closure.authenticatedPlans[0].planPath === closure.authenticatedDispositions[0]?.planPath));
   if (
     closure.issues.length > 0 ||
-    closure.authenticatedPlans.length !== 1 ||
-    authenticatedPathCount !== 2 ||
+    authenticatedTransitionCount !== 1 ||
+    !planProjectionIsValid ||
+    authenticatedPathCount < 2 ||
     !registryIsCurrent
   ) {
     const detail = closure.issues.length > 0 ? `: ${closure.issues.join('; ')}` : '';
@@ -361,7 +374,11 @@ function readAuthenticatedLastPlanCloseout(input) {
         `last-plan close-out${detail}`,
     );
   }
-  return closure.authenticatedPlans[0];
+  const authenticatedPlan = closure.authenticatedPlans[0];
+  if (!authenticatedPlan && input.requireReadablePlan !== false) {
+    throw new Error('navigation evidence is unavailable for an unreadable quarantined plan');
+  }
+  return authenticatedPlan;
 }
 
 function readChangedRepositoryStyleFacts(repoRoot, repository) {

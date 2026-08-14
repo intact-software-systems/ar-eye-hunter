@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
 
+import { toCanonicalJson } from '../governance-decisions/canonical-json.mjs';
+import {
+  readOriginMainGovernanceDecisionIndex,
+  resolveGovernanceExceptionDecisions,
+} from '../governance-decisions/governance-decision-receipt-index.mjs';
+
 const registryFields = [
   ['Repository-relative path and symbol', 'pathAndSymbol'],
   ['Purpose', 'purpose'],
@@ -30,6 +36,17 @@ export function validateRetainedLegacy(input) {
   }
   const ledgerHash = retainedLedgerHash({ items: retainedItems, approvalById });
   const ledgerIds = retainedItems.map((item) => item.id).sort();
+  const ledgerProjection = retainedLedgerProjection({ items: retainedItems, approvalById });
+  const receiptApprovals = readReceiptApprovals(input);
+  const hasReceiptApproval = receiptApprovals.some((approval) =>
+    receiptApprovesLedger({
+      projection: approval.projection,
+      ledgerProjection,
+      ledgerHash,
+      approvals: input.record.retainedLegacy,
+      candidateHead: input.headSha,
+    }),
+  );
 
   for (const item of retainedItems) {
     const approval = approvalById.get(item.id);
@@ -37,7 +54,11 @@ export function validateRetainedLegacy(input) {
       input.errors.push(`retained legacy is missing trusted human approval: ${item.id}`);
       continue;
     }
-    validateApproval({ approval, item, ledgerHash, ledgerIds, ...input });
+    if (hasReceiptApproval) {
+      validateReceiptApprovedApproval({ approval, item, ledgerHash, ...input });
+    } else {
+      validateApproval({ approval, item, ledgerHash, ledgerIds, ...input });
+    }
   }
 
   for (const approval of input.record.retainedLegacy) {
@@ -47,6 +68,86 @@ export function validateRetainedLegacy(input) {
       );
     }
   }
+}
+
+function validateReceiptApprovedApproval(input) {
+  const { approval, item, errors } = input;
+  if (!isRecord(approval)) {
+    return;
+  }
+  if (approval.path !== item.path || approval.symbol !== item.symbol) {
+    errors.push(`retained legacy approval must match final ledger path and symbol: ${item.id}`);
+  }
+  if (approval.ledgerSha256 !== input.ledgerHash) {
+    errors.push(`retained legacy ledger hash does not match the final ledger: ${item.id}`);
+  }
+  validatePostApprovalPaths({
+    approval,
+    currentHeadSha: input.headSha,
+    historyBySha: input.approvalHistory,
+    errors,
+  });
+  validateReceiptRegistry({ approval, registry: input.registry, errors });
+}
+
+function readReceiptApprovals(input) {
+  const selector = { exceptionKind: 'production-legacy', candidateHead: input.headSha };
+  if (typeof input.readGovernanceExceptions === 'function') {
+    const decisions = input.readGovernanceExceptions(selector);
+    if (!Array.isArray(decisions)) {
+      input.errors.push(
+        'governance exception resolver returned malformed production legacy evidence',
+      );
+      return [];
+    }
+    return decisions.filter((decision) => {
+      if (isProductionLegacyDecision(decision)) {
+        return true;
+      }
+      input.errors.push(
+        'governance exception resolver returned malformed production legacy evidence',
+      );
+      return false;
+    });
+  }
+  const index =
+    input.readGovernanceDecisionIndex?.(input.repoRoot ?? process.cwd()) ??
+    readOriginMainGovernanceDecisionIndex(input.repoRoot ?? process.cwd());
+  input.errors.push(...index.issues.map((issue) => `governance decision receipt: ${issue}`));
+  return resolveGovernanceExceptionDecisions(index, selector).filter((decision) => {
+    if (isProductionLegacyDecision(decision)) {
+      return true;
+    }
+    input.errors.push(
+      'governance exception resolver returned malformed production legacy evidence',
+    );
+    return false;
+  });
+}
+
+function isProductionLegacyDecision(decision) {
+  const projection = decision?.projection;
+  return (
+    isRecord(projection) &&
+    Array.isArray(projection.retainedLedgerProjection) &&
+    projection.retainedLedgerProjection.length > 0 &&
+    typeof projection.ledgerSha256 === 'string' &&
+    typeof projection.approvedProductionSha === 'string' &&
+    typeof projection.candidateHead === 'string'
+  );
+}
+
+function receiptApprovesLedger(input) {
+  return (
+    input.projection?.candidateHead === input.candidateHead &&
+    input.projection.ledgerSha256 === input.ledgerHash &&
+    input.approvals.length > 0 &&
+    input.approvals.every(
+      (approval) => approval?.approvedProductionSha === input.projection.approvedProductionSha,
+    ) &&
+    toCanonicalJson(input.projection.retainedLedgerProjection) ===
+      toCanonicalJson(input.ledgerProjection)
+  );
 }
 
 function validateApproval(input) {
@@ -195,6 +296,61 @@ function validateRegistry(input) {
       input.errors.push(
         `retained legacy registry ${label} does not match approved ledger: ${input.approval.id}`,
       );
+    }
+  }
+}
+
+function validateReceiptRegistry(input) {
+  validateRegistryDocument(input.registry, input.errors);
+  const section = readRegistrySection(input.registry, input.approval.id);
+  if (section === undefined) {
+    return;
+  }
+  const expectedByField = {
+    pathAndSymbol: `${input.approval.path}#${input.approval.symbol}`,
+    purpose: input.approval.purpose,
+    canonicalOwner: input.approval.canonicalOwner,
+    consumerDependency: input.approval.consumerDependency,
+    unsafeRemovalReason: input.approval.unsafeRemovalReason,
+    minimization: input.approval.minimization,
+    approvedProductionSha: input.approval.approvedProductionSha,
+    compatibilityTests: input.approval.compatibilityTests,
+    owner: input.approval.owner,
+    removalCondition: input.approval.removalCondition,
+  };
+  for (const [label, field] of registryFields) {
+    if (['approvalAndReviewer', 'reviewId'].includes(field)) {
+      continue;
+    }
+    if (normalize(readRegistryField(section, label)) !== normalize(expectedByField[field])) {
+      input.errors.push(
+        `retained legacy registry ${label} does not match approved ledger: ${input.approval.id}`,
+      );
+    }
+  }
+}
+
+function validateRegistryDocument(registry, errors) {
+  if (typeof registry !== 'string') {
+    errors.push('production legacy registry must be Markdown text');
+    return;
+  }
+  const source = registry.replace(/```[\s\S]*?```/gu, '');
+  const identifiers = [...source.matchAll(/^### (production-legacy-[a-z0-9-]+)\s*$/gmu)].map(
+    (match) => match[1],
+  );
+  const seen = new Set();
+  for (const identifier of identifiers) {
+    if (seen.has(identifier)) {
+      errors.push(`retained legacy registry entry is duplicated: ${identifier}`);
+      continue;
+    }
+    seen.add(identifier);
+    const section = readRegistrySection(source, identifier);
+    for (const [label] of registryFields) {
+      if (normalize(readRegistryField(section ?? '', label)) === '') {
+        errors.push(`retained legacy registry ${label} is malformed: ${identifier}`);
+      }
     }
   }
 }

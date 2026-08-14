@@ -58,6 +58,17 @@ describe('adaptive plan execution skill contract', () => {
     );
     expect(skill).toContain('Feature work stays inactive until the post-consolidation checkpoint');
   });
+
+  it('routes authenticated plan disposition through one exact approval', () => {
+    const skill = normalizeWhitespace(readRepo(`${skillRoot}/SKILL.md`));
+
+    expect(skill).toContain('exact canonical request and expected main head');
+    expect(skill).toContain('one just-in-time approval before `apply`');
+    expect(skill).toContain('A changed request or head invalidates the approval');
+    expect(skill).toContain('Never hand-write a receipt');
+    expect(skill).toContain('directly edit/delete a plan');
+    expect(skill).toContain('generated active-plan registry');
+  });
 });
 
 function readRepo(filePath: string): string {

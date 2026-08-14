@@ -2,6 +2,11 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
+import {
+  readOriginMainGovernanceDecisionIndex,
+  resolveGovernanceExceptionDecisions,
+} from '../governance-decisions/governance-decision-receipt-index.mjs';
+
 const exceptionRegistryPath = 'docs/repo-structure-exceptions.json';
 const authorizedAssociations = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 const substantiveReviewStates = new Set(['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED']);
@@ -9,32 +14,12 @@ const exactShaPattern = /^[a-f0-9]{40}$/u;
 
 export function readStructureExceptions(repoRoot, dependencies = {}) {
   const absolutePath = resolveRegistryPath(repoRoot);
-  if (absolutePath === undefined) {
-    return { exceptions: [], issues: [] };
-  }
-  let registry;
-  try {
-    registry = JSON.parse(readFileSync(absolutePath, 'utf8'));
-  } catch (error) {
-    return {
-      exceptions: [],
-      issues: [`${exceptionRegistryPath} contains invalid JSON: ${toError(error).message}`],
-    };
-  }
-  if (registry?.version !== 2 || !Array.isArray(registry.exceptions)) {
-    return {
-      exceptions: [],
-      issues: [`${exceptionRegistryPath} must contain version 2 and an exceptions array`],
-    };
-  }
-  if (registry.exceptions.length === 0) {
-    return { exceptions: [], issues: [] };
-  }
+  const registry = readExceptionRegistry(absolutePath);
+  const issues = [...registry.issues];
+  const exceptions = [];
   const repositoryContext = readRepositoryExceptionContext(repoRoot);
   const reviewLookup = dependencies.reviewLookup ?? readAuthenticatedGitHubReview;
-  const exceptions = [];
-  const issues = [];
-  for (const [index, exception] of registry.exceptions.entries()) {
+  for (const [index, exception] of registry.entries.entries()) {
     const name = `${exceptionRegistryPath} exceptions[${index}]`;
     const exceptionIssues = validateRegisteredException({
       repoRoot,
@@ -48,7 +33,73 @@ export function readStructureExceptions(repoRoot, dependencies = {}) {
       exceptions.push(exception);
     }
   }
+  const selector = {
+    exceptionKind: 'repository-structure',
+    candidateHead: repositoryContext.candidateHead,
+  };
+  let receiptApprovals;
+  if (typeof dependencies.readGovernanceExceptions === 'function') {
+    receiptApprovals = dependencies.readGovernanceExceptions(selector);
+  } else {
+    const index =
+      dependencies.readGovernanceDecisionIndex?.(repoRoot) ??
+      readOriginMainGovernanceDecisionIndex(repoRoot);
+    issues.push(...index.issues.map((issue) => `governance decision receipt: ${issue}`));
+    receiptApprovals = resolveGovernanceExceptionDecisions(index, selector);
+  }
+  if (!Array.isArray(receiptApprovals)) {
+    issues.push('governance exception resolver returned malformed repository structure evidence');
+    return { exceptions, issues };
+  }
+  for (const approval of receiptApprovals) {
+    if (!isGovernanceStructureProjection(approval?.projection)) {
+      issues.push('governance exception resolver returned malformed repository structure evidence');
+      continue;
+    }
+    exceptions.push(approval.projection);
+  }
   return { exceptions, issues };
+}
+
+function isGovernanceStructureProjection(projection) {
+  return (
+    isRecord(projection) &&
+    sameKeys(projection, ['ruleId', 'target', 'owner', 'reviewOrRemovalCondition']) &&
+    projection.ruleId === 'topology.singleton-subtree' &&
+    isConfinedRepoPath(projection.target) &&
+    isNonEmptyText(projection.owner) &&
+    isNonEmptyText(projection.reviewOrRemovalCondition)
+  );
+}
+
+function sameKeys(value, expected) {
+  return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort());
+}
+
+function isNonEmptyText(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function readExceptionRegistry(absolutePath) {
+  if (absolutePath === undefined) {
+    return { entries: [], issues: [] };
+  }
+  let registry;
+  try {
+    registry = JSON.parse(readFileSync(absolutePath, 'utf8'));
+  } catch (error) {
+    return {
+      entries: [],
+      issues: [`${exceptionRegistryPath} contains invalid JSON: ${toError(error).message}`],
+    };
+  }
+  if (registry?.version !== 2 || !Array.isArray(registry.exceptions)) {
+    return {
+      entries: [],
+      issues: [`${exceptionRegistryPath} must contain version 2 and an exceptions array`],
+    };
+  }
+  return { entries: registry.exceptions, issues: [] };
 }
 
 function validateRegisteredException(input) {

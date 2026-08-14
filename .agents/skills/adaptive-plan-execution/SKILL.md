@@ -44,6 +44,14 @@ stay outcome-shaped until a checkpoint earns their activation.
    tactical plan and registry entry:
    `npm run plan:adapt -- close --final-pr-evidence <pull-request-evidence>`.
 
+When an administrator explicitly chooses one of the fixed authenticated
+governance operations, use `governance:decide`; preview is optional. An AI must
+show the exact canonical request and expected main head and obtain one
+just-in-time approval before `apply`. A changed request or head invalidates the
+approval. Never hand-write a receipt, directly edit/delete a plan, fabricate
+completion or review evidence, or alter the generated active-plan registry as
+a substitute.
+
 ## Decision and validation judgment
 
 | Evidence                                                               | Decision      |

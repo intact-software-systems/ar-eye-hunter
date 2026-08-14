@@ -11,6 +11,7 @@ on:
       - ready_for_review
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -53,6 +54,9 @@ jobs:
           repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews
           > "$RUNNER_TEMP/pull-request-reviews.json"
       - name: Validate PR Human Review Record v2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
         run: >-
           node scripts/pr-human-review.mjs --event "$GITHUB_EVENT_PATH"
           --registry "$RUNNER_TEMP/production-legacy-exceptions.md"

@@ -13,7 +13,10 @@ import {
   findingMagnitude,
   matchesBaseMagnitude,
 } from './repo-style-check/finding-magnitude.mjs';
-import { isReviewedDisposition } from './repo-style-check/reviewed-dispositions.mjs';
+import {
+  isReviewedDisposition,
+  readReviewedDispositionContext,
+} from './repo-style-check/reviewed-dispositions.mjs';
 import {
   readStructuralLineageMap,
   StructuralLineageValidationError,
@@ -92,17 +95,24 @@ async function main() {
     structuralLineageSourcePaths: new Set(structuralLineageByTargetPath.values()),
     logicalSourceByTargetPath: new Map([...renameByTargetPath, ...structuralLineageByTargetPath]),
   });
+  const reviewedDispositionContext = readReviewedDispositionContext(repoRoot, targetCommit);
 
   printChangedFindings({
     repoRoot,
     mergeBase,
     targetReference,
-    newFindings: newFindings.filter((finding) => !isReviewedDisposition(repoRoot, finding)),
+    newFindings: newFindings.filter(
+      (finding) => !isReviewedDisposition(repoRoot, finding, reviewedDispositionContext),
+    ),
+    governanceIssues: reviewedDispositionContext.issues,
   });
 }
 
 function printChangedFindings(result) {
-  if (result.newFindings.length === 0) {
+  for (const issue of result.governanceIssues) {
+    console.log(`FAIL: governance decision receipt: ${issue}`);
+  }
+  if (result.newFindings.length === 0 && result.governanceIssues.length === 0) {
     console.log(
       `PASS: no new repository style findings ` +
         `(${result.mergeBase} -> ${result.targetReference}).`,
@@ -110,11 +120,13 @@ function printChangedFindings(result) {
     return;
   }
 
-  console.log(
-    `FAIL: ${result.newFindings.length} new or worsened repository style finding` +
-      `${result.newFindings.length === 1 ? '' : 's'} ` +
-      `(${result.mergeBase} -> ${result.targetReference}):`,
-  );
+  if (result.newFindings.length > 0) {
+    console.log(
+      `FAIL: ${result.newFindings.length} new or worsened repository style finding` +
+        `${result.newFindings.length === 1 ? '' : 's'} ` +
+        `(${result.mergeBase} -> ${result.targetReference}):`,
+    );
+  }
   for (const finding of result.newFindings) {
     console.log(`${toRelativePath(result.repoRoot, finding.file)} [${finding.ruleId}]`);
     console.log(`  ${finding.message}`);

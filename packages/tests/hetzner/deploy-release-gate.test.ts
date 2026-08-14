@@ -10,7 +10,7 @@ const denoPreflightCondition =
 const deployDenoAfterPreflightCondition =
   "if: ${{ always() && !cancelled() && github.ref == 'refs/heads/main' && vars.DENO_DEPLOY_ACTIONS_ENABLED == 'true' && needs.deno-deploy-preflight.result == 'success' && (needs.release-gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.skip_release_gate == true)) }}";
 const releaseGateEnabledCondition =
-  "if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true }}";
+  "if: ${{ always() && !cancelled() && needs.governance-decision.outputs.decision_only != 'true' && (github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true) }}";
 
 function getJobBlock(workflow: string, jobName: string): string {
   const jobStart = workflow.indexOf(`  ${jobName}:\n`);

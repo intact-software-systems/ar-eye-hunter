@@ -135,6 +135,9 @@ jobs:
         run: >-
           node scripts/validation-evidence.mjs conclude
           --governance-result "${{ needs.governance-gate.result }}"
+          --governance-status "${{ needs.governance-gate.outputs.status }}"
+          --governance-underlying-status "${{ needs.governance-gate.outputs.underlying_status }}"
+          --governance-decision-id "${{ needs.governance-gate.outputs.decision_id }}"
           --selection-result "${{ needs.validation-evidence.result }}"
           --reuse "${{ needs.validation-evidence.outputs.reuse }}"
           --release-result "${{ needs.release-gate.result }}"

@@ -148,6 +148,15 @@ describe('content-sensitive Branch Release Gate', () => {
     );
     expect(resultStep.run).toContain('node scripts/validation-evidence.mjs conclude');
     expect(resultStep.run).toContain('--reuse "${{ needs.validation-evidence.outputs.reuse }}"');
+    expect(resultStep.run).toContain(
+      '--governance-status "${{ needs.governance-gate.outputs.status }}"',
+    );
+    expect(resultStep.run).toContain(
+      '--governance-underlying-status "${{ needs.governance-gate.outputs.underlying_status }}"',
+    );
+    expect(resultStep.run).toContain(
+      '--governance-decision-id "${{ needs.governance-gate.outputs.decision_id }}"',
+    );
   });
 
   it('exposes the focused capability command', () => {

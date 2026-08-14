@@ -70,8 +70,9 @@ The checker consumes, but does not own, five explicitly declared contracts:
   supplies the single active plan and generated registry.
 - [adaptive-plan-record.mjs#validateAdaptivePlanRecord](../plan-adaptation/adaptive-plan-record.mjs#validateAdaptivePlanRecord)
   validates its configuration before structure policy uses it.
-- [plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges](../plan-adaptation/plan-closure-receipt.mjs#readAuthenticatedPlanClosureChanges)
-  authenticates the exact last-plan close-out transition when no active plan remains. Repository
+- [plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges](../plan-adaptation/plan-transition-authentication.mjs#readAuthenticatedPlanTransitionChanges)
+  authenticates either the exact normal closure or an exact governance plan disposition when no
+  active plan remains. Repository
   structure and navigation evidence accept that transition only when the generated registry is
   empty and no other changed surface remains.
 - [plan-change-facts.mjs#computeAffectedCodeDigest](../plan-adaptation/plan-change-facts.mjs#computeAffectedCodeDigest)

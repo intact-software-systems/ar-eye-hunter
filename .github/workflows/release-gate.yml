@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   release-gate:
@@ -77,6 +78,9 @@ jobs:
 
       - name: Check changed repository style
         if: ${{ inputs.changed_repo_style_base != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
         run: >-
           node scripts/check-changed-repo-style.mjs
           "${{ steps.changed_review_range.outputs.base }}"
@@ -84,6 +88,9 @@ jobs:
 
       - name: Check changed test structure coupling
         if: ${{ inputs.changed_repo_style_base != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
         run: >-
           node scripts/check-test-structure-coupling.mjs --changed
           "${{ steps.changed_review_range.outputs.base }}"

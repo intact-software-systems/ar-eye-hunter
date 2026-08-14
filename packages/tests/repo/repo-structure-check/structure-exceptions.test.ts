@@ -158,6 +158,78 @@ describe('repository structure singleton exceptions', () => {
     expect(result).toEqual({ exceptions: [], issues: [] });
   });
 
+  it('accepts a native receipt projection for the exact candidate beside an empty registry', () => {
+    const root = createRegistry(undefined);
+    const candidateHead = runGit(root, ['rev-parse', 'HEAD']).trim();
+
+    const result = readStructureExceptions(root, {
+      readGovernanceExceptions: (selector: Record<string, unknown>) => {
+        expect(selector).toEqual({
+          exceptionKind: 'repository-structure',
+          candidateHead,
+        });
+        return [
+          {
+            decisionId: 'd'.repeat(64),
+            projection: {
+              ruleId: 'topology.singleton-subtree',
+              target: 'apps/receipt-approved-singleton',
+              owner: 'Repository maintainers',
+              reviewOrRemovalCondition: 'Review when another module is required.',
+            },
+          },
+        ];
+      },
+    });
+
+    expect(result).toEqual({
+      exceptions: [
+        {
+          ruleId: 'topology.singleton-subtree',
+          target: 'apps/receipt-approved-singleton',
+          owner: 'Repository maintainers',
+          reviewOrRemovalCondition: 'Review when another module is required.',
+        },
+      ],
+      issues: [],
+    });
+  });
+
+  it('keeps malformed registry evidence visible beside a valid receipt projection', () => {
+    const root = createRegistry(undefined);
+    writeFileSync(path.join(root, 'docs/repo-structure-exceptions.json'), '{invalid');
+
+    const result = readStructureExceptions(root, {
+      readGovernanceExceptions: () => [
+        {
+          decisionId: 'd'.repeat(64),
+          projection: {
+            ruleId: 'topology.singleton-subtree',
+            target: 'apps/receipt-approved-singleton',
+            owner: 'Repository maintainers',
+            reviewOrRemovalCondition: 'Review when another module is required.',
+          },
+        },
+      ],
+    });
+
+    expect(result.exceptions).toHaveLength(1);
+    expect(result.issues[0]).toContain('contains invalid JSON');
+  });
+
+  it('keeps malformed governance resolver evidence visible and unauthorized', () => {
+    const root = createRegistry(undefined);
+
+    const result = readStructureExceptions(root, {
+      readGovernanceExceptions: () => [{ decisionId: 'd'.repeat(64), projection: null }],
+    });
+
+    expect(result.exceptions).toEqual([]);
+    expect(result.issues).toContain(
+      'governance exception resolver returned malformed repository structure evidence',
+    );
+  });
+
   it('does not follow a symlinked exception registry', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'structure-exceptions-'));
     fixtureRoots.push(root);

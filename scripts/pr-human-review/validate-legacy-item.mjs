@@ -107,16 +107,33 @@ export function validateRetainedApprovalShape({ approval, itemId, errors }) {
   let valid = true;
   for (const field of retainedApprovalFields) {
     if (field === 'reviewId') {
-      if (!Number.isInteger(approval[field]) || approval[field] <= 0) {
+      if (
+        approval[field] !== undefined &&
+        (!Number.isInteger(approval[field]) || approval[field] <= 0)
+      ) {
         errors.push('retained legacy reviewId must be a positive integer');
         valid = false;
       }
+      continue;
+    }
+    if (['reviewerLogin', 'approvalDate'].includes(field) && approval[field] === undefined) {
       continue;
     }
     if (!isEvidenceText(approval[field])) {
       errors.push(`retained legacy ${field} is required`);
       valid = false;
     }
+  }
+  const prAuthenticationFields = ['reviewId', 'reviewerLogin', 'approvalDate'];
+  const suppliedAuthenticationFields = prAuthenticationFields.filter(
+    (field) => approval[field] !== undefined,
+  );
+  if (
+    suppliedAuthenticationFields.length > 0 &&
+    suppliedAuthenticationFields.length !== prAuthenticationFields.length
+  ) {
+    errors.push('retained legacy PR authentication fields must be supplied together');
+    valid = false;
   }
   if (!exactSha.test(approval.approvedProductionSha ?? '')) {
     errors.push(`retained legacy approval SHA must be exact: ${itemId}`);
