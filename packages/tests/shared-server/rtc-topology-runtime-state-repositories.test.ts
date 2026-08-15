@@ -12,9 +12,11 @@ import {
     initRtcRttReceiptFamilyCleanup,
     migrateLegacyRtcRttMeasurementKeys,
     RtcRttRepository,
+} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import {
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
-} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+} from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import {
     RTC_TOPOLOGY_SNAPSHOTS_NAMESPACE,
     migrateLegacyRtcTopologySnapshotKeys,
@@ -36,22 +38,24 @@ import {
     RtcTopologyExecutionRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import {
-    computeRttMutation,
     type RtcRttMutationCommand,
     type RtcRttMutationComputed,
-    validateRttMutation,
-} from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+} from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-contracts.ts';
+import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
+import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
 import {
-    readRttMutation,
-    writeRttMutation,
-} from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
+    readRtcRttMutation,
+} from '@shared-server/rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
+import {
+    writeRtcRttMutation,
+} from '@shared-server/rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import type { RtcTopologyWorkPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
 import type { ALMessage } from '@shared/mod.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
-type TestExecuteRttMutationInput = Readonly<{
+type TestExecuteRtcRttMutationInput = Readonly<{
     repository: RtcRttRepository;
     runtime: FakeRuntimeStateRepository;
     command: RtcRttMutationCommand;
@@ -66,7 +70,7 @@ type TestExecuteRttMutationInput = Readonly<{
     sleep?: (delayMs: number) => Promise<void>;
 }>;
 
-async function executeRttMutation(input: TestExecuteRttMutationInput) {
+async function executeRtcRttMutation(input: TestExecuteRtcRttMutationInput) {
     const request = {
         rtt: input.command.rtt,
         alSenderId: input.command.alSenderId,
@@ -74,7 +78,7 @@ async function executeRttMutation(input: TestExecuteRttMutationInput) {
     const commandHash = await hashMutationCommand(request as JsonWireValue);
     for (let attemptCount = 1; attemptCount <= 20; attemptCount += 1) {
         try {
-            const read = await readRttMutation(input.repository, request);
+            const read = await readRtcRttMutation(input.repository, request);
             const command = read.receipt
                 ? {
                     ...request,
@@ -96,8 +100,8 @@ async function executeRttMutation(input: TestExecuteRttMutationInput) {
                     commandHash,
                     attemptCount,
                 };
-            const computed = computeRttMutation({ command, read, facts });
-            validateRttMutation({ command, read, facts, computed });
+            const computed = computeRtcRttMutation({ command, read, facts });
+            validateRtcRttMutation({ command, read, facts, computed });
             if (computed.outcome === 'write') {
                 await input.runtime.begin(async () => {
                     for (const guard of computed.endpointGuards) {
@@ -1781,7 +1785,7 @@ describe('RTC topology runtime-state repositories', () => {
         const groupAC = createRttGroupSnapshot('room-ac', ['session-a', 'session-c']);
 
         const results = await Promise.all([
-            executeRttMutation({
+            executeRtcRttMutation({
                 repository,
                 runtime: runtimeRepository,
                 command: {
@@ -1803,7 +1807,7 @@ describe('RTC topology runtime-state repositories', () => {
                 }),
                 sleep: async () => {},
             }),
-            executeRttMutation({
+            executeRtcRttMutation({
                 repository,
                 runtime: runtimeRepository,
                 command: {
@@ -1843,7 +1847,7 @@ describe('RTC topology runtime-state repositories', () => {
                     MutableRttWriteCandidate,
             );
 
-            await expect(writeRttMutation(
+            await expect(writeRtcRttMutation(
                 runtimeRepository,
                 { now: () => 2 },
                 malformed as unknown as Extract<
@@ -1892,7 +1896,7 @@ describe('RTC topology runtime-state repositories', () => {
                 degreeLimit: 1,
             };
 
-            await expect(executeRttMutation({
+            await expect(executeRtcRttMutation({
                 repository,
                 runtime: runtimeRepository,
                 command,
@@ -1965,7 +1969,7 @@ describe('RTC topology runtime-state repositories', () => {
             }
         };
 
-        await expect(executeRttMutation({
+        await expect(executeRtcRttMutation({
             repository,
             runtime: runtimeRepository,
             command,
@@ -2107,7 +2111,7 @@ describe('RTC topology runtime-state repositories', () => {
             rtt: divergent ? { ...baseRtt, rttMs: 2 } : baseRtt,
             alSenderId: 'session-a',
         };
-        const executed = executeRttMutation({
+        const executed = executeRtcRttMutation({
             repository,
             runtime: runtimeRepository,
             command: {
@@ -2164,7 +2168,7 @@ describe('RTC topology runtime-state repositories', () => {
         const commandReader = {
             current: undefined as (() => typeof command) | undefined,
         };
-        const execute = (nextCommand = command) => executeRttMutation({
+        const execute = (nextCommand = command) => executeRtcRttMutation({
             repository,
             runtime: runtimeRepository,
             command: nextCommand,
@@ -2260,7 +2264,7 @@ describe('RTC topology runtime-state repositories', () => {
             if (waiting <= 2) await together;
             return values;
         });
-        const execute = () => executeRttMutation({
+        const execute = () => executeRtcRttMutation({
             repository,
             runtime: runtimeRepository,
             command,
@@ -2363,7 +2367,7 @@ describe('RTC topology runtime-state repositories', () => {
             ['session-a', 'session-b'],
         );
 
-        const result = await executeRttMutation({
+        const result = await executeRtcRttMutation({
             repository,
             runtime: runtimeRepository,
             command: {
@@ -2451,7 +2455,7 @@ describe('RTC topology runtime-state repositories', () => {
         const stableCommand = readCommand();
         commands.unshift(initial);
 
-        const result = await executeRttMutation({
+        const result = await executeRtcRttMutation({
             repository,
             runtime: runtimeRepository,
             command: stableCommand,
@@ -2788,7 +2792,7 @@ function createValidRttWriteCandidate(): Extract<
     RtcRttMutationComputed,
     { outcome: 'write' }
 > {
-    const computed = computeRttMutation({
+    const computed = computeRtcRttMutation({
         command: {
             rtt: {
                 sessionIdFrom: 'session-a',
@@ -3027,7 +3031,7 @@ async function _seedAcceptedRttMutation(
     const repository = new RtcRttRepository(runtime, {
         now: () => rtt.createdAtEpochMs,
     });
-    const result = await executeRttMutation({
+    const result = await executeRtcRttMutation({
         repository,
         runtime,
         command: {
@@ -3062,7 +3066,7 @@ async function _seedAcceptedRttMutationFamily(
     groups: readonly GroupSnapshot[],
 ) {
     const repository = new RtcRttRepository(runtime, { now: () => 1 });
-    const result = await executeRttMutation({
+    const result = await executeRtcRttMutation({
         repository,
         runtime,
         command: {

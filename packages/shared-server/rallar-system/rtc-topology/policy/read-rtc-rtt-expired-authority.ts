@@ -2,23 +2,29 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
+// prettier-ignore
+import { validateRuntimeStateExpiredAuthority }
+    from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity,
     toRtcRttEndpointAdmissionStorageKey,
     toRtcRttMeasurementStorageKey,
 } from '../../rtc-topology-identifiers.ts';
-import type { RtcRttEndpointAdmission } from '../../services/rtc-topology-mutations.ts';
+// prettier-ignore
+import type { RtcRttEndpointAdmission }
+    from '../persistence/rtc-rtt-persistence-contracts.ts';
 
-export function readRtcRttExpiredAuthority(input: Readonly<{
-    sessionIdFrom: string;
-    sessionIdTo: string;
-    measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
-    expiredMeasurementEntry: RuntimeStateEntry | null;
-    endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
-    expiredEndpointAdmissionEntries: readonly RuntimeStateEntry[];
-}>): Readonly<{
+export function readRtcRttExpiredAuthority(
+    input: Readonly<{
+        sessionIdFrom: string;
+        sessionIdTo: string;
+        measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
+        expiredMeasurementEntry: RuntimeStateEntry | null;
+        endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
+        expiredEndpointAdmissionEntries: readonly RuntimeStateEntry[];
+    }>,
+): Readonly<{
     admissionByEndpoint: ReadonlyMap<
         string,
         RuntimeStateEntryValue<RtcRttEndpointAdmission>
@@ -32,13 +38,21 @@ export function readRtcRttExpiredAuthority(input: Readonly<{
         'RTC RTT measurement read',
     );
     const admissionByEndpoint = new Map(
-        input.endpointAdmissions.map((stored) => [stored.value.endpointId, stored]),
+        input.endpointAdmissions.map((stored) => [
+            stored.value.endpointId,
+            stored,
+        ]),
     );
     const expiredByKey = new Map(
-        input.expiredEndpointAdmissionEntries.map((entry) => [entry.key, entry]),
+        input.expiredEndpointAdmissionEntries.map((entry) => [
+            entry.key,
+            entry,
+        ]),
     );
     if (expiredByKey.size !== input.expiredEndpointAdmissionEntries.length) {
-        throw new TypeError('RTC RTT expired endpoint admission keys are duplicated');
+        throw new TypeError(
+            'RTC RTT expired endpoint admission keys are duplicated',
+        );
     }
     const expiredAdmissionByEndpoint = new Map<string, RuntimeStateEntry>();
     for (const endpointId of [input.sessionIdFrom, input.sessionIdTo]) {
@@ -54,7 +68,9 @@ export function readRtcRttExpiredAuthority(input: Readonly<{
         expiredByKey.delete(key);
     }
     if (expiredByKey.size > 0) {
-        throw new TypeError('RTC RTT expired endpoint admission is outside the command');
+        throw new TypeError(
+            'RTC RTT expired endpoint admission is outside the command',
+        );
     }
     return { admissionByEndpoint, expiredAdmissionByEndpoint };
 }

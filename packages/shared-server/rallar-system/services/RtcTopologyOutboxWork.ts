@@ -15,8 +15,8 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import {
     toCanonicalRtcTopologyPairIdentity,
-    toRtcRttMutationReceiptId,
 } from '../rtc-topology-identifiers.ts';
+import { toRtcRttMutationReceiptId } from '../rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { AppOutboxType } from './AppOutboxService.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,

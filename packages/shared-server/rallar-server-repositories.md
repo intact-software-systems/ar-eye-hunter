@@ -131,8 +131,8 @@ The five guarded operation families keep one visible `read`, `compute`,
   `writeTopologyConfigMutation`;
 - RTC topology: `readTopologyMutation`, `computeTopologyMutation`,
   `validateTopologyMutation`, `writeTopologyMutation`; and
-- RTT: `readRttMutation`, `computeRttMutation`, `validateRttMutation`,
-  `writeRttMutation`.
+- RTT: `readRtcRttMutation`, `computeRtcRttMutation`, `validateRtcRttMutation`,
+  `writeRtcRttMutation`.
 
 The `compute` and `validate` phases are pure; computed persistence data is not
 called a plan. The service `write(transaction, computed)` is transaction-bound:

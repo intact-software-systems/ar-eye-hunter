@@ -129,7 +129,24 @@ export * from './rallar-system/topology/config/group-topology-config.ts';
 export * from './rallar-system/topology/group-topology-management-service.ts';
 export * from './rallar-system/services/rallar-rtc-topology-service.ts';
 export * from './rallar-system/services/rtc-topology-mutations.ts';
-export * from './rallar-system/services/rtc-rtt-mutation-service.ts';
+export * from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-contracts.ts';
+export * from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
+export * from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
+export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
+export * from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
+export * from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
+export * from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
+export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
+export * from './rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-result.ts';
+export { computeRtcRttMutation as computeRttMutation } from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
+export { validateRtcRttMutation as validateRttMutation } from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
+export { readRtcRttMutation as readRttMutation } from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
+export { writeRtcRttMutation as writeRttMutation } from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
+export { executeRtcRttMutation as executeRttMutation } from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
+export type {
+  ExecuteRtcRttMutationInput as ExecuteRttMutationInput,
+  ExecuteRtcRttMutationResult as ExecuteRttMutationResult,
+} from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 export * from './rallar-system/services/group-state-snapshot-read-through-cache.ts';
 export * from './rallar-system/services/timing.ts';
 export * from './rallar-system/services/ws-lifecycle-service.ts';

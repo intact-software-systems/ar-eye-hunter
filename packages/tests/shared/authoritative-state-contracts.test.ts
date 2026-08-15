@@ -44,7 +44,7 @@ import type {
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import type {
     RtcRttAppInboxResult,
-} from '@shared-server/rallar-system/services/rtc-rtt-app-inbox-result.ts';
+} from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-result.ts';
 
 type EmptyObject = Record<never, never>;
 type OptionalKeysOfObject<T> = {

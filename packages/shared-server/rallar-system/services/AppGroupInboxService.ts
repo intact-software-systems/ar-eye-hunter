@@ -105,7 +105,7 @@ export type {
   RtcRttAppInboxDependencies,
 } from '../rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
 
-export type { RtcRttAppInboxResult } from './rtc-rtt-app-inbox-result.ts';
+export type { RtcRttAppInboxResult } from '../rtc-topology/inbox/rtc-rtt-app-inbox-result.ts';
 
 const TOPOLOGY_CONFIG_INBOX_TYPES = [
   AppInboxType.TOPOLOGY_CONFIG_PUT,

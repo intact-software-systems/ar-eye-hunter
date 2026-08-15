@@ -1,0 +1,81 @@
+// prettier-ignore
+import { toCanonicalGroupTopologyConfigPatch }
+    from '@shared/api/group-topology-config-canonical.ts';
+import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+// prettier-ignore
+import { PSqlRuntimeStateRepository }
+    from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+// prettier-ignore
+import { RuntimeStateWriteConflictError }
+    from '../../../runtime-state/optimistic-runtime-state-write.ts';
+
+import { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
+import {
+    RTC_RTT_MUTATION_RETENTION_MS,
+    validateRtcRttWriteCandidate,
+} from '../../rtc-rtt-persistence-validation.ts';
+// prettier-ignore
+import { writeRtcTopologyOutbox }
+    from '../../services/rtc-topology-outbox-entry.ts';
+import type { RtcRttMutationComputed } from './rtc-rtt-mutation-contracts.ts';
+
+export async function writeRtcRttMutation(
+    transaction: PSqlTransactionSql,
+    options: ConstructorParameters<typeof RtcRttRepository>[1],
+    computed: Extract<RtcRttMutationComputed, { outcome: 'write' }>,
+): Promise<'accepted'> {
+    const mutationExpireAtTimestamp =
+        computed.receipt.acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS;
+    validateRtcRttWriteCandidate(computed, mutationExpireAtTimestamp);
+    const runtime = new PSqlRuntimeStateRepository(transaction);
+    const repository = new RtcRttRepository(runtime, options);
+    for (const guard of computed.endpointGuards) {
+        requireAcceptedRttWrite(
+            await repository.commitEndpointAdmission(
+                guard.value,
+                guard.expectedRevision,
+                guard.expireAtTimestamp,
+            ),
+        );
+    }
+    requireAcceptedRttWrite(
+        await repository.commitMeasurement(
+            computed.measurementGuard.value,
+            computed.measurementGuard.expectedRevision,
+            computed.measurementGuard.purgeAfterEpochMs,
+        ),
+    );
+    requireAcceptedRttWrite(
+        await repository.insertMutationReceipt(
+            computed.receipt,
+            mutationExpireAtTimestamp,
+        ),
+    );
+    for (const intent of computed.recomputeIntents) {
+        await writeRtcTopologyOutbox(transaction, {
+            commandId: intent.receiptId,
+            resourceId: intent.outboxId,
+            aggregateRef: intent.groupSnapshot.group,
+            acceptedCausalRevision: intent.groupSnapshot.causalRevision,
+            groupSnapshot: intent.groupSnapshot,
+            effectKind: 'rtc-topology-recompute',
+            payloadKind: 'rtt-refresh',
+            rtt: intent.rtt,
+            refinementObservationId: intent.receiptId,
+            createdAtEpochMs: intent.createdAtEpochMs,
+            expireAtEpochMs: mutationExpireAtTimestamp,
+            senderId: intent.senderId,
+            requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+            publish: true,
+        });
+    }
+    return 'accepted';
+}
+
+function requireAcceptedRttWrite(
+    result: Readonly<{ status: 'accepted' | 'conflict' }>,
+): void {
+    if (result.status === 'conflict') {
+        throw new RuntimeStateWriteConflictError();
+    }
+}

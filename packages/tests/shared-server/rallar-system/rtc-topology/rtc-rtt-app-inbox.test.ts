@@ -8,7 +8,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
-import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
+import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
 import {
   parsePersistedRtcTopologyALMessage,
@@ -19,7 +19,7 @@ import {
   createAuthorityHarness,
   createResilience,
   SCOPE,
-} from './group-state/inbox/group-state-inbox-test-runtime.ts';
+} from '../../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 describe('durable RTC RTT refinement work', () => {
   it('preserves the accepted RTT observation in final topology work', async () => {

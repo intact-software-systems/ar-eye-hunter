@@ -86,8 +86,8 @@ describe('topology and RTC RTT AppInbox ownership', () => {
 
     expect(facade).not.toContain('computeTopologyConfigMutation(');
     expect(facade).not.toContain('computeTopologyMutation(');
-    expect(facade).not.toContain('computeRttMutation(');
-    expect(facade).not.toContain('writeRttMutation(');
+    expect(facade).not.toContain('computeRtcRttMutation(');
+    expect(facade).not.toContain('writeRtcRttMutation(');
     expect(facade).not.toContain('createTopologyMutationAuthorityProof(');
   });
 

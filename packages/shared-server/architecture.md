@@ -73,7 +73,7 @@ The implementation guard covers these exact operation families:
 | Group mutation           | `readGroupMutation`, `computeGroupMutation`, `validateGroupMutation`, `writeGroupMutation`                                     | group aggregate or presence-session insert/CAS/delete | admission/member rows, compact group `MutationReceipt`, direct `ResourceInbox` effects, event |
 | Topology config mutation | `readTopologyConfigMutation`, `computeTopologyConfigMutation`, `validateTopologyConfigMutation`, `writeTopologyConfigMutation` | group authority fence, then config/override guard     | invariant/target generations, compact receipt, recompute outbox                               |
 | RTC topology mutation    | `readTopologyMutation`, `computeTopologyMutation`, `validateTopologyMutation`, `writeTopologyMutation`                         | topology snapshot CAS                                 | work claim and immutable publication when the computed variant carries a publication          |
-| RTC RTT mutation         | `readRttMutation`, `computeRttMutation`, `validateRttMutation`, `writeRttMutation`                                             | lexically ordered endpoint-admission guards           | measurement, compact receipt, every computed recompute intent                                 |
+| RTC RTT mutation         | `readRtcRttMutation`, `computeRtcRttMutation`, `validateRtcRttMutation`, `writeRtcRttMutation`                                 | lexically ordered endpoint-admission guards           | measurement, compact receipt, every computed recompute intent                                 |
 
 `RtcTopologyOutboxWork` handles both publication-null and publication-bearing
 RTC topology variants. ResourceInbox/QueueBox owns the downstream attempt and

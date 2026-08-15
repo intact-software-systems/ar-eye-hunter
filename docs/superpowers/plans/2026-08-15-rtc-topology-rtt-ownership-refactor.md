@@ -102,8 +102,8 @@ repositories, ResourceInbox/AppInbox, QueueBox AppOutbox, Vivaldi RTT coordinate
 - `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-refinement-gate.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-refinement-service.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-topic.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-mutation.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-app-inbox.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-read-write.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-convergence.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.test.ts`
@@ -417,8 +417,8 @@ Run:
 
 ```bash
 npx vitest run \
-  packages/tests/shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation.test.ts \
-  packages/tests/shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox.test.ts \
+  packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-mutation.test.ts \
+  packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-app-inbox.test.ts \
   packages/tests/shared-server/group-state/inbox/app-group-inbox-registration-lifecycle.test.ts \
   packages/tests/shared-server/authoritative-mutation-read-compute-validate-write.test.ts \
   packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts

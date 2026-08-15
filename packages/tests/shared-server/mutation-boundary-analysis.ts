@@ -28,6 +28,7 @@ const FORBIDDEN_DIRECT_MUTATORS = new Set([
   'removeGroupTopology',
   'writeTopologyMutation',
   'writeRttMutation',
+  'writeRtcRttMutation',
   'writeSnapshot',
   'updateDocumentLifecycle',
   'append',

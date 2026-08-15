@@ -1,7 +1,7 @@
 import { GroupMutationAuthorizationError } from '../../group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
 import { validateRtcRttMeasurement } from '../../rtc-rtt-persistence-validation.ts';
-import { toRtcRttMutationReceiptId } from '../../rtc-topology-identifiers.ts';
+import { toRtcRttMutationReceiptId } from '../mutation/rtc-rtt-mutation-identifiers.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 // prettier-ignore
 import {

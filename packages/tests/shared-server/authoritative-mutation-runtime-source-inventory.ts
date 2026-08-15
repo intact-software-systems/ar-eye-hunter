@@ -3,6 +3,7 @@ const serviceRoot = `${systemRoot}/services`;
 const groupStateRoot = `${systemRoot}/group-state`;
 const topologyMutationRoot = `${systemRoot}/topology/config/mutation`;
 const topologyRoot = `${systemRoot}/topology`;
+const rtcMutationRoot = `${systemRoot}/rtc-topology/mutation`;
 
 export const authoritativeMutationRuntimeSourcePaths = [
   `${serviceRoot}/AppInboxService.ts`,
@@ -36,7 +37,12 @@ export const authoritativeMutationRuntimeSourcePaths = [
   `${topologyMutationRoot}/write-topology-config-mutation.ts`,
   `${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`,
   `${groupStateRoot}/presence/group-presence-summary-work.ts`,
-  `${serviceRoot}/rtc-rtt-mutation-service.ts`,
+  `${rtcMutationRoot}/rtc-rtt-mutation-contracts.ts`,
+  `${rtcMutationRoot}/compute-rtc-rtt-mutation.ts`,
+  `${rtcMutationRoot}/validate-rtc-rtt-mutation.ts`,
+  `${rtcMutationRoot}/read-rtc-rtt-mutation.ts`,
+  `${rtcMutationRoot}/write-rtc-rtt-mutation.ts`,
+  `${rtcMutationRoot}/execute-rtc-rtt-mutation.ts`,
   `${serviceRoot}/canonical-command-hash.ts`,
   `${systemRoot}/repositories/RtcTopologyPublicationRepository.ts`,
   `${systemRoot}/repositories/RtcTopologyScalarAuthorityMigration.ts`,

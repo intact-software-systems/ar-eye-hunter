@@ -7,8 +7,8 @@ import {
   RTC_RTT_LATEST_NAMESPACE,
   RtcRttRepository,
 } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
-import { executeRttMutation as executeRttMutationService } from '@shared-server/rallar-system/services/rtc-rtt-mutation-service.ts';
-import type { RtcRttMutationCommand } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import { executeRtcRttMutation as executeRtcRttMutationService } from '@shared-server/rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
+import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-contracts.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
   cleanupTopologyApplicationRows,
@@ -19,8 +19,8 @@ import {
 
 const postgresIt = process.env.RALLAR_POSTGRES_INTEGRATION === '1' ? it : it.skip;
 
-type TestExecuteRttMutationInput = Omit<
-  Parameters<typeof executeRttMutationService>[0],
+type TestExecuteRtcRttMutationInput = Omit<
+  Parameters<typeof executeRtcRttMutationService>[0],
   'request' | 'readCommand'
 > &
   Readonly<{
@@ -56,7 +56,7 @@ describe('Postgres RTT runtime concurrency', () => {
         ] as const;
         const result = await Promise.allSettled([
           clients[0]!.begin((transaction) =>
-            executeRttMutation({
+            executeRtcRttMutation({
               repository: new RtcRttRepository(firstRuntime, { now: () => 1 }),
               transaction,
               attemptCount: 1,
@@ -80,7 +80,7 @@ describe('Postgres RTT runtime concurrency', () => {
             }),
           ),
           clients[1]!.begin((transaction) =>
-            executeRttMutation({
+            executeRtcRttMutation({
               repository: new RtcRttRepository(secondRuntime, { now: () => 1 }),
               transaction,
               attemptCount: 1,
@@ -117,9 +117,9 @@ describe('Postgres RTT runtime concurrency', () => {
   );
 });
 
-function executeRttMutation(input: TestExecuteRttMutationInput) {
+function executeRtcRttMutation(input: TestExecuteRtcRttMutationInput) {
   const { command, readCommand, ...rest } = input;
-  return executeRttMutationService({
+  return executeRtcRttMutationService({
     ...rest,
     request: { rtt: command.rtt, alSenderId: command.alSenderId },
     readCommand: readCommand ?? (() => command),
