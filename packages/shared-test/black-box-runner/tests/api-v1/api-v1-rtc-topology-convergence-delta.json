@@ -1,0 +1,907 @@
+{
+  "description": "Delta-mode twin of api-v1-rtc-topology-convergence: concurrent group revisions committed through two servers converge to identical delta envelopes observed on a third, proven through group-state.event delta envelopes instead of the per-change group-state.snapshot frames. Exact revisions are asserted from each envelope resultingCausalRevision and the envelope payloads are compared across the primary and tertiary sockets, so a delta-primary default keeps the cross-server convergence and payload-agreement contract. Generated from the snapshot-mode recipe.",
+  "variables": {
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
+    },
+    "rallarApiBaseUrl": {
+      "env": "RALLAR_API_BASE_URL",
+      "default": "http://127.0.0.1:18080"
+    },
+    "rallarWsBaseUrl": {
+      "env": "RALLAR_WS_BASE_URL",
+      "default": "ws://127.0.0.1:18080"
+    },
+    "rallarApiBaseUrlSecondary": {
+      "env": "RALLAR_API_BASE_URL_SECONDARY",
+      "default": "http://127.0.0.1:18081"
+    },
+    "rallarApiBaseUrlTertiary": {
+      "env": "RALLAR_API_BASE_URL_TERTIARY",
+      "default": "http://127.0.0.1:18082"
+    },
+    "rallarWsBaseUrlTertiary": {
+      "env": "RALLAR_WS_BASE_URL_TERTIARY",
+      "default": "ws://127.0.0.1:18082"
+    },
+    "applicationId": {
+      "env": "RALLAR_BB_APPLICATION_ID",
+      "default": "api-v1-topology-{runId}-delta"
+    },
+    "workspaceId": {
+      "env": "RALLAR_BB_WORKSPACE_ID",
+      "default": "cluster-{runId}-delta"
+    },
+    "groupId": {
+      "env": "RALLAR_BB_GROUP_ID",
+      "default": "topology-convergence-{runId}-delta"
+    },
+    "groupName": {
+      "env": "RALLAR_BB_GROUP_NAME",
+      "default": "Topology convergence {runId}-delta"
+    },
+    "aliceUsername": {
+      "env": "RALLAR_ALICE_USERNAME",
+      "default": "alice"
+    },
+    "alicePassword": {
+      "env": "RALLAR_ALICE_PASSWORD",
+      "default": "secret",
+      "secret": true
+    },
+    "bobUsername": {
+      "env": "RALLAR_BOB_USERNAME",
+      "default": "bob"
+    },
+    "bobPassword": {
+      "env": "RALLAR_BOB_PASSWORD",
+      "default": "secret",
+      "secret": true
+    }
+  },
+  "execution": {
+    "correlation": {
+      "injectHeaders": true,
+      "injectPayloads": false
+    }
+  },
+  "connections": {
+    "apiPrimary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrl}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "apiSecondary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlSecondary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "apiTertiary": {
+      "type": "http",
+      "baseUrl": "{rallarApiBaseUrlTertiary}",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "timeoutMs": 15000
+    },
+    "wsPrimary": {
+      "type": "ws",
+      "timeoutMs": 15000
+    },
+    "wsTertiary": {
+      "type": "ws",
+      "timeoutMs": 15000
+    }
+  },
+  "steps": [
+    {
+      "name": "loginAliceOnPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{aliceUsername}",
+          "password": "{alicePassword}"
+        },
+        "outputs": {
+          "aliceClientId": "body.clientId",
+          "aliceAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "aliceSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceAuthHeader",
+      "type": "set",
+      "output": "aliceAuthHeader",
+      "secret": true,
+      "redactAs": "aliceAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.aliceAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "loginBobOnSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/login",
+        "body": {
+          "username": "{bobUsername}",
+          "password": "{bobPassword}"
+        },
+        "outputs": {
+          "bobClientId": "body.clientId",
+          "bobAccessToken": {
+            "path": "body.accessToken",
+            "secret": true
+          },
+          "bobSessionId": "body.sessionId"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "clientId": "string",
+          "accessToken": "string",
+          "sessionId": "string"
+        }
+      }
+    },
+    {
+      "name": "deriveBobAuthHeader",
+      "type": "set",
+      "output": "bobAuthHeader",
+      "secret": true,
+      "redactAs": "bobAuthHeader",
+      "transform": {
+        "concat": [
+          "Bearer ",
+          {
+            "path": "outputs.bobAccessToken"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createGroupOnPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "create-topology-{groupId}-{runId}-delta",
+          "groupId": "{groupId}",
+          "displayName": "{groupName}",
+          "kind": "room",
+          "joinMode": "open",
+          "createdByPrincipalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "statusCode": [
+          201,
+          409
+        ],
+        "bodyAnyOf": [
+          {
+            "group": {
+              "groupId": "{groupId}"
+            }
+          },
+          {
+            "error": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "activateAliceMembership",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{aliceClientId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "activate-alice-{groupId}-{runId}-delta",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer",
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "activateBobMembershipThroughSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "activate-bob-{groupId}-{runId}-delta",
+          "status": "active"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer",
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectAlicePresenceThroughPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{aliceSessionId}",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "body": {
+          "requestId": "presence-alice-{groupId}-{runId}-delta",
+          "generationId": "generation-{runId}",
+          "principalId": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer",
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "connectBobPresenceThroughSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "PUT",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/sessions/{bobSessionId}",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "body": {
+          "requestId": "presence-bob-{groupId}-{runId}-delta",
+          "generationId": "generation-{runId}",
+          "principalId": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "stateRevision": "integer",
+          "group": {
+            "groupId": "{groupId}"
+          }
+        }
+      }
+    },
+    {
+      "name": "establishBaselineTopology",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/topology/reconfigure",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}",
+          "Idempotency-Key": "baseline-topology-{groupId}-{runId}-delta"
+        },
+        "body": {
+          "requestId": "baseline-topology-{groupId}-{runId}-delta",
+          "publish": false
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "status": "queued",
+          "groupRef": {
+            "applicationId": "{applicationId}",
+            "workspaceId": "{workspaceId}",
+            "groupId": "{groupId}"
+          },
+          "requestId": "baseline-topology-{groupId}-{runId}-delta",
+          "outboxId": "string"
+        }
+      }
+    },
+    {
+      "name": "createAliceWebSocketTicketOnPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        },
+        "outputs": {
+          "aliceWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{aliceSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveAliceWebSocketUrl",
+      "type": "set",
+      "output": "aliceWsUrl",
+      "secret": true,
+      "redactAs": "aliceWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrl"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.aliceSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.aliceWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openAliceWebSocketOnPrimary",
+      "type": "ws.open",
+      "connection": "wsPrimary",
+      "request": {
+        "url": "{aliceWsUrl}",
+        "timeoutMs": 15000
+      }
+    },
+    {
+      "name": "wsPrimaryAuthorizationReady",
+      "type": "ws.wait",
+      "connection": "wsPrimary",
+      "expect": {
+        "connection": "wsPrimary",
+        "withinMs": 15000,
+        "consume": true,
+        "messages": [
+          {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "payload": {
+              "typeId": "client-state.snapshot"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "createBobWebSocketTicketOnTertiary",
+      "type": "http",
+      "connection": "apiTertiary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/ws-ticket",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        },
+        "outputs": {
+          "bobWsTicket": {
+            "path": "body.ticket",
+            "secret": true
+          }
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "ticket": "string",
+          "sessionId": "{bobSessionId}"
+        }
+      }
+    },
+    {
+      "name": "deriveBobWebSocketUrl",
+      "type": "set",
+      "output": "bobWsUrl",
+      "secret": true,
+      "redactAs": "bobWsUrl",
+      "transform": {
+        "concat": [
+          {
+            "path": "variables.rallarWsBaseUrlTertiary"
+          },
+          "/api/ws/",
+          {
+            "path": "outputs.bobSessionId"
+          },
+          "?ticket=",
+          {
+            "urlEncode": {
+              "path": "outputs.bobWsTicket"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "openBobWebSocketOnTertiary",
+      "type": "ws.open",
+      "connection": "wsTertiary",
+      "request": {
+        "url": "{bobWsUrl}",
+        "timeoutMs": 15000
+      }
+    },
+    {
+      "name": "wsTertiaryAuthorizationReady",
+      "type": "ws.wait",
+      "connection": "wsTertiary",
+      "expect": {
+        "connection": "wsTertiary",
+        "withinMs": 15000,
+        "consume": true,
+        "messages": [
+          {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "payload": {
+              "typeId": "client-state.snapshot"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "commitConcurrentGroupRevisions",
+      "type": "parallel",
+      "maxConcurrency": 2,
+      "timeoutMs": 30000,
+      "groups": [
+        {
+          "name": "primary-role-mutation",
+          "steps": [
+            {
+              "name": "consumeBaselineCurrentTopologyOnPrimary",
+              "type": "ws.wait",
+              "connection": "wsPrimary",
+              "expect": {
+                "connection": "wsPrimary",
+                "withinMs": 15000,
+                "consume": true,
+                "messages": [
+                  {
+                    "route": {
+                      "topicId": "overlay.topology",
+                      "contextId": "{groupId}"
+                    },
+                    "payload": {
+                      "typeId": "overlay.topology"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "promoteBobThroughPrimary",
+              "type": "http",
+              "connection": "apiPrimary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}/members/{bobClientId}/role",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "body": {
+                  "requestId": "promote-bob-{groupId}-{runId}-delta",
+                  "role": "admin"
+                },
+                "outputs": {
+                  "roleMutationRevision": "body.causalRevision.groupRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "stateRevision": "integer",
+                  "group": {
+                    "groupId": "{groupId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "secondary-group-mutation",
+          "steps": [
+            {
+              "name": "consumeBaselineCurrentTopologyOnTertiary",
+              "type": "ws.wait",
+              "connection": "wsTertiary",
+              "expect": {
+                "connection": "wsTertiary",
+                "withinMs": 15000,
+                "consume": true,
+                "messages": [
+                  {
+                    "route": {
+                      "topicId": "overlay.topology",
+                      "contextId": "{groupId}"
+                    },
+                    "payload": {
+                      "typeId": "overlay.topology"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "name": "updateGroupThroughSecondary",
+              "type": "http",
+              "connection": "apiSecondary",
+              "request": {
+                "method": "PUT",
+                "path": "/api/state/apps/{applicationId}/workspaces/{workspaceId}/groups/{groupId}",
+                "headers": {
+                  "Authorization": "{aliceAuthHeader}",
+                  "x-client-id": "{aliceClientId}"
+                },
+                "body": {
+                  "requestId": "update-group-{groupId}-{runId}-delta",
+                  "description": "Concurrent update from the secondary API server"
+                },
+                "outputs": {
+                  "groupMutationRevision": "body.causalRevision.groupRevision"
+                }
+              },
+              "expect": {
+                "status": 200,
+                "body": {
+                  "stateRevision": "integer",
+                  "group": {
+                    "groupId": "{groupId}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "waitForBothRevisionEnvelopesOnPrimary",
+      "type": "ws.wait",
+      "connection": "wsPrimary",
+      "request": {
+        "outputs": {
+          "primaryFirstEnvelopePayload": "matchedMessages.0.matchedMessage.data.payload.resource",
+          "primarySecondEnvelopePayload": "matchedMessages.1.matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsPrimary",
+        "withinMs": 20000,
+        "consume": true,
+        "ordered": false,
+        "messages": [
+          {
+            "route": {
+              "topicId": "group-state.event"
+            },
+            "payload": {
+              "typeId": "group-state.event"
+            }
+          },
+          {
+            "route": {
+              "topicId": "group-state.event"
+            },
+            "payload": {
+              "typeId": "group-state.event"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "waitForBothRevisionEnvelopesOnTertiary",
+      "type": "ws.wait",
+      "connection": "wsTertiary",
+      "request": {
+        "outputs": {
+          "tertiaryFirstEnvelopePayload": "matchedMessages.0.matchedMessage.data.payload.resource",
+          "tertiarySecondEnvelopePayload": "matchedMessages.1.matchedMessage.data.payload.resource"
+        }
+      },
+      "expect": {
+        "connection": "wsTertiary",
+        "withinMs": 20000,
+        "consume": true,
+        "ordered": false,
+        "messages": [
+          {
+            "route": {
+              "topicId": "group-state.event"
+            },
+            "payload": {
+              "typeId": "group-state.event"
+            }
+          },
+          {
+            "route": {
+              "topicId": "group-state.event"
+            },
+            "payload": {
+              "typeId": "group-state.event"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "parsePrimaryFirstEnvelope",
+      "type": "set",
+      "output": "primaryFirstEnvelope",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.primaryFirstEnvelopePayload"
+        }
+      }
+    },
+    {
+      "name": "parsePrimarySecondEnvelope",
+      "type": "set",
+      "output": "primarySecondEnvelope",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.primarySecondEnvelopePayload"
+        }
+      }
+    },
+    {
+      "name": "parseTertiaryFirstEnvelope",
+      "type": "set",
+      "output": "tertiaryFirstEnvelope",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.tertiaryFirstEnvelopePayload"
+        }
+      }
+    },
+    {
+      "name": "parseTertiarySecondEnvelope",
+      "type": "set",
+      "output": "tertiarySecondEnvelope",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.tertiarySecondEnvelopePayload"
+        }
+      }
+    },
+    {
+      "name": "assertPrimaryExactRevisions",
+      "type": "assert",
+      "actual": {
+        "firstRevision": "{primaryFirstEnvelope.resultingCausalRevision.groupRevision}",
+        "secondRevision": "{primarySecondEnvelope.resultingCausalRevision.groupRevision}"
+      },
+      "expect": {
+        "anyOf": [
+          {
+            "firstRevision": "{roleMutationRevision}",
+            "secondRevision": "{groupMutationRevision}"
+          },
+          {
+            "firstRevision": "{groupMutationRevision}",
+            "secondRevision": "{roleMutationRevision}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "assertTertiaryExactRevisions",
+      "type": "assert",
+      "actual": {
+        "firstRevision": "{tertiaryFirstEnvelope.resultingCausalRevision.groupRevision}",
+        "secondRevision": "{tertiarySecondEnvelope.resultingCausalRevision.groupRevision}"
+      },
+      "expect": {
+        "anyOf": [
+          {
+            "firstRevision": "{roleMutationRevision}",
+            "secondRevision": "{groupMutationRevision}"
+          },
+          {
+            "firstRevision": "{groupMutationRevision}",
+            "secondRevision": "{roleMutationRevision}"
+          }
+        ]
+      }
+    },
+    {
+      "name": "assertEnvelopePayloadsAcrossPrimaryAndTertiary",
+      "type": "assert",
+      "actual": {
+        "primaryFirst": "{primaryFirstEnvelope}",
+        "primarySecond": "{primarySecondEnvelope}",
+        "tertiaryFirst": "{tertiaryFirstEnvelope}",
+        "tertiarySecond": "{tertiarySecondEnvelope}"
+      },
+      "expect": {
+        "body": {
+          "primaryFirst": {
+            "resultingCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
+            "group": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "primarySecond": {
+            "resultingCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
+            "group": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "tertiaryFirst": {
+            "resultingCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
+            "group": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          },
+          "tertiarySecond": {
+            "resultingCausalRevision": {
+              "groupRevision": "integer",
+              "presenceRevision": "integer"
+            },
+            "group": {
+              "applicationId": "{applicationId}",
+              "workspaceId": "{workspaceId}",
+              "groupId": "{groupId}"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "closeAliceWebSocket",
+      "type": "ws.close",
+      "connection": "wsPrimary",
+      "request": {
+        "code": 1000,
+        "reason": "topology convergence complete"
+      }
+    },
+    {
+      "name": "closeBobWebSocket",
+      "type": "ws.close",
+      "connection": "wsTertiary",
+      "request": {
+        "code": 1000,
+        "reason": "topology convergence complete"
+      }
+    },
+    {
+      "name": "logoutAliceThroughPrimary",
+      "type": "http",
+      "connection": "apiPrimary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{aliceAuthHeader}",
+          "x-client-id": "{aliceClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    },
+    {
+      "name": "logoutBobThroughSecondary",
+      "type": "http",
+      "connection": "apiSecondary",
+      "request": {
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "headers": {
+          "Authorization": "{bobAuthHeader}",
+          "x-client-id": "{bobClientId}"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "body": {
+          "loggedOut": true
+        }
+      }
+    }
+  ]
+}
