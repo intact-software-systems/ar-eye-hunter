@@ -538,6 +538,12 @@ export class RallarRtcTopologyService {
         });
         if (evolved.outcome === 'full-rebuild') {
             this.metrics.incrementalPlanFallbackFullCount += 1;
+            // An invariant-violating evolution is the only fallback reason that
+            // says the incremental algorithms produced an unusable graph; a
+            // budgeted or failed update is an ordinary, expected fallback.
+            if (evolved.reason === 'invariant-violation') {
+                this.metrics.incrementalPlanInvariantFallbackCount += 1;
+            }
             return undefined;
         }
 
