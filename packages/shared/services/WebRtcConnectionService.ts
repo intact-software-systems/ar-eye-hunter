@@ -75,6 +75,14 @@ export type WebRtcPeerConnectionAttemptExhaustedEvent =
     reason: 'peer-connection-attempt-budget-exhausted';
 }>;
 
+export type WebRtcPeerConnectionAttemptBudgetDiagnostics = Readonly<{
+    consumedCount: number;
+    resetOnSuccessCount: number;
+    resetOnRemovalCount: number;
+    cooldownExpiredClearCount: number;
+    exhaustedCount: number;
+}>;
+
 export const DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY: WebRtcPeerConnectionAttemptBudgetPolicy = {
     enabled: false,
     maxAttempts: 6,
@@ -268,6 +276,13 @@ export class WebRtcConnectionService {
     private readonly peerEstablishmentWatchdog = new AsyncCommand<PeerId, QRtcPeerDto>();
     private readonly peerConnectionAttemptStateByPeerId =
         new Map<PeerId, WebRtcPeerConnectionAttemptState>();
+    private readonly attemptBudgetDiagnostics = {
+        consumedCount: 0,
+        resetOnSuccessCount: 0,
+        resetOnRemovalCount: 0,
+        cooldownExpiredClearCount: 0,
+        exhaustedCount: 0,
+    };
     private readonly tentativePeerIds = new Set<PeerId>();
     private inboundPeerCreationPolicy: WebRtcInboundPeerCreationPolicy | undefined;
 
@@ -300,6 +315,10 @@ export class WebRtcConnectionService {
         return this.toPeerConnectionAttemptDiagnostics(state);
     }
 
+    readPeerConnectionAttemptBudgetDiagnostics(): WebRtcPeerConnectionAttemptBudgetDiagnostics {
+        return { ...this.attemptBudgetDiagnostics };
+    }
+
     // --------------------------------------------------
     // Callbacks
     // --------------------------------------------------
@@ -326,7 +345,7 @@ export class WebRtcConnectionService {
         if (rtcPeer === undefined) {
             console.log(`Peer ${peerId} not found. Ignoring`);
             if (options.resetAttemptBudget !== false) {
-                this.clearPeerConnectionAttemptBudget(peerId);
+                this.clearPeerConnectionAttemptBudget(peerId, 'removal');
             }
             return false;
         }
@@ -334,7 +353,7 @@ export class WebRtcConnectionService {
         this.clearPeerEstablishmentTimeout(peerId);
         this.tentativePeerIds.delete(peerId);
         if (options.resetAttemptBudget !== false) {
-            this.clearPeerConnectionAttemptBudget(peerId);
+            this.clearPeerConnectionAttemptBudget(peerId, 'removal');
         }
 
         for (const [_, cb] of this.onRtcPeerLifecycleCallbacks.entries()) {
@@ -436,8 +455,8 @@ export class WebRtcConnectionService {
             .filter((health): health is RtcPeerHealth => health !== undefined);
     }
 
-    disconnectPeer(peerId: string): boolean {
-        return this.removePeerIfPresent(peerId);
+    disconnectPeer(peerId: string, options: WebRtcRemovePeerOptions = {}): boolean {
+        return this.removePeerIfPresent(peerId, options);
     }
 
     private toSignalingProtocol(): QRtcSignalingTransportCallbacks {
@@ -710,7 +729,10 @@ export class WebRtcConnectionService {
                         onClosed: (peerId: string) => {
                             console.log(`Connection to peer ${peerId} closed, removing from queue box`);
                             this.clearPeerEstablishmentTimeout(peerId);
-                            this.removePeerIfPresent(peerId);
+                            // A closed connection is churn evidence, not success:
+                            // the attempt budget survives so a flapping overlay
+                            // cannot mint fresh dial budgets by closing edges.
+                            this.removePeerIfPresent(peerId, { resetAttemptBudget: false });
                             return Promise.resolve();
                         }
                     }
@@ -849,7 +871,9 @@ export class WebRtcConnectionService {
                 started?.right,
             );
             if (options.cleanupOnFailure && result.peer) {
-                this.removePeerIfPresent(result.peer.peerId);
+                // A failed lane open consumed budget; cleaning up the peer
+                // must not refund it.
+                this.removePeerIfPresent(result.peer.peerId, { resetAttemptBudget: false });
             }
 
             return result;
@@ -1081,7 +1105,7 @@ export class WebRtcConnectionService {
 
     private markPeerEstablished(peerId: PeerId): void {
         this.clearPeerEstablishmentTimeout(peerId);
-        this.clearPeerConnectionAttemptBudget(peerId);
+        this.clearPeerConnectionAttemptBudget(peerId, 'established');
         this.tentativePeerIds.delete(peerId);
     }
 
@@ -1155,6 +1179,7 @@ export class WebRtcConnectionService {
             }
 
             this.peerConnectionAttemptStateByPeerId.delete(peerId);
+            this.attemptBudgetDiagnostics.cooldownExpiredClearCount += 1;
         } else if (
             current &&
             this.isPeerConnectionAttemptBudgetExhausted(current, policy, now)
@@ -1181,6 +1206,7 @@ export class WebRtcConnectionService {
                 lastAttemptAtEpochMs: now,
             };
         this.peerConnectionAttemptStateByPeerId.set(peerId, next);
+        this.attemptBudgetDiagnostics.consumedCount += 1;
         return undefined;
     }
 
@@ -1205,6 +1231,7 @@ export class WebRtcConnectionService {
             retryAfterEpochMs: exhaustedAtEpochMs + policy.cooldownMs,
         };
         this.peerConnectionAttemptStateByPeerId.set(peerId, exhausted);
+        this.attemptBudgetDiagnostics.exhaustedCount += 1;
         const event = this.toPeerConnectionAttemptExhaustedEvent(
             exhausted,
             policy,
@@ -1260,8 +1287,18 @@ export class WebRtcConnectionService {
         }
     }
 
-    private clearPeerConnectionAttemptBudget(peerId: PeerId): void {
-        this.peerConnectionAttemptStateByPeerId.delete(peerId);
+    private clearPeerConnectionAttemptBudget(
+        peerId: PeerId,
+        reason: 'established' | 'removal',
+    ): void {
+        if (!this.peerConnectionAttemptStateByPeerId.delete(peerId)) {
+            return;
+        }
+        if (reason === 'established') {
+            this.attemptBudgetDiagnostics.resetOnSuccessCount += 1;
+        } else {
+            this.attemptBudgetDiagnostics.resetOnRemovalCount += 1;
+        }
     }
 
     private peerConnectionAttemptBudgetPolicy(): WebRtcPeerConnectionAttemptBudgetPolicy {

@@ -1018,6 +1018,79 @@ describe('WebRtcConnectionService', () => {
         expect(service.peerConnectionAttemptDiagnostics('z-peer')).toBeUndefined();
     });
 
+    it('counts attempt-budget consumption, exhaustion, and reset evidence separately', async () => {
+        vi.useFakeTimers();
+        const signaler = {
+            connect: vi.fn(async () => {
+            }),
+            send: vi.fn(async () => {
+            }),
+        };
+        const service = new WebRtcConnectionService(
+            signaler as never,
+            {
+                ...createConnectionInput('a-self'),
+                peerEstablishmentTimeout: {
+                    enabled: true,
+                    timeoutMs: 50,
+                },
+                peerConnectionAttemptBudget: {
+                    enabled: true,
+                    maxAttempts: 2,
+                    maxTotalDurationMs: 100,
+                    cooldownMs: 30,
+                },
+            },
+        );
+
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toEqual({
+            consumedCount: 0,
+            resetOnSuccessCount: 0,
+            resetOnRemovalCount: 0,
+            cooldownExpiredClearCount: 0,
+            exhaustedCount: 0,
+        });
+
+        service.ensurePeerConnectionStarted('z-peer');
+        await vi.advanceTimersByTimeAsync(50);
+        service.ensurePeerConnectionStarted('z-peer');
+        await vi.advanceTimersByTimeAsync(50);
+        service.ensurePeerConnectionStarted('z-peer');
+
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
+            consumedCount: 2,
+            exhaustedCount: 1,
+            cooldownExpiredClearCount: 0,
+        });
+
+        await vi.advanceTimersByTimeAsync(30);
+        service.ensurePeerConnectionStarted('z-peer');
+
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
+            consumedCount: 3,
+            cooldownExpiredClearCount: 1,
+            resetOnSuccessCount: 0,
+            resetOnRemovalCount: 0,
+        });
+
+        service.disconnectPeer('z-peer');
+
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
+            resetOnRemovalCount: 1,
+            resetOnSuccessCount: 0,
+        });
+
+        service.ensurePeerConnectionStarted('z-peer');
+        mockState.dataChannels.at(-1)!.healthReadyState = 'open';
+        mockState.dataChannels.at(-1)!.rtcCallbacks?.onOpen?.();
+
+        expect(service.readPeerConnectionAttemptBudgetDiagnostics()).toMatchObject({
+            consumedCount: 4,
+            resetOnSuccessCount: 1,
+            resetOnRemovalCount: 1,
+        });
+    });
+
     it('ensures a requested peer lane is open after starting the connection', async () => {
         const signaler = {
             connect: vi.fn(async () => {

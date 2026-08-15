@@ -4,7 +4,15 @@ import { Either } from '@shared/resilience/Either.ts';
 import { DynamicMeshAlgo } from './mesh/group-dynamics-mesh-types.ts';
 import { DEFAULT_GRAPH_PROP, MessageType, ReconfigAlgo } from './algo-props.ts';
 import type { DynamicTreeAlgo } from './remove/remove-dynamics-types.ts';
-import { type EdgeProp, type GraphProp, TreeGraph, VertexId, type VertexProp, WeightedGraph, } from './graph-props.ts';
+import {
+    compareVertexIds,
+    type EdgeProp,
+    type GraphProp,
+    TreeGraph,
+    VertexId,
+    type VertexProp,
+    WeightedGraph,
+} from './graph-props.ts';
 import { InsertToMeshComputedDto, InsertToMeshInputDto, } from './mesh/insert-mesh-algs.ts';
 import { CoreSelectionAlgo, findWCNodes, } from './graph/steiner-core-algorithms.ts';
 import { removeVertexFromTree } from './remove/remove-dynamics-facade.ts';
@@ -81,10 +89,12 @@ export function createGroupMesh(
 ): CreateGroupMeshComputedDto {
     const started = performance.now();
     const memberSessionIds = uniqueSessionIds(readGroupMemberSessionIds(input.group));
+    // Mesh shape is a function of insertion order; the default is canonical
+    // vertex order so identical member sets build identical meshes.
     const orderedMembers = input.orderMemberSessionIds?.(
         memberSessionIds,
         input.globalGraph,
-    ) ?? memberSessionIds;
+    ) ?? [...memberSessionIds].sort(compareVertexIds);
     let mesh = createEmptyGroupGraphLike(input.globalGraph);
 
     if (orderedMembers.length === 0) {

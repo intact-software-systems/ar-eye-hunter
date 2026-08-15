@@ -1,0 +1,310 @@
+# Phase 4 Stable-Topology-Evolution Results (baseline + candidate measured 2026-08-15)
+
+Status: **baseline and candidate measured.** Baseline on the slice-1 instrumented tree (churn
+recipe + counting-only attempt-budget diagnostics — zero behavior change relative to `main` at
+`f094abb3`); candidate on the full phase-4 tree (M6 canonical + incremental planning with kind
+hysteresis, M8 RTT refinement gating, M11 overlay-transition retention + budget survival, M9
+reconcile coalescing).
+
+Phase 4 evidence beside
+[the Phase 0 formation-burst baseline](2026-08-08-formation-burst-baseline.md),
+[the Phase 1 overlay-precedence results](2026-08-09-phase1-overlay-precedence-results.md),
+[the Phase 2 server-damping results](2026-08-11-phase2-server-damping-results.md), and the primary
+reference
+[the Phase 3 delta-dissemination results](2026-08-13-phase3-delta-dissemination-results.md),
+for Phase 4 of
+[the group formation implementation plan](../2026-08-08-group-formation-implementation-plan.md).
+
+Reading rules are the Phase 0 baseline's (process-local metrics, primary + secondary capture with
+the tertiary share uncaptured, liveness-only assertions) with one extension: the churn recipe
+captures four instants — T0 (pre-formation), T1 (formed, pre-churn), T2 (post-churn), T3 (after
+the ~60 s steady-state heartbeat window) — so T1−T0 is the formation burst, **T2−T1 is the churn
+window** (six sequential join/leave cycles with 1.5 s settle delays, i.e. 12 membership changes),
+and T3−T2 is steady state.
+
+## Baseline run provenance
+
+- Branch `codex/group-formation-phase4-stable-topology-evolution`, slice-1 instrumented tree;
+  behaviorally identical to `main` at `f094abb3` (a new churn recipe plus counting-only
+  attempt-budget diagnostics).
+- Machine: macOS 26.6 (Darwin 25.6.0), Apple Silicon (arm64); Node v26.7.0; Postgres via Docker
+  (`ar-eye-hunter-postgres`), database recreated from empty volumes and freshly migrated before
+  the Postgres runs.
+- Commands (baseline): `npm run test:api-v1:black-box:memory` → 22/22;
+  `npm run test:api-v1:black-box:postgres:formation-large` → burst-large + churn-large passed
+  on the pre-phase-4 tree.
+- Commands (candidate): `npm run test:api-v1:black-box:memory` → 22/22;
+  `npx vitest run packages/tests/` → 7,082 passed / 5 skipped;
+  `npm run test:api-v1:black-box:postgres` → 22/22 standard + 5/5 cluster;
+  `npm run test:api-v1:black-box:postgres:formation-large` under the `dual-emit` default and
+  again with `RALLAR_GROUP_STATE_DISSEMINATION=delta-primary` → all four runs passed;
+  CI: API v1 Medium-Scale Gate run 31891191399 and API v1 Topology Replay Gate run 31891191396
+  both **success** on the candidate head; the state-write perf protocol below.
+- Raw artifacts are not committed (`scripts/perf/README.md` artifact policy); numbers are the
+  `outputs.*` captures from each recipe's `report.json` and the planner measurement described
+  below.
+
+## Baseline: planner edge churn per membership change (unit-level, no-RTT paths)
+
+Measured directly against `RallarRtcTopologyService.planGroupTopologyAt` (the same planning kernel
+the durable work handler calls), with zero-padded session ids, no RTT measurements, and default
+config — one full replan per membership change, exactly what the pre-phase-4 server executes.
+"Churn" is the symmetric difference of undirected edge sets between consecutive plans.
+
+| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Same-set reorder churn (edges) |
+| --- | --- | --- | --- | --- | --- |
+| 6 | tree | 5 | 7 | 1 | 6 |
+| 20 | mesh | 37 | 2 | 6 | 54 |
+| 50 | mesh | 97 | 2 | 6 | 180 |
+
+Observations:
+
+- **A different arrival order of the identical member set plans a mostly different graph** —
+  at N=50 the reorder churn (180) is ~93% of the combined edge slots of the two plans. Every
+  fallback weight is positional (`|i-j|+1` over the presence-array index), the no-RTT mesh
+  attaches each member to the most recently inserted feasible candidates, and the tree source is
+  picked by positional index distance — so planning is a function of arrival order, not of the
+  member set. This is the quantified root cause behind both the cross-server determinism risk
+  and the "replans do not preserve structure" behavior Phase 4 (M6) targets.
+- **Mesh joins are incidentally cheap** (2 edges — the full rebuild replays the same insertion
+  prefix and appends the joiner), but this is an accident of append-order stability, not a
+  contract: the same rebuild churns 54–180 edges the moment order shifts.
+- **The tree tier full-rebuilds on join** (7 of 5+6 edges at N=6): every join in the 5–15 member
+  band rewires essentially the whole tree today.
+- Leave churn is bounded (1–6 edges) only because removal keeps the surviving members' relative
+  order; the browser still pays a teardown+redial per changed edge, and each teardown resets the
+  peer's connection-attempt budget on the pre-phase-4 tree (reset-on-removal — the flap-loop
+  hazard M11 closes).
+
+## Baseline: churn recipe (formed N=50, six join/leave cycles, three-server Postgres cluster)
+
+`api-v1-group-formation-churn-large` baseline run: **PASSED, 2,070 step successes, zero
+failures** (burst-large re-passed beside it with 1,307). Metrics are process-local and
+cumulative, and the burst-large recipe ran first in the same processes, so T0 carries its
+residue; every quantity below is a window delta. All numbers are the primary server; secondary
+egress was 0 in every window (all recipe WS clients connect to the primary), and the tertiary
+share is uncaptured (Phase 0 reading rule).
+
+Churn window (T2−T1; 12 membership changes: 6 joins with presence connect, 6 presence
+disconnects, 1.5 s settle between operations):
+
+| Quantity | Churn window | Per membership change |
+| --- | --- | --- |
+| `overlay.topology` egress bytes | 19,432,098 | **≈ 1.62 MB** |
+| `overlay.topology` WS sends | 24 | 2.0 |
+| Topology replans executed (`topologyUpdateCount`) | 9 | 0.75 |
+| Replans changed / published | 9 / 9 | 0.75 |
+| Fingerprint-gated skips (`topologyRebuildSkippedFingerprintCount`) | 6 | 0.5 |
+| `group-state.event` egress bytes | 6,972,400 | 581 KB |
+| `group-state.snapshot` egress bytes (dual-emit oracle) | 71,812,081 | 5.98 MB |
+| `group-directory.snapshot` egress bytes (dual-emit oracle) | 71,822,047 | 5.99 MB |
+| Presence-summary expansions | 18 | 1.5 |
+
+Steady-state window (T3−T2, ~60 s with two heartbeat rounds across the 50 online clients):
+**0 egress bytes, 0 WS sends, 0 expansions, 0 replans, 0 publications** — the only movement is
+the heartbeat lease renewals in `groupMutationCount` (+73), so the phase-2 idle property holds
+under the churn instrument.
+
+Observations:
+
+- **Every churned membership change publishes a full ~810 KB overlay snapshot to every session**
+  (~1.62 MB per change at N≈51–56 across ~2 sends): replan output is a complete
+  `nextHopsBySessionId` graph regardless of how small the actual edge delta is. Combined with
+  the planner-level table above (full replans that reshuffle on reorder), this is the
+  O(N)-per-change cost phase 4 bounds to O(delta).
+- The damping machinery behaves correctly under churn: 12 changes coalesce into 9 executed
+  replans, every executed replan is genuinely changed and published exactly once, and 6
+  redundant recomputes (for example the member-remove after a presence disconnect) are
+  fingerprint-skipped.
+- Under the `dual-emit` default the two per-change full-snapshot topics still dominate the churn
+  window (143.6 MB of 170.1 MB total) — the phase-3 delta-primary evidence applies to churn
+  exactly as it did to formation, which is the delta-consumption context for this phase's
+  dissemination-default checkpoint decision.
+- Browser-side composition (from the churn simulation beside the burst simulation): the
+  `WebRtcGroupManager` executes exactly the per-client edge delta of an overlay transition —
+  a republished identical edge set churns zero edges, and a disjoint transition tears down and
+  redials per changed edge in the same reconcile pass with no grace window and no retention.
+  Each teardown resets the peer's connection-attempt budget on this tree (reset-on-removal),
+  measured by the new counting-only attempt-budget diagnostics.
+
+## Phase 4 targets (set from this baseline)
+
+- Identical member sets plan byte-identical graphs across servers and insertion orders (reorder
+  churn → 0), unit-proven across sizes.
+- Edge churn per single join/leave bounded by O(degree) with no full-mesh teardown, on both the
+  planner measurement and the churn recipe/simulation.
+- No budget-reset flap loops under the churn stream (`resetOnRemovalCount` stays ≈ 0 once M11
+  lands; measured by the new counting-only attempt-budget diagnostics).
+- No kind-boundary oscillation across the hysteresis band.
+- Every phase-2 and phase-3 property preserved: idle steady state ≈ 0 beyond client-plane lease
+  writes, burst egress at the phase-3 levels per dissemination mode, liveness assertions, and
+  fingerprint-skips still firing.
+
+## Candidate results
+
+### Slice 2 (M6 canonical input + order-independent weights): planner edge churn
+
+Same measurement as the baseline table, on the slice-2 tree (canonical sorted planning input,
+hash-derived pair weights at every fallback site including the no-RTT mirrors, order-sensitive
+`changed` predicate, code-unit tie-breaks on the planning path):
+
+| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Same-set reorder churn (edges) |
+| --- | --- | --- | --- | --- | --- |
+| 6 | tree | 5 | 1 (was 7) | 1 (was 1) | **0 (was 6)** |
+| 20 | mesh | 37 | 2 (was 2) | 8 (was 6) | **0 (was 54)** |
+| 50 | mesh | 97 | 2 (was 2) | 6 (was 6) | **0 (was 180)** |
+
+- **Same-set reorder churn is 0 at every size** — identical member sets now plan byte-identical
+  graphs regardless of arrival order (unit-proven across sizes 2–64, no-RTT and RTT-mixed, in
+  `rtc-topology-plan-determinism.test.ts`).
+- Join/leave churn is already inside O(degree) *empirically* on full rebuilds, because
+  pair-stable weights keep unrelated planning decisions identical when one member changes. The
+  tree tier's join churn fell 7 → 1. This bound is emergent, not contractual — the
+  incremental-seeding + hysteresis slice turns it into a contract (and covers the kind-boundary
+  crossings a full rebuild still reshuffles).
+
+### Slice 3 (M6 incremental evolution + kind hysteresis): planner edge churn
+
+Same measurement on the slice-3 tree, now planning with the `membership-delta` intent the
+durable group-revision work path passes (incremental evolution of the previous accepted graph
+through `updateGroupTree`/`updateGroupMesh`, hysteresis band widths
+`RALLAR_RTC_TOPOLOGY_MESH_EXIT_WIDTH=4` / `TREE_EXIT_WIDTH=0`, RTT-refresh and explicit
+reconfigure work still full rebuilds — the periodic drift bound):
+
+| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Incremental plans / fallbacks |
+| --- | --- | --- | --- | --- | --- |
+| 6 | tree | 5 | 1 | 1 | 2 / 0 |
+| 20 | mesh | 37 | 2 | 5 | 2 / 0 |
+| 50 | mesh | 97 | 2 | 5 | 2 / 0 |
+
+- Structure preservation is now by construction, not coincidence: an unchanged member keeps its
+  edges, join adds `meshParamK` (or one tree) edges, leave repairs locally. The contractual
+  bound (churn ≤ 2×(degreeLimit+1) per single change) plus incremental-vs-full invariant
+  equivalence, seeded determinism, delta-budget fallback, and the hysteresis boundary walk
+  (15↔16 flap holds mesh through the 12–15 band, exits at 11) are unit-proven in
+  `evolve-planned-topology.test.ts` and `topology-kind-hysteresis.test.ts`.
+
+### Slice 4 (M11 + M9): browser churn resilience
+
+Measured through the churn simulation (50 real `WebRtcGroupManager` stacks over a fake connection
+service, seeded ring overlays):
+
+- **Overlay transition, within the grace window**: each client dials its 2 incoming delta edges
+  and tears down **0** — the 2 outgoing edges the previous epoch wanted become retained
+  connections (`reason: 'overlay-transition'`, grace default
+  `DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS = 15 s`).
+- **Flap (epoch A → B → A)**: the round trip costs exactly the 2 forward dials and **0
+  teardowns** — the reverted epoch's edges are still connected, so flapping converges instead of
+  looping. A republished identical edge set stays at 0/0.
+- **Expiry**: past the grace window the retained edges tear down (`retainedExpiredCount`), and
+  every churn-path teardown — overlay expiry, retained eviction, connection close, failed lane
+  open — now preserves the peer's connection-attempt budget (`resetAttemptBudget: false`);
+  budgets reset only on genuine establishment or explicit user reconnect intent. Failures still
+  consume budget.
+- **M9**: the reconcile single-flight is a true coalescer — a trigger arriving while a run is in
+  flight is flagged and re-run against the newest state instead of silently dropped
+  (`reconcileCoalescedRerunCount` / the awaited-caller re-run path), proven by the concurrent
+  reconcile test that previously documented the lost update.
+
+### Candidate: churn recipe under both dissemination modes (three-server Postgres cluster)
+
+Full candidate tree (slices 1–5), fresh database, burst-large + churn-large run per mode
+(`RALLAR_GROUP_STATE_DISSEMINATION=delta-primary` exported for the delta runs; dual-emit is the
+default). All runs **PASSED** with full liveness: dual-emit burst 1,327 / churn 2,086 step
+successes; delta-primary burst 1,323 / churn 2,070 — zero failures in every run.
+
+Churn window (T2−T1, primary server; 12 membership changes):
+
+| Quantity | Baseline (pre-phase-4) | Candidate dual-emit | Candidate delta-primary |
+| --- | --- | --- | --- |
+| Replans executed | 9 | 10 | 11 |
+| **Incremental plans / full-rebuild fallbacks** | — (path did not exist) | **9 / 1** | **9 / 2** |
+| Publications | 9 | 10 | 11 |
+| Fingerprint-gated skips | 6 | 5 | 6 |
+| `overlay.topology` egress bytes | 19,432,098 | 19,497,888 | 19,473,024* |
+| Steady state (T3−T2) | all 0 | all 0 | all 0 |
+
+\* delta-primary churn-window overlay egress computed from its own run's captures; the
+`group-state.snapshot`/`group-directory.snapshot` topics are 0 bytes in every delta-primary
+window while `group-state.event` envelopes carry the deltas.
+
+- **Incremental planning carries the churn stream in production**: 9 of the 10–11 executed
+  churn-window replans evolved the previous accepted graph (the 1–2 fallbacks are the recipe's
+  larger composite transitions), with zero invariant violations — the unit-level
+  incremental-vs-full equivalence holds live.
+- Overlay `wsEgressBytes` per change is intentionally unchanged: phase 4 bounds the **edge
+  churn** browsers execute (the planned-graph delta and the dial/teardown behavior), not the
+  size of a published overlay snapshot — overlay delta-encoding remains the named phase-5+
+  fanout follow-up phase 3 already recorded as "the largest remaining fanout".
+- Formation burst at N=50 (T1−T0, same runs): dual-emit 252.2 MB total vs delta-primary
+  **18.6 MB** (13.6×; phase-3 measured 19.3× on its own baseline day) — the phase-3 egress
+  property holds on the phase-4 tree in both modes, with idle steady state exactly 0.
+
+### Candidate: convergence and replay gates
+
+- **API v1 Medium-Scale Gate: PASSED in CI** on the full candidate tree (run 31891191399;
+  100 clients / 5 groups / 3 Postgres-backed processes, constants, operation matrix, and
+  assertions untouched), under the damped default with incremental planning live.
+- **API v1 Topology Replay Gate: PASSED in CI** on the full candidate tree (run 31891191396) —
+  the issue-156 pinned legacy-damping proof keeps its one-publication-per-mutation, exact
+  message-id, and cross-process byte-identity contracts with hash weights, canonical ordering,
+  hysteresis, and the rtt-refresh unchanged-gate in place (every new suppression is scoped to
+  damped group-revision work or rtt-refresh work, both unreachable from the proof's mutations).
+- Postgres standard (22/22) + cluster (5/5) profiles passed locally on a fresh database,
+  including the snapshot-payload-asserting `api-v1-rtc-topology-convergence` and the
+  cross-server `api-v1-state-topology-churn` recipes.
+
+### State-write perf comparison (issue #157 baseline-control protocol)
+
+Three runs on freshly recreated databases (`--backend=postgres --warmup=1 --runs=3
+--concurrency=10`): baseline A and control baseline B on the merge-base `f094abb3` (a pinned
+baseline worktree — `origin/main` moved to #224 mid-phase, so the merge-base is the
+apples-to-apples base), candidate on the phase-4 tree. The **identical-code control pairing
+FAILS the comparator outright** — shared throughput −8.1% plus five median drifts on identical
+code — re-confirming that this machine's variance sits above the 5% gates (the finding issue
+#157 tracks, third phase in a row).
+
+Against that floor: the candidate passes **every latency gate (uncontended p95/p99) in both
+pairings**. The one sign-stable candidate flag is hot-workload throughput (−10.5% vs A, −11.4%
+vs B), with reasoned medians (hot `sql.statements` +5.4%/+10.7% — a metric whose two
+identical-code baselines already differ by 5.1% from contention-retry variance; small shared
+median drifts inside the control's own drift ranges). Two facts weigh against reading the hot
+flag as a regression: issue #157's record shows hot throughput spanning ±36% between
+identical-code runs on this machine, and **no phase-4 code executes on the bench's measured
+path** — the bench drives group-state and topology-config writes and never drains the
+`APP_OUTBOX` topology work queue, so canonical planning, incremental evolution, hysteresis, and
+the refinement gate are all unreached (audited; the outbox intent kinds/counts per mutation are
+unchanged, which the comparator's mutation contract itself verifies).
+
+**Verdict: environment-limited comparator; no mutation-path regression indicated.** The
+escalation left open, consistent with the comparator's own protocol, is the order-balanced
+A-B-B-A pooling run on an idle, cooled machine (the candidate bench here ran last after ~1 h of
+continuous cluster load). Gate artifacts stay uncommitted under `tmp/perf/` per the artifact
+policy.
+
+## Dissemination-default checkpoint decision
+
+**Decision: keep `RALLAR_GROUP_STATE_DISSEMINATION=dual-emit` as the default; the churn-stream
+delta-consumption precondition is now met, and the flip is deferred to the phase-5 flagged
+transition with two named preconditions remaining.**
+
+Evidence weighed:
+
+- The churn stream (this phase's recipe, run in both modes — tables below) is the sustained
+  mutation-stream delta-consumption proof phase 3 recorded as the flip's precondition: under
+  `delta-primary` the formed-50 churn run converges with full liveness while both per-change
+  snapshot topics stay at zero bytes.
+- Two recipes still consume `group-state.snapshot` frames by contract and would go red under a
+  `delta-primary` default: `api-v1-cross-application-ws-isolation.json` (memory + postgres
+  standard profiles, including its cross-scope isolation negative) and
+  `api-v1-rtc-topology-convergence.json` (cluster profile, asserts snapshot payload contents).
+  The flip needs delta-mode variants of both — including a delta-mode cross-scope isolation
+  negative — which is recipe-contract work the program plan places in the phase-5 flagged
+  transition ("snapshot broadcasts per change are removed once delta consumption is proven").
+- The phase-3 audit's server-cache constraint (the RTT fallback group lookup reading the
+  process cache the snapshot topics refresh, `init-rtc-rtt-topic.ts`) still deserves its
+  re-verification under a delta-primary default before snapshot rows disappear.
+
+Recording the decision either way, per the phase-4 checkpoint contract: the consumption proof no
+longer blocks the flip; the recipe variants and the cache re-verification do, and they are named
+follow-up work rather than silent debt.

@@ -1,4 +1,4 @@
-import { TreeGraph, VertexId, VertexState, VertexType } from '../graph-props.ts';
+import { compareVertexIds, TreeGraph, VertexId, VertexState, VertexType } from '../graph-props.ts';
 import type { RemoveDynamicsContext, RemoveResult, } from './remove-dynamics-types.ts';
 import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf, } from './remove-dynamics-helpers.ts';
 import { connectMCE, connectMDE, connectSearchMCE, connectSearchMDE, } from './tree-dynamics-connect.ts';
@@ -185,7 +185,7 @@ function rankIntersectionVertices(
         ranked.push({ node: candidate, sumEdges });
     }
 
-    ranked.sort((a, b) => a.sumEdges - b.sumEdges || a.node.localeCompare(b.node));
+    ranked.sort((a, b) => a.sumEdges - b.sumEdges || compareVertexIds(a.node, b.node));
     return ranked;
 }
 
@@ -269,7 +269,7 @@ function seedHighestDegreeVertex(
             return db - da;
         }
 
-        return a.localeCompare(b);
+        return compareVertexIds(a, b);
     });
 
     const first = sorted[0];

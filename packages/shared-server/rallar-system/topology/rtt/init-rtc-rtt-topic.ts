@@ -10,7 +10,10 @@ import * as rttRepository from '@shared/repository/rtt-repository.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { computeGlobalGraphAndCacheIt } from '@shared-graph/group-graphs-create-service.ts';
+import { predictedRttMs } from '@shared-graph/graph/vivaldi.ts';
 import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
+
+import type { RtcRttRefinementGate } from './rtc-rtt-refinement-gate.ts';
 
 import type { RtcTopologyRuntimeState } from '../../ws-rtc-topology-runtime.ts';
 import type { RtcTopologyWorkPublisher } from '../../services/RtcTopologyOutboxWork.ts';
@@ -29,6 +32,7 @@ interface InitRtcRttTopicOptions {
   readonly rtcTopologyWorkPublisher?: RtcTopologyWorkPublisher;
   readonly runtimeState?: RtcTopologyRuntimeState;
   readonly persistentRuntimeDeclared: boolean;
+  readonly rttRefinementGate?: RtcRttRefinementGate;
   readonly scheduleGlobalGraphRttRecompute: () => void;
   readonly findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
   readonly enqueueRtcRttMutation?: (input: Readonly<{
@@ -90,17 +94,65 @@ export function initRtcRttTopic(options: InitRtcRttTopicOptions): void {
       }
       if (!acceptance.updated) return;
 
-      vivaldiService.observeRtt(rtt);
+      const predictedDeltaMs = observeRttWithPredictedDelta(rtt);
       options.scheduleGlobalGraphRttRecompute();
       if (options.rtcTopologyWorkPublisher && !options.runtimeState) {
-        await options.rtcTopologyWorkPublisher.enqueueForRttGroups(
-          rtt,
+        const refinementGroups = resolveRttRefinementGroups(
           acceptance.affectedGroups,
-          options.rtcTopologyService.readRttRebuildDebounceMs(),
+          predictedDeltaMs,
+          options.rttRefinementGate,
         );
+        if (refinementGroups.length > 0) {
+          await options.rtcTopologyWorkPublisher.enqueueForRttGroups(
+            rtt,
+            refinementGroups,
+            options.rtcTopologyService.readRttRebuildDebounceMs(),
+          );
+        }
       }
     },
   });
+}
+
+/**
+ * The Vivaldi delta for a report is how far the pair's predicted RTT moved
+ * when the observation was applied; the first observation of a pair has no
+ * prediction and always counts as refinement-worthy placement knowledge.
+ */
+function observeRttWithPredictedDelta(rtt: RttMeasurementInfo): number {
+  const predictedBefore = readPredictedPairRttMs(rtt);
+  vivaldiService.observeRtt(rtt);
+  const predictedAfter = readPredictedPairRttMs(rtt);
+  if (predictedBefore === undefined || predictedAfter === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs(predictedAfter - predictedBefore);
+}
+
+function readPredictedPairRttMs(rtt: RttMeasurementInfo): number | undefined {
+  const nodes = vivaldiService.readablePredictedNodeData();
+  const fromNode = nodes.get(rtt.sessionIdFrom);
+  const toNode = nodes.get(rtt.sessionIdTo);
+  if (!fromNode || !toNode) {
+    return undefined;
+  }
+  return predictedRttMs(fromNode, toNode);
+}
+
+function resolveRttRefinementGroups(
+  affectedGroups: readonly GroupSnapshot[],
+  predictedDeltaMs: number,
+  refinementGate: RtcRttRefinementGate | undefined,
+): readonly GroupSnapshot[] {
+  if (!refinementGate) {
+    return affectedGroups;
+  }
+  return affectedGroups.filter((group) =>
+    refinementGate.claimRefinement({
+      groupKey: toWebRtcGroupKey(group.group),
+      predictedDeltaMs,
+    })
+  );
 }
 
 export function computeGlobalGraphAndCacheItIfPossible(predictedDegreeLimit?: number): void {

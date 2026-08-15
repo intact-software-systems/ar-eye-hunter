@@ -3,6 +3,7 @@ import { removeTryReplaceMDDL } from './tree/remove-dynamics-mddl.ts';
 import { UndirectedGraph } from 'graphology';
 import { mddlOTTC, relaxDegreeByOne, type RelaxDegreeFn } from './tree/mddl-ottc.ts';
 import {
+    compareVertexIds,
     type EdgeProp,
     type GraphProp,
     TreeGraph,
@@ -65,7 +66,11 @@ export function createGroupTree(
     input: CreateGroupTreeInputDto,
 ): CreateGroupTreeComputedDto {
     const started = performance.now();
-    const memberSessionIds = new Set(readGroupMemberSessionIds(input.group));
+    // Canonical member iteration order: tree construction breaks weight ties
+    // by first-encountered vertex, so the set must never carry arrival order.
+    const memberSessionIds = new Set(
+        [...new Set(readGroupMemberSessionIds(input.group))].sort(compareVertexIds),
+    );
     const tree = createEmptyGroupGraphLike(input.globalGraph);
 
     if (memberSessionIds.size === 0) {

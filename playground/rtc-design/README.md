@@ -13,6 +13,9 @@ implementation plan.
 | [2026-08-08-rallar-system-planes-catalog.md](2026-08-08-rallar-system-planes-catalog.md)               | Beyond formation: the system planes a distributed group communication system needs (P1–P14 — time, room log, repair, failure detection, flow control, agreement-lite, interest management, trust, evolution, governance, operational truth, and more), each with mechanisms, Rallar seeds, scenario families, and a priority view. |
 | [baselines/2026-08-08-formation-burst-baseline.md](baselines/2026-08-08-formation-burst-baseline.md)   | Phase 0 measured baseline: the storm quantities recorded by the `group-formation` admin metrics family and the 6/20/50 formation-burst black-box tiers on memory and Postgres backends — the "before" numbers for Phases 1+.                                                                                                       |
 | [baselines/2026-08-09-phase1-overlay-precedence-results.md](baselines/2026-08-09-phase1-overlay-precedence-results.md) | Phase 1 measured results: server-overlay adoption and bounded outbound dials at the 6/20/50 tiers (in-process simulation + live three-browser diagnostics), plus the recipe reruns showing server-side storm quantities unchanged vs the Phase 0 baseline.                                                                        |
+| [baselines/2026-08-11-phase2-server-damping-results.md](baselines/2026-08-11-phase2-server-damping-results.md) | Phase 2 measured results: coalesced recomputes, the topology-input fingerprint change gate, heartbeat/presence separation, and scoped state-sync audiences — idle groups at ≈ 0 recomputes/broadcasts, burst recomputes in low single digits.                                                                                     |
+| [baselines/2026-08-13-phase3-delta-dissemination-results.md](baselines/2026-08-13-phase3-delta-dissemination-results.md) | Phase 3 measured results: delta envelopes, overlay read-through, and join admission — N=50 burst egress 255 MB → 13.2 MB under `delta-primary` (19.3×), with the dual-emit divergence oracle and the convergence/perf gates re-verified.                                                                                          |
+| [baselines/2026-08-15-phase4-stable-topology-evolution-results.md](baselines/2026-08-15-phase4-stable-topology-evolution-results.md) | Phase 4 baseline + results: planner edge churn per membership change (join/leave/reorder), the formed-N=50 churn-stream recipe, and the stable-topology-evolution candidate evidence (M6/M8/M11/M9).                                                                                                                             |
 
 Relationship to other documents:
 
@@ -25,6 +28,7 @@ Relationship to other documents:
   architecture authority for causal revisions, durable publications, and
   multi-server fanout.
 
-Status: Phase 0 (storm metrics + baseline) is merged; Phase 1 (overlay
-precedence + bounded bootstrap) is in progress on PR #138. Later phases
+Status: Phases 0–3 (storm metrics + baseline, overlay precedence + bounded
+bootstrap, server damping, delta dissemination + read-through + admission)
+are merged. Phase 4 (stable topology evolution) is in progress; phases 5–6
 remain planning documents.

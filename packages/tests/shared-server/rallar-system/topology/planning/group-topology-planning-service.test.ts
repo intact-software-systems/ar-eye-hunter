@@ -24,6 +24,7 @@ describe('GroupTopologyPlanningService', () => {
     ).resolves.toEqual({
       group,
       config,
+      kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
       rttMeasurements: [],
       nowEpochMs: 2_000,
     });
@@ -41,6 +42,7 @@ describe('GroupTopologyPlanningService', () => {
       {
         group: inactive,
         config: resolveGroupTopologyConfig({}),
+        kindHysteresisWidths: { meshExitWidth: 4, treeExitWidth: 0 },
         rttMeasurements: [],
         nowEpochMs: 2_000,
       },

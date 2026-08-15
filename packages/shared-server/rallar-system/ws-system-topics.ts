@@ -36,6 +36,7 @@ import {
   computeGlobalGraphAndCacheItIfPossible,
   initRtcRttTopic,
 } from './topology/rtt/init-rtc-rtt-topic.ts';
+import type { RtcRttRefinementGate } from './topology/rtt/rtc-rtt-refinement-gate.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
   initDynamicTopics?: boolean;
@@ -43,6 +44,7 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
   rtcTopologyService?: RallarRtcTopologyService;
   rtcTopologyOptions?: RallarRtcTopologyServiceOptions;
   rtcTopologyManagement?: GroupTopologyManagementService;
+  rttRefinementGate?: RtcRttRefinementGate;
   observeGroupSnapshot?: (snapshot: GroupSnapshot) => void | Promise<void>;
   observeClientSnapshot?: (snapshot: ClientSnapshot) => void | Promise<void>;
   rtcTopologyRuntimeState?: Readonly<{
@@ -180,6 +182,7 @@ export function initRallarSystemWsTopics(
     rtcTopologyWorkPublisher: rtcTopologyAppOutbox?.publisher,
     runtimeState: rtcTopologyRuntimeState,
     persistentRuntimeDeclared: rtcTopologyPersistence.declared,
+    rttRefinementGate: options.rttRefinementGate,
     scheduleGlobalGraphRttRecompute,
     findGroupSnapshotByRef,
     enqueueRtcRttMutation: options.enqueueRtcRttMutation,

@@ -20,6 +20,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -36,7 +38,9 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledTimes(2);
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenNthCalledWith(1, 'peer-a');
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenNthCalledWith(2, 'peer-c');
-        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-orphan');
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-orphan', {
+            resetAttemptBudget: false,
+        });
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual(['group-1', 'group-2']);
         expect(manager.isPeerOwnedByAnyGroup('peer-b')).toBe(true);
 
@@ -63,6 +67,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -95,6 +101,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -124,6 +132,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -149,6 +159,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -189,6 +201,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
         const workspaceA = createGroupSnapshot(
             'shared-room',
@@ -228,6 +242,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -237,7 +253,7 @@ describe('WebRtcGroupManager', () => {
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual(['peer-a']);
 
         await expect(manager.delete(group1.group)).resolves.toBe(true);
-        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a', { resetAttemptBudget: false });
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
 
         await manager.acceptGroupUpdate(
@@ -247,7 +263,9 @@ describe('WebRtcGroupManager', () => {
 
         await manager.clear();
 
-        expect(rtcQBox.disconnectPeer).toHaveBeenLastCalledWith('peer-a');
+        expect(rtcQBox.disconnectPeer).toHaveBeenLastCalledWith('peer-a', {
+            resetAttemptBudget: false,
+        });
         expect(manager.size()).toBe(0);
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
     });
@@ -260,6 +278,8 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -272,7 +292,7 @@ describe('WebRtcGroupManager', () => {
             createGroupSnapshot('group-1', 2, ['self']),
         );
 
-        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a', { resetAttemptBudget: false });
         expect(rtcQBox.knownPeerIds()).toEqual([]);
         expect(rtcQBox.peerIdsWithNoReconnectableLanes()).toEqual([]);
     });
@@ -286,7 +306,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             undefined,
-            { maxPeerConnections: 10 },
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0 },
         );
 
         clientCache.set('peer-a', createClientInfo('peer-a', true));
@@ -297,7 +317,7 @@ describe('WebRtcGroupManager', () => {
             .resolves.toBe(true);
 
         expect(manager.size()).toBe(0);
-        expect(rtcQBox.disconnectPeer).not.toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.disconnectPeer).not.toHaveBeenCalledWith('peer-a', { resetAttemptBudget: false });
         expect(rtcQBox.knownPeerIds()).toEqual(['peer-a']);
     });
 
@@ -310,7 +330,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             undefined,
-            { maxPeerConnections: 5 },
+            { maxPeerConnections: 5, overlayTransitionGraceMs: 0 },
         );
         const retainedPeerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d', 'peer-e'];
 
@@ -328,7 +348,7 @@ describe('WebRtcGroupManager', () => {
             createGroupSnapshot('group-2', 1, ['self', 'peer-f']),
         );
 
-        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a', { resetAttemptBudget: false });
         expect(rtcQBox.knownPeerIds().sort()).toEqual([
             'peer-b',
             'peer-c',
@@ -347,7 +367,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             undefined,
-            { maxPeerConnections: 10 },
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0 },
         );
         for (const peerId of ['peer-a', 'peer-b', 'peer-c', 'peer-d']) {
             clientCache.set(peerId, createClientInfo(peerId, true));
@@ -377,7 +397,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             overlayCache,
-            { maxPeerConnections: 10 },
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0 },
         );
         const group = createGroupSnapshot('group-1', 1, [
             'self',
@@ -408,7 +428,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             overlayCache,
-            { maxPeerConnections: 10 },
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0 },
         );
         const group = createGroupSnapshot('group-1', 1, [
             'self',
@@ -438,7 +458,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             undefined,
-            { maxPeerConnections: 10 },
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0 },
         );
         for (
             const peerId of [
@@ -476,7 +496,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             undefined,
-            { maxPeerConnections: 10 },
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0 },
         );
         for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
             clientCache.set(peerId, createClientInfo(peerId, true));
@@ -535,7 +555,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             overlayCache,
-            { maxPeerConnections: 10 },
+            { maxPeerConnections: 10, overlayTransitionGraceMs: 0 },
         );
         const group = createGroupSnapshot('group-1', 1, [
             'self',
@@ -562,7 +582,7 @@ describe('WebRtcGroupManager', () => {
         await manager.notifyOverlayTopologyChanged();
 
         expect(rtcQBox.ensurePeerConnectionStarted).toHaveBeenCalledWith('peer-b');
-        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a');
+        expect(rtcQBox.disconnectPeer).toHaveBeenCalledWith('peer-a', { resetAttemptBudget: false });
         expect(manager.state().desiredPeerIds).toEqual(['peer-b']);
         expect(manager.ownerGroupsOfPeer('peer-a')).toEqual([]);
         expect(manager.ownerGroupsOfPeer('peer-b')).toEqual(['group-1']);
@@ -576,16 +596,21 @@ describe('WebRtcGroupManager', () => {
             rtcQBox.service as never,
             groupCache,
             clientCache,
+            undefined,
+            { overlayTransitionGraceMs: 0 },
         );
 
         expect(manager.readDiagnostics()).toEqual({
             reconcileRunCount: 0,
             reconcileAwaitedInFlightCount: 0,
+            reconcileCoalescedRerunCount: 0,
             lastDesiredPeerCount: 0,
             connectAttemptCount: 0,
             connectFailureCount: 0,
             connectDeferredBudgetCount: 0,
             disconnectCount: 0,
+            retainedCreatedCount: 0,
+            retainedExpiredCount: 0,
             retainedEvictionCount: 0,
         });
 
@@ -608,7 +633,9 @@ describe('WebRtcGroupManager', () => {
         await Promise.all([first, second]);
 
         const afterConcurrentReconcile = manager.readDiagnostics();
-        expect(afterConcurrentReconcile.reconcileRunCount).toBe(2);
+        // The concurrent trigger is coalesced, not lost: the awaiting caller
+        // re-runs once against the newest state after the in-flight run.
+        expect(afterConcurrentReconcile.reconcileRunCount).toBe(3);
         expect(afterConcurrentReconcile.reconcileAwaitedInFlightCount).toBe(1);
 
         manager.resetDiagnostics();
@@ -624,7 +651,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             undefined,
-            { maxPeerConnections: 5 },
+            { maxPeerConnections: 5, overlayTransitionGraceMs: 0 },
         );
         const peerIds = Array.from({ length: 8 }, (_, index) => `peer-${index}`);
         for (const peerId of peerIds) {
@@ -649,7 +676,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             overlayCache,
-            { maxPeerConnections: 5 },
+            { maxPeerConnections: 5, overlayTransitionGraceMs: 0 },
         );
         const bootstrapPeerIds = Array.from(
             { length: 6 },
@@ -725,7 +752,7 @@ describe('WebRtcGroupManager', () => {
             groupCache,
             clientCache,
             undefined,
-            { maxPeerConnections: 5 },
+            { maxPeerConnections: 5, overlayTransitionGraceMs: 0 },
         );
         const retainedPeerIds = ['peer-a', 'peer-b', 'peer-c', 'peer-d'];
         const replacementPeerIds = ['peer-e', 'peer-f', 'peer-g'];

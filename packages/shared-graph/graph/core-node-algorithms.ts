@@ -1,4 +1,10 @@
-import { VertexArray, VertexId, VertexSet, WeightedGraph } from '../graph-props.ts';
+import {
+    compareVertexIds,
+    VertexArray,
+    VertexId,
+    VertexSet,
+    WeightedGraph,
+} from '../graph-props.ts';
 
 type RankedNode = {
     node: VertexId;
@@ -264,5 +270,5 @@ function compareRankedNodesAsc(a: RankedNode, b: RankedNode): number {
         return a.score - b.score;
     }
 
-    return a.node.localeCompare(b.node);
+    return compareVertexIds(a.node, b.node);
 }

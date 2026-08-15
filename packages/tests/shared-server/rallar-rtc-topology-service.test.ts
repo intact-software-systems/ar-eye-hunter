@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+// prettier-ignore
+import {
+    computeCanonicalTopologyPairWeight,
+} from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 
 describe('RallarRtcTopologyService', () => {
@@ -56,7 +61,13 @@ describe('RallarRtcTopologyService', () => {
         const fallbackGraph = service.createRoomGraph(group);
         const fallbackEdge = fallbackGraph.edge('peer-1', 'peer-3');
         expect(fallbackEdge).toBeDefined();
-        expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBe(3);
+        expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBe(
+            computeCanonicalTopologyPairWeight('peer-1', 'peer-3'),
+        );
+        expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight'))
+            .toBeGreaterThanOrEqual(1);
+        expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight'))
+            .toBeLessThan(32);
 
         const rttGraph = service.createRoomGraph(group, [
             {
@@ -279,16 +290,12 @@ describe('RallarRtcTopologyService', () => {
         expect(result.snapshot.nextHopsBySessionId).toEqual(
             graphPathResult.snapshot.nextHopsBySessionId,
         );
-        expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual([
-            'peer-2',
-            'peer-3',
-        ]);
-        expect(result.snapshot.nextHopsBySessionId['peer-10']).toEqual([
-            'peer-11',
-            'peer-12',
-            'peer-8',
-            'peer-9',
-        ]);
+        const validation = validateGroupTopologyNextHops({
+            activeSessionIds: new Set(result.snapshot.activeSessionIds),
+            nextHopsBySessionId: result.snapshot.nextHopsBySessionId,
+            maxDegree: result.snapshot.degreeLimit,
+        });
+        expect(validation.issues).toEqual([]);
     });
 
     it('uses the weighted room graph for mesh topology with RTT measurements', () => {
@@ -301,11 +308,11 @@ describe('RallarRtcTopologyService', () => {
         const service = new RallarRtcTopologyService({
             now: () => 100,
         });
-        const createRoomGraph = vi.spyOn(service, 'createRoomGraph');
 
         const result = service.updateGroupTopology(group, rttMeasurements);
 
-        expect(createRoomGraph).toHaveBeenCalledWith(group, rttMeasurements);
+        expect(service.readMetrics().weightedRoomGraphBuildCount).toBe(1);
+        expect(service.readMetrics().weightedPlanCount).toBe(1);
         expect(result.snapshot.topology).toBe('mesh');
     });
 
@@ -428,10 +435,12 @@ describe('RallarRtcTopologyService', () => {
         });
 
         expect(result.snapshot.topology).toBe('mesh');
-        expect(result.snapshot.nextHopsBySessionId['peer-1']).toEqual([
-            'peer-2',
-            'peer-3',
-        ]);
+        const validation = validateGroupTopologyNextHops({
+            activeSessionIds: new Set(result.snapshot.activeSessionIds),
+            nextHopsBySessionId: result.snapshot.nextHopsBySessionId,
+            maxDegree: result.snapshot.degreeLimit,
+        });
+        expect(validation.issues).toEqual([]);
     });
 
     it('uses per-update degree limit without replacing service-wide defaults', () => {
