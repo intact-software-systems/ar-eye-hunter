@@ -455,8 +455,8 @@ export class WebRtcConnectionService {
             .filter((health): health is RtcPeerHealth => health !== undefined);
     }
 
-    disconnectPeer(peerId: string): boolean {
-        return this.removePeerIfPresent(peerId);
+    disconnectPeer(peerId: string, options: WebRtcRemovePeerOptions = {}): boolean {
+        return this.removePeerIfPresent(peerId, options);
     }
 
     private toSignalingProtocol(): QRtcSignalingTransportCallbacks {
@@ -729,7 +729,10 @@ export class WebRtcConnectionService {
                         onClosed: (peerId: string) => {
                             console.log(`Connection to peer ${peerId} closed, removing from queue box`);
                             this.clearPeerEstablishmentTimeout(peerId);
-                            this.removePeerIfPresent(peerId);
+                            // A closed connection is churn evidence, not success:
+                            // the attempt budget survives so a flapping overlay
+                            // cannot mint fresh dial budgets by closing edges.
+                            this.removePeerIfPresent(peerId, { resetAttemptBudget: false });
                             return Promise.resolve();
                         }
                     }
@@ -868,7 +871,9 @@ export class WebRtcConnectionService {
                 started?.right,
             );
             if (options.cleanupOnFailure && result.peer) {
-                this.removePeerIfPresent(result.peer.peerId);
+                // A failed lane open consumed budget; cleaning up the peer
+                // must not refund it.
+                this.removePeerIfPresent(result.peer.peerId, { resetAttemptBudget: false });
             }
 
             return result;

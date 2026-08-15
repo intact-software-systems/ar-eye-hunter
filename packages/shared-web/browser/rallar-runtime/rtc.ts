@@ -356,7 +356,7 @@ class BrowserRallarRtcController implements RallarRtcController {
             peers,
             groupManager: ctx.middleware.webRtcGroupManager.readDiagnostics?.(),
             overlayAdoption: readOverlayAdoptionDiagnostics(),
-            connectionAttemptBudget: service.readPeerConnectionAttemptBudgetDiagnostics(),
+            connectionAttemptBudget: service.readPeerConnectionAttemptBudgetDiagnostics?.(),
         };
     }
 

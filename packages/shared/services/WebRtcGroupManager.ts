@@ -42,12 +42,14 @@ export type {
 
 export const DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS = 10;
 export const MIN_WEBRTC_MAX_PEER_CONNECTIONS = 5;
+export const DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS = 15_000;
 
 export class WebRtcGroupManager {
     private readonly groupsByKey = new Map<string, WebRtcGroupService>();
     private readonly retainedPeerConnections = new Map<PeerId, RetainedPeerConnection>();
     private peerOwnersCache: ReadonlyMap<PeerId, readonly GroupId[]> | undefined;
     private reconcileInFlight: Promise<void> | undefined;
+    private reconcileRequested = false;
     private retainedOrder = 0;
     private readonly diagnostics = emptyGroupManagerDiagnostics();
 
@@ -265,99 +267,160 @@ export class WebRtcGroupManager {
         await this.reconcileAllGroups();
     }
 
+    /**
+     * A reconcile request arriving while a run is in flight is never dropped:
+     * the flag survives the run, and either the drain loop or the awaiting
+     * caller re-runs against the newest state. Without this the single-flight
+     * guard silently lost the second trigger's mutations (M9).
+     */
     private async reconcileAllGroups(): Promise<void> {
+        this.reconcileRequested = true;
         if (this.reconcileInFlight) {
             this.diagnostics.reconcileAwaitedInFlightCount += 1;
             await this.reconcileInFlight;
-            return;
+            if (!this.reconcileRequested) {
+                return;
+            }
+            if (this.reconcileInFlight) {
+                await this.reconcileInFlight;
+                return;
+            }
         }
 
-        const run = (async () => {
-            this.diagnostics.reconcileRunCount += 1;
-            const peerOwners = this.peerOwners();
-            const desiredPeerIds = new Set(peerOwners.keys());
-            const onlinePeerIds = this.onlinePeerIds();
-            const peerIdsWithNoReconnectableLanes = new Set(
-                this.rtcQBox.peerIdsWithNoReconnectableLanes(),
-            );
-            let knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
-            this.removeRetainedDesiredPeers(desiredPeerIds);
-            this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
-
-            const connectablePeerIds = Array.from(desiredPeerIds).filter(
-                (peerId) => onlinePeerIds.has(peerId),
-            );
-
-            const dialPlan = computeOutboundDialPlan({
-                mode: resolveRtcGroupFormationMode(this.options.groupFormationMode),
-                maxPeerConnections: this.maxPeerConnections(),
-                knownPeerIds,
-                desiredPeerIds,
-                connectablePeerIds: connectablePeerIds.filter(
-                    (peerId) => !peerIdsWithNoReconnectableLanes.has(peerId),
-                ),
-                serverDesiredPeerIds: computeServerDesiredPeerIds(
-                    this.overlayCache,
-                    this.groups().map((group) => group.groupRef),
-                    this.rtcQBox.input.sessionId,
-                ),
-            });
-            this.diagnostics.connectDeferredBudgetCount +=
-                dialPlan.deferredPeerIds.length;
-
-            for (const peerId of dialPlan.peersToConnect) {
-                this.diagnostics.connectAttemptCount += 1;
-                const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
-                if (connected.left) {
-                    this.diagnostics.connectFailureCount += 1;
-                    const error = connected.left.kind === 'self'
-                        ? undefined
-                        : connected.left.error;
-                    console.error(
-                        `Failed to connect peer ${peerId}. Owners=${
-                            JSON.stringify(peerOwners.get(peerId) ?? [])
-                        }. Cause=${connected.left.kind}`,
-                        error,
-                    );
-                }
-            }
-
-            knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
-            this.removeUnknownRetainedPeers(knownPeerIds);
-            const retainedPeerIds = new Set(this.retainedPeerConnections.keys());
-            const peersToDisconnect = Array.from(knownPeerIds).filter(
-                (peerId) => !desiredPeerIds.has(peerId) && !retainedPeerIds.has(peerId),
-            );
-
-            for (const peerId of peersToDisconnect) {
-                try {
-                    this.rtcQBox.disconnectPeer(peerId);
-                    this.retainedPeerConnections.delete(peerId);
-                    this.diagnostics.disconnectCount += 1;
-                } catch (error) {
-                    console.error(`Failed to disconnect peer ${peerId}`, error);
-                }
-            }
-
-            for (const peerId of this.retainedPeersToEvict(desiredPeerIds, knownPeerIds)) {
-                try {
-                    this.rtcQBox.disconnectPeer(peerId);
-                    this.retainedPeerConnections.delete(peerId);
-                    this.diagnostics.retainedEvictionCount += 1;
-                } catch (error) {
-                    console.error(`Failed to disconnect retained peer ${peerId}`, error);
-                }
-            }
-
-            this.options.onDesiredPeerIdsChanged?.();
-        })();
-
+        const run = this.drainReconcileRequests();
         this.reconcileInFlight = run;
         try {
             await run;
         } finally {
             if (this.reconcileInFlight === run) {
                 this.reconcileInFlight = undefined;
+            }
+        }
+    }
+
+    private async drainReconcileRequests(): Promise<void> {
+        while (this.reconcileRequested) {
+            this.reconcileRequested = false;
+            this.runReconcilePass();
+            if (this.reconcileRequested) {
+                this.diagnostics.reconcileCoalescedRerunCount += 1;
+            }
+        }
+    }
+
+    private runReconcilePass(): void {
+        this.diagnostics.reconcileRunCount += 1;
+        const peerOwners = this.peerOwners();
+        const desiredPeerIds = new Set(peerOwners.keys());
+        const onlinePeerIds = this.onlinePeerIds();
+        const peerIdsWithNoReconnectableLanes = new Set(
+            this.rtcQBox.peerIdsWithNoReconnectableLanes(),
+        );
+        let knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+        this.removeRetainedDesiredPeers(desiredPeerIds);
+        this.diagnostics.lastDesiredPeerCount = desiredPeerIds.size;
+
+        const connectablePeerIds = Array.from(desiredPeerIds).filter(
+            (peerId) => onlinePeerIds.has(peerId),
+        );
+
+        const dialPlan = computeOutboundDialPlan({
+            mode: resolveRtcGroupFormationMode(this.options.groupFormationMode),
+            maxPeerConnections: this.maxPeerConnections(),
+            knownPeerIds,
+            desiredPeerIds,
+            connectablePeerIds: connectablePeerIds.filter(
+                (peerId) => !peerIdsWithNoReconnectableLanes.has(peerId),
+            ),
+            serverDesiredPeerIds: computeServerDesiredPeerIds(
+                this.overlayCache,
+                this.groups().map((group) => group.groupRef),
+                this.rtcQBox.input.sessionId,
+            ),
+        });
+        this.diagnostics.connectDeferredBudgetCount +=
+            dialPlan.deferredPeerIds.length;
+
+        for (const peerId of dialPlan.peersToConnect) {
+            this.diagnostics.connectAttemptCount += 1;
+            const connected = this.rtcQBox.ensurePeerConnectionStarted(peerId);
+            if (connected.left) {
+                this.diagnostics.connectFailureCount += 1;
+                const error = connected.left.kind === 'self'
+                    ? undefined
+                    : connected.left.error;
+                console.error(
+                    `Failed to connect peer ${peerId}. Owners=${
+                        JSON.stringify(peerOwners.get(peerId) ?? [])
+                    }. Cause=${connected.left.kind}`,
+                    error,
+                );
+            }
+        }
+
+        knownPeerIds = new Set(this.rtcQBox.knownPeerIds());
+        this.removeUnknownRetainedPeers(knownPeerIds);
+        this.retainUndesiredKnownPeers(desiredPeerIds, knownPeerIds);
+        this.disconnectExpiredRetainedPeers(knownPeerIds);
+
+        for (const peerId of this.retainedPeersToEvict(desiredPeerIds, knownPeerIds)) {
+            try {
+                this.rtcQBox.disconnectPeer(peerId, { resetAttemptBudget: false });
+                this.retainedPeerConnections.delete(peerId);
+                this.diagnostics.retainedEvictionCount += 1;
+            } catch (error) {
+                console.error(`Failed to disconnect retained peer ${peerId}`, error);
+            }
+        }
+
+        this.options.onDesiredPeerIdsChanged?.();
+    }
+
+    /**
+     * An established edge the previous overlay wanted survives a replan for
+     * the grace window instead of being torn down in the same pass (M11) —
+     * a flapping overlay converges to zero churn because the edge is still
+     * there when the next epoch wants it back.
+     */
+    private retainUndesiredKnownPeers(
+        desiredPeerIds: Set<PeerId>,
+        knownPeerIds: Set<PeerId>,
+    ): void {
+        for (const peerId of knownPeerIds) {
+            if (desiredPeerIds.has(peerId) || this.retainedPeerConnections.has(peerId)) {
+                continue;
+            }
+
+            this.retainedPeerConnections.set(peerId, {
+                peerId,
+                groupKey: null,
+                groupId: null,
+                retainedOrder: this.retainedOrder++,
+                reason: 'overlay-transition',
+                expiresAtEpochMs: this.now() + this.overlayTransitionGraceMs(),
+            });
+            this.diagnostics.retainedCreatedCount += 1;
+        }
+    }
+
+    private disconnectExpiredRetainedPeers(knownPeerIds: Set<PeerId>): void {
+        const now = this.now();
+        for (const retained of Array.from(this.retainedPeerConnections.values())) {
+            if (
+                retained.expiresAtEpochMs === null ||
+                retained.expiresAtEpochMs > now ||
+                !knownPeerIds.has(retained.peerId)
+            ) {
+                continue;
+            }
+
+            try {
+                this.rtcQBox.disconnectPeer(retained.peerId, { resetAttemptBudget: false });
+                this.retainedPeerConnections.delete(retained.peerId);
+                this.diagnostics.disconnectCount += 1;
+                this.diagnostics.retainedExpiredCount += 1;
+            } catch (error) {
+                console.error(`Failed to disconnect retained peer ${retained.peerId}`, error);
             }
         }
     }
@@ -540,6 +603,8 @@ export class WebRtcGroupManager {
                 groupKey,
                 groupId: group.groupRef.groupId,
                 retainedOrder: this.retainedOrder++,
+                reason: 'left-group',
+                expiresAtEpochMs: null,
             });
         }
     }
@@ -609,5 +674,17 @@ export class WebRtcGroupManager {
             MIN_WEBRTC_MAX_PEER_CONNECTIONS,
             Math.floor(requested),
         );
+    }
+
+    private overlayTransitionGraceMs(): number {
+        return Math.max(
+            0,
+            this.options.overlayTransitionGraceMs ??
+                DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS,
+        );
+    }
+
+    private now(): number {
+        return this.options.now?.() ?? Date.now();
     }
 }

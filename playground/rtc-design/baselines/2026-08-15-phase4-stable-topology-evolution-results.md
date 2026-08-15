@@ -176,6 +176,28 @@ reconfigure work still full rebuilds — the periodic drift bound):
   (15↔16 flap holds mesh through the 12–15 band, exits at 11) are unit-proven in
   `evolve-planned-topology.test.ts` and `topology-kind-hysteresis.test.ts`.
 
+### Slice 4 (M11 + M9): browser churn resilience
+
+Measured through the churn simulation (50 real `WebRtcGroupManager` stacks over a fake connection
+service, seeded ring overlays):
+
+- **Overlay transition, within the grace window**: each client dials its 2 incoming delta edges
+  and tears down **0** — the 2 outgoing edges the previous epoch wanted become retained
+  connections (`reason: 'overlay-transition'`, grace default
+  `DEFAULT_WEBRTC_OVERLAY_TRANSITION_GRACE_MS = 15 s`).
+- **Flap (epoch A → B → A)**: the round trip costs exactly the 2 forward dials and **0
+  teardowns** — the reverted epoch's edges are still connected, so flapping converges instead of
+  looping. A republished identical edge set stays at 0/0.
+- **Expiry**: past the grace window the retained edges tear down (`retainedExpiredCount`), and
+  every churn-path teardown — overlay expiry, retained eviction, connection close, failed lane
+  open — now preserves the peer's connection-attempt budget (`resetAttemptBudget: false`);
+  budgets reset only on genuine establishment or explicit user reconnect intent. Failures still
+  consume budget.
+- **M9**: the reconcile single-flight is a true coalescer — a trigger arriving while a run is in
+  flight is flagged and re-run against the newest state instead of silently dropped
+  (`reconcileCoalescedRerunCount` / the awaited-caller re-run path), proven by the concurrent
+  reconcile test that previously documented the lost update.
+
 ## Dissemination-default checkpoint decision
 
 _(pending: the churn stream is the delta-consumption proof phase 3 recorded as the

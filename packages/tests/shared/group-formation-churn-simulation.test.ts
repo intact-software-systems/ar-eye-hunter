@@ -50,7 +50,7 @@ describe('group formation churn simulation', () => {
         }
     });
 
-    it('an overlay transition churns exactly its per-client edge delta, torn down immediately (N=50)', async () => {
+    it('an overlay transition dials its edge delta but retains outgoing edges for the grace window (N=50)', async () => {
         const formed = await createFormedClients();
 
         const reshuffled = createRingTopologySnapshot(formed.group, formed.sessionIds, {
@@ -70,13 +70,88 @@ describe('group formation churn simulation', () => {
 
         for (const client of formed.clients) {
             const diagnostics = client.manager.readDiagnostics();
-            // Shift-1 and shift-7 next-hop sets are disjoint: two edges out,
-            // two edges in, per client. The pre-phase-4 manager executes the
-            // full delta in the same reconcile pass — no grace window and no
-            // retained-connection path for overlay transitions.
+            // Shift-1 and shift-7 next-hop sets are disjoint: two edges in per
+            // client are dialed, but the two outgoing edges the previous epoch
+            // wanted survive as retained connections instead of being torn
+            // down in the same pass (M11 grace window).
             expect(diagnostics.connectAttemptCount - formed.formationDialCount).toBe(2);
+            expect(diagnostics.disconnectCount).toBe(0);
+            expect(diagnostics.retainedCreatedCount).toBe(2);
+            expect(diagnostics.retainedExpiredCount).toBe(0);
+            expect(client.connectedPeerIds().size).toBeLessThanOrEqual(MAX_PEER_CONNECTIONS);
+        }
+    });
+
+    it('a flapping overlay converges to zero churn inside the grace window (N=50)', async () => {
+        const formed = await createFormedClients();
+
+        const reshuffled = createRingTopologySnapshot(formed.group, formed.sessionIds, {
+            sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 2 },
+            version: 2,
+            degreeLimit: DEGREE_LIMIT,
+            ringShift: 7,
+        });
+        const revertedToFormedEdges = createRingTopologySnapshot(formed.group, formed.sessionIds, {
+            sourceGroupStateCausalRevision: { groupRevision: 3, presenceRevision: 3 },
+            version: 3,
+            degreeLimit: DEGREE_LIMIT,
+            ringShift: 1,
+        });
+        for (const client of formed.clients) {
+            for (const epoch of [reshuffled, revertedToFormedEdges]) {
+                setOverlayById(
+                    formed.overlayId,
+                    toOverlayInfoForSession(epoch, client.sessionId),
+                    client.repositoryManager,
+                );
+                await client.manager.notifyOverlayTopologyChanged();
+            }
+        }
+
+        for (const client of formed.clients) {
+            const diagnostics = client.manager.readDiagnostics();
+            // The flap's second epoch wants the original edges back: they are
+            // still connected (retained through the grace window), so the
+            // round trip costs the two forward dials and zero teardowns —
+            // flapping converges instead of looping.
+            expect(diagnostics.connectAttemptCount - formed.formationDialCount).toBe(2);
+            expect(diagnostics.disconnectCount).toBe(0);
+            expect(diagnostics.retainedExpiredCount).toBe(0);
+        }
+    });
+
+    it('retained transition edges expire after the grace window and tear down budget-free (N=50)', async () => {
+        let nowEpochMs = 1_000;
+        const formed = await createFormedClients({
+            overlayTransitionGraceMs: 5_000,
+            now: () => nowEpochMs,
+        });
+
+        const reshuffled = createRingTopologySnapshot(formed.group, formed.sessionIds, {
+            sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 2 },
+            version: 2,
+            degreeLimit: DEGREE_LIMIT,
+            ringShift: 7,
+        });
+        for (const client of formed.clients) {
+            setOverlayById(
+                formed.overlayId,
+                toOverlayInfoForSession(reshuffled, client.sessionId),
+                client.repositoryManager,
+            );
+            await client.manager.notifyOverlayTopologyChanged();
+        }
+
+        nowEpochMs += 6_000;
+        for (const client of formed.clients) {
+            await client.manager.ensureAllGroupsConnected();
+        }
+
+        for (const client of formed.clients) {
+            const diagnostics = client.manager.readDiagnostics();
+            expect(diagnostics.retainedCreatedCount).toBe(2);
+            expect(diagnostics.retainedExpiredCount).toBe(2);
             expect(diagnostics.disconnectCount).toBe(2);
-            expect(diagnostics.retainedEvictionCount).toBe(0);
             expect(client.connectedPeerIds().size).toBeLessThanOrEqual(MAX_PEER_CONNECTIONS);
         }
     });
@@ -90,7 +165,12 @@ type FormedClients = Readonly<{
     formationDialCount: number;
 }>;
 
-async function createFormedClients(): Promise<FormedClients> {
+type FormedClientOptions = Readonly<{
+    overlayTransitionGraceMs?: number;
+    now?: () => number;
+}>;
+
+async function createFormedClients(options: FormedClientOptions = {}): Promise<FormedClients> {
     resetOverlayAdoptionDiagnostics();
     const sessionIds = Array.from(
         { length: MEMBER_COUNT },
@@ -108,6 +188,7 @@ async function createFormedClients(): Promise<FormedClients> {
     const clients = sessionIds.map((sessionId) =>
         createSimulatedClient(sessionId, sessionIds, {
             maxPeerConnections: MAX_PEER_CONNECTIONS,
+            ...options,
         })
     );
     for (const client of clients) {

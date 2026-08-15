@@ -14,6 +14,8 @@ export type WebRtcGroupManagerState = {
 export type WebRtcGroupManagerOptions = Readonly<{
     maxPeerConnections?: number;
     groupFormationMode?: RtcGroupFormationMode;
+    overlayTransitionGraceMs?: number;
+    now?: () => number;
     onDesiredPeerIdsChanged?: () => void;
 }>;
 
@@ -25,11 +27,23 @@ export type WebRtcRttReportingPeerOptions = Readonly<{
     degreeLimit?: number;
 }>;
 
+/**
+ * `commanded` is reserved for the activation design's commanded-edge
+ * retention (the Phase 5 merge point); this manager only produces the first
+ * two reasons. Eviction order is defined across reasons: expired entries
+ * first, then oldest `retainedOrder` regardless of reason.
+ */
+export type RetainedPeerConnectionReason = 'left-group' | 'overlay-transition' | 'commanded';
+
 export type RetainedPeerConnection = Readonly<{
     peerId: PeerId;
-    groupKey: string;
-    groupId: GroupId;
+    /** Group scope of a `left-group` retention; an overlay transition is not group-scoped. */
+    groupKey: string | null;
+    groupId: GroupId | null;
     retainedOrder: number;
+    reason: RetainedPeerConnectionReason;
+    /** `null` retains until budget eviction; a timestamp is the grace-window expiry. */
+    expiresAtEpochMs: number | null;
 }>;
 
 export function clonePeerOwners(
@@ -45,11 +59,14 @@ export function clonePeerOwners(
 export interface MutableWebRtcGroupManagerDiagnostics {
     reconcileRunCount: number;
     reconcileAwaitedInFlightCount: number;
+    reconcileCoalescedRerunCount: number;
     lastDesiredPeerCount: number;
     connectAttemptCount: number;
     connectFailureCount: number;
     connectDeferredBudgetCount: number;
     disconnectCount: number;
+    retainedCreatedCount: number;
+    retainedExpiredCount: number;
     retainedEvictionCount: number;
 }
 
@@ -59,11 +76,14 @@ export function emptyGroupManagerDiagnostics(): MutableWebRtcGroupManagerDiagnos
     return {
         reconcileRunCount: 0,
         reconcileAwaitedInFlightCount: 0,
+        reconcileCoalescedRerunCount: 0,
         lastDesiredPeerCount: 0,
         connectAttemptCount: 0,
         connectFailureCount: 0,
         connectDeferredBudgetCount: 0,
         disconnectCount: 0,
+        retainedCreatedCount: 0,
+        retainedExpiredCount: 0,
         retainedEvictionCount: 0,
     };
 }
