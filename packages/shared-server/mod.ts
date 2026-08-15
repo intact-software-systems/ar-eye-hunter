@@ -146,27 +146,31 @@ export * from './rallar-system/services/rtc-topology-mutations.ts';
 export * from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-contracts.ts';
 export * from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 export * from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
+export * from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-authority.ts';
 export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
 export * from './rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-result.ts';
-export {
-  computeRtcRttMutation as computeRttMutation,
-} from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
-export {
-  validateRtcRttMutation as validateRttMutation,
-} from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
-export {
-  readRtcRttMutation as readRttMutation,
-} from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
-export {
-  writeRtcRttMutation as writeRttMutation,
-} from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
-export {
-  executeRtcRttMutation as executeRttMutation,
-} from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
+// prettier-ignore
+export { computeRtcRttMutation as computeRttMutation }
+  from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
+// prettier-ignore
+export { validateRtcRttMutationFacts as validateRttMutationFacts }
+  from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-authority.ts';
+// prettier-ignore
+export { validateRtcRttMutation as validateRttMutation }
+  from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
+// prettier-ignore
+export { readRtcRttMutation as readRttMutation }
+  from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
+// prettier-ignore
+export { writeRtcRttMutation as writeRttMutation }
+  from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
+// prettier-ignore
+export { executeRtcRttMutation as executeRttMutation }
+  from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 export type {
   ExecuteRtcRttMutationInput as ExecuteRttMutationInput,
   ExecuteRtcRttMutationResult as ExecuteRttMutationResult,

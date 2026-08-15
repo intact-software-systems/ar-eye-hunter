@@ -125,11 +125,7 @@ export function analyzeMutationBoundarySource(
     }
     if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return;
     const callName = readCallName(node.callee, directAliases);
-    if (
-      callName &&
-      FORBIDDEN_DIRECT_MUTATORS.has(callName) &&
-      !isKnownAppInboxCall(node.callee)
-    ) {
+    if (callName && FORBIDDEN_DIRECT_MUTATORS.has(callName) && !isKnownAppInboxCall(node.callee)) {
       directMutatorCalls.add(callName);
     }
   });
@@ -204,9 +200,8 @@ function readDirectAliases(node: AstNode, aliases: Map<string, string>): void {
     const importedName = readNodeName(property.key);
     if (!FORBIDDEN_DIRECT_MUTATORS.has(importedName)) continue;
     const local = asNode(property.value);
-    const localName = local?.type === 'AssignmentPattern'
-      ? readNodeName(asNode(local.left))
-      : readNodeName(local);
+    const localName =
+      local?.type === 'AssignmentPattern' ? readNodeName(asNode(local.left)) : readNodeName(local);
     if (localName) aliases.set(localName, importedName);
   }
 }
@@ -228,16 +223,15 @@ function readMemberName(node: AstNode): string {
 
 function isKnownAppInboxCall(value: unknown): boolean {
   const callee = asNode(value);
-  if (
-    !callee ||
-    (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression')
-  ) return false;
+  if (!callee || (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression'))
+    return false;
   const receiver = asNode(callee.object);
   if (receiver?.type === 'Identifier') {
     return EXACT_APP_INBOX_RECEIVERS.has(readNodeName(receiver));
   }
   if (
-    !receiver || (receiver.type !== 'CallExpression' && receiver.type !== 'OptionalCallExpression')
+    !receiver ||
+    (receiver.type !== 'CallExpression' && receiver.type !== 'OptionalCallExpression')
   ) {
     return false;
   }
@@ -269,8 +263,8 @@ function readNodeName(value: unknown): string {
   return typeof node.name === 'string'
     ? node.name
     : typeof node.value === 'string'
-    ? node.value
-    : '';
+      ? node.value
+      : '';
 }
 
 function readStringLiteral(value: unknown): string | undefined {
@@ -279,7 +273,9 @@ function readStringLiteral(value: unknown): string | undefined {
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as AstNode)
+    : undefined;
 }
 
 function asNodeArray(value: unknown): readonly AstNode[] {

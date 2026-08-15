@@ -7,248 +7,210 @@ import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { selectRttReportingPeers } from '@shared/rtc/rtt-reporting-policy.ts';
 
 export type RtcRttAcceptanceReason =
-    | 'accepted'
-    | 'invalid-rtt'
-    | 'self-pair'
-    | 'sender-mismatch'
-    | 'not-reporting-edge'
-    | 'no-shared-active-group'
-    | 'over-degree';
+  | 'accepted'
+  | 'invalid-rtt'
+  | 'self-pair'
+  | 'sender-mismatch'
+  | 'not-reporting-edge'
+  | 'no-shared-active-group'
+  | 'over-degree';
 
 export type RtcRttAcceptanceResult = Readonly<{
-    accepted: boolean;
-    reason: RtcRttAcceptanceReason;
-    affectedGroups: readonly GroupSnapshot[];
+  accepted: boolean;
+  reason: RtcRttAcceptanceReason;
+  affectedGroups: readonly GroupSnapshot[];
 }>;
 
 export function filterRtcRttMeasurementsForGroup(input: {
-    readonly group: GroupSnapshot;
-    readonly rttMeasurements: readonly RttMeasurementInfo[];
-    readonly overlaySnapshot?: RallarOverlayTopologySnapshot;
-    readonly degreeLimit: number;
+  readonly group: GroupSnapshot;
+  readonly rttMeasurements: readonly RttMeasurementInfo[];
+  readonly overlaySnapshot?: RallarOverlayTopologySnapshot;
+  readonly degreeLimit: number;
 }): readonly RttMeasurementInfo[] {
-    if (
-        input.group.group.status !== 'active' ||
-        input.rttMeasurements.length === 0
-    ) {
-        return [];
-    }
+  if (input.group.group.status !== 'active' || input.rttMeasurements.length === 0) {
+    return [];
+  }
 
-    return input.rttMeasurements.filter(
-        (rtt) =>
-            groupIncludesPair(
-                input.group,
-                rtt.sessionIdFrom,
-                rtt.sessionIdTo,
-            ) &&
-            isReportingPairForGroup({
-                group: input.group,
-                rtt,
-                overlay: input.overlaySnapshot,
-                degreeLimit: input.degreeLimit,
-            }),
-    );
+  return input.rttMeasurements.filter(
+    (rtt) =>
+      groupIncludesPair(input.group, rtt.sessionIdFrom, rtt.sessionIdTo) &&
+      isReportingPairForGroup({
+        group: input.group,
+        rtt,
+        overlay: input.overlaySnapshot,
+        degreeLimit: input.degreeLimit,
+      }),
+  );
 }
 
 export function evaluateRtcRttMeasurement(input: {
-    readonly rtt: RttMeasurementInfo;
-    readonly alSenderId: string;
-    readonly requestedAtEpochMs: number;
-    readonly candidateGroups: readonly GroupSnapshot[];
-    readonly overlaySnapshotsByGroupKey: ReadonlyMap<
-        string,
-        RallarOverlayTopologySnapshot
-    >;
-    readonly existingMeasurements: readonly RttMeasurementInfo[];
-    readonly degreeLimit: number;
+  readonly rtt: RttMeasurementInfo;
+  readonly alSenderId: string;
+  readonly requestedAtEpochMs: number;
+  readonly candidateGroups: readonly GroupSnapshot[];
+  readonly overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
+  readonly existingMeasurements: readonly RttMeasurementInfo[];
+  readonly degreeLimit: number;
 }): RtcRttAcceptanceResult {
-    const { rtt } = input;
-    if (
-        typeof rtt.rttMs !== 'number' ||
-        !Number.isFinite(rtt.rttMs) ||
-        rtt.rttMs <= 0
-    ) {
-        return rejected('invalid-rtt');
-    }
+  const { rtt } = input;
+  if (typeof rtt.rttMs !== 'number' || !Number.isFinite(rtt.rttMs) || rtt.rttMs <= 0) {
+    return rejected('invalid-rtt');
+  }
 
-    if (rtt.sessionIdFrom === rtt.sessionIdTo) {
-        return rejected('self-pair');
-    }
+  if (rtt.sessionIdFrom === rtt.sessionIdTo) {
+    return rejected('self-pair');
+  }
 
-    if (input.alSenderId !== rtt.sessionIdFrom) {
-        return rejected('sender-mismatch');
-    }
+  if (input.alSenderId !== rtt.sessionIdFrom) {
+    return rejected('sender-mismatch');
+  }
 
-    const sharedActiveGroups = input.candidateGroups.filter(
-        (group) =>
-            group.group.status === 'active' &&
-            (group.group.expiresAtEpochMs === null ||
-                group.group.expiresAtEpochMs > input.requestedAtEpochMs) &&
-            groupIncludesLivePairAt({
-                group,
-                sessionIdFrom: rtt.sessionIdFrom,
-                sessionIdTo: rtt.sessionIdTo,
-                requestedAtEpochMs: input.requestedAtEpochMs,
-            }),
-    );
+  const sharedActiveGroups = input.candidateGroups.filter(
+    (group) =>
+      group.group.status === 'active' &&
+      (group.group.expiresAtEpochMs === null ||
+        group.group.expiresAtEpochMs > input.requestedAtEpochMs) &&
+      groupIncludesLivePairAt({
+        group,
+        sessionIdFrom: rtt.sessionIdFrom,
+        sessionIdTo: rtt.sessionIdTo,
+        requestedAtEpochMs: input.requestedAtEpochMs,
+      }),
+  );
 
-    if (sharedActiveGroups.length === 0) {
-        return rejected('no-shared-active-group');
-    }
+  if (sharedActiveGroups.length === 0) {
+    return rejected('no-shared-active-group');
+  }
 
-    if (
-        sharedActiveGroups.some(
-            (group) =>
-                !isReportingPairForGroup({
-                    group,
-                    rtt,
-                    overlay: input.overlaySnapshotsByGroupKey.get(
-                        toWebRtcGroupKey(group.group),
-                    ),
-                    degreeLimit: input.degreeLimit,
-                }),
-        )
-    ) {
-        return rejected('not-reporting-edge', sharedActiveGroups);
-    }
+  if (
+    sharedActiveGroups.some(
+      (group) =>
+        !isReportingPairForGroup({
+          group,
+          rtt,
+          overlay: input.overlaySnapshotsByGroupKey.get(toWebRtcGroupKey(group.group)),
+          degreeLimit: input.degreeLimit,
+        }),
+    )
+  ) {
+    return rejected('not-reporting-edge', sharedActiveGroups);
+  }
 
-    if (
-        exceedsEndpointDegree(
-            rtt,
-            input.existingMeasurements,
-            input.degreeLimit,
-        )
-    ) {
-        return rejected('over-degree', sharedActiveGroups);
-    }
+  if (exceedsEndpointDegree(rtt, input.existingMeasurements, input.degreeLimit)) {
+    return rejected('over-degree', sharedActiveGroups);
+  }
 
-    return {
-        accepted: true,
-        reason: 'accepted',
-        affectedGroups: sharedActiveGroups,
-    };
+  return {
+    accepted: true,
+    reason: 'accepted',
+    affectedGroups: sharedActiveGroups,
+  };
 }
 
 function rejected(
-    reason: Exclude<RtcRttAcceptanceReason, 'accepted'>,
-    affectedGroups: readonly GroupSnapshot[] = [],
+  reason: Exclude<RtcRttAcceptanceReason, 'accepted'>,
+  affectedGroups: readonly GroupSnapshot[] = [],
 ): RtcRttAcceptanceResult {
-    return {
-        accepted: false,
-        reason,
-        affectedGroups,
-    };
+  return {
+    accepted: false,
+    reason,
+    affectedGroups,
+  };
 }
 
 function groupIncludesPair(
-    group: GroupSnapshot,
-    sessionIdFrom: string,
-    sessionIdTo: string,
+  group: GroupSnapshot,
+  sessionIdFrom: string,
+  sessionIdTo: string,
 ): boolean {
-    const memberIds = new Set(readGroupMemberSessionIds(group));
-    return memberIds.has(sessionIdFrom) && memberIds.has(sessionIdTo);
+  const memberIds = new Set(readGroupMemberSessionIds(group));
+  return memberIds.has(sessionIdFrom) && memberIds.has(sessionIdTo);
 }
 
 interface GroupIncludesLivePairAtInput {
-    readonly group: GroupSnapshot;
-    readonly sessionIdFrom: string;
-    readonly sessionIdTo: string;
-    readonly requestedAtEpochMs: number;
+  readonly group: GroupSnapshot;
+  readonly sessionIdFrom: string;
+  readonly sessionIdTo: string;
+  readonly requestedAtEpochMs: number;
 }
 
 function groupIncludesLivePairAt(input: GroupIncludesLivePairAtInput): boolean {
-    const liveSessionIds = new Set(
-        input.group.activeSessions
-            .filter(
-                (session) =>
-                    session.connectedAtEpochMs <= input.requestedAtEpochMs &&
-                    session.expiresAtEpochMs > input.requestedAtEpochMs,
-            )
-            .map((session) => session.sessionId),
-    );
-    return (
-        liveSessionIds.has(input.sessionIdFrom) &&
-        liveSessionIds.has(input.sessionIdTo)
-    );
+  const liveSessionIds = new Set(
+    input.group.activeSessions
+      .filter(
+        (session) =>
+          session.connectedAtEpochMs <= input.requestedAtEpochMs &&
+          session.expiresAtEpochMs > input.requestedAtEpochMs,
+      )
+      .map((session) => session.sessionId),
+  );
+  return liveSessionIds.has(input.sessionIdFrom) && liveSessionIds.has(input.sessionIdTo);
 }
 
 interface IsReportingPairForGroupInput {
-    readonly group: GroupSnapshot;
-    readonly rtt: RttMeasurementInfo;
-    readonly overlay: RallarOverlayTopologySnapshot | undefined;
-    readonly degreeLimit: number;
+  readonly group: GroupSnapshot;
+  readonly rtt: RttMeasurementInfo;
+  readonly overlay: RallarOverlayTopologySnapshot | undefined;
+  readonly degreeLimit: number;
 }
 
 function isReportingPairForGroup(input: IsReportingPairForGroupInput): boolean {
-    const activePeerSessionIds = readGroupMemberSessionIds(input.group);
-    const groupKey = toWebRtcGroupKey(input.group.group);
-    const fromSelection = selectRttReportingPeers({
-        localSessionId: input.rtt.sessionIdFrom,
-        degreeLimit: input.degreeLimit,
-        overlayNextHopSessionIds:
-            input.overlay?.nextHopsBySessionId[input.rtt.sessionIdFrom] ?? [],
-        activePeerSessionIds,
-        groupKey,
-    });
-    const toSelection = selectRttReportingPeers({
-        localSessionId: input.rtt.sessionIdTo,
-        degreeLimit: input.degreeLimit,
-        overlayNextHopSessionIds:
-            input.overlay?.nextHopsBySessionId[input.rtt.sessionIdTo] ?? [],
-        activePeerSessionIds,
-        groupKey,
-    });
+  const activePeerSessionIds = readGroupMemberSessionIds(input.group);
+  const groupKey = toWebRtcGroupKey(input.group.group);
+  const fromSelection = selectRttReportingPeers({
+    localSessionId: input.rtt.sessionIdFrom,
+    degreeLimit: input.degreeLimit,
+    overlayNextHopSessionIds: input.overlay?.nextHopsBySessionId[input.rtt.sessionIdFrom] ?? [],
+    activePeerSessionIds,
+    groupKey,
+  });
+  const toSelection = selectRttReportingPeers({
+    localSessionId: input.rtt.sessionIdTo,
+    degreeLimit: input.degreeLimit,
+    overlayNextHopSessionIds: input.overlay?.nextHopsBySessionId[input.rtt.sessionIdTo] ?? [],
+    activePeerSessionIds,
+    groupKey,
+  });
 
-    return (
-        fromSelection.selectedPeerIds.includes(input.rtt.sessionIdTo) ||
-        toSelection.selectedPeerIds.includes(input.rtt.sessionIdFrom)
-    );
+  return (
+    fromSelection.selectedPeerIds.includes(input.rtt.sessionIdTo) ||
+    toSelection.selectedPeerIds.includes(input.rtt.sessionIdFrom)
+  );
 }
 
 function exceedsEndpointDegree(
-    rtt: RttMeasurementInfo,
-    existingMeasurements: readonly RttMeasurementInfo[],
-    degreeLimit: number,
+  rtt: RttMeasurementInfo,
+  existingMeasurements: readonly RttMeasurementInfo[],
+  degreeLimit: number,
 ): boolean {
-    const rttPairKey = pairKey(rtt.sessionIdFrom, rtt.sessionIdTo);
-    const peerIdsByEndpoint = new Map<string, Set<string>>([
-        [rtt.sessionIdFrom, new Set()],
-        [rtt.sessionIdTo, new Set()],
-    ]);
+  const rttPairKey = pairKey(rtt.sessionIdFrom, rtt.sessionIdTo);
+  const peerIdsByEndpoint = new Map<string, Set<string>>([
+    [rtt.sessionIdFrom, new Set()],
+    [rtt.sessionIdTo, new Set()],
+  ]);
 
-    for (const measurement of existingMeasurements) {
-        if (
-            pairKey(measurement.sessionIdFrom, measurement.sessionIdTo) ===
-            rttPairKey
-        ) {
-            continue;
-        }
-
-        addEndpointPeer(
-            peerIdsByEndpoint,
-            measurement.sessionIdFrom,
-            measurement.sessionIdTo,
-        );
-        addEndpointPeer(
-            peerIdsByEndpoint,
-            measurement.sessionIdTo,
-            measurement.sessionIdFrom,
-        );
+  for (const measurement of existingMeasurements) {
+    if (pairKey(measurement.sessionIdFrom, measurement.sessionIdTo) === rttPairKey) {
+      continue;
     }
 
-    return (
-        (peerIdsByEndpoint.get(rtt.sessionIdFrom)?.size ?? 0) >= degreeLimit ||
-        (peerIdsByEndpoint.get(rtt.sessionIdTo)?.size ?? 0) >= degreeLimit
-    );
+    addEndpointPeer(peerIdsByEndpoint, measurement.sessionIdFrom, measurement.sessionIdTo);
+    addEndpointPeer(peerIdsByEndpoint, measurement.sessionIdTo, measurement.sessionIdFrom);
+  }
+
+  return (
+    (peerIdsByEndpoint.get(rtt.sessionIdFrom)?.size ?? 0) >= degreeLimit ||
+    (peerIdsByEndpoint.get(rtt.sessionIdTo)?.size ?? 0) >= degreeLimit
+  );
 }
 
 function addEndpointPeer(
-    peerIdsByEndpoint: Map<string, Set<string>>,
-    endpointId: string,
-    peerId: string,
+  peerIdsByEndpoint: Map<string, Set<string>>,
+  endpointId: string,
+  peerId: string,
 ): void {
-    if (endpointId === peerId) {
-        return;
-    }
-    peerIdsByEndpoint.get(endpointId)?.add(peerId);
+  if (endpointId === peerId) {
+    return;
+  }
+  peerIdsByEndpoint.get(endpointId)?.add(peerId);
 }

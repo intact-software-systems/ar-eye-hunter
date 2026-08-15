@@ -39,6 +39,87 @@ export const reviewedDispositions = Object.freeze([
     rule: 'layout.primary-export-name',
     symbol: 'parseRtcBaselineCommand',
   }),
+  // RTC RTT persistence decoders own the untrusted persisted-JSON boundary.
+  // Each listed owner validates or narrows its unknown input before domain use;
+  // keep these exact symbols reviewed while the checker treats all unknown
+  // annotations as propagation, regardless of that immediate normalization.
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation-primitives.ts',
+    rule: 'boundary.unknown',
+    symbol: 'readRtcRttPersistedRecord',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation-primitives.ts',
+    rule: 'boundary.unknown',
+    symbol: 'assertExactRtcRttPersistedKeys',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation-primitives.ts',
+    rule: 'boundary.unknown',
+    symbol: 'assertNonEmptyRtcRttString',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation-primitives.ts',
+    rule: 'boundary.unknown',
+    symbol: 'assertRtcRttSafeInteger',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation-primitives.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateRtcRttCommandHash',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateRtcRttMutationReceipt',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateRtcRttMeasurement',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateRtcRttEndpointAdmission',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateCanonicalGroupRef',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'rtc-rtt-persistence-validation.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateExpectedRevision',
+  }),
+  Object.freeze({
+    path:
+      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+      'validate-rtc-rtt-recompute-intent.ts',
+    rule: 'boundary.unknown',
+    symbol: 'validateRtcRttRecomputeIntent',
+  }),
 ]);
 
 export function readReviewedDispositionContext(repoRoot, candidateHead, dependencies = {}) {
