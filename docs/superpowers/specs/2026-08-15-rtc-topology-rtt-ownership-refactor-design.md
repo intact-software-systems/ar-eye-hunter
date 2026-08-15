@@ -142,14 +142,19 @@ retry idempotence, and zero-knob compatibility behavior.
 1. Characterize repository behavior and live concurrency boundaries before movement.
 2. Move repository contracts, runtime namespaces, storage keys, codecs, exact reads, mutation
    writes, cleanup, migration, and persisted-shape validation into `rtc-topology/persistence`.
-3. Split the current repository only at real read, write, migration, cleanup, or codec boundaries;
+3. Fix the stale receipt-family cleanup assumption: current mutation code writes final AppOutbox
+   entries directly and no longer writes the legacy `rtc-rtt:recompute-outbox` intermediate rows,
+   so receipt cleanup must guard and delete the expired receipt without requiring absent siblings;
+   generic expiry owns any retained legacy intermediate rows.
+4. Split the current repository only at real read, write, migration, cleanup, or codec boundaries;
    do not create one-file folders or forwarding layers.
-4. Mirror persistence tests and update internal consumers.
-5. Re-run repository navigation and structure checks before selecting another slice.
+5. Mirror persistence tests and update internal consumers.
+6. Re-run repository navigation and structure checks before selecting another slice.
 
 Acceptance for this slice is byte-compatible persisted data, unchanged canonical keys, unchanged
 transaction and optimistic-concurrency behavior, unchanged retention and cleanup, and unchanged
-migration semantics.
+migration semantics, except that valid expired receipts no longer fail cleanup because obsolete
+intermediate siblings are absent.
 
 Later work remains outcome-shaped until both slices are complete and reviewed. In particular, this
 design does not pre-authorize moving durable topology replay, changing graph algorithms, or
@@ -171,12 +176,14 @@ The refactor must preserve:
 - process-local RTT refinement thresholds, intervals, accumulation, and first-observation behavior;
 - existing package and application behavior; and
 - the intentional correction that makes those configured refinement controls effective for durable
-  RTT work.
+  RTT work, plus the correction that lets valid expired receipts clean up after direct final-outbox
+  delivery replaced the legacy intermediate outbox.
 
 No protocol, API, database schema, topology algorithm, RTT acceptance policy, distributed recipe,
 or performance threshold changes as part of an ownership move. The persistent-path refinement fix
 changes only the broken bypass: it makes the already configured threshold and interval apply where
-current production wiring ignores them.
+current production wiring ignores them. The receipt cleanup fix removes an obsolete sibling
+requirement; it does not shorten retention or delete live rows.
 
 ## Bug protocol
 
@@ -266,6 +273,8 @@ rollback, and linked follow-up issues; no plan bookkeeping or closure receipt is
   tested real bug fixes.
 - Every touched file reaches full standards closure, including recursively touched support files.
 - Every verified weakness not fixed in scope has a reused or newly created GitHub issue.
+- The independent all-pairs Vivaldi cost and broad topology-service ownership weaknesses are tracked
+  by GitHub issues #235 and #236.
 - Focused semantic, persistence, concurrency, typecheck, structure, style, and formatting evidence
   is recorded exactly as passed, failed, or skipped.
 - The completed, validated implementation is published as one pull request.
