@@ -17,6 +17,7 @@ export type RallarRtcTopologyMetrics = Readonly<{
     weightedRoomGraphSparseFallbackCount: number;
     incrementalPlanCount: number;
     incrementalPlanFallbackFullCount: number;
+    incrementalPlanInvariantFallbackCount: number;
     hysteresisHeldKindCount: number;
     rttQueueRequestCount: number;
     rttQueueNewCount: number;
@@ -62,6 +63,7 @@ export const emptyTopologyMetrics = (): MutableRallarRtcTopologyMetrics => ({
     weightedRoomGraphSparseFallbackCount: 0,
     incrementalPlanCount: 0,
     incrementalPlanFallbackFullCount: 0,
+    incrementalPlanInvariantFallbackCount: 0,
     hysteresisHeldKindCount: 0,
     rttQueueRequestCount: 0,
     rttQueueNewCount: 0,
