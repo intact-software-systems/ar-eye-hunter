@@ -24,19 +24,22 @@
 
 [scripts/governance-gate.mjs#runGovernanceGateCommand](../governance-gate.mjs#runGovernanceGateCommand)
 is the canonical local entry. It validates the repository argument, delegates execution, and emits
-only ordered phase results or bounded phase-specific failure output.
+ordered phase results, bounded retained-legacy advisory output, or bounded phase-specific failure
+output.
 
 ## Control-flow families
 
 - [governance-gate-phases.mjs#governanceGatePhases](./governance-gate-phases.mjs#governanceGatePhases)
-  owns two read-only package-command boundaries: changed repository structure and repository code
-  style. Missing or empty commands fail before any phase starts. Test suites, plan or PR evidence
-  lifecycles, governance mutations, network access, Git mutation, and mutable output paths are
-  rejected as gate phases.
+  owns three read-only package-command boundaries: changed repository structure, repository code
+  style, and retained production legacy. Only retained legacy exposes successful output because its
+  heuristic candidates are an advisory review surface. Missing or empty commands fail before any
+  phase starts. Test suites, plan or PR evidence lifecycles, governance mutations, network access,
+  Git mutation, and mutable output paths are rejected as gate phases.
 - [run-governance-gate.mjs#runGovernanceGate](./run-governance-gate.mjs#runGovernanceGate) runs
   those independent read-only phases concurrently so the local path stays bounded by the slowest
-  focused suite instead of their sum. It retains output only for a failing phase and limits that
-  diagnostic to its final relevant lines.
+  focused suite instead of their sum. It preserves at most 32,000 characters of successful
+  retained-legacy output and points truncated output to the direct command. Failure diagnostics
+  retain their existing bounded final-line summary.
 - [scripts/governance-gate.mjs#printResults](../governance-gate.mjs#printResults) is the result and
   exit owner. Any non-zero phase makes the gate non-zero; successful sibling output cannot hide the
   failing owner.

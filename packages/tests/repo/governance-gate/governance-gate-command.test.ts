@@ -31,6 +31,7 @@ describe('governance gate command', () => {
     expect(result.stdout.trim().split('\n')).toEqual([
       'PASS: governance gate repo-structure',
       'PASS: governance gate repo-style',
+      'retained-legacy fixture success',
       'PASS: governance gate retained-legacy',
       'PASS: governance gate (3 phases)',
     ]);
@@ -39,6 +40,26 @@ describe('governance gate command', () => {
       'repo-style',
       'retained-legacy',
     ]);
+  });
+
+  it('bounds successful advisory output and points to the complete retained-legacy report', () => {
+    const fixtureRoot = createFixture({
+      ...requiredPhaseCommands,
+      'check:retained-legacy': ['retained-legacy-large', 0],
+    });
+
+    const result = runCommand(fixtureRoot);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('retained-legacy-large fixture success');
+    expect(result.stdout).toContain(
+      'TRUNCATED: successful advisory output exceeded 32,000 characters; ' +
+        'run npm run check:retained-legacy for the complete report.',
+    );
+    expect(result.stdout).not.toContain('end-of-large-advisory');
+    const advisoryStart = result.stdout.indexOf('retained-legacy-large fixture success');
+    const advisoryEnd = result.stdout.indexOf('\nPASS: governance gate retained-legacy');
+    expect(result.stdout.slice(advisoryStart, advisoryEnd)).toHaveLength(32_000);
   });
 
   it('fails before execution when a canonical package command is missing', () => {
@@ -108,7 +129,11 @@ function createFixture(commands: Readonly<Record<string, readonly [string, numbe
       "import { appendFileSync } from 'node:fs';",
       'const [phase, status] = process.argv.slice(2);',
       "appendFileSync('executed-phases.txt', `${phase}\\n`);",
-      "console.log(status === '0' ? `${phase} fixture success` : `${phase} fixture failure`);",
+      "if (phase === 'retained-legacy-large') {",
+      "  console.log(`${phase} fixture success ${'x'.repeat(33_000)} end-of-large-advisory`);",
+      '} else {',
+      "  console.log(status === '0' ? `${phase} fixture success` : `${phase} fixture failure`);",
+      '}',
       'process.exitCode = Number(status);',
     ].join('\n'),
   );

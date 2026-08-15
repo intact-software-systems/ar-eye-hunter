@@ -6,7 +6,11 @@ export class GovernanceGateConfigurationError extends Error {}
 export const governanceGatePhases = [
   { phase: 'repo-structure', command: 'check:repo-structure' },
   { phase: 'repo-style', command: 'check:repo-style' },
-  { phase: 'retained-legacy', command: 'check:retained-legacy' },
+  {
+    phase: 'retained-legacy',
+    command: 'check:retained-legacy',
+    showSuccessfulOutput: true,
+  },
 ];
 
 const forbiddenScriptPatterns = [

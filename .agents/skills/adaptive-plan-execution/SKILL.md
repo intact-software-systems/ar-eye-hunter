@@ -29,6 +29,14 @@ file, that file enters the closure recursively. Independent untouched code
 remains outside the closure. Checker tolerance is not authority and does not
 define touched-file standards closure.
 
+During touched-file standards closure, actively remove affected legacy code when no
+independent requirement or verified consumer requires it. Do not retain affected legacy solely
+because it pre-existed, a coupled test protects it, or removal was not named in the request. Keep
+independent untouched legacy outside closure. If removal would change a public API, persisted
+format, protocol, migration contract, or verified consumer behavior, treat it as a compatibility or
+migration decision; minimize it to a thin named boundary and require explicit maintainer approval
+and a registry entry for continued retention.
+
 When giving a next-action decision before edits, and again in the final
 handoff, state all three closure facts explicitly:
 

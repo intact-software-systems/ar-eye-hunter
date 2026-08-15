@@ -2,8 +2,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { printReport } from '../../../scripts/legacy-review/candidate-report.mjs';
 import { readRetainedLegacyRegistry } from '../../../scripts/legacy-review/retained-legacy-registry.mjs';
 import { validateRetainedLegacy } from '../../../scripts/legacy-review/validate-retained-legacy.mjs';
 
@@ -94,7 +95,82 @@ describe('changed production legacy review command', () => {
     expect(result.stdout).toContain('compatibility vocabulary');
     expect(result.stdout).toContain('compatibility export alias');
     expect(result.stdout).toContain('feature flag or mode retaining a predecessor');
+    expect(result.stdout).not.toContain('::warning');
     expect(result.stdout).not.toMatch(/production-legacy-candidate-|REPORT-SHA256|final ledger/iu);
+  });
+
+  it('emits non-blocking GitHub warnings for heuristic candidates in Actions', () => {
+    const fixture = createGitFixture({
+      'packages/example/src/compatibility-route.ts':
+        "export { createCanonicalRoute as createLegacyRoute } from './canonical-route.ts';\n",
+    });
+
+    const result = runLegacyReview(fixture, [], { GITHUB_ACTIONS: 'true' });
+
+    expect(result.status, result.stdout).toBe(0);
+    expect(result.stdout).toContain(
+      '::warning file=packages/example/src/compatibility-route.ts,line=1,' +
+        'title=Changed production legacy heuristic candidate::',
+    );
+    expect(result.stdout).toContain('Heuristic candidate');
+  });
+
+  it('escapes scanner-derived warning properties and messages', () => {
+    const output = captureReportOutput(
+      [
+        {
+          path: 'packages/example/src/compatibility%2C:route.ts',
+          line: 7,
+          symbol: 'legacy%:\r\n,route',
+          reason: 'compatibility%,\r\n:reason',
+        },
+      ],
+      true,
+    );
+
+    expect(output).toContain(
+      '::warning file=packages/example/src/compatibility%252C%3Aroute.ts,line=7,' +
+        'title=Changed production legacy heuristic candidate::' +
+        'legacy%25%3A%0D%0A%2Croute — compatibility%25%2C%0D%0A%3Areason. ' +
+        'Heuristic candidate; inspect the changed production call path.',
+    );
+  });
+
+  it('caps GitHub candidate annotations and reports overflow', () => {
+    const candidates = Array.from({ length: 23 }, (_, index) => ({
+      path: `packages/example/src/legacy-route-${index + 1}.ts`,
+      line: index + 1,
+      symbol: `legacyRoute${index + 1}`,
+      reason: 'compatibility vocabulary',
+    }));
+
+    const output = captureReportOutput(candidates, true);
+    const warnings = output.split('\n').filter((line) => line.startsWith('::warning'));
+
+    expect(warnings).toHaveLength(21);
+    expect(warnings.filter((line) => line.includes('file='))).toHaveLength(20);
+    expect(warnings.at(-1)).toContain('3 additional heuristic candidates');
+    expect(warnings.at(-1)).toContain('npm run check%3Aretained-legacy');
+  });
+
+  it('does not let plain candidate values inject GitHub workflow commands', () => {
+    const output = captureReportOutput(
+      [
+        {
+          path: 'packages/example/src/legacy-route.ts\n::warning file=forged.ts::forged',
+          line: 1,
+          symbol: 'legacyRoute',
+          reason: 'compatibility vocabulary',
+        },
+      ],
+      true,
+    );
+    const warnings = output.split('\n').filter((line) => line.startsWith('::warning'));
+
+    expect(warnings).toHaveLength(1);
+    expect(output).toContain(
+      'CANDIDATE packages/example/src/legacy-route.ts\\n::warning file=forged.ts::forged:1',
+    );
   });
 
   it('keeps tests and ordinary governance tooling outside production legacy review', () => {
@@ -182,11 +258,34 @@ function createGitFixture(files: Readonly<Record<string, string>>) {
 function runLegacyReview(
   fixture: { readonly root: string; readonly base: string; readonly head: string },
   options: readonly string[] = [],
+  environment: NodeJS.ProcessEnv = {},
 ) {
   return spawnSync(process.execPath, [reviewLegacyPath, fixture.base, fixture.head, ...options], {
     cwd: fixture.root,
     encoding: 'utf8',
+    env: { ...process.env, ...environment },
   });
+}
+
+function captureReportOutput(
+  candidates: readonly {
+    readonly path: string;
+    readonly line: number;
+    readonly symbol: string;
+    readonly reason: string;
+  }[],
+  githubActions: boolean,
+): string {
+  const lines: string[] = [];
+  const consoleLog = vi.spyOn(console, 'log').mockImplementation((value) => {
+    lines.push(String(value));
+  });
+  try {
+    printReport({ candidates }, { githubActions });
+  } finally {
+    consoleLog.mockRestore();
+  }
+  return lines.join('\n');
 }
 
 function writeFixture(root: string, file: string, content: string): void {

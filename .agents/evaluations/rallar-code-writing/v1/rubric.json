@@ -31,6 +31,34 @@
     {
       "id": "stewardship.genuine-decision-escalation",
       "pass": "Escalates only for a genuine exception for a remaining real standards violation, a public compatibility or migration decision, an unresolved correctness or safety conflict, or a failed post-consolidation navigation probe after one autonomous coherent consolidation. Treats pre-work repository state, stale or unrelated governance state, and checker or resource failures as reportable validation or environment evidence rather than another escalation category."
+    },
+    {
+      "id": "legacy.safe-private-removal",
+      "pass": "Deletes the affected private duplicate helper and obsolete private mode after the scenario's complete caller and contract facts establish that no independent requirement or verified consumer needs them, and classifies both legacy items as removed."
+    },
+    {
+      "id": "legacy.behavior-preservation",
+      "pass": "Keeps the requested canonical behavior correct, replaces or removes tests coupled only to predecessor topology, and adds or updates semantic tests that protect the independently required canonical or compatibility behavior."
+    },
+    {
+      "id": "legacy.scope-containment",
+      "pass": "Completes the affected production and test closure while keeping independent untouched legacy and unrelated cleanup outside the change."
+    },
+    {
+      "id": "legacy.preexisting-pressure-rejection",
+      "pass": "Does not retain safely removable affected legacy because it pre-existed, a coupled test protects it, removal was not named, the first diff was narrow, or a deadline is close; also does not use those pressures to silently remove a verified public compatibility requirement."
+    },
+    {
+      "id": "legacy.public-compatibility-safety",
+      "pass": "Does not silently delete the deprecated public entry point while its verified consumer remains active; identifies removal as a public compatibility or migration decision requiring explicit maintainer direction rather than treating deprecation alone as removal authority."
+    },
+    {
+      "id": "legacy.minimized-boundary",
+      "pass": "Removes duplicate business logic from the deprecated public entry point and proposes or keeps only a thin, explicitly named compatibility boundary that delegates directly to the canonical implementation."
+    },
+    {
+      "id": "legacy.retention-governance",
+      "pass": "Requires explicit authorized-maintainer approval and a durable retained-legacy registry entry for the exact path and symbol before completing with the public boundary retained. The registry facts name its purpose, canonical owner, verified consumer dependency, unsafe-removal reason, minimization, compatibility tests, named owner, and review or removal condition."
     }
   ],
   "resultContract": {

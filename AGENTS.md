@@ -24,6 +24,14 @@ closure recursively. Independent untouched code remains outside the closure.
 Do not treat warning-only full-repository checks or new/worsened changed checks
 as authority to retain touched-file noncompliance.
 
+During touched-file standards closure, actively remove affected legacy code when no
+independent requirement or verified consumer requires it. Do not retain affected legacy solely
+because it pre-existed, a coupled test protects it, or removal was not named in the request. Keep
+independent untouched legacy outside closure. If removal would change a public API, persisted
+format, protocol, migration contract, or verified consumer behavior, treat it as a compatibility or
+migration decision; minimize it to a thin named boundary and require explicit maintainer approval
+and a registry entry for continued retention.
+
 Escalate only for a genuine exception for a remaining real standards violation,
 a public compatibility or migration decision, an unresolved correctness or
 safety conflict, or a failed post-consolidation navigation probe. Do not
@@ -128,8 +136,8 @@ standard.
 - Keep Rallar black-box control protocol, distributed-run artifact contracts,
   reusable recipe fixtures, and artifact analysis in `packages/shared-test`;
   `apps/rallar-black-box` should consume those contracts for UI/operator flows.
-- Preserve existing public exports and app import paths unless a task explicitly
-  asks for a breaking change.
+- Do not silently delete public exports or automatically preserve deprecated
+  exports forever; apply the compatibility and migration rule above.
 - Prefer `GroupRef`/`roomRef` when application/workspace scope matters.
 - For room-scoped app/game traffic, prefer `rallar.realtime.room<T>(...)` and
   `rallar.messages.room<T>(...)` before hand-wiring RTC readiness and sends.

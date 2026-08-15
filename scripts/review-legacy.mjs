@@ -8,7 +8,7 @@ import { scanChangedProduction } from './legacy-review/scan-changed-production.m
 
 const input = readInput(process.argv.slice(2));
 const result = scanChangedProduction(input);
-printReport(result);
+printReport(result, { githubActions: process.env.GITHUB_ACTIONS === 'true' });
 if (input.registry) {
   validateRegistry(input.registry);
 }

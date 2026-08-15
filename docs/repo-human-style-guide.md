@@ -289,6 +289,14 @@ canonical implementation, and contains no duplicate business logic. Unrelated un
 outside the completion gate unless the change depends on, expands, materially touches, or routes
 changed production flow through it.
 
+During touched-file standards closure, actively remove affected legacy code when no
+independent requirement or verified consumer requires it. Do not retain affected legacy solely
+because it pre-existed, a coupled test protects it, or removal was not named in the request. Keep
+independent untouched legacy outside closure. If removal would change a public API, persisted
+format, protocol, migration contract, or verified consumer behavior, treat it as a compatibility or
+migration decision; minimize it to a thin named boundary and require explicit maintainer approval
+and a registry entry for continued retention.
+
 Never allow an issue, reviewer silence, prior approval, agent judgment, or an automated result to
 approve retained legacy. For every retained item, verify an authorized maintainer approved and the
 durable registry records its exact path and symbol, purpose and consumer dependency,

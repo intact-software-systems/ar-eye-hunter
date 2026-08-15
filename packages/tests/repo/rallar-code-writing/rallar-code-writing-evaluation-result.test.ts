@@ -22,6 +22,18 @@ const stewardshipDimensions = [
   'stewardship.no-debt-only-permission-request',
   'stewardship.genuine-decision-escalation',
 ] as const;
+const legacyScenarioDimensions = [
+  ['safe-private-legacy-removal', 'legacy.safe-private-removal'],
+  ['safe-private-legacy-removal', 'legacy.behavior-preservation'],
+  ['safe-private-legacy-removal', 'legacy.scope-containment'],
+  ['safe-private-legacy-removal', 'legacy.preexisting-pressure-rejection'],
+  ['public-compatibility-legacy-restraint', 'legacy.public-compatibility-safety'],
+  ['public-compatibility-legacy-restraint', 'legacy.minimized-boundary'],
+  ['public-compatibility-legacy-restraint', 'legacy.retention-governance'],
+  ['public-compatibility-legacy-restraint', 'legacy.behavior-preservation'],
+  ['public-compatibility-legacy-restraint', 'legacy.scope-containment'],
+  ['public-compatibility-legacy-restraint', 'legacy.preexisting-pressure-rejection'],
+] as const;
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -46,39 +58,95 @@ describe('rallar code-writing evaluation result validation', () => {
     expect(validation.stdout).toContain('PASS: rallar code-writing evaluation result');
   });
 
+  it('requires all three critical scenarios and their raw output artifacts', () => {
+    const validationInput = createValidationInput();
+
+    expect(validationInput.result.scenarioResults).toHaveLength(3);
+    expect(validationInput.result.summary).toEqual({
+      criticalPassed: 3,
+      criticalTotal: 3,
+      passed: 3,
+      total: 3,
+    });
+
+    validationInput.result.scenarioResults[0].rawOutputArtifact = 'missing-agent-output.txt';
+    expect(validateEvaluationResult(validationInput)).toContain(
+      `${scenarioId} rawOutputArtifact cannot be read as non-empty text`,
+    );
+  });
+
   it.each(stewardshipDimensions)('treats %s as independently non-compensable', (dimensionId) => {
     const consistentInput = createValidationInput();
-    failDimension(consistentInput.result, dimensionId);
-    consistentInput.result.scenarioResults[0].verdict = 'fail';
-    consistentInput.result.scenarioResults[0].criticalFailures = [dimensionId];
+    failDimension(consistentInput.result, scenarioId, dimensionId);
+    const scenarioResult = findScenarioResult(consistentInput.result, scenarioId);
+    scenarioResult.verdict = 'fail';
+    scenarioResult.criticalFailures = [dimensionId];
     consistentInput.result.summary = {
-      criticalPassed: 0,
-      criticalTotal: 1,
-      passed: 0,
-      total: 1,
+      criticalPassed: 2,
+      criticalTotal: 3,
+      passed: 2,
+      total: 3,
     };
 
     expect(validateEvaluationResult(consistentInput)).toEqual([]);
 
     const inconsistentInput = createValidationInput();
-    failDimension(inconsistentInput.result, dimensionId);
+    failDimension(inconsistentInput.result, scenarioId, dimensionId);
 
     expect(validateEvaluationResult(inconsistentInput)).toEqual(
       expect.arrayContaining([
         `${scenarioId} verdict must be fail when a required dimension fails`,
         `${scenarioId} criticalFailures must exactly list failed required dimensions`,
-        'result.summary.passed must equal 0',
-        'result.summary.criticalPassed must equal 0',
+        'result.summary.passed must equal 2',
+        'result.summary.criticalPassed must equal 2',
       ]),
     );
   });
+
+  it.each(legacyScenarioDimensions)(
+    'treats %s %s as independently non-compensable',
+    (legacyScenarioId, dimensionId) => {
+      const consistentInput = createValidationInput();
+      const scenarioResult = findScenarioResult(consistentInput.result, legacyScenarioId);
+      failDimension(consistentInput.result, legacyScenarioId, dimensionId);
+      scenarioResult.verdict = 'fail';
+      scenarioResult.criticalFailures = [dimensionId];
+      consistentInput.result.summary = {
+        criticalPassed: 2,
+        criticalTotal: 3,
+        passed: 2,
+        total: 3,
+      };
+
+      expect(validateEvaluationResult(consistentInput)).toEqual([]);
+
+      const inconsistentInput = createValidationInput();
+      failDimension(inconsistentInput.result, legacyScenarioId, dimensionId);
+      expect(validateEvaluationResult(inconsistentInput)).toEqual(
+        expect.arrayContaining([
+          `${legacyScenarioId} verdict must be fail when a required dimension fails`,
+          `${legacyScenarioId} criticalFailures must exactly list failed required dimensions`,
+          'result.summary.passed must equal 2',
+          'result.summary.criticalPassed must equal 2',
+        ]),
+      );
+    },
+  );
 });
 
-function failDimension(result: any, dimensionId: string): void {
-  const dimensionResult = result.scenarioResults[0].dimensionResults.find(
+function failDimension(result: any, targetScenarioId: string, dimensionId: string): void {
+  const dimensionResult = findScenarioResult(result, targetScenarioId).dimensionResults.find(
     (entry: any) => entry.dimensionId === dimensionId,
   );
   dimensionResult.verdict = 'fail';
+}
+
+function findScenarioResult(result: any, targetScenarioId: string): any {
+  const scenarioResult = result.scenarioResults.find(
+    (entry: any) => entry.scenarioId === targetScenarioId,
+  );
+  expect(scenarioResult, targetScenarioId).toBeDefined();
+  return scenarioResult;
 }
 
 function createValidationInput(): any {
@@ -87,6 +155,7 @@ function createValidationInput(): any {
   const scenarios = suite.scenarios.filter(
     (scenario: any) => scenario.primarySkill === 'rallar-code-writing',
   );
+  const criticalTotal = scenarios.filter((scenario: any) => scenario.critical).length;
   return {
     repoRoot,
     suite,
@@ -112,7 +181,12 @@ function createValidationInput(): any {
         criticalFailures: [],
         rawOutputArtifact: rawArtifact,
       })),
-      summary: { criticalPassed: 1, criticalTotal: 1, passed: 1, total: 1 },
+      summary: {
+        criticalPassed: criticalTotal,
+        criticalTotal,
+        passed: scenarios.length,
+        total: scenarios.length,
+      },
     },
   };
 }

@@ -36,6 +36,11 @@ function readRepoRoot(args) {
 function printResults(results) {
   const failures = results.filter((result) => result.status !== 0);
   if (failures.length > 0) {
+    for (const result of results) {
+      if (result.status === 0 && result.output !== '') {
+        console.log(result.output);
+      }
+    }
     for (const failure of failures) {
       console.error(`FAIL: governance gate ${failure.phase} (${failure.command})`);
       if (failure.output !== '') {
@@ -45,6 +50,9 @@ function printResults(results) {
     return;
   }
   for (const result of results) {
+    if (result.output !== '') {
+      console.log(result.output);
+    }
     console.log(`PASS: governance gate ${result.phase}`);
   }
   console.log(`PASS: governance gate (${results.length} phases)`);
