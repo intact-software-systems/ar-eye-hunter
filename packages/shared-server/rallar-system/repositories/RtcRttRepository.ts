@@ -17,11 +17,13 @@ import {
     RuntimeStateWriteConflictError,
 } from '../../runtime-state/optimistic-runtime-state-write.ts';
 import type {
-    RtcRttEndpointAdmission,
     RtcRttMutationLifecycleFacts,
-    RtcRttMutationReceipt,
     RtcRttRecomputeIntent,
-} from '../services/rtc-topology-mutations.ts';
+} from '../rtc-topology/mutation/rtc-rtt-mutation-contracts.ts';
+import type {
+    RtcRttEndpointAdmission,
+    RtcRttMutationReceipt,
+} from '../rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
 import * as snapshotValidation from '../group-state/snapshot/validate-persisted-group-snapshot.ts';
 import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../rtc-topology-errors.ts';
@@ -30,9 +32,11 @@ import {
     toCanonicalRtcTopologyGroupIdentity,
     toRtcRttEndpointAdmissionStorageKey,
     toRtcRttMeasurementStorageKey,
+} from '../rtc-topology-identifiers.ts';
+import {
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
-} from '../rtc-topology-identifiers.ts';
+} from '../rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import {
     RTC_RTT_MUTATION_RETENTION_MS,
@@ -43,11 +47,6 @@ import {
     validateRtcRttMutationReceipt as validatePersistedRtcRttMutationReceipt,
     validateRtcRttRecomputeIntent as validatePersistedRtcRttRecomputeIntent,
 } from '../rtc-rtt-persistence-validation.ts';
-
-export {
-    toRtcRttMutationReceiptId,
-    toRtcRttRecomputeOutboxId,
-} from '../rtc-topology-identifiers.ts';
 
 export const RTC_RTT_LATEST_NAMESPACE = 'rtc-rtt:latest';
 export const RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE = 'rtc-rtt:endpoint-admission';

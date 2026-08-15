@@ -16,7 +16,7 @@ import {
   readRtcRttRecomputeOutboxIdentity,
   toRtcRttMutationReceiptId,
   type RtcRttRecomputeOutboxIdentity,
-} from '../../rtc-topology-identifiers.ts';
+} from '../../rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validatePersistedALMessage } from '../../services/al-message-persistence-validation.ts';
 import {
   COALESCED_APP_OUTBOX_WORK_FIELD,

@@ -9,7 +9,7 @@
   },
   "results": [
     {
-      "path": "packages/shared-server/rallar-system/services/rtc-rtt-app-inbox-result.ts",
+      "path": "packages/shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-result.ts",
       "symbol": "toRtcRttAppInboxResult"
     },
     {
@@ -27,7 +27,7 @@
       "symbol": "RtcTopologyRepositoryInvariantCorruptionError"
     },
     {
-      "path": "packages/shared-server/rallar-system/services/rtc-topology-mutations.ts",
+      "path": "packages/shared-server/rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts",
       "symbol": "RtcRttMutationIdempotencyConflictError"
     }
   ]

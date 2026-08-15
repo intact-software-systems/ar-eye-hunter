@@ -24,7 +24,7 @@ import {
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
-import { toRtcRttMutationReceiptId } from '../rtc-topology-identifiers.ts';
+import { toRtcRttMutationReceiptId } from '../rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { AppOutboxType } from './AppOutboxService.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 

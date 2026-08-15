@@ -16,6 +16,7 @@ const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
 const topologyInboxRoot = 'packages/shared-server/rallar-system/topology/inbox';
 const topologyRoot = 'packages/shared-server/rallar-system/topology';
 const rtcInboxRoot = 'packages/shared-server/rallar-system/rtc-topology/inbox';
+const rtcMutationRoot = 'packages/shared-server/rallar-system/rtc-topology/mutation';
 const persistenceRoot = `${groupStateRoot}/persistence`;
 const validationPrimitivesPath = `${groupStateRoot}/group-state-validation-primitives.ts`;
 const oldValidationPath = `${groupStateRoot}/mutation/group-state-validation-primitives.ts`;
@@ -51,7 +52,7 @@ const sources = {
   topologyReconfigure: read(`${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`),
   topologyWorker: read(`${serviceRoot}/RtcTopologyOutboxWork.ts`),
   topologyRepository: read(`${repositoryRoot}/RtcTopologyExecutionRepository.ts`),
-  rtt: read(`${serviceRoot}/rtc-rtt-mutation-service.ts`),
+  rtt: read(`${rtcMutationRoot}/write-rtc-rtt-mutation.ts`),
 };
 
 const trackedRuntimeSource = authoritativeMutationRuntimeSourcePaths.map(read).join('\n');
@@ -216,9 +217,9 @@ it.each([
     source: sources.rtcHandler,
     owner: 'processMutation',
     calls: [
-      'readRttMutation(',
-      'computeRttMutation(',
-      'validateRttMutation(',
+      'readRtcRttMutation(',
+      'computeRtcRttMutation(',
+      'validateRtcRttMutation(',
       'this.commitMutation(',
     ],
   },
@@ -233,7 +234,7 @@ it('keeps every authoritative service write bound to the caller transaction', ()
     functionBody(sources.group, 'writeGroupMutation'),
     functionBody(sources.topologyConfig, 'writeTopologyConfigMutation'),
     methodBody(sources.topologyReconfigure, 'write'),
-    functionBody(sources.rtt, 'writeRttMutation'),
+    functionBody(sources.rtt, 'writeRtcRttMutation'),
     methodBody(sources.topologyRepository, 'writeTopologyMutation'),
   ];
   for (const seam of seams) {
@@ -291,7 +292,7 @@ it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
 });
 
 it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomically', () => {
-  const seam = functionBody(sources.rtt, 'writeRttMutation');
+  const seam = functionBody(sources.rtt, 'writeRtcRttMutation');
   expectInOrder(seam, [
     'commitEndpointAdmission(',
     'commitMeasurement(',

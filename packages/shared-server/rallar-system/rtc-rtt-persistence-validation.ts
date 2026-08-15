@@ -4,9 +4,11 @@ import * as snapshotValidation from './group-state/snapshot/validate-persisted-g
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity,
+} from './rtc-topology-identifiers.ts';
+import {
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
-} from './rtc-topology-identifiers.ts';
+} from './rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equality.ts';
 
 export const RTC_RTT_MUTATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
