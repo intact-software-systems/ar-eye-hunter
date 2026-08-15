@@ -372,7 +372,7 @@ function evaluateSharedRows(candidateRows: number): string[] {
 
 function resourceRegressionError(candidate: number): string {
   return (
-    'shared median sql.rowsRead increased without a recorded reason: ' +
+    'shared median sql.rowsRead regressed by more than 5% without a recorded reason: ' +
     `baseline=1, candidate=${candidate}`
   );
 }

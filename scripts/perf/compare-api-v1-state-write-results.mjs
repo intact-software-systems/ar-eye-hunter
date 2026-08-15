@@ -82,6 +82,40 @@ const REGRESSION_REASON_METRICS = new Set([
   'postgres.transactionDurationMs',
 ]);
 
+const RESOURCE_REGRESSION_METRICS = [
+  ['sql', 'statements'],
+  ['sql', 'rowsRead'],
+  ['sql', 'serializedResultBytes'],
+  ['postgres', 'transactionDurationMs'],
+];
+
+/**
+ * These four are stochastic, not deterministic. The workloads contend
+ * deliberately, so retry attempt counts vary with timing, and statement counts,
+ * rows read, and transaction duration all follow attempt counts. An
+ * order-balanced control on byte-identical code measured drift up to +2.7%,
+ * scaling with contention: +0.2% on `uncontended` (100 groups), +1.6% on
+ * `shared` (5), +2.7% on `hot` (1). They therefore share the tolerance already
+ * used for latency and throughput rather than being compared for strict
+ * increase, which no identical-code run could satisfy. Exceeding the band still
+ * requires a recorded reason. Evidence: issue #157 and
+ * `playground/rtc-design/baselines/2026-08-15-state-write-pooling-control-results.md`.
+ */
+export const RESOURCE_REGRESSION_RATIO = 0.05;
+
+/**
+ * The child structure policy suppresses findings from this comparator by exact
+ * string equality, so both sides must build the message here rather than each
+ * formatting its own copy.
+ */
+export function toStateWriteResourceRegressionMessage(input) {
+  return (
+    `${input.workload} median ${input.metric} regressed by more than ` +
+    `${RESOURCE_REGRESSION_RATIO * 100}% without a recorded reason: ` +
+    `baseline=${input.baselineMedian}, candidate=${input.candidateMedian}`
+  );
+}
+
 export function validateStateWriteArtifact(artifact) {
   try {
     return validateStateWriteArtifactInternal(artifact);
@@ -193,23 +227,20 @@ function compareStateWriteArtifactsInternal(baseline, candidate) {
   for (const name of WORKLOADS.keys()) {
     const baselineWorkload = baselineByName.get(name);
     const candidateWorkload = candidateByName.get(name);
-    for (
-      const [container, metric] of [
-        ['sql', 'statements'],
-        ['sql', 'rowsRead'],
-        ['sql', 'serializedResultBytes'],
-        ['postgres', 'transactionDurationMs'],
-      ]
-    ) {
+    for (const [container, metric] of RESOURCE_REGRESSION_METRICS) {
       const baselineMedian = baselineWorkload[container][metric];
       const candidateMedian = candidateWorkload[container][metric];
       if (
-        candidateMedian > baselineMedian &&
+        candidateMedian > baselineMedian * (1 + RESOURCE_REGRESSION_RATIO) &&
         !hasRecordedReason(candidate, name, `${container}.${metric}`)
       ) {
         errors.push(
-          `${name} median ${container}.${metric} increased without a recorded reason: ` +
-            `baseline=${baselineMedian}, candidate=${candidateMedian}`,
+          toStateWriteResourceRegressionMessage({
+            workload: name,
+            metric: `${container}.${metric}`,
+            baselineMedian,
+            candidateMedian,
+          }),
         );
       }
     }

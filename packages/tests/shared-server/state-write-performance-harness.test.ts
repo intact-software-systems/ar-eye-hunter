@@ -179,6 +179,43 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
     }
   });
 
+  // Resource counters follow retry attempt counts, which follow timing, so an
+  // identical-code control drifts (up to +2.7% measured, issue #157). The gate
+  // has to absorb that drift and still catch a real resource regression.
+  it('tolerates resource variance within 5% and rejects beyond it', () => {
+    const withinTolerance = createStateWritePerformanceArtifact();
+    setResourceAdverseRatio(withinTolerance, 0.04);
+    expect(
+      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), withinTolerance),
+    ).toEqual([]);
+
+    const beyondTolerance = createStateWritePerformanceArtifact();
+    setResourceAdverseRatio(beyondTolerance, 0.06);
+    expect(
+      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), beyondTolerance),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'uncontended median sql.serializedResultBytes regressed by more than 5% ' +
+            'without a recorded reason',
+        ),
+        expect.stringContaining(
+          'hot median sql.serializedResultBytes regressed by more than 5% ' +
+            'without a recorded reason',
+        ),
+      ]),
+    );
+  });
+
+  it('lets a recorded reason authorize a resource regression beyond the band', () => {
+    const authorized = createStateWritePerformanceArtifact();
+    setResourceAdverseRatio(authorized, 0.06);
+    authorized.regressionReasons = [...STATE_WRITE_REASONS];
+    expect(
+      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), authorized),
+    ).toEqual([]);
+  });
+
   it('preserves scale, retry-exhaustion, latency, throughput, and resource gates', () => {
     const baseline = createStateWritePerformanceArtifact();
     const candidate = createStateWritePerformanceArtifact();
@@ -368,6 +405,19 @@ function queueResource(data: object, msgId?: string): string {
     ...(msgId === undefined ? {} : { id: { msgId } }),
     payload: { resource: JSON.stringify({ data }) },
   });
+}
+
+// Scales serializedResultBytes rather than statements: the fixture's statement
+// count is 20, too coarse for 4% and 6% to land on different integers.
+function setResourceAdverseRatio(artifact: any, ratio: number): void {
+  for (const workload of artifact.workloads) {
+    for (const sample of workload.samples) {
+      sample.sql.serializedResultBytes = Math.round(
+        sample.sql.serializedResultBytes * (1 + ratio),
+      );
+    }
+    refreshStateWritePerformanceWorkload(workload);
+  }
 }
 
 function setThroughputAdverseRatio(artifact: any, ratio: number): void {

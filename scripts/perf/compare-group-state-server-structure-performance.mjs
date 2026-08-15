@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url';
 import {
   compareStateWriteArtifacts,
   isSubstantiveRegressionReason,
+  toStateWriteResourceRegressionMessage,
 } from './compare-api-v1-state-write-results.mjs';
 import { ORDER_BALANCED_STATE_WRITE_PROTOCOL } from './pool-api-v1-state-write-results.mjs';
 
@@ -335,10 +336,12 @@ function toStructureThroughputBandError(workloadName, baseline, candidate) {
 }
 
 function toResourceRegressionError(input) {
-  return (
-    `${input.workloadName} median ${metricName(input.descriptor)} increased without a ` +
-    `recorded reason: baseline=${input.baselineValue}, candidate=${input.candidateValue}`
-  );
+  return toStateWriteResourceRegressionMessage({
+    workload: input.workloadName,
+    metric: metricName(input.descriptor),
+    baselineMedian: input.baselineValue,
+    candidateMedian: input.candidateValue,
+  });
 }
 
 function metricName(descriptor) {
