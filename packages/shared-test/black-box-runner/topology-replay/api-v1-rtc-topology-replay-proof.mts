@@ -10,6 +10,7 @@ import {
   assertCheckpointMatchesMutation,
   assertCompleteSessionTopology,
   assertPollDrivenReplayMetricDelta,
+  assertSharedPublicationIdentity,
   exactPublicationExpectation,
   exactTopologyExpectation,
   waitForDurableState,
@@ -92,7 +93,7 @@ export async function runApiV1RtcTopologyReplayProof(
       input.controls,
       input.secondaryPlan.port,
       async () => {
-        await api.updateDescription({
+        await api.updateDisplayName({
           ...group,
           actor: sessions[0]!,
           phase: 'baseline-a',
@@ -108,7 +109,7 @@ export async function runApiV1RtcTopologyReplayProof(
       input.controls,
       input.primaryPlan.port,
       async () => {
-        await api.updateDescription({
+        await api.updateDisplayName({
           ...group,
           actor: sessions[2]!,
           phase: 'baseline-b',
@@ -149,16 +150,14 @@ export async function runApiV1RtcTopologyReplayProof(
       input.controls,
       input.secondaryPlan.port,
       async () => {
-        const revision = await api.updateMemberRole({
+        const revision = await api.updateDisplayName({
           ...group,
           actor: sessions[0]!,
-          memberClientId: sessions[1]!.clientId,
-          role: 'admin',
           phase: 'live-a',
         });
         const observations = await waitForPassivePair(
           attached,
-          exactPublicationExpectation(group, `${proofId}-live-a-role`, revision),
+          exactPublicationExpectation(revision),
         );
         assertCompleteSessionTopology(observations, sessions);
         const durable = await waitForDurableState(input.databaseUrl, (state) =>
@@ -188,14 +187,14 @@ export async function runApiV1RtcTopologyReplayProof(
       input.controls,
       input.primaryPlan.port,
       async () => {
-        const revision = await api.updateDescription({
+        const revision = await api.updateDisplayName({
           ...group,
           actor: sessions[2]!,
           phase: 'live-b',
         });
         const observations = await waitForPassivePair(
           attached,
-          exactPublicationExpectation(group, `${proofId}-live-b-description`, revision),
+          exactPublicationExpectation(revision),
         );
         assertCompleteSessionTopology(observations, sessions);
         attached[4]!.assertNoRegressionOrDuplicateLane();
@@ -238,11 +237,9 @@ export async function runApiV1RtcTopologyReplayProof(
       input.controls,
       input.secondaryPlan.port,
       async () => {
-        const revision = await api.updateMemberRole({
+        const revision = await api.updateDisplayName({
           ...group,
           actor: sessions[0]!,
-          memberClientId: sessions[1]!.clientId,
-          role: 'member',
           phase: 'restart-a',
         });
         const durable = await waitForDurableState(input.databaseUrl, (state) =>
@@ -268,7 +265,7 @@ export async function runApiV1RtcTopologyReplayProof(
       input.controls,
       input.primaryPlan.port,
       async () => {
-        const revision = await api.updateDescription({
+        const revision = await api.updateDisplayName({
           ...group,
           actor: sessions[2]!,
           phase: 'restart-b',
@@ -359,8 +356,8 @@ export async function runApiV1RtcTopologyReplayProof(
         },
         publisherHeads: liveBEvidence.publisherHeads,
         publicationMessageIds: {
-          A: liveAObservations[0]!.messageId,
-          B: liveBObservations[0]!.messageId,
+          A: assertSharedPublicationIdentity(liveAObservations),
+          B: assertSharedPublicationIdentity(liveBObservations),
         },
         metrics: metricEvidence,
         publisherClaimScheduling: 'non-target-process-suspended',

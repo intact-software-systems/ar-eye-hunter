@@ -36,12 +36,6 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
-      # The replay proof pins the legacy per-command publication contract: it
-      # asserts one durable topology publication per group mutation, which the
-      # damped default's coalescing and fingerprint change gate intentionally
-      # eliminate for non-topology-affecting mutations. The proof runs against
-      # the retained legacy path until it is adapted to the damped contract.
-      RALLAR_GROUP_FORMATION_DAMPING: legacy
       RALLAR_ICE_MODE: local
       RALLAR_LOGIN_USER_RATE_LIMIT: '100'
       RALLAR_STATE_STRICT_READ_AUTH: '1'

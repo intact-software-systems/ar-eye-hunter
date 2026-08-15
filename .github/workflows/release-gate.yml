@@ -145,8 +145,6 @@ jobs:
 
       - name: Run deterministic topology replay proof
         uses: ./.github/actions/api-v1-black-box-test
-        env:
-          RALLAR_GROUP_FORMATION_DAMPING: legacy
         with:
           backend: postgres
           api-port: '18080'

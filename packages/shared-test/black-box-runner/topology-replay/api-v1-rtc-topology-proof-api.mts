@@ -183,6 +183,26 @@ export class ApiV1RtcTopologyProofApi {
     return readCausalRevision(body);
   }
 
+  /**
+   * The group display name is part of the topology-input fingerprint, so a
+   * distinct name per phase drives exactly one publication under the damped
+   * default. A description or member-role change is deliberately not a
+   * topology input and publishes nothing there.
+   */
+  async updateDisplayName(
+    input: ProofGroupInput & Readonly<{ actor: ProofSession; phase: string }>,
+  ): Promise<ProofCausalRevision> {
+    const body = await requestJson(input.actor.apiBaseUrl, groupPath(input), {
+      method: 'PUT',
+      session: input.actor,
+      body: {
+        requestId: `${input.proofId}-${input.phase}-display-name`,
+        displayName: `RTC topology replay ${input.phase}`,
+      },
+    });
+    return readCausalRevision(body);
+  }
+
   async issueWebSocketTicket(
     session: ProofSession,
     apiBaseUrl = session.apiBaseUrl,
