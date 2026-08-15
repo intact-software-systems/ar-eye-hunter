@@ -36,7 +36,14 @@ import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic }
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware-contract.ts';
 import { initialiseMiddleware, registerMiddlewareBackgroundTask } from './middleware.ts';
-import { getApiRtcTopologyServiceOptions } from './services/rtc-topology-config.ts';
+import {
+  getApiRtcTopologyServiceOptions,
+  readApiRtcRttRefinementGateConfig,
+} from './services/rtc-topology-config.ts';
+// prettier-ignore
+import {
+  RtcRttRefinementGate,
+} from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';
@@ -109,6 +116,10 @@ export function createRallarServer(
     topologyKind: rtcTopologyOptions.topologyKind ?? 'auto' as const,
   };
   const rtcTopologyService = new RallarRtcTopologyService(rtcTopologyOptions);
+  const rttRefinementGate = new RtcRttRefinementGate({
+    ...readApiRtcRttRefinementGateConfig(),
+    now,
+  });
   const topologyConfigRepository = new GroupTopologyConfigRepository(
     runtimeStateRepository,
   );
@@ -274,6 +285,7 @@ export function createRallarServer(
     system: {
       installDefaultMiddlewareTopics: (runtime, ws) => {
         stopSystemTopics?.();
+
         const systemTopics = initRallarSystemWsTopics(
           runtime.wsQBoxServerService,
           {
@@ -281,6 +293,7 @@ export function createRallarServer(
             rtcTopologyService,
             rtcTopologyOptions,
             rtcTopologyManagement: topologyManagement,
+            rttRefinementGate,
             observeGroupSnapshot: async (snapshot) => {
               await runtime.groupStateService.observeSnapshot(snapshot);
             },

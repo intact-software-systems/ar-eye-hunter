@@ -212,7 +212,10 @@ async function computeAcceptedRtcTopologyWork(
     read.snapshot?.value,
     membershipDeltaWork ? 'membership-delta' : 'full-rebuild',
   );
-  if (changeGated && read.snapshot !== null && !computedTopology.changed) {
+  // RTT is deliberately outside the fingerprint, so an RTT refresh always
+  // replans — but an unchanged planned graph publishes nothing (M8).
+  const unchangedGated = changeGated || work.kind === 'rtt-refresh';
+  if (unchangedGated && read.snapshot !== null && !computedTopology.changed) {
     return { decision: 'skipped-unchanged', work, group: authority.group, inputFingerprint };
   }
   const publicationExpireAtTimestamp = work.publish

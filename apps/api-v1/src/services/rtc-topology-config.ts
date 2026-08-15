@@ -1,4 +1,9 @@
 import type { RallarRtcTopologyServiceOptions } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import {
+  DEFAULT_RTT_REFINEMENT_MIN_INTERVAL_MS,
+  DEFAULT_RTT_VIVALDI_DELTA_MS,
+  type RtcRttRefinementGateConfig,
+} from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
 
 type EnvReader = Readonly<{
   get(name: string): string | undefined;
@@ -29,6 +34,21 @@ export function readApiTopologyRecomputeDebounceMs(
   env: EnvReader = Deno.env,
 ): number | undefined {
   return readNonNegativeIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS');
+}
+
+export function readApiRtcRttRefinementGateConfig(
+  env: EnvReader = Deno.env,
+): Omit<RtcRttRefinementGateConfig, 'now'> {
+  return {
+    minIntervalMs: readNonNegativeIntegerEnv(
+      env,
+      'RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS',
+    ) ?? DEFAULT_RTT_REFINEMENT_MIN_INTERVAL_MS,
+    vivaldiDeltaThresholdMs: readNonNegativeIntegerEnv(
+      env,
+      'RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS',
+    ) ?? DEFAULT_RTT_VIVALDI_DELTA_MS,
+  };
 }
 
 function compactOptions(
