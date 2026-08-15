@@ -16,6 +16,7 @@ import {
 import {
   stopApiOnRtcTopologyDeliveryHealthFailure,
 } from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
+import { startApiProcess } from './runtime/api-process-startup.ts';
 import {
   logRtcTopologyReplayConfig,
   readApiRtcTopologyReplayConfig,
@@ -90,13 +91,19 @@ rallar.system
   .useWebSocketLifecycle();
 rallar.ws.mount(app);
 rallar.rest.mount(app);
-await rallar.runtime.readiness;
-if (shouldStartApiQueueWorkers(rtcTopologyReplayConfig)) {
-  rallar.start();
-}
 
 const port = readServerPort();
-const httpServer = Deno.serve({ port }, app.fetch);
+const apiProcess = startApiProcess({
+  runtimeReadiness: rallar.runtime.readiness,
+  listen: () => Deno.serve({ port }, app.fetch),
+  startQueueWorkers: () => {
+    if (shouldStartApiQueueWorkers(rtcTopologyReplayConfig)) {
+      rallar.start();
+    }
+  },
+});
+const httpServer = apiProcess.httpServer;
+await apiProcess.readiness;
 if (rallar.runtime.healthFailure) {
   void stopApiOnRtcTopologyDeliveryHealthFailure({
     healthFailure: rallar.runtime.healthFailure,
