@@ -3,7 +3,7 @@ const PINNED_POSTGRES_IMAGE =
 const PINNED_POSTGRES_IMAGE_ID =
   'sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171';
 
-const ENVIRONMENT_FIELDS = [
+export const ENVIRONMENT_FIELDS = [
   'image_ref',
   'image_id',
   'repo_digest',

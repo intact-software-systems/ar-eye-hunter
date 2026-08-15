@@ -211,6 +211,63 @@ Loop-driving CLI values are bounded safe integers: warmup runs 1–10, measured
 runs 1–100, and concurrency 1–256. Task 0B further requires exactly one warmup,
 at least three measured runs, and concurrency 10.
 
+## Pinned Benchmark Environment
+
+The dev container in `docker-compose.yml` is deliberately convenient — floating
+tag, autovacuum on, no resource reservation — and those are the properties that
+make medians drift between otherwise identical runs (issue #157).
+`docker-compose.perf-bench.yml` is its controlled counterpart: the digest,
+command, shm size, memory, and CPU count are all pinned because
+`validate-api-v1-state-write-environment.mjs` compares them for exact equality.
+It listens on 5433 and declares no named volume, so `down -v` genuinely returns
+an empty data directory.
+
+Every governed PostgreSQL setting except `autovacuum` is simply the PostgreSQL
+16 default, so the pinned environment is stock PG16 with autovacuum off, 4 GiB
+memory, 4 CPUs, and 256 MiB of shared memory.
+
+The pooling protocol also requires no other running containers and no other
+running benchmark process, so stop the dev container first.
+
+```sh
+docker stop ar-eye-hunter-postgres
+docker compose -f docker-compose.perf-bench.yml down -v
+docker compose -f docker-compose.perf-bench.yml up -d --wait
+DATABASE_URL=postgres://app:app@localhost:5433/appdb npm run db:migrate
+```
+
+`capture-api-v1-state-write-environment.mjs` emits the governed descriptor that
+each pooling source requires. Capture is two-stage because the field semantics
+bracket the run: preflight row counts and the preflight maintenance counter
+describe the database the benchmark started against, and the postflight
+maintenance counter proves no automatic maintenance ran during it.
+
+```sh
+node scripts/perf/capture-api-v1-state-write-environment.mjs \
+  --stage preflight --container rallar-perf-bench-postgres \
+  --database-url postgres://app:app@localhost:5433/appdb \
+  --out tmp/perf/env/position-1-preflight.json
+
+# run the benchmark here
+
+node scripts/perf/capture-api-v1-state-write-environment.mjs \
+  --stage postflight --container rallar-perf-bench-postgres \
+  --database-url postgres://app:app@localhost:5433/appdb \
+  --preflight tmp/perf/env/position-1-preflight.json \
+  --out tmp/perf/env/position-1.txt
+```
+
+The postflight stage validates before writing, so a descriptor that reaches
+disk is one the pooling protocol accepts. A non-empty preflight database, a
+container restarted mid-run, or an overlapping container fails the capture
+rather than surviving into a verdict.
+
+The order-balanced protocol runs four positions — approved-base, candidate,
+candidate, approved-base — each against a freshly recreated container, and
+`write-api-v1-state-write-pooled-results.mjs` pools them. Note that it rejects
+equal approved-base and candidate commits, so an identical-code control needs
+two distinct commits whose runtime code does not differ.
+
 ## Focused Runtime Harness
 
 Run the full focused harness with three measured runs:

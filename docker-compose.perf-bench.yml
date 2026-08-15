@@ -1,0 +1,40 @@
+# Pinned PostgreSQL for the API-v1 state-write benchmark (issue #157).
+#
+# Separate from docker-compose.yml on purpose. The dev container is deliberately
+# convenient — unpinned tag, autovacuum on, no resource reservation — and those
+# are exactly the properties that make benchmark medians drift between runs.
+# This file is the controlled counterpart, and every value below is pinned
+# because scripts/perf/validate-api-v1-state-write-environment.mjs compares it
+# for exact equality.
+#
+# Port 5433 so it can coexist with the dev container, and no named volume so a
+# `down -v` genuinely returns an empty data directory.
+#
+# Usage:
+#   docker compose -f docker-compose.perf-bench.yml down -v
+#   docker compose -f docker-compose.perf-bench.yml up -d --wait
+#   DATABASE_URL=postgres://app:app@localhost:5433/appdb npm run db:migrate
+#
+# The pooling protocol also requires no other containers and no other benchmark
+# processes running; stop the dev container first or the captured
+# container_overlap_count will not be zero.
+services:
+  perf-bench-postgres:
+    image: postgres@sha256:081f1bc7bd5e143dbb6e487b710bbc27712cdcfaced4c071b8e47349aa1b4171
+    container_name: rallar-perf-bench-postgres
+    command: postgres -c autovacuum=off
+    shm_size: 268435456
+    mem_limit: 4294967296
+    memswap_limit: 4294967296
+    cpus: 4
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: appdb
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U app -d appdb" ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
