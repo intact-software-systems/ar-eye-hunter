@@ -1343,6 +1343,39 @@
       "description": "Opt-in formation-burst baseline large tier: 50 clients join one group in a burst against the three-server PostgreSQL cluster, converge, then hold a ~60s steady-state heartbeat window while admin group-formation metrics are captured per server at T0/T1/T2."
     },
     {
+      "id": "api-v1-group-formation-churn-large",
+      "recipe": "tests/api-v1/api-v1-group-formation-churn-large.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-formation-large",
+        "api-v1-black-box-phase4-churn"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-formation-churn-large",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "Opt-in phase-4 churn stream large tier: 50 clients form one group against the three-server PostgreSQL cluster and converge, then a sequential join/leave churn stream runs six cycles with settle delays longer than the coalesced recompute debounce, followed by a ~60s steady-state heartbeat window; admin group-formation and rtc-topology metrics are captured per server at T0/T1/T2/T3 so the churn window isolates per-change replan, publication, and egress quantities."
+    },
+    {
       "id": "api-v1-scope-isolation",
       "recipe": "tests/api-v1/api-v1-scope-isolation.json",
       "category": "api-v1-black-box",

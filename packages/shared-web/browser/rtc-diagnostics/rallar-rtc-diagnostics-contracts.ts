@@ -1,4 +1,8 @@
 import type { RallarOverlayAdoptionDiagnostics } from '@shared/repository/overlays-repository.ts';
+// prettier-ignore
+import type {
+  WebRtcPeerConnectionAttemptBudgetDiagnostics,
+} from '@shared/services/WebRtcConnectionService.ts';
 import type { WebRtcGroupManagerDiagnostics } from '@shared/services/WebRtcGroupManager.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
 import type { QRtcPeerConnectionDiagnostics } from '@shared/webrtc/QRtcPeerConnection.ts';
@@ -101,4 +105,5 @@ export type RallarRtcDiagnostics = Readonly<{
     peers: readonly RallarRtcPeerDiagnostics[];
     groupManager?: WebRtcGroupManagerDiagnostics;
     overlayAdoption?: RallarOverlayAdoptionDiagnostics;
+    connectionAttemptBudget?: WebRtcPeerConnectionAttemptBudgetDiagnostics;
 }>;
