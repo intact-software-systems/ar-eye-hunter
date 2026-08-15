@@ -1,3 +1,5 @@
+import { dirname } from 'node:path';
+
 import type { ClientInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
@@ -5,23 +7,53 @@ import type { ReadableKeyedValues } from '@shared/cache/RepositoryInterfaces.ts'
 import { Either } from '@shared/resilience/Either.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 
-type BenchResult = Readonly<{
-  run: number;
-  durationMs: number;
-  clientCount: number;
-  desiredPeerCount: number;
-  lookups: number;
-  keysCalls: number;
-  readCalls: number;
-  onlineDesiredPeerCount: number;
-  onlinePeerCount: number;
-}>;
+import {
+  rtcBaselineIssue,
+  type RtcBaselineIssueDto,
+  type RtcBaselineJson,
+  type RtcBaselineResult,
+  type RtcBaselineSampleDto,
+} from '../../baseline/contracts/rtc-baseline-contracts.ts';
+import { parseRtcBaselineBoundedInteger } from '../../baseline/command/rtc-baseline-cli-options.ts';
+import {
+  parseRtcBaselineAcceptedWorker,
+  type RtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorkerCli,
+} from '../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 
-const OUT = readArg('--out') ?? 'tmp/perf/results/webrtc-group-manager-state.json';
-const CLIENTS = Number(readArg('--clients') ?? '5000');
-const DESIRED = Number(readArg('--desired') ?? '1000');
-const LOOKUPS = Number(readArg('--lookups') ?? '20');
-const RUNS = Number(readArg('--runs') ?? '5');
+export interface WebRtcGroupManagerStateInput {
+  readonly clients: number;
+  readonly desired: number;
+  readonly lookups: number;
+}
+
+interface WebRtcGroupManagerStateDiagnosticArguments {
+  readonly mode: 'diagnostic';
+  readonly input: WebRtcGroupManagerStateInput;
+  readonly runs: number;
+  readonly out: string;
+}
+
+export interface WebRtcGroupManagerStateResult {
+  readonly durationMs: number;
+  readonly clientCount: number;
+  readonly desiredPeerCount: number;
+  readonly lookups: number;
+  readonly keysCalls: number;
+  readonly readCalls: number;
+  readonly onlineDesiredPeerCount: number;
+  readonly onlinePeerCount: number;
+}
+
+interface ValidationRule {
+  readonly valid: boolean;
+  readonly path: string;
+  readonly code: string;
+  readonly message: string;
+}
+
+const acceptedInput: WebRtcGroupManagerStateInput = { clients: 5000, desired: 1000, lookups: 20 };
 
 class CountingClientCache implements ReadableKeyedValues<string, ClientInfo> {
   keysCalls = 0;
@@ -92,15 +124,34 @@ class CountingClientCache implements ReadableKeyedValues<string, ClientInfo> {
   }
 }
 
-const results: BenchResult[] = [];
+export function parseWebRtcGroupManagerStateArguments(
+  arguments_: readonly string[],
+): RtcBaselineResult<
+  | WebRtcGroupManagerStateDiagnosticArguments
+  | RtcBaselineAcceptedWorker<WebRtcGroupManagerStateInput>
+> {
+  const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  if (accepted) {
+    return parseRtcBaselineAcceptedWorker({
+      arguments_,
+      identity: { workloadId: 'RTC-B04', caseId: 'group-manager-state' },
+      toInputKey: () => 'fixed',
+      capabilityOptionNames: ['rtc-clients', 'rtc-desired', 'rtc-lookups'],
+      parseCapability: parseAcceptedCapability,
+    });
+  }
+  return { ok: true, value: parseDiagnosticArguments(arguments_) };
+}
 
-for (let run = 1; run <= RUNS; run++) {
+export async function runWebRtcGroupManagerState(
+  input: WebRtcGroupManagerStateInput,
+): Promise<WebRtcGroupManagerStateResult> {
   const groupCache = new LatestRepository<string, GroupSnapshot>();
   const clientCache = new CountingClientCache();
   const rtcQBox = createRtcQBoxHarness('self');
   const manager = new WebRtcGroupManager(rtcQBox.service as never, groupCache, clientCache);
 
-  for (let index = 0; index < CLIENTS; index++) {
+  for (let index = 0; index < input.clients; index += 1) {
     const peerId = `peer-${index}`;
     clientCache.set(peerId, {
       clientId: peerId,
@@ -112,7 +163,7 @@ for (let run = 1; run <= RUNS; run++) {
   await manager.acceptGroupUpdate(
     createGroupSnapshot('room-1', 1, [
       'self',
-      ...Array.from({ length: DESIRED }, (_, index) => `peer-${index}`),
+      ...Array.from({ length: input.desired }, (_, index) => `peer-${index}`),
     ]),
   );
 
@@ -121,44 +172,36 @@ for (let run = 1; run <= RUNS; run++) {
   let onlinePeerCount = 0;
   const start = performance.now();
 
-  for (let lookup = 0; lookup < LOOKUPS; lookup++) {
+  for (let lookup = 0; lookup < input.lookups; lookup += 1) {
     const state = manager.state();
     onlineDesiredPeerCount = state.onlineDesiredPeerIds.length;
     onlinePeerCount = state.onlinePeerIds.length;
   }
 
-  results.push({
-    run,
+  return {
     durationMs: performance.now() - start,
-    clientCount: CLIENTS,
-    desiredPeerCount: DESIRED,
-    lookups: LOOKUPS,
+    clientCount: input.clients,
+    desiredPeerCount: input.desired,
+    lookups: input.lookups,
     keysCalls: clientCache.keysCalls,
     readCalls: clientCache.readCalls,
     onlineDesiredPeerCount,
     onlinePeerCount,
-  });
+  };
 }
 
-await Deno.writeTextFile(
-  OUT,
-  JSON.stringify(
-    {
-      createdAt: new Date().toISOString(),
-      input: {
-        clientCount: CLIENTS,
-        desiredPeerCount: DESIRED,
-        lookups: LOOKUPS,
-        runs: RUNS,
-      },
-      results,
-    },
-    null,
-    2,
-  ),
-);
-
-console.log(`Wrote ${OUT}`);
+export function runWebRtcGroupManagerStateAcceptedSamples(input: {
+  readonly worker: RtcBaselineAcceptedWorker<WebRtcGroupManagerStateInput>;
+  readonly run: () => WebRtcGroupManagerStateResult | Promise<WebRtcGroupManagerStateResult>;
+}): Promise<RtcBaselineSampleDto[]> {
+  return runRtcBaselineAcceptedWorker({
+    worker: input.worker,
+    run: input.run,
+    validate: (result) => validateResult(input.worker.input, result),
+    metrics: (result) => [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }],
+    rawEvidence: toRawEvidence,
+  });
+}
 
 function createRtcQBoxHarness(sessionId: string) {
   const knownPeerIds = new Set<string>();
@@ -191,102 +234,285 @@ function createGroupSnapshot(
   membershipVersion: number,
   memberSessionIds: readonly string[],
 ): GroupSnapshot {
-  const applicationId = 'app-1';
-  const workspaceId = 'workspace-1';
-  const ownerPrincipalId = memberSessionIds[0] ?? 'creator';
-
   return {
     stateRevision: membershipVersion,
     causalRevision: {
       groupRevision: membershipVersion,
       presenceRevision: membershipVersion,
     },
-    group: {
-      applicationId,
-      workspaceId,
-      groupId,
-      slug: groupId,
-      displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
-      activeMemberCount: memberSessionIds.length,
-      ownerPrincipalId,
-      snapshotVersion: membershipVersion,
-      metadataVersion: 0,
-      rosterVersion: membershipVersion,
-      presenceVersion: 0,
-      created: {
-        atEpochMs: 1,
-        actor: { kind: 'principal', principalId: 'creator' },
-        reason: null,
-        traceId: null,
-        requestId: null,
-      },
-      updated: {
-        atEpochMs: membershipVersion,
-        actor: { kind: 'principal', principalId: 'creator' },
-        reason: null,
-        traceId: null,
-        requestId: null,
-      },
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
-    members: memberSessionIds.map((sessionId) => ({
-      applicationId,
-      workspaceId,
-      groupId,
-      principalId: sessionId,
-      role: 'member',
-      status: 'active',
-      joined: {
-        atEpochMs: 1,
-        actor: { kind: 'principal', principalId: 'creator' },
-        reason: null,
-        traceId: null,
-        requestId: null,
-      },
-      updated: {
-        atEpochMs: membershipVersion,
-        actor: { kind: 'principal', principalId: 'creator' },
-        reason: null,
-        traceId: null,
-        requestId: null,
-      },
-      invitedByPrincipalId: null,
-      invitationExpiresAtEpochMs: null,
-      left: null,
-      removed: null,
-      banned: null,
-    })),
-    activeSessions: memberSessionIds.map((sessionId) => ({
-      applicationId,
-      workspaceId,
-      groupId,
-      sessionId,
-      principalId: sessionId,
-      generationId: `generation-${sessionId}`,
-      generationVersion: membershipVersion,
-      status: 'active',
-      connectedAtEpochMs: 1,
-      lastHeartbeatAtEpochMs: membershipVersion,
-      expiresAtEpochMs: membershipVersion + 60_000,
-      disconnectedAtEpochMs: null,
-      disconnectReason: null,
-    })),
+    group: createGroupSnapshotGroup(groupId, membershipVersion, memberSessionIds),
+    members: createGroupSnapshotMembers(groupId, membershipVersion, memberSessionIds),
+    activeSessions: createGroupSnapshotSessions(groupId, membershipVersion, memberSessionIds),
     memberCount: memberSessionIds.length,
     onlineMemberCount: memberSessionIds.length,
   };
 }
 
-function readArg(name: string): string | undefined {
-  return Deno.args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1);
+function createGroupSnapshotGroup(
+  groupId: string,
+  membershipVersion: number,
+  memberSessionIds: readonly string[],
+): GroupSnapshot['group'] {
+  return {
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId,
+    slug: groupId,
+    displayName: groupId,
+    description: null,
+    kind: 'room',
+    status: 'active',
+    archived: null,
+    deleted: null,
+    joinMode: 'open',
+    maxMembers: null,
+    maxSessionsPerMember: null,
+    metadata: {},
+    activeMemberCount: memberSessionIds.length,
+    ownerPrincipalId: memberSessionIds[0] ?? 'creator',
+    snapshotVersion: membershipVersion,
+    metadataVersion: 0,
+    rosterVersion: membershipVersion,
+    presenceVersion: 0,
+    created: {
+      atEpochMs: 1,
+      actor: { kind: 'principal', principalId: 'creator' },
+      reason: null,
+      traceId: null,
+      requestId: null,
+    },
+    updated: {
+      atEpochMs: membershipVersion,
+      actor: { kind: 'principal', principalId: 'creator' },
+      reason: null,
+      traceId: null,
+      requestId: null,
+    },
+    expiresAtEpochMs: null,
+    emptySinceEpochMs: null,
+    purgeAfterEpochMs: null,
+  };
+}
+
+function createGroupSnapshotMembers(
+  groupId: string,
+  membershipVersion: number,
+  memberSessionIds: readonly string[],
+): GroupSnapshot['members'] {
+  return memberSessionIds.map((sessionId) => ({
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId,
+    principalId: sessionId,
+    role: 'member',
+    status: 'active',
+    joined: {
+      atEpochMs: 1,
+      actor: { kind: 'principal', principalId: 'creator' },
+      reason: null,
+      traceId: null,
+      requestId: null,
+    },
+    updated: {
+      atEpochMs: membershipVersion,
+      actor: { kind: 'principal', principalId: 'creator' },
+      reason: null,
+      traceId: null,
+      requestId: null,
+    },
+    invitedByPrincipalId: null,
+    invitationExpiresAtEpochMs: null,
+    left: null,
+    removed: null,
+    banned: null,
+  }));
+}
+
+function createGroupSnapshotSessions(
+  groupId: string,
+  membershipVersion: number,
+  memberSessionIds: readonly string[],
+): GroupSnapshot['activeSessions'] {
+  return memberSessionIds.map((sessionId) => ({
+    applicationId: 'app-1',
+    workspaceId: 'workspace-1',
+    groupId,
+    sessionId,
+    principalId: sessionId,
+    generationId: `generation-${sessionId}`,
+    generationVersion: membershipVersion,
+    status: 'active',
+    connectedAtEpochMs: 1,
+    lastHeartbeatAtEpochMs: membershipVersion,
+    expiresAtEpochMs: membershipVersion + 60_000,
+    disconnectedAtEpochMs: null,
+    disconnectReason: null,
+  }));
+}
+
+function parseDiagnosticArguments(
+  arguments_: readonly string[],
+): WebRtcGroupManagerStateDiagnosticArguments {
+  return {
+    mode: 'diagnostic',
+    input: {
+      clients: Number(readDiagnosticArgument(arguments_, '--clients', '5000')),
+      desired: Number(readDiagnosticArgument(arguments_, '--desired', '1000')),
+      lookups: Number(readDiagnosticArgument(arguments_, '--lookups', '20')),
+    },
+    runs: Number(readDiagnosticArgument(arguments_, '--runs', '5')),
+    out: readDiagnosticArgument(
+      arguments_,
+      '--out',
+      'tmp/perf/results/webrtc-group-manager-state.json',
+    ),
+  };
+}
+
+function parseAcceptedCapability(
+  options: Readonly<Record<string, string>>,
+): RtcBaselineResult<WebRtcGroupManagerStateInput> {
+  const clients = parseRtcBaselineBoundedInteger(
+    options['rtc-clients'] ?? '',
+    'rtc-clients',
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const desired = parseRtcBaselineBoundedInteger(
+    options['rtc-desired'] ?? '',
+    'rtc-desired',
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const lookups = parseRtcBaselineBoundedInteger(
+    options['rtc-lookups'] ?? '',
+    'rtc-lookups',
+    1,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const expected = {
+    'rtc-clients': String(acceptedInput.clients),
+    'rtc-desired': String(acceptedInput.desired),
+    'rtc-lookups': String(acceptedInput.lookups),
+  };
+  const issues = [
+    ...collectParsingIssues([clients, desired, lookups]),
+    ...Object.entries(expected)
+      .filter(([name, value]) => options[name] !== value)
+      .map(([name, value]) =>
+        rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`)
+      ),
+  ];
+  return issues.length > 0 ? { ok: false, issues } : { ok: true, value: acceptedInput };
+}
+
+function validateResult(
+  input: WebRtcGroupManagerStateInput,
+  result: WebRtcGroupManagerStateResult,
+): RtcBaselineIssueDto[] {
+  return validateRules([
+    {
+      valid: JSON.stringify([result.clientCount, result.desiredPeerCount, result.lookups]) ===
+        JSON.stringify([input.clients, input.desired, input.lookups]),
+      path: '$.rawEvidence.input',
+      code: 'input-mismatch',
+      message: 'Unexpected input.',
+    },
+    {
+      valid: JSON.stringify([result.keysCalls, result.readCalls]) ===
+          JSON.stringify([input.lookups, input.clients * input.lookups]) &&
+        [result.keysCalls, result.readCalls].every(Number.isSafeInteger),
+      path: '$.rawEvidence.calls',
+      code: 'call-count-mismatch',
+      message: 'Unexpected calls.',
+    },
+    {
+      valid: JSON.stringify([result.onlineDesiredPeerCount, result.onlinePeerCount]) ===
+        JSON.stringify([input.desired, input.clients]),
+      path: '$.rawEvidence.state',
+      code: 'state-result-mismatch',
+      message: 'Unexpected state result.',
+    },
+    {
+      valid: Number.isFinite(result.durationMs) && result.durationMs >= 0,
+      path: '$.rawEvidence.durationMs',
+      code: 'invalid-timing',
+      message: 'Expected nonnegative.',
+    },
+  ]);
+}
+
+function collectParsingIssues(
+  results: readonly RtcBaselineResult<number>[],
+): RtcBaselineIssueDto[] {
+  return results.flatMap((result) => result.ok ? [] : result.issues);
+}
+
+function readDiagnosticArgument(
+  arguments_: readonly string[],
+  name: string,
+  fallback: string,
+): string {
+  return arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
+    fallback;
+}
+
+function validateRules(rules: readonly ValidationRule[]): RtcBaselineIssueDto[] {
+  return rules.filter((rule) => !rule.valid).map((rule) =>
+    rtcBaselineIssue(rule.path, rule.code, rule.message)
+  );
+}
+
+function toRawEvidence(result: WebRtcGroupManagerStateResult): RtcBaselineJson {
+  return {
+    durationMs: result.durationMs,
+    clientCount: result.clientCount,
+    desiredPeerCount: result.desiredPeerCount,
+    lookups: result.lookups,
+    keysCalls: result.keysCalls,
+    readCalls: result.readCalls,
+    onlineDesiredPeerCount: result.onlineDesiredPeerCount,
+    onlinePeerCount: result.onlinePeerCount,
+  };
+}
+
+async function main(): Promise<void> {
+  const parsed = parseWebRtcGroupManagerStateArguments(Deno.args);
+  if (!parsed.ok) {
+    throw new Error(JSON.stringify(parsed.issues));
+  }
+  const dispatched = await runRtcBaselineAcceptedWorkerCli({
+    parsed: parsed.value,
+    runAccepted: (worker) =>
+      runWebRtcGroupManagerStateAcceptedSamples({
+        worker,
+        run: () => runWebRtcGroupManagerState(worker.input),
+      }),
+    writeOutput: (output) => console.log(output),
+  });
+  if (dispatched.handled) {
+    return;
+  }
+  const diagnostic = dispatched.diagnostic;
+  const results = [];
+  for (let run = 1; run <= diagnostic.runs; run += 1) {
+    results.push({ run, ...await runWebRtcGroupManagerState(diagnostic.input) });
+  }
+  const output = {
+    createdAt: new Date().toISOString(),
+    input: {
+      clientCount: diagnostic.input.clients,
+      desiredPeerCount: diagnostic.input.desired,
+      lookups: diagnostic.input.lookups,
+      runs: diagnostic.runs,
+    },
+    results,
+  };
+  await Deno.mkdir(dirname(diagnostic.out), { recursive: true });
+  await Deno.writeTextFile(diagnostic.out, JSON.stringify(output, null, 2));
+  console.log(`Wrote ${diagnostic.out}`);
+}
+
+if (import.meta.main) {
+  await main();
 }

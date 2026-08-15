@@ -34,6 +34,7 @@ const executablePaths = [
 const sourcePaths = [
   'baseline/acceptance/rtc-baseline-evidence-acceptance.ts',
   'baseline/acceptance/rtc-baseline-failure-accounting.ts',
+  'baseline/acceptance/rtc-baseline-worker-protocol.ts',
   'baseline/catalog/rtc-baseline-workload-catalog.ts',
   'baseline/catalog/rtc-baseline-workload-manifest.ts',
   'baseline/command/rtc-baseline-cli-grammar.ts',
@@ -91,6 +92,7 @@ const owningTests = [
   'tests/architecture/rtc-benchmark-package-boundaries.test.ts',
   'tests/baseline/acceptance/rtc-performance-baseline-evidence-acceptance.test.ts',
   'tests/baseline/acceptance/rtc-performance-baseline-evidence-failure.test.ts',
+  'tests/baseline/acceptance/rtc-baseline-worker-protocol.test.ts',
   'tests/baseline/catalog/rtc-performance-baseline-workload-catalog.test.ts',
   'tests/baseline/catalog/rtc-performance-baseline-workload-manifest.test.ts',
   'tests/baseline/command/rtc-performance-baseline-cli-grammar.test.ts',
@@ -122,7 +124,9 @@ const owningTests = [
 function filesBelow(root: string): string[] {
   return fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const entryPath = path.join(root, entry.name);
-    if (entry.isDirectory()) return filesBelow(entryPath);
+    if (entry.isDirectory()) {
+      return filesBelow(entryPath);
+    }
     return entry.isFile() ? [entryPath] : [];
   });
 }
