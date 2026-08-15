@@ -95,6 +95,34 @@ Until the band exists, "environment-limited" remains the honest verdict for thes
 four metrics — but it should be recorded as *gate-limited*, and no amount of
 environment pinning will change it.
 
+## Known limitation: the `image_id` pin is store-dependent
+
+`postgres@sha256:081f1bc7…` is a **multi-architecture OCI image index**, not a
+per-architecture image. `docker manifest inspect` on it returns an index listing
+amd64, arm, and other platform manifests, each with its own digest.
+
+This machine runs the **containerd image store** (`docker info` reports
+`io.containerd.snapshotter.v1`), and under that store `docker image inspect`
+reports the *index* digest as the image `Id` and resolves `Architecture` to the
+host's. That is why the capture satisfies the validator's pin
+`image_id == sha256:081f1bc7…` exactly.
+
+Under the classic dockerd image store, `Id` is the per-architecture config digest,
+which is a different sha. The `image_id` pin would then not match, and the
+descriptor would be rejected even though the same image is running. The pins
+`image_ref` and `repo_digest` are the index digest and are stable across stores;
+only `image_id` carries this coupling.
+
+The practical consequence is that the pinned environment is reproducible on hosts
+using the containerd image store, and its portability elsewhere — notably to CI,
+which is typically classic dockerd on amd64 — is **unproven**. I have not tested a
+classic-store host, so this is reasoned from the store's documented behavior rather
+than measured. It also further supports the inference that the validator's pins were
+originally captured on a containerd-store arm64 machine.
+
+If the protocol is ever meant to run in CI, `image_id` is the field to revisit
+first.
+
 ## Incidental findings
 
 - **Artifact size is close to a hard runtime limit.** A 9-run artifact is
