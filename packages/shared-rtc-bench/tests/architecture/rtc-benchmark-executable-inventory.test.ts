@@ -63,6 +63,7 @@ const sourcePaths = [
   'topology-delivery/run-rtc-topology-delivery-log-workloads.ts',
   'topology-replay/replay-drain-operation-counts.ts',
   'workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs',
+  'workloads/browser-lifecycle/rtc-data-channel-browser-soak-validation.ts',
   'workloads/data-channel/rtc-data-channel-close-retention-bench.ts',
   'workloads/data-channel/rtc-data-channel-drain-bench.ts',
   'workloads/data-channel/rtc-data-channel-error-reference-bench.ts',

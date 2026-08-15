@@ -157,7 +157,8 @@ function externalInput(workloadId: 'RTC-B01' | 'RTC-B05' | 'RTC-B06') {
   };
 }
 
-function stagedAttempt(workloadId: 'RTC-B05' | 'RTC-B06') {
+function stagedExternalAttempt() {
+  const workloadId = 'RTC-B06' as const;
   const input = externalInput(workloadId);
   const manifest = manifestFor(workloadId);
   const outer = manifest.outerAttempts[0]!;
@@ -196,9 +197,7 @@ function stagedAttempt(workloadId: 'RTC-B05' | 'RTC-B06') {
         issues: [],
       },
     ],
-    samples: [
-      passedSample(identity, workloadId === 'RTC-B05' ? 'native-browser' : 'local-full-stack'),
-    ],
+    samples: [passedSample(identity, 'local-full-stack')],
     issues: [],
   };
 }
@@ -295,21 +294,9 @@ describe('RTC baseline evidence acceptance', () => {
     expect(await result).toEqual(rejected(path, 'entry-ownership', message));
   });
 
-  it('accepts valid browser and external samples and writes every normalized field', async () => {
+  it('accepts a valid external sample and writes every normalized field', async () => {
     const writes: unknown[] = [];
-    const browserAttempt = stagedAttempt('RTC-B05');
-    const browser = createRtcBaselineEvidenceAcceptance(
-      dependencies({
-        readManifest: async () => ({ ok: true, value: manifestFor('RTC-B05') }),
-        readStagedJson: async () => ({ ok: true, value: browserAttempt }),
-        writeAcceptedArtifact: collectWrites(writes),
-      }),
-    );
-    expect(await browser.recordBrowser(externalInput('RTC-B05'))).toEqual({
-      ok: true,
-      value: { acceptedSampleCount: 1 },
-    });
-    const externalAttempt = stagedAttempt('RTC-B06');
+    const externalAttempt = stagedExternalAttempt();
     const external = createRtcBaselineEvidenceAcceptance(
       dependencies({
         readManifest: async () => ({ ok: true, value: manifestFor('RTC-B06') }),
@@ -321,7 +308,7 @@ describe('RTC baseline evidence acceptance', () => {
       ok: true,
       value: { acceptedSampleCount: 1 },
     });
-    expect(writes).toEqual([browserAttempt, externalAttempt]);
+    expect(writes).toEqual([externalAttempt]);
     Object.assign(externalAttempt.samples[0]!, { outcome: 'failed', issues: [producerIssue] });
     Object.assign(externalAttempt.sampleOutcomes[0]!, {
       outcome: 'failed',

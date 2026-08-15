@@ -20,6 +20,10 @@ import type {
   RtcBaselineWorkloadId,
 } from '../contracts/rtc-baseline-contracts.ts';
 import {
+  computeRtcDataChannelBrowserSoakAttempt,
+  RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT,
+} from '../../workloads/browser-lifecycle/rtc-data-channel-browser-soak-validation.ts';
+import {
   RTC_BASELINE_ACCEPTED_ARTIFACT_DIRECTORIES,
   RTC_BASELINE_CAUSAL_NOT_RUN_ISSUE,
   RTC_BASELINE_FAILURE_ARTIFACT_FIELDS,
@@ -213,12 +217,24 @@ export function validateRtcBaselineAcceptedCohort(
 
 export function decodeRtcBaselineAcceptedAttempt(
   value: RtcBaselineJson,
-  input: Omit<Parameters<typeof validateRtcBaselineAcceptedAttempt>[0], 'attempt'>,
+  input: Omit<Parameters<typeof validateRtcBaselineAcceptedAttempt>[0], 'attempt'> & {
+    readonly baselineId: string;
+  },
 ) {
-  return validateRtcBaselineDecoded(decodeRtcBaselineExternalAttempt(value), (attempt) => [
+  const decoded = validateRtcBaselineDecoded(decodeRtcBaselineExternalAttempt(value), (attempt) => [
     ...validateRtcBaselineExternalAttempt(attempt),
     ...validateRtcBaselineAcceptedAttempt({ ...input, attempt }),
   ]);
+  if (
+    !decoded.ok ||
+    input.expectedOuter.workloadId !== RTC_DATA_CHANNEL_BROWSER_SOAK_CONTRACT.workloadId
+  ) {
+    return decoded;
+  }
+  return {
+    ok: true as const,
+    value: computeRtcDataChannelBrowserSoakAttempt(decoded.value, input.baselineId),
+  };
 }
 
 export function decodeRtcBaselineAcceptedCohort(
