@@ -1,7 +1,7 @@
 import { decodeAdminPruneCommand } from
     '@shared-server/rallar-system/admin-operations/admin-prune-work-codec.ts';
 import { validateRtcRttMeasurement } from
-    '@shared-server/rallar-system/rtc-rtt-persistence-validation.ts';
+    '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { AppInboxType } from
     '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import { decodeAuthMutationCommand } from

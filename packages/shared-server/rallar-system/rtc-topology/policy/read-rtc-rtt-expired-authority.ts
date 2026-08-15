@@ -8,9 +8,11 @@ import { validateRuntimeStateExpiredAuthority }
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity,
+} from '../../rtc-topology-identifiers.ts';
+import {
     toRtcRttEndpointAdmissionStorageKey,
     toRtcRttMeasurementStorageKey,
-} from '../../rtc-topology-identifiers.ts';
+} from '../persistence/rtc-rtt-storage-keys.ts';
 // prettier-ignore
 import type { RtcRttEndpointAdmission }
     from '../persistence/rtc-rtt-persistence-contracts.ts';

@@ -1,17 +1,21 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import * as snapshotValidation from './group-state/snapshot/validate-persisted-group-snapshot.ts';
+// prettier-ignore
+import * as snapshotValidation
+    from '../../group-state/snapshot/validate-persisted-group-snapshot.ts';
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity,
-} from './rtc-topology-identifiers.ts';
+} from '../../rtc-topology-identifiers.ts';
 import {
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
-} from './rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
-import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equality.ts';
+} from '../mutation/rtc-rtt-mutation-identifiers.ts';
+import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
 
 export const RTC_RTT_MUTATION_RETENTION_MS = 24 * 60 * 60 * 1_000;
+export const DEFAULT_RTC_RTT_MUTATION_RETENTION_MS =
+    RTC_RTT_MUTATION_RETENTION_MS;
 
 type RtcRttMutationReceiptContract = Readonly<{
     receiptId: string;
@@ -60,10 +64,21 @@ export function validateRtcRttMutationReceipt(
 ): asserts value is RtcRttMutationReceiptContract {
     const receipt = record(value, 'RTC RTT receipt');
     exactKeys(receipt, [
-        'receiptId', 'commandId', 'requestId', 'sessionIdFrom', 'sessionIdTo',
-        'aggregateRef', 'measurementVersion', 'affectedGroupRefs',
-        'acceptedAtEpochMs', 'outcome', 'attemptCount',
-        'acceptedStorageRevision', 'eventId', 'outboxIds', 'commandHash',
+        'receiptId',
+        'commandId',
+        'requestId',
+        'sessionIdFrom',
+        'sessionIdTo',
+        'aggregateRef',
+        'measurementVersion',
+        'affectedGroupRefs',
+        'acceptedAtEpochMs',
+        'outcome',
+        'attemptCount',
+        'acceptedStorageRevision',
+        'eventId',
+        'outboxIds',
+        'commandHash',
     ]);
     nonEmptyString(receipt.receiptId, 'receipt id');
     nonEmptyString(receipt.commandId, 'receipt command id');
@@ -97,8 +112,8 @@ export function validateRtcRttMutationReceipt(
     }
     if (
         !Array.isArray(receipt.outboxIds) ||
-        receipt.outboxIds.some((outboxId) =>
-            typeof outboxId !== 'string' || outboxId.length === 0
+        receipt.outboxIds.some(
+            (outboxId) => typeof outboxId !== 'string' || outboxId.length === 0,
         )
     ) {
         throw new TypeError('RTC RTT receipt outbox ids are invalid');
@@ -107,11 +122,12 @@ export function validateRtcRttMutationReceipt(
     if (
         receipt.commandId !== receipt.receiptId ||
         receipt.requestId !== receipt.receiptId ||
-        receipt.receiptId !== toRtcRttMutationReceiptId({
-            sessionIdFrom: receipt.sessionIdFrom as string,
-            sessionIdTo: receipt.sessionIdTo as string,
-            version: receipt.measurementVersion as number,
-        })
+        receipt.receiptId !==
+            toRtcRttMutationReceiptId({
+                sessionIdFrom: receipt.sessionIdFrom as string,
+                sessionIdTo: receipt.sessionIdTo as string,
+                version: receipt.measurementVersion as number,
+            })
     ) {
         throw new TypeError('RTC RTT receipt identity is invalid');
     }
@@ -150,8 +166,14 @@ export function validateRtcRttRecomputeIntent(
 ): asserts value is RtcRttRecomputeIntentContract {
     const intent = record(value, 'RTC RTT recompute intent');
     exactKeys(intent, [
-        'outboxId', 'receiptId', 'groupSnapshot', 'rtt', 'createdAtEpochMs',
-        'commandHash', 'senderId', 'delivery',
+        'outboxId',
+        'receiptId',
+        'groupSnapshot',
+        'rtt',
+        'createdAtEpochMs',
+        'commandHash',
+        'senderId',
+        'delivery',
     ]);
     nonEmptyString(intent.outboxId, 'recompute outbox id');
     nonEmptyString(intent.receiptId, 'recompute receipt id');
@@ -165,11 +187,12 @@ export function validateRtcRttRecomputeIntent(
     const receiptId = toRtcRttMutationReceiptId(rtt);
     if (
         intent.receiptId !== receiptId ||
-        intent.outboxId !== toRtcRttRecomputeOutboxId(
-            receiptId,
-            group.group,
-            intent.commandHash as string,
-        )
+        intent.outboxId !==
+            toRtcRttRecomputeOutboxId(
+                receiptId,
+                group.group,
+                intent.commandHash as string,
+            )
     ) {
         throw new TypeError('RTC RTT recompute intent identity is invalid');
     }
@@ -201,216 +224,16 @@ export function validateRtcRttRecomputeIntent(
     }
 }
 
-export function validateRtcRttWriteCandidate(
-    value: unknown,
-    mutationExpireAtTimestamp: number,
-): void {
-    const candidate = record(value, 'RTC RTT write candidate');
-    exactKeys(candidate, [
-        'outcome', 'reason', 'affectedGroups', 'endpointGuards',
-        'measurementGuard', 'receipt', 'recomputeIntents',
-    ]);
-    if (candidate.outcome !== 'write' || candidate.reason !== 'accepted') {
-        throw new TypeError('RTC RTT write candidate discriminant is invalid');
-    }
-    const receipt = candidate.receipt;
-    validateRtcRttMutationReceipt(receipt, mutationExpireAtTimestamp);
-    const canonicalReceipt = receipt as RtcRttMutationReceiptContract;
-    if (!Array.isArray(candidate.recomputeIntents)) {
-        throw new TypeError('RTC RTT recompute intents are mandatory');
-    }
-    const intents = candidate.recomputeIntents;
-    if (intents.length !== canonicalReceipt.affectedGroupRefs.length) {
-        throw new TypeError('RTC RTT recompute intent set is incomplete');
-    }
-    const expectedGroups = canonicalReceipt.affectedGroupRefs.map(
-        toCanonicalRtcTopologyGroupIdentity,
-    );
-    const observedGroups: string[] = [];
-    const intentByGroup = new Map<string, RtcRttRecomputeIntentContract>();
-    for (const rawIntent of intents) {
-        validateRtcRttRecomputeIntent(rawIntent, mutationExpireAtTimestamp);
-        const intent = rawIntent as RtcRttRecomputeIntentContract;
-        if (intent.delivery.state !== 'pending') {
-            throw new TypeError('RTC RTT write intent must be pending');
-        }
-        validateIntentAgainstReceipt(intent, canonicalReceipt);
-        const groupIdentity = toCanonicalRtcTopologyGroupIdentity(
-            intent.groupSnapshot.group,
-        );
-        observedGroups.push(groupIdentity);
-        intentByGroup.set(groupIdentity, intent);
-    }
-    if (!rtcTopologySemanticEqual(observedGroups, expectedGroups)) {
-        throw new TypeError('RTC RTT recompute intent set differs from receipt');
-    }
-    validateAffectedGroups(candidate.affectedGroups, expectedGroups, intentByGroup);
-    const measurement = validateMeasurementGuard(
-        candidate.measurementGuard,
-        canonicalReceipt,
-        intents,
-    );
-    validateEndpointGuards(
-        candidate.endpointGuards,
-        canonicalReceipt,
-        measurement.purgeAfterEpochMs,
-    );
-}
-
-function validateAffectedGroups(
-    value: unknown,
-    expectedGroups: readonly string[],
-    intentByGroup: ReadonlyMap<string, RtcRttRecomputeIntentContract>,
-): void {
-    if (!Array.isArray(value) || value.length !== expectedGroups.length) {
-        throw new TypeError('RTC RTT affected group set is incomplete');
-    }
-    const observed: string[] = [];
-    for (const rawGroup of value) {
-        snapshotValidation.validatePersistedGroupSnapshot(rawGroup);
-        const group = rawGroup as GroupSnapshot;
-        const identity = toCanonicalRtcTopologyGroupIdentity(group.group);
-        const intent = intentByGroup.get(identity);
-        if (!intent || !rtcTopologySemanticEqual(group, intent.groupSnapshot)) {
-            throw new TypeError('RTC RTT affected group differs from recompute intent');
-        }
-        observed.push(identity);
-    }
-    if (!rtcTopologySemanticEqual(observed, expectedGroups)) {
-        throw new TypeError('RTC RTT affected groups are not canonical');
-    }
-}
-
-function validateMeasurementGuard(
-    value: unknown,
-    receipt: RtcRttMutationReceiptContract,
-    rawIntents: readonly unknown[],
-): Readonly<{ value: RttMeasurementInfo; purgeAfterEpochMs: number }> {
-    const guard = record(value, 'RTC RTT measurement guard');
-    exactKeys(guard, ['expectedRevision', 'value', 'purgeAfterEpochMs']);
-    validateExpectedRevision(guard.expectedRevision, 'measurement');
-    validateRtcRttMeasurement(guard.value);
-    const measurement = guard.value as RttMeasurementInfo;
-    safeInteger(
-        guard.purgeAfterEpochMs,
-        receipt.acceptedAtEpochMs + 1,
-        'measurement purge time',
-    );
-    if (
-        measurement.sessionIdFrom !== receipt.sessionIdFrom ||
-        measurement.sessionIdTo !== receipt.sessionIdTo ||
-        measurement.version !== receipt.measurementVersion ||
-        measurement.createdAtEpochMs > receipt.acceptedAtEpochMs
-    ) {
-        throw new TypeError('RTC RTT measurement guard differs from receipt');
-    }
-    for (const rawIntent of rawIntents) {
-        const intent = rawIntent as RtcRttRecomputeIntentContract;
-        if (!rtcTopologySemanticEqual(measurement, intent.rtt)) {
-            throw new TypeError('RTC RTT measurement guard differs from intent');
-        }
-    }
-    return {
-        value: measurement,
-        purgeAfterEpochMs: guard.purgeAfterEpochMs as number,
-    };
-}
-
-function validateEndpointGuards(
-    value: unknown,
-    receipt: RtcRttMutationReceiptContract,
-    purgeAfterEpochMs: number,
-): void {
-    if (!Array.isArray(value) || value.length !== 2) {
-        throw new TypeError('RTC RTT endpoint guard pair is incomplete');
-    }
-    const expectedEndpointIds = [receipt.sessionIdFrom, receipt.sessionIdTo]
-        .sort(compareRtcTopologyIdentifiers);
-    for (let index = 0; index < value.length; index += 1) {
-        const guard = record(value[index], 'RTC RTT endpoint guard');
-        exactKeys(guard, [
-            'endpointId', 'expectedRevision', 'expireAtTimestamp', 'value',
-        ]);
-        const endpointId = guard.endpointId;
-        nonEmptyString(endpointId, 'endpoint guard id');
-        if (endpointId !== expectedEndpointIds[index]) {
-            throw new TypeError('RTC RTT endpoint guards are not canonical');
-        }
-        validateExpectedRevision(guard.expectedRevision, 'endpoint');
-        safeInteger(
-            guard.expireAtTimestamp,
-            receipt.acceptedAtEpochMs + 1,
-            'endpoint guard expiry',
-        );
-        validateRtcRttEndpointAdmission(
-            guard.value,
-            endpointId,
-            guard.expireAtTimestamp as number,
-        );
-        const admission = guard.value as RtcRttEndpointAdmissionContract;
-        validateRtcRttEndpointAdmissionCandidateVersion(
-            admission.version,
-            guard.expectedRevision,
-        );
-        if (admission.updatedAtEpochMs !== receipt.acceptedAtEpochMs) {
-            throw new TypeError('RTC RTT endpoint admission lifecycle is invalid');
-        }
-        const counterpart = endpointId === receipt.sessionIdFrom
-            ? receipt.sessionIdTo
-            : receipt.sessionIdFrom;
-        const pairLease = admission.peers.find((peer) =>
-            peer.peerSessionId === counterpart
-        );
-        if (!pairLease || pairLease.expiresAtEpochMs < purgeAfterEpochMs) {
-            throw new TypeError('RTC RTT endpoint admission is missing pair lease');
-        }
-    }
-}
-
-function validateIntentAgainstReceipt(
-    intent: RtcRttRecomputeIntentContract,
-    receipt: RtcRttMutationReceiptContract,
-): void {
-    const groupIdentity = toCanonicalRtcTopologyGroupIdentity(
-        intent.groupSnapshot.group,
-    );
-    const receiptIncludesGroup = receipt.affectedGroupRefs.some((ref) =>
-        toCanonicalRtcTopologyGroupIdentity(ref) === groupIdentity
-    );
-    const activeSessionIds = new Set(
-        intent.groupSnapshot.activeSessions
-            .filter((session) =>
-                session.connectedAtEpochMs <= intent.createdAtEpochMs &&
-                session.expiresAtEpochMs > intent.createdAtEpochMs
-            )
-            .map((session) => session.sessionId),
-    );
-    const groupExpiry = intent.groupSnapshot.group.expiresAtEpochMs;
-    if (
-        receipt.receiptId !== intent.receiptId ||
-        receipt.sessionIdFrom !== intent.rtt.sessionIdFrom ||
-        receipt.sessionIdTo !== intent.rtt.sessionIdTo ||
-        receipt.measurementVersion !== intent.rtt.version ||
-        receipt.commandHash !== intent.commandHash ||
-        receipt.acceptedAtEpochMs !== intent.createdAtEpochMs ||
-        !receiptIncludesGroup ||
-        intent.groupSnapshot.group.status !== 'active' ||
-        (groupExpiry !== null && groupExpiry <= intent.createdAtEpochMs) ||
-        !activeSessionIds.has(receipt.sessionIdFrom) ||
-        !activeSessionIds.has(receipt.sessionIdTo)
-    ) {
-        throw new TypeError(
-            'RTC RTT recompute intent differs from immutable receipt authority',
-        );
-    }
-}
-
 export function validateRtcRttMeasurement(
     value: unknown,
 ): asserts value is RttMeasurementInfo {
     const measurement = record(value, 'RTC RTT measurement');
     exactKeys(measurement, [
-        'sessionIdFrom', 'sessionIdTo', 'rttMs', 'createdAtEpochMs', 'version',
+        'sessionIdFrom',
+        'sessionIdTo',
+        'rttMs',
+        'createdAtEpochMs',
+        'version',
     ]);
     nonEmptyString(measurement.sessionIdFrom, 'measurement source session');
     nonEmptyString(measurement.sessionIdTo, 'measurement target session');
@@ -434,12 +257,21 @@ export function validateRtcRttEndpointAdmission(
     physicalExpiry: number,
 ): asserts value is RtcRttEndpointAdmissionContract {
     const admission = record(value, 'RTC RTT endpoint admission');
-    exactKeys(admission, ['endpointId', 'peers', 'version', 'updatedAtEpochMs']);
+    exactKeys(admission, [
+        'endpointId',
+        'peers',
+        'version',
+        'updatedAtEpochMs',
+    ]);
     if (admission.endpointId !== expectedEndpointId) {
         throw new TypeError('RTC RTT endpoint admission identity is invalid');
     }
     safeInteger(admission.version, 1, 'endpoint admission version');
-    safeInteger(admission.updatedAtEpochMs, 0, 'endpoint admission update time');
+    safeInteger(
+        admission.updatedAtEpochMs,
+        0,
+        'endpoint admission update time',
+    );
     if (!Array.isArray(admission.peers) || admission.peers.length === 0) {
         throw new TypeError('RTC RTT endpoint admission peers are invalid');
     }
@@ -457,10 +289,8 @@ export function validateRtcRttEndpointAdmission(
         if (
             peer.peerSessionId === expectedEndpointId ||
             (previous !== undefined &&
-                compareRtcTopologyIdentifiers(
-                    previous,
-                    peer.peerSessionId,
-                ) >= 0)
+                compareRtcTopologyIdentifiers(previous, peer.peerSessionId) >=
+                    0)
         ) {
             throw new TypeError('RTC RTT endpoint peers are not canonical');
         }
@@ -468,7 +298,9 @@ export function validateRtcRttEndpointAdmission(
         latestExpiry = Math.max(latestExpiry, peer.expiresAtEpochMs as number);
     }
     if (physicalExpiry !== latestExpiry) {
-        throw new TypeError('RTC RTT endpoint physical expiry differs from leases');
+        throw new TypeError(
+            'RTC RTT endpoint physical expiry differs from leases',
+        );
     }
 }
 
@@ -478,9 +310,8 @@ export function validateRtcRttEndpointAdmissionCandidateVersion(
 ): void {
     safeInteger(domainVersion, 1, 'endpoint admission version');
     validateExpectedRevision(expectedRevision, 'endpoint');
-    const requiredVersion = expectedRevision === null
-        ? 1
-        : expectedRevision + 2;
+    const requiredVersion =
+        expectedRevision === null ? 1 : expectedRevision + 2;
     if (
         !Number.isSafeInteger(requiredVersion) ||
         domainVersion !== requiredVersion
@@ -521,7 +352,9 @@ function validateExactFamilyExpiry(
 ): void {
     const expectedExpiry = acceptedAtEpochMs + RTC_RTT_MUTATION_RETENTION_MS;
     if (!Number.isSafeInteger(expectedExpiry)) {
-        throw new TypeError(`RTC RTT ${authority} physical expiry overflows retention`);
+        throw new TypeError(
+            `RTC RTT ${authority} physical expiry overflows retention`,
+        );
     }
     if (physicalExpiry !== expectedExpiry) {
         throw new TypeError(
@@ -562,7 +395,9 @@ function validateExpectedRevision(
         (value as number) < 0 ||
         (value as number) >= Number.MAX_SAFE_INTEGER
     ) {
-        throw new TypeError(`RTC RTT ${authority} expected revision is invalid`);
+        throw new TypeError(
+            `RTC RTT ${authority} expected revision is invalid`,
+        );
     }
 }
 
@@ -573,7 +408,10 @@ function record(value: unknown, label: string): Record<string, unknown> {
     return value as Record<string, unknown>;
 }
 
-function exactKeys(value: Record<string, unknown>, expected: readonly string[]): void {
+function exactKeys(
+    value: Record<string, unknown>,
+    expected: readonly string[],
+): void {
     const keys = Object.keys(value).sort(compareRtcTopologyIdentifiers);
     const canonical = [...expected].sort(compareRtcTopologyIdentifiers);
     if (!rtcTopologySemanticEqual(keys, canonical)) {
@@ -581,7 +419,10 @@ function exactKeys(value: Record<string, unknown>, expected: readonly string[]):
     }
 }
 
-function nonEmptyString(value: unknown, label: string): asserts value is string {
+function nonEmptyString(
+    value: unknown,
+    label: string,
+): asserts value is string {
     if (typeof value !== 'string' || value.length === 0) {
         throw new TypeError(`RTC RTT ${label} is invalid`);
     }

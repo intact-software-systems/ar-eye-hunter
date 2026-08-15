@@ -13,7 +13,7 @@ import type { GroupStateRepository } from '../group-state/persistence/group-stat
 import type {
   GroupTopologyConfigRepository,
 } from './config/persistence/group-topology-config-repository.ts';
-import type { RtcRttRepository } from '../repositories/RtcRttRepository.ts';
+import type { RtcRttRepository } from '../rtc-topology/persistence/rtc-rtt-repository.ts';
 // prettier-ignore
 import type {
   RtcTopologySnapshotRepository,

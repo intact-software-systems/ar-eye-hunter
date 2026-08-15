@@ -22,7 +22,9 @@ import { AdminOperationsService } from '@shared-server/rallar-system/admin-opera
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
 persistence/group-topology-config-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+// prettier-ignore
+import { RtcRttRepository }
+  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { GroupTopologyManagementService }
   from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
@@ -99,6 +101,7 @@ export function createRallarServer(
 ): RallarServerApplication<Middleware, Hono> {
   const crdtPolicies = readConfiguredCrdtPolicies();
   const middleware = options.middleware ?? initialiseMiddleware();
+
   const crdtLogRepository = options.crdtLogRepository ??
     new PSqlCrdtLogRepository(sql as unknown as PSqlSql, {
       serverId: myServerId,
@@ -106,6 +109,7 @@ export function createRallarServer(
       policies: crdtPolicies,
     });
   middleware.appCrdtInboxService?.setAuditSink(options.crdtAuditSink);
+
   const runtimeStateRepository = createRuntimeStateRepository(sql);
   const configuredRtcTopologyOptions = options.rtcTopologyOptions ??
     getApiRtcTopologyServiceOptions();

@@ -1,5 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
 
 import {
     toCanonicalRtcTopologyGroupIdentity,
@@ -54,8 +55,8 @@ export function readRtcRttRecomputeOutboxIdentity(
         const pairMatch = /^pair=([^:]+):version=([1-9][0-9]*)$/u.exec(
             receiptId,
         );
-        const pair: unknown = pairMatch
-            ? JSON.parse(decodeURIComponent(pairMatch[1]!))
+        const pair: JsonWireValue = pairMatch
+            ? JSON.parse(decodeURIComponent(pairMatch[1]!)) as JsonWireValue
             : null;
         if (
             !/^sha256:[0-9a-f]{64}$/u.test(commandHash) ||
@@ -78,7 +79,7 @@ export function readRtcRttRecomputeOutboxIdentity(
 }
 
 function isRtcTopologyEndpointPair(
-    value: unknown,
+    value: JsonWireValue,
 ): value is readonly [string, string] {
     return (
         Array.isArray(value) &&

@@ -35,7 +35,21 @@ export {
   GROUP_TOPOLOGY_CONFIG_NAMESPACE,
   GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
 } from './rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
-export * from './rallar-system/repositories/RtcRttRepository.ts';
+export * from './rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
+export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
+export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+export * from './rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
+export * from './rallar-system/rtc-topology/persistence/rtc-rtt-storage-keys.ts';
+export * from './rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.ts';
+export * from './rallar-system/rtc-topology/persistence/migrate-legacy-rtc-rtt-measurement-keys.ts';
+// prettier-ignore
+export *
+  from './rallar-system/rtc-topology/persistence/migrate-legacy-rtc-rtt-recompute-intents.ts';
+export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-write-candidate.ts';
+export {
+  validateRtcRttEndpointAdmission as validateEndpointAdmission,
+  validateRtcRttMeasurement as validateMeasurement,
+} from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 export * from './rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 export * from './rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 export * from './rallar-system/repositories/RtcTopologyExecutionRepository.ts';
@@ -138,11 +152,21 @@ export * from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
 export * from './rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-result.ts';
-export { computeRtcRttMutation as computeRttMutation } from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
-export { validateRtcRttMutation as validateRttMutation } from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
-export { readRtcRttMutation as readRttMutation } from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
-export { writeRtcRttMutation as writeRttMutation } from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
-export { executeRtcRttMutation as executeRttMutation } from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
+export {
+  computeRtcRttMutation as computeRttMutation,
+} from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
+export {
+  validateRtcRttMutation as validateRttMutation,
+} from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
+export {
+  readRtcRttMutation as readRttMutation,
+} from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
+export {
+  writeRtcRttMutation as writeRttMutation,
+} from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
+export {
+  executeRtcRttMutation as executeRttMutation,
+} from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 export type {
   ExecuteRtcRttMutationInput as ExecuteRttMutationInput,
   ExecuteRtcRttMutationResult as ExecuteRttMutationResult,

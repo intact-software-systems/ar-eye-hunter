@@ -146,7 +146,9 @@ Client/group/topology-config effects use direct transaction-bound `APP_OUTBOX`/
 `MutationReceipt` authority, result, outbox rows, and any event commit
 atomically. There is no intermediate mutation outbox. RTC topology similarly
 commits its snapshot guard, work claim, and immutable publication atomically;
-RTT commits endpoint guards, measurement, receipt, and recompute intents.
+RTT commits endpoint guards, measurement, receipt, and final topology AppOutbox
+work. The retired RTT recompute-intent namespace is read only by its guarded
+offline migration and is not part of active mutation or receipt cleanup.
 
 Resource inbox allows 20 total processing attempts. Attempts one through five
 wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30 seconds,
@@ -363,7 +365,7 @@ transaction duration is measurable.
 | Direct mutation effects | `ResourceInboxRepository` | `resource_inbox` APP_OUTBOX/WS_OUTBOX entries | No logical cache | Immutable transaction-local entries for client/group state sync, presence-summary convergence, and topology recompute. QueueBox workers drain them after commit. |
 | RTC topology snapshots | `RtcTopologySnapshotRepository` | `runtime_state_store` scoped topology namespace | Process-local observed topology | Expected-revision snapshot CAS; equal authority with different content is corruption. |
 | RTC topology work claims/publications | `RtcTopologyPublicationRepository` / `RtcTopologyExecutionRepository` | `runtime_state_store` scoped receipt/publication namespaces | Loaded on delivery | Snapshot guard, compact work claim, and immutable publication commit atomically. |
-| RTC RTT measurements/admissions/receipts/intents | `RtcRttRepository` | `runtime_state_store` scoped RTT namespaces | Process-local observed RTT/graph values | Endpoint-admission guards precede measurement, compact receipt, and every per-group recompute-intent insert. |
+| RTC RTT measurements/admissions/receipts | `rtc-topology/persistence` (`RtcRttRepository` plus the cleanup and migration owners) | `runtime_state_store` scoped RTT namespaces | Process-local observed RTT/graph values | Endpoint-admission guards precede measurement and the compact receipt. Final per-group recompute work is written directly to AppOutbox; expired receipt cleanup guards only the receipt revision. |
 | WS inbox/outbox entries | `PSqlQueueBox` over `ResourceInboxRepository` | `resource_inbox` | No logical cache; queue engine locks rows | Same table is used for both inbound and outbound queue entries. `ri_type_id` separates `WS_INBOX` and `WS_OUTBOX`. |
 | App inbox results | `ResourceInboxResultsRepository` | `resource_inbox_results` | No logical cache | Stores completed or failed app-inbox results keyed like the originating queue entry so REST callers can wait for durable mutation results. |
 | AL runtime bookkeeping | `createPSqlALRuntimeStores` | `runtime_state_store` under server WS runtime namespaces | Runtime-store objects in process | Used for admission, dedup, ordering, supersedence, sent tracking, pending acks, repair attempts. |

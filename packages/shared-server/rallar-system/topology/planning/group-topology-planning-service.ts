@@ -18,7 +18,9 @@ import {
   type RallarRtcTopologyUpdateResult,
   type RtcTopologyPlanningIntent,
 } from '../../services/rallar-rtc-topology-service.ts';
-import { filterRtcRttMeasurementsForGroup } from '../../rtc-topology/policy/rtc-rtt-measurement-policy.ts';
+// prettier-ignore
+import { filterRtcRttMeasurementsForGroup }
+  from '../../rtc-topology/policy/rtc-rtt-measurement-policy.ts';
 import { GroupTopologyValidationError } from '../group-topology-errors.ts';
 import type {
   GroupTopologyGroupSnapshotReader,
