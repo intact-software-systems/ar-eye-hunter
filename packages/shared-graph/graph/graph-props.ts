@@ -38,6 +38,15 @@ export type VertexId = string;
 export type VertexArray = VertexId[];
 export type VertexSet = ReadonlySet<VertexId>;
 
+/**
+ * Exact UTF-16 code-unit order for vertex tie-breaking. Deliberately not
+ * `localeCompare`: graph planning must rank identically across runtimes, and
+ * ICU collation differs between the Deno servers and the Node test runner.
+ */
+export function compareVertexIds(left: VertexId, right: VertexId): number {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
+
 export type TreeGraph = UndirectedGraph<VertexProp, EdgeProp, GraphProp>;
 export type WeightedGraph = UndirectedGraph<VertexProp, EdgeProp, GraphProp>;
 export type MeshGraph = UndirectedGraph<VertexProp, EdgeProp, GraphProp>;

@@ -18,6 +18,10 @@ import {
     toCanonicalRtcTopologyPairIdentity,
 } from '../rtc-topology-identifiers.ts';
 import {
+    computeCanonicalTopologyPairWeight,
+    toCanonicalTopologySessionIds,
+} from '../topology/planning/canonical-topology-planning-input.ts';
+import {
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
     readGroupDisplayName,
@@ -235,7 +239,9 @@ export class RallarRtcTopologyService {
         nowEpochMs: number,
     ): RallarRtcTopologyUpdateResult {
         this.metrics.topologyUpdateCount += 1;
-        const activeSessionIds = readGroupMemberSessionIds(group);
+        const activeSessionIds = toCanonicalTopologySessionIds(
+            readGroupMemberSessionIds(group),
+        );
         const relevantRttMeasurements = filterRttMeasurementsForActiveSessions(
             rttMeasurements,
             activeSessionIds,
@@ -473,7 +479,9 @@ export class RallarRtcTopologyService {
         const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
         const degreeLimit = this.degreeLimit(options);
         const rttReportingDegreeLimit = this.readRttReportingDegreeLimit(options);
-        const activeSessionIds = readGroupMemberSessionIds(group);
+        const activeSessionIds = toCanonicalTopologySessionIds(
+            readGroupMemberSessionIds(group),
+        );
         const rttBySessionId = rttMeasurements.length > 0
             ? createRttWeightLookup(rttMeasurements)
             : undefined;
@@ -536,9 +544,6 @@ export class RallarRtcTopologyService {
         degreeLimit: number,
     ): Readonly<{ connected: boolean }> {
         const maxEdges = Math.floor((activeSessionIds.length * degreeLimit) / 2);
-        const indexBySessionId = new Map(
-            activeSessionIds.map((sessionId, index) => [sessionId, index]),
-        );
 
         for (const edge of createSortedRttEdges(rttMeasurements, activeSessionIds)) {
             addBoundedRoomEdge(
@@ -557,10 +562,7 @@ export class RallarRtcTopologyService {
                     graph,
                     from,
                     to,
-                    fallbackWeight(
-                        indexBySessionId.get(from) ?? 0,
-                        indexBySessionId.get(to) ?? 0,
-                    ),
+                    computeCanonicalTopologyPairWeight(from, to),
                     degreeLimit,
                     maxEdges,
                 );
@@ -580,7 +582,10 @@ export class RallarRtcTopologyService {
                     graph,
                     activeSessionIds[i],
                     activeSessionIds[j],
-                    fallbackWeight(i, j),
+                    computeCanonicalTopologyPairWeight(
+                        activeSessionIds[i],
+                        activeSessionIds[j],
+                    ),
                     degreeLimit,
                     maxEdges,
                 );
@@ -642,6 +647,9 @@ export class RallarRtcTopologyService {
         activeSessionIds: readonly string[],
         options: RallarRtcTopologyServiceOptions,
     ): Record<string, readonly string[]> {
+        // Mirrors createGroupMesh + kInsertMC (k cheapest feasible candidates
+        // by direct pair weight) for fallback weights without materializing
+        // the complete Graphology room graph.
         const targetEdgeCount = this.meshArgs(options).meshParamK;
         const degreeLimit = this.degreeLimit(options);
         const insertedSessionIds: string[] = [];
@@ -656,32 +664,26 @@ export class RallarRtcTopologyService {
                 continue;
             }
 
-            let hasFeasibleCandidate = false;
-            let selectedCount = 0;
-            const selectedCandidates: string[] = [];
+            const rankedCandidates = insertedSessionIds
+                .filter((candidate) =>
+                    (nextHopsBySessionId.get(candidate)?.size ?? 0) < degreeLimit
+                )
+                .map((candidate) => ({
+                    candidate,
+                    weight: computeCanonicalTopologyPairWeight(sessionId, candidate),
+                }))
+                .sort((left, right) =>
+                    left.weight - right.weight ||
+                    compareRtcTopologyIdentifiers(left.candidate, right.candidate)
+                );
 
-            for (let i = insertedSessionIds.length - 1; i >= 0; i--) {
-                const candidate = insertedSessionIds[i];
-                const candidateDegree =
-                    nextHopsBySessionId.get(candidate)?.size ?? 0;
-
-                if (candidateDegree >= degreeLimit) continue;
-
-                hasFeasibleCandidate = true;
-
-                if (selectedCount >= targetEdgeCount) continue;
-
-                selectedCandidates.push(candidate);
-                selectedCount++;
-            }
-
-            if (!hasFeasibleCandidate) break;
+            if (rankedCandidates.length === 0) break;
 
             const nextHops = new Set<string>();
             nextHopsBySessionId.set(sessionId, nextHops);
             insertedSessionIds.push(sessionId);
 
-            for (const candidate of selectedCandidates) {
+            for (const { candidate } of rankedCandidates.slice(0, targetEdgeCount)) {
                 nextHops.add(candidate);
                 nextHopsBySessionId.get(candidate)?.add(sessionId);
             }
@@ -766,10 +768,6 @@ export class RallarRtcTopologyService {
     }
 }
 
-function fallbackWeight(i: number, j: number): number {
-    return Math.abs(i - j) + 1;
-}
-
 function filterRttMeasurementsForActiveSessions(
     rttMeasurements: readonly RttMeasurementInfo[],
     activeSessionIds: readonly string[],
@@ -798,7 +796,7 @@ function addCompleteFallbackRoomEdges(
                 from,
                 to,
                 weight: readRttWeight(rttBySessionId, from, to) ??
-                    fallbackWeight(i, j),
+                    computeCanonicalTopologyPairWeight(from, to),
             });
         }
     }
@@ -811,9 +809,6 @@ function createFallbackRoomGraph(
     degreeLimit: number,
 ): WeightedGraph {
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
-    const indexBySessionId = new Map(
-        activeSessionIds.map((sessionId, index) => [sessionId, index]),
-    );
     graph.replaceAttributes({
         id: toScopedOverlayId(group.group),
         version: group.group.snapshotVersion,
@@ -836,10 +831,7 @@ function createFallbackRoomGraph(
                 graph,
                 from,
                 to,
-                fallbackWeight(
-                    indexBySessionId.get(from) ?? 0,
-                    indexBySessionId.get(to) ?? 0,
-                ),
+                computeCanonicalTopologyPairWeight(from, to),
             );
         }
     }
@@ -1006,7 +998,6 @@ function readRttWeight(
 }
 
 type NoRttTreeState = {
-    readonly indexBySessionId: ReadonlyMap<string, number>;
     readonly nearBySessionId: Map<string, string | undefined>;
     readonly eccentricityBySessionId: Map<string, number>;
     readonly distanceBySessionId: Map<string, Map<string, number>>;
@@ -1073,17 +1064,18 @@ function createNoRttTreeNextHopMap(
 }
 
 function pickNoRttTreeSource(activeSessionIds: readonly string[]): string {
+    // Mirrors createGroupTree's source pick (mean direct edge weight over the
+    // complete fallback graph, best first) without materializing the graph.
     let selected = activeSessionIds[0];
     let selectedScore = Number.POSITIVE_INFINITY;
 
-    for (let i = 0; i < activeSessionIds.length; i++) {
+    for (const sessionId of activeSessionIds) {
         let score = 0;
-        for (let j = 0; j < activeSessionIds.length; j++) {
-            if (i === j) continue;
-            score += Math.abs(i - j);
+        for (const otherSessionId of activeSessionIds) {
+            if (otherSessionId === sessionId) continue;
+            score += computeCanonicalTopologyPairWeight(sessionId, otherSessionId);
         }
 
-        const sessionId = activeSessionIds[i];
         if (
             score < selectedScore ||
             (
@@ -1103,9 +1095,6 @@ function initializeNoRttTreeState(
     activeSessionIds: readonly string[],
     source: string,
 ): NoRttTreeState {
-    const indexBySessionId = new Map(
-        activeSessionIds.map((sessionId, index) => [sessionId, index]),
-    );
     const nearBySessionId = new Map<string, string | undefined>();
     const eccentricityBySessionId = new Map<string, number>();
     const distanceBySessionId = new Map<string, Map<string, number>>();
@@ -1122,7 +1111,7 @@ function initializeNoRttTreeState(
             nearBySessionId.set(sessionId, source);
         } else {
             nearBySessionId.set(sessionId, source);
-            const weight = noRttTreeWeight(indexBySessionId, sessionId, source);
+            const weight = noRttTreeWeight(sessionId, source);
             if (weight < nearest.score) {
                 nearest = { node: sessionId, score: weight };
             }
@@ -1136,7 +1125,6 @@ function initializeNoRttTreeState(
     }
 
     return {
-        indexBySessionId,
         nearBySessionId,
         eccentricityBySessionId,
         distanceBySessionId,
@@ -1176,11 +1164,7 @@ function updateNoRttTreeDistancesAfterAttach(
     sessionId: string,
     parentSessionId: string,
 ): void {
-    const weight = noRttTreeWeight(
-        state.indexBySessionId,
-        sessionId,
-        parentSessionId,
-    );
+    const weight = noRttTreeWeight(sessionId, parentSessionId);
 
     for (const treeSessionId of state.treeNodeOrder) {
         const parentToTreeSession = readNoRttTreeDistance(
@@ -1244,11 +1228,7 @@ function recomputeNoRttTreeNear(
                 state.nextHopsBySessionId.get(inTreeSessionId)?.size ?? 0;
             if (inTreeDegree >= degreeLimit) continue;
 
-            const weight = noRttTreeWeight(
-                state.indexBySessionId,
-                sessionId,
-                inTreeSessionId,
-            );
+            const weight = noRttTreeWeight(sessionId, inTreeSessionId);
             const score =
                 (state.eccentricityBySessionId.get(inTreeSessionId) ?? 0) +
                 weight;
@@ -1278,11 +1258,7 @@ function selectNoRttTreeNearestVertex(
         if (nearSessionId === undefined) continue;
 
         const outDegree = state.nextHopsBySessionId.get(nearSessionId)?.size ?? 0;
-        const weight = noRttTreeWeight(
-            state.indexBySessionId,
-            sessionId,
-            nearSessionId,
-        );
+        const weight = noRttTreeWeight(sessionId, nearSessionId);
         const score =
             (state.eccentricityBySessionId.get(nearSessionId) ?? 0) + weight;
 
@@ -1312,15 +1288,8 @@ function noRttTreeNextHopRecord(
     );
 }
 
-function noRttTreeWeight(
-    indexBySessionId: ReadonlyMap<string, number>,
-    left: string,
-    right: string,
-): number {
-    return fallbackWeight(
-        indexBySessionId.get(left) ?? 0,
-        indexBySessionId.get(right) ?? 0,
-    );
+function noRttTreeWeight(left: string, right: string): number {
+    return computeCanonicalTopologyPairWeight(left, right);
 }
 
 function readNoRttTreeDistance(
@@ -1345,6 +1314,13 @@ function setNoRttTreeDistance(
     row.set(right, value);
 }
 
+/**
+ * Order-sensitive by design: published next-hop arrays are a canonical-order
+ * contract (`assertCanonicalIdentifiers`), and the persisted semantic-equality
+ * check compares them index-wise. An ordering change must therefore register
+ * as `changed` and bump the version — a same-version byte change at an equal
+ * causal tuple reads as snapshot corruption downstream.
+ */
 function isSameNextHopMap(
     left: Readonly<Record<string, readonly string[]>>,
     right: Readonly<Record<string, readonly string[]>>,
@@ -1373,11 +1349,6 @@ function sameStringArray(
     left: readonly string[],
     right: readonly string[],
 ): boolean {
-    if (left.length !== right.length) {
-        return false;
-    }
-
-    const sortedLeft = [...left].sort();
-    const sortedRight = [...right].sort();
-    return sortedLeft.every((value, index) => value === sortedRight[index]);
+    return left.length === right.length &&
+        left.every((value, index) => value === right[index]);
 }

@@ -1,4 +1,11 @@
-import { MeshGraph, VertexId, VertexState, VertexType, WeightedGraph, } from '../graph-props.ts';
+import {
+    compareVertexIds,
+    MeshGraph,
+    VertexId,
+    VertexState,
+    VertexType,
+    WeightedGraph,
+} from '../graph-props.ts';
 import { cloneGraph, isValidMesh, worstCaseDist } from '../graph/graph-algs.ts';
 import { DynamicMeshAlgo } from './group-dynamics-mesh-types.ts';
 
@@ -135,7 +142,7 @@ export function kInsertMDDL(
         throw new Error('kInsertMDDL failed: no feasible target vertices found.');
     }
 
-    ranked.sort((a, b) => a.score - b.score || a.node.localeCompare(b.node));
+    ranked.sort((a, b) => a.score - b.score || compareVertexIds(a.node, b.node));
 
     insertMemberVertexFromGlobal(groupGraph, globalGraph, actionVertexId);
 
@@ -178,7 +185,7 @@ export function kInsertMC(
         throw new Error('kInsertMC failed: no feasible target vertices found.');
     }
 
-    ranked.sort((a, b) => a.score - b.score || a.node.localeCompare(b.node));
+    ranked.sort((a, b) => a.score - b.score || compareVertexIds(a.node, b.node));
 
     insertMemberVertexFromGlobal(groupGraph, globalGraph, actionVertexId);
 

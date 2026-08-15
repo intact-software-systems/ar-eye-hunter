@@ -134,7 +134,26 @@ Observations:
 
 ## Candidate results
 
-_(pending implementation slices)_
+### Slice 2 (M6 canonical input + order-independent weights): planner edge churn
+
+Same measurement as the baseline table, on the slice-2 tree (canonical sorted planning input,
+hash-derived pair weights at every fallback site including the no-RTT mirrors, order-sensitive
+`changed` predicate, code-unit tie-breaks on the planning path):
+
+| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Same-set reorder churn (edges) |
+| --- | --- | --- | --- | --- | --- |
+| 6 | tree | 5 | 1 (was 7) | 1 (was 1) | **0 (was 6)** |
+| 20 | mesh | 37 | 2 (was 2) | 8 (was 6) | **0 (was 54)** |
+| 50 | mesh | 97 | 2 (was 2) | 6 (was 6) | **0 (was 180)** |
+
+- **Same-set reorder churn is 0 at every size** — identical member sets now plan byte-identical
+  graphs regardless of arrival order (unit-proven across sizes 2–64, no-RTT and RTT-mixed, in
+  `rtc-topology-plan-determinism.test.ts`).
+- Join/leave churn is already inside O(degree) *empirically* on full rebuilds, because
+  pair-stable weights keep unrelated planning decisions identical when one member changes. The
+  tree tier's join churn fell 7 → 1. This bound is emergent, not contractual — the
+  incremental-seeding + hysteresis slice turns it into a contract (and covers the kind-boundary
+  crossings a full rebuild still reshuffles).
 
 ## Dissemination-default checkpoint decision
 
