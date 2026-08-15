@@ -137,8 +137,9 @@ commit IDs, digests, or check snapshots into tracked governance state.
 ## Completion boundary
 
 At handoff, the PR body contains Goal, Changes, Acceptance, Validation, Risk and rollback, and
-Follow-up. Run `npm run pr:delivery -- ready` once. Native auto-merge may wait for review and checks;
-an authorized administrator may merge through GitHub when independent approval is unavailable.
+Follow-up. Run `npm run pr:delivery -- ready` once. While review is required, the command leaves
+auto-merge unarmed so an authorized administrator may merge directly. After GitHub reports
+approval, one later `ready` invocation may arm native auto-merge without more human governance.
 
 After GitHub reports `merged`, stop. Do not close or archive a plan, write a receipt, update a
 catalog, refresh evidence, rebase, or make a governance-only commit.

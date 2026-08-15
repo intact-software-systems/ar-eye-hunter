@@ -22,8 +22,9 @@ or commit-level governance identity.
    progress ledger, or tracked overview.
 5. A change to `main` is not work by itself. An agent acts only when the pull request has a real
    conflict, a failing required check, a requested change, or a substantive requirement change.
-6. The collaborative path is native approval plus auto-merge. The administrator path is an
-   intentional native administrator merge. Both end at the same terminal `merged` PR state.
+6. The collaborative path is native approval followed by auto-merge. Before approval, auto-merge
+   stays unarmed so the administrator path remains an immediate native administrator merge. Both
+   paths end at the same terminal `merged` PR state.
 7. Nothing performs governance work after GitHub reports the pull request as merged.
 
 ## The governed entity
@@ -69,19 +70,19 @@ record belongs in the PR body.
 Every delivery command starts by reading the live PR. Conflict and closure state are resolved before
 any validation or publication ceremony.
 
-| Current PR state                      | Agent result                  | Agent action                                                   |
-| ------------------------------------- | ----------------------------- | -------------------------------------------------------------- |
-| No PR for a multi-slice branch        | `OPEN_DRAFT`                  | Publish the first coherent commit and open one draft PR        |
-| Draft                                 | `WORK`                        | Continue the requested implementation                          |
-| Closed without merge                  | `STOP_CLOSED`                 | Stop; do not recreate or reopen without direction              |
-| Merged                                | `DONE`                        | Stop; perform no governance action                             |
-| GitHub still calculating mergeability | `WAIT_GITHUB`                 | Wait briefly and read the same PR again                        |
-| Real merge conflict                   | `REPAIR_CONFLICT`             | Report the conflicting paths and resolve source code first     |
-| Required check failed                 | `REPAIR_CHECK`                | Diagnose that check; do not edit governance metadata           |
-| Required checks pending               | `WAIT_CI`                     | Wait for GitHub; do not generate local evidence records        |
-| Checks acceptable, review required    | `AWAIT_REVIEW_OR_ADMIN_MERGE` | Leave auto-merge armed when GitHub permits; an admin may merge |
-| Approved and auto-merge not armed     | `ARM_AUTO_MERGE`              | Arm native auto-merge once                                     |
-| Approved and auto-merge armed         | `WAIT_MERGE`                  | GitHub owns the merge                                          |
+| Current PR state                      | Agent result                  | Agent action                                                |
+| ------------------------------------- | ----------------------------- | ----------------------------------------------------------- |
+| No PR for a multi-slice branch        | `OPEN_DRAFT`                  | Publish the first coherent commit and open one draft PR     |
+| Draft                                 | `WORK`                        | Continue the requested implementation                       |
+| Closed without merge                  | `STOP_CLOSED`                 | Stop; do not recreate or reopen without direction           |
+| Merged                                | `DONE`                        | Stop; perform no governance action                          |
+| GitHub still calculating mergeability | `WAIT_GITHUB`                 | Wait briefly and read the same PR again                     |
+| Real merge conflict                   | `REPAIR_CONFLICT`             | Report the conflicting paths and resolve source code first  |
+| Required check failed                 | `REPAIR_CHECK`                | Diagnose that check; do not edit governance metadata        |
+| Required checks pending               | `WAIT_CI`                     | Wait for GitHub; do not generate local evidence records     |
+| Checks acceptable, review required    | `AWAIT_REVIEW_OR_ADMIN_MERGE` | Keep auto-merge unarmed; await review or let an admin merge |
+| Approved and auto-merge not armed     | `ARM_AUTO_MERGE`              | Arm native auto-merge once                                  |
+| Approved and auto-merge armed         | `WAIT_MERGE`                  | GitHub owns the merge                                       |
 
 `BEHIND` is not an action state. When required status checks use loose mode, a behind but otherwise
 mergeable PR remains eligible. The agent must not click **Update branch**, merge `main`, or rebase
@@ -98,14 +99,16 @@ permanent contributor count.
 
 ### Collaborative path
 
-1. The agent completes the PR and arms native auto-merge before requesting review.
+1. The agent completes the PR, marks it ready, and requests review without arming auto-merge.
 2. Another authorized developer reviews the PR using GitHub's normal review UI.
-3. When GitHub's required checks and review rules are satisfied, GitHub merges the PR.
-4. Agents observe `merged` and stop.
+3. When GitHub reports approval, the agent runs the readiness command once to arm auto-merge.
+4. GitHub merges when its required checks and review rules are satisfied.
+5. Agents observe `merged` and stop.
 
 ### Administrator path
 
-1. The agent completes the PR and reports `AWAIT_REVIEW_OR_ADMIN_MERGE`.
+1. The agent completes the PR, leaves auto-merge unarmed, and reports
+   `AWAIT_REVIEW_OR_ADMIN_MERGE`.
 2. An administrator may intentionally merge through GitHub even when an independent approval is
    unavailable.
 3. GitHub's authenticated administrator action is the decision record.
@@ -151,8 +154,9 @@ The required check uses loose mode: the PR branch does not have to be updated me
 moved. GitHub still rejects an actual conflict. Stale-review dismissal and last-push approval remain
 disabled so base movement does not create review work.
 
-Repository auto-merge is enabled. The agent's readiness command arms it before requesting approval.
-No merge queue is required.
+Repository auto-merge is enabled as a collaborative capability. The readiness command arms it only
+after GitHub reports approval; a review-required PR remains directly administrator-mergeable. No
+merge queue is required.
 
 Workflows use the event's PR context and the ordinary read-only GitHub token. No new App, private key,
 webhook service, expected-App check source, or secret-bearing environment is created.
@@ -188,8 +192,9 @@ receipt, because that would create more bookkeeping and merge pressure.
   current PR and the repository default branch.
 - The local PR-state reducer and governance checks should complete in under two seconds excluding the
   GitHub network request.
-- An implementation-complete agent should need one readiness command, not a sequence of plan close,
-  receipt, digest, review-record, rebase, and merge commands.
+- An implementation-complete agent needs one readiness command at handoff. If native approval
+  arrives later, one more readiness command arms auto-merge; neither path runs plan close, receipt,
+  digest, review-record, or rebase commands.
 - A conflict must be reported before any broad validation rerun or governance mutation.
 - Repeating `status` or `ready` is idempotent and creates no repository diff.
 - After `merged`, the number of permitted governance mutations is zero.
@@ -208,8 +213,9 @@ The migration is one PR:
    Release Gate result.
 6. Verify both native paths on the migration PR: the collaborative path is structurally available,
    and the current administrator can manually merge.
-7. Arm auto-merge if GitHub permits, then request the final decision. No cutover action is scheduled
-   after merge.
+7. Run readiness without arming auto-merge, then request the final decision. After approval, one
+   readiness call may arm auto-merge; without approval, the administrator can merge directly. No
+   cutover action is scheduled after merge.
 
 The obsolete base-resident PR-review workflow may fail on the migration PR because the PR removes its
 metadata contract. That is expected cutover evidence, not a reason to recreate the metadata. The

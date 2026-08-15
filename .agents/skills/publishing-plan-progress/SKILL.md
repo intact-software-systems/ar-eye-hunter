@@ -39,13 +39,14 @@ evidence.
 
 ## Readiness and merge paths
 
-After affected validation and review are complete, run `npm run pr:delivery -- ready` once. It may
-mark the draft ready and arm native auto-merge; it never performs an immediate administrator merge.
+After affected validation is complete, run `npm run pr:delivery -- ready` once. It may mark the
+draft ready, but it arms native auto-merge only after GitHub reports approval. It never performs an
+immediate administrator merge.
 
-- With an available reviewer, leave native auto-merge armed and let GitHub merge after checks and
-  review.
+- With an available reviewer, request native review. After approval, run `ready` once so GitHub can
+  own the merge without more human governance.
 - Without an independent reviewer, report `AWAIT_REVIEW_OR_ADMIN_MERGE`. An authorized
-  administrator may intentionally merge through GitHub.
+  administrator may intentionally merge through GitHub without first disabling auto-merge.
 - `DONE` permits no post-merge governance work. Do not archive a plan, write a receipt, refresh
   evidence, or create a closure commit.
 

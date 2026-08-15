@@ -37,7 +37,7 @@ describe('pull request delivery command', () => {
     expect(result.output).toEqual([
       'Usage: npm run pr:delivery -- <status|ready>',
       '  status  Read the current pull request and report the next action.',
-      '  ready   Mark a draft ready and arm native auto-merge when permitted.',
+      '  ready   Mark a draft ready and arm native auto-merge after approval.',
     ]);
     expect(github.calls).toEqual([]);
   });
@@ -66,7 +66,7 @@ describe('pull request delivery command', () => {
     expect(result.output).toEqual([
       'PR #222 https://github.com/example/repository/pull/222',
       'Action: AWAIT_REVIEW_OR_ADMIN_MERGE',
-      'Blocker: Native review or an intentional administrator merge is required.',
+      'Next: Await native review or merge intentionally through GitHub as an administrator.',
     ]);
     expect(github.calls).toHaveLength(2);
     expect(github.calls[0]?.arguments.slice(0, 2)).toEqual(['pr', 'view']);
@@ -131,35 +131,57 @@ describe('pull request delivery command', () => {
     expect(github.mutations).toEqual([]);
   });
 
-  it('marks a draft ready and arms auto-merge with one refresh after each mutation', async () => {
-    const github = createGithubFixture([
-      { ...openPullRequest, isDraft: true },
-      openPullRequest,
-      {
-        ...openPullRequest,
-        autoMergeRequest: {
-          enabledAt: '2026-08-14T20:00:00Z',
-          mergeMethod: 'SQUASH',
-          enabledBy: { login: 'developer' },
-        },
-      },
-    ]);
+  it('marks a draft ready without arming auto-merge before approval', async () => {
+    const github = createGithubFixture([{ ...openPullRequest, isDraft: true }, openPullRequest]);
 
     const result = await runCommand(['ready'], github);
 
     expect(result.action).toBe('AWAIT_REVIEW_OR_ADMIN_MERGE');
-    expect(github.mutations).toEqual([
-      ['pr', 'ready'],
-      ['pr', 'merge', '--auto', '--squash'],
-    ]);
+    expect(github.mutations).toEqual([['pr', 'ready']]);
     expect(github.calls.map((call) => call.arguments.slice(0, 2))).toEqual([
       ['pr', 'view'],
       ['repo', 'view'],
       ['pr', 'ready'],
       ['pr', 'view'],
-      ['pr', 'merge'],
-      ['pr', 'view'],
     ]);
+  });
+
+  it('does not arm auto-merge before approval', async () => {
+    const github = createGithubFixture([openPullRequest]);
+
+    const result = await runCommand(['ready'], github);
+
+    expect(result.action).toBe('AWAIT_REVIEW_OR_ADMIN_MERGE');
+    expect(github.mutations).toEqual([]);
+  });
+
+  it('does not arm auto-merge while approval and the required check are pending', async () => {
+    const github = createGithubFixture([
+      {
+        ...openPullRequest,
+        statusCheckRollup: [{ ...passingCheck, status: 'IN_PROGRESS', conclusion: '' }],
+      },
+    ]);
+
+    const result = await runCommand(['ready'], github);
+
+    expect(result.action).toBe('WAIT_CI');
+    expect(github.mutations).toEqual([]);
+  });
+
+  it('does not arm auto-merge while the required check is failing', async () => {
+    const github = createGithubFixture([
+      {
+        ...openPullRequest,
+        reviewDecision: 'APPROVED',
+        statusCheckRollup: [{ ...passingCheck, conclusion: 'FAILURE' }],
+      },
+    ]);
+
+    const result = await runCommand(['ready'], github);
+
+    expect(result.action).toBe('REPAIR_CHECK');
+    expect(github.mutations).toEqual([]);
   });
 
   it('performs no mutation when the pull request is already ready and armed', async () => {
@@ -195,6 +217,12 @@ describe('pull request delivery command', () => {
     const result = await runCommand(['status'], github);
 
     expect(result.action).toBe('AWAIT_REVIEW_OR_ADMIN_MERGE');
+    expect(result.output).toEqual([
+      'PR #222 https://github.com/example/repository/pull/222',
+      'Action: AWAIT_REVIEW_OR_ADMIN_MERGE',
+      'Next: Await native review, or disable PR auto-merge before an intentional ' +
+        'administrator merge.',
+    ]);
     expect(result.output.join('\n')).not.toMatch(/approved|receipt|evidence/i);
   });
 

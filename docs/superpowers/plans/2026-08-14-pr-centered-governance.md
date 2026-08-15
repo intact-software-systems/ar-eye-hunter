@@ -205,8 +205,9 @@ PR path.
 - Consumes: `gh pr view` for the PR associated with the current branch and `gh repo view` for the
   default branch.
 - Produces: `npm run pr:delivery -- status` and `npm run pr:delivery -- ready`.
-- Side effects: `ready` may run `gh pr ready` once when draft and `gh pr merge --auto --squash`
-  once when auto-merge is available but unarmed. It never performs an immediate `--admin` merge.
+- Side effects: `ready` may run `gh pr ready` once when draft and, only after GitHub reports
+  approval, `gh pr merge --auto --squash` once when auto-merge is available but unarmed. It never
+  performs an immediate `--admin` merge.
 
 - [ ] **Step 1: Write command-spy tests**
 
@@ -216,9 +217,10 @@ PR path.
     auto-merge, and base-ref fields;
   - no command asks for a SHA, plan path, digest, workflow run, reviewer, or PR number;
   - `ready` checks `REPAIR_CONFLICT` before mutations;
-  - a draft PR uses at most `gh pr ready` followed by one state refresh and auto-merge arming;
+  - a draft PR uses at most `gh pr ready` followed by one state refresh;
   - a repeated `ready` on an already-ready/armed PR performs zero mutations;
-  - missing approval returns `AWAIT_REVIEW_OR_ADMIN_MERGE` without fabricating evidence;
+  - missing approval returns `AWAIT_REVIEW_OR_ADMIN_MERGE` without arming auto-merge or
+    fabricating evidence;
   - merged returns `DONE` without GitHub mutation;
   - closed-unmerged returns `STOP_CLOSED` without reopening.
 
@@ -236,8 +238,9 @@ PR path.
 - [ ] **Step 4: Implement `status` and `ready`**
 
   `status` prints the action, PR URL, and only the concrete blocker needed by the next actor.
-  `ready` refreshes state after each permitted mutation and prints the final action. A failed
-  attempt to arm auto-merge must preserve the native GitHub error and finish at
+  `ready` refreshes state after each permitted mutation and prints the final action. It arms
+  auto-merge only after approval. A failed attempt to arm auto-merge must preserve the native
+  GitHub error and finish at
   `AWAIT_REVIEW_OR_ADMIN_MERGE` when administrator action is the available path.
 
 - [ ] **Step 5: Add the package command and navigation map**
@@ -726,8 +729,8 @@ PR path.
 **Interfaces:**
 
 - Consumes: the migration PR, current repository settings, ruleset `15939552`, and final validation.
-- Produces: one ready PR with native auto-merge available, loose required checks, role-based admin
-  bypass, and no post-merge governance work.
+- Produces: one ready PR with native auto-merge available after approval, loose required checks,
+  role-based admin bypass, and no post-merge governance work.
 
 - [ ] **Step 1: Run local validation after checking PR state first**
 
@@ -791,7 +794,9 @@ PR path.
 
   Expected:
 
-  - collaborative PR: ready and auto-merge armed before approval;
+  - collaborative PR before approval: ready, with auto-merge unarmed so administrator merge stays
+    immediate;
+  - collaborative PR after approval: `ready` arms auto-merge once;
   - current solo/admin-authored PR: `AWAIT_REVIEW_OR_ADMIN_MERGE` when independent approval is
     unavailable; the administrator can merge manually;
   - conflict: `REPAIR_CONFLICT` and no readiness mutation;
@@ -808,18 +813,18 @@ PR path.
 
 ## Acceptance matrix
 
-| Scenario                       | Required result                     | Forbidden work                                      |
-| ------------------------------ | ----------------------------------- | --------------------------------------------------- |
-| `main` moved, PR mergeable     | Continue current PR state           | rebase, update branch, reapproval, digest refresh   |
-| Real source conflict           | `REPAIR_CONFLICT` first             | ten minutes of governance before discovery          |
-| Checks pending                 | `WAIT_CI`                           | local evidence ledger                               |
-| Checks failed                  | `REPAIR_CHECK`                      | plan metadata edits                                 |
-| Approval available             | arm native auto-merge before review | custom approval App/check                           |
-| Approval unavailable           | `AWAIT_REVIEW_OR_ADMIN_MERGE`       | fake approval or receipt                            |
-| Administrator merges           | `DONE`                              | retroactive proof that bypassed requirements passed |
-| PR merged                      | `DONE`                              | any post-merge governance mutation                  |
-| Two unrelated PRs              | independent PR bodies and CI groups | shared plan/status/catalog mutation                 |
-| Two PRs edit same product code | report real Git conflict            | label conflict as governance freshness              |
+| Scenario                       | Required result                      | Forbidden work                                      |
+| ------------------------------ | ------------------------------------ | --------------------------------------------------- |
+| `main` moved, PR mergeable     | Continue current PR state            | rebase, update branch, reapproval, digest refresh   |
+| Real source conflict           | `REPAIR_CONFLICT` first              | ten minutes of governance before discovery          |
+| Checks pending                 | `WAIT_CI`                            | local evidence ledger                               |
+| Checks failed                  | `REPAIR_CHECK`                       | plan metadata edits                                 |
+| Approval available             | arm native auto-merge after approval | custom approval App/check                           |
+| Approval unavailable           | `AWAIT_REVIEW_OR_ADMIN_MERGE`        | fake approval or receipt                            |
+| Administrator merges           | `DONE`                               | retroactive proof that bypassed requirements passed |
+| PR merged                      | `DONE`                               | any post-merge governance mutation                  |
+| Two unrelated PRs              | independent PR bodies and CI groups  | shared plan/status/catalog mutation                 |
+| Two PRs edit same product code | report real Git conflict             | label conflict as governance freshness              |
 
 ## Completion criteria
 

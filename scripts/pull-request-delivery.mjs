@@ -20,6 +20,8 @@ const mutationBlockedActions = new Set([
   'STOP_WRONG_BASE',
   'WAIT_GITHUB',
   'REPAIR_CONFLICT',
+  'REPAIR_CHECK',
+  'AWAIT_REVIEW_OR_ADMIN_MERGE',
 ]);
 
 if (isDirectExecution()) {
@@ -58,7 +60,11 @@ export async function runPullRequestDeliveryCommand(arguments_, dependencies) {
     action = deriveDeliveryAction(pullRequest);
   }
 
-  if (!mutationBlockedActions.has(action) && !pullRequest.autoMergeArmed) {
+  if (
+    !mutationBlockedActions.has(action) &&
+    pullRequest.reviewDecision === 'APPROVED' &&
+    !pullRequest.autoMergeArmed
+  ) {
     try {
       armPullRequestAutoMerge(dependencies.execFile);
     } catch (error) {
@@ -91,7 +97,7 @@ function readOperation(arguments_) {
 function printHelp(writeOutput) {
   writeOutput('Usage: npm run pr:delivery -- <status|ready>');
   writeOutput('  status  Read the current pull request and report the next action.');
-  writeOutput('  ready   Mark a draft ready and arm native auto-merge when permitted.');
+  writeOutput('  ready   Mark a draft ready and arm native auto-merge after approval.');
 }
 
 function printDeliveryStatus(pullRequest, action, writeOutput) {
@@ -100,13 +106,13 @@ function printDeliveryStatus(pullRequest, action, writeOutput) {
   }
   writeOutput(`Action: ${action}`);
 
-  const detail = readActionDetail(action);
+  const detail = readActionDetail(action, pullRequest);
   if (detail !== undefined) {
     writeOutput(detail);
   }
 }
 
-function readActionDetail(action) {
+function readActionDetail(action, pullRequest) {
   switch (action) {
     case 'OPEN_DRAFT':
       return 'Next: Publish a coherent commit and open one draft pull request.';
@@ -131,7 +137,10 @@ function readActionDetail(action) {
     case 'WAIT_CI':
       return 'Blocker: Required pull request checks are still running.';
     case 'AWAIT_REVIEW_OR_ADMIN_MERGE':
-      return 'Blocker: Native review or an intentional administrator merge is required.';
+      return pullRequest?.autoMergeArmed
+        ? 'Next: Await native review, or disable PR auto-merge before an intentional ' +
+            'administrator merge.'
+        : 'Next: Await native review or merge intentionally through GitHub as an administrator.';
     case 'ARM_AUTO_MERGE':
       return 'Next: Arm native auto-merge.';
     case 'WAIT_MERGE':
