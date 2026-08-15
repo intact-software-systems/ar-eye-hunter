@@ -295,6 +295,7 @@ export function createRtcBaselineEvidenceAcceptance(
       (attempt) => attempt.sampleIds[0] === owner.identity.sampleId,
     )!;
     const accepted = decodeRtcBaselineAcceptedAttempt(staged.value, {
+      baselineId: input.baselineId,
       expectedOuter,
       rawResultRelativePath: input.rawResultRelativePath,
       producerExitStatus: input.producerExitStatus,
