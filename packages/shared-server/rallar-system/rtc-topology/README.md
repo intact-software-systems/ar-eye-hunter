@@ -50,6 +50,12 @@ the RTT websocket topic. A persistent runtime also registers
 and AppOutbox dependencies. Process-local mode supplies the cache-backed RTT
 repository and schedules only its existing global graph refresh.
 
+Durable RTT storage is owned by `persistence/`: the repository owns exact
+reads and conditional writes, while the cleanup owner validates an expired
+receipt before entering one guarded delete transaction. The legacy
+`rtc-rtt:recompute-outbox` namespace remains reachable only from its offline
+migration and is intentionally outside active expiry protection.
+
 ## Runtime invocation
 
 An RTT websocket message first validates its route and sender. Persistent mode

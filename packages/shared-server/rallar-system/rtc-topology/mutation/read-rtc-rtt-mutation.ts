@@ -1,4 +1,4 @@
-import { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
+import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
 import type {
     RtcRttMutationRead,

@@ -41,7 +41,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/repositories/
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 import {
   createGroupStateService,

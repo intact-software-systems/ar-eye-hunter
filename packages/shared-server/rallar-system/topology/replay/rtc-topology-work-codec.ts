@@ -1,5 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { validateRtcRttMeasurement } from '../../rtc-rtt-persistence-validation.ts';
+// prettier-ignore
+import { validateRtcRttMeasurement }
+  from '../../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 // prettier-ignore

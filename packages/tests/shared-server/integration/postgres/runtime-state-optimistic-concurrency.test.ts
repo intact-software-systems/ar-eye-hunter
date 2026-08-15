@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES } from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import { RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
 import {
   createRuntimeStatePostgresSql as createSql,
   requirePostgresClient as requireClient,

@@ -2,7 +2,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import type { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
+import type { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 // prettier-ignore
 import type {
   GroupFormationRttMutationSink,

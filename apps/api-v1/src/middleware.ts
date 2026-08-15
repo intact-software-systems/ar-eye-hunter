@@ -82,9 +82,13 @@ import { readApiV1DatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { readApiV1DatabaseBackendConfig } from './db/database-config.ts';
 import {
   initRtcRttReceiptFamilyCleanup,
+} from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.ts';
+// prettier-ignore
+import { RtcRttRepository }
+  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
+import {
   RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
-  RtcRttRepository,
-} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+} from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
 import {
   setRtcTopologyOutboxWriteSink,
 } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';

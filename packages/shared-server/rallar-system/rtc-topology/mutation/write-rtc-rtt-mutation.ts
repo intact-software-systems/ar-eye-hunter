@@ -9,11 +9,11 @@ import { PSqlRuntimeStateRepository }
 import { RuntimeStateWriteConflictError }
     from '../../../runtime-state/optimistic-runtime-state-write.ts';
 
-import { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
+import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import {
     RTC_RTT_MUTATION_RETENTION_MS,
-    validateRtcRttWriteCandidate,
-} from '../../rtc-rtt-persistence-validation.ts';
+} from '../persistence/rtc-rtt-persistence-validation.ts';
+import { validateRtcRttWriteCandidate } from './validate-rtc-rtt-write-candidate.ts';
 // prettier-ignore
 import { writeRtcTopologyOutbox }
     from '../../services/rtc-topology-outbox-entry.ts';

@@ -2,8 +2,8 @@ import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts
 import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
 import {
     RTC_RTT_MUTATION_RETENTION_MS,
-    validateRtcRttWriteCandidate,
-} from '../../rtc-rtt-persistence-validation.ts';
+} from '../persistence/rtc-rtt-persistence-validation.ts';
+import { validateRtcRttWriteCandidate } from './validate-rtc-rtt-write-candidate.ts';
 import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
 import type {
     RtcRttMutationCommand,

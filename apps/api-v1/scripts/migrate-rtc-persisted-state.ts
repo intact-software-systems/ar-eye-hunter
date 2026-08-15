@@ -1,5 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+// prettier-ignore
+import { PSqlRuntimeStateRepository }
+  from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
   migrateLegacyRtcTopologySnapshotKeys,
   RtcTopologySnapshotRepository,
@@ -8,11 +10,17 @@ import {
   migrateLegacyRtcTopologyPublicationKeys,
   RtcTopologyPublicationRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
-import {
-  migrateLegacyRtcRttMeasurementKeys,
-  migrateLegacyRtcRttRecomputeIntentDeliveryState,
-  RtcRttRepository,
-} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+// prettier-ignore
+import { migrateLegacyRtcRttMeasurementKeys }
+  from '@shared-server/rallar-system/rtc-topology/persistence/\
+migrate-legacy-rtc-rtt-measurement-keys.ts';
+// prettier-ignore
+import { migrateLegacyRtcRttRecomputeIntentDeliveryState }
+  from '@shared-server/rallar-system/rtc-topology/persistence/\
+migrate-legacy-rtc-rtt-recompute-intents.ts';
+// prettier-ignore
+import { RtcRttRepository }
+  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
 import {
   invalidateLegacyScalarRtcTopologyAuthority,
 } from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';

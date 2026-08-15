@@ -23,23 +23,6 @@ export function toCanonicalRtcTopologyPairIdentity(
     return JSON.stringify([first, second]);
 }
 
-export function toRtcRttMeasurementStorageKey(
-    left: string,
-    right: string,
-): string {
-    const [from, to] =
-        compareRtcTopologyIdentifiers(left, right) <= 0
-            ? [left, right]
-            : [right, left];
-    return `from=${encodeURIComponent(from)}:to=${encodeURIComponent(to)}`;
-}
-
-export function toRtcRttEndpointAdmissionStorageKey(
-    endpointId: string,
-): string {
-    return `endpoint=${encodeURIComponent(endpointId)}`;
-}
-
 export function toCanonicalRtcTopologyGroupIdentity(
     groupRef: GroupRef,
 ): string {

@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import {
-  RTC_RTT_LATEST_NAMESPACE,
-  RtcRttRepository,
-} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+import { RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
 import { executeRtcRttMutation as executeRtcRttMutationService } from '@shared-server/rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 import type { RtcRttMutationCommand } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-contracts.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';

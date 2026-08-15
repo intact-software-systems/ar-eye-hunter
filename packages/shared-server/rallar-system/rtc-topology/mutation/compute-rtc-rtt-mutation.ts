@@ -1,6 +1,4 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../rtc-topology-errors.ts';
@@ -17,11 +15,14 @@ import type {
     RtcRttMutationCommand,
     RtcRttMutationComputed,
     RtcRttMutationFacts,
-    RtcRttMutationLifecycleFacts,
     RtcRttMutationRead,
     RtcRttRecomputeIntent,
-    RtcRttStableRequest,
 } from './rtc-rtt-mutation-contracts.ts';
+import {
+    assertReceiptOnlyRttInputs,
+    requireRttAuthority,
+    validateRtcRttMutationFacts,
+} from './rtc-rtt-mutation-authority.ts';
 import {
     toRtcRttMutationReceiptId,
     toRtcRttRecomputeOutboxId,
@@ -292,96 +293,6 @@ function exceedsEndpointAdmissionDegree(
             return true;
     }
     return false;
-}
-
-export function validateRtcRttMutationFacts(facts: RtcRttMutationFacts): void {
-    if (!/^sha256:[0-9a-f]{64}$/.test(facts.commandHash)) {
-        throw new TypeError('RTC RTT command hash fact is invalid');
-    }
-    if (!Number.isSafeInteger(facts.attemptCount) || facts.attemptCount < 1) {
-        throw new TypeError('RTC RTT attempt count fact is invalid');
-    }
-    if (facts.requestedAtEpochMs === null || facts.purgeAfterEpochMs === null) {
-        if (
-            facts.requestedAtEpochMs !== null ||
-            facts.purgeAfterEpochMs !== null
-        ) {
-            throw new TypeError(
-                'RTC RTT lifecycle facts must be jointly absent',
-            );
-        }
-        return;
-    }
-    if (
-        !Number.isSafeInteger(facts.requestedAtEpochMs) ||
-        facts.requestedAtEpochMs < 0
-    ) {
-        throw new TypeError('RTC RTT requested-at lifecycle fact is invalid');
-    }
-    if (
-        !Number.isSafeInteger(facts.purgeAfterEpochMs) ||
-        facts.purgeAfterEpochMs <= facts.requestedAtEpochMs
-    ) {
-        throw new TypeError('RTC RTT purge-after lifecycle fact is invalid');
-    }
-}
-
-function assertReceiptOnlyRttInputs(
-    command: RtcRttMutationCommand,
-    facts: RtcRttMutationFacts,
-): void {
-    if (
-        command.candidateGroups !== null ||
-        command.overlaySnapshotsByGroupKey !== null ||
-        command.degreeLimit !== null ||
-        facts.requestedAtEpochMs !== null ||
-        facts.purgeAfterEpochMs !== null
-    ) {
-        throw new TypeError(
-            'RTC RTT receipt replay must not include authority or lifecycle facts',
-        );
-    }
-}
-
-function requireRttAuthority(
-    command: RtcRttMutationCommand,
-    facts: RtcRttMutationFacts,
-): Readonly<{
-    command: RtcRttStableRequest &
-        Readonly<{
-            candidateGroups: readonly GroupSnapshot[];
-            overlaySnapshotsByGroupKey: ReadonlyMap<
-                string,
-                RallarOverlayTopologySnapshot
-            >;
-            degreeLimit: number;
-        }>;
-    facts: RtcRttMutationLifecycleFacts & Readonly<{ commandHash: string }>;
-}> {
-    if (
-        command.candidateGroups === null ||
-        command.overlaySnapshotsByGroupKey === null ||
-        command.degreeLimit === null ||
-        facts.requestedAtEpochMs === null ||
-        facts.purgeAfterEpochMs === null
-    ) {
-        throw new TypeError(
-            'RTC RTT receipt miss requires authority and lifecycle facts',
-        );
-    }
-    return {
-        command: command as RtcRttStableRequest &
-            Readonly<{
-                candidateGroups: readonly GroupSnapshot[];
-                overlaySnapshotsByGroupKey: ReadonlyMap<
-                    string,
-                    RallarOverlayTopologySnapshot
-                >;
-                degreeLimit: number;
-            }>,
-        facts: facts as RtcRttMutationLifecycleFacts &
-            Readonly<{ commandHash: string }>,
-    };
 }
 
 function peersForEndpoint(

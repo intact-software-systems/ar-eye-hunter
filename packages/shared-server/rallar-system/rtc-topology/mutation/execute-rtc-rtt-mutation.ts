@@ -1,6 +1,6 @@
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 
-import { RtcRttRepository } from '../../repositories/RtcRttRepository.ts';
+import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
 import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
 import { computeRtcRttMutation } from './compute-rtc-rtt-mutation.ts';
 import type {

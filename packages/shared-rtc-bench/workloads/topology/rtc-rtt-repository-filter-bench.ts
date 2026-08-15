@@ -1,9 +1,13 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import {
-  RTC_RTT_LATEST_NAMESPACE,
-  RtcRttRepository,
-  validateMeasurement,
-} from '@shared-server/rallar-system/repositories/RtcRttRepository.ts';
+// prettier-ignore
+import { validateRtcRttMeasurement }
+  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+// prettier-ignore
+import { RtcRttRepository }
+  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
+// prettier-ignore
+import { RTC_RTT_LATEST_NAMESPACE }
+  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
 
 // prettier-ignore
 import { SyntheticRtcRttRuntimeStateRepository } from
@@ -228,7 +232,7 @@ function prepopulateRepository(
   const pairs = createMeasurementPairs(input);
   const expireAtTimestamp = dependencies.clock.nowEpochMs() + 60_000;
   for (const measurement of [...pairs.target, ...pairs.foreign]) {
-    validateMeasurement(measurement);
+    validateRtcRttMeasurement(measurement);
     const key = repository.measurementKey(measurement.sessionIdFrom, measurement.sessionIdTo);
     dependencies.runtimeRepository.data.set(`${RTC_RTT_LATEST_NAMESPACE}::${key}`, {
       key,
