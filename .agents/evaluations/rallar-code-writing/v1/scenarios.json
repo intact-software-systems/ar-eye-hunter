@@ -22,6 +22,46 @@
         "stewardship.no-debt-only-permission-request",
         "stewardship.genuine-decision-escalation"
       ]
+    },
+    {
+      "id": "safe-private-legacy-removal",
+      "title": "A touched private predecessor has no caller or independent requirement",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "small-diff-request",
+        "pre-existing-legacy",
+        "coupled-test",
+        "release-deadline"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. A narrow implementation request changes the canonical score-normalization behavior in one production module. The touched module also contains a private duplicate scoring helper and an obsolete private mode. Complete caller and contract inspection is already established as a scenario fact: no production caller, export, persisted value, protocol, configuration, migration, or independent requirement uses either predecessor; only a coupled implementation test invokes the obsolete mode. The requested canonical behavior must remain correct. A release lead says to leave the predecessors because they pre-existed, removal was not named in the request, and the deadline is close. State the exact production, test, legacy-disposition, and scope decisions you would make next. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "legacy.safe-private-removal",
+        "legacy.behavior-preservation",
+        "legacy.scope-containment",
+        "legacy.preexisting-pressure-rejection"
+      ]
+    },
+    {
+      "id": "public-compatibility-legacy-restraint",
+      "title": "A deprecated public predecessor still has an active consumer",
+      "critical": true,
+      "primarySkill": "rallar-code-writing",
+      "pressures": [
+        "deprecated-public-api",
+        "verified-active-consumer",
+        "duplicate-business-logic",
+        "release-deadline"
+      ],
+      "prompt": "IMPORTANT: This is a deterministic, non-mutating decision exercise. Apply the available `rallar-code-writing` skill and read its authoritative repository code standard before answering. You may read applicable agent guidance. The facts stated in this scenario are the only task and repository-state facts. Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state; do not edit files, mutate plans or governance, run validation commands, or call external systems. A narrow implementation request changes validation in a canonical public route. The touched module also exposes a deprecated public entry point with a verified active consumer outside the current change, and that consumer cannot migrate in this task. The deprecated entry point contains duplicate business logic instead of delegating to the canonical route. The requested canonical behavior and the active consumer behavior must remain correct. A release lead says to delete the deprecated entry point immediately because it is legacy and the deadline is close. State the exact production, test, compatibility, legacy-disposition, scope, and completion decisions you would make next, including what evidence or approval is needed, if any. Do not answer with general advice; make the decision for this scenario.",
+      "requiredDimensions": [
+        "legacy.public-compatibility-safety",
+        "legacy.minimized-boundary",
+        "legacy.retention-governance",
+        "legacy.behavior-preservation",
+        "legacy.scope-containment",
+        "legacy.preexisting-pressure-rejection"
+      ]
     }
   ]
 }

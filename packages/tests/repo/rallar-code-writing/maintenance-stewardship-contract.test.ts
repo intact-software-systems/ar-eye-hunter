@@ -20,6 +20,46 @@ const stewardshipDimensions = [
   'stewardship.no-debt-only-permission-request',
   'stewardship.genuine-decision-escalation',
 ] as const;
+const safePrivateLegacyDimensions = [
+  'legacy.safe-private-removal',
+  'legacy.behavior-preservation',
+  'legacy.scope-containment',
+  'legacy.preexisting-pressure-rejection',
+] as const;
+const publicCompatibilityLegacyDimensions = [
+  'legacy.public-compatibility-safety',
+  'legacy.minimized-boundary',
+  'legacy.retention-governance',
+  'legacy.behavior-preservation',
+  'legacy.scope-containment',
+  'legacy.preexisting-pressure-rejection',
+] as const;
+const allDimensions = [
+  ...stewardshipDimensions,
+  'legacy.safe-private-removal',
+  'legacy.behavior-preservation',
+  'legacy.scope-containment',
+  'legacy.preexisting-pressure-rejection',
+  'legacy.public-compatibility-safety',
+  'legacy.minimized-boundary',
+  'legacy.retention-governance',
+] as const;
+const legacyRemovalGuidancePaths = [
+  'AGENTS.md',
+  '.agents/skills/rallar-code-writing/SKILL.md',
+  '.agents/skills/rallar-code-writing/references/repo-code-style.md',
+  '.agents/skills/rallar-code-writing/references/typescript-type-organization.md',
+  '.agents/skills/adaptive-plan-execution/SKILL.md',
+  '.agents/skills/rallar-platform/SKILL.md',
+  'docs/repo-human-style-guide.md',
+] as const;
+const legacyRemovalGuidance = [
+  'During touched-file standards closure, actively remove affected legacy code when no independent requirement or verified consumer requires it',
+  'Do not retain affected legacy solely because it pre-existed, a coupled test protects it, or removal was not named in the request',
+  'Keep independent untouched legacy outside closure',
+  'If removal would change a public API, persisted format, protocol, migration contract, or verified consumer behavior, treat it as a compatibility or migration decision',
+  'minimize it to a thin named boundary and require explicit maintainer approval and a registry entry for continued retention',
+] as const;
 
 describe('rallar code-writing maintenance stewardship contract', () => {
   it('makes touched-file standards closure the positive execution path', () => {
@@ -55,6 +95,23 @@ describe('rallar code-writing maintenance stewardship contract', () => {
       expect(source).toContain('Checker tolerance is not authority');
       expect(source).toContain('does not define touched-file standards closure');
     }
+  });
+
+  it('removes safe affected legacy while governing continued compatibility retention', () => {
+    for (const repositoryPath of legacyRemovalGuidancePaths) {
+      expectAll(normalize(readRepo(repositoryPath)), legacyRemovalGuidance);
+    }
+
+    const platformGuidance = normalize(readRepo('.agents/skills/rallar-platform/SKILL.md'));
+    expect(platformGuidance).not.toContain(
+      'Preserve existing exports unless the task explicitly removes a deprecated API',
+    );
+    const typeOrganizationGuidance = normalize(
+      readRepo('.agents/skills/rallar-code-writing/references/typescript-type-organization.md'),
+    );
+    expect(typeOrganizationGuidance).not.toContain(
+      'existing public exports and app import paths are preserved unless the task explicitly asks for a breaking change',
+    );
   });
 
   it('requires next-action decisions and final handoffs to spell out closure', () => {
@@ -182,35 +239,60 @@ describe('rallar code-writing maintenance stewardship contract', () => {
     expectAll(escalationDimension?.pass ?? '', preWorkEvidence);
   });
 
-  it('defines one critical versioned pressure scenario and a binary rubric', () => {
+  it('defines three critical versioned pressure scenarios and a binary rubric', () => {
     const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
     const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
 
     expect(suite.schemaVersion).toBe('rallar-code-writing-scenarios-v1');
     expect(suite.suiteId).toBe('rallar-code-writing-v1');
-    expect(suite.scenarios).toHaveLength(1);
-    expect(suite.scenarios[0]).toMatchObject({
+    expect(suite.scenarios).toHaveLength(3);
+    const stewardshipScenario = findScenario(
+      suite,
+      'pre-existing-noncompliance-under-release-pressure',
+    );
+    const safePrivateLegacyScenario = findScenario(suite, 'safe-private-legacy-removal');
+    const publicCompatibilityScenario = findScenario(
+      suite,
+      'public-compatibility-legacy-restraint',
+    );
+    expect(stewardshipScenario).toMatchObject({
       id: 'pre-existing-noncompliance-under-release-pressure',
       critical: true,
       primarySkill: 'rallar-code-writing',
       requiredDimensions: stewardshipDimensions,
     });
-    expect(suite.scenarios[0].pressures).toEqual([
+    expect(stewardshipScenario.pressures).toEqual([
       'release-deadline',
       'small-diff-request',
       'pre-existing-noncompliance',
       'permission-seeking',
     ]);
-    expect(suite.scenarios[0].prompt).toContain('BabylonArena.tsx');
-    expect(suite.scenarios[0].prompt).toContain('pause/resume');
-    expect(suite.scenarios[0].prompt).toContain('20-line');
+    expect(stewardshipScenario.prompt).toContain('BabylonArena.tsx');
+    expect(stewardshipScenario.prompt).toContain('pause/resume');
+    expect(stewardshipScenario.prompt).toContain('20-line');
+    expect(safePrivateLegacyScenario).toMatchObject({
+      critical: true,
+      primarySkill: 'rallar-code-writing',
+      requiredDimensions: safePrivateLegacyDimensions,
+    });
+    expect(safePrivateLegacyScenario.prompt).toContain('private duplicate');
+    expect(safePrivateLegacyScenario.prompt).toContain('obsolete private mode');
+    expect(safePrivateLegacyScenario.prompt).toContain('no production caller');
+    expect(publicCompatibilityScenario).toMatchObject({
+      critical: true,
+      primarySkill: 'rallar-code-writing',
+      requiredDimensions: publicCompatibilityLegacyDimensions,
+    });
+    expect(publicCompatibilityScenario.prompt).toContain('deprecated public entry point');
+    expect(publicCompatibilityScenario.prompt).toContain('verified active consumer');
+    expect(publicCompatibilityScenario.prompt).toContain('duplicate business logic');
 
     expect(rubric.schemaVersion).toBe('rallar-code-writing-rubric-v1');
     expect(rubric.suiteId).toBe(suite.suiteId);
     expect(rubric.criticalPolicy).toBe(
       'Every required dimension for every critical scenario must pass.',
     );
-    expect(rubric.dimensions.map(({ id }) => id)).toEqual(stewardshipDimensions);
+    expect(rubric.dimensions.map(({ id }) => id)).toEqual(allDimensions);
     expect(rubric.resultContract).toMatchObject({
       schemaVersion: 'rallar-code-writing-result-v1',
       skillVariants: ['no-skill', 'with-skill'],
@@ -222,7 +304,6 @@ describe('rallar code-writing maintenance stewardship contract', () => {
   it('keeps expected stewardship actions in the rubric instead of the pressure prompt', () => {
     const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
     const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
-    const scenario = suite.scenarios[0];
     const forbiddenAnswerFragments = [
       'standards compliance across every file you touch',
       'remediation scope propagates',
@@ -252,43 +333,53 @@ describe('rallar code-writing maintenance stewardship contract', () => {
       'build or typecheck',
       'report each result',
       'never replace or indefinitely defer',
+      'classify them `removed`',
+      'thin canonical delegate',
+      'explicit maintainer approval',
+      'registry entry for continued retention',
     ];
 
-    for (const fragment of forbiddenAnswerFragments) {
-      expect(scenario.prompt.toLowerCase(), `leaked expected action: ${fragment}`).not.toContain(
-        fragment,
-      );
-    }
-    for (const dimensionId of stewardshipDimensions) {
-      const passText = rubric.dimensions.find((dimension) => dimension.id === dimensionId)?.pass;
-      expect(passText, dimensionId).toBeDefined();
-      expect(scenario.prompt, `leaked rubric text: ${dimensionId}`).not.toContain(passText);
-      expect(scenario.prompt, `leaked dimension ID: ${dimensionId}`).not.toContain(dimensionId);
+    for (const scenario of suite.scenarios) {
+      for (const fragment of forbiddenAnswerFragments) {
+        expect(
+          scenario.prompt.toLowerCase(),
+          `${scenario.id} leaked expected action: ${fragment}`,
+        ).not.toContain(fragment);
+      }
+      for (const dimensionId of scenario.requiredDimensions) {
+        const passText = rubric.dimensions.find((dimension) => dimension.id === dimensionId)?.pass;
+        expect(passText, dimensionId).toBeDefined();
+        expect(scenario.prompt, `leaked rubric text: ${dimensionId}`).not.toContain(passText);
+        expect(scenario.prompt, `leaked dimension ID: ${dimensionId}`).not.toContain(dimensionId);
+      }
     }
   });
 
-  it('keeps the pressure scenario deterministic, non-mutating, and workspace-independent', () => {
+  it('keeps each pressure scenario deterministic, non-mutating, and workspace-independent', () => {
     const suite = readJson(`${evaluationRoot}/scenarios.json`) as EvaluationSuite;
-    const prompt = normalize(suite.scenarios[0].prompt);
 
-    expect(prompt).toContain('deterministic, non-mutating decision exercise');
-    expect(prompt).toContain('Apply the available `rallar-code-writing` skill');
-    expect(prompt).toContain('read its authoritative repository code standard before answering');
-    expect(prompt).toContain('You may read applicable agent guidance');
-    expect(prompt).toContain(
-      'The facts stated in this scenario are the only task and repository-state facts',
-    );
-    expect(prompt).toContain(
-      'Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state',
-    );
-    expect(prompt).toContain('do not edit files');
-    expect(prompt).toContain('mutate plans or governance');
-    expect(prompt).toContain('run validation commands');
-    expect(prompt).toContain('call external systems');
-    expect(prompt).not.toContain('do not edit files, run commands');
-    expect(prompt).not.toContain('current repository task');
-    expect(prompt).not.toContain('current repository facts');
-    expect(prompt).not.toContain('repository evidence you inspect');
+    for (const scenario of suite.scenarios) {
+      const prompt = normalize(scenario.prompt);
+
+      expect(prompt).toContain('deterministic, non-mutating decision exercise');
+      expect(prompt).toContain('Apply the available `rallar-code-writing` skill');
+      expect(prompt).toContain('read its authoritative repository code standard before answering');
+      expect(prompt).toContain('You may read applicable agent guidance');
+      expect(prompt).toContain(
+        'The facts stated in this scenario are the only task and repository-state facts',
+      );
+      expect(prompt).toContain(
+        'Apart from reading applicable agent guidance, do not inspect the task source, current workspace, or current governance state',
+      );
+      expect(prompt).toContain('do not edit files');
+      expect(prompt).toContain('mutate plans or governance');
+      expect(prompt).toContain('run validation commands');
+      expect(prompt).toContain('call external systems');
+      expect(prompt).not.toContain('do not edit files, run commands');
+      expect(prompt).not.toContain('current repository task');
+      expect(prompt).not.toContain('current repository facts');
+      expect(prompt).not.toContain('repository evidence you inspect');
+    }
   });
 
   it('reuses the canonical versioned evaluation-result validator', () => {
@@ -340,4 +431,13 @@ function expectAll(haystack: string, needles: readonly string[]): void {
   for (const needle of needles) {
     expect(haystack, needle).toContain(needle);
   }
+}
+
+function findScenario(
+  suite: EvaluationSuite,
+  scenarioId: string,
+): EvaluationSuite['scenarios'][number] {
+  const scenario = suite.scenarios.find(({ id }) => id === scenarioId);
+  expect(scenario, scenarioId).toBeDefined();
+  return scenario!;
 }

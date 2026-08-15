@@ -93,6 +93,14 @@ shims, and workarounds; parallel old/new implementations; rollback paths that
 retain a predecessor; and historical vocabulary or types retained only for
 compatibility.
 
+During touched-file standards closure, actively remove affected legacy code when no
+independent requirement or verified consumer requires it. Do not retain affected legacy solely
+because it pre-existed, a coupled test protects it, or removal was not named in the request. Keep
+independent untouched legacy outside closure. If removal would change a public API, persisted
+format, protocol, migration contract, or verified consumer behavior, treat it as a compatibility or
+migration decision; minimize it to a thin named boundary and require explicit maintainer approval
+and a registry entry for continued retention.
+
 At completion, each affected item is `removed`, `minimized-boundary`, `resolved`, or `retained`.
 `minimized-boundary` means a thin, explicitly named compatibility boundary that
 delegates to the canonical implementation and contains no duplicate business
