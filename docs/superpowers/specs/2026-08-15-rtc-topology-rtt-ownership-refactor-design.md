@@ -15,7 +15,8 @@ record, shared progress file, or post-merge governance artifact.
 
 The authoritative flow is split across unrelated-looking locations:
 
-- the WebSocket entry is under `rallar-system/topology/rtt`;
+- the WebSocket entry and its process-local RTT refinement gate are under
+  `rallar-system/topology/rtt`;
 - durable authorization and dispatch are under `rallar-system/rtc-topology/inbox`;
 - mutation read, compute, validate, write, result, and acceptance policy live under
   `rallar-system/services`;
@@ -58,7 +59,7 @@ measurement ingestion and persistence:
 ```text
 rtc-topology/
   README.md
-  topic/          WebSocket RTT entry and acceptance handoff
+  topic/          WebSocket RTT entry, predicted-delta observation, refinement gate, and handoff
   inbox/          Durable command construction, authority, and AppInbox dispatch
   mutation/       Read, compute, validate, write, receipt, and result decisions
   policy/         RTT acceptance and expired-authority decisions
@@ -72,22 +73,59 @@ The following ownership remains unchanged unless later evidence proves a concret
 
 - `rallar-system/topology` owns group-topology configuration, planning, publication, and durable
   replay;
+- `rallar-system/topology/planning` continues to own the canonical planning input, incremental
+  evolution, and topology-kind hysteresis introduced by stable topology evolution;
 - `packages/shared-graph` owns graph algorithms and Vivaldi calculations;
 - AppInbox owns durable queue infrastructure, not RTC RTT decisions;
 - API-v1 owns process composition and configuration; and
 - browser/shared RTC code owns measurement production and transport behavior.
 
-The broad `rallar-rtc-topology-service.ts` is not moved mechanically. After the first two slices,
-its responsibilities are classified between RTC measurement policy, group-topology planning, graph
-calculation, and composition. Only responsibilities with a truthful RTC-topology owner move; the
-rest stay with or move to their actual owner in a separately reviewed later slice.
+The broad `rallar-rtc-topology-service.ts` is not moved mechanically. Current main has grown it to
+roughly 1,500 lines while also extracting canonical planning input, incremental evolution, and
+topology-kind hysteresis into `topology/planning`. After the first two slices, its remaining
+responsibilities are classified between RTC measurement policy, group-topology planning, graph
+calculation, process-local snapshot state, and composition. Only responsibilities with a truthful
+RTC-topology owner move; the rest stay with or move to their actual owner in a separately reviewed
+later slice. If that structural weakness is not resolved by this refactor, it receives a focused
+GitHub issue before delivery rather than being left implicit.
+
+## Latest-main compatibility adaptation
+
+Stable topology evolution added an RTT refinement threshold and interval gate after this design was
+first written. That evidence changes the move inventory but not the behavior-preservation contract:
+
+- `init-rtc-rtt-topic.ts` now measures the Vivaldi predicted-RTT delta after an accepted in-memory
+  observation and uses a process-local `RtcRttRefinementGate` before enqueueing topology refresh;
+- API-v1 passes that gate into a persistent RTC runtime, but the topic returns into durable AppInbox
+  before observing Vivaldi or invoking the gate, so the configured threshold and interval are not
+  active on the production persistent path;
+- durable RTT mutation currently serializes its recompute intents as `group-revision` work, so the
+  executor's `rtt-refresh` unchanged-result gate is bypassed as well;
+- this is an actual production bug: durable RTT persistence remains atomic, but its configured
+  refinement damping is ineffective and accepted reports can trigger unnecessary full replans;
+- the fix keeps measurement, receipt, and outbox writes in one AppInbox transaction, identifies the
+  durable work truthfully as an RTT refresh, and applies Vivaldi observation plus process-local
+  refinement damping idempotently per durable work identity before planning;
+- a repeated delivery on one process reuses the same observation and claim decision, while a
+  restarted process retains the documented permission to refine once early; a below-threshold work
+  item is completed without changing durable topology, and threshold-qualified work still passes
+  through the existing unchanged-publication gate;
+- the gate, its defaults, accumulated per-group state, first-observation behavior, zero-knob
+  compatibility behavior, and API-v1 configuration wiring move with the RTC RTT feature owner;
+- durable AppInbox RTT mutation remains authoritative and keeps its existing recompute intent
+  atomicity; the refinement gate is process-local scheduling policy, not persisted authority; and
+- the new canonical planning, evolution, hysteresis, fingerprint, and unchanged-publication owners
+  remain under `rallar-system/topology` and are updated only for import paths required by the move.
+
+No open pull request currently overlaps this RTC RTT ownership refactor. The existing RTC signaling
+diagnostics draft concerns a different boundary.
 
 ## Concrete execution horizon
 
 ### Slice 1: RTT ingress and mutation ownership
 
 1. Characterize the current WebSocket-to-AppInbox-to-mutation behavior with semantic tests.
-2. Move the RTT topic entry into the RTC-topology feature.
+2. Move the RTT topic entry and process-local refinement gate into the RTC-topology feature.
 3. Consolidate mutation contracts and the read, compute, validate, write, receipt, result, and
    measurement-policy decisions beside the existing inbox handler.
 4. Update internal consumers directly and retain no pass-through compatibility module unless an
@@ -95,7 +133,9 @@ rest stay with or move to their actual owner in a separately reviewed later slic
 5. Add a navigation README and mirror focused tests by behavior.
 
 Acceptance for this slice is unchanged command decoding, authority verification, idempotent replay,
-mutation outcomes, receipt identity, transaction timing, after-commit effects, and failure behavior.
+mutation outcomes, receipt identity, transaction timing, after-commit effects, failure behavior,
+plus corrected persistent-path predicted-delta observation, per-group refinement damping, durable
+retry idempotence, and zero-knob compatibility behavior.
 
 ### Slice 2: RTT persistence ownership
 
@@ -127,11 +167,16 @@ The refactor must preserve:
 - transaction, retry, rollback, and optimistic-concurrency semantics;
 - storage keys, runtime namespaces, codecs, persisted shapes, and migrations;
 - outbox and topology-recomputation intent;
-- optional metrics remaining non-authoritative and never-throw; and
-- existing package and application behavior.
+- optional metrics remaining non-authoritative and never-throw;
+- process-local RTT refinement thresholds, intervals, accumulation, and first-observation behavior;
+- existing package and application behavior; and
+- the intentional correction that makes those configured refinement controls effective for durable
+  RTT work.
 
 No protocol, API, database schema, topology algorithm, RTT acceptance policy, distributed recipe,
-or performance threshold changes as part of an ownership move.
+or performance threshold changes as part of an ownership move. The persistent-path refinement fix
+changes only the broken bypass: it makes the already configured threshold and interval apply where
+current production wiring ignores them.
 
 ## Bug protocol
 
@@ -191,10 +236,12 @@ After each slice, run the focused tests for every moved decision and consumer. T
 validation includes:
 
 - RTC RTT AppInbox routing, authorization, read/compute/validate/write, and result tests;
+- RTT refinement-gate, WebSocket scheduling, and API-v1 configuration tests;
 - runtime-state repository, migration, cleanup, and key-shape tests;
 - PostgreSQL RTT concurrency tests when persistence ownership changes;
 - affected topology scheduling and WebSocket routing tests;
 - `@ar-eye-hunter/shared-server` typecheck;
+- the API-v1 Deno check because composition imports and gate wiring move;
 - repository structure and changed-file style checks; and
 - formatting and `git diff --check`.
 
@@ -204,10 +251,10 @@ according to the affected boundary and current testing guidance.
 
 ## Delivery and review
 
-Work stays on `codex/rtc-topology-rtt-structure` in the dedicated worktree. The design and eventual
-implementation are kept local for review until publication is explicitly requested. If later
-published, one normal PR owns the semantic goal, changes, acceptance, validation, risk, and linked
-follow-up issues; no plan bookkeeping or closure receipt is created.
+Work stays on `codex/rtc-topology-rtt-structure` in the dedicated worktree. Implementation remains
+local until it is complete and affected validation has run. The finished branch is then pushed and
+one normal pull request is created with the semantic goal, changes, acceptance, validation, risk,
+rollback, and linked follow-up issues; no plan bookkeeping or closure receipt is created.
 
 ## Acceptance criteria
 
@@ -221,4 +268,4 @@ follow-up issues; no plan bookkeeping or closure receipt is created.
 - Every verified weakness not fixed in scope has a reused or newly created GitHub issue.
 - Focused semantic, persistence, concurrency, typecheck, structure, style, and formatting evidence
   is recorded exactly as passed, failed, or skipped.
-- No PR or remote branch is created until requested.
+- The completed, validated implementation is published as one pull request.
