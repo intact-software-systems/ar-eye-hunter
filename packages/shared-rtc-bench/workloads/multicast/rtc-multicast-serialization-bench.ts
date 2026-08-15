@@ -8,17 +8,17 @@ import {
   type RtcBaselineJson,
   type RtcBaselineResult,
   type RtcBaselineSampleDto,
-  type RtcBaselineSampleIdentityDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import {
   parseRtcBaselineBoundedInteger,
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
-import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
-// prettier-ignore
 import {
-  runRtcBaselineAcceptedWorkerSamples,
-} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+  parseRtcBaselineAcceptedWorker,
+  type RtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorkerCli,
+} from '../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 
 export interface RtcMulticastSerializationInput {
   readonly peers: 10 | 100 | 1000;
@@ -31,14 +31,6 @@ interface RtcMulticastSerializationDiagnosticArguments {
   readonly payloadBytes: readonly number[];
   readonly runs: number;
   readonly out: string;
-}
-
-interface RtcMulticastSerializationAcceptedArguments {
-  readonly mode: 'accepted';
-  readonly input: RtcMulticastSerializationInput;
-  readonly intendedPhase: 'warmup' | 'retained';
-  readonly outerOrdinal: number;
-  readonly sampleIds: readonly string[];
 }
 
 export interface RtcMulticastSerializationResult {
@@ -54,40 +46,47 @@ export interface RtcMulticastSerializationResult {
   readonly allTransportMessagesIdentical: boolean;
 }
 
-interface CreateRtcMulticastIssueInput {
+interface RtcMulticastValidationRule {
   readonly valid: boolean;
   readonly path: string;
   readonly code: string;
   readonly message: string;
 }
 
-interface ValidateAcceptedPhaseAndIdsInput {
-  readonly options: Readonly<Record<string, string>>;
-  readonly input: RtcMulticastSerializationInput;
-  readonly intendedPhase: string | undefined;
-  readonly outerOrdinal: number;
-  readonly sampleIds: readonly string[];
+interface RtcMulticastPayload {
+  readonly text: string;
+  readonly createdAtEpochMs: number;
 }
 
-const acceptedNames = (
-  'capture baseline-id workload case-id input-key intended-phase outer-ordinal sample-ids ' +
-  'rtc-peers rtc-payload-bytes rtc-inner-runs'
-).split(' ');
 const frozenPeerCounts = new Set<number>([10, 100, 1000]);
 const frozenPayloadBytes = new Set<number>([4096, 65536]);
 
 export function parseRtcMulticastSerializationArguments(
   arguments_: readonly string[],
 ): RtcBaselineResult<
-  RtcMulticastSerializationDiagnosticArguments | RtcMulticastSerializationAcceptedArguments
+  | RtcMulticastSerializationDiagnosticArguments
+  | RtcBaselineAcceptedWorker<RtcMulticastSerializationInput>
 > {
   const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  if (accepted) {
+    return parseRtcBaselineAcceptedWorker({
+      arguments_,
+      identity: {
+        workloadId: 'RTC-B04',
+        caseId: 'multicast-serialization',
+      },
+      toInputKey: (input) => `peers-${input.peers}-payload-${input.payloadBytes}`,
+      capabilityOptionNames: ['rtc-peers', 'rtc-payload-bytes'],
+      parseCapability: parseAcceptedCapability,
+    });
+  }
   const parsed = parseRtcBaselineOneTokenOptions(
     arguments_,
-    accepted ? acceptedNames : ['peer-counts', 'payload-bytes', 'runs', 'out'],
+    ['peer-counts', 'payload-bytes', 'runs', 'out'],
   );
-  if (!parsed.ok) return parsed;
-  if (accepted) return parseAcceptedArguments(parsed.value);
+  if (!parsed.ok) {
+    return parsed;
+  }
   return parseDiagnosticArguments(parsed.value);
 }
 
@@ -145,20 +144,16 @@ export function runRtcMulticastSerialization(
   };
 }
 
-export async function runRtcMulticastSerializationAcceptedSamples(input: {
-  readonly worker: RtcMulticastSerializationAcceptedArguments;
+export function runRtcMulticastSerializationAcceptedSamples(input: {
+  readonly worker: RtcBaselineAcceptedWorker<RtcMulticastSerializationInput>;
   readonly run: () => RtcMulticastSerializationResult | Promise<RtcMulticastSerializationResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  return runRtcBaselineAcceptedWorkerSamples({
-    worker: {
-      ...input.worker,
-      workloadId: 'RTC-B04',
-      caseId: 'multicast-serialization',
-      inputKey: `peers-${input.worker.input.peers}-payload-${input.worker.input.payloadBytes}`,
-    },
+  return runRtcBaselineAcceptedWorker({
+    worker: input.worker,
     run: input.run,
     validate: (result) => validateResult(input.worker.input, result),
-    createSample: ({ identity, result, issues }) => createSample(identity, result, issues),
+    metrics: createMetrics,
+    rawEvidence: toRawEvidence,
   });
 }
 
@@ -169,14 +164,20 @@ function parseDiagnosticArguments(
     readOption(options, 'peer-counts', '10,100,1000'),
     'peer-counts',
   );
-  if (!peerCounts.ok) return peerCounts;
+  if (!peerCounts.ok) {
+    return peerCounts;
+  }
   const payloadBytes = parseDiagnosticPositiveIntegers(
     readOption(options, 'payload-bytes', '4096,65536'),
     'payload-bytes',
   );
-  if (!payloadBytes.ok) return payloadBytes;
+  if (!payloadBytes.ok) {
+    return payloadBytes;
+  }
   const runs = parseRtcBaselineBoundedInteger(readOption(options, 'runs', '3'), 'runs', 1, 5);
-  if (!runs.ok) return runs;
+  if (!runs.ok) {
+    return runs;
+  }
   return {
     ok: true as const,
     value: {
@@ -193,36 +194,9 @@ function readOption(options: Readonly<Record<string, string>>, name: string, fal
   return options[name] ?? fallback;
 }
 
-function parseAcceptedArguments(
+function parseAcceptedCapability(
   options: Readonly<Record<string, string>>,
-): RtcBaselineResult<RtcMulticastSerializationAcceptedArguments> {
-  const numeric = parseAcceptedNumericInput(options);
-  const phase = options['intended-phase'];
-  const sampleIds = (options['sample-ids'] ?? '').split(',');
-  const issues = [
-    ...numeric.issues,
-    ...validateAcceptedFixedFields(options, numeric.input),
-    ...validateAcceptedPhaseAndIds({
-      options,
-      input: numeric.input,
-      intendedPhase: phase,
-      outerOrdinal: numeric.outerOrdinal,
-      sampleIds,
-    }),
-  ];
-  return issues.length > 0 ? { ok: false, issues } : {
-    ok: true,
-    value: {
-      mode: 'accepted',
-      input: numeric.input,
-      intendedPhase: phase as 'warmup' | 'retained',
-      outerOrdinal: numeric.outerOrdinal,
-      sampleIds,
-    },
-  };
-}
-
-function parseAcceptedNumericInput(options: Readonly<Record<string, string>>) {
+): RtcBaselineResult<RtcMulticastSerializationInput> {
   const peers = parseRtcBaselineBoundedInteger(options['rtc-peers'] ?? '', 'rtc-peers', 10, 1000);
   const payloadBytes = parseRtcBaselineBoundedInteger(
     options['rtc-payload-bytes'] ?? '',
@@ -230,17 +204,9 @@ function parseAcceptedNumericInput(options: Readonly<Record<string, string>>) {
     4096,
     65536,
   );
-  const outerOrdinal = parseRtcBaselineBoundedInteger(
-    options['outer-ordinal'] ?? '',
-    'outer-ordinal',
-    1,
-    999,
-  );
   const issues = [
     ...(!peers.ok ? peers.issues : []),
     ...(!payloadBytes.ok ? payloadBytes.issues : []),
-    ...(!outerOrdinal.ok ? outerOrdinal.issues : []),
-    ...validateRtcBaselineId(options['baseline-id'] ?? ''),
   ];
   if (peers.ok && !frozenPeerCounts.has(peers.value)) {
     issues.push(
@@ -252,60 +218,34 @@ function parseAcceptedNumericInput(options: Readonly<Record<string, string>>) {
       rtcBaselineIssue('$.rtc-payload-bytes', 'unexpected-worker-input', 'Expected 4096 or 65536.'),
     );
   }
-
-  return {
-    issues,
-    input: {
-      peers: (peers.ok ? peers.value : 10) as 10 | 100 | 1000,
-      payloadBytes: (payloadBytes.ok ? payloadBytes.value : 4096) as 4096 | 65536,
-    },
-    outerOrdinal: outerOrdinal.ok ? outerOrdinal.value : 1,
-  };
-}
-
-function validateAcceptedFixedFields(
-  options: Readonly<Record<string, string>>,
-  input: RtcMulticastSerializationInput,
-) {
-  const expected = {
-    capture: 'worker',
-    workload: 'RTC-B04',
-    'case-id': 'multicast-serialization',
-    'input-key': `peers-${input.peers}-payload-${input.payloadBytes}`,
-    'rtc-peers': String(input.peers),
-    'rtc-payload-bytes': String(input.payloadBytes),
-    'rtc-inner-runs': '5',
-  };
-  return Object.entries(expected).flatMap(([name, expectedValue]) =>
-    options[name] === expectedValue
-      ? []
-      : [rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${expectedValue}.`)]
-  );
-}
-
-function validateAcceptedPhaseAndIds(input: ValidateAcceptedPhaseAndIdsInput) {
-  const issues = [];
-  if (input.options['outer-ordinal'] !== String(input.outerOrdinal)) {
+  if (peers.ok && options['rtc-peers'] !== String(peers.value)) {
     issues.push(
       rtcBaselineIssue(
-        '$.outer-ordinal',
+        '$.rtc-peers',
         'unexpected-worker-input',
         'Expected canonical integer syntax.',
       ),
     );
   }
-  if (input.intendedPhase !== 'warmup' && input.intendedPhase !== 'retained') {
-    issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
+  if (payloadBytes.ok && options['rtc-payload-bytes'] !== String(payloadBytes.value)) {
+    issues.push(
+      rtcBaselineIssue(
+        '$.rtc-payload-bytes',
+        'unexpected-worker-input',
+        'Expected canonical integer syntax.',
+      ),
+    );
   }
-  const expectedSampleIds = createExpectedSampleIds(
-    input.input,
-    input.intendedPhase === 'warmup' ? input.intendedPhase : 'retained',
-    input.outerOrdinal,
-  );
-  if (JSON.stringify(input.sampleIds) !== JSON.stringify(expectedSampleIds)) {
-    issues.push(rtcBaselineIssue('$.sample-ids', 'unexpected-worker-input', 'Invalid sample IDs.'));
+  if (issues.length > 0) {
+    return { ok: false, issues };
   }
-  return issues;
+  return {
+    ok: true,
+    value: {
+      peers: peers.ok ? peers.value as 10 | 100 | 1000 : 10,
+      payloadBytes: payloadBytes.ok ? payloadBytes.value as 4096 | 65536 : 4096,
+    },
+  };
 }
 
 function parseDiagnosticPositiveIntegers(
@@ -322,20 +262,6 @@ function parseDiagnosticPositiveIntegers(
   return issues.length > 0
     ? { ok: false as const, issues }
     : { ok: true as const, value: values.map((entry) => Number(entry)) };
-}
-
-function createExpectedSampleIds(
-  input: RtcMulticastSerializationInput,
-  intendedPhase: 'warmup' | 'retained',
-  outerOrdinal: number,
-): string[] {
-  const prefix =
-    `rtc-b04-multicast-serialization-peers-${input.peers}-payload-${input.payloadBytes}-` +
-    `${intendedPhase}-${String(outerOrdinal).padStart(3, '0')}`;
-  return Array.from(
-    { length: 5 },
-    (_value, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`,
-  );
 }
 
 function validateResult(
@@ -399,52 +325,21 @@ function areExactByteCounts(result: RtcMulticastSerializationResult) {
     result.totalSerializedBytes >= result.originalSerializedBytes * result.transportMessages;
 }
 
-function createIssueWhen(input: CreateRtcMulticastIssueInput) {
+function createIssueWhen(input: RtcMulticastValidationRule) {
   return input.valid ? [] : [rtcBaselineIssue(input.path, input.code, input.message)];
-}
-
-function createSample(
-  identity: RtcBaselineSampleIdentityDto,
-  result: RtcMulticastSerializationResult | null,
-  issues: RtcBaselineSampleDto['issues'],
-): RtcBaselineSampleDto {
-  if (result === null) {
-    return {
-      schema: 'rallar.rtc-baseline.sample.v1',
-      identity,
-      outcome: 'not-run',
-      evidenceClass: 'synthetic-path',
-      metrics: [],
-      rawEvidence: null,
-      rawReferences: [],
-      issues,
-      runtimeObservation: null,
-    };
-  }
-  return {
-    schema: 'rallar.rtc-baseline.sample.v1',
-    identity,
-    outcome: issues.length === 0 ? 'passed' : 'failed',
-    evidenceClass: 'synthetic-path',
-    metrics: createMetrics(result),
-    rawEvidence: toRawEvidence(result),
-    rawReferences: [],
-    issues,
-    runtimeObservation: null,
-  };
 }
 
 function toRawEvidence(result: RtcMulticastSerializationResult): RtcBaselineJson {
   return {
-    peerCount: toJsonNumber(result.peerCount),
-    payloadBytes: toJsonNumber(result.payloadBytes),
-    planDurationMs: toJsonNumber(result.planDurationMs),
-    serializeDurationMs: toJsonNumber(result.serializeDurationMs),
-    originalSerializeDurationMs: toJsonNumber(result.originalSerializeDurationMs),
-    transportMessages: toJsonNumber(result.transportMessages),
-    uniqueSerializedMessages: toJsonNumber(result.uniqueSerializedMessages),
-    totalSerializedBytes: toJsonNumber(result.totalSerializedBytes),
-    originalSerializedBytes: toJsonNumber(result.originalSerializedBytes),
+    peerCount: result.peerCount,
+    payloadBytes: result.payloadBytes,
+    planDurationMs: result.planDurationMs,
+    serializeDurationMs: result.serializeDurationMs,
+    originalSerializeDurationMs: result.originalSerializeDurationMs,
+    transportMessages: result.transportMessages,
+    uniqueSerializedMessages: result.uniqueSerializedMessages,
+    totalSerializedBytes: result.totalSerializedBytes,
+    originalSerializedBytes: result.originalSerializedBytes,
     allTransportMessagesIdentical: result.allTransportMessagesIdentical,
   };
 }
@@ -455,13 +350,7 @@ function createMetrics(result: RtcMulticastSerializationResult) {
     ['originalSerializeDurationMs', result.originalSerializeDurationMs],
     ['serializeDurationMs', result.serializeDurationMs],
   ];
-  return timedMeasurements.flatMap(([metric, value]) =>
-    typeof value === 'number' && Number.isFinite(value) ? [{ metric, unit: 'ms', value }] : []
-  );
-}
-
-function toJsonNumber(value: number): number | null {
-  return Number.isFinite(value) ? value : null;
+  return timedMeasurements.map(([metric, value]) => ({ metric, unit: 'ms', value }));
 }
 
 function createConnectionService(peerIds: readonly string[]) {
@@ -530,7 +419,7 @@ function createOverlayContext(peerIds: readonly string[]) {
   };
 }
 
-function createPayload(payloadBytes: number) {
+function createPayload(payloadBytes: number): RtcMulticastPayload {
   return { text: 'x'.repeat(payloadBytes), createdAtEpochMs: 1 };
 }
 
@@ -543,17 +432,22 @@ function createPeerIds(peerCount: number): readonly string[] {
 
 async function main(): Promise<void> {
   const parsed = parseRtcMulticastSerializationArguments(Deno.args);
-  if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues));
-  if (parsed.value.mode === 'accepted') {
-    const worker = parsed.value;
-    const samples = await runRtcMulticastSerializationAcceptedSamples({
-      worker,
-      run: () => runRtcMulticastSerialization(worker.input),
-    });
-    console.log(JSON.stringify(samples));
+  if (!parsed.ok) {
+    throw new Error(JSON.stringify(parsed.issues));
+  }
+  const dispatched = await runRtcBaselineAcceptedWorkerCli({
+    parsed: parsed.value,
+    runAccepted: (worker) =>
+      runRtcMulticastSerializationAcceptedSamples({
+        worker,
+        run: () => runRtcMulticastSerialization(worker.input),
+      }),
+    writeOutput: (output) => console.log(output),
+  });
+  if (dispatched.handled) {
     return;
   }
-  const diagnostic = parsed.value;
+  const diagnostic = dispatched.diagnostic;
   const results = [];
   const diagnosticInputs = diagnostic.peerCounts.flatMap((peerCount) =>
     diagnostic.payloadBytes.map((payloadBytes) => ({ peerCount, payloadBytes }))
@@ -581,4 +475,6 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(output, null, 2));
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+  await main();
+}

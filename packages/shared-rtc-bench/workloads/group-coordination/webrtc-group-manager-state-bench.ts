@@ -13,16 +13,17 @@ import {
   type RtcBaselineJson,
   type RtcBaselineResult,
   type RtcBaselineSampleDto,
-  type RtcBaselineSampleIdentityDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import {
   parseRtcBaselineBoundedInteger,
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
-import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
 import {
-  runRtcBaselineAcceptedWorkerSamples,
-} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+  parseRtcBaselineAcceptedWorker,
+  type RtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorkerCli,
+} from '../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 
 export interface WebRtcGroupManagerStateInput {
   readonly clients: number;
@@ -37,14 +38,6 @@ interface WebRtcGroupManagerStateDiagnosticArguments {
   readonly out: string;
 }
 
-export interface WebRtcGroupManagerStateAcceptedArguments {
-  readonly mode: 'accepted';
-  readonly input: WebRtcGroupManagerStateInput;
-  readonly intendedPhase: 'warmup' | 'retained';
-  readonly outerOrdinal: number;
-  readonly sampleIds: readonly string[];
-}
-
 export interface WebRtcGroupManagerStateResult {
   readonly durationMs: number;
   readonly clientCount: number;
@@ -56,14 +49,6 @@ export interface WebRtcGroupManagerStateResult {
   readonly onlinePeerCount: number;
 }
 
-interface ValidateAcceptedArgumentsInput {
-  readonly options: Readonly<Record<string, string>>;
-  readonly input: WebRtcGroupManagerStateInput;
-  readonly outerOrdinal: RtcBaselineResult<number>;
-  readonly intendedPhase: string | undefined;
-  readonly sampleIds: readonly string[];
-}
-
 interface ValidationRule {
   readonly valid: boolean;
   readonly path: string;
@@ -71,10 +56,6 @@ interface ValidationRule {
   readonly message: string;
 }
 
-const acceptedOptionNames = (
-  'capture baseline-id workload case-id input-key intended-phase outer-ordinal sample-ids ' +
-  'rtc-inner-runs rtc-clients rtc-desired rtc-lookups'
-).split(' ');
 const acceptedInput: WebRtcGroupManagerStateInput = { clients: 5000, desired: 1000, lookups: 20 };
 
 class CountingClientCache implements ReadableKeyedValues<string, ClientInfo> {
@@ -149,15 +130,27 @@ class CountingClientCache implements ReadableKeyedValues<string, ClientInfo> {
 export function parseWebRtcGroupManagerStateArguments(
   arguments_: readonly string[],
 ): RtcBaselineResult<
-  WebRtcGroupManagerStateDiagnosticArguments | WebRtcGroupManagerStateAcceptedArguments
+  | WebRtcGroupManagerStateDiagnosticArguments
+  | RtcBaselineAcceptedWorker<WebRtcGroupManagerStateInput>
 > {
   const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  if (accepted) {
+    return parseRtcBaselineAcceptedWorker({
+      arguments_,
+      identity: { workloadId: 'RTC-B04', caseId: 'group-manager-state' },
+      toInputKey: () => 'fixed',
+      capabilityOptionNames: ['rtc-clients', 'rtc-desired', 'rtc-lookups'],
+      parseCapability: parseAcceptedCapability,
+    });
+  }
   const parsed = parseRtcBaselineOneTokenOptions(
     arguments_,
-    accepted ? acceptedOptionNames : ['clients', 'desired', 'lookups', 'runs', 'out'],
+    ['clients', 'desired', 'lookups', 'runs', 'out'],
   );
-  if (!parsed.ok) return parsed;
-  return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  return parseDiagnosticArguments(parsed.value);
 }
 
 export async function runWebRtcGroupManagerState(
@@ -208,19 +201,15 @@ export async function runWebRtcGroupManagerState(
 }
 
 export function runWebRtcGroupManagerStateAcceptedSamples(input: {
-  readonly worker: WebRtcGroupManagerStateAcceptedArguments;
+  readonly worker: RtcBaselineAcceptedWorker<WebRtcGroupManagerStateInput>;
   readonly run: () => WebRtcGroupManagerStateResult | Promise<WebRtcGroupManagerStateResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  return runRtcBaselineAcceptedWorkerSamples({
-    worker: {
-      ...input.worker,
-      workloadId: 'RTC-B04',
-      caseId: 'group-manager-state',
-      inputKey: 'fixed',
-    },
+  return runRtcBaselineAcceptedWorker({
+    worker: input.worker,
     run: input.run,
     validate: (result) => validateResult(input.worker.input, result),
-    createSample: ({ identity, result, issues }) => createSample(identity, result, issues),
+    metrics: (result) => [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }],
+    rawEvidence: toRawEvidence,
   });
 }
 
@@ -409,9 +398,9 @@ function parseDiagnosticArguments(
   };
 }
 
-function parseAcceptedArguments(
+function parseAcceptedCapability(
   options: Readonly<Record<string, string>>,
-): RtcBaselineResult<WebRtcGroupManagerStateAcceptedArguments> {
+): RtcBaselineResult<WebRtcGroupManagerStateInput> {
   const clients = parseRtcBaselineBoundedInteger(
     options['rtc-clients'] ?? '',
     'rtc-clients',
@@ -430,103 +419,20 @@ function parseAcceptedArguments(
     1,
     Number.MAX_SAFE_INTEGER,
   );
-  const outerOrdinal = parseRtcBaselineBoundedInteger(
-    options['outer-ordinal'] ?? '',
-    'outer-ordinal',
-    1,
-    999,
-  );
-  const intendedPhase = options['intended-phase'];
-  const sampleIds = (options['sample-ids'] ?? '').split(',');
-  const parsedInput = {
-    clients: readParsedNumber(clients, acceptedInput.clients),
-    desired: readParsedNumber(desired, acceptedInput.desired),
-    lookups: readParsedNumber(lookups, acceptedInput.lookups),
-  };
-  const issues = [
-    ...collectParsingIssues([clients, desired, lookups, outerOrdinal]),
-    ...validateRtcBaselineId(options['baseline-id'] ?? ''),
-    ...validateAcceptedArguments({
-      options,
-      input: parsedInput,
-      outerOrdinal,
-      intendedPhase,
-      sampleIds,
-    }),
-  ];
-  return issues.length > 0 ? { ok: false, issues } : {
-    ok: true,
-    value: {
-      mode: 'accepted',
-      input: parsedInput,
-      intendedPhase: intendedPhase as 'warmup' | 'retained',
-      outerOrdinal: readParsedNumber(outerOrdinal, 1),
-      sampleIds,
-    },
-  };
-}
-
-function validateAcceptedArguments(input: ValidateAcceptedArgumentsInput): RtcBaselineIssueDto[] {
   const expected = {
-    capture: 'worker',
-    workload: 'RTC-B04',
-    'case-id': 'group-manager-state',
-    'input-key': 'fixed',
-    'rtc-inner-runs': '5',
     'rtc-clients': String(acceptedInput.clients),
     'rtc-desired': String(acceptedInput.desired),
     'rtc-lookups': String(acceptedInput.lookups),
   };
-  const issues = Object.entries(expected)
-    .filter(([name, value]) => input.options[name] !== value)
-    .map(([name, value]) =>
-      rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`)
-    );
-  const phase = input.intendedPhase === 'warmup' ? 'warmup' : 'retained';
-  const ordinal = readParsedNumber(input.outerOrdinal, 1);
-  return [
-    ...issues,
-    ...validateRules([
-      {
-        valid: JSON.stringify(input.input) === JSON.stringify(acceptedInput),
-        path: '$.input',
-        code: 'unexpected-worker-input',
-        message: 'Expected fixed input.',
-      },
-      {
-        valid: input.outerOrdinal.ok && input.options['outer-ordinal'] === String(ordinal),
-        path: '$.outer-ordinal',
-        code: 'unexpected-worker-input',
-        message: 'Expected canonical integer syntax.',
-      },
-      {
-        valid: ['warmup', 'retained'].includes(input.intendedPhase ?? ''),
-        path: '$.intended-phase',
-        code: 'unexpected-worker-input',
-        message: 'Invalid phase.',
-      },
-      {
-        valid: JSON.stringify(input.sampleIds) ===
-          JSON.stringify(createExpectedSampleIds(phase, ordinal)),
-        path: '$.sample-ids',
-        code: 'unexpected-worker-input',
-        message: 'Invalid sample IDs.',
-      },
-    ]),
+  const issues = [
+    ...collectParsingIssues([clients, desired, lookups]),
+    ...Object.entries(expected)
+      .filter(([name, value]) => options[name] !== value)
+      .map(([name, value]) =>
+        rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`)
+      ),
   ];
-}
-
-function createExpectedSampleIds(
-  intendedPhase: 'warmup' | 'retained',
-  outerOrdinal: number,
-): string[] {
-  const prefix = `rtc-b04-group-manager-state-fixed-${intendedPhase}-${
-    String(outerOrdinal).padStart(3, '0')
-  }`;
-  return Array.from(
-    { length: 5 },
-    (_value, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`,
-  );
+  return issues.length > 0 ? { ok: false, issues } : { ok: true, value: acceptedInput };
 }
 
 function validateResult(
@@ -551,7 +457,7 @@ function validateResult(
     },
     {
       valid: JSON.stringify([result.onlineDesiredPeerCount, result.onlinePeerCount]) ===
-        JSON.stringify([input.desired, input.desired]),
+        JSON.stringify([input.desired, input.clients]),
       path: '$.rawEvidence.state',
       code: 'state-result-mismatch',
       message: 'Unexpected state result.',
@@ -581,42 +487,9 @@ function validateRules(rules: readonly ValidationRule[]): RtcBaselineIssueDto[] 
   );
 }
 
-function createSample(
-  identity: RtcBaselineSampleIdentityDto,
-  result: WebRtcGroupManagerStateResult | null,
-  issues: readonly RtcBaselineIssueDto[],
-): RtcBaselineSampleDto {
-  if (result === null) {
-    return {
-      schema: 'rallar.rtc-baseline.sample.v1',
-      identity,
-      outcome: 'not-run',
-      evidenceClass: 'synthetic-path',
-      metrics: [],
-      rawEvidence: null,
-      rawReferences: [],
-      issues,
-      runtimeObservation: null,
-    };
-  }
-  return {
-    schema: 'rallar.rtc-baseline.sample.v1',
-    identity,
-    outcome: issues.length === 0 ? 'passed' : 'failed',
-    evidenceClass: 'synthetic-path',
-    metrics: Number.isFinite(result.durationMs) && result.durationMs >= 0
-      ? [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }]
-      : [],
-    rawEvidence: toRawEvidence(result),
-    rawReferences: [],
-    issues,
-    runtimeObservation: null,
-  };
-}
-
 function toRawEvidence(result: WebRtcGroupManagerStateResult): RtcBaselineJson {
   return {
-    durationMs: Number.isFinite(result.durationMs) ? result.durationMs : null,
+    durationMs: result.durationMs,
     clientCount: result.clientCount,
     desiredPeerCount: result.desiredPeerCount,
     lookups: result.lookups,
@@ -629,20 +502,22 @@ function toRawEvidence(result: WebRtcGroupManagerStateResult): RtcBaselineJson {
 
 async function main(): Promise<void> {
   const parsed = parseWebRtcGroupManagerStateArguments(Deno.args);
-  if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues));
-  if (parsed.value.mode === 'accepted') {
-    const worker = parsed.value;
-    console.log(
-      JSON.stringify(
-        await runWebRtcGroupManagerStateAcceptedSamples({
-          worker,
-          run: () => runWebRtcGroupManagerState(worker.input),
-        }),
-      ),
-    );
+  if (!parsed.ok) {
+    throw new Error(JSON.stringify(parsed.issues));
+  }
+  const dispatched = await runRtcBaselineAcceptedWorkerCli({
+    parsed: parsed.value,
+    runAccepted: (worker) =>
+      runWebRtcGroupManagerStateAcceptedSamples({
+        worker,
+        run: () => runWebRtcGroupManagerState(worker.input),
+      }),
+    writeOutput: (output) => console.log(output),
+  });
+  if (dispatched.handled) {
     return;
   }
-  const diagnostic = parsed.value;
+  const diagnostic = dispatched.diagnostic;
   const results = [];
   for (let run = 1; run <= diagnostic.runs; run += 1) {
     results.push({ run, ...await runWebRtcGroupManagerState(diagnostic.input) });
@@ -662,4 +537,6 @@ async function main(): Promise<void> {
   console.log(`Wrote ${diagnostic.out}`);
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+  await main();
+}

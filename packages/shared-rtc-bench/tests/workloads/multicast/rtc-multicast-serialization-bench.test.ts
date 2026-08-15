@@ -47,6 +47,38 @@ function validAcceptedResult(
   };
 }
 
+interface InvalidAcceptedResult {
+  readonly result: Multicast.RtcMulticastSerializationResult;
+  readonly normalizedField?: keyof Multicast.RtcMulticastSerializationResult;
+}
+
+function invalidAcceptedResults(): readonly InvalidAcceptedResult[] {
+  const result = validAcceptedResult(10, 4096);
+  const numericFields: readonly (keyof Multicast.RtcMulticastSerializationResult)[] = [
+    'peerCount',
+    'payloadBytes',
+    'planDurationMs',
+    'serializeDurationMs',
+    'originalSerializeDurationMs',
+    'transportMessages',
+    'uniqueSerializedMessages',
+    'totalSerializedBytes',
+    'originalSerializedBytes',
+  ];
+  return [
+    ...numericFields.map((field) => ({
+      result: { ...result, [field]: Number.POSITIVE_INFINITY },
+      normalizedField: field,
+    })),
+    { result: { ...result, planDurationMs: -1 } },
+    { result: { ...result, transportMessages: 9 } },
+    { result: { ...result, uniqueSerializedMessages: 1 } },
+    { result: { ...result, originalSerializedBytes: 0 } },
+    { result: { ...result, totalSerializedBytes: result.originalSerializedBytes - 1 } },
+    { result: { ...result, allTransportMessagesIdentical: true } },
+  ];
+}
+
 it('RTC-B04 parses every multicast matrix worker and emits exact accepted samples', async () => {
   const smokeResult = Multicast.runRtcMulticastSerialization({ peers: 10, payloadBytes: 4096 });
   expect([
@@ -198,19 +230,13 @@ it('RTC-B04 diagnostics create nested outputs and overwrite them', () => {
 
 it('RTC-B04 fails every invalid result shape with JSON-safe evidence', async () => {
   const parsed = Multicast.parseRtcMulticastSerializationArguments(worker(10, 4096).arguments);
-  if (!parsed.ok || parsed.value.mode !== 'accepted') throw new Error('Expected accepted worker.');
-  const invalidResults = [
-    { peerCount: 100 },
-    { uniqueSerializedMessages: 1 },
-    { allTransportMessagesIdentical: true },
-    { originalSerializedBytes: Infinity, totalSerializedBytes: Infinity },
-    { planDurationMs: -1 },
-    { serializeDurationMs: Infinity },
-  ];
-  for (const invalidResult of invalidResults) {
+  if (!parsed.ok || parsed.value.mode !== 'accepted') {
+    throw new Error('Expected accepted worker.');
+  }
+  for (const invalid of invalidAcceptedResults()) {
     const samples = await Multicast.runRtcMulticastSerializationAcceptedSamples({
       worker: parsed.value,
-      run: () => ({ ...validAcceptedResult(10, 4096), ...invalidResult }),
+      run: () => invalid.result,
     });
     expect(samples[0]?.outcome).toBe('failed');
     expect(samples.slice(1).map((sample) => sample.outcome)).toEqual(Array(4).fill('not-run'));
@@ -221,16 +247,13 @@ it('RTC-B04 fails every invalid result shape with JSON-safe evidence', async () 
       Array(4).fill(samples[0]?.identity.sampleId),
     );
     expect(samples[0]?.rawEvidence).not.toBeNull();
-    if ('serializeDurationMs' in invalidResult) {
-      const restored = JSON.parse(JSON.stringify(samples[0]));
-      expect(
-        restored.metrics.every((metric: { value: unknown }) => typeof metric.value === 'number'),
-      ).toBe(true);
-      expect(restored.metrics.map((metric: { metric: string }) => metric.metric)).not.toContain(
-        'serializeDurationMs',
-      );
-      expect((restored.rawEvidence as { serializeDurationMs: unknown }).serializeDurationMs)
-        .toBeNull();
+    const restored = JSON.parse(JSON.stringify(samples[0]));
+    expect(
+      restored.metrics.every((metric: { value: unknown }) => typeof metric.value === 'number'),
+    ).toBe(true);
+    if (invalid.normalizedField !== undefined) {
+      expect(restored.rawEvidence[invalid.normalizedField]).toBeNull();
     }
+    expect(() => JSON.stringify(restored.rawEvidence)).not.toThrow();
   }
 });

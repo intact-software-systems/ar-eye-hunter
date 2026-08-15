@@ -8,6 +8,9 @@ import type {
   RtcBaselineResult,
   RtcBaselineSampleDto,
 } from '../../../baseline/contracts/rtc-baseline-contracts.ts';
+import type {
+  RtcBaselineAcceptedWorker,
+} from '../../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 import * as CacheFallback from '../../../workloads/group-coordination/webrtc-group-cache-fallback-bench.ts';
 import * as ManagerState from '../../../workloads/group-coordination/webrtc-group-manager-state-bench.ts';
 import * as PeerOwners from '../../../workloads/group-coordination/webrtc-group-manager-peer-owners-bench.ts';
@@ -129,22 +132,28 @@ async function expectFirstFailureStopsAcceptedWorker(
   );
 }
 
-async function expectInvalidDurationsRejected(
-  runAccepted: (durationMs: number) => Promise<readonly RtcBaselineSampleDto[]>,
+function createNonFiniteMutations<Result extends object>(
+  result: Result,
+  keys: readonly (keyof Result)[],
+) {
+  return keys.map((key) => ({ key, result: { ...result, [key]: Number.POSITIVE_INFINITY } }));
+}
+
+async function expectNonFiniteNumbersRejected<Result extends object>(
+  fixture: WorkerFixture,
+  mutations: readonly { readonly key: keyof Result; readonly result: Result }[],
+  runAccepted: (result: Result) => Promise<readonly RtcBaselineSampleDto[]>,
 ): Promise<void> {
-  for (const durationMs of [-1, Number.POSITIVE_INFINITY]) {
-    const samples = await runAccepted(durationMs);
-    expect(samples.map((sample) => sample.outcome)).toEqual([
-      'failed',
-      'not-run',
-      'not-run',
-      'not-run',
-      'not-run',
+  for (const mutation of mutations) {
+    const samples = await runAccepted(mutation.result);
+    expect(samples.map((sample) => [sample.identity.sampleId, sample.outcome])).toEqual([
+      [fixture.sampleIds[0], 'failed'],
+      ...fixture.sampleIds.slice(1).map((sampleId) => [sampleId, 'not-run']),
     ]);
-    expect(samples[0]?.metrics).toEqual([]);
-    expect((samples[0]?.rawEvidence as { durationMs: unknown }).durationMs).toBe(
-      Number.isFinite(durationMs) ? durationMs : null,
+    expect(samples.slice(1).map((sample) => sample.issues[0]?.message)).toEqual(
+      Array(4).fill(fixture.sampleIds[0]),
     );
+    expect((samples[0]?.rawEvidence as Record<string, unknown>)[String(mutation.key)]).toBe(null);
     expect(() => JSON.parse(JSON.stringify(samples))).not.toThrow();
   }
 }
@@ -160,9 +169,9 @@ const cacheFallback = {
     snapshotCount: 20000,
     matchingVersions: 5000,
     lookups: 500,
-    readCalls: 500,
-    peekCalls: 500,
-    readAllValuesCalls: 500,
+    readCalls: 1000,
+    peekCalls: 0,
+    readAllValuesCalls: 1000,
     latestVersion: 5000,
     targetPeerCount: 1,
   } satisfies CacheFallback.WebRtcGroupCacheFallbackResult,
@@ -172,7 +181,11 @@ describe('RTC-B04 group cache fallback worker', () => {
   const { fixture, result } = cacheFallback;
 
   it('emits exact samples from deterministic accepted results', async () => {
-    const worker = readAcceptedWorker<CacheFallback.WebRtcGroupCacheFallbackAcceptedArguments>(
+    const worker = readAcceptedWorker<
+      RtcBaselineAcceptedWorker<
+        CacheFallback.WebRtcGroupCacheFallbackInput
+      >
+    >(
       CacheFallback.parseWebRtcGroupCacheFallbackArguments(fixture.arguments),
     );
     const samples = await CacheFallback.runWebRtcGroupCacheFallbackAcceptedSamples({
@@ -208,13 +221,16 @@ describe('RTC-B04 group cache fallback worker', () => {
         }),
       () => executions,
     );
-    await expectInvalidDurationsRejected((durationMs) =>
-      CacheFallback.runWebRtcGroupCacheFallbackAcceptedSamples({
-        worker: readAcceptedWorker(
-          CacheFallback.parseWebRtcGroupCacheFallbackArguments(fixture.arguments),
-        ),
-        run: () => ({ ...result, durationMs }),
-      })
+    await expectNonFiniteNumbersRejected(
+      fixture,
+      createNonFiniteMutations(result, Object.keys(result) as (keyof typeof result)[]),
+      (invalidResult) =>
+        CacheFallback.runWebRtcGroupCacheFallbackAcceptedSamples({
+          worker: readAcceptedWorker(
+            CacheFallback.parseWebRtcGroupCacheFallbackArguments(fixture.arguments),
+          ),
+          run: () => invalidResult,
+        }),
     );
   });
 });
@@ -233,7 +249,7 @@ const managerState = {
     keysCalls: 20,
     readCalls: 100000,
     onlineDesiredPeerCount: 1000,
-    onlinePeerCount: 1000,
+    onlinePeerCount: 5000,
   } satisfies ManagerState.WebRtcGroupManagerStateResult,
 };
 
@@ -241,7 +257,11 @@ describe('RTC-B04 group manager state worker', () => {
   const { fixture, result } = managerState;
 
   it('emits exact samples from deterministic accepted results', async () => {
-    const worker = readAcceptedWorker<ManagerState.WebRtcGroupManagerStateAcceptedArguments>(
+    const worker = readAcceptedWorker<
+      RtcBaselineAcceptedWorker<
+        ManagerState.WebRtcGroupManagerStateInput
+      >
+    >(
       ManagerState.parseWebRtcGroupManagerStateArguments(fixture.arguments),
     );
     const samples = await ManagerState.runWebRtcGroupManagerStateAcceptedSamples({
@@ -277,13 +297,16 @@ describe('RTC-B04 group manager state worker', () => {
         }),
       () => executions,
     );
-    await expectInvalidDurationsRejected((durationMs) =>
-      ManagerState.runWebRtcGroupManagerStateAcceptedSamples({
-        worker: readAcceptedWorker(
-          ManagerState.parseWebRtcGroupManagerStateArguments(fixture.arguments),
-        ),
-        run: () => ({ ...result, durationMs }),
-      })
+    await expectNonFiniteNumbersRejected(
+      fixture,
+      createNonFiniteMutations(result, Object.keys(result) as (keyof typeof result)[]),
+      (invalidResult) =>
+        ManagerState.runWebRtcGroupManagerStateAcceptedSamples({
+          worker: readAcceptedWorker(
+            ManagerState.parseWebRtcGroupManagerStateArguments(fixture.arguments),
+          ),
+          run: () => invalidResult,
+        }),
     );
   });
 });
@@ -309,7 +332,11 @@ describe('RTC-B04 group peer ownership worker', () => {
   const { fixture, result } = peerOwners;
 
   it('emits exact samples from deterministic accepted results', async () => {
-    const worker = readAcceptedWorker<PeerOwners.WebRtcGroupManagerPeerOwnersAcceptedArguments>(
+    const worker = readAcceptedWorker<
+      RtcBaselineAcceptedWorker<
+        PeerOwners.WebRtcGroupManagerPeerOwnersInput
+      >
+    >(
       PeerOwners.parseWebRtcGroupManagerPeerOwnersArguments(fixture.arguments),
     );
     const samples = await PeerOwners.runWebRtcGroupManagerPeerOwnersAcceptedSamples({
@@ -345,13 +372,16 @@ describe('RTC-B04 group peer ownership worker', () => {
         }),
       () => executions,
     );
-    await expectInvalidDurationsRejected((durationMs) =>
-      PeerOwners.runWebRtcGroupManagerPeerOwnersAcceptedSamples({
-        worker: readAcceptedWorker(
-          PeerOwners.parseWebRtcGroupManagerPeerOwnersArguments(fixture.arguments),
-        ),
-        run: () => ({ ...result, durationMs }),
-      })
+    await expectNonFiniteNumbersRejected(
+      fixture,
+      createNonFiniteMutations(result, Object.keys(result) as (keyof typeof result)[]),
+      (invalidResult) =>
+        PeerOwners.runWebRtcGroupManagerPeerOwnersAcceptedSamples({
+          worker: readAcceptedWorker(
+            PeerOwners.parseWebRtcGroupManagerPeerOwnersArguments(fixture.arguments),
+          ),
+          run: () => invalidResult,
+        }),
     );
   });
 });
@@ -366,7 +396,11 @@ describe('RTC-B04 heartbeat callback churn worker', () => {
   };
 
   it('emits exact samples from deterministic accepted results', async () => {
-    const worker = readAcceptedWorker<Heartbeat.WebRtcHeartbeatCallbackChurnAcceptedArguments>(
+    const worker = readAcceptedWorker<
+      RtcBaselineAcceptedWorker<
+        Heartbeat.WebRtcHeartbeatCallbackChurnInput
+      >
+    >(
       Heartbeat.parseWebRtcHeartbeatCallbackChurnArguments(fixture.arguments),
     );
     const samples = await Heartbeat.runWebRtcHeartbeatCallbackChurnAcceptedSamples({
@@ -398,13 +432,16 @@ describe('RTC-B04 heartbeat callback churn worker', () => {
         }),
       () => executions,
     );
-    await expectInvalidDurationsRejected((durationMs) =>
-      Heartbeat.runWebRtcHeartbeatCallbackChurnAcceptedSamples({
-        worker: readAcceptedWorker(
-          Heartbeat.parseWebRtcHeartbeatCallbackChurnArguments(fixture.arguments),
-        ),
-        run: () => ({ ...result, durationMs }),
-      })
+    await expectNonFiniteNumbersRejected(
+      fixture,
+      createNonFiniteMutations(result, Object.keys(result) as (keyof typeof result)[]),
+      (invalidResult) =>
+        Heartbeat.runWebRtcHeartbeatCallbackChurnAcceptedSamples({
+          worker: readAcceptedWorker(
+            Heartbeat.parseWebRtcHeartbeatCallbackChurnArguments(fixture.arguments),
+          ),
+          run: () => invalidResult,
+        }),
     );
   });
 });

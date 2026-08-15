@@ -8,16 +8,17 @@ import {
   type RtcBaselineJson,
   type RtcBaselineResult,
   type RtcBaselineSampleDto,
-  type RtcBaselineSampleIdentityDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
 import {
   parseRtcBaselineBoundedInteger,
   parseRtcBaselineOneTokenOptions,
 } from '../../baseline/command/rtc-baseline-cli-options.ts';
-import { validateRtcBaselineId } from '../../baseline/contracts/rtc-baseline-validation.ts';
 import {
-  runRtcBaselineAcceptedWorkerSamples,
-} from '../../baseline/acceptance/rtc-baseline-failure-accounting.ts';
+  parseRtcBaselineAcceptedWorker,
+  type RtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorker,
+  runRtcBaselineAcceptedWorkerCli,
+} from '../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 
 interface CallbackDto {
   readonly onMessage: (data: unknown) => Promise<void>;
@@ -34,14 +35,6 @@ interface WebRtcHeartbeatCallbackChurnDiagnosticArguments {
   readonly out: string;
 }
 
-export interface WebRtcHeartbeatCallbackChurnAcceptedArguments {
-  readonly mode: 'accepted';
-  readonly input: WebRtcHeartbeatCallbackChurnInput;
-  readonly intendedPhase: 'warmup' | 'retained';
-  readonly outerOrdinal: number;
-  readonly sampleIds: readonly string[];
-}
-
 export interface WebRtcHeartbeatCallbackChurnResult {
   readonly durationMs: number;
   readonly channelCount: number;
@@ -49,18 +42,6 @@ export interface WebRtcHeartbeatCallbackChurnResult {
   readonly maxCallbacksPerChannel: number;
 }
 
-interface ValidateAcceptedArgumentsInput {
-  readonly options: Readonly<Record<string, string>>;
-  readonly channels: number;
-  readonly outerOrdinal: RtcBaselineResult<number>;
-  readonly intendedPhase: string | undefined;
-  readonly sampleIds: readonly string[];
-}
-
-const acceptedOptionNames = (
-  'capture baseline-id workload case-id input-key intended-phase outer-ordinal sample-ids ' +
-  'rtc-inner-runs rtc-channels'
-).split(' ');
 const acceptedChannels = 10000;
 
 class FakeHeartbeatChannel {
@@ -91,15 +72,27 @@ class FakeHeartbeatChannel {
 export function parseWebRtcHeartbeatCallbackChurnArguments(
   arguments_: readonly string[],
 ): RtcBaselineResult<
-  WebRtcHeartbeatCallbackChurnDiagnosticArguments | WebRtcHeartbeatCallbackChurnAcceptedArguments
+  | WebRtcHeartbeatCallbackChurnDiagnosticArguments
+  | RtcBaselineAcceptedWorker<WebRtcHeartbeatCallbackChurnInput>
 > {
   const accepted = arguments_.some((argument) => argument.startsWith('--capture='));
+  if (accepted) {
+    return parseRtcBaselineAcceptedWorker({
+      arguments_,
+      identity: { workloadId: 'RTC-B04', caseId: 'heartbeat-callback-churn' },
+      toInputKey: () => 'fixed',
+      capabilityOptionNames: ['rtc-channels'],
+      parseCapability: parseAcceptedCapability,
+    });
+  }
   const parsed = parseRtcBaselineOneTokenOptions(
     arguments_,
-    accepted ? acceptedOptionNames : ['channels', 'runs', 'out'],
+    ['channels', 'runs', 'out'],
   );
-  if (!parsed.ok) return parsed;
-  return accepted ? parseAcceptedArguments(parsed.value) : parseDiagnosticArguments(parsed.value);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  return parseDiagnosticArguments(parsed.value);
 }
 
 export function runWebRtcHeartbeatCallbackChurn(
@@ -132,21 +125,17 @@ export function runWebRtcHeartbeatCallbackChurn(
 }
 
 export function runWebRtcHeartbeatCallbackChurnAcceptedSamples(input: {
-  readonly worker: WebRtcHeartbeatCallbackChurnAcceptedArguments;
+  readonly worker: RtcBaselineAcceptedWorker<WebRtcHeartbeatCallbackChurnInput>;
   readonly run: () =>
     | WebRtcHeartbeatCallbackChurnResult
     | Promise<WebRtcHeartbeatCallbackChurnResult>;
 }): Promise<RtcBaselineSampleDto[]> {
-  return runRtcBaselineAcceptedWorkerSamples({
-    worker: {
-      ...input.worker,
-      workloadId: 'RTC-B04',
-      caseId: 'heartbeat-callback-churn',
-      inputKey: 'fixed',
-    },
+  return runRtcBaselineAcceptedWorker({
+    worker: input.worker,
     run: input.run,
     validate: (result) => validateResult(input.worker.input, result),
-    createSample: ({ identity, result, issues }) => createSample(identity, result, issues),
+    metrics: (result) => [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }],
+    rawEvidence: toRawEvidence,
   });
 }
 
@@ -172,99 +161,24 @@ function parseDiagnosticArguments(
   };
 }
 
-function parseAcceptedArguments(
+function parseAcceptedCapability(
   options: Readonly<Record<string, string>>,
-): RtcBaselineResult<WebRtcHeartbeatCallbackChurnAcceptedArguments> {
+): RtcBaselineResult<WebRtcHeartbeatCallbackChurnInput> {
   const channels = parseRtcBaselineBoundedInteger(
     options['rtc-channels'] ?? '',
     'rtc-channels',
     1,
     Number.MAX_SAFE_INTEGER,
   );
-  const outerOrdinal = parseRtcBaselineBoundedInteger(
-    options['outer-ordinal'] ?? '',
-    'outer-ordinal',
-    1,
-    999,
-  );
-  const intendedPhase = options['intended-phase'];
-  const sampleIds = (options['sample-ids'] ?? '').split(',');
-  const parsedChannels = channels.ok ? channels.value : acceptedChannels;
   const issues = [
     ...(!channels.ok ? channels.issues : []),
-    ...(!outerOrdinal.ok ? outerOrdinal.issues : []),
-    ...validateRtcBaselineId(options['baseline-id'] ?? ''),
-    ...validateAcceptedArguments({
-      options,
-      channels: parsedChannels,
-      outerOrdinal,
-      intendedPhase,
-      sampleIds,
-    }),
-  ];
-  return issues.length > 0 ? { ok: false, issues } : {
-    ok: true,
-    value: {
-      mode: 'accepted',
-      input: { channels: parsedChannels },
-      intendedPhase: intendedPhase as 'warmup' | 'retained',
-      outerOrdinal: outerOrdinal.ok ? outerOrdinal.value : 1,
-      sampleIds,
-    },
-  };
-}
-
-function validateAcceptedArguments(input: ValidateAcceptedArgumentsInput): RtcBaselineIssueDto[] {
-  const expected = {
-    capture: 'worker',
-    workload: 'RTC-B04',
-    'case-id': 'heartbeat-callback-churn',
-    'input-key': 'fixed',
-    'rtc-inner-runs': '5',
-    'rtc-channels': String(acceptedChannels),
-  };
-  const issues = Object.entries(expected).flatMap(([name, value]) =>
-    input.options[name] === value
+    ...(options['rtc-channels'] === String(acceptedChannels)
       ? []
-      : [rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${value}.`)]
-  );
-  if (input.channels !== acceptedChannels) {
-    issues.push(rtcBaselineIssue('$.input', 'unexpected-worker-input', 'Expected fixed input.'));
-  }
-  if (
-    !input.outerOrdinal.ok ||
-    input.options['outer-ordinal'] !== String(input.outerOrdinal.value)
-  ) {
-    issues.push(
-      rtcBaselineIssue(
-        '$.outer-ordinal',
-        'unexpected-worker-input',
-        'Expected canonical integer syntax.',
-      ),
-    );
-  }
-  if (input.intendedPhase !== 'warmup' && input.intendedPhase !== 'retained') {
-    issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
-  }
-  const phase = input.intendedPhase === 'warmup' ? 'warmup' : 'retained';
-  const ordinal = input.outerOrdinal.ok ? input.outerOrdinal.value : 1;
-  if (JSON.stringify(input.sampleIds) !== JSON.stringify(createExpectedSampleIds(phase, ordinal))) {
-    issues.push(rtcBaselineIssue('$.sample-ids', 'unexpected-worker-input', 'Invalid sample IDs.'));
-  }
-  return issues;
-}
-
-function createExpectedSampleIds(
-  intendedPhase: 'warmup' | 'retained',
-  outerOrdinal: number,
-): string[] {
-  const prefix = `rtc-b04-heartbeat-callback-churn-fixed-${intendedPhase}-${
-    String(outerOrdinal).padStart(3, '0')
-  }`;
-  return Array.from(
-    { length: 5 },
-    (_value, index) => `${prefix}-${String(index + 1).padStart(3, '0')}`,
-  );
+      : [rtcBaselineIssue('$.rtc-channels', 'unexpected-worker-input', 'Expected 10000.')]),
+  ];
+  return issues.length > 0
+    ? { ok: false, issues }
+    : { ok: true, value: { channels: acceptedChannels } };
 }
 
 function validateResult(
@@ -299,42 +213,9 @@ function validateResult(
   return issues;
 }
 
-function createSample(
-  identity: RtcBaselineSampleIdentityDto,
-  result: WebRtcHeartbeatCallbackChurnResult | null,
-  issues: readonly RtcBaselineIssueDto[],
-): RtcBaselineSampleDto {
-  if (result === null) {
-    return {
-      schema: 'rallar.rtc-baseline.sample.v1',
-      identity,
-      outcome: 'not-run',
-      evidenceClass: 'synthetic-path',
-      metrics: [],
-      rawEvidence: null,
-      rawReferences: [],
-      issues,
-      runtimeObservation: null,
-    };
-  }
-  return {
-    schema: 'rallar.rtc-baseline.sample.v1',
-    identity,
-    outcome: issues.length === 0 ? 'passed' : 'failed',
-    evidenceClass: 'synthetic-path',
-    metrics: Number.isFinite(result.durationMs) && result.durationMs >= 0
-      ? [{ metric: 'durationMs', unit: 'ms', value: result.durationMs }]
-      : [],
-    rawEvidence: toRawEvidence(result),
-    rawReferences: [],
-    issues,
-    runtimeObservation: null,
-  };
-}
-
 function toRawEvidence(result: WebRtcHeartbeatCallbackChurnResult): RtcBaselineJson {
   return {
-    durationMs: Number.isFinite(result.durationMs) ? result.durationMs : null,
+    durationMs: result.durationMs,
     channelCount: result.channelCount,
     retainedCallbacks: result.retainedCallbacks,
     maxCallbacksPerChannel: result.maxCallbacksPerChannel,
@@ -343,20 +224,22 @@ function toRawEvidence(result: WebRtcHeartbeatCallbackChurnResult): RtcBaselineJ
 
 async function main(): Promise<void> {
   const parsed = parseWebRtcHeartbeatCallbackChurnArguments(Deno.args);
-  if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues));
-  if (parsed.value.mode === 'accepted') {
-    const worker = parsed.value;
-    console.log(
-      JSON.stringify(
-        await runWebRtcHeartbeatCallbackChurnAcceptedSamples({
-          worker,
-          run: () => runWebRtcHeartbeatCallbackChurn(worker.input),
-        }),
-      ),
-    );
+  if (!parsed.ok) {
+    throw new Error(JSON.stringify(parsed.issues));
+  }
+  const dispatched = await runRtcBaselineAcceptedWorkerCli({
+    parsed: parsed.value,
+    runAccepted: (worker) =>
+      runWebRtcHeartbeatCallbackChurnAcceptedSamples({
+        worker,
+        run: () => runWebRtcHeartbeatCallbackChurn(worker.input),
+      }),
+    writeOutput: (output) => console.log(output),
+  });
+  if (dispatched.handled) {
     return;
   }
-  const diagnostic = parsed.value;
+  const diagnostic = dispatched.diagnostic;
   const results = [];
   for (let run = 1; run <= diagnostic.runs; run += 1) {
     results.push({ run, ...runWebRtcHeartbeatCallbackChurn(diagnostic.input) });
@@ -371,4 +254,6 @@ async function main(): Promise<void> {
   console.log(`Wrote ${diagnostic.out}`);
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+  await main();
+}
