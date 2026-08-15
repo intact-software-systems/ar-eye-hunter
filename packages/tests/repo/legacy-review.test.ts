@@ -263,7 +263,7 @@ function runLegacyReview(
   return spawnSync(process.execPath, [reviewLegacyPath, fixture.base, fixture.head, ...options], {
     cwd: fixture.root,
     encoding: 'utf8',
-    env: { ...process.env, ...environment },
+    env: { ...process.env, GITHUB_ACTIONS: 'false', ...environment },
   });
 }
 
