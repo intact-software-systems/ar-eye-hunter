@@ -44,10 +44,10 @@ import {
 // prettier-ignore
 import {
   RtcRttRefinementGate,
-} from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
+} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 import {
   RtcRttRefinementService,
-} from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-service.ts';
+} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';

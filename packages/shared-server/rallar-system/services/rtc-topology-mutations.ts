@@ -28,12 +28,12 @@ import type { RtcTopologyStaleMutationComputed } from './rtc-topology-stale-publ
 import {
     evaluateRtcRttMeasurement,
     type RtcRttAcceptanceReason,
-} from './rtc-rtt-measurement-policy.ts';
+} from '../rtc-topology/policy/rtc-rtt-measurement-policy.ts';
 import {
     canonicalRtcRttAffectedGroups as canonicalAffectedGroups,
     canonicalRtcRttGroupRef as canonicalGroupRef,
     readRtcRttExpiredAuthority,
-} from './rtc-rtt-expired-authority.ts';
+} from '../rtc-topology/policy/read-rtc-rtt-expired-authority.ts';
 
 export type RtcTopologyPublicationClaim = Readonly<{
     receipt: RtcTopologyPublicationWorkClaim;

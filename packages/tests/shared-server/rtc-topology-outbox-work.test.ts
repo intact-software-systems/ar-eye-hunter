@@ -20,8 +20,8 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import { RtcRttRefinementGate } from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
-import { RtcRttRefinementService } from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-service.ts';
+import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
+import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 

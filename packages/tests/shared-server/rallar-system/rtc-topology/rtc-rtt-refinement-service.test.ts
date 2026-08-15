@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
-import { RtcRttRefinementGate } from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
-import { RtcRttRefinementService } from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-service.ts';
+import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
+import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.ts';
 
 const RTT: RttMeasurementInfo = {
   sessionIdFrom: 'peer-a',

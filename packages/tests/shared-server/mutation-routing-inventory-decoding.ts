@@ -22,7 +22,7 @@ const PATHS = {
   rq: 'apps/api-v1/src/services/request-auth-service.ts',
   l: 'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
   e: 'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',
-  s: 'packages/shared-server/rallar-system/topology/rtt/init-rtc-rtt-topic.ts',
+  s: 'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts',
   d: 'packages/shared-server/crdt/RallarCrdtServer.ts',
 } as const;
 

@@ -3,7 +3,7 @@ import {
   DEFAULT_RTT_REFINEMENT_MIN_INTERVAL_MS,
   DEFAULT_RTT_VIVALDI_DELTA_MS,
   type RtcRttRefinementGateConfig,
-} from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
+} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 
 type EnvReader = Readonly<{
   get(name: string): string | undefined;

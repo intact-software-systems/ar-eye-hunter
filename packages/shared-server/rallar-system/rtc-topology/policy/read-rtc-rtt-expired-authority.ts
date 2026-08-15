@@ -1,15 +1,15 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../runtime-state/RuntimeStateRepository.ts';
-import { validateRuntimeStateExpiredAuthority } from '../../runtime-state/RuntimeStateExpiredEntry.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity,
     toRtcRttEndpointAdmissionStorageKey,
     toRtcRttMeasurementStorageKey,
-} from '../rtc-topology-identifiers.ts';
-import type { RtcRttEndpointAdmission } from './rtc-topology-mutations.ts';
+} from '../../rtc-topology-identifiers.ts';
+import type { RtcRttEndpointAdmission } from '../../services/rtc-topology-mutations.ts';
 
 export function readRtcRttExpiredAuthority(input: Readonly<{
     sessionIdFrom: string;

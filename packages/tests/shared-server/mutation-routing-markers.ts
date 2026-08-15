@@ -34,7 +34,7 @@ export const ROUTING_SOURCE_MARKERS = {
     'enqueueAuthorisedWsClientConnect',
   ],
   'packages/shared-server/crdt/RallarCrdtServer.ts': ['mutationIngress.enqueueUpdate'],
-  'packages/shared-server/rallar-system/topology/rtt/init-rtc-rtt-topic.ts': [
+  'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts': [
     'enqueueRtcRttMutation',
   ],
   'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts': [

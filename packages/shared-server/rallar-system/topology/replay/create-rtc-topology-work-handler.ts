@@ -43,7 +43,7 @@ import {
 } from '../../services/rtc-topology-mutations.ts';
 import { writeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyWorkRuntime } from '../../services/RtcTopologyOutboxWork.ts';
-import type { RtcRttRefinementService } from '../rtt/rtc-rtt-refinement-service.ts';
+import type { RtcRttRefinementService } from '../../rtc-topology/topic/rtc-rtt-refinement-service.ts';
 import { isChangeGatedGroupRevisionWork } from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
 import {
