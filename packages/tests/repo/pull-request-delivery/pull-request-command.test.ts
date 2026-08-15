@@ -7,6 +7,8 @@ const passingCheck = {
   name: 'Branch Release Gate result',
   status: 'COMPLETED',
   conclusion: 'SUCCESS',
+  startedAt: '2026-08-14T20:00:00Z',
+  completedAt: '2026-08-14T20:01:00Z',
   detailsUrl: 'https://github.com/example/repository/actions/runs/1',
   workflowName: 'Branch Release Gate',
 };
@@ -253,6 +255,77 @@ describe('pull request delivery command', () => {
     const result = await runCommand(['status'], github);
 
     expect(result.action).toBe('REPAIR_CHECK');
+  });
+
+  it('ignores unrelated failures after the stable required result passes', async () => {
+    const github = createGithubFixture([
+      {
+        ...openPullRequest,
+        statusCheckRollup: [
+          passingCheck,
+          {
+            __typename: 'CheckRun',
+            name: 'Retired review evidence',
+            status: 'COMPLETED',
+            conclusion: 'FAILURE',
+            detailsUrl: 'https://github.com/example/repository/actions/runs/2',
+            workflowName: 'Retired workflow',
+          },
+        ],
+      },
+    ]);
+
+    const result = await runCommand(['status'], github);
+
+    expect(result.action).toBe('AWAIT_REVIEW_OR_ADMIN_MERGE');
+  });
+
+  it('waits when the stable required result has not been published', async () => {
+    const github = createGithubFixture([
+      {
+        ...openPullRequest,
+        statusCheckRollup: [
+          {
+            __typename: 'CheckRun',
+            name: 'Unrelated successful check',
+            status: 'COMPLETED',
+            conclusion: 'SUCCESS',
+            detailsUrl: 'https://github.com/example/repository/actions/runs/3',
+            workflowName: 'Unrelated workflow',
+          },
+        ],
+      },
+    ]);
+
+    const result = await runCommand(['status'], github);
+
+    expect(result.action).toBe('WAIT_CI');
+  });
+
+  it('uses the newest stable result after GitHub reruns the same revision', async () => {
+    const github = createGithubFixture([
+      {
+        ...openPullRequest,
+        statusCheckRollup: [
+          {
+            ...passingCheck,
+            status: 'COMPLETED',
+            conclusion: 'FAILURE',
+            startedAt: '2026-08-14T20:00:00Z',
+            completedAt: '2026-08-14T20:01:00Z',
+          },
+          {
+            ...passingCheck,
+            startedAt: '2026-08-14T21:00:00Z',
+            completedAt: '2026-08-14T21:01:00Z',
+          },
+        ],
+      },
+    ]);
+
+    const result = await runCommand(['status'], github);
+
+    expect(result.action).toBe('AWAIT_REVIEW_OR_ADMIN_MERGE');
   });
 
   it('falls back to administrator merge when GitHub cannot arm auto-merge', async () => {

@@ -20,6 +20,7 @@ const failingCheckConclusions = new Set([
   'STARTUP_FAILURE',
   'TIMED_OUT',
 ]);
+const requiredCheckName = 'Branch Release Gate result';
 
 export function readPullRequest({ execFile, defaultBranch }) {
   let pullRequest;
@@ -63,13 +64,28 @@ function readDefaultBranch(execFile) {
 }
 
 function toCheckState(statusCheckRollup) {
-  if (statusCheckRollup.some(isFailingCheck)) {
+  const requiredChecks = statusCheckRollup.filter(isRequiredCheck);
+  if (requiredChecks.length === 0) {
+    return 'PENDING';
+  }
+  const requiredCheck = requiredChecks.reduce(newestCheck);
+  if (isFailingCheck(requiredCheck)) {
     return 'FAILING';
   }
-  if (statusCheckRollup.some(isPendingCheck)) {
+  if (isPendingCheck(requiredCheck)) {
     return 'PENDING';
   }
   return 'PASSING';
+}
+
+function newestCheck(current, candidate) {
+  return (candidate.startedAt ?? '') > (current.startedAt ?? '') ? candidate : current;
+}
+
+function isRequiredCheck(check) {
+  return check.__typename === 'StatusContext'
+    ? check.context === requiredCheckName
+    : check.name === requiredCheckName;
 }
 
 function isFailingCheck(check) {

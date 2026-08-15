@@ -17,6 +17,10 @@ Conflict and terminal states are resolved before any readiness mutation. `BEHIND
 state when GitHub still reports the pull request mergeable. `ready` never performs an immediate or
 administrator merge.
 
+Check state comes only from the newest `Branch Release Gate result` on the current pull request
+revision. A missing result is pending; failures and pending states from unrelated or retired checks
+are report-only and do not create agent work.
+
 ## Commands
 
 ```bash
