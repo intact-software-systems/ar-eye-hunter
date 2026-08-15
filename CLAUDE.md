@@ -72,9 +72,12 @@ cd apps/api-v1 && deno test --allow-env --allow-read test/group-state/group-stat
 npx playwright test --config apps/rallar-black-box/playwright.config.ts -g 'spec name'
 ```
 
-Note: **all** Vitest tests live in `packages/tests/**`, mirroring the package/app they cover
-(`packages/tests/shared-web/`, `packages/tests/api-v1/`, `packages/tests/repo/`, …) — not beside
-the source. Deno app tests live in `apps/<app>/test/**`.
+Note: Vitest has **two** roots, both in `vitest.config.ts`'s `include`. Almost every test lives in
+`packages/tests/**`, mirroring the package/app it covers (`packages/tests/shared-web/`,
+`packages/tests/api-v1/`, `packages/tests/repo/`, …) — not beside the source. The exception is
+`packages/shared-rtc-bench/tests/**`, which owns the RTC benchmark workloads. A sweep scoped to
+`packages/tests/` alone is **not** the suite `test:unit` runs; pass both paths or run `test:unit`.
+Deno app tests live in `apps/<app>/test/**`.
 
 Per-package type check / build:
 
