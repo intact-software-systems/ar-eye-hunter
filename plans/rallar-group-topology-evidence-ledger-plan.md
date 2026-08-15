@@ -10,10 +10,10 @@ closure evidence into one non-circular ledger without changing code,
 performance evidence, or the historical closed child.
 
 **Architecture:** Keep the authenticated closure receipt and deleted
-implementation plan as immutable historical evidence. The new active plan owns
-one evidence-only slice. Its only external write surface is the two reciprocal
-program planning records; the adaptive lifecycle owns this plan and the
-generated active-plan registry.
+implementation plan as immutable historical evidence. The plan completed its
+one evidence-only slice and is now postponed with no next slice. Its only
+external write surface remains the two reciprocal program planning records;
+the adaptive lifecycle owns its status and eventual canonical closure.
 
 **Tech Stack:** Markdown, Git, GitHub pull requests and Actions, the repository
 adaptive-plan lifecycle, repository-structure governance, Prettier, and focused
@@ -21,10 +21,12 @@ Vitest governance suites.
 
 Date: 2026-08-13
 
-Status: Active plan initialized from exact `origin/main`
-`8ee348e215a3e30d9b4959ce90369aea1b55b620`, tree
-`a4b05fe3c16fff6092efad40335ab2d5b371eb96`. The sole authorized slice is
-`publish-later-evidence-ledger`.
+Status: Postponed after completing the sole authorized
+`publish-later-evidence-ledger` slice. The plan was initialized from exact
+`origin/main` `8ee348e215a3e30d9b4959ce90369aea1b55b620`, tree
+`a4b05fe3c16fff6092efad40335ab2d5b371eb96`. No next slice is authorized; the
+completed ledger is preserved for re-authenticated publication review and
+canonical closure.
 
 ## 1. Authority And Immutable Boundary
 
@@ -221,8 +223,8 @@ for its exact final head; no future result is fabricated in advance.
       compatibility owners, supplementary-ratchet decisions, semantic and
       concurrency coverage, and the no-performance disposition.
 - [x] Update both reciprocal program records from stale drafted/unapproved
-      topology state to closed implementation plus active evidence-ledger
-      publication state.
+      topology state to closed implementation plus the then-current
+      evidence-ledger publication state.
 - [x] Preserve the old receipt and deleted plan history byte-for-byte.
 - [x] Complete the adaptive slice, write and apply the five checkpoint
       judgments, and expose no second slice.

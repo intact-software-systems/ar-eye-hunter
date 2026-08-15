@@ -145,9 +145,10 @@ implementation is closed through PRs #103, #151, #155, and #209, merge
 [closure receipt](rallar-group-topology-server-structure.closure.json), and
 direct close-out main `8ee348e215a3e30d9b4959ce90369aea1b55b620`.
 Its separately authorized
-[evidence ledger](rallar-group-topology-evidence-ledger-plan.md) is active on
-that exact base; the child is not `ledger-published` until the evidence-ledger
-publication is merged and its external envelope is recorded.
+[evidence ledger](rallar-group-topology-evidence-ledger-plan.md) completed its
+sole evidence slice and is now postponed with no next slice. The child remains
+short of `ledger-published` while that completed ledger awaits re-authenticated
+publication review and canonical closure.
 
 Program drafting, approval, execution, publication, and human handoffs follow
 the [Repository Human Traceability Program Execution Plan](repo-human-traceability-program-execution-plan.md).
@@ -1151,11 +1152,12 @@ relabeled.
 The auth child is `ledger-published`. Group-topology implementation is closed
 through planning PR #95, plan amendments #125/#127/#129/#131, implementation
 PRs #103/#151/#155/#209, and the authenticated receipt at exact main
-`8ee348e215a3e30d9b4959ce90369aea1b55b620`. The active
+`8ee348e215a3e30d9b4959ce90369aea1b55b620`. The
 [group-topology evidence ledger](rallar-group-topology-evidence-ledger-plan.md)
-may reconcile only this program record, the execution record, its own plan, and
-the generated registry. It authorizes no production, API-v1, RTC/RTT, or
-performance work.
+completed its sole evidence slice and is now postponed with no next slice. Its
+completed evidence remains bounded to planning and lifecycle records while it
+awaits re-authenticated publication review and canonical closure. It authorizes
+no production, API-v1, RTC/RTT, or performance work.
 
 ### Wave 2: Remaining authoritative mutation domains
 
@@ -1536,8 +1538,11 @@ to write, review, approve, execute, and hand off these child plans in order:
   - API-v1, WebSocket, CRDT, room/topic, admin, and other domain consumers are
     characterized and verified without reorganization.
 - [ ] [Rallar group-topology evidence ledger](rallar-group-topology-evidence-ledger-plan.md)
-  - state: implementation closed; evidence ledger active from exact main
-    `8ee348e215a3e30d9b4959ce90369aea1b55b620`;
+  - state: implementation closed; the evidence ledger completed its sole slice
+    and is now postponed with no next slice; it remains short of
+    `ledger-published` while awaiting re-authenticated publication review and
+    canonical closure;
+  - base: exact main `8ee348e215a3e30d9b4959ce90369aea1b55b620`;
   - history: deleted implementation plan is authenticated by
     [its closure receipt](rallar-group-topology-server-structure.closure.json)
     and remains available through Git history;
@@ -1631,6 +1636,7 @@ group-topology implementation is closed through exact merge
 `44cda16e4633a27d4315dc3a3eb41405651e39c3` and authenticated close-out main
 `8ee348e215a3e30d9b4959ce90369aea1b55b620`. The
 [group-topology evidence ledger](rallar-group-topology-evidence-ledger-plan.md)
-is active but not yet merged, so topology is not yet `ledger-published`. This
-planning tree authorizes no production, performance, API-v1, RTC/RTT, or later
-Wave 2 work.
+completed its sole evidence slice and is now postponed with no next slice, so
+topology is not yet `ledger-published`. The completed ledger awaits
+re-authenticated publication review and canonical closure. This planning tree
+authorizes no production, performance, API-v1, RTC/RTT, or later Wave 2 work.
