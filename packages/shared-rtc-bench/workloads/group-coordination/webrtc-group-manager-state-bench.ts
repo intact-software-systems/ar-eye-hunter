@@ -14,10 +14,7 @@ import {
   type RtcBaselineResult,
   type RtcBaselineSampleDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
-import {
-  parseRtcBaselineBoundedInteger,
-  parseRtcBaselineOneTokenOptions,
-} from '../../baseline/command/rtc-baseline-cli-options.ts';
+import { parseRtcBaselineBoundedInteger } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
   parseRtcBaselineAcceptedWorker,
   type RtcBaselineAcceptedWorker,
@@ -143,14 +140,7 @@ export function parseWebRtcGroupManagerStateArguments(
       parseCapability: parseAcceptedCapability,
     });
   }
-  const parsed = parseRtcBaselineOneTokenOptions(
-    arguments_,
-    ['clients', 'desired', 'lookups', 'runs', 'out'],
-  );
-  if (!parsed.ok) {
-    return parsed;
-  }
-  return parseDiagnosticArguments(parsed.value);
+  return { ok: true, value: parseDiagnosticArguments(arguments_) };
 }
 
 export async function runWebRtcGroupManagerState(
@@ -361,40 +351,21 @@ function createGroupSnapshotSessions(
 }
 
 function parseDiagnosticArguments(
-  options: Readonly<Record<string, string>>,
-): RtcBaselineResult<WebRtcGroupManagerStateDiagnosticArguments> {
-  const clients = parseRtcBaselineBoundedInteger(
-    options.clients ?? '5000',
-    'clients',
-    1,
-    Number.MAX_SAFE_INTEGER,
-  );
-  const desired = parseRtcBaselineBoundedInteger(
-    options.desired ?? '1000',
-    'desired',
-    1,
-    Number.MAX_SAFE_INTEGER,
-  );
-  const lookups = parseRtcBaselineBoundedInteger(
-    options.lookups ?? '20',
-    'lookups',
-    1,
-    Number.MAX_SAFE_INTEGER,
-  );
-  const runs = parseRtcBaselineBoundedInteger(options.runs ?? '5', 'runs', 1, 5);
-  const issues = collectParsingIssues([clients, desired, lookups, runs]);
-  return issues.length > 0 ? { ok: false, issues } : {
-    ok: true,
-    value: {
-      mode: 'diagnostic',
-      input: {
-        clients: readParsedNumber(clients, 1),
-        desired: readParsedNumber(desired, 1),
-        lookups: readParsedNumber(lookups, 1),
-      },
-      runs: readParsedNumber(runs, 1),
-      out: options.out ?? 'tmp/perf/results/webrtc-group-manager-state.json',
+  arguments_: readonly string[],
+): WebRtcGroupManagerStateDiagnosticArguments {
+  return {
+    mode: 'diagnostic',
+    input: {
+      clients: Number(readDiagnosticArgument(arguments_, '--clients', '5000')),
+      desired: Number(readDiagnosticArgument(arguments_, '--desired', '1000')),
+      lookups: Number(readDiagnosticArgument(arguments_, '--lookups', '20')),
     },
+    runs: Number(readDiagnosticArgument(arguments_, '--runs', '5')),
+    out: readDiagnosticArgument(
+      arguments_,
+      '--out',
+      'tmp/perf/results/webrtc-group-manager-state.json',
+    ),
   };
 }
 
@@ -477,8 +448,13 @@ function collectParsingIssues(
   return results.flatMap((result) => result.ok ? [] : result.issues);
 }
 
-function readParsedNumber(result: RtcBaselineResult<number>, fallback: number): number {
-  return result.ok ? result.value : fallback;
+function readDiagnosticArgument(
+  arguments_: readonly string[],
+  name: string,
+  fallback: string,
+): string {
+  return arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
+    fallback;
 }
 
 function validateRules(rules: readonly ValidationRule[]): RtcBaselineIssueDto[] {

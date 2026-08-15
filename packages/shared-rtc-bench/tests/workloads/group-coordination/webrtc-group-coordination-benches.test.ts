@@ -108,6 +108,9 @@ function expectRejectedWorkerMutations(
     ).toBe(false);
   }
   for (let index = 0; index < fixture.arguments.length; index += 1) {
+    if (fixture.arguments[index]?.startsWith('--capture=')) {
+      continue;
+    }
     expect(parse(fixture.arguments.filter((_argument, offset) => offset !== index)).ok).toBe(false);
   }
 }
@@ -156,6 +159,16 @@ async function expectNonFiniteNumbersRejected<Result extends object>(
     expect((samples[0]?.rawEvidence as Record<string, unknown>)[String(mutation.key)]).toBe(null);
     expect(() => JSON.parse(JSON.stringify(samples))).not.toThrow();
   }
+}
+
+function expectDiagnosticArguments(
+  parsed: RtcBaselineResult<{ readonly mode: string }>,
+  expected: object,
+): void {
+  if (!parsed.ok || parsed.value.mode !== 'diagnostic') {
+    throw new Error('Expected legacy direct diagnostic arguments.');
+  }
+  expect(parsed.value).toMatchObject(expected);
 }
 
 const cacheFallback = {
@@ -482,4 +495,46 @@ it('keeps one-item direct diagnostics import-safe, nested, and overwrite-capable
     expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
     expect(JSON.parse(readFileSync(output, 'utf8')).results).toHaveLength(1);
   }
+});
+
+it('preserves first-match permissive Number grammar for every group diagnostic', () => {
+  const common = ['--unknown=ignored', '--runs=6.5', '--runs=1'];
+  expectDiagnosticArguments(
+    CacheFallback.parseWebRtcGroupCacheFallbackArguments([
+      '--snapshots=1.5',
+      '--snapshots=2',
+      '--matching-versions=NaN',
+      '--lookups=3',
+      ...common,
+    ]),
+    { input: { snapshots: 1.5, matchingVersions: Number.NaN, lookups: 3 }, runs: 6.5 },
+  );
+  expectDiagnosticArguments(
+    ManagerState.parseWebRtcGroupManagerStateArguments([
+      '--clients=1.5',
+      '--clients=2',
+      '--desired=NaN',
+      '--lookups=3',
+      ...common,
+    ]),
+    { input: { clients: 1.5, desired: Number.NaN, lookups: 3 }, runs: 6.5 },
+  );
+  expectDiagnosticArguments(
+    PeerOwners.parseWebRtcGroupManagerPeerOwnersArguments([
+      '--groups=1.5',
+      '--groups=2',
+      '--peers-per-group=NaN',
+      '--lookups=3',
+      ...common,
+    ]),
+    { input: { groups: 1.5, peersPerGroup: Number.NaN, lookups: 3 }, runs: 6.5 },
+  );
+  expectDiagnosticArguments(
+    Heartbeat.parseWebRtcHeartbeatCallbackChurnArguments([
+      '--channels=1.5',
+      '--channels=2',
+      ...common,
+    ]),
+    { input: { channels: 1.5 }, runs: 6.5 },
+  );
 });

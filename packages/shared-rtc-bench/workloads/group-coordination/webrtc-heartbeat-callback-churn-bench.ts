@@ -9,10 +9,7 @@ import {
   type RtcBaselineResult,
   type RtcBaselineSampleDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
-import {
-  parseRtcBaselineBoundedInteger,
-  parseRtcBaselineOneTokenOptions,
-} from '../../baseline/command/rtc-baseline-cli-options.ts';
+import { parseRtcBaselineBoundedInteger } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
   parseRtcBaselineAcceptedWorker,
   type RtcBaselineAcceptedWorker,
@@ -85,14 +82,7 @@ export function parseWebRtcHeartbeatCallbackChurnArguments(
       parseCapability: parseAcceptedCapability,
     });
   }
-  const parsed = parseRtcBaselineOneTokenOptions(
-    arguments_,
-    ['channels', 'runs', 'out'],
-  );
-  if (!parsed.ok) {
-    return parsed;
-  }
-  return parseDiagnosticArguments(parsed.value);
+  return { ok: true, value: parseDiagnosticArguments(arguments_) };
 }
 
 export function runWebRtcHeartbeatCallbackChurn(
@@ -140,25 +130,29 @@ export function runWebRtcHeartbeatCallbackChurnAcceptedSamples(input: {
 }
 
 function parseDiagnosticArguments(
-  options: Readonly<Record<string, string>>,
-): RtcBaselineResult<WebRtcHeartbeatCallbackChurnDiagnosticArguments> {
-  const channels = parseRtcBaselineBoundedInteger(
-    options.channels ?? '10000',
-    'channels',
-    1,
-    Number.MAX_SAFE_INTEGER,
-  );
-  const runs = parseRtcBaselineBoundedInteger(options.runs ?? '5', 'runs', 1, 5);
-  const issues = [...(!channels.ok ? channels.issues : []), ...(!runs.ok ? runs.issues : [])];
-  return issues.length > 0 ? { ok: false, issues } : {
-    ok: true,
-    value: {
-      mode: 'diagnostic',
-      input: { channels: channels.ok ? channels.value : 1 },
-      runs: runs.ok ? runs.value : 1,
-      out: options.out ?? 'tmp/perf/results/webrtc-heartbeat-callback-churn.json',
+  arguments_: readonly string[],
+): WebRtcHeartbeatCallbackChurnDiagnosticArguments {
+  return {
+    mode: 'diagnostic',
+    input: {
+      channels: Number(readDiagnosticArgument(arguments_, '--channels', '10000')),
     },
+    runs: Number(readDiagnosticArgument(arguments_, '--runs', '5')),
+    out: readDiagnosticArgument(
+      arguments_,
+      '--out',
+      'tmp/perf/results/webrtc-heartbeat-callback-churn.json',
+    ),
   };
+}
+
+function readDiagnosticArgument(
+  arguments_: readonly string[],
+  name: string,
+  fallback: string,
+): string {
+  return arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
+    fallback;
 }
 
 function parseAcceptedCapability(

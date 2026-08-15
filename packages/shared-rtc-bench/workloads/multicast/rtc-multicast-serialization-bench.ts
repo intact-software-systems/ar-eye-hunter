@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
@@ -9,10 +10,7 @@ import {
   type RtcBaselineResult,
   type RtcBaselineSampleDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
-import {
-  parseRtcBaselineBoundedInteger,
-  parseRtcBaselineOneTokenOptions,
-} from '../../baseline/command/rtc-baseline-cli-options.ts';
+import { parseRtcBaselineBoundedInteger } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
   parseRtcBaselineAcceptedWorker,
   type RtcBaselineAcceptedWorker,
@@ -21,8 +19,8 @@ import {
 } from '../../baseline/acceptance/rtc-baseline-worker-protocol.ts';
 
 export interface RtcMulticastSerializationInput {
-  readonly peers: 10 | 100 | 1000;
-  readonly payloadBytes: 4096 | 65536;
+  readonly peers: number;
+  readonly payloadBytes: number;
 }
 
 interface RtcMulticastSerializationDiagnosticArguments {
@@ -80,18 +78,12 @@ export function parseRtcMulticastSerializationArguments(
       parseCapability: parseAcceptedCapability,
     });
   }
-  const parsed = parseRtcBaselineOneTokenOptions(
-    arguments_,
-    ['peer-counts', 'payload-bytes', 'runs', 'out'],
-  );
-  if (!parsed.ok) {
-    return parsed;
-  }
-  return parseDiagnosticArguments(parsed.value);
+  return { ok: true, value: parseDiagnosticArguments(arguments_) };
 }
 
 export function runRtcMulticastSerialization(
   input: RtcMulticastSerializationInput,
+  run = 1,
 ): RtcMulticastSerializationResult {
   const peerIds = createPeerIds(input.peers);
   const service = new WebRtcOverlayMulticastService(
@@ -102,7 +94,7 @@ export function runRtcMulticastSerialization(
     'self',
     {
       topicId: 'chat',
-      resourceId: `msg-${input.peers}-${input.payloadBytes}`,
+      resourceId: `msg-${input.peers}-${input.payloadBytes}-${run}`,
       contextId: 'group-1',
     },
     { applicationId: 'app-1', workspaceId: 'workspace-1', groupId: 'group-1' },
@@ -146,11 +138,14 @@ export function runRtcMulticastSerialization(
 
 export function runRtcMulticastSerializationAcceptedSamples(input: {
   readonly worker: RtcBaselineAcceptedWorker<RtcMulticastSerializationInput>;
-  readonly run: () => RtcMulticastSerializationResult | Promise<RtcMulticastSerializationResult>;
+  readonly run: (
+    innerOrdinal: number,
+  ) => RtcMulticastSerializationResult | Promise<RtcMulticastSerializationResult>;
 }): Promise<RtcBaselineSampleDto[]> {
+  let innerOrdinal = 0;
   return runRtcBaselineAcceptedWorker({
     worker: input.worker,
-    run: input.run,
+    run: () => input.run(innerOrdinal += 1),
     validate: (result) => validateResult(input.worker.input, result),
     metrics: createMetrics,
     rawEvidence: toRawEvidence,
@@ -158,40 +153,25 @@ export function runRtcMulticastSerializationAcceptedSamples(input: {
 }
 
 function parseDiagnosticArguments(
-  options: Readonly<Record<string, string>>,
-): RtcBaselineResult<RtcMulticastSerializationDiagnosticArguments> {
-  const peerCounts = parseDiagnosticPositiveIntegers(
-    readOption(options, 'peer-counts', '10,100,1000'),
-    'peer-counts',
-  );
-  if (!peerCounts.ok) {
-    return peerCounts;
-  }
-  const payloadBytes = parseDiagnosticPositiveIntegers(
-    readOption(options, 'payload-bytes', '4096,65536'),
-    'payload-bytes',
-  );
-  if (!payloadBytes.ok) {
-    return payloadBytes;
-  }
-  const runs = parseRtcBaselineBoundedInteger(readOption(options, 'runs', '3'), 'runs', 1, 5);
-  if (!runs.ok) {
-    return runs;
-  }
-  return {
-    ok: true as const,
-    value: {
-      mode: 'diagnostic' as const,
-      peerCounts: peerCounts.value,
-      payloadBytes: payloadBytes.value,
-      runs: runs.value,
-      out: readOption(options, 'out', 'tmp/perf/results/rtc-multicast-serialization.json'),
-    },
+  arguments_: readonly string[],
+): RtcMulticastSerializationDiagnosticArguments {
+  const readValue = (name: string, fallback: string) => {
+    const prefix = `--${name}=`;
+    return arguments_.find((argument) => argument.startsWith(prefix))?.slice(prefix.length) ??
+      fallback;
   };
-}
-
-function readOption(options: Readonly<Record<string, string>>, name: string, fallback: string) {
-  return options[name] ?? fallback;
+  const readNumbers = (name: string, fallback: string) =>
+    readValue(name, fallback)
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isFinite(value) && value > 0);
+  return {
+    mode: 'diagnostic',
+    peerCounts: readNumbers('peer-counts', '10,100,1000'),
+    payloadBytes: readNumbers('payload-bytes', '4096,65536'),
+    runs: Number(readValue('runs', '3')),
+    out: readValue('out', 'tmp/perf/results/rtc-multicast-serialization.json'),
+  };
 }
 
 function parseAcceptedCapability(
@@ -246,22 +226,6 @@ function parseAcceptedCapability(
       payloadBytes: payloadBytes.ok ? payloadBytes.value as 4096 | 65536 : 4096,
     },
   };
-}
-
-function parseDiagnosticPositiveIntegers(
-  value: string,
-  name: string,
-): RtcBaselineResult<number[]> {
-  const values = value.split(',');
-  const issues = values.flatMap((entry, index) => {
-    const parsed = parseRtcBaselineBoundedInteger(entry, name, 1, Number.MAX_SAFE_INTEGER);
-    return parsed.ok ? [] : [
-      rtcBaselineIssue(`$.${name}[${index}]`, parsed.issues[0]!.code, parsed.issues[0]!.message),
-    ];
-  });
-  return issues.length > 0
-    ? { ok: false as const, issues }
-    : { ok: true as const, value: values.map((entry) => Number(entry)) };
 }
 
 function validateResult(
@@ -430,8 +394,8 @@ function createPeerIds(peerCount: number): readonly string[] {
   );
 }
 
-async function main(): Promise<void> {
-  const parsed = parseRtcMulticastSerializationArguments(Deno.args);
+async function main(arguments_: readonly string[]): Promise<void> {
+  const parsed = parseRtcMulticastSerializationArguments(arguments_);
   if (!parsed.ok) {
     throw new Error(JSON.stringify(parsed.issues));
   }
@@ -440,7 +404,7 @@ async function main(): Promise<void> {
     runAccepted: (worker) =>
       runRtcMulticastSerializationAcceptedSamples({
         worker,
-        run: () => runRtcMulticastSerialization(worker.input),
+        run: (innerOrdinal) => runRtcMulticastSerialization(worker.input, innerOrdinal),
       }),
     writeOutput: (output) => console.log(output),
   });
@@ -456,25 +420,28 @@ async function main(): Promise<void> {
     for (let run = 1; run <= diagnostic.runs; run += 1) {
       results.push({
         run,
-        ...runRtcMulticastSerialization({
-          peers: diagnosticInput.peerCount as 10 | 100 | 1000,
-          payloadBytes: diagnosticInput.payloadBytes as 4096 | 65536,
-        }),
+        ...runRtcMulticastSerialization(
+          {
+            peers: diagnosticInput.peerCount,
+            payloadBytes: diagnosticInput.payloadBytes,
+          },
+          run,
+        ),
       });
     }
   }
   const output = {
-    command: Deno.args,
+    command: process.argv.join(' '),
     peerCounts: diagnostic.peerCounts,
     payloadBytes: diagnostic.payloadBytes,
     runs: diagnostic.runs,
     results,
   };
-  await Deno.mkdir(dirname(diagnostic.out), { recursive: true });
-  await Deno.writeTextFile(diagnostic.out, `${JSON.stringify(output, null, 2)}\n`);
+  mkdirSync(dirname(diagnostic.out), { recursive: true });
+  writeFileSync(diagnostic.out, `${JSON.stringify(output, null, 2)}\n`);
   console.log(JSON.stringify(output, null, 2));
 }
 
 if (import.meta.main) {
-  await main();
+  await main(typeof Deno === 'undefined' ? process.argv.slice(2) : Deno.args);
 }

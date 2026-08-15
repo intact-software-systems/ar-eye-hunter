@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { expect, it, onTestFinished } from 'vitest';
 
@@ -137,6 +137,24 @@ it('RTC-B04 parses every multicast matrix worker and emits exact accepted sample
   }
 });
 
+it('supplies accepted multicast inner ordinals one through five', async () => {
+  const input = worker(10, 4096);
+  const parsed = Multicast.parseRtcMulticastSerializationArguments(input.arguments);
+  if (!parsed.ok || parsed.value.mode !== 'accepted') {
+    throw new Error('Expected exact B04 worker input.');
+  }
+  const innerOrdinals: number[] = [];
+  const samples = await Multicast.runRtcMulticastSerializationAcceptedSamples({
+    worker: parsed.value,
+    run: (innerOrdinal: number) => {
+      innerOrdinals.push(innerOrdinal);
+      return validAcceptedResult(10, 4096);
+    },
+  });
+  expect(innerOrdinals).toEqual([1, 2, 3, 4, 5]);
+  expect(samples.map((sample) => sample.outcome)).toEqual(Array(5).fill('passed'));
+});
+
 it('RTC-B04 rejects malformed multicast workers', () => {
   const input = worker(10, 4096);
   expect(Multicast.parseRtcMulticastSerializationArguments(['--out=/tmp/result.json']).ok).toBe(
@@ -176,6 +194,32 @@ it('RTC-B04 rejects malformed multicast workers', () => {
   }
 });
 
+it('preserves first-match permissive Number grammar for multicast diagnostics', () => {
+  const parsed = Multicast.parseRtcMulticastSerializationArguments([
+    '--peer-counts=10,bad,2.5,-1,Infinity,0',
+    '--peer-counts=100',
+    '--payload-bytes=4096,NaN,8192',
+    '--runs=7.5',
+    '--runs=1',
+    '--unknown=ignored',
+  ]);
+  if (!parsed.ok || parsed.value.mode !== 'diagnostic') {
+    throw new Error('Expected legacy multicast diagnostic arguments.');
+  }
+  expect(parsed.value).toMatchObject({
+    peerCounts: [10, 2.5],
+    payloadBytes: [4096, 8192],
+    runs: 7.5,
+  });
+});
+
+it('includes the run ordinal in multicast production message serialization', () => {
+  const first = Multicast.runRtcMulticastSerialization({ peers: 10, payloadBytes: 4096 }, 1);
+  const tenth = Multicast.runRtcMulticastSerialization({ peers: 10, payloadBytes: 4096 }, 10);
+  expect(tenth.originalSerializedBytes).toBe(first.originalSerializedBytes + 1);
+  expect(tenth.totalSerializedBytes).toBe(first.totalSerializedBytes + tenth.transportMessages);
+});
+
 it('RTC-B04 records causal failure remainders', async () => {
   const input = worker(10, 4096);
   let executions = 0;
@@ -207,25 +251,27 @@ it('RTC-B04 records causal failure remainders', async () => {
   );
 });
 
-it('RTC-B04 diagnostics create nested outputs and overwrite them', () => {
+it('runs the documented direct Node diagnostic with exact command and overwrite behavior', () => {
   mkdirSync('tmp', { recursive: true });
   const directory = mkdtempSync(join('tmp', 'rtc-b04-multicast-diagnostic-'));
   onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   const output = join(directory, 'nested', 'result.json');
-  const command = [
-    'run',
-    '--config=packages/shared-rtc-bench/deno.json',
-    '--allow-read',
-    '--allow-write',
-    'packages/shared-rtc-bench/workloads/multicast/rtc-multicast-serialization-bench.ts',
+  const entry =
+    'packages/shared-rtc-bench/workloads/multicast/rtc-multicast-serialization-bench.ts';
+  const arguments_ = [
     '--peer-counts=10',
     '--payload-bytes=4096',
     '--runs=1',
     `--out=${output}`,
   ];
-  expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
-  expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
-  expect(JSON.parse(readFileSync(output, 'utf8')).results).toHaveLength(1);
+  const command = ['--import=tsx', entry, ...arguments_];
+  const first = spawnSync(process.execPath, command, { encoding: 'utf8' });
+  expect(first.status, first.stderr).toBe(0);
+  const second = spawnSync(process.execPath, command, { encoding: 'utf8' });
+  expect(second.status, second.stderr).toBe(0);
+  const result = JSON.parse(readFileSync(output, 'utf8'));
+  expect(result.command).toBe([process.execPath, resolve(entry), ...arguments_].join(' '));
+  expect(result.results).toHaveLength(1);
 });
 
 it('RTC-B04 fails every invalid result shape with JSON-safe evidence', async () => {

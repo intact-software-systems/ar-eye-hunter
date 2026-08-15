@@ -11,10 +11,7 @@ import {
   type RtcBaselineResult,
   type RtcBaselineSampleDto,
 } from '../../baseline/contracts/rtc-baseline-contracts.ts';
-import {
-  parseRtcBaselineBoundedInteger,
-  parseRtcBaselineOneTokenOptions,
-} from '../../baseline/command/rtc-baseline-cli-options.ts';
+import { parseRtcBaselineBoundedInteger } from '../../baseline/command/rtc-baseline-cli-options.ts';
 import {
   parseRtcBaselineAcceptedWorker,
   type RtcBaselineAcceptedWorker,
@@ -151,14 +148,7 @@ export function parseWebRtcGroupCacheFallbackArguments(
       parseCapability: parseAcceptedCapability,
     });
   }
-  const parsed = parseRtcBaselineOneTokenOptions(
-    arguments_,
-    ['snapshots', 'matching-versions', 'lookups', 'runs', 'out'],
-  );
-  if (!parsed.ok) {
-    return parsed;
-  }
-  return parseDiagnosticArguments(parsed.value);
+  return { ok: true, value: parseDiagnosticArguments(arguments_) };
 }
 
 export function runWebRtcGroupCacheFallback(
@@ -367,40 +357,23 @@ function createGroupSnapshotSessions(
 }
 
 function parseDiagnosticArguments(
-  options: Readonly<Record<string, string>>,
-): RtcBaselineResult<WebRtcGroupCacheFallbackDiagnosticArguments> {
-  const snapshots = parseRtcBaselineBoundedInteger(
-    options.snapshots ?? '20000',
-    'snapshots',
-    1,
-    Number.MAX_SAFE_INTEGER,
-  );
-  const matchingVersions = parseRtcBaselineBoundedInteger(
-    options['matching-versions'] ?? '5000',
-    'matching-versions',
-    1,
-    Number.MAX_SAFE_INTEGER,
-  );
-  const lookups = parseRtcBaselineBoundedInteger(
-    options.lookups ?? '500',
-    'lookups',
-    1,
-    Number.MAX_SAFE_INTEGER,
-  );
-  const runs = parseRtcBaselineBoundedInteger(options.runs ?? '5', 'runs', 1, 5);
-  const issues = collectParsingIssues([snapshots, matchingVersions, lookups, runs]);
-  return issues.length > 0 ? { ok: false, issues } : {
-    ok: true,
-    value: {
-      mode: 'diagnostic',
-      input: {
-        snapshots: readParsedNumber(snapshots, 1),
-        matchingVersions: readParsedNumber(matchingVersions, 1),
-        lookups: readParsedNumber(lookups, 1),
-      },
-      runs: readParsedNumber(runs, 1),
-      out: options.out ?? 'tmp/perf/results/webrtc-group-cache-fallback.json',
+  arguments_: readonly string[],
+): WebRtcGroupCacheFallbackDiagnosticArguments {
+  return {
+    mode: 'diagnostic',
+    input: {
+      snapshots: Number(readDiagnosticArgument(arguments_, '--snapshots', '20000')),
+      matchingVersions: Number(
+        readDiagnosticArgument(arguments_, '--matching-versions', '5000'),
+      ),
+      lookups: Number(readDiagnosticArgument(arguments_, '--lookups', '500')),
     },
+    runs: Number(readDiagnosticArgument(arguments_, '--runs', '5')),
+    out: readDiagnosticArgument(
+      arguments_,
+      '--out',
+      'tmp/perf/results/webrtc-group-cache-fallback.json',
+    ),
   };
 }
 
@@ -483,8 +456,13 @@ function collectParsingIssues(
   return results.flatMap((result) => result.ok ? [] : result.issues);
 }
 
-function readParsedNumber(result: RtcBaselineResult<number>, fallback: number): number {
-  return result.ok ? result.value : fallback;
+function readDiagnosticArgument(
+  arguments_: readonly string[],
+  name: string,
+  fallback: string,
+): string {
+  return arguments_.find((argument) => argument.startsWith(`${name}=`))?.slice(name.length + 1) ??
+    fallback;
 }
 
 function validateRules(rules: readonly ValidationRule[]): RtcBaselineIssueDto[] {
