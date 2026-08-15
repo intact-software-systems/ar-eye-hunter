@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 describe('reviewed repository style dispositions', () => {
-  it('freezes exactly the six approved path, rule, and symbol triples', () => {
+  it('freezes exactly the approved path, rule, and symbol triples', () => {
     expect(Object.isFrozen(reviewedDispositions)).toBe(true);
     expect(reviewedDispositions).toEqual([
       {
@@ -54,6 +54,83 @@ describe('reviewed repository style dispositions', () => {
         path: 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
         rule: 'layout.primary-export-name',
         symbol: 'parseRtcBaselineCommand',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation-primitives.ts',
+        rule: 'boundary.unknown',
+        symbol: 'readRtcRttPersistedRecord',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation-primitives.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertExactRtcRttPersistedKeys',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation-primitives.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertNonEmptyRtcRttString',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation-primitives.ts',
+        rule: 'boundary.unknown',
+        symbol: 'assertRtcRttSafeInteger',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation-primitives.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRtcRttCommandHash',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRtcRttMutationReceipt',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRtcRttMeasurement',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRtcRttEndpointAdmission',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateCanonicalGroupRef',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'rtc-rtt-persistence-validation.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateExpectedRevision',
+      },
+      {
+        path:
+          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+          'validate-rtc-rtt-recompute-intent.ts',
+        rule: 'boundary.unknown',
+        symbol: 'validateRtcRttRecomputeIntent',
       },
     ]);
   });

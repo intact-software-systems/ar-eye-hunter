@@ -25,9 +25,7 @@ export async function assertMatchingAppInboxCommand(
     const message = JSON.parse(entry.resource) as ALMessage;
     existing = JSON.parse(message.payload.resource) as AppInboxEnqueueInput<unknown>;
   } catch {
-    const receivedCommandHash = await hashCanonicalCommand(
-      toLogicalAppInboxCommand(incoming),
-    );
+    const receivedCommandHash = await hashCanonicalCommand(toLogicalAppInboxCommand(incoming));
     throw new AppInboxIdempotencyConflictError(
       entry.key.resourceId,
       'invalid-existing-command',
@@ -76,10 +74,7 @@ export function toLogicalAppInboxCommand(enqueue: AppInboxEnqueueInput<unknown>)
   };
 }
 
-function toStableTopologyCommand(
-  type: AppInboxType,
-  value: unknown,
-): unknown | undefined {
+function toStableTopologyCommand(type: AppInboxType, value: unknown): unknown | undefined {
   try {
     if (type === AppInboxType.CRDT_UPDATE_APPEND) {
       const command = requireRecord(value);
@@ -179,12 +174,7 @@ function readTopologyPayload(value: unknown): Record<string, unknown> {
       if (record.target !== 'config') throw new TypeError('Invalid target');
       return record;
     case 'putOverride':
-      requireExactKeys(record, [
-        'operation',
-        'config',
-        'ttlMs',
-        'expiresAtEpochMs',
-      ]);
+      requireExactKeys(record, ['operation', 'config', 'ttlMs', 'expiresAtEpochMs']);
       readCanonicalGroupTopologyConfigPatch(record.config);
       readFiniteNumberOrNull(record.ttlMs);
       readFiniteNumberOrNull(record.expiresAtEpochMs);
@@ -194,11 +184,7 @@ function readTopologyPayload(value: unknown): Record<string, unknown> {
       if (record.target !== 'override') throw new TypeError('Invalid target');
       return record;
     case 'reconfigureTopology':
-      requireExactKeys(record, [
-        'operation',
-        'requestOptions',
-        'publish',
-      ]);
+      requireExactKeys(record, ['operation', 'requestOptions', 'publish']);
       readCanonicalGroupTopologyConfigPatch(record.requestOptions);
       if (typeof record.publish !== 'boolean') {
         throw new TypeError('Invalid publish flag');
@@ -216,10 +202,7 @@ function readActor(value: unknown): Record<string, unknown> {
   return actor;
 }
 
-function requireExactRecord(
-  value: unknown,
-  expected: readonly string[],
-): Record<string, unknown> {
+function requireExactRecord(value: unknown, expected: readonly string[]): Record<string, unknown> {
   const record = requireRecord(value);
   requireExactKeys(record, expected);
   return record;
@@ -232,14 +215,8 @@ function requireRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function requireExactKeys(
-  record: Record<string, unknown>,
-  expected: readonly string[],
-): void {
-  if (
-    JSON.stringify(Object.keys(record).toSorted()) !==
-      JSON.stringify([...expected].toSorted())
-  ) {
+function requireExactKeys(record: Record<string, unknown>, expected: readonly string[]): void {
+  if (JSON.stringify(Object.keys(record).toSorted()) !== JSON.stringify([...expected].toSorted())) {
     throw new TypeError('Unexpected durable command fields');
   }
 }
