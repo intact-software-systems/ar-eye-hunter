@@ -97,7 +97,7 @@ describe('governance decision GitHub workflows', () => {
     expect(readme.replace(/\s+/gu, ' ')).toContain('ordinary changes remain pull-request-based');
   });
 
-  it('documents the one-approval AI flow and prohibits manual governance substitutes', () => {
+  it('keeps authenticated exceptions separate from ordinary PR completion', () => {
     const readme = readFileSync(
       path.join(repoRoot, 'scripts/governance-decisions/README.md'),
       'utf8',
@@ -111,17 +111,16 @@ describe('governance decision GitHub workflows', () => {
       path.join(repoRoot, '.agents/skills/publishing-plan-progress/SKILL.md'),
       'utf8',
     );
-    for (const source of [readme, guide, planSkill, publicationSkill]) {
+    for (const source of [readme, guide]) {
       expect(source).toContain('just-in-time approval');
       expect(source).toMatch(/(?:a )?changed request or (?:expected )?head\s+invalidates/iu);
-      expect(source).toMatch(/Never\s+hand-write/iu);
-      expect(source).toMatch(/directly edit(?:\/delete| or delete) a plan/iu);
       expect(source).toMatch(/fabricate\s+completion/iu);
-      expect(source).toMatch(/tracked (?:plan )?overview/iu);
     }
-    expect(publicationSkill).toContain(
-      'This does not approve any ordinary default-branch commit or push',
-    );
+    expect(planSkill).not.toContain('governance:decide');
+    expect(planSkill).toContain('The GitHub pull request is the remote delivery entity');
+    expect(guide).toContain('separate from ordinary pull request delivery');
+    expect(guide).toContain('cannot be used as pull request completion evidence');
+    expect(publicationSkill).toMatch(/Commit and\s+push approvals are independent/u);
   });
 
   it('classifies exact decisions before deploy and distributed runtime work', () => {
@@ -214,35 +213,22 @@ describe('governance decision GitHub workflows', () => {
     expect(distributed.jobs.selection.if).toContain('always()');
   });
 
-  it('gives every trusted-receipt consumer read-only provenance credentials', () => {
+  it('keeps receipt provenance on the retained Tier-3 path and out of ordinary PR checks', () => {
     const governanceGate = readWorkflow('.github/workflows/governance-gate.yml');
     const releaseGate = readWorkflow('.github/workflows/release-gate.yml');
-    const legacy = readWorkflow('.github/workflows/pr-human-review-record.yml');
     const deploy = readWorkflow('.github/workflows/deploy.yml');
 
-    expect(governanceGate.permissions).toEqual({ contents: 'read', actions: 'read' });
+    expect(governanceGate.permissions).toEqual({ contents: 'read' });
     expect(releaseGate.permissions).toEqual({ contents: 'read', actions: 'read' });
     expect(deploy.permissions).toMatchObject({ contents: 'read', actions: 'read' });
-    const environment = {
-      GH_TOKEN: '${{ github.token }}',
-      GOVERNANCE_APP_SLUG: '${{ vars.GOVERNANCE_APP_SLUG }}',
-    };
     for (const name of [
       'Check changed repository style',
       'Check changed test structure coupling',
     ]) {
       expect(
-        releaseGate.jobs['release-gate'].steps.find((step: any) => step.name === name),
-      ).toMatchObject({
-        env: environment,
-      });
+        releaseGate.jobs['release-gate'].steps.find((step: any) => step.name === name).env,
+      ).toBeUndefined();
     }
-    expect(legacy.permissions).toMatchObject({ actions: 'read', contents: 'read' });
-    expect(
-      legacy.jobs.validate.steps.find(
-        (step: any) => step.name === 'Validate PR Human Review Record v2',
-      ),
-    ).toMatchObject({ env: environment });
     expect(deploy.jobs['governance-decision-checks']).toMatchObject({
       permissions: { actions: 'read', contents: 'read' },
     });
@@ -250,7 +236,7 @@ describe('governance decision GitHub workflows', () => {
       deploy.jobs['governance-decision-checks'].steps.find(
         (step: any) => step.name === 'Run focused governance verification',
       ),
-    ).toMatchObject({ env: environment });
+    ).toMatchObject({ env: { STRUCTURE_BASE: '${{ github.event.before }}' } });
   });
 });
 

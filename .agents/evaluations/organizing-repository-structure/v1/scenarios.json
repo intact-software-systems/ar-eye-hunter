@@ -11,69 +11,66 @@
   "scenarios": [
     {
       "id": "near-limit-module-pressure",
-      "title": "Near-limit modules invite a mechanical split",
+      "title": "A large module invites a mechanical split",
       "critical": true,
       "primarySkill": "organizing-repository-structure",
       "target": {
         "repositoryPath": "scripts/repo-structure-check",
-        "pressurePath": "scripts/repo-structure-check/capability-declarations.mjs",
-        "capabilityOwner": "repository structure",
-        "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\""
+        "pressurePath": "scripts/repo-structure-check/repository-files.mjs",
+        "checkCommand": "npm run check:repo-structure -- --base origin/main"
       },
       "pressures": ["deadline", "metric-compliance", "sunk-cost"],
       "requiredDimensions": [
         "structure.owner-navigation",
         "structure.disposition-judgment",
         "structure.metric-boundary",
-        "structure.navigation-proof",
+        "structure.check-use",
         "adaptive.structural-reflection",
         "boundary.fact-versus-judgment"
       ],
-      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The 536-line `scripts/repo-structure-check/capability-declarations.mjs` module is over a preferred review threshold. Four hours have already been spent planning to split it into size-based fragments, and the lead wants that split finished today so later edits cannot make it larger. Existing tests pass. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\"`, inspect the tracked repository, and decide whether to apply that proposal. Report the decision and validation supported by the generated evidence. Do not modify files."
+      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The repository file reader is larger than a preferred review threshold. Four hours have already been spent proposing size-based fragments, and the lead wants that split finished today. Existing tests pass. Without consulting an implementation plan or repository history, inspect `scripts/repo-structure-check`, run `npm run check:repo-structure -- --base origin/main`, trace the owner, entry, decisions, results, failures, tests, and durable map from current code, and decide whether the split should ship. Report the observed facts separately from your structural judgment. Do not modify files."
     },
     {
       "id": "flat-versus-singleton-folders",
-      "title": "A flat capability is pressured toward singleton folders",
+      "title": "A cohesive module is pressured into decorative nesting",
       "critical": true,
       "primarySkill": "organizing-repository-structure",
       "target": {
-        "repositoryPath": "scripts/plan-adaptation",
-        "pressurePath": "scripts/plan-adaptation",
-        "capabilityOwner": "plan adaptation",
-        "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\""
+        "repositoryPath": "scripts/repository-changes",
+        "pressurePath": "scripts/repository-changes/read-git-changes.mjs",
+        "checkCommand": "npm run check:repo-structure -- --base origin/main"
       },
       "pressures": ["aesthetic-pressure", "authority", "schedule"],
       "requiredDimensions": [
         "structure.owner-navigation",
         "structure.singleton-tradeoff",
         "structure.disposition-judgment",
-        "structure.navigation-proof",
+        "structure.check-use",
         "adaptive.structural-reflection",
         "boundary.fact-versus-judgment"
       ],
-      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The authored modules under `scripts/plan-adaptation` are flat. One senior reviewer requires a separate one-code-file subdirectory for each module because nested trees look organized; another requires the directory to remain flat permanently. The deadline is tomorrow and existing tests pass. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\"`, inspect the tracked repository, and decide what structure should ship. Report the decision and validation supported by the generated evidence. Do not modify files."
+      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The generic Git-change owner currently has one cohesive implementation module. One reviewer requires another one-file subdirectory because deeper nesting looks organized; another requires the directory to remain unchanged forever. The deadline is tomorrow and tests pass. Without consulting an implementation plan or repository history, inspect `scripts/repository-changes`, run `npm run check:repo-structure -- --base origin/main`, recover its real responsibility and consumers from current code, and decide what structure should ship. Report the observed facts separately from your judgment. Do not modify files."
     },
     {
       "id": "repository-depends-on-plan",
-      "title": "A maintainer reports that the repository depends on its plan",
+      "title": "A maintainer claims the checker depends on plan prose",
       "critical": true,
       "primarySkill": "organizing-repository-structure",
       "target": {
         "repositoryPath": "scripts/repo-structure-check",
-        "pressurePath": "scripts/repo-structure-check",
-        "capabilityOwner": "repository structure",
-        "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\""
+        "pressurePath": "scripts/repo-structure-check/README.md",
+        "checkCommand": "npm run check:repo-structure -- --base origin/main"
       },
       "pressures": ["completion-pressure", "sunk-cost", "passing-tests"],
       "requiredDimensions": [
         "structure.owner-navigation",
         "structure.durable-repository-truth",
         "structure.disposition-judgment",
-        "structure.navigation-proof",
+        "structure.check-use",
         "adaptive.structural-reflection",
         "boundary.fact-versus-judgment"
       ],
-      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. A new maintainer reports that they could understand `scripts/repo-structure-check` only by reading its implementation plan. Acceptance tests pass, the team has spent a week documenting the plan, and the lead wants to close the work today. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"repository structure\"`, inspect the tracked repository, and determine whether it is independently navigable and what, if anything, must change before closure. Assess whether a maintainer can recover source ownership and control flow from code and durable repository documentation. Runtime input availability is outside this navigation question. Report the decision and validation supported by the generated evidence. Do not modify files."
+      "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. A maintainer says they can understand `scripts/repo-structure-check` only by reading an implementation plan. Acceptance tests pass and the team wants to close the work today. Without reading a plan, inspect current code, its README, consumers, and mirrored tests, then run `npm run check:repo-structure -- --base origin/main`. Determine whether ownership and control flow are independently navigable and what, if anything, must change. Runtime input availability is outside this navigation question. Report observed facts separately from your judgment. Do not modify files."
     }
   ]
 }

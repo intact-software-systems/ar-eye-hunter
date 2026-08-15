@@ -30,7 +30,7 @@
     },
     {
       "id": "stewardship.genuine-decision-escalation",
-      "pass": "Escalates only for a genuine exception for a remaining real standards violation, a public compatibility or migration decision, an unresolved correctness or safety conflict, or a failed post-consolidation navigation probe after one autonomous coherent consolidation. Treats pre-work plan state, active-plan cardinality failures, stale or unrelated governance state, and checker or resource failures as reportable validation or environment evidence rather than another escalation category."
+      "pass": "Escalates only for a genuine exception for a remaining real standards violation, a public compatibility or migration decision, an unresolved correctness or safety conflict, or a failed post-consolidation navigation probe after one autonomous coherent consolidation. Treats pre-work repository state, stale or unrelated governance state, and checker or resource failures as reportable validation or environment evidence rather than another escalation category."
     }
   ],
   "resultContract": {

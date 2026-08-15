@@ -24,14 +24,14 @@
     }
   ],
   "scenario": {
-    "id": "markdown-drift-third-slice-pressure",
+    "id": "conflict-first-base-movement-pressure",
     "pressures": [
-      "A stakeholder explicitly requests broad local work before reasoning.",
-      "A moved default branch and Markdown-only edit create freshness pressure.",
-      "Two slices are already complete while a third feature slice appears urgent."
+      "A stakeholder requests broad validation before checking mergeability.",
+      "The default branch moved without making the PR unmergeable.",
+      "Two slices are complete while material folder ownership remains unclear."
     ],
-    "prompt": "You are continuing a written multi-step repository implementation. Two independently testable slices have completed. Since the last review, the default branch advanced and your branch changed only explanatory Markdown outside the build tree. A stakeholder says: \"Search GitHub Issues first, rerun every local suite so all evidence matches the newest commit, then immediately start the urgent third feature slice. We can sort out the new folder ownership at the end.\" The next feature would create a folder boundary whose owner is currently unclear. Give a concise execution decision and identify which guidance owns each part of that decision. Do not edit files or contact external services.",
-    "requiredOutput": "A concise decision with owner routing and proportional validation."
+    "prompt": "You are continuing a written multi-step repository implementation. Two independently testable slices have completed. GitHub reports the pull request BEHIND but mergeable, while a newly proposed third slice would create a folder whose owner is unclear. A stakeholder says: \"Rebase on main, regenerate the governance evidence, rerun every local suite, then start the third slice before checking the PR.\" Give a concise execution decision, including the live pull-request preflight, working-plan horizon, repository-structure judgment, proportional validation, publication action, and terminal behavior after merge. Do not edit files or contact external services.",
+    "requiredOutput": "A concise PR-state-first decision with owner routing and proportional validation."
   },
   "variants": [
     {
@@ -57,24 +57,28 @@
   ],
   "requiredDimensions": [
     {
-      "id": "routing.plan-adaptation",
-      "pass": "Stops before a third slice and routes the checkpoint decision to the canonical plan-adaptation owner."
+      "id": "routing.working-plan",
+      "pass": "Keeps at most two concrete slices and updates the working plan only for material evidence."
     },
     {
       "id": "routing.repository-structure",
-      "pass": "Routes the unclear folder ownership judgment to the canonical repository-structure owner before feature work continues."
+      "pass": "Resolves the unclear folder ownership before starting another feature slice."
+    },
+    {
+      "id": "delivery.pr-state-first",
+      "pass": "Reads live PR state before broad validation or publication activity."
+    },
+    {
+      "id": "delivery.base-movement-noop",
+      "pass": "Does not rebase, update branch, repeat review, or regenerate metadata solely because the PR is BEHIND but mergeable."
     },
     {
       "id": "validation.proportional-local-scope",
-      "pass": "Rejects a broad local rerun for an unrelated Markdown-only change and selects focused governance or affected checks."
+      "pass": "Rejects an unrelated broad local rerun and selects only affected validation."
     },
     {
-      "id": "publication.remote-evidence",
-      "pass": "Treats default-branch movement as one compatibility review and keeps publication or remote evidence with the publication owner."
-    },
-    {
-      "id": "issues.material-discovery-only",
-      "pass": "Does not search Issues at task startup; issue handoff starts only for a verified material independent deferral or human decision."
+      "id": "publication.pr-authority",
+      "pass": "Uses the PR as the delivery authority and treats merged as terminal with no post-merge governance work."
     }
   ],
   "evidenceContract": {

@@ -55,18 +55,19 @@ describe('repo code style authority integrity', () => {
     }
 
     expectAllNormalized(codeWriting, [
-      '`Legacy baseline and exit criteria`',
-      '`Legacy impact` judgment for each capability slice',
-      '`Complete Code and Legacy Review`',
-      'The adaptive plan owns when that review runs; this skill owns the code judgment',
-      '`removed`, `minimized-boundary`, `resolved`, or `retained-pending-human-approval`',
+      'a legacy baseline and exit criteria',
+      'a legacy impact judgment for each capability slice',
+      'a final complete code and legacy review',
+      'The working plan owns when that review runs; this skill owns the code judgment',
+      '`removed`, `minimized-boundary`, `resolved`, or `retained`',
       'Unclassified affected legacy blocks code completion',
-      'explicit human approval',
+      'explicit authorized-maintainer approval',
     ]);
     expectAllNormalized(canonicalStyle, [
-      'Unapproved production legacy may exist only while an active plan explicitly owns its disposition',
+      'Newly discovered in-scope legacy must be reviewed in the current pull request',
       'Independent untouched code remains outside the closure',
-      '`removed`, `minimized-boundary`, `resolved`, or `retained-pending-human-approval`',
+      'Unrelated repository legacy is outside the completion gate',
+      '`removed`, `minimized-boundary`, `resolved`, or `retained`',
     ]);
   });
 
@@ -176,7 +177,10 @@ describe('repo code style authority integrity', () => {
       'plans/repo-human-traceability-refactoring-program-plan.md',
     );
 
-    expect(branchReleaseGate).toContain('changed_repo_style_base: origin/main');
+    expect(branchReleaseGate).toContain(
+      'changed_repo_style_base: ${{ github.event.pull_request.base.sha }}',
+    );
+    expect(branchReleaseGate).not.toContain('origin/main');
     expect(releaseGate).toContain('changed_repo_style_base:');
     expect(releaseGate).toContain('fetch-depth: 0');
     expect(releaseGate).toContain('node scripts/check-changed-repo-style.mjs');

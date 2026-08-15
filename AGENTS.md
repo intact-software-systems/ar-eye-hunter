@@ -63,11 +63,26 @@ standard.
   Keep a functional core behind an explicitly owned stateful shell; each
   service owns one coherent business capability, one ownership boundary, and
   one reason to change.
-- For the human review workflow and warning-only check tooling, use
+- For the human review sequence and warning-only check tooling, use
   `docs/repo-human-style-guide.md` and run `npm run check:repo-style`.
 - Use `adaptive-plan-execution` for written or multi-slice plans,
   `organizing-repository-structure` for repository shape, `rallar-testing` for
   surface-specific commands, and `publishing-plan-progress` for publication.
+- The GitHub pull request is the remote delivery entity. Keep only the next two
+  useful implementation slices concrete in the agent's working plan. Ordinary
+  pull requests do not update a shared plan catalog, ownership reservation,
+  progress ledger, receipt, digest, or metadata fence.
+- Run `npm run pr:delivery -- status` before broad final validation. A real
+  conflict is repaired first. `BEHIND` alone creates no work: do not update the
+  branch, merge `main`, rebase, repeat review, or refresh metadata while GitHub
+  still reports the pull request mergeable.
+- At handoff, run `npm run pr:delivery -- ready` once. Native review plus
+  auto-merge and an intentional role-based administrator merge are both
+  supported. When GitHub reports the pull request as merged, stop. Ordinary
+  pull request completion creates no tracked governance file or post-merge task.
+- Retained production legacy remains a meaningful durable policy decision. It
+  requires the focused exception registry and explicit human approval; ordinary
+  delivery metadata never substitutes for that decision.
 - No AI or agent may create or place a commit on `main`, `master`, or the local
   default branch without stating the exact branch, operation, staged file list,
   staged diff summary and staged Git tree ID from `git write-tree`, proposed
@@ -87,13 +102,12 @@ standard.
   Each default-branch push requires a new permission request and approval.
   Commit and push permissions are independent; approval for one never grants
   approval for the other.
-- For a supported authenticated governance decision, an AI may use
+- Authenticated governance exceptions are separate from ordinary pull request delivery and
+  cannot be used as pull request completion evidence. For a supported exception, an AI may use
   `npm run governance:decide -- apply` after showing the exact canonical request
   and expected main head and receiving one just-in-time approval for that exact
   atomic mutation. A changed request or head invalidates approval and requires
-  a new one. Never hand-write governance receipts, directly edit/delete a plan,
-  fabricate completion or review evidence, or construct a tracked plan overview as
-  substitutes.
+  a new one. Never fabricate completion or review evidence.
 - For package/app changes, read the relevant repo skill in `.agents/skills/**`:
   - `building-rallar-apps` first for greenfield apps and React/3D architecture;
     then use the authority, realtime, and testing specialists for the selected
@@ -133,8 +147,8 @@ standard.
 
 ## Validation
 
-- Use `rallar-testing` to select affected checks and
-  `adaptive-plan-execution` for plan-level validation scope and checkpoints.
+- Use `rallar-testing` to select affected checks and `adaptive-plan-execution`
+  for working-plan and proportional-validation judgment.
 - Run focused tests for the touched package or app before broader suites.
 - When adding or changing REST API behavior, add or adjust Rallar black-box
   recipes/tests in `packages/shared-test/black-box-runner` as part of the same

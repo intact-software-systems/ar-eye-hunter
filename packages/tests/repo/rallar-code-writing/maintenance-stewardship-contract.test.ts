@@ -152,8 +152,7 @@ describe('rallar code-writing maintenance stewardship contract', () => {
       '.agents/skills/adaptive-plan-execution/SKILL.md',
     ];
     const preWorkEvidence = [
-      'pre-work plan state',
-      'active-plan cardinality failures',
+      'pre-work repository state',
       'stale or unrelated governance state',
       'checker or resource failures',
     ];

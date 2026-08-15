@@ -26,41 +26,40 @@ describe('organizing repository structure skill contract', () => {
     expect(skill.split(/\s+/u).length).toBeLessThanOrEqual(500);
   });
 
-  it('routes facts, dispositions, and cold navigation to their canonical owners', () => {
+  it('routes diff facts and structural judgment to their current owners', () => {
     const skill = normalizeWhitespace(readRepo(`${skillRoot}/SKILL.md`));
 
     expect(existsSync(path.join(repoRoot, 'scripts/repo-structure-check.mjs'))).toBe(true);
     expect(existsSync(path.join(repoRoot, 'scripts/repo-structure-check/README.md'))).toBe(true);
     expectAll(skill, [
       'npm run check:repo-structure',
+      'npm run check:repo-structure -- --base <base>',
       'scripts/repo-structure-check/README.md',
-      'scripts/repo-style-check/structural-facts.mjs',
       'keep',
       'split',
       'move',
       'consolidate',
-      'navigation evidence',
-      'structuralDispositions',
-      'node scripts/repo-structure-check.mjs --navigation-evidence <capability-owner>',
+      'PR review',
+      'changed paths',
+      'exception-registry facts',
     ]);
+    expect(skill).not.toContain('--navigation-evidence');
+    expect(skill).not.toContain('structuralDispositions');
   });
 
-  it('uses generated evidence instead of requiring agents to transcribe exact facts', () => {
+  it('uses current code and durable maps without generating evidence records', () => {
     const skill = normalizeWhitespace(readRepo(`${skillRoot}/SKILL.md`));
 
     expectAll(skill, [
       'entry',
       'result',
-      'Do not make a current disposition permanent',
-      'generated navigation-evidence record',
-      'do not transcribe facts the checker already owns',
-      'actual structural pressure',
+      'mirrored tests',
+      'durable navigation map',
+      'Do not write a plan-owned disposition',
+      'generated navigation evidence record',
+      'A harmless base movement',
     ]);
-    expect(skill).not.toContain('exact applicable `repository/path#symbol`');
-    expect(skill).not.toContain('declared `package.json` focused command');
-    expect(skill).not.toContain(
-      'why neither flat dumping nor singleton nesting controls the decision',
-    );
+    expect(skill).not.toContain('affectedCodeDigest');
   });
 
   it('keeps structural facts separate from human architectural judgment', () => {
@@ -68,11 +67,10 @@ describe('organizing repository structure skill contract', () => {
 
     expectAll(skill, [
       'separation of concerns',
-      'single responsibility',
+      'responsibility',
       'owner-to-result',
       'Do not mechanically split',
-      'meaningless singleton',
-      'flat dumping',
+      'A folder needs a real domain',
       'does not choose',
     ]);
     expect(skill).not.toMatch(/(?:always|must) (?:create|use) (?:a )?(?:src|feature|domain)\//iu);

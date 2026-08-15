@@ -251,18 +251,16 @@ describe('authoritative mutation guidance integrity', () => {
     ]);
   });
 
-  it('requires review-pressure evidence before publishing a large implementation plan', () => {
+  it('publishes large work through one semantic PR without a second evidence ledger', () => {
     const progress = readRepo('.agents/skills/publishing-plan-progress/SKILL.md');
 
     expectAllNormalized(progress, [
-      '100 changed files',
-      '10,000 changed lines',
-      '20 production modules',
-      'three materially different control-flow families',
-      'stacked-versus-single decision',
-      'one-screen read-first map',
-      'build-affecting tree digest',
-      'unverifiable required publication evidence keeps publication incomplete',
+      'one semantic pull request',
+      'Goal, Changes, Acceptance, Validation, Risk and rollback, and Follow-up',
+      'do not add identifiers, computed path lists, progress records, or machine metadata fences',
+      'coherent reviewed slices without empty commits or shared governance-file updates',
+      'The GitHub pull request is the remote delivery entity',
+      'Do not copy workflow run identities or content digests into the branch or PR body as governance inputs',
     ]);
   });
 

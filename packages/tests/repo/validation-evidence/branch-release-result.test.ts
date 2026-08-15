@@ -2,47 +2,36 @@ import { describe, expect, it } from 'vitest';
 
 import { validateBranchReleaseConclusion } from '../../../../scripts/validation-evidence/branch-release-result.mjs';
 
-describe('Branch Release Gate governance eligibility', () => {
+describe('Branch Release Gate result', () => {
   it.each([
-    ['passed', 'passed', ''],
-    ['accepted-deviation', 'failed', 'd'.repeat(64)],
-  ])('accepts exact %s governance resolution', (governanceStatus, underlyingStatus, decisionId) => {
+    ['fresh validation', 'false', 'success', 'success'],
+    ['same-PR content reuse', 'true', 'skipped', 'skipped'],
+  ])('accepts successful %s', (_name, reuse, releaseResult, publicationResult) => {
     expect(
       validateBranchReleaseConclusion({
-        ...successfulConclusion(),
-        governanceStatus,
-        governanceUnderlyingStatus: underlyingStatus,
-        governanceDecisionId: decisionId,
+        governanceResult: 'success',
+        selectionResult: 'success',
+        reuse,
+        releaseResult,
+        publicationResult,
       }),
     ).toEqual([]);
   });
 
-  it.each([
-    ['failed', 'failed', ''],
-    ['accepted-deviation', 'passed', 'd'.repeat(64)],
-    ['accepted-deviation', 'failed', ''],
-    ['passed', 'failed', ''],
-  ])('rejects ambiguous governance resolution %s/%s', (status, underlying, decisionId) => {
+  it('rejects every failed constituent without an external deviation', () => {
     expect(
       validateBranchReleaseConclusion({
-        ...successfulConclusion(),
-        governanceStatus: status,
-        governanceUnderlyingStatus: underlying,
-        governanceDecisionId: decisionId,
+        governanceResult: 'failure',
+        selectionResult: 'failure',
+        reuse: 'false',
+        releaseResult: 'failure',
+        publicationResult: 'failure',
       }),
-    ).toContain('Governance Gate resolution is not merge eligible');
+    ).toEqual([
+      'Governance Gate did not succeed',
+      'validation-evidence selection did not succeed',
+      'broad Release Gate did not succeed',
+      'fresh validation evidence was not published',
+    ]);
   });
 });
-
-function successfulConclusion() {
-  return {
-    governanceResult: 'success',
-    governanceStatus: 'passed',
-    governanceUnderlyingStatus: 'passed',
-    governanceDecisionId: '',
-    selectionResult: 'success',
-    reuse: 'false',
-    releaseResult: 'success',
-    publicationResult: 'success',
-  };
-}

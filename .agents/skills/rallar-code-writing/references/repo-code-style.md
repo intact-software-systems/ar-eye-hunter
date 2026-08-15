@@ -86,26 +86,24 @@ rewrite, replace, or discard the coupled test. First classify a failing test as
 either a production regression or obsolete test coupling. Never restore inferior
 production structure merely to make a coupled test pass.
 
-Within a plan's affected production surface, legacy candidates include duplicate
+Within the current work's affected production surface, legacy candidates include duplicate
 predecessor implementations; deprecated entry points or exports; compatibility
 aliases, adapters, routes, flags, modes, and fallbacks; migration bridges,
 shims, and workarounds; parallel old/new implementations; rollback paths that
 retain a predecessor; and historical vocabulary or types retained only for
 compatibility.
 
-Unapproved production legacy may exist only while an active plan explicitly owns
-its disposition. At completion, each affected item is `removed`,
-`minimized-boundary`, `resolved`, or `retained-pending-human-approval`.
+At completion, each affected item is `removed`, `minimized-boundary`, `resolved`, or `retained`.
 `minimized-boundary` means a thin, explicitly named compatibility boundary that
 delegates to the canonical implementation and contains no duplicate business
-logic. A retained item requires explicit human approval for its exact candidate
-tree; agent judgment, automation, an issue, silence, or approval for older code
-does not suffice.
+logic. A retained item requires explicit authorized-maintainer approval and a durable registry
+entry for its exact path and symbol; agent judgment, automation, an issue, silence, or approval for
+older code does not suffice.
 
-Independent untouched code remains outside the closure unless the
-plan depends on it, expands it, materially touches it, or makes it part of a
-changed production call path. Newly discovered in-scope legacy is added to the
-active plan and cannot be deferred through an issue to complete the plan.
+Independent untouched code remains outside the closure. Unrelated repository legacy is outside the
+completion gate unless the work depends on it, expands it, materially touches it, or makes it part
+of a changed production call path. Newly discovered in-scope legacy must be reviewed in the current
+pull request and cannot be deferred through an issue to complete the work.
 
 ## Scope and adoption
 
@@ -603,9 +601,9 @@ private after-commit data.
 Semantic tests are primary. Source inventories, exact-tree checks, string
 assertions, and line/count ratchets are supplementary and temporary. Each
 temporary ratchet records a named owner and removal condition and is
-supplementary to semantic runtime or architecture assertions. Remove or replace
-it after the move's resulting-main workflow and later ledger are published and
-semantic assertions directly cover the same loss risk.
+supplementary to semantic runtime or architecture assertions. Remove or replace it when semantic
+assertions directly cover the same loss risk. No resulting-main workflow or post-merge ledger is
+required.
 
 ## Function inputs and outputs
 

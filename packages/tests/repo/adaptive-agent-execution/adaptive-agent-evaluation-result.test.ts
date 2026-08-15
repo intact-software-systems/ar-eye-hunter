@@ -35,9 +35,9 @@ describe('adaptive agent evaluation result validation', () => {
 
     expect(validateEvaluationResult(input)).toEqual(
       expect.arrayContaining([
-        'result.scenarioResults contains duplicate scenario invalidated-ten-step-plan',
+        'result.scenarioResults contains duplicate scenario conflict-before-final-validation',
         'result.scenarioResults contains unknown scenario unknown-scenario',
-        'result.scenarioResults is missing scenario markdown-only-synchronization',
+        'result.scenarioResults is missing scenario base-movement-without-conflict',
       ]),
     );
   });
@@ -51,9 +51,9 @@ describe('adaptive agent evaluation result validation', () => {
 
     expect(validateEvaluationResult(input)).toEqual(
       expect.arrayContaining([
-        'invalidated-ten-step-plan dimensionResults contains duplicate dimension adaptive.plan-qualification',
-        'invalidated-ten-step-plan dimensionResults contains unknown dimension unknown.dimension',
-        'invalidated-ten-step-plan dimensionResults is missing dimension adaptive.deterministic-evidence',
+        'conflict-before-final-validation dimensionResults contains duplicate dimension delivery.pr-state-first',
+        'conflict-before-final-validation dimensionResults contains unknown dimension unknown.dimension',
+        'conflict-before-final-validation dimensionResults is missing dimension adaptive.two-slice-horizon',
       ]),
     );
   });
@@ -71,10 +71,10 @@ describe('adaptive agent evaluation result validation', () => {
 
     expect(validateEvaluationResult(input)).toEqual(
       expect.arrayContaining([
-        'invalidated-ten-step-plan adaptive.plan-qualification evidence must be non-empty text',
-        'invalidated-ten-step-plan verdict must be fail when a required dimension fails',
-        'invalidated-ten-step-plan criticalFailures must exactly list failed required dimensions',
-        'invalidated-ten-step-plan rawOutputArtifact cannot be read as non-empty text',
+        'conflict-before-final-validation delivery.pr-state-first evidence must be non-empty text',
+        'conflict-before-final-validation verdict must be fail when a required dimension fails',
+        'conflict-before-final-validation criticalFailures must exactly list failed required dimensions',
+        'conflict-before-final-validation rawOutputArtifact cannot be read as non-empty text',
         'result.summary.total must equal 3',
         'result.summary.passed must equal 2',
         'result.summary.criticalTotal must equal 3',

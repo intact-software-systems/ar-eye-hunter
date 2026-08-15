@@ -124,11 +124,12 @@ function createFixture(): ValidationInput {
       { id: 'with-canonical-skills', explicitInputs: ['skill.md'] },
     ],
     requiredDimensions: [
-      { id: 'routing.plan-adaptation' },
+      { id: 'routing.working-plan' },
       { id: 'routing.repository-structure' },
+      { id: 'delivery.pr-state-first' },
+      { id: 'delivery.base-movement-noop' },
       { id: 'validation.proportional-local-scope' },
-      { id: 'publication.remote-evidence' },
-      { id: 'issues.material-discovery-only' },
+      { id: 'publication.pr-authority' },
     ],
     evidenceContract: {
       schemaVersion: 'general-agent-guidance-evidence-ledger-v2',

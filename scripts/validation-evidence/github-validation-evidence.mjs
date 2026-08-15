@@ -3,16 +3,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import {
-  readWorkflowJobsEnvelope,
-  readWorkflowRunsEnvelope,
-} from './validation-evidence-selection.mjs';
+import { readWorkflowRunsEnvelope } from './validation-evidence-selection.mjs';
 
 export function readGithubWorkflowRuns({ repository, workflowPath, branch }) {
   const workflowName = path.posix.basename(workflowPath);
   const endpoint =
     `/repos/${repository}/actions/workflows/${workflowName}/runs` +
-    `?branch=${encodeURIComponent(branch)}&event=push&status=success&per_page=100`;
+    `?branch=${encodeURIComponent(branch)}&event=pull_request&status=success&per_page=100`;
   const source = execFileSync('gh', ['api', '--paginate', '--slurp', endpoint], {
     encoding: 'utf8',
     maxBuffer: 10 * 1024 * 1024,
@@ -32,26 +29,16 @@ export function readGithubValidationEvidenceArtifact({ repository, runId }) {
         '--repo',
         repository,
         '--name',
-        'validation-evidence-v1',
+        'validation-evidence-v2',
         '--dir',
         artifactDirectory,
       ],
       { stdio: 'ignore' },
     );
-    return readFileSync(path.join(artifactDirectory, 'validation-evidence-v1.json'), 'utf8');
+    return readFileSync(path.join(artifactDirectory, 'validation-evidence-v2.json'), 'utf8');
   } catch {
     return undefined;
   } finally {
     rmSync(artifactDirectory, { recursive: true, force: true });
   }
-}
-
-export function readGithubWorkflowJobs({ repository, runId }) {
-  const endpoint =
-    `/repos/${repository}/actions/runs/${runId}/jobs` + '?filter=latest&per_page=100';
-  const source = execFileSync('gh', ['api', '--paginate', '--slurp', endpoint], {
-    encoding: 'utf8',
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return readWorkflowJobsEnvelope(source);
 }

@@ -8,8 +8,8 @@ import { createGitHubGovernanceApi } from '../governance-decisions/github-govern
 import { verifyGovernanceDecisionAdmission } from
   '../governance-decisions/governance-decision-admission-verification.mjs';
 import { readGitRepositorySnapshot } from '../governance-decisions/git-repository-snapshot.mjs';
+import { readChangedPathsBetweenRevisions } from '../repository-changes/read-git-changes.mjs';
 import { parseAdaptivePlanRecord } from './adaptive-plan-record.mjs';
-import { readChangedPathsBetweenRevisions } from './plan-change-facts.mjs';
 
 const governanceReceiptPattern = /^governance\/decisions\/[0-9a-f]{64}\.json$/u;
 

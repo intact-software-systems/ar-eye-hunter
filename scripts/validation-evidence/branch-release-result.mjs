@@ -1,8 +1,5 @@
 export function validateBranchReleaseConclusion({
   governanceResult,
-  governanceStatus,
-  governanceUnderlyingStatus,
-  governanceDecisionId,
   selectionResult,
   reuse,
   releaseResult,
@@ -12,20 +9,10 @@ export function validateBranchReleaseConclusion({
   if (governanceResult !== 'success') {
     issues.push('Governance Gate did not succeed');
   }
-  const governancePassed =
-    governanceStatus === 'passed' &&
-    governanceUnderlyingStatus === 'passed' &&
-    governanceDecisionId === '';
-  const governanceDeviationAccepted =
-    governanceStatus === 'accepted-deviation' &&
-    governanceUnderlyingStatus === 'failed' &&
-    /^[0-9a-f]{64}$/u.test(governanceDecisionId ?? '');
-  if (!governancePassed && !governanceDeviationAccepted) {
-    issues.push('Governance Gate resolution is not merge eligible');
-  }
   if (selectionResult !== 'success') {
     issues.push('validation-evidence selection did not succeed');
   }
+
   if (reuse === 'true') {
     if (releaseResult !== 'skipped' || publicationResult !== 'skipped') {
       issues.push('reused evidence requires broad validation and publication to be skipped');

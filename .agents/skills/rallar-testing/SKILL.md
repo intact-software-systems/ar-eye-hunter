@@ -9,7 +9,7 @@ description: Use when deciding which Vitest, Deno, Vite, Playwright, package bui
 
 Read `references/test-commands.md` when choosing commands. Prefer targeted checks first, then broader builds or suites based on blast radius.
 
-`adaptive-plan-execution` owns plan-level validation scope and checkpoint decisions.
+`adaptive-plan-execution` owns working-plan and proportional-validation judgment.
 
 ## AppInbox Mutation Gate
 

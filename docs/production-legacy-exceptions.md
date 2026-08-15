@@ -1,61 +1,26 @@
 # Production Legacy Exception Registry
 
-This registry records the explicit human approvals that let a retained
-production-legacy item survive an active plan. It is not a baseline of all
-existing legacy and it never makes unreviewed legacy acceptable.
+This registry records rare production compatibility boundaries that an authorized maintainer has
+chosen to retain. Ordinary pull-request work does not edit this file when legacy is removed,
+resolved, or minimized.
 
-The active plan and its PR Human Review Record v2 own the full affected-surface
-ledger. Add an entry here only after a human explicitly approves retention for
-the exact candidate tree. No automated score or agent may approve retained
-production legacy.
+A retained entry describes only the code and its maintenance policy. It does not copy pull-request
+numbers, reviews, plan identifiers, candidate identifiers, commits, digests, or approval receipts.
+The merge authority and review history remain in GitHub.
 
-## Required entry fields
+## Retained exceptions
 
-Each retained entry includes:
+No retained production legacy is currently registered.
 
-- Legacy exception ID: a stable, unique `production-legacy-...` identifier;
-- Repository-relative path and symbol;
-- Purpose;
-- Canonical implementation owner;
-- Consumer or operational dependency;
-- Why removal is unsafe now;
-- Minimization already performed;
-- Approval date and human reviewer;
-- Approved production candidate SHA;
-- Compatibility tests, which protect compatibility rather than internal
-  structure;
-- Named owner; and
-- Review or removal condition.
-- GitHub PR review ID.
+When retention is necessary, add one section headed `path#symbol` with these maintenance facts:
 
-An entry is valid only for its recorded location, purpose, minimization,
-condition, and approved production candidate SHA. A production change
-invalidates the approval; re-review it and obtain new explicit human approval
-before the plan completes. The registry may be recorded in a later,
-evidence-only commit after approval. That later commit may change only this
-registry; any production path changed after the approved production SHA
-invalidates the approval.
-
-## Approved retained production legacy
-
-No approved retained production legacy is recorded yet.
-
-### Entry format
-
-```markdown
-### production-legacy-<descriptive-id>
-
-- Repository-relative path and symbol:
-- Purpose:
-- Canonical implementation owner:
-- Consumer or operational dependency:
-- Why removal is unsafe now:
-- Minimization already performed:
-- Approval date and human reviewer:
-- Approved production candidate SHA:
-- Compatibility tests:
-- Named owner:
-- Review or removal condition:
-- GitHub PR review ID:
-- PR Human Review Record v2 link:
-```
+- Path
+- Symbol
+- Purpose
+- Canonical owner
+- Consumer dependency
+- Why removal is unsafe
+- Minimization
+- Compatibility tests
+- Named owner
+- Review or removal condition

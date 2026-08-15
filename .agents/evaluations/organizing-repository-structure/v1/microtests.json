@@ -1,6 +1,6 @@
 {
   "schemaVersion": "organizing-repository-structure-microtests-v1",
-  "campaignId": "task-7-fix-round-1-micro-v1",
+  "campaignId": "pr-centered-governance-structure-v1",
   "repositoryRootResolution": "suite-checkout",
   "model": "gpt-5.6-terra",
   "reasoningEffort": "medium",
@@ -9,24 +9,29 @@
   "freshContext": { "forkTurns": "none", "singleShot": true },
   "skillInput": ".agents/skills/organizing-repository-structure/SKILL.md",
   "target": {
-    "repositoryPath": "scripts/plan-adaptation",
-    "capabilityOwner": "plan adaptation",
-    "evidenceCommand": "node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\""
+    "repositoryPath": "scripts/repository-changes",
+    "checkCommand": "npm run check:repo-structure -- --base origin/main"
   },
-  "prompt": "IMPORTANT: Treat this as the current repository task and make the decision now. The authored modules under `scripts/plan-adaptation` are flat. One senior reviewer requires a separate one-code-file subdirectory for each module because nested trees look organized; another requires the directory to remain flat permanently. The deadline is tomorrow and existing tests pass. Without consulting an implementation plan, pull request, or repository history, run `node scripts/repo-structure-check.mjs --navigation-evidence \"plan adaptation\"`, inspect the tracked repository, and decide what structure should ship. Report the decision and validation supported by the generated evidence. Do not modify files.",
+  "prompt": "IMPORTANT: Treat this as the current repository task and decide now. The implementation under `scripts/repository-changes` has one cohesive module. A reviewer requires a one-file nested directory because nested trees look organized; another says the shape must never change. Without consulting an implementation plan or repository history, inspect current owners, consumers, tests, and durable documentation, run `npm run check:repo-structure -- --base origin/main`, and decide what should ship. Report checker facts separately from judgment. Do not modify files.",
   "requiredDimensions": [
-    "micro.exact-owner-entry",
-    "micro.result-failure-paths",
+    "micro.owner-and-consumers",
     "micro.mirrored-tests",
     "micro.focused-command",
-    "micro.navigation-map",
+    "micro.fact-judgment-boundary",
     "micro.evidence-based-decision"
   ],
+  "scoring": {
+    "micro.owner-and-consumers": "Recovers the generic Git-change responsibility and at least one current consumer from repository code.",
+    "micro.mirrored-tests": "Uses the repository-changes test as behavioral evidence.",
+    "micro.focused-command": "Runs the diff-scoped repository-structure check.",
+    "micro.fact-judgment-boundary": "Does not treat a singleton finding as an automatic folder decision.",
+    "micro.evidence-based-decision": "Keeps the cohesive module while rejecting both decorative nesting and a permanent shape rule."
+  },
   "evidenceContract": {
     "schemaVersion": "organizing-repository-structure-evidence-ledger-v1",
     "digestAlgorithm": "sha256",
     "repositoryRootPolicy": "resolved-suite-checkout-in-ignored-ledger-only",
-    "rawOutputPolicy": "verbatim-agent-response-separate-from-navigation-evidence-stdout-artifact",
+    "rawOutputPolicy": "verbatim-agent-response-separate-artifact",
     "scorePolicy": "separate-artifact",
     "requiredFields": [
       "runId",
@@ -44,54 +49,8 @@
       "rubricDigest",
       "status",
       "rawOutputArtifact",
-      "scoreArtifact",
-      "navigationEvidenceCommand",
-      "navigationEvidenceStartedAt",
-      "navigationEvidenceCompletedAt",
-      "navigationEvidenceExitCode",
-      "navigationEvidenceArtifact",
-      "navigationEvidenceDigest",
-      "navigationEvidenceSchemaVersion",
-      "navigationEvidenceOwner",
-      "navigationEvidenceAffectedCodeDigest"
+      "scoreArtifact"
     ],
     "statuses": ["running", "completed", "failed", "invalid", "aborted"]
-  },
-  "scoring": {
-    "micro.exact-owner-entry": "Uses a valid `repository-navigation-evidence-v1` record for `plan adaptation`; the record, not answer transcription, proves owner and entry.",
-    "micro.result-failure-paths": {
-      "acceptedResultSymbols": [
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/adaptive-plan-catalog.mjs",
-          "symbol": "readAdaptivePlanCatalog"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "prepareAdaptivePlan"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "checkAdaptivePlans"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "closeAdaptivePlan"
-        }
-      ],
-      "requiredFailureSymbol": {
-        "kind": "symbol",
-        "path": "scripts/plan-adaptation.mjs",
-        "symbol": "toError"
-      },
-      "pass": "Uses the valid generated record; the record must contain at least one accepted terminal and the required failure symbol, while the answer need not transcribe them."
-    },
-    "micro.mirrored-tests": "Uses the valid generated record whose testRoot resolves to the declared mirrored tests.",
-    "micro.focused-command": "Runs or cites the focused command supplied by the valid generated record.",
-    "micro.navigation-map": "Uses the valid generated record whose navigationMap state is present and path resolves.",
-    "micro.evidence-based-decision": "Keeps the current flat capability while rejecting both automatic singleton nesting and a flat-forever rule from recovered responsibilities."
   }
 }

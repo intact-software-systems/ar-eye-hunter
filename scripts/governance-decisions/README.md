@@ -47,7 +47,8 @@ single command entry. Preview reads the exact expected Git tree, validates the c
 and calls
 [`governance-decision-transition.mjs#computeGovernanceDecisionTransition`](./governance-decision-transition.mjs#computeGovernanceDecisionTransition).
 The core returns sorted additions, deletions, bypassed domain invariants, and non-receipt content
-identities without mutating the caller's repository.
+identities without mutating the caller's repository. Current preview, publication, and apply accept
+only focused gate deviations and durable policy exceptions. Active-plan operations are retired.
 
 [`governance-decision-commit-verification.mjs#verifyGovernanceDecisionCommit`](./governance-decision-commit-verification.mjs#verifyGovernanceDecisionCommit)
 owns structural verification. It accepts injected parent and candidate snapshot reads and
@@ -68,8 +69,6 @@ dispatch context and publishes through the same transition and receipt path.
   transition.
 - `npm run governance:decide -- apply --request <request.json>` authenticates and creates one
   expected-head-bound default-branch commit.
-- `npm run governance:decide -- publish-blob --file <file>` uploads exact bytes as an unreferenced
-  Git blob after administrator authentication.
 - `npm run governance:decide -- publish-request --request <request.json>` validates and uploads the
   canonical request bytes.
 - `npm run governance:decide -- verify-commit --commit <oid>` verifies both the exact structural
@@ -79,15 +78,17 @@ Preview is optional. A human administrator may apply directly. An AI must show t
 request and expected main head, obtain one just-in-time approval for that atomic mutation, and then
 apply without further decision prompts. A changed request or expected head invalidates that
 approval. Never hand-write a decision receipt, directly edit or delete a plan, fabricate completion
-or review evidence, or manually construct a tracked plan overview as a substitute for this command.
+or review evidence, or manually construct tracked governance evidence as a substitute for this
+command. This exception path is not ordinary pull request completion evidence.
 
-Gate deviations retain the exact failed run, attempt, gate, and candidate evidence. The reusable
-Governance Gate reports `accepted-deviation` separately from `passed`, and Branch Release Gate alone
-turns that exact verified resolution into merge eligibility. Exception approvals project into the
-existing repository-structure, production-legacy, code-style, and test-coupling contracts; existing
-PR-backed registries and static dispositions remain valid. Trusted historical receipts are read only
-from an explicit `origin/main` revision and structurally replayed with GitHub-verified User or App/run
-provenance. They also require durable admission evidence from the exact `main` push run of the
+Ordinary pull-request delivery never creates a governance decision. Current commands reject plan
+operations, gate deviations, and exception decisions; an administrator uses GitHub's role-based PR
+bypass when an independent review is unavailable. Existing durable registries and static
+dispositions remain valid. Trusted historical receipts are read only from an explicit `origin/main`
+revision and structurally replayed with GitHub-verified User or App/run provenance. The replay reader
+still understands already-published plan, gate-deviation, and exception receipts for historical
+verification, but no current command creates them. Historical receipts also require durable
+admission evidence from the exact `main` push run of the
 trusted deploy workflow: its classifier job, `verify-commit` step, and fail-closed resolution step
 must all have completed for the exact decision commit and run attempt, and its uniquely named
 authenticated-admission marker must have succeeded. The trusted workflow runs that marker only

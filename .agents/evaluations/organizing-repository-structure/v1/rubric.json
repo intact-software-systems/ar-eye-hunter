@@ -1,253 +1,94 @@
 {
   "schemaVersion": "organizing-repository-structure-rubric-v1",
   "suiteId": "organizing-repository-structure-v1",
-  "criticalPolicy": "Every required dimension for every critical scenario must pass against that scenario's expected repository truth.",
+  "criticalPolicy": "Every required dimension for every critical scenario must pass against current repository truth.",
   "nonGoals": [
     "Score general architecture eloquence or writing style.",
     "Require a particular folder taxonomy.",
-    "Convert a size, density, prefix, or depth fact into an automatic split.",
-    "Award owner-navigation credit for a proposed inspection method without recovered paths and symbols."
+    "Convert a size, density, prefix, singleton, or depth fact into an automatic split.",
+    "Require a generated navigation record, plan digest, or tracked evidence ledger."
   ],
   "authority": {
     "automatedFacts": [
       "directory density",
       "feature-prefix clustering",
-      "file size and cognitive-load findings",
-      "semantic directory depth",
+      "changed file size",
       "singleton and redundant-chain findings",
-      "capability declaration and navigation-evidence validity"
+      "exception-registry validity"
     ],
     "agentJudgments": [
       "capability and responsibility ownership",
       "keep, split, move, or consolidate disposition",
-      "separation-of-concerns and single-responsibility rationale",
-      "checkpoint decision and validation scope"
+      "material working-plan adaptation",
+      "proportional validation scope"
     ]
   },
   "dimensions": [
     {
       "id": "structure.owner-navigation",
-      "pass": "Uses a valid repository-navigation-evidence-v1 record for the scenario capability; the record must match the expected owner, entry, an accepted result, failure, test path, command, map state, and affected-code digest."
+      "pass": "Recovers the owner, entry, decisions, results, failures, consumers, and mirrored tests from current code and durable documentation."
     },
     {
       "id": "structure.singleton-tradeoff",
-      "pass": "Rejects automatic flattening and meaningless singleton nesting, grounding placement in the responsibilities and dependency direction found in the target capability."
+      "pass": "Rejects both decorative singleton nesting and a flat-forever rule, grounding placement in real responsibility and dependencies."
     },
     {
       "id": "structure.durable-repository-truth",
-      "pass": "Demonstrates whether current code, entry, tests, focused command, and navigation map match the scenario expectation without relying on tactical plan prose."
+      "pass": "Determines whether current code, tests, consumers, and the durable map are navigable without tactical plan prose."
     },
     {
       "id": "structure.disposition-judgment",
-      "pass": "Selects a disposition accepted by the scenario expectation and explains it from recovered responsibilities, dependency direction, compatibility, and human navigation."
+      "pass": "Selects and explains a keep, split, move, or consolidate judgment from responsibility, dependencies, compatibility, and navigation."
     },
     {
       "id": "structure.metric-boundary",
-      "pass": "Treats the observed near-limit line counts as review facts and verifies responsibility before choosing structural change."
+      "pass": "Treats size and layout output as review facts and verifies responsibility before choosing a change."
     },
     {
-      "id": "structure.navigation-proof",
-      "pass": "Runs the scenario's evidence command and bases the judgment on its valid current record; answer transcription of automated paths is neither required nor sufficient."
+      "id": "structure.check-use",
+      "pass": "Runs the diff-scoped repository-structure command and interprets findings as PR review information rather than an automatic layout decision."
     },
     {
       "id": "adaptive.structural-reflection",
-      "pass": "Explains whether the evidence triggers structural plan reflection and does not deepen a proven navigation failure."
+      "pass": "Updates only the working plan when structure materially changes ownership, an assumption, or a near-term slice; base movement alone does nothing."
     },
     {
       "id": "boundary.fact-versus-judgment",
-      "pass": "Distinguishes observed tool facts from the agent's structural decision without claiming that a passing checker selected the layout."
+      "pass": "Clearly separates reproducible checker facts from the agent's structural decision."
     }
   ],
   "scenarioExpectations": {
     "near-limit-module-pressure": {
       "acceptedDispositions": ["keep"],
-      "owner": {
-        "repositoryPath": "scripts/repo-structure-check",
-        "capabilityOwner": "repository structure"
-      },
-      "entry": {
-        "kind": "symbol",
-        "path": "scripts/repo-structure-check.mjs",
-        "symbol": "readInput"
-      },
-      "trace": [
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check/repository-structure-check.mjs",
-          "symbol": "checkRepositoryStructure"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check/capability-declarations.mjs",
-          "symbol": "validateCapabilityDeclarations"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check/navigation-evidence.mjs",
-          "symbol": "createRepositoryNavigationEvidence"
-        }
-      ],
-      "acceptedResults": [
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check.mjs",
-          "symbol": "printResult"
-        }
-      ],
-      "failure": {
-        "kind": "symbol",
-        "path": "scripts/repo-structure-check.mjs",
-        "symbol": "toError"
-      },
-      "tests": { "kind": "path", "path": "packages/tests/repo/repo-structure-check" },
-      "focusedCommand": {
-        "kind": "command",
-        "path": "package.json",
-        "symbol": "test:repo-structure"
-      },
-      "navigationMap": { "kind": "path", "path": "scripts/repo-structure-check/README.md" },
-      "rationale": "The 536-line capability-declaration module owns one cohesive declaration-validation responsibility. Size is a review fact, while any split must follow real policy seams rather than numeric fragments."
+      "requiredPaths": [
+        "scripts/repo-structure-check.mjs",
+        "scripts/repo-structure-check/repository-files.mjs",
+        "scripts/repo-structure-check/repository-structure-check.mjs",
+        "scripts/repo-structure-check/README.md",
+        "packages/tests/repo/repo-structure-check"
+      ]
     },
     "flat-versus-singleton-folders": {
       "acceptedDispositions": ["keep"],
-      "owner": {
-        "repositoryPath": "scripts/plan-adaptation",
-        "capabilityOwner": "plan adaptation"
-      },
-      "entry": { "kind": "symbol", "path": "scripts/plan-adaptation.mjs", "symbol": "runCommand" },
-      "trace": [
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "initAdaptivePlan"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "checkAdaptivePlans"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/file-transaction.mjs",
-          "symbol": "writeFileTransaction"
-        }
-      ],
-      "acceptedResults": [
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/adaptive-plan-catalog.mjs",
-          "symbol": "readAdaptivePlanCatalog"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "prepareAdaptivePlan"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "checkAdaptivePlans"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/plan-adaptation/plan-adaptation-lifecycle.mjs",
-          "symbol": "closeAdaptivePlan"
-        }
-      ],
-      "failure": { "kind": "symbol", "path": "scripts/plan-adaptation.mjs", "symbol": "toError" },
-      "tests": { "kind": "path", "path": "packages/tests/repo/plan-adaptation" },
-      "focusedCommand": {
-        "kind": "command",
-        "path": "package.json",
-        "symbol": "test:plan-adaptation"
-      },
-      "navigationMap": { "kind": "path", "path": "scripts/plan-adaptation/README.md" },
-      "rationale": "The flat peers name real record, policy, fact, catalog, transaction, and lifecycle responsibilities under one capability; one-file subdirectories add no boundary, while a flat-forever rule would ignore future evidence."
+      "requiredPaths": [
+        "scripts/repository-changes/read-git-changes.mjs",
+        "packages/tests/repo/repository-changes/read-git-changes.test.ts"
+      ]
     },
     "repository-depends-on-plan": {
-      "acceptedDispositions": ["keep"],
-      "owner": {
-        "repositoryPath": "scripts/repo-structure-check",
-        "capabilityOwner": "repository structure"
-      },
-      "entry": {
-        "kind": "symbol",
-        "path": "scripts/repo-structure-check.mjs",
-        "symbol": "readInput"
-      },
-      "trace": [
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check/repository-structure-check.mjs",
-          "symbol": "checkRepositoryStructure"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check/capability-declarations.mjs",
-          "symbol": "validateCapabilityDeclarations"
-        },
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check/structural-dispositions.mjs",
-          "symbol": "validateStructuralDispositions"
-        }
-      ],
-      "acceptedResults": [
-        {
-          "kind": "symbol",
-          "path": "scripts/repo-structure-check.mjs",
-          "symbol": "printResult"
-        }
-      ],
-      "failure": {
-        "kind": "symbol",
-        "path": "scripts/repo-structure-check.mjs",
-        "symbol": "toError"
-      },
-      "tests": { "kind": "path", "path": "packages/tests/repo/repo-structure-check" },
-      "focusedCommand": {
-        "kind": "command",
-        "path": "package.json",
-        "symbol": "test:repo-structure"
-      },
-      "navigationMap": { "kind": "path", "path": "scripts/repo-structure-check/README.md" },
-      "acceptedClosureOutcomes": [
-        "close-without-source-change",
-        "clarify-durable-navigation-map-before-close"
-      ],
-      "rationale": "The repository already exposes its entry, four control-flow families, result and failure exits, mirrored tests, command, and durable map without the tactical plan."
+      "acceptedDispositions": ["keep", "clarify-durable-map"],
+      "requiredPaths": [
+        "scripts/repo-structure-check.mjs",
+        "scripts/repo-structure-check/repository-structure-check.mjs",
+        "scripts/repo-structure-check/README.md",
+        "packages/tests/repo/repo-structure-check"
+      ]
     }
   },
   "resultContract": {
     "schemaVersion": "adaptive-agent-execution-result-v1",
-    "requiredRunFields": [
-      "schemaVersion",
-      "runId",
-      "suiteId",
-      "primarySkill",
-      "skillVariant",
-      "model",
-      "startedAt",
-      "completedAt",
-      "scenarioResults",
-      "summary"
-    ],
     "skillVariants": ["no-skill", "with-skill"],
     "verdicts": ["pass", "fail"],
-    "requiredScenarioFields": [
-      "scenarioId",
-      "verdict",
-      "dimensionResults",
-      "criticalFailures",
-      "rawOutputArtifact",
-      "navigationEvidenceArtifact",
-      "navigationEvidenceDigest",
-      "navigationEvidenceCommand",
-      "navigationEvidenceOwner",
-      "navigationEvidenceExitCode",
-      "affectedCodeDigest"
-    ],
-    "requiredDimensionFields": ["dimensionId", "verdict", "evidence", "reason"],
-    "summaryFields": ["criticalPassed", "criticalTotal", "passed", "total"]
+    "requiredDimensionFields": ["dimensionId", "verdict", "evidence", "reason"]
   }
 }

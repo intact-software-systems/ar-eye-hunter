@@ -22,60 +22,30 @@
 }
 ```
 
-[scripts/repo-structure-check.mjs#readInput](../repo-structure-check.mjs#readInput) is the only
-command entry. It resolves the content-bound comparison base and calls
+[scripts/repo-structure-check.mjs#readInput](../repo-structure-check.mjs#readInput) accepts only an
+optional `--base <git-ref>`. The default is `origin/main`. It calls
 [repository-structure-check.mjs#checkRepositoryStructure](./repository-structure-check.mjs#checkRepositoryStructure),
-which returns sorted findings without choosing a folder layout for the agent.
+which reads the current changed tree and returns deterministic, sorted review findings. It never
+reads a plan, chooses folder structure, contacts GitHub, or writes repository state.
 
 ## Control-flow families
 
-- Authored inventory and material-change classification start at
-  [repository-files.mjs#readRepositoryFiles](./repository-files.mjs#readRepositoryFiles).
-  [repository-files.mjs#isMaterialChange](./repository-files.mjs#isMaterialChange) distinguishes
-  material edits from unchanged renames and token-equivalent JavaScript or TypeScript changes.
-- Topology checks converge in
-  [repository-structure-check.mjs#collectSingletonFacts](./repository-structure-check.mjs#collectSingletonFacts)
+- [repository-files.mjs#readRepositoryFiles](./repository-files.mjs#readRepositoryFiles) inventories
+  authored code and compares the current worktree with the merge base. Generic changed paths come
+  from `scripts/repository-changes/read-git-changes.mjs`; token-aware comparison distinguishes
+  material edits from unchanged or token-equivalent moves.
+- [repository-structure-check.mjs#collectSingletonFindings](./repository-structure-check.mjs#collectSingletonFindings)
   and
-  [repository-structure-check.mjs#collectRedundantChainFindings](./repository-structure-check.mjs#collectRedundantChainFindings).
-  [structural-dispositions.mjs#validateStructuralDispositions](./structural-dispositions.mjs#validateStructuralDispositions)
-  requires an exact human disposition for current style, semantic-depth, or active-plan singleton
-  facts; it never selects `keep`, `split`, `move`, or `consolidate` itself. A singleton disposition
-  is bound to the exact target, sole code descendant, magnitude, and affected-code digest.
-- Capability ownership and cold-navigation evidence are validated by
-  [capability-declarations.mjs#validateCapabilityDeclarations](./capability-declarations.mjs#validateCapabilityDeclarations).
-  This is also the owner of entry, mirrored-test, focused-command, map-link, and source-symbol
-  validation. Exact code-capability `contractPaths` are validated against repository inventory as
-  non-code files and deliberately bypass source-symbol and topology rules. Guidance declarations
-  validate either an existing skill entry or a first-class routing entry, plus mirrored contract
-  tests, evaluation evidence, focused commands, and shared specialist contracts. Guidance router
-  evidence remains repository inventory and deliberately bypasses authored-code topology and
-  source-symbol rules.
-- `--navigation-evidence <capability-owner>` selects one active code declaration, then
-  [navigation-evidence.mjs#createRepositoryNavigationEvidence](./navigation-evidence.mjs#createRepositoryNavigationEvidence)
-  validates this map's fenced contract and composes the digest-bound JSON evidence record. The
-  mode reuses canonical capability-declaration and adaptive-facts validation, then validates the
-  fenced navigation contract; it never runs topology policy or selects a structural disposition.
-  During an authenticated last-plan close-out, it reads the declaration from the exact deleted
-  base plan and re-authenticates the close-out after composing evidence.
-- Production singleton exceptions enter through
-  [structure-exceptions.mjs#readStructureExceptions](./structure-exceptions.mjs#readStructureExceptions).
-  [structure-exceptions.mjs#readRepositoryExceptionContext](./structure-exceptions.mjs#readRepositoryExceptionContext)
-  binds a nonempty registry to the exact clean Git head and authenticated GitHub review; missing or
-  ambiguous trust evidence fails closed. This static between-plan exception path remains separate
-  from current-fact judgments inside an active adaptive plan.
+  [repository-structure-check.mjs#collectRedundantChainFindings](./repository-structure-check.mjs#collectRedundantChainFindings)
+  report changed topology. Canonical repository-style facts add changed density, prefix-cluster,
+  and changed-file-size pressure.
+- [structure-exceptions.mjs#readStructureExceptions](./structure-exceptions.mjs#readStructureExceptions)
+  reads the optional durable `docs/repo-structure-exceptions.json` registry. Entries contain only
+  the rule, target, owner, and review/removal condition. No review ID, commit SHA, plan ID, receipt,
+  or network lookup is accepted.
 
-## Declared cross-owner facts
-
-The checker consumes, but does not own, five explicitly declared contracts:
-
-- The plan-adaptation catalog supplies validated active and postponed records without a tracked
-  shared registry. Its plan-transition authentication owner supplies exact normal closure and
-  governance dispositions, while its plan-scoped facts bind structural findings to the owning
-  active plan. These are consumed contracts, not repository-structure ownership.
-- [structural-facts.mjs#collectRepositoryStyleFacts](../repo-style-check/structural-facts.mjs#collectRepositoryStyleFacts)
-  remains the canonical owner of density, prefix-clustering, and file-size facts.
-
-The command exits successfully only when no findings remain. Policy findings exit with status 1;
-invalid configuration, unsafe filesystem state, or unavailable required trust evidence exits with
-status 2. Mirrored semantic tests live under `packages/tests/repo/repo-structure-check/` and run
-through `npm run test:repo-structure`.
+Findings are PR review information and the command still exits successfully after printing them.
+Malformed input, unsafe filesystem state, invalid Git bases, and malformed exception registries
+fail closed with status 2. The agent decides whether to keep, split, move, or consolidate and
+explains material judgment in the pull request. Mirrored semantic tests live under
+`packages/tests/repo/repo-structure-check/` and run with `npm run test:repo-structure`.

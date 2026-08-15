@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = process.cwd();
 const evaluationRoot = '.agents/evaluations/adaptive-agent-execution/v1';
 const adaptiveScenarioIds = [
-  'invalidated-ten-step-plan',
-  'markdown-only-synchronization',
+  'conflict-before-final-validation',
+  'base-movement-without-conflict',
   'ci-failure-classification',
 ] as const;
 describe('adaptive agent execution evaluation contract', () => {
@@ -34,22 +34,17 @@ describe('adaptive agent execution evaluation contract', () => {
 
   it('makes adaptive compliance observable without grading general architecture eloquence', () => {
     const rubric = readJson(`${evaluationRoot}/rubric.json`) as EvaluationRubric;
-    const adaptiveDimensions = rubric.dimensions.filter((dimension) =>
-      dimension.id.startsWith('adaptive.'),
-    );
-
     expect(rubric.schemaVersion).toBe('adaptive-agent-execution-rubric-v1');
-    expect(adaptiveDimensions.map((dimension) => dimension.id).sort()).toEqual(
+    expect(rubric.dimensions.map((dimension) => dimension.id).sort()).toEqual(
       [
-        'adaptive.checkpoint-judgments',
         'adaptive.ci-classification',
-        'adaptive.content-freshness',
-        'adaptive.decision-escalation',
-        'adaptive.deterministic-evidence',
-        'adaptive.plan-qualification',
+        'adaptive.material-change',
         'adaptive.proportionate-validation',
-        'adaptive.trigger-reflection',
         'adaptive.two-slice-horizon',
+        'boundary.fact-versus-judgment',
+        'delivery.base-movement-noop',
+        'delivery.pr-state-first',
+        'delivery.terminal-merged',
       ].sort(),
     );
     expect(rubric.nonGoals).toContain('Score general architecture eloquence or writing style.');
@@ -59,7 +54,7 @@ describe('adaptive agent execution evaluation contract', () => {
       const requiredDimensions = suite.scenarios.find(
         (entry) => entry.id === scenarioId,
       )?.requiredDimensions;
-      expect(requiredDimensions, scenarioId).toContain('adaptive.deterministic-evidence');
+      expect(requiredDimensions, scenarioId).toContain('delivery.pr-state-first');
     }
   });
 
@@ -68,20 +63,19 @@ describe('adaptive agent execution evaluation contract', () => {
 
     expect(rubric.authority.automatedFacts).toEqual(
       expect.arrayContaining([
-        'qualifying diff classification',
-        'computed triggers',
-        'affected-code digest',
-        'undeclared changed paths',
-        'two-slice count',
+        'live pull request state',
+        'changed paths',
+        'check results',
+        'repository structure findings',
       ]),
     );
     expect(rubric.authority.agentJudgments).toEqual(
       expect.arrayContaining([
-        'outcome',
-        'learning',
-        'structure',
-        'decision',
+        'goal',
+        'acceptance',
         'next slices',
+        'material plan changes',
+        'structure',
         'validation scope',
       ]),
     );

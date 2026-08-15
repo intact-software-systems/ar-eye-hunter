@@ -61,11 +61,12 @@ describe('general agent guidance fresh-agent evaluation contract', () => {
       ],
     });
     expect(evaluation.requiredDimensions.map(({ id }) => id)).toEqual([
-      'routing.plan-adaptation',
+      'routing.working-plan',
       'routing.repository-structure',
+      'delivery.pr-state-first',
+      'delivery.base-movement-noop',
       'validation.proportional-local-scope',
-      'publication.remote-evidence',
-      'issues.material-discovery-only',
+      'publication.pr-authority',
     ]);
     expect(evaluation.evidenceContract).toEqual({
       schemaVersion: 'general-agent-guidance-evidence-ledger-v2',

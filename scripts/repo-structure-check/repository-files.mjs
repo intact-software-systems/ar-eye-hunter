@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { parse } from '@babel/parser';
 
+import { readChangedPaths } from '../repository-changes/read-git-changes.mjs';
+
 export const authoredCodeRoots = Object.freeze([
   'apps',
   'packages',
@@ -152,41 +154,19 @@ function collectAuthoredRoot(absoluteRoot, repoRoot) {
 }
 
 function readChanges(repoRoot, mergeBase) {
-  const trackedTokens = runGit(repoRoot, [
-    'diff',
-    '--name-status',
-    '-z',
-    '--find-renames',
-    mergeBase,
-    '--',
-  ])
-    .split('\0')
-    .filter(Boolean);
-  const trackedChanges = [];
-  for (let index = 0; index < trackedTokens.length;) {
-    const status = trackedTokens[index++];
-    const kind = status[0];
-    const firstPath = trackedTokens[index++];
-    const secondPath = kind === 'R' || kind === 'C' ? trackedTokens[index++] : undefined;
-    const change =
-      secondPath === undefined
-        ? {
-            kind,
-            source: kind === 'A' ? undefined : firstPath,
-            target: kind === 'D' ? undefined : firstPath,
-          }
-        : { kind, source: firstPath, target: secondPath };
-    trackedChanges.push(change);
-  }
-  const untrackedChanges = runGit(repoRoot, ['ls-files', '--others', '--exclude-standard', '-z'])
-    .split('\0')
-    .filter(Boolean)
-    .map((target) => ({ kind: 'A', source: undefined, target, material: true }));
-  return [...trackedChanges, ...untrackedChanges]
+  return readChangedPaths(repoRoot, mergeBase)
+    .map((change) => {
+      const kind = change.status[0];
+      return {
+        kind,
+        source: kind === 'A' ? undefined : (change.oldPath ?? change.path),
+        target: kind === 'D' ? undefined : change.path,
+      };
+    })
     .filter((change) => [change.source, change.target].filter(Boolean).some(isAuthoredCodePath))
     .map((change) => ({
       ...change,
-      material: change.material ?? isMaterialChange(repoRoot, mergeBase, change),
+      material: isMaterialChange(repoRoot, mergeBase, change),
     }));
 }
 

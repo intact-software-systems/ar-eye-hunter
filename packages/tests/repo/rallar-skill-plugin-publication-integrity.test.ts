@@ -84,34 +84,31 @@ describe('Rallar skill plugin and publication integrity', () => {
     expectAll(normalizedProgressSkill, [
       '`codex/<topic>`',
       'draft pull request',
-      'On a non-default branch',
-      'completed capability slice',
+      'Work on a non-default',
+      'coherent reviewed slices',
       'without waiting for review',
-      'Explicit user instructions',
-      'installed GitHub publication workflow',
-      'upstream tracking',
-      'detached worktree',
-      'Create branch here',
-      'may narrow or disable publication',
-      'Default Branch Commit and Push Permission',
+      'The GitHub pull request is the remote delivery entity',
+      'current diff, checks, reviews, conversations, mergeability, and merged state are authoritative',
+      '`BEHIND` but still reports the PR mergeable',
+      'Do not update the branch, merge `main`, or rebase merely to follow base movement',
+      '`AWAIT_REVIEW_OR_ADMIN_MERGE`',
+      'authorized administrator may intentionally merge through GitHub',
+      '`DONE` permits no post-merge governance work',
+      'Default branch commit and push permission',
       'Before every default-branch commit',
       'staged diff summary',
       'staged Git tree ID',
       '`git write-tree`',
       'full commit IDs',
-      'proposed commit message',
-      'commit, amend, merge, revert, cherry-pick, rebase, or squash',
-      'silence is not approval',
-      'Changed content, message, input, target, or conflict resolution invalidates approval',
-      'Working directly on the default branch is not permission to commit',
-      'Approval to commit is not approval to push',
-      'approval to push is not approval to commit',
+      'proposed message',
+      'Ask for permission immediately before that exact operation',
+      'changed content, message, input, target, or conflict resolution invalidates approval',
+      'separate just-in-time permission',
       'exact remote, destination ref and refspec',
       'resolved full old and new commit IDs',
-      'A changed tip or range invalidates approval',
-      'A force push requires separate disclosure and approval',
-      'whenever any source branch targets the remote default ref',
-      'pauses only that Git operation',
+      'Recheck immediately after approval and push only that range',
+      'Commit and push approvals are independent',
+      'These gates do not apply to a non-default destination ref',
     ]);
     expect(plugin.keywords).toEqual(
       expect.arrayContaining([
@@ -138,26 +135,26 @@ describe('Rallar skill plugin and publication integrity', () => {
       'draft pull request',
       'Branch Release Gate',
       'Run Hetzner Supported Distributed Manifests',
-      'build-affecting tree digest',
-      'Pending, skipped, failed, expired, or unverifiable required publication evidence keeps publication incomplete',
-      'An instruction not to commit or push postpones publication',
+      'Do not copy workflow run identities or content digests into the branch or PR body as governance inputs',
+      'Report the exact commands that passed, failed, or were skipped and the current GitHub check state',
+      '`DONE` permits no post-merge governance work',
     ]);
     expectAllNormalized(testingSkill, [
       'adaptive-plan-execution',
-      'plan-level validation scope',
+      'working-plan and proportional-validation judgment',
       'test:api-v1:black-box:postgres:medium-scale',
       'test:api-v1:black-box:postgres:topology-replay',
       'perf:api-v1:state-write',
     ]);
     expectAllNormalized(testCommands, [
-      'Plan-Level Validation Routing',
+      'Working-Plan Validation Routing',
       'adaptive-plan-execution',
       'explicitly required high-risk proofs',
     ]);
     expectAllNormalized(codeWritingSkill, [
       'rallar-testing',
       'adaptive-plan-execution',
-      'plan-level validation scope',
+      'working-plan and proportional-validation judgment',
     ]);
     for (const source of [agents, progressSkill, testingSkill, testCommands]) {
       expect(source).not.toContain('npm run test:unit');
@@ -166,7 +163,7 @@ describe('Rallar skill plugin and publication integrity', () => {
     }
   });
 
-  it('limits feature-branch release gates to changes that can affect builds', () => {
+  it('runs release validation in isolated pull-request workflows', () => {
     const branchWorkflow = readRepo('.github/workflows/branch-release-gate.yml');
     const reusableWorkflow = readRepo('.github/workflows/release-gate.yml');
     const agents = readRepo('AGENTS.md');
@@ -175,21 +172,19 @@ describe('Rallar skill plugin and publication integrity', () => {
     const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
 
     expectAllNormalized(branchWorkflow, [
-      'branches-ignore:',
-      '- main',
-      'paths-ignore:',
-      "- 'docs/superpowers/plans/**'",
+      'pull_request:',
+      '- synchronize',
+      'group: branch-release-pr-${{ github.event.pull_request.number }}',
+      'cancel-in-progress: true',
     ]);
-    for (const buildContractPath of ["'plans/**'", "'.agents/**'", "'AGENTS.md'"]) {
-      expect(branchWorkflow).not.toContain(buildContractPath);
-    }
-    expect(branchWorkflow).not.toContain('docs/superpowers/specs/**');
-    expect(branchWorkflow).not.toContain('.codex-plugin/**');
+    expect(branchWorkflow).not.toContain('branches-ignore:');
+    expect(branchWorkflow).not.toContain('paths-ignore:');
     expect(reusableWorkflow).not.toContain('paths-ignore:');
 
     expectAllNormalized(progressSkill, [
-      'Historical-plan-only branches do not wait for Branch Release Gate when every changed path is excluded by the workflow',
-      'Branch Release Gate remains required when its build-affecting path contract includes changed code, workflows, scripts, tests, package metadata, lockfiles, active plans, or agent and plugin contracts',
+      'The GitHub pull request is the remote delivery entity',
+      'Run `npm run pr:delivery -- status` before broad final validation',
+      '`DONE` permits no post-merge governance work',
     ]);
     for (const source of [agents, testingSkill, testCommands]) {
       expect(source).not.toContain('Plan-only branches do not wait for');

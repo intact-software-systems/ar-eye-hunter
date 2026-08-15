@@ -1,10 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
-import {
-  readOriginMainGovernanceDecisionIndex,
-  resolveGovernanceExceptionDecisions,
-} from './governance-decisions/governance-decision-receipt-index.mjs';
 import { readRevisionFile } from './test-structure-coupling-range-evidence.mjs';
 
 const registryPath = 'docs/test-structure-coupling-exceptions.md';
@@ -104,11 +100,7 @@ export function readGovernedTestCouplingRegistry(reviewInput, registry, dependen
   if (typeof dependencies.readGovernanceExceptions === 'function') {
     decisions = dependencies.readGovernanceExceptions(selector);
   } else {
-    const index =
-      dependencies.readGovernanceDecisionIndex?.(process.cwd()) ??
-      readOriginMainGovernanceDecisionIndex(process.cwd());
-    errors.push(...index.issues.map((issue) => `governance decision receipt: ${issue}`));
-    decisions = resolveGovernanceExceptionDecisions(index, selector);
+    decisions = [];
   }
   if (!Array.isArray(decisions)) {
     return {

@@ -2,33 +2,24 @@ name: Governance Gate
 
 on:
   workflow_call:
-    outputs:
-      status:
-        description: Verified governance resolution.
-        value: ${{ jobs.governance-gate.outputs.status }}
-      underlying_status:
-        description: Underlying governance evidence conclusion.
-        value: ${{ jobs.governance-gate.outputs.underlying_status }}
-      decision_id:
-        description: Accepted-deviation decision ID, when present.
-        value: ${{ jobs.governance-gate.outputs.decision_id }}
+    inputs:
+      candidate_ref:
+        description: 'Pull request source revision to validate'
+        required: true
+        type: string
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
   governance-gate:
     name: Governance Gate
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    outputs:
-      status: ${{ steps.resolution.outputs.status }}
-      underlying_status: ${{ steps.resolution.outputs.underlying_status }}
-      decision_id: ${{ steps.resolution.outputs.decision_id }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.candidate_ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
@@ -37,30 +28,4 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Run governance gate
-        id: local-gate
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
         run: npm run check:governance-gate
-      - name: Resolve governance gate
-        id: resolution
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
-          LOCAL_GATE_OUTCOME: ${{ steps.local-gate.outcome }}
-        run: |
-          if [[ "$LOCAL_GATE_OUTCOME" == "success" ]]; then
-            local_status=passed
-          else
-            local_status=failed
-          fi
-          node scripts/governance-gate-resolution.mjs \
-            --repo-root "$GITHUB_WORKSPACE" \
-            --local-status "$local_status" \
-            --candidate "$GITHUB_SHA" \
-            --current-run-id "$GITHUB_RUN_ID" \
-            --current-run-attempt "$GITHUB_RUN_ATTEMPT" \
-            --gate-name "Governance Gate / Governance Gate" \
-            --output "$GITHUB_OUTPUT"

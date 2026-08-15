@@ -8,10 +8,10 @@ The authoritative coding standard is
 reviewing a change. This guide supplies the review sequence and checker usage; it
 does not define a second version of the rules.
 
-Record independent pull-request reviews in the
-[PR Human Review Record v2](./pr-human-review-record.md). That record captures
-content-sensitive review evidence and retained-legacy approval; this guide remains the
-authoritative human review sequence.
+Summarize material review findings and their resolution in the pull request's semantic Changes,
+Validation, and Risk and rollback sections. Do not create a machine metadata fence, copied
+identifier ledger, or separate generic review record. Durable retained-production-legacy approval
+still belongs in the focused exception registry.
 
 Code is written first for human developers. Correctness, safety, security,
 compatibility, and required performance remain mandatory; within those
@@ -61,8 +61,8 @@ Run `npm run review:legacy -- <merge-base> <candidate-head>` for every changed
 production review. It reports heuristic, changed-surface candidates only; a
 clean report does not prove that no legacy exists and a report does not decide
 whether a candidate is legitimate. Review the actual call paths, then give each
-reported candidate exactly one final-ledger disposition: `removed`,
-`minimized-boundary`, `resolved`, or `retained-pending-human-approval`. A
+reported candidate exactly one pull-request disposition: `removed`,
+`minimized-boundary`, `resolved`, or `retained`. A
 retained item still needs explicit human approval and a durable registry entry.
 
 ## Human review sequence
@@ -270,33 +270,30 @@ records a non-obvious invariant, external constraint, safety reason, or tradeoff
 
 Semantic tests are primary. Source inventories, exact-tree checks, string
 assertions, and line/count ratchets are supplementary and temporary. Verify each
-temporary ratchet has a named owner and removal condition, remains supplementary
-to semantic runtime or architecture assertions, and is removed or replaced after
-the move's resulting-main workflow and later ledger are published when semantic
-assertions cover the same loss risk.
+temporary ratchet has a named owner and removal condition, remains supplementary to semantic
+runtime or architecture assertions, and is removed or replaced when semantic assertions cover the
+same loss risk. No resulting-main workflow or post-merge ledger is required.
 
 ### 10. Review affected production legacy
 
-For the active plan's affected production surface, inspect duplicate predecessor
+For the changed production surface, inspect duplicate predecessor
 implementations; deprecated entry points and exports; compatibility aliases,
 adapters, routes, flags, modes, and fallbacks; bridges, shims, and workarounds;
 parallel old/new paths; rollback paths; and historical vocabulary or types kept
 only for compatibility. Do not infer that a clean vocabulary scan proves the
 absence of legacy: trace actual production call paths.
 
-Unapproved production legacy may exist only while an active plan explicitly owns
-its disposition. Every affected item must be `removed`, `minimized-boundary`,
-`resolved`, or `retained-pending-human-approval`. A minimized boundary is thin,
-explicitly named, delegates to the canonical implementation, and contains no
-duplicate business logic. Unrelated untouched legacy is outside the completion
-gate unless the plan depends on, expands, materially touches, or routes changed
-production flow through it.
+Every affected item must be `removed`, `minimized-boundary`, `resolved`, or `retained`. A minimized
+boundary is thin, explicitly named, delegates to the
+canonical implementation, and contains no duplicate business logic. Unrelated untouched legacy is
+outside the completion gate unless the change depends on, expands, materially touches, or routes
+changed production flow through it.
 
-Never allow an issue, reviewer silence, prior approval, agent judgment, or an
-automated result to approve retained legacy. For every retained item, verify the
-human approved its exact path and symbol, purpose and consumer dependency,
+Never allow an issue, reviewer silence, prior approval, agent judgment, or an automated result to
+approve retained legacy. For every retained item, verify an authorized maintainer approved and the
+durable registry records its exact path and symbol, purpose and consumer dependency,
 unsafe-removal reason, minimization, canonical owner, compatibility tests,
-named owner, review/removal condition, and current candidate SHA. A production
+named owner, review/removal condition, and current retained implementation. A material production
 change invalidates that approval and requires the complete review again.
 
 ## Warning-only checker

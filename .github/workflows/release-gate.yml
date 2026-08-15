@@ -3,8 +3,12 @@ name: Release Gate
 on:
   workflow_call:
     inputs:
+      candidate_ref:
+        description: 'Pull request source revision to validate'
+        required: true
+        type: string
       changed_repo_style_base:
-        description: 'Base ref used to reject new repository style findings'
+        description: 'Base revision used to reject new repository style findings'
         required: false
         default: ''
         type: string
@@ -42,6 +46,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.candidate_ref }}
           fetch-depth: 0
 
       - name: Setup Node
@@ -78,9 +83,6 @@ jobs:
 
       - name: Check changed repository style
         if: ${{ inputs.changed_repo_style_base != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
         run: >-
           node scripts/check-changed-repo-style.mjs
           "${{ steps.changed_review_range.outputs.base }}"
@@ -88,9 +90,6 @@ jobs:
 
       - name: Check changed test structure coupling
         if: ${{ inputs.changed_repo_style_base != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GOVERNANCE_APP_SLUG: ${{ vars.GOVERNANCE_APP_SLUG }}
         run: >-
           node scripts/check-test-structure-coupling.mjs --changed
           "${{ steps.changed_review_range.outputs.base }}"
@@ -146,10 +145,6 @@ jobs:
 
       - name: Run deterministic topology replay proof
         uses: ./.github/actions/api-v1-black-box-test
-        # The replay proof pins the legacy per-command publication contract
-        # (one durable publication per mutation), which damped coalescing and
-        # the fingerprint change gate intentionally eliminate; it runs against
-        # the retained legacy path until adapted to the damped contract.
         env:
           RALLAR_GROUP_FORMATION_DAMPING: legacy
         with:
@@ -176,6 +171,5 @@ jobs:
 
       - name: Run Postgres presence-expiry integration tests
         run: |
-          # The second invocation proves retained direct-outbox rows cannot contaminate a later run.
           npm run test:postgres:presence-expiry
           npm run test:postgres:presence-expiry

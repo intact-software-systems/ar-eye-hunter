@@ -1,129 +1,91 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
-import {
-  readReviewRecord,
-  validateSuppliedEvidence,
-} from './legacy-review/validate-supplied-evidence.mjs';
-import {
-  computeReportSha256,
-  printReport,
-  toCanonicalReport,
-  toCanonicalReportText,
-} from './legacy-review/candidate-report.mjs';
+import { printReport } from './legacy-review/candidate-report.mjs';
+import { readRetainedLegacyRegistry } from './legacy-review/retained-legacy-registry.mjs';
 import { scanChangedProduction } from './legacy-review/scan-changed-production.mjs';
 
 const input = readInput(process.argv.slice(2));
-const result = input.isExempt
-  ? { ...input, changedFiles: [], candidates: [], exempt: true }
-  : toDigestedScan(scanChangedProduction(input));
-
-if (!input.isExempt && input.reportOut !== undefined) {
-  writeFileSync(input.reportOut, toCanonicalReportText(toCanonicalReport(result)));
-}
+const result = scanChangedProduction(input);
 printReport(result);
-const validationErrors = validateSuppliedEvidence(input, result.candidates);
-if (validationErrors.length > 0) {
-  for (const error of validationErrors) {
-    console.log(`FAIL: ${error}`);
-  }
-  process.exitCode = 1;
-} else if (input.reviewRecord) {
-  console.log('PASS: supplied final review ledger disposes every reported candidate');
+if (input.registry) {
+  validateRegistry(input.registry);
 }
 
-function toDigestedScan(scan) {
-  const reportText = toCanonicalReportText(toCanonicalReport(scan));
-  return { ...scan, reportSha256: computeReportSha256(reportText) };
-}
-
-function readInput(args) {
-  const [baseReference, headReference, ...optionArgs] = args;
+function readInput(arguments_) {
+  const [baseReference, headReference, ...optionArguments] = arguments_;
   if (!baseReference || !headReference) {
-    failUsage(
-      'usage: npm run review:legacy -- <base> <head> ' +
-        '[--review-record file] [--registry file] [--stage stage] [--report-out file]',
-    );
+    fail('usage: npm run review:legacy -- <base> <head> [--registry file]');
   }
-  const options = readOptions(optionArgs);
-  if (options.registry && !options['review-record']) {
-    failUsage('--registry requires --review-record');
-  }
+  const options = readOptions(optionArguments);
   const base = resolveCommit(baseReference, 'base');
   const head = resolveCommit(headReference, 'head');
-  const isExempt = readExemptScope(options['review-record']);
+
   return {
     base,
     head,
     mergeBase: runGit(['merge-base', base, head]).trim(),
-    reviewRecord: options['review-record'],
     registry: options.registry,
-    stage: options.stage,
-    reportOut: options['report-out'],
-    isExempt,
   };
 }
 
-function readExemptScope(reviewRecordPath) {
-  if (!reviewRecordPath) return false;
-  try {
-    return readReviewRecord(readFileSync(reviewRecordPath, 'utf8'))?.scope === 'exempt';
-  } catch {
-    return false;
+function readOptions(arguments_) {
+  if (arguments_.length === 0) {
+    return {};
   }
-}
-
-function readOptions(args) {
-  const options = {};
-  for (let index = 0; index < args.length; index += 2) {
-    const option = args[index];
-    const value = args[index + 1];
-    if (!option?.startsWith('--') || value === undefined) {
-      failUsage('options must use --name value pairs');
-    }
-    const name = option.slice(2);
-    const supportedOptions = ['review-record', 'registry', 'stage', 'report-out'];
-    if (!supportedOptions.includes(name) || options[name] !== undefined) {
-      failUsage(`unsupported or repeated option: ${option}`);
-    }
-    options[name] = value;
+  if (arguments_.length !== 2 || arguments_[0] !== '--registry') {
+    fail('only --registry <file> is supported');
   }
-  if (options.stage && !['initial', 'final'].includes(options.stage)) {
-    failUsage('--stage must be initial or final');
-  }
-  return options;
+  return { registry: arguments_[1] };
 }
 
 function resolveCommit(reference, name) {
   const output = tryGit(['rev-parse', '--verify', `${reference}^{commit}`]);
   if (!output) {
-    failUsage(`${name} reference does not resolve to a commit: ${reference}`);
+    fail(`${name} reference does not resolve to a commit: ${reference}`);
   }
-  return output.toString('utf8').trim();
+  return output.trim();
 }
 
-function runGit(args) {
-  return runGitBuffer(args).toString('utf8');
+function validateRegistry(registryPath) {
+  let source;
+  try {
+    source = readFileSync(registryPath, 'utf8');
+  } catch {
+    fail(`retained production legacy registry is not readable: ${registryPath}`);
+  }
+
+  const registry = readRetainedLegacyRegistry(source);
+  if (registry.issues.length > 0) {
+    for (const issue of registry.issues) {
+      console.log(`FAIL: ${issue}`);
+    }
+    process.exit(1);
+  }
+  console.log('PASS: retained production legacy registry is valid');
 }
 
-function runGitBuffer(args) {
-  const output = tryGit(args);
-  if (!output) {
-    failUsage(`could not read Git evidence: git ${args.join(' ')}`);
+function runGit(arguments_) {
+  const output = tryGit(arguments_);
+  if (output === undefined) {
+    fail(`could not read Git state: git ${arguments_.join(' ')}`);
   }
   return output;
 }
 
-function tryGit(args) {
+function tryGit(arguments_) {
   try {
-    return execFileSync('git', args);
+    return execFileSync('git', arguments_, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
   } catch {
     return undefined;
   }
 }
 
-function failUsage(message) {
+function fail(message) {
   console.log(`FAIL: ${message}`);
   process.exit(1);
 }
