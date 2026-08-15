@@ -44,6 +44,16 @@ relax visible ownership, dataflow, decisions, side effects, failures, and call p
 For TypeScript, use the `rallar-code-writing` skill and its authoritative repo
 standard.
 
+## Current Standards And Historical Plans
+
+The authoritative repo standard and active skills govern current code. Plans,
+specifications, and design records preserve the constraints and decisions that
+applied to their exact work at the time; they are not current coding-standard
+authority. A still-authorized plan may impose a narrower acceptance constraint
+on its exact slice, but do not generalize that constraint to other work. In
+particular, historical 400-line criteria are not a repository-wide TypeScript
+limit.
+
 ## Start Here
 
 - Inspect the existing code and relevant `examples/**` before editing; Rallar

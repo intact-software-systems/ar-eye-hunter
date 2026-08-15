@@ -108,10 +108,9 @@ describe('group topology capability source and style snapshot', () => {
     );
   });
 
-  it('resolves the two retained PR C style findings without changing their owners', () => {
+  it('resolves the retained PR C line-width finding without changing its owner', () => {
     expect(
       maximumSourceLineWidth(readWorkspaceFile(groupTopologyPlanningSnapshotPath)),
     ).toBeLessThanOrEqual(100);
-    expect(sourceLineCount(readWorkspaceFile(rtcTopologyWorkHandlerPath))).toBeLessThanOrEqual(400);
   });
 });

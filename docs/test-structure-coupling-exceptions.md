@@ -862,9 +862,9 @@ moved or changed test.
   ],
   "entries": [
     {
-      "id": "test-structure-coupling-b4ae70a143aeb441",
+      "id": "test-structure-coupling-18fc3cbf53d4a31b",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 70,
+      "line": 58,
       "column": 26,
       "kind": "production-source-read",
       "contract": "group-topology-canonical-import-direction",
@@ -875,9 +875,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-8afb0296a700cecd",
+      "id": "test-structure-coupling-975f975fd6661570",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 71,
+      "line": 59,
       "column": 28,
       "kind": "production-source-read",
       "contract": "group-topology-canonical-import-direction",
@@ -888,9 +888,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-717ec2297834efca",
+      "id": "test-structure-coupling-d674a5b2e6c2a1d5",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 74,
+      "line": 62,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
@@ -901,9 +901,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-4ad59a273989944f",
+      "id": "test-structure-coupling-a5dfdd324a5ece62",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 77,
+      "line": 65,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
@@ -914,9 +914,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-c131c169d1bf9068",
+      "id": "test-structure-coupling-0e82e2b1f3cd4f22",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 80,
+      "line": 68,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
@@ -927,9 +927,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-5b752e05869e42cf",
+      "id": "test-structure-coupling-a8100a51077e02f4",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 86,
+      "line": 74,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
