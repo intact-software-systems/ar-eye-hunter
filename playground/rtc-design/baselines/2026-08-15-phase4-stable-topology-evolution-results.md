@@ -1,8 +1,10 @@
-# Phase 4 Stable-Topology-Evolution Results (baseline measured 2026-08-15)
+# Phase 4 Stable-Topology-Evolution Results (baseline + candidate measured 2026-08-15)
 
-Status: **pre-phase-4 baseline measured; candidate not yet measured.** Baseline on the slice-1
-instrumented tree (churn recipe + counting-only attempt-budget diagnostics — zero behavior change
-relative to `main` at `f094abb3`).
+Status: **baseline and candidate measured.** Baseline on the slice-1 instrumented tree (churn
+recipe + counting-only attempt-budget diagnostics — zero behavior change relative to `main` at
+`f094abb3`); candidate on the full phase-4 tree (M6 canonical + incremental planning with kind
+hysteresis, M8 RTT refinement gating, M11 overlay-transition retention + budget survival, M9
+reconcile coalescing).
 
 Phase 4 evidence beside
 [the Phase 0 formation-burst baseline](2026-08-08-formation-burst-baseline.md),
@@ -28,10 +30,16 @@ and T3−T2 is steady state.
 - Machine: macOS 26.6 (Darwin 25.6.0), Apple Silicon (arm64); Node v26.7.0; Postgres via Docker
   (`ar-eye-hunter-postgres`), database recreated from empty volumes and freshly migrated before
   the Postgres runs.
-- Commands:
-  - `npm run test:api-v1:black-box:memory` → 22/22 recipes passed (pre-instrumentation tree).
-  - `npm run test:api-v1:black-box:postgres:formation-large` → burst-large + churn-large
-    (baseline capture; see below).
+- Commands (baseline): `npm run test:api-v1:black-box:memory` → 22/22;
+  `npm run test:api-v1:black-box:postgres:formation-large` → burst-large + churn-large passed
+  on the pre-phase-4 tree.
+- Commands (candidate): `npm run test:api-v1:black-box:memory` → 22/22;
+  `npx vitest run packages/tests/` → 7,082 passed / 5 skipped;
+  `npm run test:api-v1:black-box:postgres` → 22/22 standard + 5/5 cluster;
+  `npm run test:api-v1:black-box:postgres:formation-large` under the `dual-emit` default and
+  again with `RALLAR_GROUP_STATE_DISSEMINATION=delta-primary` → all four runs passed;
+  CI: API v1 Medium-Scale Gate run 31891191399 and API v1 Topology Replay Gate run 31891191396
+  both **success** on the candidate head; the state-write perf protocol below.
 - Raw artifacts are not committed (`scripts/perf/README.md` artifact policy); numbers are the
   `outputs.*` captures from each recipe's `report.json` and the planner measurement described
   below.
@@ -198,8 +206,105 @@ service, seeded ring overlays):
   (`reconcileCoalescedRerunCount` / the awaited-caller re-run path), proven by the concurrent
   reconcile test that previously documented the lost update.
 
+### Candidate: churn recipe under both dissemination modes (three-server Postgres cluster)
+
+Full candidate tree (slices 1–5), fresh database, burst-large + churn-large run per mode
+(`RALLAR_GROUP_STATE_DISSEMINATION=delta-primary` exported for the delta runs; dual-emit is the
+default). All runs **PASSED** with full liveness: dual-emit burst 1,327 / churn 2,086 step
+successes; delta-primary burst 1,323 / churn 2,070 — zero failures in every run.
+
+Churn window (T2−T1, primary server; 12 membership changes):
+
+| Quantity | Baseline (pre-phase-4) | Candidate dual-emit | Candidate delta-primary |
+| --- | --- | --- | --- |
+| Replans executed | 9 | 10 | 11 |
+| **Incremental plans / full-rebuild fallbacks** | — (path did not exist) | **9 / 1** | **9 / 2** |
+| Publications | 9 | 10 | 11 |
+| Fingerprint-gated skips | 6 | 5 | 6 |
+| `overlay.topology` egress bytes | 19,432,098 | 19,497,888 | 19,473,024* |
+| Steady state (T3−T2) | all 0 | all 0 | all 0 |
+
+\* delta-primary churn-window overlay egress computed from its own run's captures; the
+`group-state.snapshot`/`group-directory.snapshot` topics are 0 bytes in every delta-primary
+window while `group-state.event` envelopes carry the deltas.
+
+- **Incremental planning carries the churn stream in production**: 9 of the 10–11 executed
+  churn-window replans evolved the previous accepted graph (the 1–2 fallbacks are the recipe's
+  larger composite transitions), with zero invariant violations — the unit-level
+  incremental-vs-full equivalence holds live.
+- Overlay `wsEgressBytes` per change is intentionally unchanged: phase 4 bounds the **edge
+  churn** browsers execute (the planned-graph delta and the dial/teardown behavior), not the
+  size of a published overlay snapshot — overlay delta-encoding remains the named phase-5+
+  fanout follow-up phase 3 already recorded as "the largest remaining fanout".
+- Formation burst at N=50 (T1−T0, same runs): dual-emit 252.2 MB total vs delta-primary
+  **18.6 MB** (13.6×; phase-3 measured 19.3× on its own baseline day) — the phase-3 egress
+  property holds on the phase-4 tree in both modes, with idle steady state exactly 0.
+
+### Candidate: convergence and replay gates
+
+- **API v1 Medium-Scale Gate: PASSED in CI** on the full candidate tree (run 31891191399;
+  100 clients / 5 groups / 3 Postgres-backed processes, constants, operation matrix, and
+  assertions untouched), under the damped default with incremental planning live.
+- **API v1 Topology Replay Gate: PASSED in CI** on the full candidate tree (run 31891191396) —
+  the issue-156 pinned legacy-damping proof keeps its one-publication-per-mutation, exact
+  message-id, and cross-process byte-identity contracts with hash weights, canonical ordering,
+  hysteresis, and the rtt-refresh unchanged-gate in place (every new suppression is scoped to
+  damped group-revision work or rtt-refresh work, both unreachable from the proof's mutations).
+- Postgres standard (22/22) + cluster (5/5) profiles passed locally on a fresh database,
+  including the snapshot-payload-asserting `api-v1-rtc-topology-convergence` and the
+  cross-server `api-v1-state-topology-churn` recipes.
+
+### State-write perf comparison (issue #157 baseline-control protocol)
+
+Three runs on freshly recreated databases (`--backend=postgres --warmup=1 --runs=3
+--concurrency=10`): baseline A and control baseline B on the merge-base `f094abb3` (a pinned
+baseline worktree — `origin/main` moved to #224 mid-phase, so the merge-base is the
+apples-to-apples base), candidate on the phase-4 tree. The **identical-code control pairing
+FAILS the comparator outright** — shared throughput −8.1% plus five median drifts on identical
+code — re-confirming that this machine's variance sits above the 5% gates (the finding issue
+#157 tracks, third phase in a row).
+
+Against that floor: the candidate passes **every latency gate (uncontended p95/p99) in both
+pairings**. The one sign-stable candidate flag is hot-workload throughput (−10.5% vs A, −11.4%
+vs B), with reasoned medians (hot `sql.statements` +5.4%/+10.7% — a metric whose two
+identical-code baselines already differ by 5.1% from contention-retry variance; small shared
+median drifts inside the control's own drift ranges). Two facts weigh against reading the hot
+flag as a regression: issue #157's record shows hot throughput spanning ±36% between
+identical-code runs on this machine, and **no phase-4 code executes on the bench's measured
+path** — the bench drives group-state and topology-config writes and never drains the
+`APP_OUTBOX` topology work queue, so canonical planning, incremental evolution, hysteresis, and
+the refinement gate are all unreached (audited; the outbox intent kinds/counts per mutation are
+unchanged, which the comparator's mutation contract itself verifies).
+
+**Verdict: environment-limited comparator; no mutation-path regression indicated.** The
+escalation left open, consistent with the comparator's own protocol, is the order-balanced
+A-B-B-A pooling run on an idle, cooled machine (the candidate bench here ran last after ~1 h of
+continuous cluster load). Gate artifacts stay uncommitted under `tmp/perf/` per the artifact
+policy.
+
 ## Dissemination-default checkpoint decision
 
-_(pending: the churn stream is the delta-consumption proof phase 3 recorded as the
-`RALLAR_GROUP_STATE_DISSEMINATION` default-flip precondition; the decision is recorded here
-either way once the candidate churn evidence exists.)_
+**Decision: keep `RALLAR_GROUP_STATE_DISSEMINATION=dual-emit` as the default; the churn-stream
+delta-consumption precondition is now met, and the flip is deferred to the phase-5 flagged
+transition with two named preconditions remaining.**
+
+Evidence weighed:
+
+- The churn stream (this phase's recipe, run in both modes — tables below) is the sustained
+  mutation-stream delta-consumption proof phase 3 recorded as the flip's precondition: under
+  `delta-primary` the formed-50 churn run converges with full liveness while both per-change
+  snapshot topics stay at zero bytes.
+- Two recipes still consume `group-state.snapshot` frames by contract and would go red under a
+  `delta-primary` default: `api-v1-cross-application-ws-isolation.json` (memory + postgres
+  standard profiles, including its cross-scope isolation negative) and
+  `api-v1-rtc-topology-convergence.json` (cluster profile, asserts snapshot payload contents).
+  The flip needs delta-mode variants of both — including a delta-mode cross-scope isolation
+  negative — which is recipe-contract work the program plan places in the phase-5 flagged
+  transition ("snapshot broadcasts per change are removed once delta consumption is proven").
+- The phase-3 audit's server-cache constraint (the RTT fallback group lookup reading the
+  process cache the snapshot topics refresh, `init-rtc-rtt-topic.ts`) still deserves its
+  re-verification under a delta-primary default before snapshot rows disappear.
+
+Recording the decision either way, per the phase-4 checkpoint contract: the consumption proof no
+longer blocks the flip; the recipe variants and the cache re-verification do, and they are named
+follow-up work rather than silent debt.
