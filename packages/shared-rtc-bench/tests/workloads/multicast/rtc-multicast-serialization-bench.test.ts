@@ -95,6 +95,12 @@ it('RTC-B04 parses every multicast matrix worker and emits exact accepted sample
         runtimeObservation: null,
       });
       expect(samples[0]?.metrics).toHaveLength(3);
+      expect(samples[0]?.metrics).toEqual([
+        { metric: 'planDurationMs', unit: 'ms', value: 1 },
+        { metric: 'originalSerializeDurationMs', unit: 'ms', value: 0.5 },
+        { metric: 'serializeDurationMs', unit: 'ms', value: 2 },
+      ]);
+      expect(samples[0]?.rawEvidence).toEqual(validAcceptedResult(peers, payloadBytes));
     }
   }
 });
@@ -115,6 +121,24 @@ it('RTC-B04 rejects malformed multicast workers, persists causal failure remaind
     expect(
       Multicast.parseRtcMulticastSerializationArguments(
         input.arguments.map((argument) => (argument === expected ? replacement : argument)),
+      ).ok,
+    ).toBe(false);
+  }
+  for (
+    const replacement of [
+      ['--workload=RTC-B04', '--workload=RTC-B03'],
+      ['--case-id=multicast-serialization', '--case-id=wrong'],
+      ['--input-key=peers-10-payload-4096', '--input-key=wrong'],
+      ['--intended-phase=retained', '--intended-phase=wrong'],
+      [`--sample-ids=${input.ids.join(',')}`, '--sample-ids=wrong'],
+      ['--rtc-inner-runs=5', '--unexpected=1'],
+    ]
+  ) {
+    expect(
+      Multicast.parseRtcMulticastSerializationArguments(
+        input.arguments.map((
+          argument,
+        ) => (argument === replacement[0] ? replacement[1] : argument)),
       ).ok,
     ).toBe(false);
   }
@@ -143,10 +167,10 @@ it('RTC-B04 rejects malformed multicast workers, persists causal failure remaind
     Array(4).fill('causal-not-run'),
   );
 
-  mkdirSync('tmp/perf/results', { recursive: true });
-  const directory = mkdtempSync(join('tmp/perf/results', 'rtc-b04-multicast-diagnostic-'));
+  mkdirSync('tmp', { recursive: true });
+  const directory = mkdtempSync(join('tmp', 'rtc-b04-multicast-diagnostic-'));
   onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
-  const output = join(directory, 'result.json');
+  const output = join(directory, 'nested', 'result.json');
   const command = [
     'run',
     '--config=packages/shared-rtc-bench/deno.json',

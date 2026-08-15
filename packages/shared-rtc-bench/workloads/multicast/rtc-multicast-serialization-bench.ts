@@ -1,5 +1,6 @@
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
+import { dirname } from 'node:path';
 
 import {
   rtcBaselineIssue,
@@ -345,16 +346,21 @@ function validateResult(
       message: 'Expected distinct serialized transport messages.',
     }),
     ...createIssueWhen({
-      valid: Math.min(
-        result.originalSerializedBytes - 1,
-        result.totalSerializedBytes - result.originalSerializedBytes * result.transportMessages,
-      ) >= 0,
+      valid: areExactByteCounts(result),
       path: '$.rawEvidence.bytes',
       code: 'byte-evidence-mismatch',
       message: 'Unexpected bytes.',
     }),
     ...timingIssues,
   ];
+}
+
+function areExactByteCounts(result: RtcMulticastSerializationResult) {
+  return [result.originalSerializedBytes, result.totalSerializedBytes].every(
+    Number.isSafeInteger,
+  ) &&
+    result.originalSerializedBytes > 0 &&
+    result.totalSerializedBytes >= result.originalSerializedBytes * result.transportMessages;
 }
 
 function createIssueWhen(input: CreateRtcMulticastIssueInput) {
@@ -384,15 +390,7 @@ function createSample(
     identity,
     outcome: issues.length === 0 ? 'passed' : 'failed',
     evidenceClass: 'synthetic-path',
-    metrics: [
-      { metric: 'planDurationMs', unit: 'ms', value: result.planDurationMs },
-      {
-        metric: 'originalSerializeDurationMs',
-        unit: 'ms',
-        value: result.originalSerializeDurationMs,
-      },
-      { metric: 'serializeDurationMs', unit: 'ms', value: result.serializeDurationMs },
-    ],
+    metrics: createMetrics(result),
     rawEvidence: toRawEvidence(result),
     rawReferences: [],
     issues,
@@ -402,17 +400,32 @@ function createSample(
 
 function toRawEvidence(result: RtcMulticastSerializationResult): RtcBaselineJson {
   return {
-    peerCount: result.peerCount,
-    payloadBytes: result.payloadBytes,
-    planDurationMs: result.planDurationMs,
-    serializeDurationMs: result.serializeDurationMs,
-    originalSerializeDurationMs: result.originalSerializeDurationMs,
-    transportMessages: result.transportMessages,
-    uniqueSerializedMessages: result.uniqueSerializedMessages,
-    totalSerializedBytes: result.totalSerializedBytes,
-    originalSerializedBytes: result.originalSerializedBytes,
+    peerCount: toJsonNumber(result.peerCount),
+    payloadBytes: toJsonNumber(result.payloadBytes),
+    planDurationMs: toJsonNumber(result.planDurationMs),
+    serializeDurationMs: toJsonNumber(result.serializeDurationMs),
+    originalSerializeDurationMs: toJsonNumber(result.originalSerializeDurationMs),
+    transportMessages: toJsonNumber(result.transportMessages),
+    uniqueSerializedMessages: toJsonNumber(result.uniqueSerializedMessages),
+    totalSerializedBytes: toJsonNumber(result.totalSerializedBytes),
+    originalSerializedBytes: toJsonNumber(result.originalSerializedBytes),
     allTransportMessagesIdentical: result.allTransportMessagesIdentical,
   };
+}
+
+function createMetrics(result: RtcMulticastSerializationResult) {
+  const timedMeasurements: readonly [string, number][] = [
+    ['planDurationMs', result.planDurationMs],
+    ['originalSerializeDurationMs', result.originalSerializeDurationMs],
+    ['serializeDurationMs', result.serializeDurationMs],
+  ];
+  return timedMeasurements.flatMap(([metric, value]) =>
+    typeof value === 'number' && Number.isFinite(value) ? [{ metric, unit: 'ms', value }] : []
+  );
+}
+
+function toJsonNumber(value: number): number | null {
+  return Number.isFinite(value) ? value : null;
 }
 
 function createConnectionService(peerIds: readonly string[]) {
@@ -527,6 +540,7 @@ async function main(): Promise<void> {
     runs: diagnostic.runs,
     results,
   };
+  await Deno.mkdir(dirname(diagnostic.out), { recursive: true });
   await Deno.writeTextFile(diagnostic.out, `${JSON.stringify(output, null, 2)}\n`);
   console.log(JSON.stringify(output, null, 2));
 }
