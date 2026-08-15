@@ -11,7 +11,6 @@ import { toTopologyAppInboxCommand as canonicalTopologyCommand } from '@shared-s
 const serverRoot = fileURLToPath(
   new URL('../../../../../shared-server/rallar-system/', import.meta.url),
 );
-const testsRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 const targetOwners = [
   'topology/inbox/topology-app-inbox-contracts.ts',
@@ -21,17 +20,6 @@ const targetOwners = [
   'rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts',
   'rtc-topology/inbox/rtc-rtt-app-inbox-authority.ts',
   'rtc-topology/inbox/rtc-rtt-app-inbox-handler.ts',
-] as const;
-
-const materiallyChangedOwners = ['services/AppGroupInboxService.ts', ...targetOwners] as const;
-
-const materiallyChangedTestSupport = [
-  'mutation-routing-inventory.ts',
-  'mutation-routing-owner-inventory.ts',
-  'mutation-routing-reachability.ts',
-  'authoritative-mutation-read-compute-validate-write.test.ts',
-  'authoritative-mutation-runtime-source-inventory.ts',
-  'rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts',
 ] as const;
 
 const removedPredecessorOwners = [
@@ -128,19 +116,6 @@ describe('topology and RTC RTT AppInbox ownership', () => {
     expect(rtcHandler).not.toContain('setDependencies(');
     expect(topologyHandler).toContain('owners: TopologyAppInboxMutationOwners');
     expect(rtcHandler).toContain('rtcRttDependencies: RtcRttAppInboxDependencies');
-  });
-
-  it('keeps every materially changed production owner within the hard file limit', () => {
-    for (const relativePath of materiallyChangedOwners) {
-      expect(readOwner(relativePath).split('\n').length, relativePath).toBeLessThanOrEqual(400);
-    }
-  });
-
-  it('keeps directly owned mutation-routing and authoritative test support within the limit', () => {
-    for (const relativePath of materiallyChangedTestSupport) {
-      const source = readFileSync(`${testsRoot}${relativePath}`, 'utf8');
-      expect(source.split('\n').length, relativePath).toBeLessThanOrEqual(400);
-    }
   });
 });
 

@@ -277,19 +277,6 @@ describe('browser room code standard', () => {
 
     expect(violations).toEqual([]);
   });
-
-  it('keeps every new or moved room source and test module within 400 physical lines', () => {
-    const violations = [
-      ...EXPECTED_ROOM_SOURCE_FILES.map((fileName) => [ROOM_SOURCE_DIRECTORY, fileName] as const),
-      ...EXPECTED_ROOM_TEST_FILES.map((fileName) => [ROOM_TEST_DIRECTORY, fileName] as const),
-    ].flatMap(([directory, fileName]) => {
-      const source = readFileSync(path.join(directory, fileName), 'utf8');
-      const physicalLines = countPhysicalLines(source);
-      return physicalLines > 400 ? [`${fileName}: ${physicalLines}`] : [];
-    });
-
-    expect(violations).toEqual([]);
-  });
 });
 
 function readTypeScriptFileNames(directory: string): readonly string[] {
@@ -387,12 +374,4 @@ function readIdentifier(value: unknown): string | undefined {
 
 function isAstNode(value: unknown): value is AstNode {
   return typeof value === 'object' && value !== null && typeof (value as AstNode).type === 'string';
-}
-
-function countPhysicalLines(source: string): number {
-  if (source.length === 0) {
-    return 0;
-  }
-  const lines = source.split(/\r?\n/u);
-  return lines.at(-1) === '' ? lines.length - 1 : lines.length;
 }

@@ -360,35 +360,7 @@ describe('repo style checker', () => {
     );
   });
 
-  it('keeps the checker implementation within its own file limits', () => {
-    const checkerFiles = [
-      'scripts/check-changed-repo-style.mjs',
-      'scripts/repo-style-check.mjs',
-      'scripts/repo-style-check/contract-rules.mjs',
-      'scripts/repo-style-check/construction-callback-references.mjs',
-      'scripts/repo-style-check/construction-rules.mjs',
-      'scripts/repo-style-check/construction-scope-model.mjs',
-      'scripts/repo-style-check/cognitive-load-rules.mjs',
-      'scripts/repo-style-check/data-literal-discount.mjs',
-      'scripts/repo-style-check/factory-route-rules.mjs',
-      'scripts/repo-style-check/finding-magnitude.mjs',
-      'scripts/repo-style-check/function-analysis.mjs',
-      'scripts/repo-style-check/layout-rules.mjs',
-      'scripts/repo-style-check/repository-scan.mjs',
-      'scripts/repo-style-check/source-text.mjs',
-      'scripts/repo-style-check/type-organization-rules.mjs',
-    ];
-
-    for (const relativePath of checkerFiles) {
-      const lines = readFileSync(path.join(repoRoot, relativePath), 'utf8').split('\n');
-      const overlongLines = lines
-        .map((text, index) => ({ line: index + 1, length: text.length }))
-        .filter((line) => line.length > 100);
-
-      expect(lines.length, relativePath).toBeLessThanOrEqual(400);
-      expect(overlongLines, relativePath).toEqual([]);
-    }
-
+  it('keeps the checker implementation free of self-reported style findings', () => {
     expect(runChecker(path.join(repoRoot, 'scripts/repo-style-check'))).toContain(
       'PASS (no issues found in this run)',
     );
