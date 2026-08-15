@@ -1,5 +1,5 @@
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RtcRttAcceptanceReason } from './rtc-rtt-measurement-policy.ts';
+import type { RtcRttAcceptanceReason } from '../rtc-topology/policy/rtc-rtt-measurement-policy.ts';
 import type { RtcRttMutationComputed } from './rtc-topology-mutations.ts';
 
 export type RtcRttAppInboxResult = Readonly<{

@@ -99,9 +99,9 @@ repositories, ResourceInbox/AppInbox, QueueBox AppOutbox, Vivaldi RTT coordinate
 
 ### Mirrored focused tests
 
-- `packages/tests/shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/topic/rtc-rtt-topic.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-refinement-gate.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-refinement-service.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-rtt-topic.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-read-write.test.ts`
@@ -299,7 +299,7 @@ git commit -m "fix(rtc): apply refinement to durable RTT work"
   `packages/shared-server/rallar-system/rtc-topology/policy/read-rtc-rtt-expired-authority.ts`
 - Modify: all direct imports in shared-server, API-v1, and tests
 - Split: RTT cases from `packages/tests/shared-server/ws-system-topics-rtc-topology.test.ts`
-- Move/Create: the three mirrored `rtc-topology/topic` test files named in the locked structure
+- Move/Create: the three RTT topic test files at the `rtc-topology` feature test root
 
 **Interfaces:**
 
@@ -335,7 +335,7 @@ construction/registration and runtime invocation timelines required by the code-
 Run:
 
 ```bash
-npx vitest run packages/tests/shared-server/rallar-system/rtc-topology/topic
+npx vitest run packages/tests/shared-server/rallar-system/rtc-topology
 npx vitest run packages/tests/shared-server/rallar-system/topology/planning
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 ```

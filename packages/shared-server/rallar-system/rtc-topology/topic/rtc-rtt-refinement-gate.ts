@@ -13,7 +13,7 @@ export interface ClaimRttRefinementInput {
 }
 
 /**
- * Damps RTT-driven placement refinement (M8): a replan is enqueued only when
+ * Owns process-local damping for RTT-driven placement refinement (M8): a replan is enqueued only when
  * the accumulated Vivaldi predicted-RTT movement since the last refinement
  * crosses the threshold AND the per-group interval floor has elapsed, so
  * placement improves occasionally instead of per report. Sub-threshold

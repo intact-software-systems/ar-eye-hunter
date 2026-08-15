@@ -35,9 +35,9 @@ import { type RtcTopologyRuntimeState } from './ws-rtc-topology-runtime.ts';
 import {
   computeGlobalGraphAndCacheItIfPossible,
   initRtcRttTopic,
-} from './topology/rtt/init-rtc-rtt-topic.ts';
-import type { RtcRttRefinementGate } from './topology/rtt/rtc-rtt-refinement-gate.ts';
-import type { RtcRttRefinementService } from './topology/rtt/rtc-rtt-refinement-service.ts';
+} from './rtc-topology/topic/init-rtc-rtt-topic.ts';
+import type { RtcRttRefinementGate } from './rtc-topology/topic/rtc-rtt-refinement-gate.ts';
+import type { RtcRttRefinementService } from './rtc-topology/topic/rtc-rtt-refinement-service.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
   initDynamicTopics?: boolean;

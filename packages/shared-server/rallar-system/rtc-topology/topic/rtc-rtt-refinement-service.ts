@@ -28,6 +28,7 @@ type ExpiringDecision = Readonly<{
   expireAtEpochMs: number;
 }>;
 
+/** Coordinates stable refinement decisions across durable work retries. */
 export class RtcRttRefinementService {
   private readonly dependencies: RtcRttRefinementServiceDependencies;
   private readonly observations = new Map<string, ExpiringObservation>();

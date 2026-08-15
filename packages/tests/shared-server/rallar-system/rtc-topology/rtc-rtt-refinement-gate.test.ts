@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 // prettier-ignore
 import {
     RtcRttRefinementGate,
-} from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
+} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 
 describe('rtc rtt refinement gate', () => {
     it('accumulates sub-threshold movement without refining, then refines once', () => {

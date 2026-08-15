@@ -18,12 +18,12 @@ import type { RtcRttRefinementGate } from './rtc-rtt-refinement-gate.ts';
 
 import type { RtcTopologyRuntimeState } from '../../ws-rtc-topology-runtime.ts';
 import type { RtcTopologyWorkPublisher } from '../../services/RtcTopologyOutboxWork.ts';
-import type { GroupTopologyGroupSnapshotReader } from '../group-topology-management-service.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../../topology/group-topology-management-service.ts';
 import type { RallarRtcTopologyService } from '../../services/rallar-rtc-topology-service.ts';
 import {
   evaluateRtcRttMeasurement,
   type RtcRttAcceptanceResult,
-} from '../../services/rtc-rtt-measurement-policy.ts';
+} from '../policy/rtc-rtt-measurement-policy.ts';
 
 interface InitRtcRttTopicOptions {
   readonly wsQueueBoxServerService: WsQueueBoxServerService;
