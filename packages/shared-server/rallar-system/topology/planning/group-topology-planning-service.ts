@@ -16,6 +16,7 @@ import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts
 import {
   RallarRtcTopologyService,
   type RallarRtcTopologyUpdateResult,
+  type RtcTopologyPlanningIntent,
 } from '../../services/rallar-rtc-topology-service.ts';
 import { filterRtcRttMeasurementsForGroup } from '../../services/rtc-rtt-measurement-policy.ts';
 import { GroupTopologyValidationError } from '../group-topology-errors.ts';
@@ -94,6 +95,7 @@ export class GroupTopologyPlanningService {
     return {
       group,
       config,
+      kindHysteresisWidths: this.dependencies.topologyService.readKindHysteresisWidths(),
       rttMeasurements,
       nowEpochMs: this.dependencies.topologyService.readNowEpochMs(),
     };
@@ -102,6 +104,7 @@ export class GroupTopologyPlanningService {
   computeTopologyFromAuthority(
     authority: GroupTopologyPlanningAuthority,
     previous: RallarOverlayTopologySnapshot | undefined,
+    planningIntent: RtcTopologyPlanningIntent = 'full-rebuild',
   ): ReconcileGroupTopologyResult {
     if (!isGroupTopologyActiveAt(authority.group, authority.nowEpochMs)) {
       return removedTopologyResult(authority.group, previous);
@@ -115,7 +118,7 @@ export class GroupTopologyPlanningService {
     const result = this.dependencies.topologyService.planGroupTopologyAt(
       authority.group,
       filteredRttMeasurements,
-      { previous, topologyOptions: authority.config.effective },
+      { previous, topologyOptions: authority.config.effective, planningIntent },
       authority.nowEpochMs,
     );
     this.validateTopology(result.snapshot);

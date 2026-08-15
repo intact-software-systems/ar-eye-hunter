@@ -16,6 +16,8 @@ export function getApiRtcTopologyServiceOptions(
     treeMinSize: readPositiveIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE'),
     meshMinSize: readPositiveIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE'),
     meshParamK: readPositiveIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_MESH_PARAM_K'),
+    meshExitWidth: readNonNegativeIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_MESH_EXIT_WIDTH'),
+    treeExitWidth: readNonNegativeIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_TREE_EXIT_WIDTH'),
     rttRebuildDebounceMs: readNonNegativeIntegerEnv(
       env,
       'RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS',

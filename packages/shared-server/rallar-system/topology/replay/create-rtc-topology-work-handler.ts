@@ -43,7 +43,7 @@ import {
 import { writeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyWorkRuntime } from '../../services/RtcTopologyOutboxWork.ts';
 import { isChangeGatedGroupRevisionWork } from './rtc-topology-coalesced-group-revision-work.ts';
-import { computeRtcTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
+import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
 import {
   type PersistedRtcTopologyWork,
   readRtcTopologyWorkEnvelope,
@@ -190,17 +190,14 @@ async function computeAcceptedRtcTopologyWork(
 ): Promise<AcceptedRtcTopologyWork> {
   const { options, workEnvelope, workId, attemptCount, read } = input;
   const work = workEnvelope.data;
+  const membershipDeltaWork = work.kind === 'group-revision';
   const authority = await options.topologyPlanning.readTopologyPlanningAuthority({
     groupRef: work.groupSnapshot.group,
     requestOptions: fromCanonicalGroupTopologyConfigPatch(work.requestOptions),
     knownGroup: work.groupSnapshot,
-    snapshotSelection:
-      work.kind === 'group-revision' ? 'preserve-known-revision' : 'prefer-current',
+    snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current',
   });
-  const inputFingerprint = await computeRtcTopologyInputFingerprint({
-    group: authority.group,
-    effectiveConfig: authority.config.effective,
-  });
+  const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
   const changeGated = isChangeGatedGroupRevisionWork(work);
   if (changeGated && read.snapshot?.value.state === 'active') {
     const storedFingerprint = await options.executionRepository.readTopologyInputFingerprint(
@@ -213,6 +210,7 @@ async function computeAcceptedRtcTopologyWork(
   const computedTopology = options.topologyPlanning.computeTopologyFromAuthority(
     authority,
     read.snapshot?.value,
+    membershipDeltaWork ? 'membership-delta' : 'full-rebuild',
   );
   if (changeGated && read.snapshot !== null && !computedTopology.changed) {
     return { decision: 'skipped-unchanged', work, group: authority.group, inputFingerprint };

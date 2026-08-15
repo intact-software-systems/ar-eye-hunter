@@ -1,7 +1,7 @@
 import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
 import { degreeLimitOf, degreeOf, neighborsOf, } from './remove-dynamics-helpers.ts';
 import { connectMCE, connectSearchMCE, } from './tree-dynamics-connect.ts';
-import { TreeGraph, VertexId } from '../graph-props.ts';
+import { compareVertexIds, TreeGraph, VertexId } from '../graph-props.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
 
 export function rvMCEdge(ctx: RemoveDynamicsContext): RemoveResult {
@@ -82,7 +82,7 @@ function seedConnectedVertex(
         if (da !== db) {
             return db - da;
         }
-        return a.localeCompare(b);
+        return compareVertexIds(a, b);
     });
 
     const first = ordered[0];

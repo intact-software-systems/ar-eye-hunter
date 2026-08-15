@@ -155,6 +155,27 @@ hash-derived pair weights at every fallback site including the no-RTT mirrors, o
   incremental-seeding + hysteresis slice turns it into a contract (and covers the kind-boundary
   crossings a full rebuild still reshuffles).
 
+### Slice 3 (M6 incremental evolution + kind hysteresis): planner edge churn
+
+Same measurement on the slice-3 tree, now planning with the `membership-delta` intent the
+durable group-revision work path passes (incremental evolution of the previous accepted graph
+through `updateGroupTree`/`updateGroupMesh`, hysteresis band widths
+`RALLAR_RTC_TOPOLOGY_MESH_EXIT_WIDTH=4` / `TREE_EXIT_WIDTH=0`, RTT-refresh and explicit
+reconfigure work still full rebuilds — the periodic drift bound):
+
+| N | Kind | Formed edges | Join churn (edges) | Leave churn (edges) | Incremental plans / fallbacks |
+| --- | --- | --- | --- | --- | --- |
+| 6 | tree | 5 | 1 | 1 | 2 / 0 |
+| 20 | mesh | 37 | 2 | 5 | 2 / 0 |
+| 50 | mesh | 97 | 2 | 5 | 2 / 0 |
+
+- Structure preservation is now by construction, not coincidence: an unchanged member keeps its
+  edges, join adds `meshParamK` (or one tree) edges, leave repairs locally. The contractual
+  bound (churn ≤ 2×(degreeLimit+1) per single change) plus incremental-vs-full invariant
+  equivalence, seeded determinism, delta-budget fallback, and the hysteresis boundary walk
+  (15↔16 flap holds mesh through the 12–15 band, exits at 11) are unit-proven in
+  `evolve-planned-topology.test.ts` and `topology-kind-hysteresis.test.ts`.
+
 ## Dissemination-default checkpoint decision
 
 _(pending: the churn stream is the delta-consumption proof phase 3 recorded as the

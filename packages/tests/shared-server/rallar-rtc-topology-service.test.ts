@@ -308,11 +308,11 @@ describe('RallarRtcTopologyService', () => {
         const service = new RallarRtcTopologyService({
             now: () => 100,
         });
-        const createRoomGraph = vi.spyOn(service, 'createRoomGraph');
 
         const result = service.updateGroupTopology(group, rttMeasurements);
 
-        expect(createRoomGraph).toHaveBeenCalledWith(group, rttMeasurements);
+        expect(service.readMetrics().weightedRoomGraphBuildCount).toBe(1);
+        expect(service.readMetrics().weightedPlanCount).toBe(1);
         expect(result.snapshot.topology).toBe('mesh');
     });
 

@@ -1,4 +1,4 @@
-import { VertexId, VertexSet, WeightedGraph } from '../graph-props.ts';
+import { compareVertexIds, VertexId, VertexSet, WeightedGraph } from '../graph-props.ts';
 
 export const CoreSelectionAlgo = {
     MEDIAN_DISTANCE: 'MEDIAN_DISTANCE',
@@ -85,7 +85,7 @@ export function kMedianNodes(
         });
     }
 
-    ranked.sort((a, b) => a.score - b.score || a.node.localeCompare(b.node));
+    ranked.sort((a, b) => a.score - b.score || compareVertexIds(a.node, b.node));
 
     const selected: VertexId[] = [];
     for (const entry of ranked) {
@@ -147,7 +147,7 @@ export function kCenterNodes(
 
     ranked.sort(
         (a, b) =>
-            a.eccentricity - b.eccentricity || a.node.localeCompare(b.node),
+            a.eccentricity - b.eccentricity || compareVertexIds(a.node, b.node),
     );
 
     const selected: VertexId[] = [];
@@ -194,7 +194,7 @@ export function findkBestLocatedNodesNotInSetsMedian(
         });
     }
 
-    ranked.sort((a, b) => a.score - b.score || a.node.localeCompare(b.node));
+    ranked.sort((a, b) => a.score - b.score || compareVertexIds(a.node, b.node));
 
     const selected: VertexId[] = [];
     for (const entry of ranked) {

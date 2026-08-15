@@ -1,7 +1,7 @@
 import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf, } from './remove-dynamics-helpers.ts';
 import type { DiameterCandidate, EdgeCandidate } from './tree-dynamics-connect-types.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
-import { TreeGraph, VertexId } from '../graph-props.ts';
+import { compareVertexIds, TreeGraph, VertexId } from '../graph-props.ts';
 
 export function findMCEdge(
     globalGraph: TreeGraph,
@@ -24,7 +24,7 @@ export function findMCEdge(
                 if (
                     best === undefined ||
                     weight < best.weight ||
-                    (weight === best.weight && current.localeCompare(best.to) < 0)
+                    (weight === best.weight && compareVertexIds(current, best.to) < 0)
                 ) {
                     best = {
                         from: source,
@@ -74,7 +74,7 @@ export function findMDEdge(
                 if (
                     best === undefined ||
                     newDiameter < best.diameter ||
-                    (newDiameter === best.diameter && current.localeCompare(best.to) < 0)
+                    (newDiameter === best.diameter && compareVertexIds(current, best.to) < 0)
                 ) {
                     best = {
                         from: source,
