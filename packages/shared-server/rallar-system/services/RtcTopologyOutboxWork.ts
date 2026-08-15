@@ -3,20 +3,19 @@ import {
     newALUntargetedMessage,
 } from '@shared/al-contracts/al-contract.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
-import {
-    toCanonicalGroupTopologyConfigPatch,
-} from '@shared/api/group-topology-config-canonical.ts';
+// prettier-ignore
+import type { CanonicalGroupTopologyConfigPatch }
+    from '@shared/api/graph-topology-management-types.ts';
+// prettier-ignore
+import { toCanonicalGroupTopologyConfigPatch }
+    from '@shared/api/group-topology-config-canonical.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
-    readGroupStateRevision,
-} from '@shared/api/group-client-views.ts';
-import type {
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
+import { readGroupStateRevision } from '@shared/api/group-client-views.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import {
     toCanonicalRtcTopologyPairIdentity,
+    toRtcRttMutationReceiptId,
 } from '../rtc-topology-identifiers.ts';
 import { AppOutboxType } from './AppOutboxService.ts';
 import {
@@ -24,10 +23,7 @@ import {
     type CoalescedAppOutboxWorkData,
     CoalescedAppOutboxWorkService,
 } from './CoalescedAppOutboxWorkService.ts';
-import {
-    toAppQueueCreatedBy,
-    toAppQueueKey,
-} from './app-inbox-queue-key.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 import {
     parsePersistedRtcTopologyALMessage,
     readRtcTopologyWorkEnvelope,
@@ -62,6 +58,21 @@ export type RtcTopologyRttRefreshWork = Readonly<{
     groupSnapshot: GroupSnapshot;
     requestedGroupStateRevision: number;
     requestedRttVersion: number;
+    rtt: RttMeasurementInfo;
+    refinementObservationId: string;
+    requestedAtEpochMs: number;
+    requestOptions: CanonicalGroupTopologyConfigPatch;
+    publish: boolean;
+}>;
+
+export type RtcTopologyLegacyRttRefreshWork = Readonly<{
+    kind: 'legacy-rtt-refresh';
+    legacySource: 'rtt-refresh' | 'durable-group-revision';
+    overlayId: string;
+    groupSnapshot: GroupSnapshot;
+    requestedGroupStateRevision: number;
+    requestedRttVersion: number | null;
+    refinementObservationId: string | null;
     requestedAtEpochMs: number;
     requestOptions: CanonicalGroupTopologyConfigPatch;
     publish: boolean;
@@ -74,9 +85,8 @@ export type RtcTopologyStateMutationPublisher = Readonly<{
     ): Promise<RtcTopologyGroupEnqueueResult>;
 }>;
 
-export type RtcTopologyWorkPublisher =
-    & RtcTopologyStateMutationPublisher
-    & Readonly<{
+export type RtcTopologyWorkPublisher = RtcTopologyStateMutationPublisher &
+    Readonly<{
         enqueueForGroupSnapshot(group: GroupSnapshot): Promise<void>;
         enqueueForRtt(
             group: GroupSnapshot,
@@ -113,13 +123,15 @@ type CreateRtcTopologyWorkRuntimeOptions = Readonly<{
     now?: () => number;
 }>;
 
-export function createRtcTopologyOutboxPublisher(options: Readonly<{
-    outboxQueueReader: OutboxQueueReader;
-    senderId?: string;
-    topicId?: string;
-    wake?: () => void;
-    now?: () => number;
-}>): RtcTopologyWorkRuntime {
+export function createRtcTopologyOutboxPublisher(
+    options: Readonly<{
+        outboxQueueReader: OutboxQueueReader;
+        senderId?: string;
+        topicId?: string;
+        wake?: () => void;
+        now?: () => number;
+    }>,
+): RtcTopologyWorkRuntime {
     const senderId = options.senderId ?? 'rallar-server';
     return createRtcTopologyWorkRuntime({
         service: new CoalescedAppOutboxWorkService(
@@ -143,7 +155,9 @@ export class RtcTopologyExecutionConflictError extends Error {
     readonly workId: string;
 
     constructor(workId: string) {
-        super(`RTC topology predecessor changed before the queued attempt committed: ${workId}`);
+        super(
+            `RTC topology predecessor changed before the queued attempt committed: ${workId}`,
+        );
         this.workId = workId;
         this.name = 'RtcTopologyExecutionConflictError';
     }
@@ -173,6 +187,8 @@ function createRtcTopologyWorkRuntime(
                 groupSnapshot: group,
                 requestedGroupStateRevision,
                 requestedRttVersion: rtt.version,
+                rtt,
+                refinementObservationId: toRtcRttMutationReceiptId(rtt),
                 requestedAtEpochMs,
                 requestOptions: toCanonicalGroupTopologyConfigPatch({}),
                 publish: true,
@@ -204,26 +220,28 @@ function createRtcTopologyWorkRuntime(
         const overlayId = toScopedOverlayId(group.group);
         const sourceGroupStateRevision = readGroupStateRevision(group);
         const requestedAtEpochMs = now();
-        const envelope: RtcTopologyWorkEnvelope<RtcTopologyGroupRevisionWork> = {
-            type: options.workType,
-            topicId: options.topicId,
-            resourceId: deliveryId ??
-                toRtcTopologyGroupRevisionResourceId(
+        const envelope: RtcTopologyWorkEnvelope<RtcTopologyGroupRevisionWork> =
+            {
+                type: options.workType,
+                topicId: options.topicId,
+                resourceId:
+                    deliveryId ??
+                    toRtcTopologyGroupRevisionResourceId(
+                        overlayId,
+                        sourceGroupStateRevision,
+                    ),
+                contextId: toRtcTopologyQueueContextId(group.group),
+                senderId: toAppQueueCreatedBy(options.senderId),
+                data: {
+                    kind: 'group-revision',
                     overlayId,
+                    groupSnapshot: group,
                     sourceGroupStateRevision,
-                ),
-            contextId: toRtcTopologyQueueContextId(group.group),
-            senderId: toAppQueueCreatedBy(options.senderId),
-            data: {
-                kind: 'group-revision',
-                overlayId,
-                groupSnapshot: group,
-                sourceGroupStateRevision,
-                requestedAtEpochMs,
-                requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-                publish: true,
-            },
-        };
+                    requestedAtEpochMs,
+                    requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+                    publish: true,
+                },
+            };
         const key = toAppQueueKey(envelope);
         const winner = await options.outboxQueueReader.enqueueIfAbsent(
             newALUntargetedMessage(
@@ -234,7 +252,9 @@ function createRtcTopologyWorkRuntime(
             ),
         );
         options.wake?.();
-        const winnerMessage = parsePersistedRtcTopologyALMessage(winner.resource);
+        const winnerMessage = parsePersistedRtcTopologyALMessage(
+            winner.resource,
+        );
         const winnerEnvelope = readRtcTopologyWorkEnvelope(
             winnerMessage,
             options.workType,
@@ -279,10 +299,15 @@ function mergeRtcTopologyRttWork(
 ): CoalescedAppOutboxWorkData<RtcTopologyRttRefreshWork> {
     const previous = existing[COALESCED_APP_OUTBOX_WORK_FIELD];
     const next = incoming[COALESCED_APP_OUTBOX_WORK_FIELD];
-    const selectedGroup = existing.requestedGroupStateRevision >
-            incoming.requestedGroupStateRevision
-        ? existing
-        : incoming;
+    const selectedGroup =
+        existing.requestedGroupStateRevision >
+        incoming.requestedGroupStateRevision
+            ? existing
+            : incoming;
+    const selectedRtt =
+        existing.requestedRttVersion > incoming.requestedRttVersion
+            ? existing
+            : incoming;
     return {
         ...incoming,
         groupSnapshot: selectedGroup.groupSnapshot,
@@ -294,6 +319,8 @@ function mergeRtcTopologyRttWork(
             existing.requestedRttVersion,
             incoming.requestedRttVersion,
         ),
+        rtt: selectedRtt.rtt,
+        refinementObservationId: selectedRtt.refinementObservationId,
         requestedAtEpochMs: Math.max(
             existing.requestedAtEpochMs,
             incoming.requestedAtEpochMs,

@@ -33,6 +33,7 @@ import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PS
 import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic }
   from '@shared-graph/graph-diagnostics-service.ts';
+import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { Middleware } from './middleware-contract.ts';
 import { initialiseMiddleware, registerMiddlewareBackgroundTask } from './middleware.ts';
@@ -44,6 +45,9 @@ import {
 import {
   RtcRttRefinementGate,
 } from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
+import {
+  RtcRttRefinementService,
+} from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-service.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';
@@ -118,7 +122,12 @@ export function createRallarServer(
   const rtcTopologyService = new RallarRtcTopologyService(rtcTopologyOptions);
   const rttRefinementGate = new RtcRttRefinementGate({
     ...readApiRtcRttRefinementGateConfig(),
-    now,
+  });
+  const rttRefinementService = new RtcRttRefinementService({
+    gate: rttRefinementGate,
+    nowEpochMs: now,
+    observeRtt: vivaldiService.observeRtt,
+    readPredictedNodeData: vivaldiService.readablePredictedNodeData,
   });
   const topologyConfigRepository = new GroupTopologyConfigRepository(
     runtimeStateRepository,
@@ -294,6 +303,7 @@ export function createRallarServer(
             rtcTopologyOptions,
             rtcTopologyManagement: topologyManagement,
             rttRefinementGate,
+            rttRefinementService,
             observeGroupSnapshot: async (snapshot) => {
               await runtime.groupStateService.observeSnapshot(snapshot);
             },

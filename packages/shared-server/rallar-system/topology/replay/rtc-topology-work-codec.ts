@@ -1,13 +1,22 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { validateRtcRttMeasurement } from '../../rtc-rtt-persistence-validation.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
-  readCanonicalGroupTopologyConfigPatch,
-} from '@shared/api/group-topology-config-canonical.ts';
+// prettier-ignore
+import { readCanonicalGroupTopologyConfigPatch }
+  from '@shared/api/group-topology-config-canonical.ts';
+// prettier-ignore
+import type { CanonicalGroupTopologyConfigPatch }
+  from '@shared/api/graph-topology-management-types.ts';
 import { readGroupStateRevision } from '@shared/api/group-client-views.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { groupStateGroupStorageKey } from '../../group-state-storage-keys.ts';
+import {
+  readRtcRttRecomputeOutboxIdentity,
+  toRtcRttMutationReceiptId,
+  type RtcRttRecomputeOutboxIdentity,
+} from '../../rtc-topology-identifiers.ts';
 import { validatePersistedALMessage } from '../../services/al-message-persistence-validation.ts';
 import {
   COALESCED_APP_OUTBOX_WORK_FIELD,
@@ -16,6 +25,7 @@ import {
 import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
 import type {
   RtcTopologyGroupRevisionWork,
+  RtcTopologyLegacyRttRefreshWork,
   RtcTopologyRttRefreshWork,
 } from '../../services/RtcTopologyOutboxWork.ts';
 
@@ -28,18 +38,15 @@ export type RtcTopologyWorkEnvelope<T extends object> = Readonly<{
   data: T;
 }>;
 
-export type PersistedRtcTopologyWork = (RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork) &
+export type PersistedRtcTopologyWork = (
+  RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork | RtcTopologyLegacyRttRefreshWork
+) &
   Readonly<{
     [COALESCED_APP_OUTBOX_WORK_FIELD]?: CoalescedAppOutboxWorkMetadata;
   }>;
 
 type WorkBoundaryValue =
-  | null
-  | boolean
-  | number
-  | string
-  | WorkBoundaryRecord
-  | readonly WorkBoundaryValue[];
+  null | boolean | number | string | WorkBoundaryRecord | readonly WorkBoundaryValue[];
 
 interface WorkBoundaryRecord {
   readonly [key: string]: WorkBoundaryValue;
@@ -50,6 +57,21 @@ interface RequireWorkKeysInput {
   readonly required: readonly string[];
   readonly allowed: readonly string[];
   readonly label: string;
+}
+
+interface RtcTopologyCommonWork {
+  readonly overlayId: string;
+  readonly groupSnapshot: GroupSnapshot;
+  readonly requestedAtEpochMs: number;
+  readonly requestOptions: CanonicalGroupTopologyConfigPatch;
+  readonly publish: boolean;
+}
+
+interface ReadRtcTopologyWorkVariantInput {
+  readonly work: WorkBoundaryRecord;
+  readonly commonKeys: readonly string[];
+  readonly commonWork: RtcTopologyCommonWork;
+  readonly durableIdentity: RtcRttRecomputeOutboxIdentity | null;
 }
 
 export function readRtcTopologyWorkEnvelope(
@@ -116,14 +138,22 @@ function readPersistedRtcTopologyWorkEnvelope(
   ) {
     throw new TypeError('RTC topology work envelope differs from its AL route');
   }
-  validatePersistedRtcTopologyWork(envelope, expectedWorkType);
-  return envelope as WorkBoundaryRecord & RtcTopologyWorkEnvelope<PersistedRtcTopologyWork>;
+  const work = readPersistedRtcTopologyWork(envelope, envelope.resourceId, envelope.contextId);
+  return {
+    type: envelope.type,
+    topicId: envelope.topicId,
+    resourceId: envelope.resourceId,
+    contextId: envelope.contextId,
+    senderId: envelope.senderId,
+    data: work,
+  };
 }
 
-function validatePersistedRtcTopologyWork(
+function readPersistedRtcTopologyWork(
   envelope: WorkBoundaryRecord,
-  _expectedWorkType: string,
-): void {
+  resourceId: string,
+  contextId: string,
+): PersistedRtcTopologyWork {
   const work = requireWorkRecord(envelope.data, 'RTC topology work data');
   const common = [
     'kind',
@@ -133,29 +163,27 @@ function validatePersistedRtcTopologyWork(
     'requestOptions',
     'publish',
   ];
-  const variant =
-    work.kind === 'group-revision'
-      ? ['sourceGroupStateRevision']
-      : work.kind === 'rtt-refresh'
-        ? ['requestedGroupStateRevision', 'requestedRttVersion']
-        : null;
-  if (!variant) {
+  if (work.kind !== 'group-revision' && work.kind !== 'rtt-refresh') {
     throw new TypeError('RTC topology work kind is invalid');
   }
-  const allowed = [...common, ...variant, COALESCED_APP_OUTBOX_WORK_FIELD];
-  requireWorkKeys({
-    value: work,
-    required: [...common, ...variant],
-    allowed,
-    label: 'RTC topology work data',
-  });
+  const commonWork = readCommonRtcTopologyWork(work, contextId);
+  const durableIdentity = readRtcRttRecomputeOutboxIdentity(
+    resourceId,
+    commonWork.groupSnapshot.group,
+  );
+  const variantInput = { work, commonKeys: common, commonWork, durableIdentity };
+  return work.kind === 'group-revision'
+    ? readGroupRevisionWork(variantInput)
+    : readRttRefreshWork(variantInput);
+}
+
+function readCommonRtcTopologyWork(
+  work: WorkBoundaryRecord,
+  contextId: string,
+): RtcTopologyCommonWork {
   requireWorkString(work.overlayId, 'RTC topology work overlayId');
   requireWorkInteger(work.requestedAtEpochMs, 'RTC topology work requestedAtEpochMs');
-  try {
-    readCanonicalGroupTopologyConfigPatch(work.requestOptions);
-  } catch {
-    throw new TypeError('RTC topology work request options are invalid');
-  }
+  const requestOptions = readCanonicalGroupTopologyConfigPatch(work.requestOptions);
   if (typeof work.publish !== 'boolean') {
     throw new TypeError('RTC topology work request options are invalid');
   }
@@ -163,10 +191,112 @@ function validatePersistedRtcTopologyWork(
   if (work.overlayId !== toScopedOverlayId(work.groupSnapshot.group)) {
     throw new TypeError('RTC topology work overlayId differs from group scope');
   }
-  if (envelope.contextId !== toRtcTopologyQueueContextId(work.groupSnapshot.group)) {
+  if (contextId !== toRtcTopologyQueueContextId(work.groupSnapshot.group)) {
     throw new TypeError('RTC topology work context differs from group scope');
   }
+  return {
+    overlayId: work.overlayId,
+    groupSnapshot: work.groupSnapshot,
+    requestedAtEpochMs: work.requestedAtEpochMs,
+    requestOptions,
+    publish: work.publish,
+  };
+}
+
+function readGroupRevisionWork(input: ReadRtcTopologyWorkVariantInput): PersistedRtcTopologyWork {
+  const { work, commonKeys, commonWork, durableIdentity } = input;
+  requireWorkKeys({
+    value: work,
+    required: [...commonKeys, 'sourceGroupStateRevision'],
+    allowed: [...commonKeys, 'sourceGroupStateRevision', COALESCED_APP_OUTBOX_WORK_FIELD],
+    label: 'RTC topology work data',
+  });
   validatePersistedRtcTopologyRevision(work);
+  const metadata = readOptionalCoalescedWorkMetadata(work);
+  requireWorkInteger(work.sourceGroupStateRevision, 'RTC topology work source revision');
+  if (!durableIdentity) {
+    return {
+      kind: 'group-revision',
+      ...commonWork,
+      sourceGroupStateRevision: work.sourceGroupStateRevision,
+      ...optionalCoalescedMetadata(metadata),
+    };
+  }
+  if (Object.hasOwn(work, COALESCED_APP_OUTBOX_WORK_FIELD)) {
+    throw new TypeError('Legacy durable RTC RTT work cannot contain coalescing metadata');
+  }
+  return {
+    kind: 'legacy-rtt-refresh',
+    legacySource: 'durable-group-revision',
+    ...commonWork,
+    requestedGroupStateRevision: work.sourceGroupStateRevision,
+    requestedRttVersion: durableIdentity.version,
+    refinementObservationId: durableIdentity.receiptId,
+  };
+}
+
+function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRtcTopologyWork {
+  const { work, commonKeys, commonWork, durableIdentity } = input;
+  const revision = ['requestedGroupStateRevision', 'requestedRttVersion'];
+  const hasCanonicalObservation =
+    Object.hasOwn(work, 'rtt') || Object.hasOwn(work, 'refinementObservationId');
+  requireWorkKeys({
+    value: work,
+    required: hasCanonicalObservation
+      ? [...commonKeys, ...revision, 'rtt', 'refinementObservationId']
+      : [...commonKeys, ...revision],
+    allowed: [
+      ...commonKeys,
+      ...revision,
+      ...(hasCanonicalObservation ? ['rtt', 'refinementObservationId'] : []),
+      COALESCED_APP_OUTBOX_WORK_FIELD,
+    ],
+    label: 'RTC topology work data',
+  });
+  validatePersistedRtcTopologyRevision(work);
+  requireWorkInteger(work.requestedGroupStateRevision, 'RTC topology RTT group revision');
+  requireWorkInteger(work.requestedRttVersion, 'RTC topology RTT version');
+  if (!hasCanonicalObservation) {
+    const metadata = readOptionalCoalescedWorkMetadata(work);
+    if (!metadata) {
+      throw new TypeError('Legacy RTC topology RTT work coalescing metadata is required');
+    }
+    return {
+      kind: 'legacy-rtt-refresh',
+      legacySource: 'rtt-refresh',
+      ...commonWork,
+      requestedGroupStateRevision: work.requestedGroupStateRevision,
+      requestedRttVersion: work.requestedRttVersion,
+      refinementObservationId: null,
+      [COALESCED_APP_OUTBOX_WORK_FIELD]: metadata,
+    };
+  }
+
+  validateRtcRttMeasurement(work.rtt);
+  requireWorkString(work.refinementObservationId, 'RTC topology RTT refinement observation id');
+  const rtt = work.rtt;
+  if (
+    work.requestedRttVersion !== rtt.version ||
+    work.refinementObservationId !== toRtcRttMutationReceiptId(rtt)
+  ) {
+    throw new TypeError('RTC topology RTT observation differs from work identity');
+  }
+  const metadata = readOptionalCoalescedWorkMetadata(work);
+  if (
+    !metadata &&
+    (!durableIdentity || durableIdentity.receiptId !== work.refinementObservationId)
+  ) {
+    throw new TypeError('RTC topology RTT work lacks durable or coalesced identity');
+  }
+  return {
+    kind: 'rtt-refresh',
+    ...commonWork,
+    requestedGroupStateRevision: work.requestedGroupStateRevision,
+    requestedRttVersion: work.requestedRttVersion,
+    rtt,
+    refinementObservationId: work.refinementObservationId,
+    ...optionalCoalescedMetadata(metadata),
+  };
 }
 
 function validatePersistedRtcTopologyRevision(work: WorkBoundaryRecord): void {
@@ -188,14 +318,21 @@ function validatePersistedRtcTopologyRevision(work: WorkBoundaryRecord): void {
       throw new TypeError('RTC topology RTT work revision differs from snapshot');
     }
   }
-  if (Object.hasOwn(work, COALESCED_APP_OUTBOX_WORK_FIELD)) {
-    validateCoalescedWorkMetadata(work[COALESCED_APP_OUTBOX_WORK_FIELD]);
-  } else if (work.kind === 'rtt-refresh') {
-    throw new TypeError('RTC topology RTT work coalescing metadata is required');
-  }
 }
 
-function validateCoalescedWorkMetadata(value: WorkBoundaryValue): void {
+function readOptionalCoalescedWorkMetadata(
+  work: WorkBoundaryRecord,
+): CoalescedAppOutboxWorkMetadata | undefined {
+  return Object.hasOwn(work, COALESCED_APP_OUTBOX_WORK_FIELD)
+    ? readCoalescedWorkMetadata(work[COALESCED_APP_OUTBOX_WORK_FIELD])
+    : undefined;
+}
+
+function optionalCoalescedMetadata(metadata: CoalescedAppOutboxWorkMetadata | undefined) {
+  return metadata ? { [COALESCED_APP_OUTBOX_WORK_FIELD]: metadata } : {};
+}
+
+function readCoalescedWorkMetadata(value: WorkBoundaryValue): CoalescedAppOutboxWorkMetadata {
   const metadata = requireWorkRecord(value, 'RTC topology coalescing metadata');
   requireWorkKeys({
     value: metadata,
@@ -206,12 +343,19 @@ function validateCoalescedWorkMetadata(value: WorkBoundaryValue): void {
   requireWorkInteger(metadata.generation, 'RTC topology coalescing generation');
   requireWorkInteger(metadata.requestedAtEpochMs, 'RTC topology coalescing requestedAtEpochMs');
   requireWorkInteger(metadata.dueAtEpochMs, 'RTC topology coalescing dueAtEpochMs');
-  if (
-    !Array.isArray(metadata.reasons) ||
-    metadata.reasons.some((reason) => typeof reason !== 'string' || reason.length === 0)
-  ) {
+  if (!isNonEmptyStringArray(metadata.reasons)) {
     throw new TypeError('RTC topology coalescing reasons are invalid');
   }
+  return {
+    generation: metadata.generation,
+    requestedAtEpochMs: metadata.requestedAtEpochMs,
+    dueAtEpochMs: metadata.dueAtEpochMs,
+    reasons: metadata.reasons,
+  };
+}
+
+function isNonEmptyStringArray(value: WorkBoundaryValue): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0);
 }
 
 function requireWorkRecord(value: WorkBoundaryValue, label: string): WorkBoundaryRecord {
@@ -238,19 +382,13 @@ function requireWorkKeys(input: RequireWorkKeysInput): void {
   }
 }
 
-function requireWorkString(
-  value: WorkBoundaryValue,
-  label: string,
-): asserts value is string {
+function requireWorkString(value: WorkBoundaryValue, label: string): asserts value is string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new TypeError(`${label} is invalid`);
   }
 }
 
-function requireWorkInteger(
-  value: WorkBoundaryValue,
-  label: string,
-): asserts value is number {
+function requireWorkInteger(value: WorkBoundaryValue, label: string): asserts value is number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new TypeError(`${label} is invalid`);
   }
