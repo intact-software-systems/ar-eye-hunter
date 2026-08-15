@@ -147,6 +147,8 @@ jobs:
     needs: governance-decision
     if: ${{ always() && !cancelled() && needs.governance-decision.outputs.decision_only != 'true' && (github.event_name != 'workflow_dispatch' || inputs.skip_release_gate != true) }}
     uses: ./.github/workflows/release-gate.yml
+    with:
+      candidate_ref: ${{ github.sha }}
 
   deno-deploy-preflight:
     name: Verify Deno Deploy access

@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       candidate_ref:
-        description: 'Pull request source revision to validate'
+        description: 'Exact Git revision to validate'
         required: true
         type: string
       changed_repo_style_base:

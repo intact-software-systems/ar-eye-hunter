@@ -55,6 +55,32 @@ describe('governance gate workflow', () => {
     });
   });
 
+  it('passes the exact deployment revision to the required release-gate input', () => {
+    const deployWorkflowPath = path.join(repoRoot, '.github/workflows/deploy.yml');
+    const releaseGateWorkflowPath = path.join(repoRoot, '.github/workflows/release-gate.yml');
+
+    const deployWorkflow = load(readFileSync(deployWorkflowPath, 'utf8'));
+    const releaseGateWorkflow = load(readFileSync(releaseGateWorkflowPath, 'utf8'));
+
+    expect(releaseGateWorkflow).toMatchObject({
+      on: {
+        workflow_call: {
+          inputs: {
+            candidate_ref: { required: true, type: 'string' },
+          },
+        },
+      },
+    });
+    expect(deployWorkflow).toMatchObject({
+      jobs: {
+        'release-gate': {
+          uses: './.github/workflows/release-gate.yml',
+          with: { candidate_ref: '${{ github.sha }}' },
+        },
+      },
+    });
+  });
+
   it('makes the broad branch release job depend on governance without copying checks', () => {
     const workflowPath = path.join(repoRoot, '.github/workflows/branch-release-gate.yml');
 
