@@ -1,6 +1,7 @@
+import { dirname } from 'node:path';
+
 import { newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
-import { dirname } from 'node:path';
 
 import {
   rtcBaselineIssue,

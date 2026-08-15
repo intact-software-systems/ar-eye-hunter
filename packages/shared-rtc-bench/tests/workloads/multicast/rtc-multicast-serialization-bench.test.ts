@@ -186,3 +186,26 @@ it('RTC-B04 rejects malformed multicast workers, persists causal failure remaind
   expect(spawnSync('deno', command, { encoding: 'utf8' }).status).toBe(0);
   expect(JSON.parse(readFileSync(output, 'utf8')).results).toHaveLength(1);
 });
+
+it('RTC-B04 fails every invalid result shape with JSON-safe evidence', async () => {
+  const parsed = Multicast.parseRtcMulticastSerializationArguments(worker(10, 4096).arguments);
+  if (!parsed.ok || parsed.value.mode !== 'accepted') throw new Error('Expected accepted worker.');
+  const invalidResults = [
+    { peerCount: 100 },
+    { uniqueSerializedMessages: 1 },
+    { allTransportMessagesIdentical: true },
+    { originalSerializedBytes: Infinity, totalSerializedBytes: Infinity },
+    { planDurationMs: -1 },
+    { serializeDurationMs: Infinity },
+  ];
+  for (const invalidResult of invalidResults) {
+    const samples = await Multicast.runRtcMulticastSerializationAcceptedSamples({
+      worker: parsed.value,
+      run: () => ({ ...validAcceptedResult(10, 4096), ...invalidResult }),
+    });
+    expect(samples[0]?.outcome).toBe('failed');
+    expect(samples.slice(1).map((sample) => sample.outcome)).toEqual(Array(4).fill('not-run'));
+    expect(JSON.stringify(samples)).not.toContain('Infinity');
+    expect(samples[0]?.rawEvidence).not.toBeNull();
+  }
+});
