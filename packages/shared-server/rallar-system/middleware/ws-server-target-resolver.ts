@@ -12,7 +12,10 @@ import type {
 } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { isClientSnapshotSessionLive, isGroupSnapshotSessionLive } from '../snapshot-presence.ts';
-import { readGroupSnapshotStateSyncPayload } from '../state-sync/state-sync-payload.ts';
+import {
+  parseStateSyncPayload,
+  readGroupSnapshotStateSyncPayload,
+} from '../state-sync/state-sync-payload.ts';
 import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
 import type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
 
@@ -62,10 +65,25 @@ export function createWsServerTargetResolver(
       ? payloadSnapshot
       : undefined;
   };
+  /**
+   * A row that carries its own immutable computed audience is delivered to
+   * exactly that audience intersected with locally open connections, per the
+   * AppInbox mutation contract. Resolving such a row from a process-local
+   * snapshot instead would drop the very session whose change produced it:
+   * the cached snapshot predates the mutation, so the joining or reconnecting
+   * session is not yet a member of it. Snapshot rows keep the causal
+   * newest-of(payload, cache) resolution below.
+   */
   const resolveGroupRecipients = (
     groupId: string,
     message: ALMessage,
   ): readonly WsServerResolvedRecipient[] => {
+    const audienceSessionIds = readGroupAudienceForGroup(groupId, message);
+    if (audienceSessionIds) {
+      return audienceSessionIds
+        .filter((sessionId) => webSocketServer.connections.get(sessionId)?.isOpen)
+        .map((sessionId) => ({ peerId: sessionId, connectionId: sessionId }));
+    }
     const snapshot = resolveGroupSnapshot(groupId, message);
     if (!snapshot) return [];
     return snapshot.activeSessions
@@ -74,6 +92,17 @@ export function createWsServerTargetResolver(
         webSocketServer.connections.get(session.sessionId)?.isOpen
       )
       .map((session) => ({ peerId: session.sessionId, connectionId: session.sessionId }));
+  };
+  const readGroupAudienceForGroup = (
+    groupId: string,
+    message: ALMessage,
+  ): readonly string[] | undefined => {
+    const payload = parseStateSyncPayload(message);
+    return payload?.kind === 'group-event' &&
+        payload.audienceSessionIds !== undefined &&
+        payload.groupId === groupId
+      ? payload.audienceSessionIds
+      : undefined;
   };
   const resolveAllOpenConnections = (
     message: ALMessage,

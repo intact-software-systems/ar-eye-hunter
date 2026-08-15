@@ -17,7 +17,9 @@ import {
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-websocket.mts';
 import {
   assertPollDrivenReplayMetricDelta,
-  toProofTopologyPublicationMessageId,
+  assertSharedPublicationIdentity,
+  exactPublicationExpectation,
+  readObservedPublicationIds,
 } from '@shared-test/black-box-runner/topology-replay/api-v1-rtc-topology-proof-evidence.mts';
 import { withManagedApiServerSuspended } from '@shared-test/black-box-runner/topology-replay/with-managed-api-server-suspended.mts';
 
@@ -198,26 +200,15 @@ describe('API-v1 RTC topology replay proof semantics', () => {
     ).toThrow('incomparable');
   });
 
-  it('binds each live mutation to its exact publication identity and replay delta', () => {
-    expect(
-      toProofTopologyPublicationMessageId(
-        {
-          proofId: 'proof-1',
-          applicationId: 'app-1',
-          workspaceId: 'workspace-1',
-          groupId: 'group-1',
-        },
-        'proof-1-live-a-role',
-        { groupRevision: 7, presenceRevision: 9 },
-      ),
-    ).toBe(
-      JSON.stringify([
-        'rtc-topology-publication',
-        'app-outbox.rtc-topology:app=app-1:ws=workspace-1:group=group-1:' +
-          'proof-1-live-a-role:rtc-topology-recompute:group-revision:' +
-          'group=7;presence=10:0',
-      ]),
-    );
+  it('binds each live mutation to its exact publication revision and replay delta', () => {
+    // Correlation is the causal revision the mutation produced, never a
+    // precomputed work identity: legacy per-command work and damped coalesced
+    // work derive message ids differently, and the proof must hold for both.
+    expect(exactPublicationExpectation({ groupRevision: 7, presenceRevision: 9 })).toEqual({
+      causalRevision: { groupRevision: 7, presenceRevision: 10 },
+      causalMatch: 'exact',
+      deliveryKind: 'publication',
+    });
 
     const before = replayMetrics(7, 0, 0, 10);
     const after = replayMetrics(9, 0, 0, 12);
@@ -230,6 +221,23 @@ describe('API-v1 RTC topology replay proof semantics', () => {
     expect(() =>
       assertPollDrivenReplayMetricDelta(before, replayMetrics(9, 0, 0, 13)),
     ).toThrow('exactly two');
+  });
+
+  it('records one shared publication identity across both passive sockets', () => {
+    const shared = JSON.stringify(['rtc-topology-publication', 'observed-work-id']);
+    const observations = [
+      { ...topologyObservation({ groupRevision: 7, presenceRevision: 10 }, 12), messageId: shared },
+      { ...topologyObservation({ groupRevision: 7, presenceRevision: 10 }, 12), messageId: shared },
+    ];
+
+    expect(assertSharedPublicationIdentity(observations)).toBe(shared);
+    expect(readObservedPublicationIds(observations)).toEqual([shared]);
+    expect(() =>
+      assertSharedPublicationIdentity([
+        observations[0]!,
+        { ...observations[1]!, messageId: JSON.stringify(['rtc-topology-publication', 'other']) },
+      ]),
+    ).toThrow('distinct publication ids');
   });
 
   it('fails a WebSocket readiness assertion at the fixed ten-second boundary', async () => {

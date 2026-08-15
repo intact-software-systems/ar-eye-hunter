@@ -7,21 +7,28 @@ import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.t
 import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
+import {
+  createDeltaEnvelopeFixture,
+  createDeltaEnvelopeFixtureAuditStamp,
+  createDeltaEnvelopeFixtureGroupEvent,
+  createDeltaEnvelopeFixtureGroupSnapshot,
+  createDeltaEnvelopeFixtureWebSocketServer,
+  DELTA_ENVELOPE_FIXTURE_NOW,
+} from './group-state-delta-envelope-fixtures.ts';
 
-const NOW = Date.now();
 
 describe('group-state delta envelope audience routing', () => {
   it('resolves recipients from the persisted audience without any cache lookup', () => {
-    const server = createWebSocketServer(['alice-session', 'bob-session', 'other-session']);
-    const findGroupSnapshotByRef = vi.fn(() => createGroupSnapshot());
+    const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'bob-session', 'other-session']);
+    const findGroupSnapshotByRef = vi.fn(() => createDeltaEnvelopeFixtureGroupSnapshot());
     const readClientSnapshots = vi.fn(() => [] as readonly ClientSnapshot[]);
-    const envelope = createEnvelope(['alice-session', 'bob-session']);
+    const envelope = createDeltaEnvelopeFixture({ audienceSessionIds: ['alice-session', 'bob-session'] });
     expect(() => validateGroupStateDeltaEnvelope(envelope)).not.toThrow();
 
     const recipients = resolveStateSyncRecipients(server, createEnvelopeMessage(envelope), {
       findGroupSnapshotByRef,
       readClientSnapshots,
-      now: () => NOW,
+      now: () => DELTA_ENVELOPE_FIXTURE_NOW,
     });
 
     expect(connectionIds(recipients)).toEqual(['alice-session', 'bob-session']);
@@ -30,32 +37,32 @@ describe('group-state delta envelope audience routing', () => {
   });
 
   it('drops audience sessions without a locally open connection silently', () => {
-    const server = createWebSocketServer(['alice-session']);
-    const envelope = createEnvelope(['alice-session', 'ghost-session', 'bob-session']);
+    const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session']);
+    const envelope = createDeltaEnvelopeFixture({ audienceSessionIds: ['alice-session', 'ghost-session', 'bob-session'] });
 
     const recipients = resolveStateSyncRecipients(server, createEnvelopeMessage(envelope), {
-      now: () => NOW,
+      now: () => DELTA_ENVELOPE_FIXTURE_NOW,
     });
 
     expect(connectionIds(recipients)).toEqual(['alice-session']);
   });
 
   it('still resolves a bare legacy event row through the snapshot cache path', () => {
-    const server = createWebSocketServer(['alice-session', 'bob-session']);
-    const snapshot = createGroupSnapshot();
+    const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'bob-session']);
+    const snapshot = createDeltaEnvelopeFixtureGroupSnapshot();
     const findGroupSnapshotByRef = vi.fn(() => snapshot);
     const message = newALBroadcastMessage(
       'server-1',
       newALEventRoute(AppTopics.groupStateEvent, 'room-1', 'event-1'),
       'all',
       AppTopics.groupStateEvent,
-      createGroupEvent(),
+      createDeltaEnvelopeFixtureGroupEvent(),
     );
 
     const recipients = resolveStateSyncRecipients(server, message, {
       findGroupSnapshotByRef,
       readClientSnapshots: () => [createClientSnapshot('alice', 'alice-session')],
-      now: () => NOW,
+      now: () => DELTA_ENVELOPE_FIXTURE_NOW,
     });
 
     expect(findGroupSnapshotByRef).toHaveBeenCalled();
@@ -63,12 +70,12 @@ describe('group-state delta envelope audience routing', () => {
   });
 
   it('treats a malformed envelope payload as invalid and resolves nobody', () => {
-    const server = createWebSocketServer(['alice-session']);
-    const envelope = createEnvelope(['alice-session']);
+    const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session']);
+    const envelope = createDeltaEnvelopeFixture({ audienceSessionIds: ['alice-session'] });
     const malformed = { ...envelope, onlineMemberCount: envelope.onlineMemberCount + 1 };
 
     const recipients = resolveStateSyncRecipients(server, createEnvelopeMessage(malformed), {
-      now: () => NOW,
+      now: () => DELTA_ENVELOPE_FIXTURE_NOW,
     });
 
     expect(recipients).toEqual([]);
@@ -81,14 +88,10 @@ function connectionIds(
   return (recipients ?? []).map((recipient) => recipient.connectionId).sort();
 }
 
-function createWebSocketServer(sessionIds: readonly string[]): JsonWebSocketServer {
-  return {
-    connections: new Map(
-      sessionIds.map((sessionId) => [sessionId, { id: sessionId, isOpen: true }]),
-    ),
-  } as unknown as JsonWebSocketServer;
-}
-
+/**
+ * This suite exercises the non-room broadcast branch, so its rows carry scope
+ * 'all'; the room-scope dispatch path has its own suite.
+ */
 function createEnvelopeMessage(envelope: GroupStateDeltaEnvelope) {
   return newALBroadcastMessage(
     'server-1',
@@ -99,122 +102,8 @@ function createEnvelopeMessage(envelope: GroupStateDeltaEnvelope) {
   );
 }
 
-function createEnvelope(audienceSessionIds: readonly string[]): GroupStateDeltaEnvelope {
-  const snapshot = createGroupSnapshot();
-  return {
-    event: createGroupEvent(),
-    predecessorCausalRevision: { groupRevision: 2, presenceRevision: 1 },
-    resultingCausalRevision: snapshot.causalRevision,
-    members: [],
-    removedMemberPrincipalIds: [],
-    sessions: snapshot.activeSessions,
-    removedSessionIds: [],
-    activeSessionIds: snapshot.activeSessions.map((session) => session.sessionId),
-    group: snapshot.group,
-    memberCount: snapshot.memberCount,
-    onlineMemberCount: snapshot.onlineMemberCount,
-    audienceSessionIds,
-  };
-}
-
-function createGroupSnapshot(): GroupSnapshot {
-  const audit = createAuditStamp();
-  return {
-    stateRevision: 2_000_002,
-    causalRevision: { groupRevision: 2, presenceRevision: 2 },
-    group: {
-      applicationId: 'app-1',
-      workspaceId: 'workspace-1',
-      groupId: 'room-1',
-      slug: null,
-      displayName: 'room-1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      archived: null,
-      deleted: null,
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
-      activeMemberCount: 2,
-      ownerPrincipalId: 'alice',
-      snapshotVersion: 2,
-      metadataVersion: 1,
-      rosterVersion: 1,
-      presenceVersion: 2,
-      created: audit,
-      updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-    },
-    members: [toActiveMember('alice', 'owner'), toActiveMember('bob', 'member')],
-    activeSessions: [
-      toActiveSession('alice', 'alice-session'),
-      toActiveSession('bob', 'bob-session'),
-    ],
-    memberCount: 2,
-    onlineMemberCount: 2,
-  };
-}
-
-function toActiveMember(principalId: string, role: 'owner' | 'member') {
-  return {
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
-    groupId: 'room-1',
-    principalId,
-    role,
-    status: 'active',
-    joined: createAuditStamp(),
-    updated: createAuditStamp(),
-    left: null,
-    removed: null,
-    banned: null,
-    invitedByPrincipalId: null,
-    invitationExpiresAtEpochMs: null,
-  } as const;
-}
-
-function toActiveSession(principalId: string, sessionId: string) {
-  return {
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
-    groupId: 'room-1',
-    principalId,
-    sessionId,
-    generationId: `${sessionId}-generation`,
-    generationVersion: 1,
-    status: 'active',
-    disconnectedAtEpochMs: null,
-    disconnectReason: null,
-    connectedAtEpochMs: 1,
-    lastHeartbeatAtEpochMs: NOW,
-    expiresAtEpochMs: NOW + 60_000,
-  } as const;
-}
-
-function createGroupEvent(): GroupEvent {
-  return {
-    applicationId: 'app-1',
-    workspaceId: 'workspace-1',
-    groupId: 'room-1',
-    eventId: 'event-1',
-    eventType: 'session-connected',
-    snapshotVersion: 2,
-    causalRevision: { groupRevision: 2, presenceRevision: 2 },
-    occurredAtEpochMs: NOW,
-    actor: { kind: 'session', sessionId: 'bob-session', principalId: 'bob' },
-    reason: null,
-    traceId: null,
-    requestId: null,
-    payload: {},
-  };
-}
-
 function createClientSnapshot(principalId: string, sessionId: string): ClientSnapshot {
-  const audit = createAuditStamp();
+  const audit = createDeltaEnvelopeFixtureAuditStamp();
   return {
     stateRevision: 1,
     principal: {
@@ -236,7 +125,7 @@ function createClientSnapshot(principalId: string, sessionId: string): ClientSna
       snapshotVersion: 1,
       created: audit,
       updated: audit,
-      lastSeenAtEpochMs: NOW,
+      lastSeenAtEpochMs: DELTA_ENVELOPE_FIXTURE_NOW,
     },
     instances: [],
     activeSessions: [
@@ -256,17 +145,17 @@ function createClientSnapshot(principalId: string, sessionId: string): ClientSna
         connectionId: sessionId,
         authenticatedAtEpochMs: 1,
         connectedAtEpochMs: 1,
-        lastHeartbeatAtEpochMs: NOW,
-        expiresAtEpochMs: NOW + 60_000,
+        lastHeartbeatAtEpochMs: DELTA_ENVELOPE_FIXTURE_NOW,
+        expiresAtEpochMs: DELTA_ENVELOPE_FIXTURE_NOW + 60_000,
       },
     ],
     isOnline: true,
     activeSessionCount: 1,
-    lastSeenAtEpochMs: NOW,
+    lastSeenAtEpochMs: DELTA_ENVELOPE_FIXTURE_NOW,
   };
 }
 
-function createAuditStamp(): AuditStamp {
+function createDeltaEnvelopeFixtureAuditStamp(): AuditStamp {
   return {
     atEpochMs: 1,
     actor: { kind: 'service', serviceId: 'test' },

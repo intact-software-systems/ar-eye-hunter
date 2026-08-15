@@ -80,6 +80,7 @@
     "test:api-v1:black-box:postgres:crdt": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:crdt",
     "test:api-v1:black-box:postgres:medium-scale": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:medium-scale",
     "test:api-v1:black-box:postgres:formation-large": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:formation-large",
+    "test:api-v1:black-box:postgres:delta-primary": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:delta-primary",
     "test:api-v1:black-box:postgres:topology-replay": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:postgres:topology-replay",
     "test:api-v1:black-box:memory": "npm --workspace @ar-eye-hunter/shared-test run bb:api-v1:memory",
     "test:group-topology": "vitest run packages/tests/shared-server/rallar-system/topology",

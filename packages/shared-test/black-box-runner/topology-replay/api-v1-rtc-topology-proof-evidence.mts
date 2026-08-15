@@ -77,32 +77,39 @@ export function assertPollDrivenReplayMetricDelta(
   return { pollWakes, notificationWakes, localCommitWakes, replayedEntryCount };
 }
 
-export function toProofTopologyPublicationMessageId(
-  group: ProofGroupInput,
-  requestId: string,
-  mutationRevision: ProofCausalRevision,
-): string {
-  const topologyRevision = toTopologyRevisionAfterMutation(mutationRevision);
-  const commandId =
-    `app-outbox.rtc-topology:app=${group.applicationId}:` +
-    `ws=${group.workspaceId}:group=${group.groupId}:${requestId}`;
-  const workId =
-    `${commandId}:rtc-topology-recompute:group-revision:` +
-    `group=${topologyRevision.groupRevision};presence=${topologyRevision.presenceRevision}:0`;
-  return JSON.stringify(['rtc-topology-publication', workId]);
-}
-
+/**
+ * A publication is correlated by the exact causal revision its mutation
+ * produced, not by a precomputed work identity: coalesced group-revision work
+ * derives message ids from the per-group resource id and generation, so any
+ * precomputed id would pin one damping mode's derivation. The observed ids are
+ * recorded as evidence instead.
+ */
 export function exactPublicationExpectation(
-  group: ProofGroupInput,
-  requestId: string,
   mutationRevision: ProofCausalRevision,
 ): ProofTopologyExpectation {
   return {
     causalRevision: toTopologyRevisionAfterMutation(mutationRevision),
     causalMatch: 'exact',
     deliveryKind: 'publication',
-    messageId: toProofTopologyPublicationMessageId(group, requestId, mutationRevision),
   };
+}
+
+export function readObservedPublicationIds(
+  observations: readonly ProofTopologyObservation[],
+): readonly string[] {
+  return [...new Set(observations.map((observation) => observation.messageId))].sort();
+}
+
+export function assertSharedPublicationIdentity(
+  observations: readonly ProofTopologyObservation[],
+): string {
+  const observedIds = readObservedPublicationIds(observations);
+  if (observedIds.length !== 1) {
+    throw new Error(
+      `Passive sockets observed ${observedIds.length} distinct publication ids for one mutation.`,
+    );
+  }
+  return observedIds[0]!;
 }
 
 export function exactTopologyExpectation(

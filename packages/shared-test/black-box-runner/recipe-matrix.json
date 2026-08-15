@@ -1125,6 +1125,42 @@
       "description": "No-browser three-server convergence test for immutable RTC topology revisions and PostgreSQL-backed WebSocket fanout."
     },
     {
+      "id": "api-v1-rtc-topology-convergence-delta",
+      "recipe": "tests/api-v1/api-v1-rtc-topology-convergence-delta.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster",
+        "api-v1-black-box-delta-primary"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-rtc-topology-convergence-delta",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
+        ]
+      },
+      "description": "Delta-mode twin of the three-server RTC topology convergence recipe: concurrent revisions converge to identical group-state.event delta envelopes across servers, so the convergence and payload-agreement contract survives a delta-primary dissemination default."
+    },
+    {
       "id": "api-v1-state-topology-churn",
       "recipe": "tests/api-v1/api-v1-state-topology-churn.json",
       "category": "api-v1-black-box",
@@ -1602,6 +1638,30 @@
         ]
       },
       "description": "No-browser API-v1 cross-application WS isolation: the same groupId in two applications delivers group frames only inside each scope, proven with positive same-scope controls and expect.absent negative waits."
+    },
+    {
+      "id": "api-v1-cross-application-ws-isolation-delta",
+      "recipe": "tests/api-v1/api-v1-cross-application-ws-isolation-delta.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box",
+        "api-v1-black-box-recipes",
+        "api-v1-black-box-delta-primary"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-cross-application-ws-isolation-delta",
+      "requires": {
+        "httpServices": [
+          {
+            "name": "Rallar API",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "Delta-mode twin of the cross-application WS isolation recipe: scope isolation and the cross-scope negative waits are proven through group-state.event delta envelopes, so the isolation contract survives a delta-primary dissemination default."
     },
     {
       "id": "api-v1-read-your-writes-presence",
