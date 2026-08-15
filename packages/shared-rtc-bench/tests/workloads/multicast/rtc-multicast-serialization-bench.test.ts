@@ -105,7 +105,7 @@ it('RTC-B04 parses every multicast matrix worker and emits exact accepted sample
   }
 });
 
-it('RTC-B04 rejects malformed multicast workers, persists causal failure remainder, and preserves overwrite diagnostics', async () => {
+it('RTC-B04 rejects malformed multicast workers', () => {
   const input = worker(10, 4096);
   expect(Multicast.parseRtcMulticastSerializationArguments(['--out=/tmp/result.json']).ok).toBe(
     true,
@@ -142,6 +142,10 @@ it('RTC-B04 rejects malformed multicast workers, persists causal failure remaind
       ).ok,
     ).toBe(false);
   }
+});
+
+it('RTC-B04 records causal failure remainders', async () => {
+  const input = worker(10, 4096);
   let executions = 0;
   const acceptedWorker = Multicast.parseRtcMulticastSerializationArguments(input.arguments);
   if (!acceptedWorker.ok || acceptedWorker.value.mode !== 'accepted') {
@@ -166,7 +170,12 @@ it('RTC-B04 rejects malformed multicast workers, persists causal failure remaind
   expect(samples.slice(1).map((sample: RtcBaselineSampleDto) => sample.issues[0]?.code)).toEqual(
     Array(4).fill('causal-not-run'),
   );
+  expect(samples.slice(1).map((sample) => sample.issues[0]?.message)).toEqual(
+    Array(4).fill(input.ids[0]),
+  );
+});
 
+it('RTC-B04 diagnostics create nested outputs and overwrite them', () => {
   mkdirSync('tmp', { recursive: true });
   const directory = mkdtempSync(join('tmp', 'rtc-b04-multicast-diagnostic-'));
   onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
@@ -205,7 +214,23 @@ it('RTC-B04 fails every invalid result shape with JSON-safe evidence', async () 
     });
     expect(samples[0]?.outcome).toBe('failed');
     expect(samples.slice(1).map((sample) => sample.outcome)).toEqual(Array(4).fill('not-run'));
-    expect(JSON.stringify(samples)).not.toContain('Infinity');
+    expect(samples.slice(1).map((sample) => sample.issues[0]?.code)).toEqual(
+      Array(4).fill('causal-not-run'),
+    );
+    expect(samples.slice(1).map((sample) => sample.issues[0]?.message)).toEqual(
+      Array(4).fill(samples[0]?.identity.sampleId),
+    );
     expect(samples[0]?.rawEvidence).not.toBeNull();
+    if ('serializeDurationMs' in invalidResult) {
+      const restored = JSON.parse(JSON.stringify(samples[0]));
+      expect(
+        restored.metrics.every((metric: { value: unknown }) => typeof metric.value === 'number'),
+      ).toBe(true);
+      expect(restored.metrics.map((metric: { metric: string }) => metric.metric)).not.toContain(
+        'serializeDurationMs',
+      );
+      expect((restored.rawEvidence as { serializeDurationMs: unknown }).serializeDurationMs)
+        .toBeNull();
+    }
   }
 });

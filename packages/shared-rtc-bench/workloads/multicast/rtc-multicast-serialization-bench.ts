@@ -61,6 +61,14 @@ interface CreateRtcMulticastIssueInput {
   readonly message: string;
 }
 
+interface ValidateAcceptedPhaseAndIdsInput {
+  readonly options: Readonly<Record<string, string>>;
+  readonly input: RtcMulticastSerializationInput;
+  readonly intendedPhase: string | undefined;
+  readonly outerOrdinal: number;
+  readonly sampleIds: readonly string[];
+}
+
 const acceptedNames = (
   'capture baseline-id workload case-id input-key intended-phase outer-ordinal sample-ids ' +
   'rtc-peers rtc-payload-bytes rtc-inner-runs'
@@ -188,6 +196,33 @@ function readOption(options: Readonly<Record<string, string>>, name: string, fal
 function parseAcceptedArguments(
   options: Readonly<Record<string, string>>,
 ): RtcBaselineResult<RtcMulticastSerializationAcceptedArguments> {
+  const numeric = parseAcceptedNumericInput(options);
+  const phase = options['intended-phase'];
+  const sampleIds = (options['sample-ids'] ?? '').split(',');
+  const issues = [
+    ...numeric.issues,
+    ...validateAcceptedFixedFields(options, numeric.input),
+    ...validateAcceptedPhaseAndIds({
+      options,
+      input: numeric.input,
+      intendedPhase: phase,
+      outerOrdinal: numeric.outerOrdinal,
+      sampleIds,
+    }),
+  ];
+  return issues.length > 0 ? { ok: false, issues } : {
+    ok: true,
+    value: {
+      mode: 'accepted',
+      input: numeric.input,
+      intendedPhase: phase as 'warmup' | 'retained',
+      outerOrdinal: numeric.outerOrdinal,
+      sampleIds,
+    },
+  };
+}
+
+function parseAcceptedNumericInput(options: Readonly<Record<string, string>>) {
   const peers = parseRtcBaselineBoundedInteger(options['rtc-peers'] ?? '', 'rtc-peers', 10, 1000);
   const payloadBytes = parseRtcBaselineBoundedInteger(
     options['rtc-payload-bytes'] ?? '',
@@ -218,10 +253,20 @@ function parseAcceptedArguments(
     );
   }
 
-  const input: RtcMulticastSerializationInput = {
-    peers: (peers.ok ? peers.value : 10) as 10 | 100 | 1000,
-    payloadBytes: (payloadBytes.ok ? payloadBytes.value : 4096) as 4096 | 65536,
+  return {
+    issues,
+    input: {
+      peers: (peers.ok ? peers.value : 10) as 10 | 100 | 1000,
+      payloadBytes: (payloadBytes.ok ? payloadBytes.value : 4096) as 4096 | 65536,
+    },
+    outerOrdinal: outerOrdinal.ok ? outerOrdinal.value : 1,
   };
+}
+
+function validateAcceptedFixedFields(
+  options: Readonly<Record<string, string>>,
+  input: RtcMulticastSerializationInput,
+) {
   const expected = {
     capture: 'worker',
     workload: 'RTC-B04',
@@ -231,14 +276,16 @@ function parseAcceptedArguments(
     'rtc-payload-bytes': String(input.payloadBytes),
     'rtc-inner-runs': '5',
   };
-  for (const [name, expectedValue] of Object.entries(expected)) {
-    if (options[name] !== expectedValue) {
-      issues.push(
-        rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${expectedValue}.`),
-      );
-    }
-  }
-  if (outerOrdinal.ok && options['outer-ordinal'] !== String(outerOrdinal.value)) {
+  return Object.entries(expected).flatMap(([name, expectedValue]) =>
+    options[name] === expectedValue
+      ? []
+      : [rtcBaselineIssue(`$.${name}`, 'unexpected-worker-input', `Expected ${expectedValue}.`)]
+  );
+}
+
+function validateAcceptedPhaseAndIds(input: ValidateAcceptedPhaseAndIdsInput) {
+  const issues = [];
+  if (input.options['outer-ordinal'] !== String(input.outerOrdinal)) {
     issues.push(
       rtcBaselineIssue(
         '$.outer-ordinal',
@@ -247,30 +294,18 @@ function parseAcceptedArguments(
       ),
     );
   }
-  const intendedPhase = options['intended-phase'];
-  if (intendedPhase !== 'warmup' && intendedPhase !== 'retained') {
+  if (input.intendedPhase !== 'warmup' && input.intendedPhase !== 'retained') {
     issues.push(rtcBaselineIssue('$.intended-phase', 'unexpected-worker-input', 'Invalid phase.'));
   }
-  const ordinal = outerOrdinal.ok ? outerOrdinal.value : 1;
-  const sampleIds = (options['sample-ids'] ?? '').split(',');
   const expectedSampleIds = createExpectedSampleIds(
-    input,
-    intendedPhase === 'warmup' ? intendedPhase : 'retained',
-    ordinal,
+    input.input,
+    input.intendedPhase === 'warmup' ? input.intendedPhase : 'retained',
+    input.outerOrdinal,
   );
-  if (JSON.stringify(sampleIds) !== JSON.stringify(expectedSampleIds)) {
+  if (JSON.stringify(input.sampleIds) !== JSON.stringify(expectedSampleIds)) {
     issues.push(rtcBaselineIssue('$.sample-ids', 'unexpected-worker-input', 'Invalid sample IDs.'));
   }
-  return issues.length > 0 ? { ok: false as const, issues } : {
-    ok: true as const,
-    value: {
-      mode: 'accepted' as const,
-      input,
-      intendedPhase: intendedPhase as 'warmup' | 'retained',
-      outerOrdinal: ordinal,
-      sampleIds,
-    },
-  };
+  return issues;
 }
 
 function parseDiagnosticPositiveIntegers(
