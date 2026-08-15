@@ -9,13 +9,12 @@ describe('rtc rtt refinement gate', () => {
         const gate = new RtcRttRefinementGate({
             minIntervalMs: 0,
             vivaldiDeltaThresholdMs: 10,
-            now: () => 1_000,
         });
 
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 4 })).toBe(false);
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 4 })).toBe(false);
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 4 })).toBe(true);
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 4 })).toBe(false);
+        expect(claim(gate, 'g-1', 4, 1_000)).toBe(false);
+        expect(claim(gate, 'g-1', 4, 1_000)).toBe(false);
+        expect(claim(gate, 'g-1', 4, 1_000)).toBe(true);
+        expect(claim(gate, 'g-1', 4, 1_000)).toBe(false);
     });
 
     it('enforces the per-group interval floor while movement keeps accumulating', () => {
@@ -23,42 +22,40 @@ describe('rtc rtt refinement gate', () => {
         const gate = new RtcRttRefinementGate({
             minIntervalMs: 30_000,
             vivaldiDeltaThresholdMs: 5,
-            now: () => nowEpochMs,
         });
 
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 20 })).toBe(true);
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 20 })).toBe(false);
+        expect(claim(gate, 'g-1', 20, nowEpochMs)).toBe(true);
+        expect(claim(gate, 'g-1', 20, nowEpochMs)).toBe(false);
 
         nowEpochMs += 29_000;
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 20 })).toBe(false);
+        expect(claim(gate, 'g-1', 20, nowEpochMs)).toBe(false);
 
         nowEpochMs += 1_000;
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 0 })).toBe(true);
+        expect(claim(gate, 'g-1', 0, nowEpochMs)).toBe(true);
     });
 
     it('gates groups independently', () => {
         const gate = new RtcRttRefinementGate({
             minIntervalMs: 30_000,
             vivaldiDeltaThresholdMs: 5,
-            now: () => 1_000,
         });
 
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 20 })).toBe(true);
-        expect(gate.claimRefinement({ groupKey: 'g-2', predictedDeltaMs: 20 })).toBe(true);
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 20 })).toBe(false);
+        expect(claim(gate, 'g-1', 20, 1_000)).toBe(true);
+        expect(claim(gate, 'g-2', 20, 1_000)).toBe(true);
+        expect(claim(gate, 'g-1', 20, 1_000)).toBe(false);
     });
 
     it('treats a first observation (infinite delta) as refinement-worthy', () => {
         const gate = new RtcRttRefinementGate({
             minIntervalMs: 30_000,
             vivaldiDeltaThresholdMs: 5,
-            now: () => 1_000,
         });
 
         expect(
             gate.claimRefinement({
                 groupKey: 'g-1',
                 predictedDeltaMs: Number.POSITIVE_INFINITY,
+                nowEpochMs: 1_000,
             }),
         ).toBe(true);
     });
@@ -67,10 +64,18 @@ describe('rtc rtt refinement gate', () => {
         const gate = new RtcRttRefinementGate({
             minIntervalMs: 0,
             vivaldiDeltaThresholdMs: 0,
-            now: () => 1_000,
         });
 
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 0 })).toBe(true);
-        expect(gate.claimRefinement({ groupKey: 'g-1', predictedDeltaMs: 0 })).toBe(true);
+        expect(claim(gate, 'g-1', 0, 1_000)).toBe(true);
+        expect(claim(gate, 'g-1', 0, 1_000)).toBe(true);
     });
 });
+
+function claim(
+    gate: RtcRttRefinementGate,
+    groupKey: string,
+    predictedDeltaMs: number,
+    nowEpochMs: number,
+): boolean {
+    return gate.claimRefinement({ groupKey, predictedDeltaMs, nowEpochMs });
+}

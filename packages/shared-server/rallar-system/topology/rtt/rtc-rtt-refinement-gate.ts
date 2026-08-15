@@ -4,12 +4,12 @@ export const DEFAULT_RTT_VIVALDI_DELTA_MS = 5;
 export interface RtcRttRefinementGateConfig {
   readonly minIntervalMs: number;
   readonly vivaldiDeltaThresholdMs: number;
-  readonly now?: () => number;
 }
 
 export interface ClaimRttRefinementInput {
   readonly groupKey: string;
   readonly predictedDeltaMs: number;
+  readonly nowEpochMs: number;
 }
 
 /**
@@ -32,27 +32,26 @@ export class RtcRttRefinementGate {
   }
 
   claimRefinement(input: ClaimRttRefinementInput): boolean {
-    const accumulated = (this.accumulatedDeltaMsByGroupKey.get(input.groupKey) ?? 0) +
+    const accumulated =
+      (this.accumulatedDeltaMsByGroupKey.get(input.groupKey) ?? 0) +
       Math.abs(input.predictedDeltaMs);
     if (accumulated < this.config.vivaldiDeltaThresholdMs) {
       this.accumulatedDeltaMsByGroupKey.set(input.groupKey, accumulated);
       return false;
     }
 
-    const now = this.now();
     const lastRefinementAt = this.lastRefinementAtByGroupKey.get(input.groupKey);
-    if (lastRefinementAt !== undefined && now - lastRefinementAt < this.config.minIntervalMs) {
+    if (
+      lastRefinementAt !== undefined &&
+      input.nowEpochMs - lastRefinementAt < this.config.minIntervalMs
+    ) {
       this.accumulatedDeltaMsByGroupKey.set(input.groupKey, accumulated);
       return false;
     }
 
     this.accumulatedDeltaMsByGroupKey.delete(input.groupKey);
-    this.lastRefinementAtByGroupKey.set(input.groupKey, now);
+    this.lastRefinementAtByGroupKey.set(input.groupKey, input.nowEpochMs);
     return true;
-  }
-
-  private now(): number {
-    return this.config.now?.() ?? Date.now();
   }
 }
 

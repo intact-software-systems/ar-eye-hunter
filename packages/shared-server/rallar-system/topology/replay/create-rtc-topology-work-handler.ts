@@ -2,6 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 // prettier-ignore
 import { fromCanonicalGroupTopologyConfigPatch }
   from '@shared/api/group-topology-config-canonical.ts';
+import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
@@ -42,6 +43,7 @@ import {
 } from '../../services/rtc-topology-mutations.ts';
 import { writeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
 import type { RtcTopologyWorkRuntime } from '../../services/RtcTopologyOutboxWork.ts';
+import type { RtcRttRefinementService } from '../rtt/rtc-rtt-refinement-service.ts';
 import { isChangeGatedGroupRevisionWork } from './rtc-topology-coalesced-group-revision-work.ts';
 import { computeAuthorityTopologyInputFingerprint } from './rtc-topology-input-fingerprint.ts';
 import {
@@ -73,6 +75,7 @@ interface RtcTopologyWorkHandlerOptions {
     | 'recordTopologyRebuildSkippedFingerprint'
   >;
   readonly executionRepository: RtcTopologyExecutionRepository;
+  readonly rttRefinementService?: RtcRttRefinementService;
   readonly topologyDelivery?: RtcTopologyDeliveryOptions;
   readonly onInactiveOverlay?: (overlayId: string) => void;
   readonly wakeQueue?: () => void;
@@ -101,6 +104,11 @@ type AcceptedRtcTopologyWork =
       work: PersistedRtcTopologyWork;
       group: GroupSnapshot;
       inputFingerprint: string;
+    }>
+  | Readonly<{
+      decision: 'skipped-rtt-refinement';
+      work: PersistedRtcTopologyWork;
+      group: GroupSnapshot;
     }>;
 
 type RtcTopologyExecutionRead = Awaited<
@@ -113,6 +121,7 @@ interface ComputeAcceptedRtcTopologyWorkInput {
   readonly workId: string;
   readonly attemptCount: number;
   readonly read: RtcTopologyExecutionRead;
+  readonly expireAtEpochMs: number;
 }
 
 interface ToTopologyPublicationInput {
@@ -153,6 +162,7 @@ async function processRtcTopologyWork(
     workId,
     attemptCount: entry.dequeueAudit.attempts,
     read,
+    expireAtEpochMs: entry.audit.expiryTs.epochMilliseconds,
   });
   await writeAcceptedRtcTopologyWork(options, entry, accepted);
 }
@@ -190,6 +200,23 @@ async function computeAcceptedRtcTopologyWork(
 ): Promise<AcceptedRtcTopologyWork> {
   const { options, workEnvelope, workId, attemptCount, read } = input;
   const work = workEnvelope.data;
+  if (
+    work.kind !== 'group-revision' &&
+    options.rttRefinementService &&
+    !options.rttRefinementService.claimWork({
+      observationId: work.refinementObservationId ?? workId,
+      workId,
+      groupKey: toWebRtcGroupKey(work.groupSnapshot.group),
+      rtt: work.kind === 'rtt-refresh' ? work.rtt : null,
+      expireAtEpochMs: input.expireAtEpochMs,
+    })
+  ) {
+    return {
+      decision: 'skipped-rtt-refinement',
+      work,
+      group: work.groupSnapshot,
+    };
+  }
   const membershipDeltaWork = work.kind === 'group-revision';
   const authority = await options.topologyPlanning.readTopologyPlanningAuthority({
     groupRef: work.groupSnapshot.group,
@@ -198,7 +225,7 @@ async function computeAcceptedRtcTopologyWork(
     snapshotSelection: membershipDeltaWork ? 'preserve-known-revision' : 'prefer-current',
   });
   const inputFingerprint = await computeAuthorityTopologyInputFingerprint(authority);
-  const changeGated = isChangeGatedGroupRevisionWork(work);
+  const changeGated = work.kind === 'group-revision' && isChangeGatedGroupRevisionWork(work);
   if (changeGated && read.snapshot?.value.state === 'active') {
     const storedFingerprint = await options.executionRepository.readTopologyInputFingerprint(
       authority.group.group,
@@ -214,7 +241,7 @@ async function computeAcceptedRtcTopologyWork(
   );
   // RTT is deliberately outside the fingerprint, so an RTT refresh always
   // replans — but an unchanged planned graph publishes nothing (M8).
-  const unchangedGated = changeGated || work.kind === 'rtt-refresh';
+  const unchangedGated = changeGated || work.kind !== 'group-revision';
   if (unchangedGated && read.snapshot !== null && !computedTopology.changed) {
     return { decision: 'skipped-unchanged', work, group: authority.group, inputFingerprint };
   }
@@ -280,6 +307,10 @@ async function writeAcceptedRtcTopologyWork(
   entry: ResourceEntry,
   accepted: AcceptedRtcTopologyWork,
 ): Promise<void> {
+  if (accepted.decision === 'skipped-rtt-refinement') {
+    await finishRtcTopologyWork(options.database, entry);
+    return;
+  }
   if (accepted.decision === 'skipped-fingerprint') {
     await finishRtcTopologyWork(options.database, entry);
     options.topologyPlanning.recordTopologyRebuildSkippedFingerprint();

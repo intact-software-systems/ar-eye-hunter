@@ -56,10 +56,10 @@ export async function readRttMutation(
         measurement: measurement.value ?? null,
         expiredMeasurementEntry: measurement.expiredEntry ?? null,
         endpointAdmissions: endpointAdmissionReads.flatMap((read) =>
-            read.value ? [read.value] : []
+            read.value ? [read.value] : [],
         ),
-        expiredEndpointAdmissionEntries: endpointAdmissionReads.flatMap((read) =>
-            read.expiredEntry ? [read.expiredEntry] : []
+        expiredEndpointAdmissionEntries: endpointAdmissionReads.flatMap(
+            (read) => (read.expiredEntry ? [read.expiredEntry] : []),
         ),
         measurements,
     };
@@ -105,7 +105,9 @@ export async function writeRttMutation(
             acceptedCausalRevision: intent.groupSnapshot.causalRevision,
             groupSnapshot: intent.groupSnapshot,
             effectKind: 'rtc-topology-recompute',
-            payloadKind: 'group-revision',
+            payloadKind: 'rtt-refresh',
+            rtt: intent.rtt,
+            refinementObservationId: intent.receiptId,
             createdAtEpochMs: intent.createdAtEpochMs,
             expireAtEpochMs: mutationExpireAtTimestamp,
             senderId: intent.senderId,

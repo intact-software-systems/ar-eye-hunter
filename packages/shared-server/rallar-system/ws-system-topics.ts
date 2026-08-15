@@ -37,6 +37,7 @@ import {
   initRtcRttTopic,
 } from './topology/rtt/init-rtc-rtt-topic.ts';
 import type { RtcRttRefinementGate } from './topology/rtt/rtc-rtt-refinement-gate.ts';
+import type { RtcRttRefinementService } from './topology/rtt/rtc-rtt-refinement-service.ts';
 
 export type InitRallarSystemWsTopicsOptions = Readonly<{
   initDynamicTopics?: boolean;
@@ -45,6 +46,7 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
   rtcTopologyOptions?: RallarRtcTopologyServiceOptions;
   rtcTopologyManagement?: GroupTopologyManagementService;
   rttRefinementGate?: RtcRttRefinementGate;
+  rttRefinementService?: RtcRttRefinementService;
   observeGroupSnapshot?: (snapshot: GroupSnapshot) => void | Promise<void>;
   observeClientSnapshot?: (snapshot: ClientSnapshot) => void | Promise<void>;
   rtcTopologyRuntimeState?: Readonly<{
@@ -135,6 +137,7 @@ export function initRallarSystemWsTopics(
         database: rtcTopologyAppOutboxOptions.database,
         topologyPlanning: rtcTopologyManagement.planningService,
         executionRepository: rtcTopologyAppOutboxOptions.executionRepository,
+        rttRefinementService: options.rttRefinementService,
         topologyDelivery: rtcTopologyAppOutboxOptions.topologyDelivery,
         wakeQueue: rtcTopologyAppOutboxOptions.wake,
         wakeReplay: rtcTopologyAppOutboxOptions.wakeReplay,

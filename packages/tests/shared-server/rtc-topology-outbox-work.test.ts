@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
+import { EntityStatus, InMemoryQueueBox, type ALMessage, type ResourceEntry } from '@shared/mod.ts';
 import type {
   GroupPresenceSummary,
   GroupRef,
@@ -8,6 +8,7 @@ import type {
   GroupStateCausalRevision,
 } from '@shared/api/group-types.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import {
   createRtcTopologyOutboxPublisher,
   createRtcTopologyWorkHandler,
@@ -19,6 +20,9 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import { RtcRttRefinementGate } from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-gate.ts';
+import { RtcRttRefinementService } from '@shared-server/rallar-system/topology/rtt/rtc-rtt-refinement-service.ts';
+import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
@@ -69,9 +73,7 @@ describe('RTC topology APP_OUTBOX work', () => {
     );
     expect(completionSource).not.toMatch(/waitForRuntimeStateWriteRetry/);
     expect(completionSource).not.toMatch(/\bfor\s*\([^)]*attempt/);
-    expect(completionSource).toMatch(
-      /new ResourceInboxRepository\(transaction\)\.finishReserved/,
-    );
+    expect(completionSource).toMatch(/new ResourceInboxRepository\(transaction\)\.finishReserved/);
     expect(completionSource).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
   });
 
@@ -477,6 +479,8 @@ describe('RTC topology APP_OUTBOX work', () => {
     await runtime.publisher.enqueueForRtt(revision1, rtt, 100);
     now = 1_100;
     await runtime.publisher.enqueueForRtt(revision2, { ...rtt, version: 2 }, 100);
+    now = 1_200;
+    await runtime.publisher.enqueueForRtt(revision2, rtt, 100);
 
     const [entry] = await entriesIn(queue);
     expect(readWork(entry)).toMatchObject({
@@ -484,8 +488,114 @@ describe('RTC topology APP_OUTBOX work', () => {
       groupSnapshot: revision2,
       requestedGroupStateRevision: 2,
       requestedRttVersion: 2,
-      requestedAtEpochMs: 1_100,
+      rtt: { ...rtt, version: 2 },
+      requestedAtEpochMs: 1_200,
     });
+  });
+
+  it('skips sub-threshold RTT work before planning and reuses a qualifying retry decision', async () => {
+    const queue = new InMemoryQueueBox();
+    const runtime = createRtcTopologyOutboxPublisher({
+      outboxQueueReader: new OutboxQueueReader(queue),
+      now: () => 1_000,
+    });
+    let predictedDistanceMs = 0;
+    const observeRtt = vi.fn(() => {
+      predictedDistanceMs += 4;
+      return true;
+    });
+    const refinement = new RtcRttRefinementService({
+      gate: new RtcRttRefinementGate({
+        minIntervalMs: 0,
+        vivaldiDeltaThresholdMs: 10,
+      }),
+      nowEpochMs: () => 1_000,
+      observeRtt,
+      readPredictedNodeData: () => predictedNodes(predictedDistanceMs),
+    });
+    const planned = new Error('planned');
+    const readTopologyPlanningAuthority = vi.fn(async () => {
+      throw planned;
+    });
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const handler = createRtcTopologyWorkHandler({
+      runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
+      topologyPlanning: {
+        readTopologyPlanningAuthority,
+        computeTopologyFromAuthority: vi.fn(),
+        observeCommittedTopology: vi.fn(),
+        recordTopologyPublication: vi.fn(),
+        recordTopologyRebuildSkippedFingerprint: vi.fn(),
+      },
+      executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
+      rttRefinementService: refinement,
+    });
+    const group = createGroupSnapshot(3);
+
+    for (const version of [1, 2]) {
+      const entry = await enqueueAndReserveRtt(queue, runtime, group, version);
+      await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
+    }
+    expect(readTopologyPlanningAuthority).not.toHaveBeenCalled();
+
+    const qualifying = await enqueueAndReserveRtt(queue, runtime, group, 3);
+    await expect(handler.onMessage(JSON.parse(qualifying.resource), qualifying)).rejects.toBe(
+      planned,
+    );
+    await expect(handler.onMessage(JSON.parse(qualifying.resource), qualifying)).rejects.toBe(
+      planned,
+    );
+    expect(readTopologyPlanningAuthority).toHaveBeenCalledTimes(2);
+    expect(observeRtt).toHaveBeenCalledTimes(3);
+  });
+
+  it('claims zero-knob and legacy RTT work without fabricating legacy observations', async () => {
+    const queue = new InMemoryQueueBox();
+    const runtime = createRtcTopologyOutboxPublisher({
+      outboxQueueReader: new OutboxQueueReader(queue),
+      now: () => 1_000,
+    });
+    const observeRtt = vi.fn(() => true);
+    const refinement = new RtcRttRefinementService({
+      gate: new RtcRttRefinementGate({ minIntervalMs: 0, vivaldiDeltaThresholdMs: 0 }),
+      nowEpochMs: () => 1_000,
+      observeRtt,
+      readPredictedNodeData: () => predictedNodes(0),
+    });
+    const planned = new Error('planned');
+    const readTopologyPlanningAuthority = vi.fn(async () => {
+      throw planned;
+    });
+    const handler = createRtcTopologyWorkHandler({
+      runtime,
+      database: createAppInboxTestDatabase(queue, {
+        replace: async (entry) => entry,
+      }),
+      topologyPlanning: {
+        readTopologyPlanningAuthority,
+        computeTopologyFromAuthority: vi.fn(),
+        observeCommittedTopology: vi.fn(),
+        recordTopologyPublication: vi.fn(),
+        recordTopologyRebuildSkippedFingerprint: vi.fn(),
+      },
+      executionRepository: new RtcTopologyExecutionRepository(new FakeRuntimeStateRepository()),
+      rttRefinementService: refinement,
+    });
+    const canonical = await enqueueAndReserveRtt(queue, runtime, createGroupSnapshot(3), 1);
+    await expect(handler.onMessage(JSON.parse(canonical.resource), canonical)).rejects.toBe(
+      planned,
+    );
+    expect(observeRtt).toHaveBeenCalledOnce();
+
+    const legacy = withoutCanonicalRttObservation(
+      await enqueueAndReserveRtt(queue, runtime, createGroupSnapshot(3), 2),
+    );
+    await expect(handler.onMessage(JSON.parse(legacy.resource), legacy)).rejects.toBe(planned);
+    await expect(handler.onMessage(JSON.parse(legacy.resource), legacy)).rejects.toBe(planned);
+    expect(observeRtt).toHaveBeenCalledOnce();
   });
 });
 
@@ -566,6 +676,48 @@ function rtt(sessionIdFrom: string, sessionIdTo: string, version: number) {
     createdAtEpochMs: version,
     version,
   };
+}
+
+async function enqueueAndReserveRtt(
+  queue: InMemoryQueueBox,
+  runtime: ReturnType<typeof createRtcTopologyOutboxPublisher>,
+  group: GroupSnapshot,
+  version: number,
+) {
+  await runtime.publisher.enqueueForRtt(group, rtt('session-a', 'session-b', version), 0);
+  const reserved = await queue.reserveEntries(
+    OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
+    new Set([EntityStatus.NEW]),
+    1,
+  );
+  const entry = [...reserved.values()][0];
+  if (!entry) throw new Error('Expected reserved RTC RTT work');
+  return entry;
+}
+
+function withoutCanonicalRttObservation(entry: ResourceEntry): ResourceEntry {
+  const message = JSON.parse(entry.resource) as ALMessage;
+  const envelope = JSON.parse(message.payload.resource) as {
+    data: Record<string, unknown>;
+  };
+  const { rtt: _rtt, refinementObservationId: _observationId, ...legacyData } = envelope.data;
+  return {
+    ...entry,
+    resource: JSON.stringify({
+      ...message,
+      payload: {
+        ...message.payload,
+        resource: JSON.stringify({ ...envelope, data: legacyData }),
+      },
+    }),
+  };
+}
+
+function predictedNodes(distanceMs: number): ReadonlyMap<string, VivaldiNodeData> {
+  return new Map([
+    ['session-a', { id: 'session-a', coords: [0], err: 0.1, rttMs: 0 }],
+    ['session-b', { id: 'session-b', coords: [distanceMs], err: 0.1, rttMs: 0 }],
+  ]);
 }
 
 function createGroupSnapshot(stateRevision: number): GroupSnapshot {

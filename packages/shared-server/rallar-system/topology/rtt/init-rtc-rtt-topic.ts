@@ -4,6 +4,7 @@ import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+// prettier-ignore
 import * as groupStateSnapshotsRepository
   from '@shared/repository/group-state-snapshots-repository.ts';
 import * as rttRepository from '@shared/repository/rtt-repository.ts';
@@ -17,9 +18,7 @@ import type { RtcRttRefinementGate } from './rtc-rtt-refinement-gate.ts';
 
 import type { RtcTopologyRuntimeState } from '../../ws-rtc-topology-runtime.ts';
 import type { RtcTopologyWorkPublisher } from '../../services/RtcTopologyOutboxWork.ts';
-import type {
-  GroupTopologyGroupSnapshotReader,
-} from '../group-topology-management-service.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../group-topology-management-service.ts';
 import type { RallarRtcTopologyService } from '../../services/rallar-rtc-topology-service.ts';
 import {
   evaluateRtcRttMeasurement,
@@ -35,11 +34,13 @@ interface InitRtcRttTopicOptions {
   readonly rttRefinementGate?: RtcRttRefinementGate;
   readonly scheduleGlobalGraphRttRecompute: () => void;
   readonly findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
-  readonly enqueueRtcRttMutation?: (input: Readonly<{
-    rtt: RttMeasurementInfo;
-    alSenderId: string;
-    capturedAtEpochMs: number;
-  }>) => Promise<ResourceEntry>;
+  readonly enqueueRtcRttMutation?: (
+    input: Readonly<{
+      rtt: RttMeasurementInfo;
+      alSenderId: string;
+      capturedAtEpochMs: number;
+    }>,
+  ) => Promise<ResourceEntry>;
 }
 
 interface RtcRttPolicyInputs {
@@ -151,7 +152,8 @@ function resolveRttRefinementGroups(
     refinementGate.claimRefinement({
       groupKey: toWebRtcGroupKey(group.group),
       predictedDeltaMs,
-    })
+      nowEpochMs: Date.now(),
+    }),
   );
 }
 
@@ -187,17 +189,19 @@ async function findGroupsAffectedByRtt(
 
 type RtcRttUpdateResult = RtcRttAcceptanceResult & Readonly<{ updated: boolean }>;
 
-async function acceptRtcRttMeasurementWithPolicy(input: Readonly<{
-  rtt: RttMeasurementInfo;
-  alSenderId: string;
-  readPolicyInputs: () => Promise<RtcRttPolicyInputs>;
-}>): Promise<RtcRttUpdateResult> {
+async function acceptRtcRttMeasurementWithPolicy(
+  input: Readonly<{
+    rtt: RttMeasurementInfo;
+    alSenderId: string;
+    readPolicyInputs: () => Promise<RtcRttPolicyInputs>;
+  }>,
+): Promise<RtcRttUpdateResult> {
   const requestedAtEpochMs = Date.now();
   const result = evaluateRtcRttMeasurement({
     rtt: input.rtt,
     alSenderId: input.alSenderId,
     requestedAtEpochMs,
-    ...await input.readPolicyInputs(),
+    ...(await input.readPolicyInputs()),
     existingMeasurements: rttRepository.getAllRtt(),
   });
   return {

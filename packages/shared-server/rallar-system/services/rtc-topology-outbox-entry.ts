@@ -1,6 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { EnqueuedType } from '@shared/api/api-config.ts';
+import {
+    EnqueuedType,
+    type RttMeasurementInfo,
+} from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { readGroupStateRevision } from '@shared/api/group-client-views.ts';
 import { groupStateGroupStorageKey } from '../group-state-storage-keys.ts';
@@ -20,6 +23,8 @@ import {
 
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { validateRtcRttMeasurement } from '../rtc-rtt-persistence-validation.ts';
+import { toRtcRttMutationReceiptId } from '../rtc-topology-identifiers.ts';
 import { AppOutboxType } from './AppOutboxService.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 
@@ -36,13 +41,12 @@ export function setRtcTopologyOutboxWriteSink(
     outboxWriteSink = sink;
 }
 
-export interface ComputedRtcTopologyOutbox {
+interface ComputedRtcTopologyOutboxBase {
     readonly commandId: string;
     readonly aggregateRef: GroupRef;
     readonly acceptedCausalRevision: GroupStateCausalRevision;
     readonly groupSnapshot: GroupSnapshot;
     readonly effectKind: 'rtc-topology-recompute';
-    readonly payloadKind: 'group-revision';
     readonly createdAtEpochMs: number;
     readonly expireAtEpochMs: number;
     readonly senderId: string;
@@ -51,10 +55,24 @@ export interface ComputedRtcTopologyOutbox {
     readonly publish: boolean;
 }
 
-type LegacyComputedRtcTopologyOutboxInput = Omit<
-    ComputedRtcTopologyOutbox,
-    'senderId' | 'resourceId'
->;
+export type ComputedRtcTopologyOutbox =
+    | (ComputedRtcTopologyOutboxBase &
+          Readonly<{
+              payloadKind: 'group-revision';
+          }>)
+    | (ComputedRtcTopologyOutboxBase &
+          Readonly<{
+              payloadKind: 'rtt-refresh';
+              rtt: RttMeasurementInfo;
+              refinementObservationId: string;
+          }>);
+
+type LegacyComputedRtcTopologyOutboxInput =
+    ComputedRtcTopologyOutbox extends infer T
+        ? T extends ComputedRtcTopologyOutbox
+            ? Omit<T, 'senderId' | 'resourceId'>
+            : never
+        : never;
 
 interface RtcTopologyGroupRevisionWork {
     readonly kind: 'group-revision';
@@ -66,13 +84,26 @@ interface RtcTopologyGroupRevisionWork {
     readonly publish: boolean;
 }
 
+interface RtcTopologyRttRefreshWork {
+    readonly kind: 'rtt-refresh';
+    readonly overlayId: string;
+    readonly groupSnapshot: GroupSnapshot;
+    readonly requestedGroupStateRevision: number;
+    readonly requestedRttVersion: number;
+    readonly rtt: RttMeasurementInfo;
+    readonly refinementObservationId: string;
+    readonly requestedAtEpochMs: number;
+    readonly requestOptions: CanonicalGroupTopologyConfigPatch;
+    readonly publish: boolean;
+}
+
 interface RtcTopologyWorkEnvelope {
     readonly type: typeof AppOutboxType.RTC_TOPOLOGY_RECOMPUTE;
     readonly topicId: string;
     readonly resourceId: string;
     readonly contextId: string;
     readonly senderId: string;
-    readonly data: RtcTopologyGroupRevisionWork;
+    readonly data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
 }
 
 export function computeRtcTopologyEntry(
@@ -87,13 +118,14 @@ export function computeRtcTopologyEntry(
     input: ComputedRtcTopologyOutbox | LegacyComputedRtcTopologyOutboxInput,
     legacySenderId?: string,
 ): ResourceEntry {
-    const computed = 'senderId' in input && 'resourceId' in input
-        ? input
-        : {
-            ...input,
-            senderId: legacySenderId ?? '',
-            resourceId: deriveRtcTopologyEntryResourceId(input),
-        };
+    const computed =
+        'senderId' in input && 'resourceId' in input
+            ? input
+            : {
+                  ...input,
+                  senderId: legacySenderId ?? '',
+                  resourceId: deriveRtcTopologyEntryResourceId(input),
+              };
     validateComputedRtcTopologyOutbox(computed);
     const createdBy = toAppQueueCreatedBy(computed.senderId);
     const overlayId = toScopedOverlayId(computed.aggregateRef);
@@ -107,21 +139,35 @@ export function computeRtcTopologyEntry(
         resourceId: messageId,
         contextId,
     });
+    const commonWork = {
+        overlayId,
+        groupSnapshot: computed.groupSnapshot,
+        requestedAtEpochMs: computed.createdAtEpochMs,
+        requestOptions: computed.requestOptions,
+        publish: computed.publish,
+    } as const;
+    const data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork =
+        computed.payloadKind === 'rtt-refresh'
+            ? {
+                  ...commonWork,
+                  kind: 'rtt-refresh',
+                  requestedGroupStateRevision: sourceGroupStateRevision,
+                  requestedRttVersion: computed.rtt.version,
+                  rtt: computed.rtt,
+                  refinementObservationId: computed.refinementObservationId,
+              }
+            : {
+                  ...commonWork,
+                  kind: 'group-revision',
+                  sourceGroupStateRevision,
+              };
     const envelope: RtcTopologyWorkEnvelope = {
         type: AppOutboxType.RTC_TOPOLOGY_RECOMPUTE,
         topicId: APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
         resourceId: messageId,
         contextId,
         senderId: createdBy,
-        data: {
-            kind: 'group-revision',
-            overlayId,
-            groupSnapshot: computed.groupSnapshot,
-            sourceGroupStateRevision,
-            requestedAtEpochMs: computed.createdAtEpochMs,
-            requestOptions: computed.requestOptions,
-            publish: computed.publish,
-        },
+        data,
     };
     const message: ALMessage = {
         id: {
@@ -195,9 +241,10 @@ export async function writeRtcTopologyOutbox(
     computed: ComputedRtcTopologyOutbox | LegacyComputedRtcTopologyOutboxInput,
     senderId?: string,
 ): Promise<ResourceEntry> {
-    const entry = 'senderId' in computed && 'resourceId' in computed
-        ? computeRtcTopologyEntry(computed)
-        : computeRtcTopologyEntry(computed, senderId ?? '');
+    const entry =
+        'senderId' in computed && 'resourceId' in computed
+            ? computeRtcTopologyEntry(computed)
+            : computeRtcTopologyEntry(computed, senderId ?? '');
     await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);
     try {
         outboxWriteSink?.();
@@ -231,7 +278,8 @@ function validateComputedRtcTopologyOutbox(
         computed.resourceId.length === 0 ||
         computed.senderId.length === 0 ||
         computed.effectKind !== 'rtc-topology-recompute' ||
-        computed.payloadKind !== 'group-revision' ||
+        (computed.payloadKind !== 'group-revision' &&
+            computed.payloadKind !== 'rtt-refresh') ||
         !Number.isSafeInteger(computed.createdAtEpochMs) ||
         !Number.isSafeInteger(computed.expireAtEpochMs) ||
         computed.createdAtEpochMs < 0 ||
@@ -247,6 +295,17 @@ function validateComputedRtcTopologyOutbox(
         !hasCanonicalRequestOptions(computed.requestOptions)
     ) {
         throw new TypeError('Computed RTC topology outbox facts are invalid');
+    }
+    if (computed.payloadKind === 'rtt-refresh') {
+        validateRtcRttMeasurement(computed.rtt);
+        if (
+            computed.refinementObservationId !==
+            toRtcRttMutationReceiptId(computed.rtt)
+        ) {
+            throw new TypeError(
+                'Computed RTC topology RTT refresh facts are invalid',
+            );
+        }
     }
 }
 
