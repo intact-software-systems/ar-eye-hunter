@@ -1,5 +1,13 @@
 import { UndirectedGraph } from 'graphology';
-import { type EdgeProp, type GraphProp, type VertexProp, VertexState, VertexType } from '../graph-props.ts';
+// prettier-ignore
+import {
+    compareVertexIds,
+    type EdgeProp,
+    type GraphProp,
+    type VertexProp,
+    VertexState,
+    VertexType,
+} from '../graph-props.ts';
 import {
     computePredictedRttMs,
     DEFAULT_VIVALDI_CONFIG,
@@ -102,8 +110,13 @@ export function createDegreeCappedPredictedGraph(
     // common enough (co-located or collinear coordinates) that the tie-break
     // decides real edges. Sorting here also lets the selection tie-break on
     // node indices instead of comparing ids per candidate.
+    //
+    // compareVertexIds and not localeCompare: collation depends on the runtime's
+    // default locale and ICU data, so servers configured differently could order
+    // the same ids differently, which is exactly the divergence this ordering
+    // exists to remove.
     const nodes = [...nodeDataById.values()].sort((left, right) =>
-        left.id.localeCompare(right.id)
+        compareVertexIds(left.id, right.id)
     );
     const degreeLimit = Number.isInteger(options.degreeLimit) &&
             options.degreeLimit > 0
