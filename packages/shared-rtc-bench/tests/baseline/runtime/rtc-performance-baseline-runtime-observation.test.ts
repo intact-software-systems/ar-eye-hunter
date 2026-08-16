@@ -14,34 +14,79 @@ function readWorkerFlag(arguments_: readonly string[], name: string) {
   return value.slice(name.length + 3);
 }
 
+function createTemporaryFilePort(rootPath: string): DenoRtcBaselineAdapters['filePort'] {
+  const toTemporaryPath = (path: string) => join(rootPath, path);
+  return {
+    inspectPath: async (path) => {
+      try {
+        const entry = await stat(toTemporaryPath(path));
+        return entry.isDirectory() ? { kind: 'directory' } : { kind: 'file' };
+      } catch {
+        return null;
+      }
+    },
+    createDirectory: async (path, options) => mkdir(toTemporaryPath(path), options),
+    writeFileCreateNew: async (path, bytes) =>
+      writeFile(toTemporaryPath(path), bytes, { flag: 'wx' }),
+    readFile: async (path) => readFile(toTemporaryPath(path)),
+    removeFile: async (path) => rm(toTemporaryPath(path)),
+    removeDirectory: async (path) => rm(toTemporaryPath(path), { force: true, recursive: true }),
+    listDirectory: async (path) =>
+      (await readdir(toTemporaryPath(path), { withFileTypes: true })).map((entry) => ({
+        name: entry.name,
+        kind: entry.isDirectory() ? ('directory' as const) : ('file' as const),
+      })),
+  };
+}
+
+function createNeutralSyntheticWorker(): DenoRtcBaselineAdapters['freshWorker'] {
+  return {
+    run: async ({ arguments: workerArguments }) => {
+      const workloadId = readWorkerFlag(workerArguments, 'workload');
+      const caseId = readWorkerFlag(workerArguments, 'case-id');
+      const inputKey = readWorkerFlag(workerArguments, 'input-key');
+      const intendedPhase = readWorkerFlag(workerArguments, 'intended-phase');
+      const outerOrdinal = Number(readWorkerFlag(workerArguments, 'outer-ordinal'));
+      const sampleIds = readWorkerFlag(workerArguments, 'sample-ids').split(',');
+      return {
+        ok: true as const,
+        value: {
+          exitStatus: 0,
+          stdout: JSON.stringify(
+            sampleIds.map((sampleId, index) => ({
+              schema: 'rallar.rtc-baseline.sample.v1',
+              identity: {
+                sampleId,
+                workloadId,
+                caseId,
+                inputKey,
+                intendedPhase,
+                outerOrdinal,
+                innerOrdinal: index + 1,
+              },
+              outcome: 'passed',
+              evidenceClass: 'synthetic-path',
+              metrics: [{ metric: 'durationMs', unit: 'ms', value: index + 1 }],
+              rawEvidence: null,
+              rawReferences: [],
+              issues: [],
+              runtimeObservation: null,
+            })),
+          ),
+          stderr: '',
+        },
+      };
+    },
+  };
+}
+
 async function createRuntimeAdapters(): Promise<{
   adapters: DenoRtcBaselineAdapters;
   rootPath: string;
 }> {
   const rootPath = await mkdtemp(join(tmpdir(), 'rtc-runtime-observation-'));
-  const toTemporaryPath = (path: string) => join(rootPath, path);
   const adapters: DenoRtcBaselineAdapters = {
-    filePort: {
-      inspectPath: async (path) => {
-        try {
-          const entry = await stat(toTemporaryPath(path));
-          return entry.isDirectory() ? { kind: 'directory' } : { kind: 'file' };
-        } catch {
-          return null;
-        }
-      },
-      createDirectory: async (path, options) => mkdir(toTemporaryPath(path), options),
-      writeFileCreateNew: async (path, bytes) =>
-        writeFile(toTemporaryPath(path), bytes, { flag: 'wx' }),
-      readFile: async (path) => readFile(toTemporaryPath(path)),
-      removeFile: async (path) => rm(toTemporaryPath(path)),
-      removeDirectory: async (path) => rm(toTemporaryPath(path), { force: true, recursive: true }),
-      listDirectory: async (path) =>
-        (await readdir(toTemporaryPath(path), { withFileTypes: true })).map((entry) => ({
-          name: entry.name,
-          kind: entry.isDirectory() ? ('directory' as const) : ('file' as const),
-        })),
-    },
+    filePort: createTemporaryFilePort(rootPath),
     git: {
       readHeadCommit: async () => ({ ok: true, value: 'a'.repeat(40) }),
       readHeadTree: async () => ({ ok: true, value: 'b'.repeat(40) }),
@@ -49,44 +94,7 @@ async function createRuntimeAdapters(): Promise<{
       readStatus: async () => ({ ok: true, value: '' }),
     },
     process: { run: async () => ({ ok: true, value: { exitStatus: 0, stdout: '', stderr: '' } }) },
-    freshWorker: {
-      run: async ({ arguments: workerArguments }) => {
-        const workloadId = readWorkerFlag(workerArguments, 'workload');
-        const caseId = readWorkerFlag(workerArguments, 'case-id');
-        const inputKey = readWorkerFlag(workerArguments, 'input-key');
-        const intendedPhase = readWorkerFlag(workerArguments, 'intended-phase');
-        const outerOrdinal = Number(readWorkerFlag(workerArguments, 'outer-ordinal'));
-        const sampleIds = readWorkerFlag(workerArguments, 'sample-ids').split(',');
-        return {
-          ok: true as const,
-          value: {
-            exitStatus: 0,
-            stdout: JSON.stringify(
-              sampleIds.map((sampleId, index) => ({
-                schema: 'rallar.rtc-baseline.sample.v1',
-                identity: {
-                  sampleId,
-                  workloadId,
-                  caseId,
-                  inputKey,
-                  intendedPhase,
-                  outerOrdinal,
-                  innerOrdinal: index + 1,
-                },
-                outcome: 'passed',
-                evidenceClass: 'synthetic-path',
-                metrics: [{ metric: 'durationMs', unit: 'ms', value: index + 1 }],
-                rawEvidence: null,
-                rawReferences: [],
-                issues: [],
-                runtimeObservation: null,
-              })),
-            ),
-            stderr: '',
-          },
-        };
-      },
-    },
+    freshWorker: createNeutralSyntheticWorker(),
     environment: { readAllowlisted: () => ({}) },
     runtimeHost: {
       read: async () => ({
