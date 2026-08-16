@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -159,5 +160,119 @@ describe('RTC topology planning options and revisions', () => {
     expect(second.snapshot.version).toBe(2);
     expect(second.snapshot.createdAtEpochMs).toBe(first.snapshot.createdAtEpochMs);
     expect(second.snapshot.updatedAtEpochMs).toBe(200);
+  });
+
+  it('reuses the exact previous snapshot when topology semantics are unchanged', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1', 'peer-2', 'peer-3']);
+    const first = planRallarRtcTopologySnapshot({
+      group,
+      topology: 'tree',
+      nextHopsBySessionId: {
+        'peer-1': ['peer-2', 'peer-3'],
+        'peer-2': ['peer-1'],
+        'peer-3': ['peer-1'],
+      },
+      degreeLimit: 5,
+      nowEpochMs: 100,
+    });
+    const unchanged = planRallarRtcTopologySnapshot({
+      group,
+      previous: first.snapshot,
+      topology: 'tree',
+      nextHopsBySessionId: first.snapshot.nextHopsBySessionId,
+      degreeLimit: 5,
+      nowEpochMs: 200,
+    });
+
+    expect(unchanged.snapshot).toBe(first.snapshot);
+  });
+
+  it('advances source causality without a topology version bump', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1', 'peer-2', 'peer-3']);
+    const first = planRallarRtcTopologySnapshot({
+      group,
+      topology: 'tree',
+      nextHopsBySessionId: {
+        'peer-1': ['peer-2', 'peer-3'],
+        'peer-2': ['peer-1'],
+        'peer-3': ['peer-1'],
+      },
+      degreeLimit: 5,
+      nowEpochMs: 100,
+    });
+    const causallyAdvancedGroup = {
+      ...group,
+      stateRevision: 2,
+      causalRevision: { ...group.causalRevision, groupRevision: 2 },
+      group: { ...group.group, snapshotVersion: 2 },
+    };
+    const causallyAdvanced = planRallarRtcTopologySnapshot({
+      group: causallyAdvancedGroup,
+      previous: first.snapshot,
+      topology: 'tree',
+      nextHopsBySessionId: first.snapshot.nextHopsBySessionId,
+      degreeLimit: 5,
+      nowEpochMs: 300,
+    });
+
+    expect(causallyAdvanced.changed).toBe(false);
+    expect(causallyAdvanced.snapshot.version).toBe(first.snapshot.version);
+    expect(causallyAdvanced.snapshot.sourceGroupStateCausalRevision).toEqual({
+      groupRevision: 2,
+      presenceRevision: 0,
+    });
+  });
+
+  it('bumps the version and timestamp when next-hop order changes', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1', 'peer-2', 'peer-3']);
+    const first = planRallarRtcTopologySnapshot({
+      group,
+      topology: 'tree',
+      nextHopsBySessionId: {
+        'peer-1': ['peer-2', 'peer-3'],
+        'peer-2': ['peer-1'],
+        'peer-3': ['peer-1'],
+      },
+      degreeLimit: 5,
+      nowEpochMs: 100,
+    });
+    const orderedHopChange = planRallarRtcTopologySnapshot({
+      group,
+      previous: first.snapshot,
+      topology: 'tree',
+      nextHopsBySessionId: {
+        'peer-1': ['peer-3', 'peer-2'],
+        'peer-2': ['peer-1'],
+        'peer-3': ['peer-1'],
+      },
+      degreeLimit: 5,
+      nowEpochMs: 400,
+    });
+
+    expect(orderedHopChange.changed).toBe(true);
+    expect(orderedHopChange.snapshot.version).toBe(first.snapshot.version + 1);
+    expect(orderedHopChange.snapshot.updatedAtEpochMs).toBe(400);
+  });
+
+  it('copies canonical group scope into the snapshot', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', ['peer-1', 'peer-2', 'peer-3']);
+    const snapshot = planRallarRtcTopologySnapshot({
+      group,
+      topology: 'tree',
+      nextHopsBySessionId: {
+        'peer-1': ['peer-2', 'peer-3'],
+        'peer-2': ['peer-1'],
+        'peer-3': ['peer-1'],
+      },
+      degreeLimit: 5,
+      nowEpochMs: 100,
+    }).snapshot;
+
+    expect(snapshot.groupRef).toEqual({
+      applicationId: group.group.applicationId,
+      workspaceId: group.group.workspaceId,
+      groupId: group.group.groupId,
+    });
+    expect(snapshot.groupRef).not.toBe(group.group);
   });
 });

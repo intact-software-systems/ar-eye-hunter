@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { toCanonicalTopologySessionIds } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
+import { computeNoRttTopologyNextHops } from '@shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts';
 
 import {
   createRtcTopologyGroupSnapshot,
@@ -122,5 +124,65 @@ describe('RTC topology planning without RTT measurements', () => {
     for (const nextHops of Object.values(result.snapshot.nextHopsBySessionId)) {
       expect(nextHops.length).toBeLessThanOrEqual(5);
     }
+  });
+
+  it('computes exact star next hops', () => {
+    expect(
+      computeNoRttTopologyNextHops({
+        topology: 'star',
+        activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+        degreeLimit: 2,
+        meshParamK: 2,
+      }),
+    ).toEqual({
+      'peer-1': ['peer-2', 'peer-3'],
+      'peer-2': ['peer-1', 'peer-3'],
+      'peer-3': ['peer-1', 'peer-2'],
+    });
+  });
+
+  it('computes deterministic tree next hops from canonicalized shuffled input', () => {
+    const canonicalTreeSessionIds = toCanonicalTopologySessionIds([
+      'peer-4',
+      'peer-2',
+      'peer-3',
+      'peer-1',
+    ]);
+    const shuffledCanonicalTreeSessionIds = toCanonicalTopologySessionIds([
+      'peer-3',
+      'peer-1',
+      'peer-4',
+      'peer-2',
+    ]);
+    expect(
+      computeNoRttTopologyNextHops({
+        topology: 'tree',
+        activeSessionIds: canonicalTreeSessionIds,
+        degreeLimit: 2,
+        meshParamK: 2,
+      }),
+    ).toEqual(
+      computeNoRttTopologyNextHops({
+        topology: 'tree',
+        activeSessionIds: shuffledCanonicalTreeSessionIds,
+        degreeLimit: 2,
+        meshParamK: 2,
+      }),
+    );
+  });
+
+  it('computes degree-limited mesh next hops', () => {
+    expect(
+      computeNoRttTopologyNextHops({
+        topology: 'mesh',
+        activeSessionIds: ['peer-1', 'peer-2', 'peer-3'],
+        degreeLimit: 1,
+        meshParamK: 2,
+      }),
+    ).toEqual({
+      'peer-1': ['peer-2'],
+      'peer-2': ['peer-1'],
+      'peer-3': [],
+    });
   });
 });
