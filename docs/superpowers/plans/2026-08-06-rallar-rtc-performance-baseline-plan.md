@@ -462,9 +462,10 @@ keys, full environment dumps, or unredacted remote host inventories.
 ### Measurement anchors
 
 - Capture B01-B05 only after the ordered foundation, B01, B02, B03, B04, and
-  B05 commits are published and every required local gate plus **Branch Release
-  Gate** passes on the unchanged final head. That exact head and tree are the
-  B01-B05 measurement anchor.
+  B05 commits are published, every required local gate passes, and the exact
+  final main head has a successful **Deploy Web + API** run whose embedded
+  **Release Gate / Release Gate** job succeeded. That exact head and tree are
+  the B01-B05 measurement anchor.
 - B06 remains inactive until its separate reservation is approved. It receives
   a later clean head and fresh focused, repository, and branch-release gates;
   its evidence never retroactively changes the B01-B05 anchor.
@@ -3379,6 +3380,14 @@ dependency invalidates the gate and requires a new candidate anchor.
   a frozen input, identity, grammar, timing boundary, validation rule, schema,
   output rule, failure rule, or package dependency direction changed.
 
+  The Task 4B final feature-head release failure caused by the workflow calling
+  the removed `validation-evidence.mjs --governance-status` option is superseded
+  only when this compatibility review finds no product regression, the merged
+  Task 4B tree is in the candidate ancestry, the fresh Task 7 gates pass, and the
+  candidate's exact-main **Deploy Web + API** run and embedded
+  **Release Gate / Release Gate** job succeed. Any product, correctness, or
+  current contract failure remains blocking.
+
 - [ ] **Step 2: Run exact package and production correctness gates**
 
   ```bash
@@ -3395,7 +3404,12 @@ dependency invalidates the gate and requires a new candidate anchor.
     packages/tests/shared/webrtc-overlay-services.test.ts \
     packages/tests/shared/multicast-policy-integration.test.ts \
     packages/tests/shared-server/rallar-rtc-topology-service.test.ts \
-    packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts
+    packages/tests/shared-server/rallar-system/rtc-topology/rtc-topology-publication-repository.test.ts \
+    packages/tests/shared-server/rallar-system/rtc-topology/rtc-topology-snapshot-repository.test.ts \
+    packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-read-write.test.ts \
+    packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-convergence.test.ts \
+    packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.test.ts \
+    packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-corruption.test.ts
 
   npm run check:repo-style -- --root packages/shared-rtc-bench
   npm run check:repo-style:changed -- origin/main
@@ -3425,10 +3439,22 @@ dependency invalidates the gate and requires a new candidate anchor.
 
 - [ ] **Step 4: Freeze the anchor record without changing the tree**
 
+  ```bash
+  : "${RTC_B01_B05_RELEASE_RUN:?export the matching exact-main Deploy Web + API run ID}"
+  : "${RTC_B01_B05_RELEASE_ATTEMPT:?export the matching run attempt}"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Deploy Web + API"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B01_B05_ANCHOR_HEAD}"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json jobs --jq '[.jobs[] | select(.name == "Release Gate / Release Gate" and .conclusion == "success")] | length')" = "1"
+  RTC_B01_B05_RELEASE_URL="$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json url --jq .url)"
+  test -n "${RTC_B01_B05_RELEASE_URL}"
+  ```
+
   Record the exact head, tree, plan blob, package lock hash, Deno/runtime/browser
-  versions, package test results, repository gates, review record, and required
-  resulting-main workflow URL. Verify the catalog source/config paths all exist,
-  every hash input is confined to the repository, B05 names
+  versions, package test results, repository gates, review record, required
+  exact-main **Deploy Web + API** workflow URL, and successful embedded
+  **Release Gate / Release Gate** job. Verify the catalog source/config paths all
+  exist, every hash input is confined to the repository, B05 names
   `apps/rallar-black-box/playwright.config.ts`, and no old RTC benchmark
   implementation exists under `scripts/**`.
 
@@ -3454,20 +3480,21 @@ changed anchor returns to Task 7.
   ```bash
   : "${RTC_B01_B05_HEAD:?export the exact Task 7 head, or the Task 10 Step 6 B06 rerun head}"
   : "${RTC_B01_B05_TREE:?export the matching exact tree}"
-  : "${RTC_B01_B05_BRANCH_GATE_RUN:?export the matching Branch Release Gate run ID}"
-  : "${RTC_B01_B05_BRANCH_GATE_ATTEMPT:?export the matching run attempt}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
+  : "${RTC_B01_B05_RELEASE_RUN:?export the matching exact-main Deploy Web + API run ID}"
+  : "${RTC_B01_B05_RELEASE_ATTEMPT:?export the matching run attempt}"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Deploy Web + API"
   test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
   test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B01_B05_HEAD}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B01_B05_HEAD}"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json jobs --jq '[.jobs[] | select(.name == "Release Gate / Release Gate" and .conclusion == "success")] | length')" = "1"
   test -z "$(git status --porcelain)"
   RTC_E1_PRIMARY_ID="$(date -u +%Y%m%d)-$(git rev-parse --short=12 HEAD)-e1-local"
   printf 'export RTC_E1_PRIMARY_ID=%q\n' "${RTC_E1_PRIMARY_ID}"
   ```
 
   For original-anchor capture the head must equal Task 7's gated anchor. The
-  only substitution is Task 10 Step 6's exact Branch-Release-gated B06
+  only substitution is Task 10 Step 6's exact-main-release-gated B06
   head/tree for the required cross-anchor rerun. Stop other builds, tests,
   browser matrices, containers, services, and benchmarks before continuing.
 
@@ -3624,13 +3651,14 @@ historical nonexistent root config path.
   ```bash
   : "${RTC_B01_B05_HEAD:?export the exact Task 7 head, or the Task 10 Step 6 B06 rerun head}"
   : "${RTC_B01_B05_TREE:?export the matching exact tree}"
-  : "${RTC_B01_B05_BRANCH_GATE_RUN:?export the matching Branch Release Gate run ID}"
-  : "${RTC_B01_B05_BRANCH_GATE_ATTEMPT:?export the matching run attempt}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Branch Release Gate"
+  : "${RTC_B01_B05_RELEASE_RUN:?export the matching exact-main Deploy Web + API run ID}"
+  : "${RTC_B01_B05_RELEASE_ATTEMPT:?export the matching run attempt}"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json workflowName --jq .workflowName)" = "Deploy Web + API"
   test "$(git rev-parse HEAD)" = "${RTC_B01_B05_HEAD}"
   test "$(git rev-parse HEAD^{tree})" = "${RTC_B01_B05_TREE}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B01_B05_HEAD}"
-  test "$(gh run view "${RTC_B01_B05_BRANCH_GATE_RUN}" --attempt "${RTC_B01_B05_BRANCH_GATE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json headSha --jq .headSha)" = "${RTC_B01_B05_HEAD}"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json conclusion --jq .conclusion)" = "success"
+  test "$(gh run view "${RTC_B01_B05_RELEASE_RUN}" --attempt "${RTC_B01_B05_RELEASE_ATTEMPT}" --json jobs --jq '[.jobs[] | select(.name == "Release Gate / Release Gate" and .conclusion == "success")] | length')" = "1"
   test -z "$(git status --porcelain)"
   RTC_E2_PRIMARY_ID="$(date -u +%Y%m%d)-$(git rev-parse --short=12 HEAD)-e2-browser"
   RTC_BASELINE_ID="${RTC_E2_PRIMARY_ID}"
@@ -3860,8 +3888,10 @@ records those payloads; no browser/app/product code imports
   On the exact resulting `origin/main`, rerun the package check, focused
   B06/product tests, `npm run test:unit`, `npm run test:ci`, and
   `npm run build`; record head/tree, runtime/provider/database/browser
-  fingerprints, package catalog/config hashes, and independent review. No
-  relevant file may change between gating and capture.
+  fingerprints, package catalog/config hashes, independent review, the
+  successful exact-main **Deploy Web + API** workflow URL, and its embedded
+  **Release Gate / Release Gate** job. No relevant file may change between
+  gating and capture.
 
 - [ ] **Step 7: Initialize and capture E3-memory**
 
