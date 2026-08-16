@@ -87,6 +87,7 @@ export * from './cache/CommandsOrchestrator.ts';
 export * from './cache/LatestMementoRepository.ts';
 export * from './cache/LatestMementoValue.ts';
 export * from './cache/LatestRepository.ts';
+export * from './cache/expiring-repository.ts';
 export * from './cache/LatestValue.ts';
 export * from './cache/ObservableLatestRepository.ts';
 export * from './cache/ObservableLatestValue.ts';

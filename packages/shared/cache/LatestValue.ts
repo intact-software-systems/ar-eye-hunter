@@ -1,6 +1,6 @@
 import { ReadableValue } from './ReadableValue.ts';
 
-export type ValueValidityChecker<T> = (value: T) => boolean;
+export type ValueValidityChecker<T> = (value: T, nowEpochMs: number) => boolean;
 
 export interface LatestValueOptions<T> {
     ttlMs?: number;
@@ -19,6 +19,8 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
 
     private value: T | undefined;
     private valueStartMs = 0;
+    private expireAtEpochMs: number | undefined;
+    private holdsValue = false;
 
     public constructor(options: LatestValueOptions<T> = {}) {
         this.ttlMs = options.ttlMs ?? NEVER_EXPIRES_MS;
@@ -32,6 +34,15 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
     public accept(value: T): void {
         this.value = value;
         this.valueStartMs = Date.now();
+        this.expireAtEpochMs = undefined;
+        this.holdsValue = false;
+    }
+
+    public acceptAt(value: T, nowEpochMs: number, expireAtEpochMs?: number): void {
+        this.value = value;
+        this.valueStartMs = nowEpochMs;
+        this.expireAtEpochMs = expireAtEpochMs;
+        this.holdsValue = true;
     }
 
     public next(value: T): void {
@@ -50,7 +61,11 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
     }
 
     public read(): T | undefined {
-        return this.isExpired(this.value) ? undefined : this.value;
+        return this.readAt(Date.now());
+    }
+
+    public readAt(nowEpochMs: number): T | undefined {
+        return this.isExpiredAt(this.value, nowEpochMs) ? undefined : this.value;
     }
 
     public peek(): T | undefined {
@@ -79,15 +94,13 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
             return false;
         }
 
-        this.value = update;
-        this.valueStartMs = Date.now();
+        this.acceptAt(update, Date.now());
         return true;
     }
 
     public getAndSet(update: T): T | undefined {
         const previous = this.value;
-        this.value = update;
-        this.valueStartMs = Date.now();
+        this.acceptAt(update, Date.now());
         return previous;
     }
 
@@ -107,7 +120,11 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
     }
 
     public takeIfExpired(): T | undefined {
-        if (!this.isExpired(this.value)) {
+        return this.takeIfExpiredAt(Date.now());
+    }
+
+    public takeIfExpiredAt(nowEpochMs: number): T | undefined {
+        if (!this.isExpiredAt(this.value, nowEpochMs)) {
             return undefined;
         }
 
@@ -119,7 +136,11 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
     }
 
     public expired(): boolean {
-        return this.isExpired(this.value);
+        return this.expiredAt(Date.now());
+    }
+
+    public expiredAt(nowEpochMs: number): boolean {
+        return this.isExpiredAt(this.value, nowEpochMs);
     }
 
     public refreshing(): boolean {
@@ -129,21 +150,27 @@ export class LatestValue<T> implements ReadableValue<T>, ValueSink<T> {
     public clear(): void {
         this.value = undefined;
         this.valueStartMs = 0;
+        this.expireAtEpochMs = undefined;
+        this.holdsValue = false;
     }
 
-    private isExpired(value: T | undefined): boolean {
+    private isExpiredAt(value: T | undefined, nowEpochMs: number): boolean {
         if (value === undefined) {
             return true;
         }
 
-        if (this.valueStartMs === 0) {
+        if (!this.holdsValue && this.valueStartMs === 0) {
             return true;
         }
 
-        if (Date.now() - this.valueStartMs > this.ttlMs) {
+        if (this.expireAtEpochMs !== undefined && nowEpochMs >= this.expireAtEpochMs) {
             return true;
         }
 
-        return !this.isValid(value);
+        if (nowEpochMs - this.valueStartMs > this.ttlMs) {
+            return true;
+        }
+
+        return !this.isValid(value, nowEpochMs);
     }
 }
