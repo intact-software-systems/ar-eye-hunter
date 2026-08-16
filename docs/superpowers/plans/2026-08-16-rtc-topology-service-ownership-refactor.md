@@ -26,6 +26,48 @@ head `15ff8b402e9985802caa72ca5535abfb96b6b18b` produced accepted same-host pre-
 `20260816-15ff8b402e99-e1-local`. Newer `main` did not change the service, direct tests, or selected
 ownership, so the architecture remains current.
 
+## Final correction round
+
+Final whole-branch review at `fa0288d772f540cd80f195d86dc9a81783d1db51` proved compatibility,
+failure-boundary, graph-timing, test-authority, and allocation facts that were not protected by the
+completed slices. This is one bounded final-fix round; it does not reopen the ownership model or
+activate another feature slice.
+
+The correction acceptance is:
+
+- Preserve the baseline subclass dispatch chain exactly: update -> `planGroupTopology` ->
+  `planGroupTopologyAt`; planning and room-graph work dispatch through the public
+  `selectTopology` and `readRttReportingDegreeLimit`; committed observation dispatches through
+  `observeTopologySnapshot`; flush dispatches through claim then update. Table-driven semantic
+  subclass tests assert exact counts, order, and returned results. The committed-observation
+  virtual call is an intentional observable compatibility boundary, not a direct-registry cleanup
+  opportunity.
+- Move topology, queue, and flush request-attempt increments to the lifecycle facade before their
+  session/scope translation boundaries. Remove duplicate increments from planner/scheduler;
+  planners and schedulers continue to own result and duration metrics. Generalized throwing
+  session/scope/clock tests assert the exact error order and counters without flags or callbacks.
+- Make room-graph construction return an explicit discriminated connected or sparse-fallback
+  outcome. Record build duration and fallback count before a same-owner fallback materializer runs,
+  so fallback materialization is excluded and a throwing second graph-scope construction observes
+  build 1, fallback 1, and the already recorded boundary duration.
+- Delete
+  `packages/shared-rtc-bench/tests/architecture/rtc-benchmark-executable-ownership.test.ts`
+  without replacement inventory. Existing executable capability suites, catalog tests, navigation,
+  and package/import boundaries remain the semantic authority.
+- Remove the dead measured-graph `createRttWeightLookup` O(M) preprocessing and helpers. Open issue
+  [#253](https://github.com/intact-software-systems/ar-eye-hunter/issues/253) records the proven
+  weakness and safe acceptance; this branch fixes it but does not close the issue externally.
+
+Execute behavior corrections with strict RED -> GREEN. Amend plan/design before production edits,
+commit the amendment coherently, then commit production/tests and the obsolete inventory deletion
+as coherent non-default-branch changes. Run the full focused topology and integration set,
+shared-server typecheck, shared RTC benchmark check, governance, API Deno check, the unweakened
+medium-scale PostgreSQL gate, style/changed-style/construction/structure/tests/Prettier/diff/legacy
+review, current-main merge-tree compatibility, and terminal clean-head RTC-B03 capture. Inspect the
+remote Release Gate through `npm run pr:delivery -- status` and its supported reviewed-disposition
+path; do not push, edit PR state, add an untruthful static exception, or split the cohesive no-RTT
+owner merely to silence the gate.
+
 ## Global Constraints
 
 - Preserve the exact existing `RallarRtcTopologyService` deep import, package export, constructor,

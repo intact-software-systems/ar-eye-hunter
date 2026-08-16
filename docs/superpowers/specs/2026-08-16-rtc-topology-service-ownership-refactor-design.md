@@ -19,6 +19,49 @@ current.
 The earlier RTC RTT ownership work is already present. This document is architectural guidance, not a live progress ledger, ownership
 reservation, completion receipt, or authorization to commit on `main`.
 
+## Final compatibility correction currentness
+
+Final whole-branch review at `fa0288d772f540cd80f195d86dc9a81783d1db51` proved five
+remaining correction boundaries that supersede narrower implementation wording below without
+changing the selected owners:
+
+1. `RallarRtcTopologyService` is a supported subclassable class, and the repository already
+   subclasses `planGroupTopologyAt`. Its baseline public-to-public calls are observable
+   compatibility: update dispatches through `planGroupTopology`, planning through
+   `planGroupTopologyAt`, committed observation through `observeTopologySnapshot`, topology
+   selection through `selectTopology`, RTT degree policy through `readRttReportingDegreeLimit`,
+   and flush through `claimDueRttTopologyUpdate` then `updateGroupTopology`. These virtual calls
+   remain intentional public compatibility boundaries. In particular, committed observation must
+   not bypass the public method for a direct registry call; this one retained public dispatch is
+   not avoidable cognitive indirection.
+2. Public request-attempt metrics belong at the lifecycle-facade entry before session reads or
+   scoped-identity translation can throw. `RtcTopologyPlanner` and
+   `RtcTopologyRttRebuildScheduler` retain result and duration ownership, but no longer duplicate
+   topology, queue, or flush attempt increments.
+3. Sparse room-graph fallback is a two-stage outcome owned by
+   `planning/create-rtc-room-graph.ts`. The graph owner returns a discriminated connected-graph or
+   fallback-materialization outcome; the planner records graph duration and sparse-fallback count
+   from that outcome before the same graph owner materializes fallback nodes and edges. This
+   preserves the baseline error boundary and excludes fallback materialization from the recorded
+   build duration without a callback or duplicate decision.
+4. `packages/shared-rtc-bench/tests/architecture/rtc-benchmark-executable-ownership.test.ts` is
+   deleted. Executable capability tests, catalog behavior, navigation, and package/import
+   boundaries remain authoritative; no replacement path, tree, source-text, or count inventory is
+   introduced.
+5. The measured graph path's `createRttWeightLookup` allocation is proven dead: it allocates
+   bidirectional O(M) map entries only when measurements exist, while its sole read is in the
+   no-measurement branch. [#253](https://github.com/intact-software-systems/ar-eye-hunter/issues/253)
+   records the exact symbol, evidence, impact, and safe acceptance. The helpers and allocation are
+   removed in this branch without changing graph output or closing the issue externally.
+
+The final correction preserves all public, deep-import, package, protocol, and graph-result
+contracts. It adds semantic subclass dispatch, throwing entry-boundary, and fallback timing tests;
+it does not add a compatibility shim, alternate facade, hidden callback, metric flag, or duplicate
+graph decision. Remote Release Gate failure is diagnosed through the supported delivery and
+reviewed-disposition path after code correction. The accepted no-RTT cohesion warning remains
+truthful and is neither waived with a new static exception nor silenced by splitting its cohesive
+algorithm family.
+
 ## Current problem
 
 `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts` is 1,493 physical
