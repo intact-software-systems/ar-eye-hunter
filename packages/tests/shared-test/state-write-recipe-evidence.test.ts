@@ -46,7 +46,7 @@ describe('API-v1 state-write recipe evidence', () => {
         const terminalNames = [
             'assertPrimaryExactRevisions',
             'assertTertiaryExactRevisions',
-            'assertSnapshotPayloadsAcrossPrimaryAndTertiary',
+            'assertEnvelopePayloadsAcrossPrimaryAndTertiary',
             'closeAliceWebSocket',
             'closeBobWebSocket',
             'logoutAliceThroughPrimary',
@@ -58,23 +58,26 @@ describe('API-v1 state-write recipe evidence', () => {
 
         const assertionSteps = recipe.steps.slice(-terminalNames.length, -4);
         expect(assertionSteps[0].actual).toEqual({
-            firstRevision: '{primaryFirstSnapshot.causalRevision.groupRevision}',
-            secondRevision: '{primarySecondSnapshot.causalRevision.groupRevision}',
+            firstRevision: '{primaryFirstEnvelope.resultingCausalRevision.groupRevision}',
+            secondRevision: '{primarySecondEnvelope.resultingCausalRevision.groupRevision}',
         });
         const group = {
             applicationId: 'app', workspaceId: 'workspace', groupId: 'group',
         };
-        const snapshot = (groupRevision: number, presenceRevision: number) => ({
-            causalRevision: { groupRevision, presenceRevision },
+        // The delta envelope carries the revision the mutation produced as
+        // resultingCausalRevision; the retired snapshot frame carried it as
+        // causalRevision.
+        const envelope = (groupRevision: number, presenceRevision: number) => ({
+            resultingCausalRevision: { groupRevision, presenceRevision },
             group,
         });
         const variables = {
             applicationId: 'app', workspaceId: 'workspace', groupId: 'group',
             roleMutationRevision: 3, groupMutationRevision: 4,
-            primaryFirstSnapshot: snapshot(3, 7),
-            primarySecondSnapshot: snapshot(4, 8),
-            tertiaryFirstSnapshot: snapshot(4, 8),
-            tertiarySecondSnapshot: snapshot(3, 7),
+            primaryFirstEnvelope: envelope(3, 7),
+            primarySecondEnvelope: envelope(4, 8),
+            tertiaryFirstEnvelope: envelope(4, 8),
+            tertiarySecondEnvelope: envelope(3, 7),
         };
         const interactions = [
             ...assertionSteps.map((step, index) => ({

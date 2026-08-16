@@ -9,7 +9,6 @@ const managedClusterProfiles = [
   'api-v1-black-box-cluster',
   'api-v1-black-box-crdt',
   'api-v1-black-box-medium-scale',
-  'api-v1-black-box-delta-primary',
 ] as const;
 
 describe('managed API-v1 cluster profile options', () => {

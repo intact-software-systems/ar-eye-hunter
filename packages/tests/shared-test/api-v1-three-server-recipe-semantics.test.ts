@@ -83,7 +83,7 @@ describe('API-v1 three-server recipe semantics', () => {
       connection: 'apiSecondary',
     });
     expect(
-      allSteps.find((step) => step.name === 'waitForBothRevisionSnapshotsOnTertiary'),
+      allSteps.find((step) => step.name === 'waitForBothRevisionEnvelopesOnTertiary'),
     ).toMatchObject({
       type: 'ws.wait',
       connection: 'wsTertiary',
@@ -151,14 +151,14 @@ describe('API-v1 three-server recipe semantics', () => {
 
     for (const [stepName, firstOutput, secondOutput] of [
       [
-        'waitForBothRevisionSnapshotsOnPrimary',
-        'primaryFirstSnapshotPayload',
-        'primarySecondSnapshotPayload',
+        'waitForBothRevisionEnvelopesOnPrimary',
+        'primaryFirstEnvelopePayload',
+        'primarySecondEnvelopePayload',
       ],
       [
-        'waitForBothRevisionSnapshotsOnTertiary',
-        'tertiaryFirstSnapshotPayload',
-        'tertiarySecondSnapshotPayload',
+        'waitForBothRevisionEnvelopesOnTertiary',
+        'tertiaryFirstEnvelopePayload',
+        'tertiarySecondEnvelopePayload',
       ],
     ] as const) {
       expect(allSteps.find((step) => step.name === stepName)).toMatchObject({
@@ -173,20 +173,26 @@ describe('API-v1 three-server recipe semantics', () => {
           ordered: false,
           messages: [
             {
-              route: { topicId: 'group-state.snapshot' },
-              payload: { typeId: 'group-state.snapshot' },
+              route: { topicId: 'group-state.event' },
+              payload: { typeId: 'group-state.event' },
             },
             {
-              route: { topicId: 'group-state.snapshot' },
-              payload: { typeId: 'group-state.snapshot' },
+              route: { topicId: 'group-state.event' },
+              payload: { typeId: 'group-state.event' },
             },
           ],
         },
       });
     }
     for (const [assertName, firstActual] of [
-      ['assertPrimaryExactRevisions', '{primaryFirstSnapshot.causalRevision.groupRevision}'],
-      ['assertTertiaryExactRevisions', '{tertiaryFirstSnapshot.causalRevision.groupRevision}'],
+      [
+        'assertPrimaryExactRevisions',
+        '{primaryFirstEnvelope.resultingCausalRevision.groupRevision}',
+      ],
+      [
+        'assertTertiaryExactRevisions',
+        '{tertiaryFirstEnvelope.resultingCausalRevision.groupRevision}',
+      ],
     ] as const) {
       expect(allSteps.find((step) => step.name === assertName)).toMatchObject({
         type: 'assert',
