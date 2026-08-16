@@ -8,6 +8,8 @@ import {
   ResilienceDto,
 } from '@shared/mod.ts';
 import type { AuditStamp, GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
+import { createDeltaEnvelopeFixture } from './group-state-delta-envelope-fixtures.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -79,12 +81,10 @@ describe('direct resource outbox writes', () => {
   });
 
   it('rejects an incomplete canonical group event payload', async () => {
-    const incomplete = {
-      ...createGroupEvent(),
+    const computed = createComputedGroupEventStateSync((event) => ({
+      ...event,
       eventType: undefined,
-    } as unknown as GroupEvent;
-
-    const computed = createComputedGroupEventStateSync(incomplete);
+    } as unknown as GroupEvent));
     expect(() => computeGroupStateSyncEntries(computed, 'server-1')).toThrow();
     const database = createResourceInboxDatabase();
     await expect(
@@ -127,7 +127,7 @@ describe('direct resource outbox writes', () => {
   it('replays all canonical state-sync payload families identically', () => {
     const clientEvent = createComputedClientEventStateSync(createClientEvent());
     const clientSnapshot = createComputedClientSnapshotStateSync(createClientSnapshot());
-    const groupEvent = createComputedGroupEventStateSync(createGroupEvent());
+    const groupEvent = createComputedGroupEventStateSync();
     const groupSnapshot = createComputedGroupStateSync(createGroupSnapshot());
 
     expect(computeClientStateSyncEntries(clientEvent, 'server-1', 'world')).toEqual(
@@ -764,7 +764,19 @@ function createComputedClientSnapshotStateSync(snapshot: ClientSnapshot): Comput
   };
 }
 
-function createComputedGroupEventStateSync(event: GroupEvent): ComputedGroupStateSync {
+// The group event row carries a delta envelope; the bare GroupEvent payload was
+// retired with snapshot-per-change. The envelope is internally consistent, so
+// the identity comes from it rather than from a separately built event, and a
+// corruption is applied to that identity so the only thing under test is the
+// corruption itself.
+function createComputedGroupEventStateSync(
+  corruptEvent?: (event: GroupEvent) => GroupEvent,
+): ComputedGroupStateSync {
+  const fixture = createDeltaEnvelopeFixture({ audienceSessionIds: [] });
+  const event = fixture.event;
+  const envelope: GroupStateDeltaEnvelope = corruptEvent === undefined
+    ? fixture
+    : { ...fixture, event: corruptEvent(event) };
   return {
     commandId: 'group-command-1',
     aggregateRef: {
@@ -784,8 +796,8 @@ function createComputedGroupEventStateSync(event: GroupEvent): ComputedGroupStat
     effects: [
       {
         effectKind: 'member-state',
-        payloadKind: 'event',
-        payload: event,
+        payloadKind: 'delta-envelope',
+        payload: envelope,
       },
     ],
   };

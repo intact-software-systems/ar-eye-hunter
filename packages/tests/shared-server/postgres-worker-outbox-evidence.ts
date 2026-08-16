@@ -126,8 +126,10 @@ function expectedGroupPresenceSummaryWsEntries(
     resourceId: string;
     expected: DirectResourceOutboxLifecycleExpectation['entries'][number];
 }>[] {
+    // The event row carries the delta envelope; the bare member-state:event
+    // payload went with snapshot-per-change.
     const expectedEffects = [
-        ['member-state:event', AppTopics.groupStateEvent],
+        ['member-state:delta-envelope', AppTopics.groupStateEvent],
         ['member-state:snapshot', AppTopics.groupStateSnapshot],
         ['scope-directory:snapshot', AppTopics.groupDirectorySnapshot],
     ] as const;

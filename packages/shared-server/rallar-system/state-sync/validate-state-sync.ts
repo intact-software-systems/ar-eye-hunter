@@ -12,7 +12,6 @@ import type {
 import {
     validateAuthoritativeClientEvent,
     validateAuthoritativeClientSnapshot,
-    validateAuthoritativeGroupEvent,
     validateAuthoritativeGroupSnapshot,
 } from '@shared/api/authoritative-state-validation.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -129,11 +128,6 @@ export function validateGroupStateSyncEffect(
             throw new TypeError('Computed group state sync effect kind is invalid');
         }
         validateAuthoritativeGroupSnapshot(effect.payload, computed.aggregateRef);
-    } else if (effect.payloadKind === 'event') {
-        if (effect.effectKind !== 'member-state') {
-            throw new TypeError('Computed group state sync effect kind is invalid');
-        }
-        validateAuthoritativeGroupEvent(effect.payload, computed.aggregateRef);
     } else if (effect.payloadKind === 'delta-envelope') {
         if (effect.effectKind !== 'member-state') {
             throw new TypeError('Computed group state sync effect kind is invalid');

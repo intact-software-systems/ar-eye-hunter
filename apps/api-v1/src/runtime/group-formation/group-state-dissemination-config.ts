@@ -4,7 +4,6 @@ import type {
 import type { EnvReader } from '../../db/database-config.ts';
 
 export const GROUP_STATE_DISSEMINATION_MODES = [
-  'snapshot-per-change',
   'dual-emit',
   'delta-primary',
 ] as const satisfies readonly GroupStateDisseminationMode[];
