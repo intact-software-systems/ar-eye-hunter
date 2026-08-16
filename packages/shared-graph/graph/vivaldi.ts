@@ -1,6 +1,12 @@
 import { UndirectedGraph } from 'graphology';
 import { type EdgeProp, type GraphProp, type VertexProp, VertexState, VertexType } from '../graph-props.ts';
-import { predictedRttMs, type VivaldiConfig, type VivaldiNodeData } from './vivaldi-core.ts';
+import {
+    computePredictedRttMs,
+    DEFAULT_VIVALDI_CONFIG,
+    type VivaldiConfig,
+    type VivaldiNodeData,
+} from './vivaldi-core.ts';
+import { selectDegreeCappedEdges } from './select-degree-capped-edges.ts';
 
 export {
     Coordinates,
@@ -70,11 +76,12 @@ export function createPredictedGraph(
         upsertPredictedVertex(graph, node.id, graphProp);
     }
 
+    const mergedCfg = { ...DEFAULT_VIVALDI_CONFIG, ...cfg };
     for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
             const source = nodes[i];
             const target = nodes[j];
-            const weight = predictedRttMs(source, target, cfg);
+            const weight = computePredictedRttMs(source, target, mergedCfg);
             upsertPredictedEdge(graph, source.id, target.id, weight);
         }
     }
@@ -90,7 +97,14 @@ export function createDegreeCappedPredictedGraph(
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
     graph.replaceAttributes(graphProp);
 
-    const nodes = [...nodeDataById.values()];
+    // Canonical id order, never map-insertion order: the same member set has to
+    // produce the same graph on every server, and equal predicted weights are
+    // common enough (co-located or collinear coordinates) that the tie-break
+    // decides real edges. Sorting here also lets the selection tie-break on
+    // node indices instead of comparing ids per candidate.
+    const nodes = [...nodeDataById.values()].sort((left, right) =>
+        left.id.localeCompare(right.id)
+    );
     const degreeLimit = Number.isInteger(options.degreeLimit) &&
             options.degreeLimit > 0
         ? options.degreeLimit
@@ -100,39 +114,20 @@ export function createDegreeCappedPredictedGraph(
         upsertPredictedVertex(graph, node.id, graphProp);
     }
 
-    // Output is degree-capped, but this still scans all pairs. True large-N CPU
-    // reduction needs spatial indexing or deterministic candidate sampling.
-    const candidates = [];
-    for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-            const source = nodes[i];
-            const target = nodes[j];
-            candidates.push({
-                source,
-                target,
-                weight: predictedRttMs(source, target, options),
-            });
-        }
-    }
+    const mergedCfg = { ...DEFAULT_VIVALDI_CONFIG, ...options };
+    const selected = selectDegreeCappedEdges({
+        nodeCount: nodes.length,
+        degreeLimit,
+        computeWeight: (sourceIndex, targetIndex) =>
+            computePredictedRttMs(nodes[sourceIndex], nodes[targetIndex], mergedCfg),
+    });
 
-    candidates.sort((left, right) =>
-        left.weight - right.weight ||
-        left.source.id.localeCompare(right.source.id) ||
-        left.target.id.localeCompare(right.target.id)
-    );
-
-    for (const candidate of candidates) {
-        if (
-            graph.degree(candidate.source.id) >= degreeLimit ||
-            graph.degree(candidate.target.id) >= degreeLimit
-        ) {
-            continue;
-        }
+    for (const edge of selected) {
         upsertPredictedEdge(
             graph,
-            candidate.source.id,
-            candidate.target.id,
-            candidate.weight,
+            nodes[edge.sourceIndex].id,
+            nodes[edge.targetIndex].id,
+            edge.weight,
         );
     }
 
