@@ -22,7 +22,6 @@ const MANAGED_API_V1_CLUSTER_PROFILES = new Set([
   'api-v1-black-box-medium-scale',
   'api-v1-black-box-formation-large',
   'api-v1-black-box-topology-replay',
-  'api-v1-black-box-delta-primary',
 ]);
 
 interface ApiV1ClusterOptionValues {

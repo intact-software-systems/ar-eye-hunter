@@ -5,10 +5,10 @@ import {
   readApiGroupStateDisseminationConfig,
 } from '../src/runtime/group-formation/group-state-dissemination-config.ts';
 
-Deno.test('group-state dissemination defaults to dual-emit', () => {
+Deno.test('group-state dissemination defaults to delta-primary', () => {
   assert.deepEqual(
     readApiGroupStateDisseminationConfig(fakeEnv({})),
-    { dissemination: 'dual-emit' },
+    { dissemination: 'delta-primary' },
   );
 });
 
@@ -34,34 +34,29 @@ Deno.test('group-state dissemination accepts only the three explicit modes and t
   );
 });
 
-Deno.test('legacy formation damping forces snapshot-per-change regardless of the env value', () => {
-  assert.deepEqual(
-    readApiGroupStateDisseminationConfig(
-      fakeEnv({ RALLAR_GROUP_FORMATION_DAMPING: 'legacy' }),
-    ),
-    { dissemination: 'snapshot-per-change' },
-  );
-  assert.deepEqual(
-    readApiGroupStateDisseminationConfig(
-      fakeEnv({
-        RALLAR_GROUP_FORMATION_DAMPING: 'legacy',
-        RALLAR_GROUP_STATE_DISSEMINATION: 'delta-primary',
-      }),
-    ),
-    { dissemination: 'snapshot-per-change' },
-  );
-  assert.deepEqual(
-    readApiGroupStateDisseminationConfig(
-      fakeEnv({
-        RALLAR_GROUP_FORMATION_DAMPING: 'damped',
-        RALLAR_GROUP_STATE_DISSEMINATION: 'delta-primary',
-      }),
-    ),
-    { dissemination: 'delta-primary' },
-  );
+// Formation damping no longer overrides dissemination. The override existed so
+// the issue-156 replay proof kept bit-for-bit legacy emission; that proof is
+// now mode-independent, and silently rewriting an explicitly configured
+// dissemination mode because an unrelated knob was set is a trap.
+Deno.test('formation damping does not override the configured dissemination mode', () => {
+  for (const damping of ['legacy', 'damped']) {
+    assert.deepEqual(
+      readApiGroupStateDisseminationConfig(
+        fakeEnv({
+          RALLAR_GROUP_FORMATION_DAMPING: damping,
+          RALLAR_GROUP_STATE_DISSEMINATION: 'dual-emit',
+        }),
+      ),
+      { dissemination: 'dual-emit' },
+    );
+    assert.deepEqual(
+      readApiGroupStateDisseminationConfig(fakeEnv({ RALLAR_GROUP_FORMATION_DAMPING: damping })),
+      { dissemination: 'delta-primary' },
+    );
+  }
 });
 
-Deno.test('an invalid dissemination value fails startup even under legacy damping', () => {
+Deno.test('an invalid dissemination value fails startup under any damping mode', () => {
   assert.throws(
     () =>
       readApiGroupStateDisseminationConfig(

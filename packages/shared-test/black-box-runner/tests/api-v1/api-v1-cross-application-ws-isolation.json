@@ -467,10 +467,10 @@
         "withinMs": 20000,
         "message": {
           "route": {
-            "topicId": "group-state.snapshot"
+            "topicId": "group-state.event"
           },
           "payload": {
-            "typeId": "group-state.snapshot"
+            "typeId": "group-state.event"
           },
           "targets": {
             "mode": "broadcast",
@@ -481,6 +481,42 @@
               "groupId": "{sharedGroupId}"
             }
           }
+        }
+      },
+      "request": {
+        "outputs": {
+          "scopeBDeltaEnvelopePayload": "matchedMessage.data.payload.resource"
+        }
+      }
+    },
+    {
+      "name": "parseScopeBDeltaEnvelope",
+      "type": "set",
+      "output": "scopeBDeltaEnvelope",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.scopeBDeltaEnvelopePayload"
+        }
+      }
+    },
+    {
+      "name": "assertScopeBDeltaEnvelopeScope",
+      "type": "assert",
+      "actual": {
+        "applicationId": "{scopeBDeltaEnvelope.group.applicationId}",
+        "workspaceId": "{scopeBDeltaEnvelope.group.workspaceId}",
+        "groupId": "{scopeBDeltaEnvelope.group.groupId}",
+        "eventGroupId": "{scopeBDeltaEnvelope.event.groupId}",
+        "resultingGroupRevision": "{scopeBDeltaEnvelope.resultingCausalRevision.groupRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "applicationId": "{scopeBApplicationId}",
+          "workspaceId": "{scopeBWorkspaceId}",
+          "groupId": "{sharedGroupId}",
+          "eventGroupId": "{sharedGroupId}",
+          "resultingGroupRevision": "integer"
         }
       }
     },
@@ -519,10 +555,10 @@
         "withinMs": 20000,
         "message": {
           "route": {
-            "topicId": "group-state.snapshot"
+            "topicId": "group-state.event"
           },
           "payload": {
-            "typeId": "group-state.snapshot"
+            "typeId": "group-state.event"
           },
           "targets": {
             "mode": "broadcast",
@@ -533,6 +569,42 @@
               "groupId": "{sharedGroupId}"
             }
           }
+        }
+      },
+      "request": {
+        "outputs": {
+          "scopeADeltaEnvelopePayload": "matchedMessage.data.payload.resource"
+        }
+      }
+    },
+    {
+      "name": "parseScopeADeltaEnvelope",
+      "type": "set",
+      "output": "scopeADeltaEnvelope",
+      "transform": {
+        "jsonParse": {
+          "path": "outputs.scopeADeltaEnvelopePayload"
+        }
+      }
+    },
+    {
+      "name": "assertScopeADeltaEnvelopeScope",
+      "type": "assert",
+      "actual": {
+        "applicationId": "{scopeADeltaEnvelope.group.applicationId}",
+        "workspaceId": "{scopeADeltaEnvelope.group.workspaceId}",
+        "groupId": "{scopeADeltaEnvelope.group.groupId}",
+        "eventGroupId": "{scopeADeltaEnvelope.event.groupId}",
+        "resultingGroupRevision": "{scopeADeltaEnvelope.resultingCausalRevision.groupRevision}"
+      },
+      "expect": {
+        "missingActualValue": "MISSING",
+        "body": {
+          "applicationId": "{scopeAApplicationId}",
+          "workspaceId": "{scopeAWorkspaceId}",
+          "groupId": "{sharedGroupId}",
+          "eventGroupId": "{sharedGroupId}",
+          "resultingGroupRevision": "integer"
         }
       }
     },

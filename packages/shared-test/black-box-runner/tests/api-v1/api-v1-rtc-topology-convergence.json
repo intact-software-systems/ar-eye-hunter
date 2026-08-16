@@ -429,10 +429,16 @@
         "connection": "wsPrimary",
         "withinMs": 15000,
         "consume": true,
-        "messages": [{
-          "route": { "topicId": "client-state.snapshot" },
-          "payload": { "typeId": "client-state.snapshot" }
-        }]
+        "messages": [
+          {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "payload": {
+              "typeId": "client-state.snapshot"
+            }
+          }
+        ]
       }
     },
     {
@@ -502,10 +508,16 @@
         "connection": "wsTertiary",
         "withinMs": 15000,
         "consume": true,
-        "messages": [{
-          "route": { "topicId": "client-state.snapshot" },
-          "payload": { "typeId": "client-state.snapshot" }
-        }]
+        "messages": [
+          {
+            "route": {
+              "topicId": "client-state.snapshot"
+            },
+            "payload": {
+              "typeId": "client-state.snapshot"
+            }
+          }
+        ]
       }
     },
     {
@@ -525,13 +537,17 @@
                 "connection": "wsPrimary",
                 "withinMs": 15000,
                 "consume": true,
-                "messages": [{
-                  "route": {
-                    "topicId": "overlay.topology",
-                    "contextId": "{groupId}"
-                  },
-                  "payload": { "typeId": "overlay.topology" }
-                }]
+                "messages": [
+                  {
+                    "route": {
+                      "topicId": "overlay.topology",
+                      "contextId": "{groupId}"
+                    },
+                    "payload": {
+                      "typeId": "overlay.topology"
+                    }
+                  }
+                ]
               }
             },
             {
@@ -576,13 +592,17 @@
                 "connection": "wsTertiary",
                 "withinMs": 15000,
                 "consume": true,
-                "messages": [{
-                  "route": {
-                    "topicId": "overlay.topology",
-                    "contextId": "{groupId}"
-                  },
-                  "payload": { "typeId": "overlay.topology" }
-                }]
+                "messages": [
+                  {
+                    "route": {
+                      "topicId": "overlay.topology",
+                      "contextId": "{groupId}"
+                    },
+                    "payload": {
+                      "typeId": "overlay.topology"
+                    }
+                  }
+                ]
               }
             },
             {
@@ -619,13 +639,13 @@
       ]
     },
     {
-      "name": "waitForBothRevisionSnapshotsOnPrimary",
+      "name": "waitForBothRevisionEnvelopesOnPrimary",
       "type": "ws.wait",
       "connection": "wsPrimary",
       "request": {
         "outputs": {
-          "primaryFirstSnapshotPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
-          "primarySecondSnapshotPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
+          "primaryFirstEnvelopePayload": "matchedMessages.0.matchedMessage.data.payload.resource",
+          "primarySecondEnvelopePayload": "matchedMessages.1.matchedMessage.data.payload.resource"
         }
       },
       "expect": {
@@ -636,31 +656,31 @@
         "messages": [
           {
             "route": {
-              "topicId": "group-state.snapshot"
+              "topicId": "group-state.event"
             },
             "payload": {
-              "typeId": "group-state.snapshot"
+              "typeId": "group-state.event"
             }
           },
           {
             "route": {
-              "topicId": "group-state.snapshot"
+              "topicId": "group-state.event"
             },
             "payload": {
-              "typeId": "group-state.snapshot"
+              "typeId": "group-state.event"
             }
           }
         ]
       }
     },
     {
-      "name": "waitForBothRevisionSnapshotsOnTertiary",
+      "name": "waitForBothRevisionEnvelopesOnTertiary",
       "type": "ws.wait",
       "connection": "wsTertiary",
       "request": {
         "outputs": {
-          "tertiaryFirstSnapshotPayload": "matchedMessages.0.matchedMessage.data.payload.resource",
-          "tertiarySecondSnapshotPayload": "matchedMessages.1.matchedMessage.data.payload.resource"
+          "tertiaryFirstEnvelopePayload": "matchedMessages.0.matchedMessage.data.payload.resource",
+          "tertiarySecondEnvelopePayload": "matchedMessages.1.matchedMessage.data.payload.resource"
         }
       },
       "expect": {
@@ -671,60 +691,60 @@
         "messages": [
           {
             "route": {
-              "topicId": "group-state.snapshot"
+              "topicId": "group-state.event"
             },
             "payload": {
-              "typeId": "group-state.snapshot"
+              "typeId": "group-state.event"
             }
           },
           {
             "route": {
-              "topicId": "group-state.snapshot"
+              "topicId": "group-state.event"
             },
             "payload": {
-              "typeId": "group-state.snapshot"
+              "typeId": "group-state.event"
             }
           }
         ]
       }
     },
     {
-      "name": "parsePrimaryFirstSnapshot",
+      "name": "parsePrimaryFirstEnvelope",
       "type": "set",
-      "output": "primaryFirstSnapshot",
+      "output": "primaryFirstEnvelope",
       "transform": {
         "jsonParse": {
-          "path": "outputs.primaryFirstSnapshotPayload"
+          "path": "outputs.primaryFirstEnvelopePayload"
         }
       }
     },
     {
-      "name": "parsePrimarySecondSnapshot",
+      "name": "parsePrimarySecondEnvelope",
       "type": "set",
-      "output": "primarySecondSnapshot",
+      "output": "primarySecondEnvelope",
       "transform": {
         "jsonParse": {
-          "path": "outputs.primarySecondSnapshotPayload"
+          "path": "outputs.primarySecondEnvelopePayload"
         }
       }
     },
     {
-      "name": "parseTertiaryFirstSnapshot",
+      "name": "parseTertiaryFirstEnvelope",
       "type": "set",
-      "output": "tertiaryFirstSnapshot",
+      "output": "tertiaryFirstEnvelope",
       "transform": {
         "jsonParse": {
-          "path": "outputs.tertiaryFirstSnapshotPayload"
+          "path": "outputs.tertiaryFirstEnvelopePayload"
         }
       }
     },
     {
-      "name": "parseTertiarySecondSnapshot",
+      "name": "parseTertiarySecondEnvelope",
       "type": "set",
-      "output": "tertiarySecondSnapshot",
+      "output": "tertiarySecondEnvelope",
       "transform": {
         "jsonParse": {
-          "path": "outputs.tertiarySecondSnapshotPayload"
+          "path": "outputs.tertiarySecondEnvelopePayload"
         }
       }
     },
@@ -732,8 +752,8 @@
       "name": "assertPrimaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{primaryFirstSnapshot.causalRevision.groupRevision}",
-        "secondRevision": "{primarySecondSnapshot.causalRevision.groupRevision}"
+        "firstRevision": "{primaryFirstEnvelope.resultingCausalRevision.groupRevision}",
+        "secondRevision": "{primarySecondEnvelope.resultingCausalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -752,8 +772,8 @@
       "name": "assertTertiaryExactRevisions",
       "type": "assert",
       "actual": {
-        "firstRevision": "{tertiaryFirstSnapshot.causalRevision.groupRevision}",
-        "secondRevision": "{tertiarySecondSnapshot.causalRevision.groupRevision}"
+        "firstRevision": "{tertiaryFirstEnvelope.resultingCausalRevision.groupRevision}",
+        "secondRevision": "{tertiarySecondEnvelope.resultingCausalRevision.groupRevision}"
       },
       "expect": {
         "anyOf": [
@@ -769,18 +789,18 @@
       }
     },
     {
-      "name": "assertSnapshotPayloadsAcrossPrimaryAndTertiary",
+      "name": "assertEnvelopePayloadsAcrossPrimaryAndTertiary",
       "type": "assert",
       "actual": {
-        "primaryFirst": "{primaryFirstSnapshot}",
-        "primarySecond": "{primarySecondSnapshot}",
-        "tertiaryFirst": "{tertiaryFirstSnapshot}",
-        "tertiarySecond": "{tertiarySecondSnapshot}"
+        "primaryFirst": "{primaryFirstEnvelope}",
+        "primarySecond": "{primarySecondEnvelope}",
+        "tertiaryFirst": "{tertiaryFirstEnvelope}",
+        "tertiarySecond": "{tertiarySecondEnvelope}"
       },
       "expect": {
         "body": {
           "primaryFirst": {
-            "causalRevision": {
+            "resultingCausalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
@@ -791,7 +811,7 @@
             }
           },
           "primarySecond": {
-            "causalRevision": {
+            "resultingCausalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
@@ -802,7 +822,7 @@
             }
           },
           "tertiaryFirst": {
-            "causalRevision": {
+            "resultingCausalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
@@ -813,7 +833,7 @@
             }
           },
           "tertiarySecond": {
-            "causalRevision": {
+            "resultingCausalRevision": {
               "groupRevision": "integer",
               "presenceRevision": "integer"
             },
