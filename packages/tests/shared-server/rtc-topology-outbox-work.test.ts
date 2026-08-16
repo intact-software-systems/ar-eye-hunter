@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { EntityStatus, InMemoryQueueBox, type ALMessage, type ResourceEntry } from '@shared/mod.ts';
+import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
 import type {
   GroupPresenceSummary,
   GroupRef,
@@ -20,8 +20,14 @@ import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
+import { toAppQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
 import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.ts';
+import {
+  toRtcRttMutationReceiptId,
+  toRtcRttTopologyOutboxId,
+} from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
+import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
@@ -382,6 +388,108 @@ describe('RTC topology APP_OUTBOX work', () => {
     expect(readAuthority).not.toHaveBeenCalled();
   });
 
+  it('rejects retired RTT group-revision work before reading mutable authority', async () => {
+    const queue = new InMemoryQueueBox();
+    const runtime = createRtcTopologyOutboxPublisher({
+      outboxQueueReader: new OutboxQueueReader(queue),
+    });
+    const group = createGroupSnapshot(4);
+    await runtime.publisher.enqueueForGroupSnapshot(group);
+    const [entry] = await entriesIn(queue);
+    const message = readStoredALMessage(entry);
+    const envelope: unknown = JSON.parse(message.payload.resource);
+    if (!isUnknownRecord(envelope)) throw new Error('Expected a topology work envelope');
+    const resourceId = toRtcRttTopologyOutboxId(
+      toRtcRttMutationReceiptId(rtt('session-a', 'session-b', 1)),
+      group.group,
+      `sha256:${'a'.repeat(64)}`,
+    );
+    const retiredRttMessage: ALMessage = {
+      ...message,
+      route: {
+        ...message.route,
+        resourceId: toAppQueueKey({ ...message.route, resourceId }).resourceId,
+      },
+      payload: {
+        ...message.payload,
+        resource: JSON.stringify({ ...envelope, resourceId }),
+      },
+    };
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const topologyManagement = new ConcreteGroupTopologyManagementService({
+      findGroupSnapshotByRef: () => group,
+      topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+      topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
+      processRttReader: () => [],
+    });
+    const readAuthority = vi.spyOn(
+      topologyManagement.planningService,
+      'readTopologyPlanningAuthority',
+    );
+    const handler = createRtcTopologyWorkHandler({
+      runtime,
+      topologyPlanning: topologyManagement.planningService,
+      executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
+    });
+
+    expect(() => readRtcTopologyWorkEnvelope(retiredRttMessage, runtime.workType)).toThrow(
+      'RTC topology group-revision work cannot use an RTT durable identity',
+    );
+    await expect(handler.onMessage(retiredRttMessage, entry)).rejects.toBeInstanceOf(TypeError);
+    expect(readAuthority).not.toHaveBeenCalled();
+  });
+
+  it('rejects RTT work that combines coalesced metadata with a durable identity', async () => {
+    const queue = new InMemoryQueueBox();
+    const runtime = createRtcTopologyOutboxPublisher({
+      outboxQueueReader: new OutboxQueueReader(queue),
+    });
+    const group = createGroupSnapshot(4);
+    await runtime.publisher.enqueueForRtt(group, rtt('session-a', 'session-b', 1), 0);
+    const [entry] = await entriesIn(queue);
+    const message = readStoredALMessage(entry);
+    const envelope: unknown = JSON.parse(message.payload.resource);
+    if (!isUnknownRecord(envelope)) throw new Error('Expected a topology work envelope');
+    const resourceId = toRtcRttTopologyOutboxId(
+      toRtcRttMutationReceiptId(rtt('session-c', 'session-d', 2)),
+      group.group,
+      `sha256:${'b'.repeat(64)}`,
+    );
+    const hybridRttMessage: ALMessage = {
+      ...message,
+      route: {
+        ...message.route,
+        resourceId: toAppQueueKey({ ...message.route, resourceId }).resourceId,
+      },
+      payload: {
+        ...message.payload,
+        resource: JSON.stringify({ ...envelope, resourceId }),
+      },
+    };
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const topologyManagement = new ConcreteGroupTopologyManagementService({
+      findGroupSnapshotByRef: () => group,
+      topologyService: new RallarRtcTopologyService({ now: () => 10 }),
+      topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
+      processRttReader: () => [],
+    });
+    const readAuthority = vi.spyOn(
+      topologyManagement.planningService,
+      'readTopologyPlanningAuthority',
+    );
+    const handler = createRtcTopologyWorkHandler({
+      runtime,
+      topologyPlanning: topologyManagement.planningService,
+      executionRepository: new RtcTopologyExecutionRepository(runtimeRepository),
+    });
+
+    expect(() => readRtcTopologyWorkEnvelope(hybridRttMessage, runtime.workType)).toThrow(
+      'RTC topology RTT work cannot combine coalesced and durable identity',
+    );
+    await expect(handler.onMessage(hybridRttMessage, entry)).rejects.toBeInstanceOf(TypeError);
+    expect(readAuthority).not.toHaveBeenCalled();
+  });
+
   it('keeps a reserved RTT generation immutable and creates a drainable successor', async () => {
     const queue = new InMemoryQueueBox();
     const runtime = createRtcTopologyOutboxPublisher({
@@ -552,7 +660,7 @@ describe('RTC topology APP_OUTBOX work', () => {
     expect(observeRtt).toHaveBeenCalledTimes(3);
   });
 
-  it('claims zero-knob and legacy RTT work without fabricating legacy observations', async () => {
+  it('claims zero-knob RTT work and reuses its canonical observation on retry', async () => {
     const queue = new InMemoryQueueBox();
     const runtime = createRtcTopologyOutboxPublisher({
       outboxQueueReader: new OutboxQueueReader(queue),
@@ -588,13 +696,9 @@ describe('RTC topology APP_OUTBOX work', () => {
     await expect(handler.onMessage(JSON.parse(canonical.resource), canonical)).rejects.toBe(
       planned,
     );
-    expect(observeRtt).toHaveBeenCalledOnce();
-
-    const legacy = withoutCanonicalRttObservation(
-      await enqueueAndReserveRtt(queue, runtime, createGroupSnapshot(3), 2),
+    await expect(handler.onMessage(JSON.parse(canonical.resource), canonical)).rejects.toBe(
+      planned,
     );
-    await expect(handler.onMessage(JSON.parse(legacy.resource), legacy)).rejects.toBe(planned);
-    await expect(handler.onMessage(JSON.parse(legacy.resource), legacy)).rejects.toBe(planned);
     expect(observeRtt).toHaveBeenCalledOnce();
   });
 });
@@ -693,24 +797,6 @@ async function enqueueAndReserveRtt(
   const entry = [...reserved.values()][0];
   if (!entry) throw new Error('Expected reserved RTC RTT work');
   return entry;
-}
-
-function withoutCanonicalRttObservation(entry: ResourceEntry): ResourceEntry {
-  const message = JSON.parse(entry.resource) as ALMessage;
-  const envelope = JSON.parse(message.payload.resource) as {
-    data: Record<string, unknown>;
-  };
-  const { rtt: _rtt, refinementObservationId: _observationId, ...legacyData } = envelope.data;
-  return {
-    ...entry,
-    resource: JSON.stringify({
-      ...message,
-      payload: {
-        ...message.payload,
-        resource: JSON.stringify({ ...envelope, data: legacyData }),
-      },
-    }),
-  };
 }
 
 function predictedNodes(distanceMs: number): ReadonlyMap<string, VivaldiNodeData> {

@@ -19,26 +19,37 @@ intermediate-outbox siblings.
 **Tech Stack:** TypeScript 7 with `erasableSyntaxOnly`, Vitest, Deno, PostgreSQL/PGlite runtime-state
 repositories, ResourceInbox/AppInbox, QueueBox AppOutbox, Vivaldi RTT coordinates, GitHub CLI.
 
+**Current status (2026-08-16):** Tasks 1–5 are implemented on PR #242. Task 6 is the active
+terminal-compatibility deletion and supersedes older migration, nullable-refinement, legacy-work,
+and alias-retention wording in the historical task recipes below.
+
 ## Global Constraints
 
-- Preserve the WebSocket topic and payload, AppInbox type and authority, command hashes, storage
-  keys, runtime namespaces, persisted shapes, transaction/retry boundaries, receipts, and final
-  caller-visible results.
+- Preserve the WebSocket topic and payload, AppInbox type and authority, command hashes, canonical
+  storage keys and runtime namespaces, persisted shapes, transaction/retry boundaries, receipts,
+  and final caller-visible results.
 - Preserve topology algorithms, RTT acceptance policy, configured thresholds, distributed recipes,
   and performance thresholds.
 - The only intended behavior changes are: persistent RTT work obeys the already configured
   refinement threshold/interval, and valid expired RTT receipts clean up without legacy siblings.
 - Keep canonical topology input, evolution, hysteresis, publication, replay, and reconnect owners
   under `rallar-system/topology`.
-- Keep the package-level exported symbol set compatible through `packages/shared-server/mod.ts`; do
-  not retain old private file paths as pass-through modules.
+- Keep canonical package exports stable; remove the unused pre-`RtcRtt` aliases and do not retain
+  old private file paths as pass-through modules.
 - Every changed human-authored file is reviewed and remediated in full.
 - Every support file modified by remediation enters closure recursively until closure.
 - Independent untouched code remains outside closure.
 - A real newly discovered bug gets a failing semantic test and a separate fix explanation.
-- A verified weakness outside these slices reuses or creates a focused issue; current follow-ups are
-  [#235](https://github.com/intact-software-systems/ar-eye-hunter/issues/235) and
-  [#236](https://github.com/intact-software-systems/ar-eye-hunter/issues/236).
+- A verified weakness outside these slices reuses or creates a focused issue. Unresolved follow-ups
+  are [#235](https://github.com/intact-software-systems/ar-eye-hunter/issues/235) for Vivaldi
+  all-pairs cost, [#236](https://github.com/intact-software-systems/ar-eye-hunter/issues/236) for
+  topology-service ownership, [#237](https://github.com/intact-software-systems/ar-eye-hunter/issues/237)
+  for API composition density, and
+  [#240](https://github.com/intact-software-systems/ar-eye-hunter/issues/240) for refinement-decision
+  expiry cleanup. This PR resolves
+  [#238](https://github.com/intact-software-systems/ar-eye-hunter/issues/238) for mutation decision
+  density and [#239](https://github.com/intact-software-systems/ar-eye-hunter/issues/239) for
+  persistence-validation ownership.
 - Do not push or create the pull request until implementation and affected local validation are
   complete.
 
@@ -91,11 +102,6 @@ repositories, ResourceInbox/AppInbox, QueueBox AppOutbox, Vivaldi RTT coordinate
   reads, listing, CAS writes, receipt probes, and lifecycle facts.
 - `packages/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.ts` —
   periodic, guarded expired-receipt cleanup and failure reporting.
-- `packages/shared-server/rallar-system/rtc-topology/persistence/migrate-legacy-rtc-rtt-measurement-keys.ts`
-  — offline canonical pair-key migration.
-- `packages/shared-server/rallar-system/rtc-topology/persistence/migrate-legacy-rtc-rtt-recompute-intents.ts`
-  — retained offline decoder/upgrader for already stored legacy rows; it is not an active mutation
-  path and the namespace is no longer protected from ordinary expiry.
 
 ### Mirrored focused tests
 
@@ -108,7 +114,6 @@ repositories, ResourceInbox/AppInbox, QueueBox AppOutbox, Vivaldi RTT coordinate
 - `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-convergence.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-corruption.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-migration.test.ts`
 
 ---
 
@@ -149,7 +154,7 @@ export interface ClaimRtcRttRefinementWorkInput {
   readonly observationId: string;
   readonly workId: string;
   readonly groupKey: string;
-  readonly rtt: RttMeasurementInfo | null;
+  readonly rtt: RttMeasurementInfo;
   readonly expireAtEpochMs: number;
 }
 
@@ -159,9 +164,8 @@ export class RtcRttRefinementService {
 ```
 
 Canonical `RtcTopologyRttRefreshWork` carries required `rtt` and `refinementObservationId`.
-The decoder returns a separately discriminated legacy form for old RTT-refresh work without
-those fields and for durable RTT work previously mislabeled `group-revision`; legacy work claims
-one early refinement and never weakens validation of canonical new work.
+The decoder rejects old RTT-refresh work without those fields; group-revision work remains only
+group-revision work.
 
 - [ ] **Step 1: Record the clean rebased baseline**
 
@@ -229,22 +233,15 @@ assertions.
 `RtcRttRefinementService.claimWork` must prune cached observations and work decisions whose
 `expireAtEpochMs <= nowEpochMs()`, observe each `observationId` at most once per process, compute the
 absolute predicted RTT delta before/after observation, reuse that delta across all groups for the
-same receipt, and cache each `workId` decision. A `null` legacy RTT uses positive infinity and does
-not call Vivaldi.
+same receipt, and cache each `workId` decision.
 
-- [ ] **Step 6: Encode canonical durable RTT work and normalize legacy work**
+- [ ] **Step 6: Encode canonical durable RTT work**
 
 Make `ComputedRtcTopologyOutbox` a discriminated group-revision/RTT-refresh union. For
 `payloadKind: 'rtt-refresh'`, require the exact `rtt` and `refinementObservationId`, serialize
 `RtcTopologyRttRefreshWork`, and validate their version/identity. Update both the direct publisher
-and `writeRttMutation` to use the canonical RTT branch. In the decoder, normalize only a strict old
-RTT resource identity to the legacy form; arbitrary group work remains group work.
-
-Register that decoder as one minimized compatibility boundary in
-`docs/production-legacy-exceptions.md`: canonical owner `rtc-topology-work-codec.ts`, consumer
-dependency “in-flight final AppOutbox work written before this deployment,” unsafe-removal reason
-“up to 24 hours of valid work may remain,” and removal condition “all production writers have run
-the canonical RTT-refresh envelope for more than the fixed 24-hour work retention.”
+and `writeRtcRttMutation` to use the canonical RTT branch. Reject noncanonical work rather than
+normalizing a transitional form.
 
 - [ ] **Step 7: Gate durable work before topology planning**
 
@@ -268,8 +265,8 @@ npx vitest run \
 npx tsc -p packages/shared-server/tsconfig.json --noEmit
 ```
 
-Expected: PASS, including one idempotent decision per durable work identity and unchanged legacy
-early-refinement behavior.
+Expected: PASS, including one idempotent decision per durable work identity and strict canonical
+work decoding.
 
 - [ ] **Step 9: Review the complete changed-file closure and commit**
 
@@ -459,11 +456,9 @@ git commit -m "refactor(rtc): consolidate RTT mutation ownership"
 **Interfaces:**
 
 - Consumes: runtime-state exact reads and optimistic transaction capabilities.
-- Produces: the same package-level repository, constants, cleanup handle/error, migration functions,
-  `cleanupExpiredRtcRttReceipts`, and validation names from canonical persistence files. The legacy
-  intermediate namespace constant and migration function remain available for offline inspection,
-  but the namespace is removed from `RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES` because no active
-  writer or consumer remains.
+- Produces: the same package-level repository, canonical constants, cleanup handle/error,
+  `cleanupExpiredRtcRttReceipts`, and validation names from canonical persistence files. The retired
+  intermediate namespace and its offline migration functions are absent.
 
 - [ ] **Step 1: Write the failing receipt cleanup regression test**
 
@@ -475,8 +470,7 @@ await expect(cleanupExpiredRtcRttReceipts(repository)).resolves.toBe(1);
 await expect(repository.probeMutationReceiptEntry(receipt.receiptId)).resolves.toBeUndefined();
 ```
 
-Also assert a live receipt remains, a changed optimistic revision conflicts without deletion, and an
-expired legacy intermediate row is outside the protected namespace inventory.
+Also assert a live receipt remains and a changed optimistic revision conflicts without deletion.
 
 - [ ] **Step 2: Run the regression test to prove the current cleanup bug**
 
@@ -495,11 +489,10 @@ Keep exact reads, lists, pages, CAS writes, receipt probes, and lifecycle facts 
 reads and validates the receipt outside the transaction, then uses one transaction to guard its
 exact revision and conditionally delete it; it neither reads nor requires obsolete intent siblings.
 
-- [ ] **Step 5: Extract offline migrations and close legacy runtime use**
+- [ ] **Step 5: Close retired runtime and migration use**
 
-Keep `oldWritersStopped: true` fail-closed guards and value-verified canonical destination behavior.
-Keep the legacy recompute-intent upgrader callable for offline retained data, but remove the
-intermediate namespace from active protected cleanup and production mutation imports.
+Keep still-live topology migration steps and their `oldWritersStopped: true` fail-closed guards.
+Delete the unused RTT migration entrypoints and retired intermediate namespace.
 
 - [ ] **Step 6: Split and mirror repository tests**
 
@@ -549,7 +542,7 @@ git commit -m "refactor(rtc): move RTT persistence ownership"
 
 **Interfaces:**
 
-- Consumes: Tasks 1-4 and issues #235/#236.
+- Consumes: Tasks 1-4 and issues #235-#240.
 - Produces: one pushed `codex/rtc-topology-rtt-structure` branch and one pull request with Goal,
   Changes, Acceptance, Validation, Risk and rollback, and Follow-up.
 
@@ -636,11 +629,64 @@ reviewed RTC RTT/design/plan scope.
 
 Push `codex/rtc-topology-rtt-structure` to `origin` without force. Create one pull request against
 `main` whose body contains only Goal, Changes, Acceptance, Validation, Risk and rollback, and
-Follow-up; link the design and issues #235/#236. Keep it draft until remote checks are visible, then
+Follow-up; link the design and issues #235-#240. Keep it draft until remote checks are visible, then
 run `npm run pr:delivery -- ready` once after affected validation is complete.
 
 - [ ] **Step 7: Report the exact handoff**
 
 Report files/behavior changed, the two corrected bugs, compatibility rationale, every passed,
-failed, or skipped command, current GitHub checks, the PR URL, and issues #235/#236. Do not create a
+failed, or skipped command, current GitHub checks, the PR URL, and issues #235-#240. Do not create a
 post-merge receipt or plan closure commit.
+
+---
+
+### Task 6: Delete terminal RTC RTT compatibility and unused code in the same PR
+
+**Production deletion boundary:**
+
+- Delete the two RTC RTT offline migration modules and the retired
+  `rtc-rtt:recompute-outbox` namespace constant.
+- Delete the recompute-intent computed contract and validator; derive final canonical topology
+  AppOutbox entries directly from the accepted groups, receipt, and measurement.
+- Delete legacy topology-work normalization and require canonical RTT-refresh envelopes.
+- Delete deprecated topology-outbox overloads that fabricate sender/resource identity.
+- Delete unused package-level aliases while keeping canonical `RtcRtt` exports.
+- Remove only the RTT migration steps from the still-live API persisted-state migration command.
+
+**Test deletion boundary:**
+
+- Delete compatibility-only public-export, work-envelope, refinement-null, migration, overload,
+  namespace, and recompute-intent assertions and fixtures.
+- Keep canonical corruption, convergence, retry, transaction, and final-AppOutbox coverage.
+- Remove stale test-structure classifications created by deleted test-analysis vocabulary and
+  classify the remaining exact candidate set.
+
+- [x] **Step 1: Prove the deletion inventory from current references**
+
+Require every deleted production symbol to have only its compatibility owner, maintenance command,
+or compatibility tests as consumers. Treat current runtime wiring as evidence that a superficially
+legacy name is still live and out of scope.
+
+- [x] **Step 2: Remove the legacy production graph**
+
+Make mutation computation, validation, and write phases use `affectedGroups` directly. Require
+canonical RTT work during replay and remove nullable refinement observations. Remove deprecated
+outbox overloads, old namespace/migration modules, and unused public aliases.
+
+- [x] **Step 3: Remove compatibility-only test code and governance pins**
+
+Delete the dedicated compatibility and RTT migration suites, legacy-only cases/helpers in mixed
+suites, stale style dispositions for deleted validators, and obsolete mutation-boundary vocabulary.
+Update the exact test-structure registry only from the post-deletion candidate report.
+
+- [x] **Step 4: Verify canonical behavior and absence**
+
+Run focused RTC RTT, topology work, metrics, API migration, repository-governance, type, Deno,
+formatting, style, structure, retained-legacy, test-structure, full unit, PostgreSQL, and black-box
+checks. Use `rg` over production and tests to prove every in-scope legacy symbol/path is absent.
+
+- [ ] **Step 5: Review and refresh PR #242**
+
+Obtain a new exact-head independent review, force-with-lease the rebased feature branch, update the
+existing PR body with the intentional compatibility removal and exact validation evidence, and do
+not merge the PR.

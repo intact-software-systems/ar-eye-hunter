@@ -34,5 +34,5 @@ export type RallarGroupFormationMetrics = Readonly<{
   wsEgressBytesByTopicId: Readonly<Record<string, number>>;
   wsOutboxNoLocalRecipientCount: number;
   rttAcceptedWriteCount: number;
-  rttRecomputeIntentCount: number;
+  rttTopologyEffectCount: number;
 }>;

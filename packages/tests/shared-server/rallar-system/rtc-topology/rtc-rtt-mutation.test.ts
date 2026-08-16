@@ -189,7 +189,8 @@ describe('RTC RTT mutation phases', () => {
     expect(accepted).toMatchObject({
       outcome: 'write',
       receipt: { outcome: 'accepted', measurementVersion: 1 },
-      recomputeIntents: [{ groupSnapshot: group, rtt }],
+      affectedGroups: [group],
+      senderId: 'session-a',
     });
     if (accepted.outcome !== 'write') throw new Error('Expected RTT write');
     expect(accepted.endpointGuards.map(({ endpointId }) => endpointId)).toEqual([
@@ -243,7 +244,7 @@ describe('RTC RTT mutation phases', () => {
     if (computed.outcome !== 'write') throw new Error('Expected RTT write');
     const malformed = structuredClone(computed) as typeof computed;
     delete (
-      malformed.recomputeIntents[0]!.groupSnapshot as unknown as {
+      malformed.affectedGroups[0] as unknown as {
         causalRevision?: unknown;
       }
     ).causalRevision;
@@ -605,7 +606,7 @@ describe('RTC RTT mutation phases', () => {
     );
   });
 
-  it('emits canonical unique affected refs and one recompute intent per ref', () => {
+  it('emits canonical unique affected refs and one topology outbox id per ref', () => {
     const refA = {
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
@@ -652,10 +653,11 @@ describe('RTC RTT mutation phases', () => {
     expect(computed.outcome).toBe('write');
     if (computed.outcome !== 'write') throw new Error('Expected write');
     expect(computed.receipt.affectedGroupRefs).toEqual([refB, refA]);
-    expect(computed.recomputeIntents.map(({ groupSnapshot }) => groupSnapshot.group)).toEqual([
+    expect(computed.affectedGroups.map(({ group }) => group)).toEqual([
       expect.objectContaining(refB),
       expect.objectContaining(refA),
     ]);
+    expect(computed.receipt.outboxIds).toHaveLength(2);
   });
 });
 

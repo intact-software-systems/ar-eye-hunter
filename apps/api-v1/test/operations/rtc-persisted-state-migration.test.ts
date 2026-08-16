@@ -34,8 +34,6 @@ Deno.test('RTC persisted-state migration dry run reports safe order without writ
     'topology-scalar-authority',
     'snapshot-keys',
     'publication-keys',
-    'rtt-keys',
-    'intent-delivery',
   ]
     .map((name) => ({
       name,
@@ -57,8 +55,6 @@ Deno.test('RTC persisted-state migration dry run reports safe order without writ
       'topology-scalar-authority',
       'snapshot-keys',
       'publication-keys',
-      'rtt-keys',
-      'intent-delivery',
     ],
   });
 });
@@ -93,13 +89,6 @@ Deno.test('RTC persisted-state migration runs in order and stops after an error'
             return Promise.reject(failure);
           },
         },
-        {
-          name: 'rtt-keys',
-          run: () => {
-            calls.push('rtt-keys');
-            return Promise.resolve();
-          },
-        },
       ],
     ),
     failure,
@@ -125,8 +114,7 @@ Deno.test('RTC migration operator task and runbook expose dry-run and cutover ac
   assert.match(script, /invalidateLegacyScalarRtcTopologyAuthority/);
   assert.match(script, /migrateLegacyRtcTopologySnapshotKeys/);
   assert.match(script, /migrateLegacyRtcTopologyPublicationKeys/);
-  assert.match(script, /migrateLegacyRtcRttMeasurementKeys/);
-  assert.match(script, /migrateLegacyRtcRttRecomputeIntentDeliveryState/);
+  assert.doesNotMatch(script, /migrateLegacyRtcRtt/);
   const readme = await Deno.readTextFile(new URL('../../README.md', import.meta.url));
   const middleware = await Deno.readTextFile(
     new URL('../../src/middleware.ts', import.meta.url),

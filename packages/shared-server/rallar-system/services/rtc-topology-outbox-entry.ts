@@ -59,12 +59,6 @@ export type ComputedRtcTopologyOutbox =
         refinementObservationId: string;
       }>);
 
-type LegacyComputedRtcTopologyOutboxInput = ComputedRtcTopologyOutbox extends infer T
-  ? T extends ComputedRtcTopologyOutbox
-    ? Omit<T, 'senderId' | 'resourceId'>
-    : never
-  : never;
-
 interface RtcTopologyGroupRevisionWork {
   readonly kind: 'group-revision';
   readonly overlayId: string;
@@ -97,24 +91,7 @@ interface RtcTopologyWorkEnvelope {
   readonly data: RtcTopologyGroupRevisionWork | RtcTopologyRttRefreshWork;
 }
 
-export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceEntry;
-/** @deprecated Materialize sender and resource identity before calling. */
-export function computeRtcTopologyEntry(
-  computed: LegacyComputedRtcTopologyOutboxInput,
-  senderId: string,
-): ResourceEntry;
-export function computeRtcTopologyEntry(
-  input: ComputedRtcTopologyOutbox | LegacyComputedRtcTopologyOutboxInput,
-  legacySenderId?: string,
-): ResourceEntry {
-  const computed =
-    'senderId' in input && 'resourceId' in input
-      ? input
-      : {
-          ...input,
-          senderId: legacySenderId ?? '',
-          resourceId: deriveRtcTopologyEntryResourceId(input),
-        };
+export function computeRtcTopologyEntry(computed: ComputedRtcTopologyOutbox): ResourceEntry {
   validateComputedRtcTopologyOutbox(computed);
   const createdBy = toAppQueueCreatedBy(computed.senderId);
   const overlayId = toScopedOverlayId(computed.aggregateRef);
@@ -210,22 +187,8 @@ export function toRtcTopologyEntryResourceId(computed: ComputedRtcTopologyOutbox
 export async function writeRtcTopologyOutbox(
   transaction: PSqlTransactionSql,
   computed: ComputedRtcTopologyOutbox,
-): Promise<ResourceEntry>;
-/** @deprecated Materialize sender and resource identity before calling. */
-export async function writeRtcTopologyOutbox(
-  transaction: PSqlTransactionSql,
-  computed: LegacyComputedRtcTopologyOutboxInput,
-  senderId: string,
-): Promise<ResourceEntry>;
-export async function writeRtcTopologyOutbox(
-  transaction: PSqlTransactionSql,
-  computed: ComputedRtcTopologyOutbox | LegacyComputedRtcTopologyOutboxInput,
-  senderId?: string,
 ): Promise<ResourceEntry> {
-  const entry =
-    'senderId' in computed && 'resourceId' in computed
-      ? computeRtcTopologyEntry(computed)
-      : computeRtcTopologyEntry(computed, senderId ?? '');
+  const entry = computeRtcTopologyEntry(computed);
   await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);
   try {
     outboxWriteSink?.();

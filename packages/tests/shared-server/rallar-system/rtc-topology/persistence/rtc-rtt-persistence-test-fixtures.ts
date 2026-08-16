@@ -221,11 +221,8 @@ export type MutableRttWriteCandidate = Record<string, unknown> & {
     purgeAfterEpochMs: number;
     value: Record<string, unknown>;
   };
-  recomputeIntents: Array<
-    Record<string, unknown> & {
-      rtt: Record<string, unknown>;
-    }
-  >;
+  receipt: Record<string, unknown> & { outboxIds: string[] };
+  senderId: string;
 };
 
 export function createValidRttWriteCandidate(): Extract<
@@ -402,7 +399,7 @@ export const rttWriteCandidateCorruptions: readonly Readonly<{
     },
   },
   {
-    label: 'a measurement value differing from receipt and intents',
+    label: 'a measurement value differing from receipt',
     corrupt: (candidate) => {
       candidate.measurementGuard.value = {
         ...candidate.measurementGuard.value,
@@ -412,12 +409,16 @@ export const rttWriteCandidateCorruptions: readonly Readonly<{
     },
   },
   {
-    label: 'an intent measurement differing from the measurement guard',
+    label: 'an outbox identity differing from the affected group',
     corrupt: (candidate) => {
-      candidate.recomputeIntents[0]!.rtt = {
-        ...candidate.recomputeIntents[0]!.rtt,
-        rttMs: 99,
-      };
+      candidate.receipt.outboxIds[0] = 'wrong-outbox-id';
+      return candidate;
+    },
+  },
+  {
+    label: 'a missing sender identity',
+    corrupt: (candidate) => {
+      candidate.senderId = '';
       return candidate;
     },
   },
@@ -429,7 +430,7 @@ export const rttWriteCandidateCorruptions: readonly Readonly<{
     },
   },
   {
-    label: 'affected groups differing from receipt and intents',
+    label: 'affected groups differing from receipt',
     corrupt: (candidate) => ({ ...candidate, affectedGroups: [] }),
   },
 ];

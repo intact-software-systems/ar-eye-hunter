@@ -89,8 +89,7 @@ runtime fallback.
    The explicit acknowledgement is required before the operator opens a connection. The command
    first invalidates every legacy scalar topology dependency family and writes a deterministic
    durable recompute request in the same conditional transaction. It then migrates snapshot keys,
-   publication/claim keys, RTT measurement keys, and recompute-intent delivery state, stopping on
-   the first error.
+   then publication/claim keys, stopping on the first error.
 4. Restart only the current API version and verify startup cleanup and RTC topology traffic before
    restoring normal service. Startup drains the durable recompute requests into idempotent topology
    work. The owned single-flight worker retries transient failures and polls while the process is

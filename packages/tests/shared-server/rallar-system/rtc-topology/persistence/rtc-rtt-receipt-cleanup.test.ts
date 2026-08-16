@@ -12,13 +12,12 @@ import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/pers
 import {
   RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES,
   RTC_RTT_RECEIPTS_NAMESPACE,
-  RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
 } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
 
 import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
 
 describe('RTC RTT receipt cleanup ownership', () => {
-  it('deletes an expired receipt without obsolete recompute-intent siblings', async () => {
+  it('deletes an expired receipt', async () => {
     const harness = await createReceiptHarness({ nowOffsetFromExpiry: 1 });
 
     await expect(cleanupExpiredRtcRttReceipts(harness.repository)).resolves.toBe(1);
@@ -62,11 +61,8 @@ describe('RTC RTT receipt cleanup ownership', () => {
     ).resolves.toBeDefined();
   });
 
-  it('leaves the retired recompute-intent namespace to generic runtime expiry', () => {
+  it('protects the receipt namespace from generic runtime expiry', () => {
     expect(RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES).toContain(RTC_RTT_RECEIPTS_NAMESPACE);
-    expect(RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES).not.toContain(
-      RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
-    );
   });
 
   it('reads and validates the receipt before entering its write transaction', () => {
@@ -86,7 +82,6 @@ describe('RTC RTT receipt cleanup ownership', () => {
     expect(cleanupSection).not.toContain('runtime.begin(');
     expect(writeSection).toContain('runtime.begin(');
     expect(writeSection).not.toMatch(/\.findEntry|\.findEntriesByPrefix/);
-    expect(writeSection).not.toContain(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE);
     expect(writeSection.indexOf('.upsertIfRevision(')).toBeLessThan(
       writeSection.indexOf('.deleteIfRevision('),
     );

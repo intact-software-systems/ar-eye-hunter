@@ -2370,9 +2370,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
-      "id": "test-structure-coupling-f4d3cb333ab20ada",
+      "id": "test-structure-coupling-8eb21dccec2d6b5b",
       "path": "packages/tests/shared-server/mutation-boundary-analysis.ts",
-      "line": 144,
+      "line": 140,
       "column": 22,
       "kind": "exact-file-tree",
       "contract": "mutation-boundary-analysis-interface",

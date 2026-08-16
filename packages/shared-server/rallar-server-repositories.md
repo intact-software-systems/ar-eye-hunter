@@ -147,8 +147,9 @@ Client/group/topology-config effects use direct transaction-bound `APP_OUTBOX`/
 atomically. There is no intermediate mutation outbox. RTC topology similarly
 commits its snapshot guard, work claim, and immutable publication atomically;
 RTT commits endpoint guards, measurement, receipt, and final topology AppOutbox
-work. The retired RTT recompute-intent namespace is read only by its guarded
-offline migration and is not part of active mutation or receipt cleanup.
+work. RTC RTT persistence contains only the canonical measurement,
+endpoint-admission, receipt, and final topology AppOutbox families; no offline
+RTT migration remains.
 
 Resource inbox allows 20 total processing attempts. Attempts one through five
 wait 1, 2, 4, 8, and 16 ms; later waits rise through seconds, cap at 30 seconds,

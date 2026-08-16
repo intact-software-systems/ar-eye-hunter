@@ -63,31 +63,6 @@ describe('durable RTC RTT refinement work', () => {
     if (envelope.data.kind !== 'rtt-refresh') {
       throw new Error('Expected canonical durable RTT refresh work');
     }
-    const legacyMessage = {
-      ...message,
-      payload: {
-        ...message.payload,
-        resource: JSON.stringify({
-          ...envelope,
-          data: {
-            kind: 'group-revision',
-            overlayId: envelope.data.overlayId,
-            groupSnapshot: envelope.data.groupSnapshot,
-            sourceGroupStateRevision: envelope.data.requestedGroupStateRevision,
-            requestedAtEpochMs: envelope.data.requestedAtEpochMs,
-            requestOptions: envelope.data.requestOptions,
-            publish: envelope.data.publish,
-          },
-        }),
-      },
-    };
-    expect(
-      readRtcTopologyWorkEnvelope(legacyMessage, AppOutboxType.RTC_TOPOLOGY_RECOMPUTE).data,
-    ).toMatchObject({
-      kind: 'legacy-rtt-refresh',
-      legacySource: 'durable-group-revision',
-      refinementObservationId: toRtcRttMutationReceiptId(rtt),
-    });
   });
 });
 

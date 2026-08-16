@@ -89,28 +89,5 @@ export type RtcRttMutationComputed =
         purgeAfterEpochMs: number;
       }>;
       receipt: RtcRttMutationReceipt;
-      recomputeIntents: readonly RtcRttRecomputeIntent[];
+      senderId: string;
     }>;
-
-type RtcRttRecomputeIntentBase = Readonly<{
-  outboxId: string;
-  receiptId: string;
-  groupSnapshot: GroupSnapshot;
-  rtt: RttMeasurementInfo;
-  createdAtEpochMs: number;
-  commandHash: string;
-  senderId: string;
-}>;
-
-export type RtcRttRecomputeIntent = RtcRttRecomputeIntentBase &
-  (
-    | Readonly<{
-        delivery: Readonly<{ state: 'pending' }>;
-      }>
-    | Readonly<{
-        delivery: Readonly<{
-          state: 'delivered';
-          deliveredAtEpochMs: number;
-        }>;
-      }>
-  );

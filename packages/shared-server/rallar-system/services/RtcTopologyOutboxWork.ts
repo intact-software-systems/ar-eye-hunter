@@ -60,19 +60,6 @@ export type RtcTopologyRttRefreshWork = Readonly<{
   publish: boolean;
 }>;
 
-export type RtcTopologyLegacyRttRefreshWork = Readonly<{
-  kind: 'legacy-rtt-refresh';
-  legacySource: 'rtt-refresh' | 'durable-group-revision';
-  overlayId: string;
-  groupSnapshot: GroupSnapshot;
-  requestedGroupStateRevision: number;
-  requestedRttVersion: number | null;
-  refinementObservationId: string | null;
-  requestedAtEpochMs: number;
-  requestOptions: CanonicalGroupTopologyConfigPatch;
-  publish: boolean;
-}>;
-
 export type RtcTopologyStateMutationPublisher = Readonly<{
   enqueueForStateMutation(
     group: GroupSnapshot,

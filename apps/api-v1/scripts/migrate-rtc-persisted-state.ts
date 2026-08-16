@@ -10,17 +10,6 @@ import {
   migrateLegacyRtcTopologyPublicationKeys,
   RtcTopologyPublicationRepository,
 } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
-// prettier-ignore
-import { migrateLegacyRtcRttMeasurementKeys }
-  from '@shared-server/rallar-system/rtc-topology/persistence/\
-migrate-legacy-rtc-rtt-measurement-keys.ts';
-// prettier-ignore
-import { migrateLegacyRtcRttRecomputeIntentDeliveryState }
-  from '@shared-server/rallar-system/rtc-topology/persistence/\
-migrate-legacy-rtc-rtt-recompute-intents.ts';
-// prettier-ignore
-import { RtcRttRepository }
-  from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
 import {
   invalidateLegacyScalarRtcTopologyAuthority,
 } from '@shared-server/rallar-system/repositories/RtcTopologyScalarAuthorityMigration.ts';
@@ -50,7 +39,6 @@ if (options.dryRun) {
     const runtime = new PSqlRuntimeStateRepository(sql as PSqlSql);
     const snapshotRepository = new RtcTopologySnapshotRepository(runtime);
     const publicationRepository = new RtcTopologyPublicationRepository(runtime);
-    const rttRepository = new RtcRttRepository(runtime);
     const oldWritersStopped = options.oldWritersStopped;
     const observedAtEpochMs = Date.now();
     const scalarAuthorityMigrationId = 'api-v1-group-causal-tuple-v1';
@@ -80,22 +68,6 @@ if (options.dryRun) {
         run: () =>
           migrateLegacyRtcTopologyPublicationKeys(
             publicationRepository,
-            { oldWritersStopped },
-          ),
-      },
-      {
-        name: 'rtt-keys',
-        run: () =>
-          migrateLegacyRtcRttMeasurementKeys(
-            rttRepository,
-            { oldWritersStopped },
-          ),
-      },
-      {
-        name: 'intent-delivery',
-        run: () =>
-          migrateLegacyRtcRttRecomputeIntentDeliveryState(
-            rttRepository,
             { oldWritersStopped },
           ),
       },

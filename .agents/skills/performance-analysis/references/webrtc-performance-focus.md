@@ -329,7 +329,9 @@ Server/room/signaling/topology:
 - `packages/shared-server/rallar-system/services/AppGroupInboxService.ts`
 - `packages/shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts`
 - `packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts`
-- `packages/shared-server/rallar-system/repositories/RtcRttRepository.ts`
+- `packages/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts`
+- `packages/shared-server/rallar-system/rtc-topology/policy/rtc-rtt-measurement-policy.ts`
+- `packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts`
 - `packages/shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts`
 - `apps/api-v1/src/routes/ice-route.ts`
 - `apps/api-v1/src/routes/ws-routes.ts`

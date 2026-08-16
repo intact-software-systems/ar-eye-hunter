@@ -6,11 +6,10 @@ import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/pers
 import {
   RTC_RTT_ENDPOINT_ADMISSION_NAMESPACE,
   RTC_RTT_RECEIPTS_NAMESPACE,
-  RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE,
 } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
 import {
   toRtcRttMutationReceiptId,
-  toRtcRttRecomputeOutboxId,
+  toRtcRttTopologyOutboxId,
 } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
 import type {
   RtcRttMutationCommand,
@@ -185,9 +184,6 @@ describe('RTC RTT repository convergence', () => {
       await expect(runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE)).resolves.toEqual(
         [],
       );
-      await expect(
-        runtimeRepository.findAllEntries(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE),
-      ).resolves.toEqual([]);
     },
   );
 
@@ -268,9 +264,6 @@ describe('RTC RTT repository convergence', () => {
     expect(readCommand).toHaveBeenCalledTimes(2);
     expect(readFacts).toHaveBeenCalledTimes(2);
     await expect(runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE)).resolves.toEqual([]);
-    await expect(
-      runtimeRepository.findAllEntries(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE),
-    ).resolves.toEqual([]);
   });
 
   it.each(
@@ -371,7 +364,7 @@ describe('RTC RTT repository convergence', () => {
           attemptCount: 1,
           acceptedStorageRevision: 0,
           eventId: null,
-          outboxIds: [toRtcRttRecomputeOutboxId(receiptId, affectedGroupRef, commandHash)],
+          outboxIds: [toRtcRttTopologyOutboxId(receiptId, affectedGroupRef, commandHash)],
           commandHash,
         }),
         1 + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS,
@@ -534,9 +527,6 @@ describe('RTC RTT repository convergence', () => {
     expect(policyReads).not.toHaveBeenCalled();
     expect(lifecycleReads).not.toHaveBeenCalled();
     expect(await runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE)).toHaveLength(1);
-    expect(await runtimeRepository.findAllEntries(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE)).toHaveLength(
-      0,
-    );
   });
 
   it('converges concurrent identical RTT writers through the immutable receipt winner', async () => {
@@ -587,9 +577,6 @@ describe('RTC RTT repository convergence', () => {
     expect(results.filter(({ updated }) => updated)).toHaveLength(1);
     expect(results.filter(({ computed }) => computed.outcome === 'replay')).toHaveLength(1);
     expect(await runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE)).toHaveLength(1);
-    expect(await runtimeRepository.findAllEntries(RTC_RTT_RECOMPUTE_OUTBOX_NAMESPACE)).toHaveLength(
-      0,
-    );
   });
 
   it('validates receipt identity before expiry cleanup on direct, list, and page reads', async () => {
