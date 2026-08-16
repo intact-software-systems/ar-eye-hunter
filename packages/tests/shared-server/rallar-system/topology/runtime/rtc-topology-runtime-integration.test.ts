@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+// prettier-ignore
+import {
+  RallarRtcTopologyService,
+} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -79,6 +82,103 @@ describe('RTC topology process runtime integration', () => {
     expect(second.newlyQueued).toBe(false);
     expect(second.dueAtEpochMs).toBe(first.dueAtEpochMs);
     expect(second.delayMs).toBe(25);
+  });
+
+  it('records the RTT queue request before a throwing clock is read', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+    const service = new RallarRtcTopologyService({
+      now: () => {
+        throw new Error('clock unavailable');
+      },
+    });
+
+    expect(() => service.queueRttTopologyUpdate(group)).toThrow('clock unavailable');
+    expect(service.readMetrics()).toMatchObject({
+      rttQueueRequestCount: 1,
+      rttQueueNewCount: 0,
+      rttQueueCoalescedCount: 0,
+      rttQueueImmediateCount: 0,
+    });
+  });
+
+  it('records the RTT flush attempt before a throwing clock is read', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+    let shouldThrow = false;
+    const service = new RallarRtcTopologyService({
+      now: () => {
+        if (shouldThrow) {
+          throw new Error('clock unavailable');
+        }
+        return 100;
+      },
+    });
+
+    service.queueRttTopologyUpdate(group);
+    service.resetMetrics();
+    shouldThrow = true;
+
+    expect(() => service.claimDueRttTopologyUpdate(group.group)).toThrow('clock unavailable');
+    expect(service.readMetrics()).toMatchObject({
+      rttFlushAttemptCount: 1,
+      rttFlushSkippedCount: 0,
+      rttFlushExecutedCount: 0,
+    });
+  });
+
+  it('records a weighted graph attempt before a throwing group dependency', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+    const activeSessions = group.activeSessions;
+    let activeSessionReadCount = 0;
+    Object.defineProperty(group, 'activeSessions', {
+      get: () => {
+        activeSessionReadCount += 1;
+        if (activeSessionReadCount === 2) {
+          throw new Error('group sessions unavailable');
+        }
+        return activeSessions;
+      },
+    });
+    const service = new RallarRtcTopologyService({ now: () => 100 });
+
+    expect(() => service.createRoomGraph(group)).toThrow('group sessions unavailable');
+    expect(service.readMetrics()).toMatchObject({
+      weightedRoomGraphBuildCount: 1,
+      weightedRoomGraphBuildDurationMs: 0,
+    });
+  });
+
+  it('records a weighted plan attempt before a throwing group dependency', () => {
+    const memberSessionIds = createRtcTopologyMemberIds(5);
+    const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
+    const activeSessions = group.activeSessions;
+    let activeSessionReadCount = 0;
+    Object.defineProperty(group, 'activeSessions', {
+      get: () => {
+        activeSessionReadCount += 1;
+        if (activeSessionReadCount === 4) {
+          throw new Error('group sessions unavailable');
+        }
+        return activeSessions;
+      },
+    });
+    const service = new RallarRtcTopologyService({ now: () => 100 });
+
+    expect(() =>
+      service.planGroupTopologyAt(
+        group,
+        createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
+        {},
+        100,
+      ),
+    ).toThrow('group sessions unavailable');
+    expect(service.readMetrics()).toMatchObject({
+      topologyUpdateCount: 1,
+      updatesWithRttMeasurementCount: 1,
+      weightedRoomGraphBuildCount: 1,
+      weightedPlanCount: 1,
+      weightedPlanDurationMs: 0,
+    });
+    expect(service.readMetrics().weightedRoomGraphBuildDurationMs).toBeGreaterThanOrEqual(0);
   });
 
   it('records topology rebuild, RTT queue, flush, and publish metrics', () => {

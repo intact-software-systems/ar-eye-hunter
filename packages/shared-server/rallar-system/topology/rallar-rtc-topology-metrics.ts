@@ -80,7 +80,15 @@ export class RtcTopologyMetrics {
   private state: RtcTopologyMetricsState = createRtcTopologyMetricsState();
 
   recordTopologyUpdate(rttMeasurementCount: number): void {
+    this.recordTopologyUpdateAttempt();
+    this.recordTopologyRttMeasurementCount(rttMeasurementCount);
+  }
+
+  recordTopologyUpdateAttempt(): void {
     this.state.topologyUpdateCount += 1;
+  }
+
+  recordTopologyRttMeasurementCount(rttMeasurementCount: number): void {
     if (rttMeasurementCount > 0) {
       this.state.updatesWithRttMeasurementCount += 1;
       return;
@@ -112,12 +120,28 @@ export class RtcTopologyMetrics {
   }
 
   recordWeightedPlan(durationMs: number): void {
+    this.recordWeightedPlanAttempt();
+    this.recordWeightedPlanDuration(durationMs);
+  }
+
+  recordWeightedPlanAttempt(): void {
     this.state.weightedPlanCount += 1;
+  }
+
+  recordWeightedPlanDuration(durationMs: number): void {
     this.state.weightedPlanDurationMs += nonNegativeDurationMs(durationMs);
   }
 
   recordWeightedRoomGraph(durationMs: number, usedSparseFallback: boolean): void {
+    this.recordWeightedRoomGraphAttempt();
+    this.recordWeightedRoomGraphDuration(durationMs, usedSparseFallback);
+  }
+
+  recordWeightedRoomGraphAttempt(): void {
     this.state.weightedRoomGraphBuildCount += 1;
+  }
+
+  recordWeightedRoomGraphDuration(durationMs: number, usedSparseFallback: boolean): void {
     this.state.weightedRoomGraphBuildDurationMs += nonNegativeDurationMs(durationMs);
     if (usedSparseFallback) {
       this.state.weightedRoomGraphSparseFallbackCount += 1;
@@ -140,7 +164,15 @@ export class RtcTopologyMetrics {
   }
 
   recordRttQueue(result: 'new' | 'coalesced', immediate: boolean): void {
+    this.recordRttQueueRequest();
+    this.recordRttQueueResult(result, immediate);
+  }
+
+  recordRttQueueRequest(): void {
     this.state.rttQueueRequestCount += 1;
+  }
+
+  recordRttQueueResult(result: 'new' | 'coalesced', immediate: boolean): void {
     if (result === 'new') {
       this.state.rttQueueNewCount += 1;
     } else {
@@ -152,7 +184,15 @@ export class RtcTopologyMetrics {
   }
 
   recordRttFlush(executed: boolean): void {
+    this.recordRttFlushAttempt();
+    this.recordRttFlushResult(executed);
+  }
+
+  recordRttFlushAttempt(): void {
     this.state.rttFlushAttemptCount += 1;
+  }
+
+  recordRttFlushResult(executed: boolean): void {
     if (executed) {
       this.state.rttFlushExecutedCount += 1;
       return;

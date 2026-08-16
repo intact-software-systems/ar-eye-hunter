@@ -32,9 +32,15 @@ import {
   computeCanonicalTopologyPairWeight,
   toCanonicalTopologySessionIds,
 } from '../topology/planning/canonical-topology-planning-input.ts';
-import { computeNoRttTopologyNextHops } from '../topology/planning/compute-no-rtt-topology-next-hops.ts';
+// prettier-ignore
+import {
+  computeNoRttTopologyNextHops,
+} from '../topology/planning/compute-no-rtt-topology-next-hops.ts';
 import { computeEvolvedTopologyNextHops } from '../topology/planning/evolve-planned-topology.ts';
-import { planRallarRtcTopologySnapshot } from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+// prettier-ignore
+import {
+  planRallarRtcTopologySnapshot,
+} from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 import {
   DEFAULT_MESH_EXIT_WIDTH,
   DEFAULT_TREE_EXIT_WIDTH,
@@ -94,6 +100,13 @@ interface RtcTopologyPlanInput {
   readonly planningIntent: RtcTopologyPlanningIntent;
 }
 
+interface PlanGroupTopologyAtInput {
+  readonly group: GroupSnapshot;
+  readonly rttMeasurements: readonly RttMeasurementInfo[];
+  readonly options: RallarRtcTopologyUpdateOptions;
+  readonly nowEpochMs: number;
+}
+
 interface RtcTopologyRoomGraphInput {
   readonly group: GroupSnapshot;
   readonly rttMeasurements: readonly RttMeasurementInfo[];
@@ -105,7 +118,56 @@ interface SparseRoomGraphPopulationResult {
   readonly connected: boolean;
 }
 
-export { planRallarRtcTopologySnapshot } from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+interface PopulateSparseRoomGraphInput {
+  readonly graph: WeightedGraph;
+  readonly activeSessionIds: readonly string[];
+  readonly rttMeasurements: readonly RttMeasurementInfo[];
+  readonly fallbackNextHops: Readonly<Record<string, readonly string[]>>;
+  readonly degreeLimit: number;
+}
+
+interface CreateWeightedTopologyNextHopsInput {
+  readonly topology: RallarRtcTopologyKind;
+  readonly group: GroupSnapshot;
+  readonly activeSessionIds: readonly string[];
+  readonly globalGraph: WeightedGraph;
+  readonly options: RallarRtcTopologyServiceOptions;
+}
+
+interface CreateFallbackRoomGraphInput {
+  readonly group: GroupSnapshot;
+  readonly activeSessionIds: readonly string[];
+  readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
+  readonly degreeLimit: number;
+}
+
+interface AddBoundedRoomEdgeInput {
+  readonly graph: WeightedGraph;
+  readonly from: string;
+  readonly to: string;
+  readonly weight: number;
+  readonly degreeLimit: number;
+  readonly maxEdges: number;
+}
+
+interface AddRoomEdgeIfAbsentInput {
+  readonly graph: WeightedGraph;
+  readonly from: string;
+  readonly to: string;
+  readonly weight: number;
+}
+
+interface SetRttWeightInput {
+  readonly lookup: Map<string, Map<string, number>>;
+  readonly from: string;
+  readonly to: string;
+  readonly rttMs: number;
+}
+
+// prettier-ignore
+export {
+  planRallarRtcTopologySnapshot,
+} from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 
 export interface RallarRtcTopologyRttQueueResult {
   readonly overlayId: string;
@@ -197,12 +259,18 @@ export class RallarRtcTopologyService {
     options: RallarRtcTopologyUpdateOptions,
     nowEpochMs: number,
   ): RallarRtcTopologyUpdateResult {
+    return this.planGroupTopologyAtInput({ group, rttMeasurements, options, nowEpochMs });
+  }
+
+  private planGroupTopologyAtInput(input: PlanGroupTopologyAtInput): RallarRtcTopologyUpdateResult {
+    const { group, rttMeasurements, options, nowEpochMs } = input;
+    this.metrics.recordTopologyUpdateAttempt();
     const activeSessionIds = toCanonicalTopologySessionIds(readGroupMemberSessionIds(group));
     const relevantRttMeasurements = filterRttMeasurementsForActiveSessions(
       rttMeasurements,
       activeSessionIds,
     );
-    this.metrics.recordTopologyUpdate(relevantRttMeasurements.length);
+    this.metrics.recordTopologyRttMeasurementCount(relevantRttMeasurements.length);
 
     const overlayId = toScopedOverlayId(group.group);
     const previous = this.readPreviousSnapshot(overlayId, options);
@@ -243,12 +311,13 @@ export class RallarRtcTopologyService {
   }
 
   queueRttTopologyUpdate(group: GroupSnapshot): RallarRtcTopologyRttQueueResult {
+    this.metrics.recordRttQueueRequest();
     const overlayId = toScopedOverlayId(group.group);
     const now = this.now();
     const existingDueAt = this.pendingRttUpdateDueAtByOverlayId.get(overlayId);
 
     if (existingDueAt !== undefined) {
-      this.metrics.recordRttQueue('coalesced', existingDueAt <= now);
+      this.metrics.recordRttQueueResult('coalesced', existingDueAt <= now);
       return {
         overlayId,
         dueAtEpochMs: existingDueAt,
@@ -262,7 +331,7 @@ export class RallarRtcTopologyService {
       ? now + this.rttRebuildDebounceMs()
       : now;
     this.pendingRttUpdateDueAtByOverlayId.set(overlayId, dueAtEpochMs);
-    this.metrics.recordRttQueue('new', dueAtEpochMs <= now);
+    this.metrics.recordRttQueueResult('new', dueAtEpochMs <= now);
 
     return {
       overlayId,
@@ -283,15 +352,16 @@ export class RallarRtcTopologyService {
   }
 
   claimDueRttTopologyUpdate(groupRef: GroupRef): boolean {
+    this.metrics.recordRttFlushAttempt();
     const overlayId = toScopedOverlayId(groupRef);
     const dueAtEpochMs = this.pendingRttUpdateDueAtByOverlayId.get(overlayId);
     if (dueAtEpochMs === undefined || dueAtEpochMs > this.now()) {
-      this.metrics.recordRttFlush(false);
+      this.metrics.recordRttFlushResult(false);
       return false;
     }
 
     this.pendingRttUpdateDueAtByOverlayId.delete(overlayId);
-    this.metrics.recordRttFlush(true);
+    this.metrics.recordRttFlushResult(true);
     return true;
   }
 
@@ -392,13 +462,13 @@ export class RallarRtcTopologyService {
       return this.computeNoRttNextHops(plan);
     }
 
-    return this.createNextHopMap(
-      plan.topology,
-      plan.group,
-      plan.activeSessionIds,
-      this.readPlanRoomGraph(plan),
-      plan.topologyOptions,
-    );
+    return this.createNextHopMap({
+      topology: plan.topology,
+      group: plan.group,
+      activeSessionIds: plan.activeSessionIds,
+      globalGraph: this.readPlanRoomGraph(plan),
+      options: plan.topologyOptions,
+    });
   }
 
   private computeEvolvedNextHops(
@@ -472,6 +542,7 @@ export class RallarRtcTopologyService {
   private createRoomGraphWithOptions(roomGraphInput: RtcTopologyRoomGraphInput): WeightedGraph {
     const { group, rttMeasurements, options } = roomGraphInput;
     const startedAtMs = this.durationNowMs();
+    this.metrics.recordWeightedRoomGraphAttempt();
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
     const degreeLimit = this.degreeLimit(options);
     const rttReportingDegreeLimit = this.readRttReportingDegreeLimit(options);
@@ -504,47 +575,56 @@ export class RallarRtcTopologyService {
         degreeLimit,
         meshParamK: this.meshArgs(options).meshParamK,
       });
-      const sparse = this.populateSparseRoomGraph(
+      const sparse = this.populateSparseRoomGraph({
         graph,
         activeSessionIds,
         rttMeasurements,
         fallbackNextHops,
-        rttReportingDegreeLimit,
-      );
+        degreeLimit: rttReportingDegreeLimit,
+      });
 
       if (!sparse.connected) {
-        this.metrics.recordWeightedRoomGraph(this.durationNowMs() - startedAtMs, true);
-        return createFallbackRoomGraph(group, activeSessionIds, fallbackNextHops, degreeLimit);
+        this.metrics.recordWeightedRoomGraphDuration(this.durationNowMs() - startedAtMs, true);
+        return createFallbackRoomGraph({
+          group,
+          activeSessionIds,
+          nextHopsBySessionId: fallbackNextHops,
+          degreeLimit,
+        });
       }
     }
 
-    this.metrics.recordWeightedRoomGraph(this.durationNowMs() - startedAtMs, false);
+    this.metrics.recordWeightedRoomGraphDuration(this.durationNowMs() - startedAtMs, false);
     return graph;
   }
 
   private populateSparseRoomGraph(
-    graph: WeightedGraph,
-    activeSessionIds: readonly string[],
-    rttMeasurements: readonly RttMeasurementInfo[],
-    fallbackNextHops: Readonly<Record<string, readonly string[]>>,
-    degreeLimit: number,
+    input: PopulateSparseRoomGraphInput,
   ): SparseRoomGraphPopulationResult {
+    const { graph, activeSessionIds, rttMeasurements, fallbackNextHops, degreeLimit } = input;
     const maxEdges = Math.floor((activeSessionIds.length * degreeLimit) / 2);
 
     for (const edge of createSortedRttEdges(rttMeasurements, activeSessionIds)) {
-      addBoundedRoomEdge(graph, edge.from, edge.to, edge.weight, degreeLimit, maxEdges);
+      addBoundedRoomEdge({
+        graph,
+        from: edge.from,
+        to: edge.to,
+        weight: edge.weight,
+        degreeLimit,
+        maxEdges,
+      });
     }
 
     for (const [from, nextHops] of Object.entries(fallbackNextHops)) {
       for (const to of nextHops) {
-        addBoundedRoomEdge(
+        addBoundedRoomEdge({
           graph,
           from,
           to,
-          computeCanonicalTopologyPairWeight(from, to),
+          weight: computeCanonicalTopologyPairWeight(from, to),
           degreeLimit,
           maxEdges,
-        );
+        });
       }
     }
 
@@ -557,14 +637,14 @@ export class RallarRtcTopologyService {
         if (graph.size >= maxEdges) {
           return { connected: true };
         }
-        addBoundedRoomEdge(
+        addBoundedRoomEdge({
           graph,
-          activeSessionIds[i],
-          activeSessionIds[j],
-          computeCanonicalTopologyPairWeight(activeSessionIds[i], activeSessionIds[j]),
+          from: activeSessionIds[i],
+          to: activeSessionIds[j],
+          weight: computeCanonicalTopologyPairWeight(activeSessionIds[i], activeSessionIds[j]),
           degreeLimit,
           maxEdges,
-        );
+        });
       }
     }
 
@@ -572,13 +652,11 @@ export class RallarRtcTopologyService {
   }
 
   private createNextHopMap(
-    topology: RallarRtcTopologyKind,
-    group: GroupSnapshot,
-    activeSessionIds: readonly string[],
-    globalGraph: WeightedGraph,
-    options: RallarRtcTopologyServiceOptions,
+    input: CreateWeightedTopologyNextHopsInput,
   ): Record<string, readonly string[]> {
+    const { topology, group, activeSessionIds, globalGraph, options } = input;
     const startedAtMs = this.durationNowMs();
+    this.metrics.recordWeightedPlanAttempt();
     const graph =
       topology === 'tree'
         ? createGroupTree({
@@ -602,7 +680,7 @@ export class RallarRtcTopologyService {
         graph.hasNode(sessionId) ? (graph.neighbors(sessionId) as string[]).sort() : [],
       ]),
     );
-    this.metrics.recordWeightedPlan(this.durationNowMs() - startedAtMs);
+    this.metrics.recordWeightedPlanDuration(this.durationNowMs() - startedAtMs);
     return nextHopsBySessionId;
   }
 
@@ -703,12 +781,8 @@ function addCompleteFallbackRoomEdges(
   }
 }
 
-function createFallbackRoomGraph(
-  group: GroupSnapshot,
-  activeSessionIds: readonly string[],
-  nextHopsBySessionId: Readonly<Record<string, readonly string[]>>,
-  degreeLimit: number,
-): WeightedGraph {
+function createFallbackRoomGraph(input: CreateFallbackRoomGraphInput): WeightedGraph {
+  const { group, activeSessionIds, nextHopsBySessionId, degreeLimit } = input;
   const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
   graph.replaceAttributes({
     id: toScopedOverlayId(group.group),
@@ -728,7 +802,12 @@ function createFallbackRoomGraph(
 
   for (const [from, nextHops] of Object.entries(nextHopsBySessionId)) {
     for (const to of nextHops) {
-      addRoomEdgeIfAbsent(graph, from, to, computeCanonicalTopologyPairWeight(from, to));
+      addRoomEdgeIfAbsent({
+        graph,
+        from,
+        to,
+        weight: computeCanonicalTopologyPairWeight(from, to),
+      });
     }
   }
 
@@ -785,14 +864,8 @@ function createSortedRttEdges(
   );
 }
 
-function addBoundedRoomEdge(
-  graph: WeightedGraph,
-  from: string,
-  to: string,
-  weight: number,
-  degreeLimit: number,
-  maxEdges: number,
-): boolean {
+function addBoundedRoomEdge(input: AddBoundedRoomEdgeInput): boolean {
+  const { graph, from, to, weight, degreeLimit, maxEdges } = input;
   if (graph.size >= maxEdges || graph.hasEdge(from, to)) {
     return false;
   }
@@ -800,11 +873,12 @@ function addBoundedRoomEdge(
     return false;
   }
 
-  addRoomEdgeIfAbsent(graph, from, to, weight);
+  addRoomEdgeIfAbsent({ graph, from, to, weight });
   return true;
 }
 
-function addRoomEdgeIfAbsent(graph: WeightedGraph, from: string, to: string, weight: number): void {
+function addRoomEdgeIfAbsent(input: AddRoomEdgeIfAbsentInput): void {
+  const { graph, from, to, weight } = input;
   if (from === to || graph.hasEdge(from, to)) {
     return;
   }
@@ -843,19 +917,25 @@ function createRttWeightLookup(rttMeasurements: readonly RttMeasurementInfo[]): 
   const lookup = new Map<string, Map<string, number>>();
 
   for (const rtt of rttMeasurements) {
-    setRttWeight(lookup, rtt.sessionIdFrom, rtt.sessionIdTo, rtt.rttMs);
-    setRttWeight(lookup, rtt.sessionIdTo, rtt.sessionIdFrom, rtt.rttMs);
+    setRttWeight({
+      lookup,
+      from: rtt.sessionIdFrom,
+      to: rtt.sessionIdTo,
+      rttMs: rtt.rttMs,
+    });
+    setRttWeight({
+      lookup,
+      from: rtt.sessionIdTo,
+      to: rtt.sessionIdFrom,
+      rttMs: rtt.rttMs,
+    });
   }
 
   return lookup;
 }
 
-function setRttWeight(
-  lookup: Map<string, Map<string, number>>,
-  from: string,
-  to: string,
-  rttMs: number,
-): void {
+function setRttWeight(input: SetRttWeightInput): void {
+  const { lookup, from, to, rttMs } = input;
   let byPeer = lookup.get(from);
   if (byPeer === undefined) {
     byPeer = new Map();
