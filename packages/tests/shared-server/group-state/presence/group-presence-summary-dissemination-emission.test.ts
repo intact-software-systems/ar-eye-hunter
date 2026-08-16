@@ -25,35 +25,25 @@ import { SCOPE, groupRef } from '../mutation/group-mutation-test-runtime.ts';
 const BASE_EPOCH_MS = Date.now();
 
 describe('group presence summary dissemination emission', () => {
-  it('emits exactly the historical rows under snapshot-per-change', async () => {
-    const scenario = await createConnectedScenario('emit-legacy-rows');
+  // Both snapshot rows are asserted against a directly constructed expectation
+  // rather than against a second run in the retired snapshot-per-change mode,
+  // which is what this used as its reference before that mode was removed.
+  it('keeps both snapshot rows and carries the envelope on the event row under dual-emit', async () => {
+    const scenario = await createConnectedScenario('emit-dual-rows');
 
-    const { command, computed } = await computeSummaryWork(scenario, 'snapshot-per-change');
-
-    const audience = {
-      kind: 'group' as const,
-      applicationId: command.aggregateRef.applicationId,
-      workspaceId: command.aggregateRef.workspaceId,
-      resourceId: command.aggregateRef.groupId,
-    };
-    const expectedEventEntries = computeGroupStateSyncEntries(
-      {
-        commandId: command.commandId,
-        aggregateRef: command.aggregateRef,
-        acceptedCausalRevision: command.acceptedCausalRevision,
-        audience,
-        createdAtEpochMs: command.createdAtEpochMs,
-        expireAtEpochMs: command.expireAtEpochMs,
-        effects: [{ effectKind: 'member-state', payloadKind: 'event', payload: command.event }],
-      },
-      'summary-worker',
-    );
+    const dual = await computeSummaryWork(scenario, 'dual-emit');
+    const { command, computed } = dual;
     const expectedSnapshotEntries = computeGroupStateSyncEntries(
       {
         commandId: command.commandId,
         aggregateRef: command.aggregateRef,
         acceptedCausalRevision: computed.snapshot.causalRevision,
-        audience,
+        audience: {
+          kind: 'group' as const,
+          applicationId: command.aggregateRef.applicationId,
+          workspaceId: command.aggregateRef.workspaceId,
+          resourceId: command.aggregateRef.groupId,
+        },
         createdAtEpochMs: computed.summary.summary.computedAtEpochMs,
         expireAtEpochMs: command.expireAtEpochMs,
         effects: [
@@ -63,27 +53,13 @@ describe('group presence summary dissemination emission', () => {
       },
       'summary-worker',
     );
-    expect(computed.downstreamOutboxEntries).toEqual([
-      ...expectedEventEntries,
-      ...expectedSnapshotEntries,
-    ]);
-    expect(readEventRowPayload(computed.downstreamOutboxEntries[0]!)).toEqual(command.event);
-  });
-
-  it('keeps both snapshot rows and swaps the event payload for the envelope under dual-emit', async () => {
-    const scenario = await createConnectedScenario('emit-dual-rows');
-
-    const legacy = await computeSummaryWork(scenario, 'snapshot-per-change');
-    const dual = await computeSummaryWork(scenario, 'dual-emit');
 
     expect(topicIds(dual.computed.downstreamOutboxEntries)).toEqual([
       AppTopics.groupStateEvent,
       AppTopics.groupStateSnapshot,
       AppTopics.groupDirectorySnapshot,
     ]);
-    expect(dual.computed.downstreamOutboxEntries.slice(1)).toEqual(
-      legacy.computed.downstreamOutboxEntries.slice(1),
-    );
+    expect(dual.computed.downstreamOutboxEntries.slice(1)).toEqual(expectedSnapshotEntries);
     const eventRow = dual.computed.downstreamOutboxEntries[0]!;
     expect((JSON.parse(eventRow.resource) as ALMessage).id.msgId).toContain(
       ':member-state:delta-envelope:',

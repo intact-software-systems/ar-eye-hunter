@@ -223,7 +223,7 @@ async function convergePresenceSummaryForCacheTest(
   });
   const work = new GroupPresenceSummaryWork({
     topologyIntent: { damping: 'legacy' },
-    disseminationMode: 'snapshot-per-change',
+    disseminationMode: 'dual-emit',
     runtimeRepository: runtime,
     now: () => 2_001,
     serviceId: 'cache-convergence-test',

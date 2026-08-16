@@ -140,7 +140,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
     const wakeQueue = vi.fn();
     const worker = new GroupPresenceSummaryWork({
       topologyIntent: { damping: 'legacy' },
-      disseminationMode: 'snapshot-per-change',
+      disseminationMode: 'dual-emit',
       runtimeRepository: new FakeRuntimeStateRepository(),
       database: Object.assign(async () => undefined, { begin }) as never,
       serviceId: 'summary-handler',
@@ -168,7 +168,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
   it('exposes single-attempt presence-summary phases for a queue-owned transaction', () => {
     const work = new GroupPresenceSummaryWork({
       topologyIntent: { damping: 'legacy' },
-      disseminationMode: 'snapshot-per-change',
+      disseminationMode: 'dual-emit',
       runtimeRepository: new GroupBarrierRepository(),
       now: () => BASE_EPOCH_MS,
       serviceId: 'summary-worker',

@@ -347,7 +347,7 @@ Deno.test('PGlite AppGroup commits group mutation and summary fan-out through fe
         outboxQueueReader: outboxReader,
         recomputeDebounceMs: 0,
       },
-      disseminationMode: 'snapshot-per-change',
+      disseminationMode: 'dual-emit',
       runtimeRepository: runtime,
       database: sql,
       serviceId: 'pglite-group-service',
@@ -565,7 +565,7 @@ Deno.test('PGlite summary reservation fence rolls back CAS and every downstream 
     const summaryBefore = await repository.findPresenceSummaryEntry(ref);
     const work = new GroupPresenceSummaryWork({
       topologyIntent: { damping: 'legacy' },
-      disseminationMode: 'snapshot-per-change',
+      disseminationMode: 'dual-emit',
       runtimeRepository: runtime,
       database: sql,
       serviceId: 'pglite-summary-fence',

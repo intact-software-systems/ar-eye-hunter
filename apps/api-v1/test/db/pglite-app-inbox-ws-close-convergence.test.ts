@@ -147,7 +147,7 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
     const outboxReader = new OutboxQueueReader(new PSqlQueueBox(harness.resourceInbox));
     const summaryWork = new GroupPresenceSummaryWork({
       topologyIntent: { damping: 'legacy' },
-      disseminationMode: 'snapshot-per-change',
+      disseminationMode: 'dual-emit',
       runtimeRepository: harness.runtime,
       database: sql,
       serviceId: 'pglite-close-test',

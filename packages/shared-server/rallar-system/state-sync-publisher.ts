@@ -64,11 +64,6 @@ export type ComputedGroupStateSyncEffect =
     }>
     | Readonly<{
         effectKind: 'member-state';
-        payloadKind: 'event';
-        payload: GroupEvent;
-    }>
-    | Readonly<{
-        effectKind: 'member-state';
         payloadKind: 'delta-envelope';
         payload: GroupStateDeltaEnvelope;
     }>;

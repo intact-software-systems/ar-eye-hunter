@@ -81,7 +81,7 @@ export type GroupPresenceSummaryTopologyIntent =
     }>
   | Readonly<{ damping: 'legacy' }>;
 
-export type GroupStateDisseminationMode = 'snapshot-per-change' | 'dual-emit' | 'delta-primary';
+export type GroupStateDisseminationMode = 'dual-emit' | 'delta-primary';
 
 export type GroupPresenceSummaryWorkOptions = Readonly<{
   runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
@@ -411,13 +411,6 @@ export function validateGroupPresenceSummaryOutboxEntries(
 function computeGroupStateEventEffect(
   input: ComputeGroupPresenceSummaryOutboxInput,
 ): ComputedGroupStateSyncEffect {
-  if (input.disseminationMode === 'snapshot-per-change') {
-    return {
-      effectKind: 'member-state',
-      payloadKind: 'event',
-      payload: input.work.event,
-    };
-  }
   return {
     effectKind: 'member-state',
     payloadKind: 'delta-envelope',

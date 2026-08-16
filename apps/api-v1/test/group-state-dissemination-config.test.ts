@@ -12,7 +12,7 @@ Deno.test('group-state dissemination defaults to delta-primary', () => {
   );
 });
 
-Deno.test('group-state dissemination accepts only the three explicit modes and trims input', () => {
+Deno.test('group-state dissemination accepts only the two explicit modes and trims input', () => {
   assert.deepEqual(
     readApiGroupStateDisseminationConfig(
       fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: ' delta-primary ' }),
@@ -21,17 +21,21 @@ Deno.test('group-state dissemination accepts only the three explicit modes and t
   );
   assert.deepEqual(
     readApiGroupStateDisseminationConfig(
-      fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: 'snapshot-per-change' }),
+      fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: 'dual-emit' }),
     ),
-    { dissemination: 'snapshot-per-change' },
+    { dissemination: 'dual-emit' },
   );
-  assert.throws(
-    () =>
-      readApiGroupStateDisseminationConfig(
-        fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: 'delta' }),
-      ),
-    /RALLAR_GROUP_STATE_DISSEMINATION must be one of snapshot-per-change, dual-emit, delta-primary/,
-  );
+  // The retired mode is rejected like any other unknown value rather than
+  // silently accepted or mapped onto a survivor.
+  for (const rejected of ['delta', 'snapshot-per-change']) {
+    assert.throws(
+      () =>
+        readApiGroupStateDisseminationConfig(
+          fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: rejected }),
+        ),
+      /RALLAR_GROUP_STATE_DISSEMINATION must be one of dual-emit, delta-primary/,
+    );
+  }
 });
 
 // Formation damping no longer overrides dissemination. The override existed so
@@ -65,7 +69,7 @@ Deno.test('an invalid dissemination value fails startup under any damping mode',
           RALLAR_GROUP_STATE_DISSEMINATION: 'bogus',
         }),
       ),
-    /RALLAR_GROUP_STATE_DISSEMINATION must be one of snapshot-per-change, dual-emit, delta-primary/,
+    /RALLAR_GROUP_STATE_DISSEMINATION must be one of dual-emit, delta-primary/,
   );
 });
 

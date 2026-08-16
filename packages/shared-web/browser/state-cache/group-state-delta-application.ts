@@ -37,9 +37,10 @@ export type RereadGroupSnapshots = (
 ) => Promise<readonly GroupSnapshot[]>;
 
 /**
- * Decodes a `group-state.event` WS payload into its delta envelope. A bare
- * legacy GroupEvent payload — or any other shape — yields undefined so the
- * cache layer keeps ignoring it exactly as under snapshot-per-change.
+ * Decodes a `group-state.event` WS payload into its delta envelope. Any other
+ * shape yields undefined and the cache layer ignores the row. Servers no longer
+ * emit the bare GroupEvent payload, but a row written by an older server can
+ * still be in flight across a rolling deploy.
  */
 export function toGroupStateDeltaEnvelope(
   serialized: string,
