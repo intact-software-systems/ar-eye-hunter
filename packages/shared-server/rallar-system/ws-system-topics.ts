@@ -5,6 +5,7 @@ import { type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
+import { toRateLimiter } from '@shared/resilience/Resilience.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { QRtcSignalingMessage } from '@shared/webrtc/QRtcSignalingContracts.ts';
@@ -39,6 +40,12 @@ import {
 import type { RtcRttRefinementGate } from './rtc-topology/topic/rtc-rtt-refinement-gate.ts';
 import type { RtcRttRefinementService } from './rtc-topology/topic/rtc-rtt-refinement-service.ts';
 
+// Two rebuilds per five seconds. The RTT rebuild debounce defaults to 250 ms,
+// so an uncapped sustained stream permits four per second of synchronous
+// all-pairs work over every active session; the cached graph is read by the
+// graph diagnostics surface, which does not need that freshness.
+const DEFAULT_GLOBAL_GRAPH_RECOMPUTE_LIMIT = { windowMs: 5_000, maxPerWindow: 2 } as const;
+
 export type InitRallarSystemWsTopicsOptions = Readonly<{
   initDynamicTopics?: boolean;
   dynamicTopicRouterOptions?: DynamicWsTopicRouterOptions;
@@ -54,6 +61,10 @@ export type InitRallarSystemWsTopicsOptions = Readonly<{
     rttTtlMs?: number;
   }>;
   rtcTopologyRepositories?: RtcTopologyRuntimeState;
+  globalGraphRecomputeLimit?: Readonly<{
+    windowMs: number;
+    maxPerWindow: number;
+  }>;
   rtcTopologyAppOutbox?: Readonly<{
     database: PSqlSql;
     outboxQueueReader: OutboxQueueReader;
@@ -91,26 +102,44 @@ export function initRallarSystemWsTopics(
   const rtcTopologyRuntimeState = rtcTopologyPersistence.repositories;
   const rtcTopologyFlushTimers = new Map<string, RtcTopologyFlushTimer>();
   let globalGraphRttRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
-  const scheduleGlobalGraphRttRecompute = (): void => {
-    const delayMs = rtcTopologyService.readRttRebuildDebounceMs();
-    const recompute = (): void => {
-      computeGlobalGraphAndCacheItIfPossible(rtcTopologyService.readRttReportingDegreeLimit());
-    };
+  const globalGraphRecomputeLimit = options.globalGraphRecomputeLimit ??
+    DEFAULT_GLOBAL_GRAPH_RECOMPUTE_LIMIT;
+  const globalGraphRecomputeLimiter = toRateLimiter(
+    globalGraphRecomputeLimit.windowMs,
+    globalGraphRecomputeLimit.maxPerWindow,
+  );
 
-    if (delayMs === 0) {
-      recompute();
-      return;
-    }
-
+  const armGlobalGraphRttRecompute = (delayMs: number): void => {
     if (globalGraphRttRecomputeTimer) {
       return;
     }
-
     globalGraphRttRecomputeTimer = setTimeout(() => {
       globalGraphRttRecomputeTimer = undefined;
-      recompute();
+      runGlobalGraphRttRecompute();
     }, delayMs);
     (globalGraphRttRecomputeTimer as { unref?: () => void }).unref?.();
+  };
+
+  // The debounce only coalesces a burst; a sustained RTT stream still rebuilds
+  // every debounce window forever, and the rebuild is synchronous all-pairs
+  // work over every active session on the server. The rate limiter caps how
+  // often that can happen. A denied attempt re-arms rather than dropping, so
+  // the last update in a quiescing group still reaches the cache.
+  const runGlobalGraphRttRecompute = (): void => {
+    if (!globalGraphRecomputeLimiter.allow()) {
+      armGlobalGraphRttRecompute(globalGraphRecomputeLimit.windowMs);
+      return;
+    }
+    computeGlobalGraphAndCacheItIfPossible(rtcTopologyService.readRttReportingDegreeLimit());
+  };
+
+  const scheduleGlobalGraphRttRecompute = (): void => {
+    const delayMs = rtcTopologyService.readRttRebuildDebounceMs();
+    if (delayMs === 0) {
+      runGlobalGraphRttRecompute();
+      return;
+    }
+    armGlobalGraphRttRecompute(delayMs);
   };
   const rtcTopologyAppOutboxOptions = options.rtcTopologyAppOutbox;
   const findGroupSnapshotByRef =

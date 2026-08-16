@@ -41,6 +41,7 @@ import type { Middleware } from './middleware-contract.ts';
 import { initialiseMiddleware, registerMiddlewareBackgroundTask } from './middleware.ts';
 import {
   getApiRtcTopologyServiceOptions,
+  readApiGlobalGraphRecomputeLimit,
   readApiRtcRttRefinementGateConfig,
 } from './services/rtc-topology-config.ts';
 // prettier-ignore
@@ -320,6 +321,7 @@ export function createRallarServer(
               topologySnapshots: topologySnapshotRepository,
               rtts: rttRepository,
             },
+            globalGraphRecomputeLimit: readApiGlobalGraphRecomputeLimit(),
             rtcTopologyAppOutbox: {
               database: sql as unknown as PSqlSql,
               outboxQueueReader: runtime.outboxQueueReader,

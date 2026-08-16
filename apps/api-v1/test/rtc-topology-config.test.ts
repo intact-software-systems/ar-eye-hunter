@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { getApiRtcTopologyServiceOptions } from '../src/services/rtc-topology-config.ts';
+import {
+  getApiRtcTopologyServiceOptions,
+  readApiGlobalGraphRecomputeLimit,
+} from '../src/services/rtc-topology-config.ts';
 
 Deno.test('API RTC topology options are read from environment', () => {
   const env = fakeEnv({
@@ -42,6 +45,36 @@ Deno.test('API RTC topology options ignore unset and invalid values', () => {
   });
 
   assert.deepEqual(getApiRtcTopologyServiceOptions(env), {});
+});
+
+// Both bounds are required together: a window without a count, or a count
+// without a window, would otherwise silently pair a configured value with a
+// built-in default and produce a limit nobody asked for.
+Deno.test('global graph recompute limit needs both bounds', () => {
+  assert.deepEqual(
+    readApiGlobalGraphRecomputeLimit(
+      fakeEnv({
+        RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTE_WINDOW_MS: '20000',
+        RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTES_PER_WINDOW: '3',
+      }),
+    ),
+    { windowMs: 20000, maxPerWindow: 3 },
+  );
+
+  for (
+    const partial of [
+      { RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTE_WINDOW_MS: '20000' },
+      { RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTES_PER_WINDOW: '3' },
+      { RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTE_WINDOW_MS: '0' },
+      {
+        RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTE_WINDOW_MS: '20000',
+        RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTES_PER_WINDOW: '0',
+      },
+      {},
+    ]
+  ) {
+    assert.equal(readApiGlobalGraphRecomputeLimit(fakeEnv(partial)), undefined);
+  }
 });
 
 function fakeEnv(values: Record<string, string | undefined>): Readonly<{

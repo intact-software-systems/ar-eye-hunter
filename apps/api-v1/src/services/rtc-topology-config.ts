@@ -36,6 +36,22 @@ export function readApiTopologyRecomputeDebounceMs(
   return readNonNegativeIntegerEnv(env, 'RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS');
 }
 
+export function readApiGlobalGraphRecomputeLimit(
+  env: EnvReader = Deno.env,
+): Readonly<{ windowMs: number; maxPerWindow: number }> | undefined {
+  const windowMs = readPositiveIntegerEnv(
+    env,
+    'RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTE_WINDOW_MS',
+  );
+  const maxPerWindow = readPositiveIntegerEnv(
+    env,
+    'RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTES_PER_WINDOW',
+  );
+  return windowMs !== undefined && maxPerWindow !== undefined
+    ? { windowMs, maxPerWindow }
+    : undefined;
+}
+
 export function readApiRtcRttRefinementGateConfig(
   env: EnvReader = Deno.env,
 ): Omit<RtcRttRefinementGateConfig, 'now'> {
