@@ -1,38 +1,27 @@
 import { expect, it } from 'vitest';
 
-import {
-  planRallarRtcTopologySnapshot as packagePlanSnapshot,
-  RallarRtcTopologyService as PackageService,
-} from '@shared-server/mod.ts';
-import {
-  planRallarRtcTopologySnapshot as directPlanSnapshot,
-  RallarRtcTopologyService as DirectService,
-} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import type {
-  RallarRtcTopologyRttQueueResult,
-  RallarRtcTopologyServiceOptions,
-  RallarRtcTopologyUpdateOptions,
-  RallarRtcTopologyUpdateResult,
-  RtcTopologyKindHysteresisWidths,
-  RtcTopologyPlanningIntent,
-} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import * as Package from '@shared-server/mod.ts';
+import * as Direct from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 
 it('keeps the supported RTC topology service package and deep imports identical', () => {
-  expect(PackageService).toBe(DirectService);
-  expect(packagePlanSnapshot).toBe(directPlanSnapshot);
-  expect(new PackageService()).toBeInstanceOf(DirectService);
+  expect(Package.RallarRtcTopologyService).toBe(Direct.RallarRtcTopologyService);
+  expect(Package.planRallarRtcTopologySnapshot).toBe(Direct.planRallarRtcTopologySnapshot);
+  expect(new Package.RallarRtcTopologyService()).toBeInstanceOf(Direct.RallarRtcTopologyService);
 });
 
-type DirectRtcTopologyServiceTypeFixture = Readonly<{
-  options: RallarRtcTopologyServiceOptions;
-  updateOptions: RallarRtcTopologyUpdateOptions;
-  updateResult: RallarRtcTopologyUpdateResult;
-  rttQueueResult: RallarRtcTopologyRttQueueResult;
-  planningIntent: RtcTopologyPlanningIntent;
-  hysteresisWidths: RtcTopologyKindHysteresisWidths;
-}>;
+interface DirectRtcTopologyServiceTypeFixture {
+  readonly options: Direct.RallarRtcTopologyServiceOptions;
+  readonly updateOptions: Direct.RallarRtcTopologyUpdateOptions;
+  readonly updateResult: Direct.RallarRtcTopologyUpdateResult;
+  readonly rttQueueResult: Direct.RallarRtcTopologyRttQueueResult;
+  readonly planningIntent: Direct.RtcTopologyPlanningIntent;
+  readonly hysteresisWidths: Direct.RtcTopologyKindHysteresisWidths;
+}
 
-const directRtcTopologyServiceTypeFixture =
-  undefined as unknown as DirectRtcTopologyServiceTypeFixture;
+function acceptDirectRtcTopologyServiceTypeFixture(
+  fixture: DirectRtcTopologyServiceTypeFixture,
+): DirectRtcTopologyServiceTypeFixture {
+  return fixture;
+}
 
-void directRtcTopologyServiceTypeFixture;
+void acceptDirectRtcTopologyServiceTypeFixture;

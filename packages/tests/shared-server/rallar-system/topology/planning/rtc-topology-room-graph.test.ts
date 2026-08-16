@@ -25,7 +25,12 @@ describe('RTC topology weighted room graph planning', () => {
     expect(fallbackGraph.getEdgeAttribute(fallbackEdge!, 'weight')).toBeLessThan(32);
 
     const rttGraph = service.createRoomGraph(group, [
-      createRtcTopologyRttMeasurement('peer-1', 'peer-3', 42, 1),
+      createRtcTopologyRttMeasurement({
+        sessionIdFrom: 'peer-1',
+        sessionIdTo: 'peer-3',
+        rttMs: 42,
+        version: 1,
+      }),
     ]);
     const rttEdge = rttGraph.edge('peer-1', 'peer-3');
     expect(rttEdge).toBeDefined();
@@ -37,8 +42,18 @@ describe('RTC topology weighted room graph planning', () => {
     const service = new RallarRtcTopologyService({ now: () => 100 });
 
     const graph = service.createRoomGraph(group, [
-      createRtcTopologyRttMeasurement('peer-1', 'peer-3', 42, 1),
-      createRtcTopologyRttMeasurement('peer-3', 'peer-1', 7, 2),
+      createRtcTopologyRttMeasurement({
+        sessionIdFrom: 'peer-1',
+        sessionIdTo: 'peer-3',
+        rttMs: 42,
+        version: 1,
+      }),
+      createRtcTopologyRttMeasurement({
+        sessionIdFrom: 'peer-3',
+        sessionIdTo: 'peer-1',
+        rttMs: 7,
+        version: 2,
+      }),
     ]);
     const edge = graph.edge('peer-1', 'peer-3');
 
@@ -58,11 +73,36 @@ describe('RTC topology weighted room graph planning', () => {
     const graph = service.createRoomGraph(
       createRtcTopologyGroupSnapshot('room-pairs', sessionIds),
       [
-        createRtcTopologyRttMeasurement('a', 'b::c', 11, 1),
-        createRtcTopologyRttMeasurement('a::b', 'c', 22, 1),
-        createRtcTopologyRttMeasurement(composed, 'a', 33, 1),
-        createRtcTopologyRttMeasurement(decomposed, 'a', 44, 1),
-        createRtcTopologyRttMeasurement('b::c', 'a', 55, 2),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'a',
+          sessionIdTo: 'b::c',
+          rttMs: 11,
+          version: 1,
+        }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'a::b',
+          sessionIdTo: 'c',
+          rttMs: 22,
+          version: 1,
+        }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: composed,
+          sessionIdTo: 'a',
+          rttMs: 33,
+          version: 1,
+        }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: decomposed,
+          sessionIdTo: 'a',
+          rttMs: 44,
+          version: 1,
+        }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'b::c',
+          sessionIdTo: 'a',
+          rttMs: 55,
+          version: 2,
+        }),
       ],
     );
 
@@ -83,9 +123,24 @@ describe('RTC topology weighted room graph planning', () => {
     });
 
     const graph = service.createRoomGraph(group, [
-      createRtcTopologyRttMeasurement(decomposed, composed, 5, 1),
-      createRtcTopologyRttMeasurement(decomposed, 'z', 5, 2),
-      createRtcTopologyRttMeasurement('z', composed, 5, 3),
+      createRtcTopologyRttMeasurement({
+        sessionIdFrom: decomposed,
+        sessionIdTo: composed,
+        rttMs: 5,
+        version: 1,
+      }),
+      createRtcTopologyRttMeasurement({
+        sessionIdFrom: decomposed,
+        sessionIdTo: 'z',
+        rttMs: 5,
+        version: 2,
+      }),
+      createRtcTopologyRttMeasurement({
+        sessionIdFrom: 'z',
+        sessionIdTo: composed,
+        rttMs: 5,
+        version: 3,
+      }),
     ]);
 
     expect(graph.edges().map((edge) => graph.extremities(edge))).toEqual([
@@ -101,7 +156,12 @@ describe('RTC topology weighted room graph planning', () => {
     const service = new RallarRtcTopologyService({ now: () => 100, rttReportingDegreeLimit: 8 });
 
     const graph = service.createRoomGraph(group, [
-      createRtcTopologyRttMeasurement('peer-1', 'peer-2', 5, 1),
+      createRtcTopologyRttMeasurement({
+        sessionIdFrom: 'peer-1',
+        sessionIdTo: 'peer-2',
+        rttMs: 5,
+        version: 1,
+      }),
     ]);
 
     expect(graph.order).toBe(8);

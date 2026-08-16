@@ -5,18 +5,22 @@ export function createRtcTopologyMemberIds(count: number): readonly string[] {
   return Array.from({ length: count }, (_, index) => `peer-${index + 1}`);
 }
 
+export interface RtcTopologyRttMeasurementInput {
+  readonly sessionIdFrom: string;
+  readonly sessionIdTo: string;
+  readonly rttMs: number;
+  readonly version: number;
+}
+
 export function createRtcTopologyRttMeasurement(
-  sessionIdFrom: string,
-  sessionIdTo: string,
-  rttMs: number,
-  version: number,
+  input: RtcTopologyRttMeasurementInput,
 ): RttMeasurementInfo {
   return {
-    sessionIdFrom,
-    sessionIdTo,
-    rttMs,
-    createdAtEpochMs: version,
-    version,
+    sessionIdFrom: input.sessionIdFrom,
+    sessionIdTo: input.sessionIdTo,
+    rttMs: input.rttMs,
+    createdAtEpochMs: input.version,
+    version: input.version,
   };
 }
 
