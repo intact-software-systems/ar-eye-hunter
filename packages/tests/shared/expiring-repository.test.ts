@@ -90,38 +90,58 @@ describe('ExpiringRepository', () => {
         expect(create).toHaveBeenCalledTimes(1);
     });
 
-    // Bulk reclamation is amortized, so the O(N) scan stops being per-write.
-    // The window is driven by the passed instant, never by wall time.
-    it('rate limits the bulk prune on the supplied clock', () => {
+    // Writes carry the eviction, on a budget, so the O(N) scan is amortized
+    // instead of running per write. The budget window is driven by the passed
+    // instant, never by wall time.
+    it('evicts from the write path on a rate-limited budget', () => {
         const repository = new ExpiringRepository<string, Decision>({
-            pruneWindowMs: 20_000,
-            prunesPerWindow: 1,
+            evictWindowMs: 20_000,
+            evictsPerWindow: 1,
         });
 
-        for (const index of [1, 2, 3]) {
+        for (const [index, nowEpochMs] of [[1, 0], [2, 10], [3, 20]] as const) {
             repository.accept({
                 key: `work-${index}`,
                 value: { claimed: true },
-                nowEpochMs: 0,
+                nowEpochMs,
                 expireAtEpochMs: 100,
             });
         }
 
-        expect(repository.deleteExpiredWhenDue(1_000)).toBe(3);
-        expect(repository.readCounts()).toEqual({ retained: 0, pruneRuns: 1 });
+        // The first write spent this window's single eviction, so the later two
+        // wrote without scanning.
+        expect(repository.readCounts()).toEqual({ retained: 3, evictionRuns: 1 });
 
+        // Past both the entries' deadlines and the budget window, so this write
+        // scans and reclaims all three.
         repository.accept({
             key: 'work-4',
             value: { claimed: true },
-            nowEpochMs: 1_000,
-            expireAtEpochMs: 1_100,
+            nowEpochMs: 30_000,
+            expireAtEpochMs: 60_000,
         });
 
-        expect(repository.deleteExpiredWhenDue(5_000)).toBe(0);
-        expect(repository.readCounts()).toEqual({ retained: 1, pruneRuns: 1 });
+        expect(repository.readCounts()).toEqual({ retained: 1, evictionRuns: 2 });
+    });
 
-        expect(repository.deleteExpiredWhenDue(30_000)).toBe(1);
-        expect(repository.readCounts()).toEqual({ retained: 0, pruneRuns: 2 });
+    it('can opt out of write-path eviction entirely', () => {
+        const repository = new ExpiringRepository<string, Decision>({ evictsPerWindow: 0 });
+
+        repository.accept({
+            key: 'a',
+            value: { claimed: true },
+            nowEpochMs: 0,
+            expireAtEpochMs: 100,
+        });
+        repository.accept({
+            key: 'b',
+            value: { claimed: true },
+            nowEpochMs: 500,
+            expireAtEpochMs: 600,
+        });
+
+        expect(repository.readCounts()).toEqual({ retained: 2, evictionRuns: 0 });
+        expect(repository.deleteExpired(1_000)).toBe(2);
     });
 
     // The validity predicate receives the instant, so a whole prune scan is
@@ -129,6 +149,7 @@ describe('ExpiringRepository', () => {
     it('passes the deciding instant into the validity predicate', () => {
         const seen: number[] = [];
         const repository = new ExpiringRepository<string, Decision>({
+            evictsPerWindow: 0,
             isValid: (_value, nowEpochMs) => {
                 seen.push(nowEpochMs);
                 return true;

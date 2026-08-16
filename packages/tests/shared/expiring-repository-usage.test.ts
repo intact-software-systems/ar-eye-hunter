@@ -15,12 +15,12 @@ interface RefinementClaim {
 
 class ExampleRefinementService {
     private readonly observations = new ExpiringRepository<string, number>({
-        pruneWindowMs: 5_000,
-        prunesPerWindow: 2,
+        evictWindowMs: 5_000,
+        evictsPerWindow: 2,
     });
     private readonly decisions = new ExpiringRepository<string, boolean>({
-        pruneWindowMs: 5_000,
-        prunesPerWindow: 2,
+        evictWindowMs: 5_000,
+        evictsPerWindow: 2,
     });
 
     public constructor(
@@ -31,9 +31,6 @@ class ExampleRefinementService {
 
     public claimWork(input: RefinementClaim): boolean {
         const nowEpochMs = this.nowEpochMs();
-        this.observations.deleteExpiredWhenDue(nowEpochMs);
-        this.decisions.deleteExpiredWhenDue(nowEpochMs);
-
         const existing = this.decisions.read(input.workId, nowEpochMs);
         if (existing !== undefined) {
             return existing;
@@ -64,8 +61,8 @@ class ExampleRefinementService {
         };
     }
 
-    public readPruneRuns(): number {
-        return this.decisions.readCounts().pruneRuns;
+    public readEvictionRuns(): number {
+        return this.decisions.readCounts().evictionRuns;
     }
 }
 
@@ -113,7 +110,7 @@ describe('ExpiringRepository as the RTT refinement store', () => {
         }
 
         expect(service.readRetainedEntryCounts()).toEqual({ observations: 6, decisions: 6 });
-        expect(service.readPruneRuns()).toBe(2);
+        expect(service.readEvictionRuns()).toBe(2);
     });
 });
 

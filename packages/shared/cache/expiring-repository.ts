@@ -1,8 +1,9 @@
+import { RateLimiter } from '../resilience/Resilience.ts';
 import { LatestValue, LatestValueOptions } from './LatestValue.ts';
 
 export interface ExpiringRepositoryOptions<V> extends LatestValueOptions<V> {
-    pruneWindowMs?: number;
-    prunesPerWindow?: number;
+    evictWindowMs?: number;
+    evictsPerWindow?: number;
 }
 
 export interface AcceptExpiringEntryInput<K, V> {
@@ -14,32 +15,32 @@ export interface AcceptExpiringEntryInput<K, V> {
 
 export interface ExpiringRepositoryCounts {
     readonly retained: number;
-    readonly pruneRuns: number;
+    readonly evictionRuns: number;
 }
 
-const DEFAULT_PRUNE_WINDOW_MS = 5_000;
-const DEFAULT_PRUNES_PER_WINDOW = 2;
+const DEFAULT_EVICT_WINDOW_MS = 5_000;
+const DEFAULT_EVICTS_PER_WINDOW = 2;
+const MIN_EVICT_WINDOW_MS = 4;
 
 export class ExpiringRepository<K, V> {
     private readonly entries = new Map<K, LatestValue<V>>();
     private readonly options: ExpiringRepositoryOptions<V>;
-    private readonly pruneWindowMs: number;
-    private readonly prunesPerWindow: number;
+    private readonly evictWindowMs: number;
+    private readonly evictsPerWindow: number;
 
-    private pruneWindowStartMs: number | undefined;
-    private prunesInWindow = 0;
-    private pruneRuns = 0;
+    private evictLimiter: RateLimiter | undefined;
+    private evictionRuns = 0;
 
     public constructor(options: ExpiringRepositoryOptions<V> = {}) {
         this.options = options;
-        this.pruneWindowMs = options.pruneWindowMs ?? DEFAULT_PRUNE_WINDOW_MS;
-        this.prunesPerWindow = options.prunesPerWindow ?? DEFAULT_PRUNES_PER_WINDOW;
+        this.evictWindowMs = options.evictWindowMs ?? DEFAULT_EVICT_WINDOW_MS;
+        this.evictsPerWindow = options.evictsPerWindow ?? DEFAULT_EVICTS_PER_WINDOW;
 
-        if (!Number.isFinite(this.pruneWindowMs) || this.pruneWindowMs < 0) {
-            throw new Error('pruneWindowMs must be a finite non-negative number');
+        if (!Number.isFinite(this.evictWindowMs) || this.evictWindowMs < MIN_EVICT_WINDOW_MS) {
+            throw new Error('evictWindowMs must be a finite number of at least 4');
         }
-        if (!Number.isInteger(this.prunesPerWindow) || this.prunesPerWindow < 1) {
-            throw new Error('prunesPerWindow must be a positive integer');
+        if (!Number.isInteger(this.evictsPerWindow) || this.evictsPerWindow < 0) {
+            throw new Error('evictsPerWindow must be a non-negative integer');
         }
     }
 
@@ -47,6 +48,7 @@ export class ExpiringRepository<K, V> {
         const entry = this.entries.get(input.key) ?? new LatestValue<V>(this.options);
         entry.acceptAt(input.value, input.nowEpochMs, input.expireAtEpochMs);
         this.entries.set(input.key, entry);
+        this.evictExpiredWhenAllowed(input.nowEpochMs);
         return this;
     }
 
@@ -108,15 +110,22 @@ export class ExpiringRepository<K, V> {
                 removed += 1;
             }
         }
-        this.pruneRuns += 1;
+        this.evictionRuns += 1;
         return removed;
     }
 
-    public deleteExpiredWhenDue(nowEpochMs: number): number {
-        if (!this.isPruneDue(nowEpochMs)) {
+    public evictExpiredWhenAllowed(nowEpochMs: number): number {
+        if (this.evictsPerWindow === 0) {
             return 0;
         }
-        return this.deleteExpired(nowEpochMs);
+
+        this.evictLimiter ??= RateLimiter.initWithTs(
+            this.evictWindowMs,
+            this.evictsPerWindow,
+            nowEpochMs,
+        );
+
+        return this.evictLimiter.allowAt(nowEpochMs) ? this.deleteExpired(nowEpochMs) : 0;
     }
 
     public keys(): IterableIterator<K> {
@@ -139,24 +148,6 @@ export class ExpiringRepository<K, V> {
     }
 
     public readCounts(): ExpiringRepositoryCounts {
-        return { retained: this.entries.size, pruneRuns: this.pruneRuns };
-    }
-
-    private isPruneDue(nowEpochMs: number): boolean {
-        if (
-            this.pruneWindowStartMs === undefined ||
-            nowEpochMs - this.pruneWindowStartMs >= this.pruneWindowMs
-        ) {
-            this.pruneWindowStartMs = nowEpochMs;
-            this.prunesInWindow = 1;
-            return true;
-        }
-
-        if (this.prunesInWindow >= this.prunesPerWindow) {
-            return false;
-        }
-
-        this.prunesInWindow += 1;
-        return true;
+        return { retained: this.entries.size, evictionRuns: this.evictionRuns };
     }
 }
