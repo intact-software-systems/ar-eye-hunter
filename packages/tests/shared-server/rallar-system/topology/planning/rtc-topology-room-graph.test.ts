@@ -115,7 +115,7 @@ describe('RTC topology weighted room graph planning', () => {
     ]);
   });
 
-  it('avoids sparse fallback; connected measured edges retain canonical fallback weights', () => {
+  it('keeps connected measured edges and fills unmeasured pairs with canonical weights', () => {
     const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
     const result = createRtcRoomGraph({
       group,
