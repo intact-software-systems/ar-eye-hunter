@@ -19,9 +19,12 @@ Graphology, `packages/shared-graph`, the shared RTC benchmark package, Markdown.
 **Design:**
 `docs/superpowers/specs/2026-08-16-rtc-topology-service-ownership-refactor-design.md`
 
-**Exact execution base:** `956a057c9ab51c3060f30e60cae48ade24f5ec5c`, with base artifact ID
-`20260816-956a057c9ab5-e1-local` (2026-08-16). Newer `main` changed shared-graph selection but
-not the service, direct tests, or selected ownership, so the architecture remains current.
+**Exact product execution base:** `956a057c9ab51c3060f30e60cae48ade24f5ec5c` (2026-08-16).
+Artifact `20260816-956a057c9ab5-e1-local` is a preserved failed harness diagnostic, not the accepted
+comparative base. After the separately explained runtime-observation harness fix, exact prerequisite
+head `15ff8b402e9985802caa72ca5535abfb96b6b18b` produced accepted same-host pre-topology artifact
+`20260816-15ff8b402e99-e1-local`. Newer `main` did not change the service, direct tests, or selected
+ownership, so the architecture remains current.
 
 ## Global Constraints
 
@@ -35,6 +38,8 @@ not the service, direct tests, or selected ownership, so the architecture remain
 - Do not implement [#235](https://github.com/intact-software-systems/ar-eye-hunter/issues/235),
   [#237](https://github.com/intact-software-systems/ar-eye-hunter/issues/237), or
   [#240](https://github.com/intact-software-systems/ar-eye-hunter/issues/240) in this work.
+  The #240 implementation is independently present on `main` at `40b9c2b0`; GitHub issue metadata
+  remains open, and tracker closure is external to this branch.
 - A real bug gets a failing semantic test and a separately explained minimal fix. A confirmed
   weakness outside touched-file standards closure reuses or creates a focused GitHub issue before
   delivery.
@@ -189,6 +194,14 @@ compatibility, or validation assumptions changed. Do not rebase merely for an un
 
 - [ ] **Step 3: Capture the clean base RTC-B03 evidence**
 
+Current evidence correction: the commands below produced
+`20260816-956a057c9ab5-e1-local`, which is preserved as a failed diagnostic because the then-current
+harness omitted initialized runtime observations from accepted samples. After the separately
+explained harness fix, exact prerequisite head `15ff8b402e9985802caa72ca5535abfb96b6b18b`
+captured, finalized, and validated accepted same-host pre-topology artifact
+`20260816-15ff8b402e99-e1-local`. Task 5 compares its candidate to that accepted artifact; it does
+not reinterpret the diagnostic artifact.
+
 Run from exact base commit `956a057c9ab51c3060f30e60cae48ade24f5ec5c`:
 
 ```bash
@@ -208,10 +221,11 @@ npm run perf:rtc-baseline -- validate \
   --baseline-id=20260816-956a057c9ab5-e1-local
 ```
 
-Expected: all commands exit zero; the finalized evidence under `tmp/perf/rtc-baseline` validates
-star, tree, mesh, sparse/complete RTT graph, and inactive-churn cases at 30, 100, and 300 sessions.
-If a command fails, preserve the artifact and classify environment, harness, or baseline behavior
-before editing production.
+Historical expectation: all commands exit zero and the finalized evidence validates star, tree,
+mesh, sparse/complete RTT graph, and inactive-churn cases at 30, 100, and 300 sessions. Actual
+result: capture succeeded, finalization exposed the runtime-observation harness defect, and the
+artifact was preserved for diagnosis. The accepted prerequisite artifact above supplies the same
+semantic workload after that independently tested harness repair.
 
 - [ ] **Step 4: Split the broad test by behavior without changing assertions**
 
@@ -1021,9 +1035,13 @@ git diff --name-only --diff-filter=ACMR \
 git diff --check 956a057c9ab51c3060f30e60cae48ade24f5ec5c..HEAD
 ```
 
-Expected: changed-style, structure tests, Prettier, and diff checks pass. Full style remains
-warning-only globally, but every finding in a changed file is resolved or demonstrated false
-positive. Record every construction-detail finding by path, rule, and symbol with its disposition.
+Expected: structure tests, Prettier, and diff checks pass. Full style remains warning-only globally.
+Changed-style is expected to report the already independently approved cohesive
+`planning/compute-no-rtt-topology-next-hops.ts` warning (cognitive-load score 80; worst function
+score 12). Record it as a reviewed structural `keep` disposition because the file owns one complete
+deterministic algorithm family; do not falsely claim a zero-warning exit or split it mechanically.
+Resolve or demonstrate every other changed-file finding, and record every construction-detail
+finding by path, rule, and symbol with its disposition.
 
 - [ ] **Step 7: Commit current navigation on the non-default branch**
 
@@ -1061,10 +1079,12 @@ npm run perf:rtc-baseline -- validate \
   --baseline-id="${RTC_TOPOLOGY_CANDIDATE_ID}"
 ```
 
-Expected: all commands exit zero and every B03 semantic case is accepted. Compare the exact base and
-candidate summaries case by case on the same host. Do not invent a numeric SLO. If timing movement is
-suspicious, repeat both sides or profile before classifying a regression. A deterministic output,
-operation-count, allocation-growth, or obvious algorithmic regression blocks completion.
+Expected: all commands exit zero and every B03 semantic case is accepted. Compare the candidate
+summary case by case on the same host against accepted prerequisite artifact
+`20260816-15ff8b402e99-e1-local`, not the preserved product-base diagnostic. Do not invent a numeric
+SLO. If timing movement is suspicious, repeat both sides or profile before classifying a regression.
+A deterministic output, operation-count, allocation-growth, or obvious algorithmic regression
+blocks completion.
 
 - [ ] **Step 9: Perform the complete code and legacy review**
 
@@ -1094,8 +1114,10 @@ For each finding made during implementation:
 5. reuse an accurate issue or create one with evidence, impact, safe next step, and acceptance; and
 6. include every reused/created issue URL in the final handoff.
 
-At minimum retain these dispositions: #235 open/out of scope, #237 open/out of scope, #240 open/out
-of scope, and #236 ready to close only when every acceptance criterion passes.
+At minimum retain these dispositions: #235 open/out of scope; #237 open/out of scope; #240's
+implementation is present independently on `main` at `40b9c2b0`, while GitHub issue metadata remains
+open and tracker closure is external; and #236 is ready to close only when every acceptance
+criterion passes.
 
 - [ ] **Step 11: Prepare the local completion handoff**
 

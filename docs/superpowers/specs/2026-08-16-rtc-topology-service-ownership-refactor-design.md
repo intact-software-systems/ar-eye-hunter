@@ -7,9 +7,15 @@ responsibilities inside `RallarRtcTopologyService` without changing its supporte
 observable topology behavior. This design owns
 [#236](https://github.com/intact-software-systems/ar-eye-hunter/issues/236).
 
-The execution base is exact commit `956a057c9ab51c3060f30e60cae48ade24f5ec5c` on 2026-08-16, with
-base artifact ID `20260816-956a057c9ab5-e1-local`. Newer `main` changed shared-graph selection,
-but not the service, direct tests, or selected ownership, so this architecture remains current.
+The product execution base is exact commit `956a057c9ab51c3060f30e60cae48ade24f5ec5c`
+on 2026-08-16. Its artifact `20260816-956a057c9ab5-e1-local` is a preserved failed harness
+diagnostic: accepted samples lacked the initialized runtime observation, so finalization could not
+accept it as comparative evidence. After the separately explained runtime-observation harness fix,
+exact prerequisite head `15ff8b402e9985802caa72ca5535abfb96b6b18b` produced the accepted same-host
+pre-topology artifact `20260816-15ff8b402e99-e1-local`. Newer `main` changed shared-graph selection
+and independently landed the #240 implementation at `40b9c2b0a865aca46f3b9f2c0a4eb6df1d617e77`,
+but did not change the service, direct tests, or selected ownership, so this architecture remains
+current.
 The earlier RTC RTT ownership work is already present. This document is architectural guidance, not a live progress ledger, ownership
 reservation, completion receipt, or authorization to commit on `main`.
 
@@ -308,7 +314,9 @@ Current boundaries are:
 - [#237](https://github.com/intact-software-systems/ar-eye-hunter/issues/237) owns API-v1 composition
   density and SQL-boundary normalization and remains untouched;
 - [#240](https://github.com/intact-software-systems/ar-eye-hunter/issues/240) owns RTT refinement
-  decision-expiry cleanup and remains untouched; and
+  decision-expiry cleanup. Its implementation is present independently on `main` at `40b9c2b0`,
+  while GitHub issue metadata remains open; this branch does not implement it and tracker closure
+  is external; and
 - #236 is closed only by the completed, validated ownership refactor described here.
 
 Touched-file standards problems are remediated in this work rather than deferred as issues.
@@ -320,12 +328,14 @@ hypotheses unless code proves the growth shape. The accepted RTC-B03 workload al
 exact affected production symbols across star, tree, mesh, RTT room graph, and inactive churn at
 30, 100, and 300 sessions.
 
-Capture RTC-B03 on exact base `956a057c9ab51c3060f30e60cae48ade24f5ec5c` as
-`20260816-956a057c9ab5-e1-local` before implementation and on a clean candidate commit after both
-slices. For both artifacts, run capture → finalize → validate. Use the same host and environment.
-Require both artifacts to pass their semantic validation. Compare distributions without inventing a new numeric
-SLO; repeat or profile a suspicious movement before calling it a regression. Generated evidence
-stays under `tmp/perf/` and is not committed.
+Keep `20260816-956a057c9ab5-e1-local` as the failed diagnostic tied to the product execution base;
+do not relabel it as accepted evidence. Use exact prerequisite head
+`15ff8b402e9985802caa72ca5535abfb96b6b18b` and its accepted same-host pre-topology artifact
+`20260816-15ff8b402e99-e1-local` as the comparative base for the clean candidate captured after both
+slices. The prerequisite and candidate artifacts both run capture → finalize → validate on the same
+host and environment and must pass semantic validation. Compare distributions without inventing a
+new numeric SLO; repeat or profile a suspicious movement before calling it a regression. Generated
+evidence stays under `tmp/perf/` and is not committed.
 
 The implementation must not optimize or change graph output under #235. A verified regression
 caused by the extraction is fixed before completion; an independent pre-existing weakness gets an
@@ -359,7 +369,11 @@ concurrency domain.
 
 Style and structure validation includes changed-file and full warning review, complete dispositions
 for construction findings, repository structure checks, Prettier, `git diff --check`, and a cold
-code-only owner-to-result navigation trace from the supported service export.
+code-only owner-to-result navigation trace from the supported service export. The changed-style
+evidence is expected to report the independently approved cohesive
+`planning/compute-no-rtt-topology-next-hops.ts` file warning (cognitive-load score 80; worst function
+score 12). Its reviewed structural disposition is to keep the complete deterministic no-RTT
+algorithm family together; do not claim a zero-warning exit or split it mechanically.
 
 ## Local delivery boundary
 
