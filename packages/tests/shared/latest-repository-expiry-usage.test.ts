@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ExpiringRepository } from '@shared/cache/expiring-repository.ts';
+import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 
 // Worked example: the shape RtcRttRefinementService takes when its two hand
 // rolled Maps, the read-time expiry helper, the bulk prune and the prune rate
@@ -14,11 +14,11 @@ interface RefinementClaim {
 }
 
 class ExampleRefinementService {
-    private readonly observations = new ExpiringRepository<string, number>({
+    private readonly observations = new LatestRepository<string, number>({
         evictWindowMs: 5_000,
         evictsPerWindow: 2,
     });
-    private readonly decisions = new ExpiringRepository<string, boolean>({
+    private readonly decisions = new LatestRepository<string, boolean>({
         evictWindowMs: 5_000,
         evictsPerWindow: 2,
     });
@@ -31,12 +31,12 @@ class ExampleRefinementService {
 
     public claimWork(input: RefinementClaim): boolean {
         const nowEpochMs = this.nowEpochMs();
-        const existing = this.decisions.read(input.workId, nowEpochMs);
+        const existing = this.decisions.readAt(input.workId, nowEpochMs);
         if (existing !== undefined) {
             return existing;
         }
 
-        const predictedDeltaMs = this.observations.readOrAccept({
+        const predictedDeltaMs = this.observations.readOrAcceptAt({
             key: input.observationId,
             value: 0,
             nowEpochMs,
@@ -45,7 +45,7 @@ class ExampleRefinementService {
         });
 
         const claimed = this.claimRefinement(predictedDeltaMs);
-        this.decisions.accept({
+        this.decisions.acceptAt({
             key: input.workId,
             value: claimed,
             nowEpochMs,
@@ -62,11 +62,11 @@ class ExampleRefinementService {
     }
 
     public readEvictionRuns(): number {
-        return this.decisions.readCounts().evictionRuns;
+        return this.decisions.readEvictionCounts().evictionRuns;
     }
 }
 
-describe('ExpiringRepository as the RTT refinement store', () => {
+describe('LatestRepository as the RTT refinement store', () => {
     it('observes once per durable observation and replays the decision on retry', () => {
         let nowEpochMs = 1_000;
         const observeDelta = vi.fn(() => 4);
