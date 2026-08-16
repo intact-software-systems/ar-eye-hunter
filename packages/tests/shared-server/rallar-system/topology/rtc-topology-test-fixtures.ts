@@ -1,19 +1,19 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 
-export function createRtcTopologyMemberIds(count: number): readonly string[] {
-  return Array.from({ length: count }, (_, index) => `peer-${index + 1}`);
-}
-
-export interface RtcTopologyRttMeasurementInput {
+interface CreateRtcTopologyRttMeasurementInput {
   readonly sessionIdFrom: string;
   readonly sessionIdTo: string;
   readonly rttMs: number;
   readonly version: number;
 }
 
+export function createRtcTopologyMemberIds(count: number): readonly string[] {
+  return Array.from({ length: count }, (_, index) => `peer-${index + 1}`);
+}
+
 export function createRtcTopologyRttMeasurement(
-  input: RtcTopologyRttMeasurementInput,
+  input: CreateRtcTopologyRttMeasurementInput,
 ): RttMeasurementInfo {
   return {
     sessionIdFrom: input.sessionIdFrom,
