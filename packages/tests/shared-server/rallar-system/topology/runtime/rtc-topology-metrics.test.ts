@@ -21,9 +21,12 @@ describe('RtcTopologyMetrics', () => {
     metrics.recordWeightedPlan(4);
     metrics.recordWeightedPlanAttempt();
     metrics.recordWeightedPlanDuration(4);
-    metrics.recordWeightedRoomGraph(5, true);
     metrics.recordWeightedRoomGraphAttempt();
-    metrics.recordWeightedRoomGraphDuration(5, true);
+    metrics.recordWeightedRoomGraphSparseFallback();
+    metrics.recordWeightedRoomGraphDuration(5);
+    metrics.recordWeightedRoomGraphAttempt();
+    metrics.recordWeightedRoomGraphSparseFallback();
+    metrics.recordWeightedRoomGraphDuration(5);
     metrics.recordIncrementalPlan();
     metrics.recordIncrementalFallback('delta-too-large');
     metrics.recordIncrementalFallback('invariant-violation');

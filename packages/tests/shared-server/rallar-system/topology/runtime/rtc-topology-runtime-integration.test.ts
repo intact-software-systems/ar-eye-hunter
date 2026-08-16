@@ -5,8 +5,14 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
   RallarRtcTopologyService,
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
-import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
+// prettier-ignore
+import {
+  RtcTopologyPlanner,
+} from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+// prettier-ignore
+import {
+  RtcTopologyMetrics,
+} from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -245,15 +251,7 @@ describe('RTC topology process runtime integration', () => {
     expect(() =>
       planner.plan({
         group,
-        rttMeasurements: [
-          {
-            sessionIdFrom: 'peer-1',
-            sessionIdTo: 'peer-2',
-            rttMs: 5,
-            createdAtEpochMs: 1,
-            version: 1,
-          },
-        ],
+        rttMeasurements: createSparseRtcTopologyRttMeasurements(),
         previous: undefined,
         updateOptions: {},
         nowEpochMs: 100,
@@ -263,6 +261,43 @@ describe('RTC topology process runtime integration', () => {
       weightedRoomGraphBuildCount: 1,
       weightedRoomGraphSparseFallbackCount: 1,
       weightedRoomGraphBuildDurationMs: 7,
+      weightedPlanCount: 0,
+      topologyChangedCount: 0,
+      topologyUnchangedCount: 0,
+    });
+  });
+
+  it('records sparse fallback before the duration clock throws', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(3));
+    const metrics = new RtcTopologyMetrics();
+    let clockReads = 0;
+    const planner = new RtcTopologyPlanner(
+      { topologyKind: 'tree', rttReportingDegreeLimit: 1 },
+      {
+        metrics,
+        durationNowMs: () => {
+          clockReads += 1;
+          if (clockReads === 2) {
+            throw new Error('duration unavailable');
+          }
+          return 10;
+        },
+      },
+    );
+
+    expect(() =>
+      planner.plan({
+        group,
+        rttMeasurements: createSparseRtcTopologyRttMeasurements(),
+        previous: undefined,
+        updateOptions: {},
+        nowEpochMs: 100,
+      }),
+    ).toThrowError(new Error('duration unavailable'));
+    expect(metrics.read(0, 0)).toMatchObject({
+      weightedRoomGraphBuildCount: 1,
+      weightedRoomGraphSparseFallbackCount: 1,
+      weightedRoomGraphBuildDurationMs: 0,
       weightedPlanCount: 0,
       topologyChangedCount: 0,
       topologyUnchangedCount: 0,
@@ -499,6 +534,18 @@ function createGroupWithThrowingSecondGraphScopeRead(): GroupSnapshot {
     },
   });
   return group;
+}
+
+function createSparseRtcTopologyRttMeasurements() {
+  return [
+    {
+      sessionIdFrom: 'peer-1',
+      sessionIdTo: 'peer-2',
+      rttMs: 5,
+      createdAtEpochMs: 1,
+      version: 1,
+    },
+  ];
 }
 
 function planWeightedTopology(

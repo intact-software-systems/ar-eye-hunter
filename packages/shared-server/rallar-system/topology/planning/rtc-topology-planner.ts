@@ -356,9 +356,11 @@ export class RtcTopologyPlanner {
       seedTopology: input.topology,
       meshParamK: this.readMeshArgs(input.options).meshParamK,
     });
+    if (result.outcome === 'sparse-fallback') {
+      this.dependencies.metrics.recordWeightedRoomGraphSparseFallback();
+    }
     this.dependencies.metrics.recordWeightedRoomGraphDuration(
       this.dependencies.durationNowMs() - startedAtMs,
-      result.outcome === 'sparse-fallback',
     );
     return result.outcome === 'ready'
       ? result.graph

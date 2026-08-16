@@ -135,20 +135,16 @@ export class RtcTopologyMetrics {
     this.state.weightedPlanDurationMs += nonNegativeDurationMs(durationMs);
   }
 
-  recordWeightedRoomGraph(durationMs: number, usedSparseFallback: boolean): void {
-    this.recordWeightedRoomGraphAttempt();
-    this.recordWeightedRoomGraphDuration(durationMs, usedSparseFallback);
-  }
-
   recordWeightedRoomGraphAttempt(): void {
     this.state.weightedRoomGraphBuildCount += 1;
   }
 
-  recordWeightedRoomGraphDuration(durationMs: number, usedSparseFallback: boolean): void {
+  recordWeightedRoomGraphSparseFallback(): void {
+    this.state.weightedRoomGraphSparseFallbackCount += 1;
+  }
+
+  recordWeightedRoomGraphDuration(durationMs: number): void {
     this.state.weightedRoomGraphBuildDurationMs += nonNegativeDurationMs(durationMs);
-    if (usedSparseFallback) {
-      this.state.weightedRoomGraphSparseFallbackCount += 1;
-    }
   }
 
   recordIncrementalPlan(): void {
