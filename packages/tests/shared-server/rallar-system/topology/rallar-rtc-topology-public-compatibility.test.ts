@@ -24,4 +24,18 @@ function acceptDirectRtcTopologyServiceTypeFixture(
   return fixture;
 }
 
+function toDeepImportedRttQueueResult(
+  result: Package.RallarRtcTopologyRttQueueResult,
+): Direct.RallarRtcTopologyRttQueueResult {
+  return result;
+}
+
+function toPackageRttQueueResult(
+  result: Direct.RallarRtcTopologyRttQueueResult,
+): Package.RallarRtcTopologyRttQueueResult {
+  return result;
+}
+
 void acceptDirectRtcTopologyServiceTypeFixture;
+void toDeepImportedRttQueueResult;
+void toPackageRttQueueResult;

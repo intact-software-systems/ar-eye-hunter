@@ -256,6 +256,55 @@ describe('RTC topology process runtime integration', () => {
     });
   });
 
+  it('resets metrics without clearing committed snapshots or pending RTT work', () => {
+    let now = 1_000;
+    const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+    const service = new RallarRtcTopologyService({
+      now: () => now,
+      rttRebuildDebounceMs: 50,
+    });
+
+    service.updateGroupTopology(group);
+    now = 1_010;
+    service.queueRttTopologyUpdate(group);
+    service.resetMetrics();
+
+    expect(service.readMetrics()).toMatchObject({
+      topologyUpdateCount: 0,
+      rttQueueRequestCount: 0,
+      rttFlushAttemptCount: 0,
+      topologySnapshotCount: 1,
+      pendingRttUpdateCount: 1,
+    });
+  });
+
+  it('clears pending RTT work only after committed snapshot observation succeeds', () => {
+    const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+    const service = new RallarRtcTopologyService({
+      now: () => 1_000,
+      rttRebuildDebounceMs: 50,
+    });
+
+    const current = service.updateGroupTopology(group).snapshot;
+    service.queueRttTopologyUpdate(group);
+
+    expect(() =>
+      service.observeCommittedTopologySnapshot({ ...current, name: 'Conflicting room' }),
+    ).toThrowError(new Error(`RTC topology process-cache revision conflict: ${current.overlayId}`));
+    expect(service.readRttTopologyUpdateDelayMs(group)).toBe(50);
+
+    expect(
+      service.observeCommittedTopologySnapshot({
+        ...current,
+        sourceGroupStateCausalRevision: {
+          ...current.sourceGroupStateCausalRevision,
+          groupRevision: current.sourceGroupStateCausalRevision.groupRevision + 1,
+        },
+      }),
+    ).toBe(true);
+    expect(service.readRttTopologyUpdateDelayMs(group)).toBeUndefined();
+  });
+
   it('removes cached topology snapshots and pending RTT work for inactive groups', () => {
     let now = 1_000;
     const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));

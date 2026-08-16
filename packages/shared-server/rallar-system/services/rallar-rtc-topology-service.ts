@@ -56,7 +56,10 @@ export {
   planRallarRtcTopologySnapshot,
 } from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 
-export type { RallarRtcTopologyRttQueueResult } from '../topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
+// prettier-ignore
+export type {
+  RallarRtcTopologyRttQueueResult,
+} from '../topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
 
 const DEFAULT_RTT_REBUILD_DEBOUNCE_MS = 250;
 
@@ -111,7 +114,7 @@ export class RallarRtcTopologyService {
   }
 
   observeCommittedTopologySnapshot(snapshot: RallarOverlayTopologySnapshot): boolean {
-    const changed = this.observeTopologySnapshot(snapshot);
+    const changed = this.snapshots.observe(snapshot);
     this.rttRebuildScheduler.remove(snapshot.overlayId);
     return changed;
   }

@@ -34,15 +34,15 @@ describe('RtcTopologySnapshotRegistry', () => {
     expect(registry.get(current.overlayId)).toBe(current);
   });
 
-  it('throws the revision-conflict error for equal causal observations with different semantics', () => {
+  it('throws the exact revision error for an equal-causal semantic conflict', () => {
     const registry = new RtcTopologySnapshotRegistry();
     const current = createSnapshot({ groupRevision: 1, presenceRevision: 1, version: 1 });
     const conflicting = { ...current, name: 'Other room' };
 
     registry.observe(current);
 
-    expect(() => registry.observe(conflicting)).toThrow(
-      `RTC topology process-cache revision conflict: ${current.overlayId}`,
+    expect(() => registry.observe(conflicting)).toThrowError(
+      new Error(`RTC topology process-cache revision conflict: ${current.overlayId}`),
     );
   });
 
@@ -53,8 +53,8 @@ describe('RtcTopologySnapshotRegistry', () => {
 
     registry.observe(current);
 
-    expect(() => registry.observe(conflicting)).toThrow(
-      `RTC topology process-cache causal conflict: ${current.overlayId}`,
+    expect(() => registry.observe(conflicting)).toThrowError(
+      new Error(`RTC topology process-cache causal conflict: ${current.overlayId}`),
     );
   });
 
@@ -87,6 +87,31 @@ describe('RtcTopologySnapshotRegistry', () => {
     registry.observe(stale);
 
     expect(registry.get(newer.overlayId)).toBe(newer);
+  });
+
+  it('keeps separate overlay state isolated across registry instances', () => {
+    const firstRegistry = new RtcTopologySnapshotRegistry();
+    const secondRegistry = new RtcTopologySnapshotRegistry();
+    const firstSnapshot = createSnapshot({ groupRevision: 1, presenceRevision: 1, version: 1 });
+    const secondSnapshot = {
+      ...createSnapshot({ groupRevision: 1, presenceRevision: 1, version: 1 }),
+      overlayId: '["app-1","workspace-1","room-2"]',
+      groupRef: {
+        applicationId: 'app-1',
+        workspaceId: 'workspace-1',
+        groupId: 'room-2',
+      },
+    };
+
+    firstRegistry.observe(firstSnapshot);
+    secondRegistry.observe(secondSnapshot);
+
+    expect(firstRegistry.get(firstSnapshot.overlayId)).toBe(firstSnapshot);
+    expect(firstRegistry.get(secondSnapshot.overlayId)).toBeUndefined();
+    expect(secondRegistry.get(firstSnapshot.overlayId)).toBeUndefined();
+    expect(secondRegistry.get(secondSnapshot.overlayId)).toBe(secondSnapshot);
+    expect(firstRegistry.size).toBe(1);
+    expect(secondRegistry.size).toBe(1);
   });
 });
 

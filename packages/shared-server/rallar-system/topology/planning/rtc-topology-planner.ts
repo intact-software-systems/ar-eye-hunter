@@ -38,21 +38,6 @@ const DEFAULT_TREE_MIN_SIZE = 5;
 const DEFAULT_MESH_MIN_SIZE = 16;
 const DEFAULT_MESH_PARAM_K = 2;
 
-export namespace RtcTopologyPlanner {
-  export interface Dependencies {
-    readonly metrics: RtcTopologyMetrics;
-    readonly durationNowMs: () => number;
-  }
-
-  export interface PlanInput {
-    readonly group: GroupSnapshot;
-    readonly rttMeasurements: readonly RttMeasurementInfo[];
-    readonly previous: RallarOverlayTopologySnapshot | undefined;
-    readonly updateOptions: RallarRtcTopologyUpdateOptions;
-    readonly nowEpochMs: number;
-  }
-}
-
 interface RtcTopologyPlanInput {
   readonly group: GroupSnapshot;
   readonly activeSessionIds: readonly string[];
@@ -76,6 +61,21 @@ interface CreateMeasuredRoomGraphInput {
   readonly rttMeasurements: readonly RttMeasurementInfo[];
   readonly topology: RallarRtcTopologyKind;
   readonly options: RallarRtcTopologyServiceOptions;
+}
+
+export namespace RtcTopologyPlanner {
+  export interface Dependencies {
+    readonly metrics: RtcTopologyMetrics;
+    readonly durationNowMs: () => number;
+  }
+
+  export interface PlanInput {
+    readonly group: GroupSnapshot;
+    readonly rttMeasurements: readonly RttMeasurementInfo[];
+    readonly previous: RallarOverlayTopologySnapshot | undefined;
+    readonly updateOptions: RallarRtcTopologyUpdateOptions;
+    readonly nowEpochMs: number;
+  }
 }
 
 export class RtcTopologyPlanner {
