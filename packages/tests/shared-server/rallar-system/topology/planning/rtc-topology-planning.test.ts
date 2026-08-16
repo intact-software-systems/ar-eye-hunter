@@ -24,9 +24,6 @@ import {
   createRtcTopologyMemberIds,
 } from '../rtc-topology-test-fixtures.ts';
 
-const MESH_TOPOLOGY_OVERRIDE_DESCRIPTION =
-  'honors request topology kind override for mesh topology when group size can support mesh';
-
 describe('RTC topology planning options and revisions', () => {
   it('plans a star topology through the dedicated planning owner', () => {
     const planner = new RtcTopologyPlanner(
@@ -215,7 +212,7 @@ describe('RTC topology planning options and revisions', () => {
     }
   });
 
-  it(MESH_TOPOLOGY_OVERRIDE_DESCRIPTION, () => {
+  it('honors mesh override when the group supports mesh', () => {
     const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(16));
     const service = new RallarRtcTopologyService({ now: () => 100, meshMinSize: 999 });
 

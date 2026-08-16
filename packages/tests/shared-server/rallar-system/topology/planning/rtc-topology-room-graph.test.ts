@@ -127,6 +127,12 @@ describe('RTC topology weighted room graph planning', () => {
           rttMs: 5,
           version: 1,
         }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'peer-2',
+          sessionIdTo: 'peer-3',
+          rttMs: 7,
+          version: 2,
+        }),
       ],
       degreeLimit: 5,
       rttReportingDegreeLimit: 5,
@@ -135,8 +141,18 @@ describe('RTC topology weighted room graph planning', () => {
     });
 
     expect(result.usedSparseFallback).toBe(false);
-    expect(edgeWeight(result.graph, 'peer-1', 'peer-2')).toBe(5);
-    expect(result.graph.size).toBe(3);
+    expect(
+      result.graph
+        .edges()
+        .map((edge) => [
+          result.graph.extremities(edge),
+          result.graph.getEdgeAttribute(edge, 'weight'),
+        ]),
+    ).toEqual([
+      [['peer-1', 'peer-2'], 5],
+      [['peer-2', 'peer-3'], 7],
+      [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')],
+    ]);
   });
 
   it('uses fallback graph weights until RTT measurements are available', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 // prettier-ignore
 import {
   RallarRtcTopologyService,
@@ -125,19 +126,19 @@ describe('RTC topology process runtime integration', () => {
     });
   });
 
-  it('records a weighted graph attempt before a throwing group dependency', () => {
-    const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
-    const activeSessions = group.activeSessions;
-    let activeSessionReadCount = 0;
-    Object.defineProperty(group, 'activeSessions', {
-      get: () => {
-        activeSessionReadCount += 1;
-        if (activeSessionReadCount === 2) {
-          throw new Error('group sessions unavailable');
-        }
-        return activeSessions;
-      },
+  it('does not record a weighted graph attempt when topology selection throws first', () => {
+    const group = createGroupWithThrowingActiveSessionRead(1);
+    const service = new RallarRtcTopologyService({ now: () => 100 });
+
+    expect(() => service.createRoomGraph(group)).toThrow('group sessions unavailable');
+    expect(service.readMetrics()).toMatchObject({
+      weightedRoomGraphBuildCount: 0,
+      weightedRoomGraphBuildDurationMs: 0,
     });
+  });
+
+  it('records a weighted graph attempt before its next group preparation read throws', () => {
+    const group = createGroupWithThrowingActiveSessionRead(2);
     const service = new RallarRtcTopologyService({ now: () => 100 });
 
     expect(() => service.createRoomGraph(group)).toThrow('group sessions unavailable');
@@ -147,70 +148,43 @@ describe('RTC topology process runtime integration', () => {
     });
   });
 
-  it('does not record weighted-plan duration or result when later group access throws', () => {
+  it('records a graph attempt but no duration when weighted graph preparation throws', () => {
     const memberSessionIds = createRtcTopologyMemberIds(5);
-    const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
-    const activeSessions = group.activeSessions;
-    let activeSessionReadCount = 0;
-    Object.defineProperty(group, 'activeSessions', {
-      get: () => {
-        activeSessionReadCount += 1;
-        if (activeSessionReadCount === 4) {
-          throw new Error('group sessions unavailable');
-        }
-        return activeSessions;
-      },
-    });
+    const group = createGroupWithThrowingActiveSessionRead(3);
     const service = new RallarRtcTopologyService({ now: () => 100 });
 
-    expect(() =>
-      service.planGroupTopologyAt(
-        group,
-        createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-        {},
-        100,
-      ),
-    ).toThrow('group sessions unavailable');
-    expect(service.readMetrics()).toMatchObject({
-      weightedPlanCount: 1,
-      weightedPlanDurationMs: 0,
-      topologyChangedCount: 0,
-      topologyUnchangedCount: 0,
-    });
-  });
-
-  it('records a weighted plan attempt before a throwing group dependency', () => {
-    const memberSessionIds = createRtcTopologyMemberIds(5);
-    const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
-    const activeSessions = group.activeSessions;
-    let activeSessionReadCount = 0;
-    Object.defineProperty(group, 'activeSessions', {
-      get: () => {
-        activeSessionReadCount += 1;
-        if (activeSessionReadCount === 4) {
-          throw new Error('group sessions unavailable');
-        }
-        return activeSessions;
-      },
-    });
-    const service = new RallarRtcTopologyService({ now: () => 100 });
-
-    expect(() =>
-      service.planGroupTopologyAt(
-        group,
-        createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
-        {},
-        100,
-      ),
-    ).toThrow('group sessions unavailable');
+    expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow(
+      'group sessions unavailable',
+    );
     expect(service.readMetrics()).toMatchObject({
       topologyUpdateCount: 1,
       updatesWithRttMeasurementCount: 1,
       weightedRoomGraphBuildCount: 1,
-      weightedPlanCount: 1,
+      weightedRoomGraphBuildDurationMs: 0,
+      weightedPlanCount: 0,
       weightedPlanDurationMs: 0,
     });
-    expect(service.readMetrics().weightedRoomGraphBuildDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('records weighted duration when snapshot display-name access throws', () => {
+    const memberSessionIds = createRtcTopologyMemberIds(5);
+    const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
+    Object.defineProperty(group.group, 'displayName', {
+      get: () => {
+        throw new Error('group display name unavailable');
+      },
+    });
+    const service = new RallarRtcTopologyService({ now: () => 100 });
+
+    expect(() => planWeightedTopology(service, group, memberSessionIds)).toThrow(
+      'group display name unavailable',
+    );
+    expect(service.readMetrics()).toMatchObject({
+      weightedPlanCount: 1,
+      topologyChangedCount: 0,
+      topologyUnchangedCount: 0,
+    });
+    expect(service.readMetrics().weightedPlanDurationMs).toBeGreaterThan(0);
   });
 
   it('records topology rebuild, RTT queue, flush, and publish metrics', () => {
@@ -321,3 +295,32 @@ describe('RTC topology process runtime integration', () => {
     });
   });
 });
+
+function createGroupWithThrowingActiveSessionRead(throwOnRead: number): GroupSnapshot {
+  const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+  const activeSessions = group.activeSessions;
+  let readCount = 0;
+  Object.defineProperty(group, 'activeSessions', {
+    get: () => {
+      readCount += 1;
+      if (readCount === throwOnRead) {
+        throw new Error('group sessions unavailable');
+      }
+      return activeSessions;
+    },
+  });
+  return group;
+}
+
+function planWeightedTopology(
+  service: RallarRtcTopologyService,
+  group: GroupSnapshot,
+  memberSessionIds: readonly string[],
+): void {
+  service.planGroupTopologyAt(
+    group,
+    createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
+    {},
+    100,
+  );
+}
