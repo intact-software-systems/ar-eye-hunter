@@ -65,10 +65,10 @@ async function createRuntimeAdapters(): Promise<{
               sampleIds.map((sampleId, index) => ({
                 schema: 'rallar.rtc-baseline.sample.v1',
                 identity: {
+                  sampleId,
                   workloadId,
                   caseId,
                   inputKey,
-                  sampleId,
                   intendedPhase,
                   outerOrdinal,
                   innerOrdinal: index + 1,
@@ -138,10 +138,41 @@ describe('RTC baseline Deno runtime observation binding', () => {
       expect(await runtime.captureWorkload({ baselineId, workloadId: 'RTC-B03' })).toMatchObject({
         ok: true,
       });
-      const finalized = await runtime.finalize({ baselineId });
-      expect(finalized.ok ? [] : finalized.issues.map((issue) => issue.code)).not.toContain(
-        'missing-runtime-observation',
+      const samplePath = join(
+        rootPath,
+        'tmp/perf/rtc-baseline',
+        baselineId,
+        'results/samples',
+        `${outerAttempt.sampleIds[0]}.json`,
       );
+      const environmentPath = join(
+        rootPath,
+        'tmp/perf/rtc-baseline',
+        baselineId,
+        'environment.json',
+      );
+      const sample = JSON.parse(await readFile(samplePath, 'utf8'));
+      const environment = JSON.parse(await readFile(environmentPath, 'utf8'));
+      expect(sample.runtimeObservation).toEqual(environment.observation);
+      expect(sample.identity).toEqual({
+        sampleId: outerAttempt.sampleIds[0],
+        workloadId: outerAttempt.workloadId,
+        caseId: outerAttempt.caseId,
+        inputKey: outerAttempt.inputKey,
+        intendedPhase: outerAttempt.intendedPhase,
+        outerOrdinal: outerAttempt.outerOrdinal,
+        innerOrdinal: 1,
+      });
+      expect(sample).toMatchObject({
+        outcome: 'passed',
+        evidenceClass: 'synthetic-path',
+        metrics: [{ metric: 'durationMs', unit: 'ms', value: 1 }],
+        rawEvidence: null,
+        rawReferences: [],
+        issues: [],
+      });
+      const finalized = await runtime.finalize({ baselineId });
+      expect(finalized).toMatchObject({ ok: true });
     } finally {
       await rm(rootPath, { force: true, recursive: true });
     }
