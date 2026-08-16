@@ -1,6 +1,31 @@
 # Group Formation Implementation Plan (2026-08-08)
 
-Status: proposed plan; implementation not started.
+Status: **Phases 0–4 landed on the default branch. Phase 5 is next and not started.**
+
+| Phase | State | Delivery | Measured results |
+| --- | --- | --- | --- |
+| 0 — Metrics and baseline | Landed | — | `baselines/2026-08-08-formation-burst-baseline.md` |
+| 1 — Overlay precedence | Landed | PR #138 | `baselines/2026-08-09-phase1-overlay-precedence-results.md` |
+| 2 — Server damping (M1) | Landed | PR #152 | `baselines/2026-08-11-phase2-server-damping-results.md` |
+| 3 — Delta dissemination | Landed | PR #214 | `baselines/2026-08-13-phase3-delta-dissemination-results.md` |
+| 4 — Stable topology evolution (M6, M8, M11, M9) | Landed | PR #223 | `baselines/2026-08-15-phase4-stable-topology-evolution-results.md` |
+| 5 — Formation epochs (M7) + activation reconciliation | Not started | — | — |
+| 6 — Contention and scale-out polish | Measurement-gated | — | — |
+
+Carried into Phase 5 from the landed phases:
+
+- `RALLAR_GROUP_STATE_DISSEMINATION` deliberately still defaults to `dual-emit`.
+  Phase 4 proved the churn stream consumes cleanly under `delta-primary` with both
+  per-change snapshot topics at zero bytes, and both flip preconditions landed in
+  PR #228 (delta-mode recipe twins; RTT-path cache re-verification). The flip and
+  the retirement of `snapshot-per-change` are tracked in issue #231.
+- Phase 4's incremental planner falls back to a full rebuild when the incremental
+  **tree** remove path produces an invariant-violating graph, which costs a
+  discarded repair plus a full rebuild. `incrementalPlanInvariantFallbackCount`
+  makes the rate observable; tracked in issue #230.
+
+This file records the plan and its phase state. It is not a governance record:
+delivery is driven by the live pull request per `plans/README.md`.
 
 Staged plan to make Rallar group formation convergent (eventually
 consistent), fault tolerant, and permissive/optimistic at scale — covering
