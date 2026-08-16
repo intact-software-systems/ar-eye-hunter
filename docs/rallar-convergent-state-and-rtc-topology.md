@@ -290,9 +290,14 @@ RTT measurements themselves remain latest-value inputs read during execution.
 
 ## Topology Calculation And Latest State
 
-`planRallarRtcTopologySnapshot(...)` contains the side-effect-free planning
-policy. `GroupTopologyManagementService` coordinates config and RTT reads,
-validation, process observation, and durable observation.
+`RallarRtcTopologyService` is the supported package facade and process-lifecycle boundary.
+`RtcTopologyPlanner` owns kind, option, incremental/full, no-RTT, and weighted-path selection;
+`createRtcRoomGraph` owns weighted sparse/complete graph decisions; and
+`planRallarRtcTopologySnapshot(...)` owns the caller-visible changed/version/timestamp planning
+result. `RtcTopologySnapshotRegistry`, `RtcTopologyRttRebuildScheduler`, and `RtcTopologyMetrics`
+own accepted process observations, pending RTT work, and mutable counters respectively.
+`GroupTopologyManagementService` continues to coordinate config and RTT authority reads,
+validation, and durable observation through the supported facade.
 
 Every work item calculates from its embedded snapshot. It must not replace
 revision N with the current cache value N+1. Graph planning occurs outside the
@@ -650,8 +655,22 @@ intentional coordinated-deployment boundary described by this architecture.
 - `packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts`:
   immutable group work, RTT successors, and terminal handling.
 - `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`:
-  pure topology planning and process observation.
-- `packages/shared-server/rallar-system/services/group-topology-management-service.ts`:
+  supported topology facade and process-lifecycle coordination.
+- `packages/shared-server/rallar-system/topology/planning/rtc-topology-planner.ts`:
+  topology kind, option, incremental/full, no-RTT, and weighted-path selection.
+- `packages/shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts`:
+  weighted sparse/complete room graph decisions.
+- `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts`:
+  deterministic star, tree, and mesh no-RTT next hops.
+- `packages/shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts`:
+  caller-visible snapshot change, version, timestamp, and canonical next-hop result.
+- `packages/shared-server/rallar-system/topology/runtime/rtc-topology-snapshot-registry.ts`:
+  accepted process observations and causal conflict decisions.
+- `packages/shared-server/rallar-system/topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts`:
+  pending RTT deadlines, coalescing, claims, delays, and cleanup.
+- `packages/shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts`:
+  topology counters, duration observations, and reset behavior.
+- `packages/shared-server/rallar-system/topology/group-topology-management-service.ts`:
   topology config, validation, durable latest observation, and removal plans.
 - `packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts`:
   monotonic durable latest topology.
