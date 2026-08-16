@@ -1471,7 +1471,7 @@ Deno.test('PSqlRuntimeStateRepository generic expiry preserves protected namespa
     const repository = new PSqlRuntimeStateRepository(sql);
     const protectedNamespaces = [
       'rtc-rtt:receipts',
-      'rtc-rtt:recompute-outbox',
+      'test:second-protected-family',
     ];
     await repository.upsert(protectedNamespaces[0], 'receipt', '{}', PAST_MS);
     await repository.upsert(protectedNamespaces[1], 'intent', '{}', PAST_MS);

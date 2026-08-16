@@ -125,17 +125,10 @@ describe('reviewed repository style dispositions', () => {
         rule: 'boundary.unknown',
         symbol: 'validateExpectedRevision',
       },
-      {
-        path:
-          'packages/shared-server/rallar-system/rtc-topology/persistence/' +
-          'validate-rtc-rtt-recompute-intent.ts',
-        rule: 'boundary.unknown',
-        symbol: 'validateRtcRttRecomputeIntent',
-      },
     ]);
   });
 
-  it('passes only the two reviewed RTC baseline findings', () => {
+  it('passes only the reviewed RTC baseline findings', () => {
     const fixture = createReviewedFixture();
     writeReviewedSources(fixture);
 

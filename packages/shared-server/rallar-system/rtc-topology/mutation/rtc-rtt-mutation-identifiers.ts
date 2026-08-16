@@ -15,7 +15,7 @@ export function toRtcRttMutationReceiptId(
   )}:version=${rtt.version}`;
 }
 
-export function toRtcRttRecomputeOutboxId(
+export function toRtcRttTopologyOutboxId(
   receiptId: string,
   groupRef: GroupRef,
   commandHash: string,
@@ -25,15 +25,15 @@ export function toRtcRttRecomputeOutboxId(
   )}`;
 }
 
-export type RtcRttRecomputeOutboxIdentity = Readonly<{
+export type RtcRttTopologyOutboxIdentity = Readonly<{
   receiptId: string;
   version: number;
 }>;
 
-export function readRtcRttRecomputeOutboxIdentity(
+export function readRtcRttTopologyOutboxIdentity(
   resourceId: string,
   groupRef: GroupRef,
-): RtcRttRecomputeOutboxIdentity | null {
+): RtcRttTopologyOutboxIdentity | null {
   const match = /^(pair=[^:]+:version=([1-9][0-9]*)):commandHash=([^:]+):group=(.+)$/u.exec(
     resourceId,
   );

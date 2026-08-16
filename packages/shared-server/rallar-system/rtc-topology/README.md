@@ -52,9 +52,9 @@ repository and schedules only its existing global graph refresh.
 
 Durable RTT storage is owned by `persistence/`: the repository owns exact
 reads and conditional writes, while the cleanup owner validates an expired
-receipt before entering one guarded delete transaction. The legacy
-`rtc-rtt:recompute-outbox` namespace remains reachable only from its offline
-migration and is intentionally outside active expiry protection.
+receipt before entering one guarded delete transaction. Active persistence
+uses only the canonical latest-measurement, endpoint-admission, and receipt
+namespaces.
 
 ## Runtime invocation
 

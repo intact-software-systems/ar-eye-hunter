@@ -14,7 +14,7 @@ export interface ClaimRtcRttRefinementWorkInput {
   readonly observationId: string;
   readonly workId: string;
   readonly groupKey: string;
-  readonly rtt: RttMeasurementInfo | null;
+  readonly rtt: RttMeasurementInfo;
   readonly expireAtEpochMs: number;
 }
 
@@ -61,9 +61,7 @@ export class RtcRttRefinementService {
     const existing = this.observations.get(input.observationId);
     if (existing) return existing.predictedDeltaMs;
 
-    const predictedDeltaMs = input.rtt
-      ? this.observeAndMeasurePredictedDelta(input.rtt)
-      : Number.POSITIVE_INFINITY;
+    const predictedDeltaMs = this.observeAndMeasurePredictedDelta(input.rtt);
     this.observations.set(input.observationId, {
       predictedDeltaMs,
       expireAtEpochMs: input.expireAtEpochMs,

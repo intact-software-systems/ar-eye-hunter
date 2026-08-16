@@ -63,7 +63,7 @@ rtc-topology/
   inbox/          Durable command construction, authority, and AppInbox dispatch
   mutation/       Read, compute, validate, write, receipt, and result decisions
   policy/         RTT acceptance and expired-authority decisions
-  persistence/    Repository contracts, storage, codecs, keys, validation, migration, and cleanup
+  persistence/    Repository contracts, storage, codecs, keys, validation, and cleanup
 ```
 
 The exact final filenames follow the responsibilities recovered from current code; the refactor does
@@ -112,13 +112,38 @@ first written. That evidence changes the move inventory but not the behavior-pre
   through the existing unchanged-publication gate;
 - the gate, its defaults, accumulated per-group state, first-observation behavior, zero-knob
   compatibility behavior, and API-v1 configuration wiring move with the RTC RTT feature owner;
-- durable AppInbox RTT mutation remains authoritative and keeps its existing recompute intent
-  atomicity; the refinement gate is process-local scheduling policy, not persisted authority; and
+- durable AppInbox RTT mutation remains authoritative and keeps measurement, receipt, and final
+  topology AppOutbox writes atomic; the refinement gate is process-local scheduling policy, not
+  persisted authority; and
 - the new canonical planning, evolution, hysteresis, fingerprint, and unchanged-publication owners
   remain under `rallar-system/topology` and are updated only for import paths required by the move.
 
 No open pull request currently overlaps this RTC RTT ownership refactor. The existing RTC signaling
 diagnostics draft concerns a different boundary.
+
+## Authorized legacy closure
+
+The follow-up decision for this same pull request makes the RTC-specific cutover terminal. The
+implementation no longer retains transitional code merely because an older writer or in-flight
+row once required it. This supersedes the earlier compatibility assumptions only for the following
+bounded RTC RTT surfaces:
+
+- old topology work envelopes without the canonical RTT measurement and refinement observation
+  identity are rejected instead of normalized;
+- the `rtc-rtt:recompute-outbox` namespace, its offline upgrader, and the old RTT pair-key migration
+  are removed;
+- mutation computation carries canonical affected groups directly to the final AppOutbox writer
+  instead of materializing the retired recompute-intent intermediate contract;
+- deprecated topology-outbox call overloads that omit sender and resource identity are removed;
+- unused package-level RTT mutation aliases are removed; canonical `RtcRtt` names remain exported;
+  and
+- compatibility-only production branches, tests, fixtures, registry entries, and test-governance
+  pins are deleted with their owners.
+
+This authorization does not classify unrelated, still-wired repository migration families as
+unused. In particular, scalar-authority recompute draining and topology snapshot/publication
+migrations stay outside this closure because current API composition or maintenance commands still
+invoke them.
 
 ## Concrete execution horizon
 
@@ -141,20 +166,18 @@ retry idempotence, and zero-knob compatibility behavior.
 
 1. Characterize repository behavior and live concurrency boundaries before movement.
 2. Move repository contracts, runtime namespaces, storage keys, codecs, exact reads, mutation
-   writes, cleanup, migration, and persisted-shape validation into `rtc-topology/persistence`.
+   writes, cleanup, and persisted-shape validation into `rtc-topology/persistence`.
 3. Fix the stale receipt-family cleanup assumption: current mutation code writes final AppOutbox
-   entries directly and no longer writes the legacy `rtc-rtt:recompute-outbox` intermediate rows,
-   so receipt cleanup must guard and delete the expired receipt without requiring absent siblings;
-   generic expiry owns any retained legacy intermediate rows.
-4. Split the current repository only at real read, write, migration, cleanup, or codec boundaries;
+   entries directly and no longer writes the retired `rtc-rtt:recompute-outbox` intermediate rows,
+   so receipt cleanup must guard and delete the expired receipt without requiring absent siblings.
+4. Split the current repository only at real read, write, cleanup, or codec boundaries;
    do not create one-file folders or forwarding layers.
 5. Mirror persistence tests and update internal consumers.
 6. Re-run repository navigation and structure checks before selecting another slice.
 
 Acceptance for this slice is byte-compatible persisted data, unchanged canonical keys, unchanged
-transaction and optimistic-concurrency behavior, unchanged retention and cleanup, and unchanged
-migration semantics, except that valid expired receipts no longer fail cleanup because obsolete
-intermediate siblings are absent.
+transaction and optimistic-concurrency behavior, and unchanged retention and cleanup, except that
+valid expired receipts no longer fail cleanup because obsolete intermediate siblings are absent.
 
 Later work remains outcome-shaped until both slices are complete and reviewed. In particular, this
 design does not pre-authorize moving durable topology replay, changing graph algorithms, or
@@ -170,7 +193,7 @@ The refactor must preserve:
 - read/compute/validate/write ordering;
 - idempotent receipt and replay behavior;
 - transaction, retry, rollback, and optimistic-concurrency semantics;
-- storage keys, runtime namespaces, codecs, persisted shapes, and migrations;
+- canonical storage keys, runtime namespaces, codecs, and persisted shapes;
 - outbox and topology-recomputation intent;
 - optional metrics remaining non-authoritative and never-throw;
 - process-local RTT refinement thresholds, intervals, accumulation, and first-observation behavior;
@@ -178,6 +201,10 @@ The refactor must preserve:
 - the intentional correction that makes those configured refinement controls effective for durable
   RTT work, plus the correction that lets valid expired receipts clean up after direct final-outbox
   delivery replaced the legacy intermediate outbox.
+
+The authorized legacy closure intentionally removes the superseded RTT migration entrypoints,
+legacy work decoder, deprecated overloads, and unused export aliases. Those removed surfaces are no
+longer part of the preservation contract.
 
 No protocol, API, database schema, topology algorithm, RTT acceptance policy, distributed recipe,
 or performance threshold changes as part of an ownership move. The persistent-path refinement fix
@@ -244,7 +271,7 @@ validation includes:
 
 - RTC RTT AppInbox routing, authorization, read/compute/validate/write, and result tests;
 - RTT refinement-gate, WebSocket scheduling, and API-v1 configuration tests;
-- runtime-state repository, migration, cleanup, and key-shape tests;
+- runtime-state repository, cleanup, and key-shape tests;
 - PostgreSQL RTT concurrency tests when persistence ownership changes;
 - affected topology scheduling and WebSocket routing tests;
 - `@ar-eye-hunter/shared-server` typecheck;
@@ -273,8 +300,10 @@ rollback, and linked follow-up issues; no plan bookkeeping or closure receipt is
   tested real bug fixes.
 - Every touched file reaches full standards closure, including recursively touched support files.
 - Every verified weakness not fixed in scope has a reused or newly created GitHub issue.
-- The independent all-pairs Vivaldi cost and broad topology-service ownership weaknesses are tracked
-  by GitHub issues #235 and #236.
+- The unresolved all-pairs Vivaldi cost, broad topology-service ownership, API composition density,
+  and refinement-decision expiry weaknesses are tracked by GitHub issues #235, #236, #237, and
+  #240. This pull request resolves the mutation-decision and persistence-validation ownership
+  weaknesses tracked by #238 and #239.
 - Focused semantic, persistence, concurrency, typecheck, structure, style, and formatting evidence
   is recorded exactly as passed, failed, or skipped.
 - The completed, validated implementation is published as one pull request.

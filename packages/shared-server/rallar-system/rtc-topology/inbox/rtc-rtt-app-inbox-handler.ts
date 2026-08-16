@@ -88,7 +88,7 @@ export class RtcRttAppInboxHandler {
       this.dependencies.wakeQueue?.();
       try {
         rtcRttDependencies.formationMetrics?.({
-          recomputeIntentCount: computed.recomputeIntents.length,
+          topologyEffectCount: computed.affectedGroups.length,
         });
       } catch {
         // Recording must never affect RTT mutation behavior.

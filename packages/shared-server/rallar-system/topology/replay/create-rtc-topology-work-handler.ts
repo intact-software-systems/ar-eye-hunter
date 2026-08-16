@@ -203,13 +203,13 @@ async function computeAcceptedRtcTopologyWork(
   const { options, workEnvelope, workId, attemptCount, read } = input;
   const work = workEnvelope.data;
   if (
-    work.kind !== 'group-revision' &&
+    work.kind === 'rtt-refresh' &&
     options.rttRefinementService &&
     !options.rttRefinementService.claimWork({
-      observationId: work.refinementObservationId ?? workId,
+      observationId: work.refinementObservationId,
       workId,
       groupKey: toWebRtcGroupKey(work.groupSnapshot.group),
-      rtt: work.kind === 'rtt-refresh' ? work.rtt : null,
+      rtt: work.rtt,
       expireAtEpochMs: input.expireAtEpochMs,
     })
   ) {

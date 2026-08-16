@@ -63,23 +63,6 @@ describe('RTC RTT refinement service', () => {
     expect(observeRtt).toHaveBeenCalledOnce();
   });
 
-  it('claims legacy work early without inventing an RTT observation', () => {
-    const observeRtt = vi.fn(() => true);
-    const service = new RtcRttRefinementService({
-      gate: new RtcRttRefinementGate({
-        minIntervalMs: 0,
-        vivaldiDeltaThresholdMs: 10,
-      }),
-      nowEpochMs: () => 1_000,
-      observeRtt,
-      readPredictedNodeData: () => new Map(),
-    });
-
-    expect(claim(service, 'legacy-1', 'legacy-work', null)).toBe(true);
-    expect(claim(service, 'legacy-1', 'legacy-work', null)).toBe(true);
-    expect(observeRtt).not.toHaveBeenCalled();
-  });
-
   it('preserves per-work refinement when both knobs are zero', () => {
     const service = new RtcRttRefinementService({
       gate: new RtcRttRefinementGate({ minIntervalMs: 0, vivaldiDeltaThresholdMs: 0 }),
@@ -97,7 +80,7 @@ function claim(
   service: RtcRttRefinementService,
   observationId: string,
   workId: string,
-  rtt: RttMeasurementInfo | null,
+  rtt: RttMeasurementInfo,
   expireAtEpochMs = 60_000,
   groupKey = 'group-1',
 ): boolean {

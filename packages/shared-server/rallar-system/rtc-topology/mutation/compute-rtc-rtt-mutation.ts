@@ -16,7 +16,6 @@ import type {
   RtcRttMutationComputed,
   RtcRttMutationFacts,
   RtcRttMutationRead,
-  RtcRttRecomputeIntent,
 } from './rtc-rtt-mutation-contracts.ts';
 import {
   assertReceiptOnlyRttInputs,
@@ -25,7 +24,7 @@ import {
 } from './rtc-rtt-mutation-authority.ts';
 import {
   toRtcRttMutationReceiptId,
-  toRtcRttRecomputeOutboxId,
+  toRtcRttTopologyOutboxId,
 } from './rtc-rtt-mutation-identifiers.ts';
 
 export class RtcRttMutationIdempotencyConflictError extends Error {
@@ -173,16 +172,9 @@ export function computeRtcRttMutation(
   });
   const receiptId = toRtcRttMutationReceiptId(authority.command.rtt);
   const affectedGroupRefs = affectedGroups.map((group) => canonicalGroupRef(group.group));
-  const recomputeIntents = affectedGroups.map((group): RtcRttRecomputeIntent => ({
-    outboxId: toRtcRttRecomputeOutboxId(receiptId, group.group, input.facts.commandHash),
-    receiptId,
-    groupSnapshot: group,
-    rtt: authority.command.rtt,
-    createdAtEpochMs: authority.facts.requestedAtEpochMs,
-    commandHash: input.facts.commandHash,
-    senderId: authority.command.alSenderId,
-    delivery: { state: 'pending' },
-  }));
+  const outboxIds = affectedGroups.map((group) =>
+    toRtcRttTopologyOutboxId(receiptId, group.group, input.facts.commandHash),
+  );
   return {
     outcome: 'write',
     reason: 'accepted',
@@ -216,10 +208,10 @@ export function computeRtcRttMutation(
           authorityRead.expiredMeasurementEntry?.revision ??
           -1) + 1,
       eventId: null,
-      outboxIds: recomputeIntents.map((intent) => intent.outboxId),
+      outboxIds,
       commandHash: input.facts.commandHash,
     },
-    recomputeIntents,
+    senderId: authority.command.alSenderId,
   };
 }
 

@@ -47,7 +47,11 @@ import {
   type ComputedGroupStateSyncEffect,
   type StateSyncAudience,
 } from '../../state-sync-publisher.ts';
-import { computeRtcTopologyEntry } from '../../services/RtcTopologyOutboxWork.ts';
+import {
+  computeRtcTopologyEntry,
+  deriveRtcTopologyEntryResourceId,
+  type ComputedRtcTopologyOutbox,
+} from '../../services/rtc-topology-outbox-entry.ts';
 import {
   CoalescedAppOutboxWorkService,
   type ComputedCoalescedAppOutboxWork,
@@ -511,21 +515,24 @@ function computeGroupPresenceTopologyOutboxEntry(
   input: ComputeGroupPresenceSummaryOutboxInput,
 ): ResourceEntry {
   const { work, summary, snapshot, serviceId } = input;
-  return computeRtcTopologyEntry(
-    {
-      commandId: work.commandId,
-      aggregateRef: work.aggregateRef,
-      acceptedCausalRevision: snapshot.causalRevision,
-      groupSnapshot: snapshot,
-      effectKind: 'rtc-topology-recompute',
-      payloadKind: 'group-revision',
-      requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-      publish: true,
-      createdAtEpochMs: summary.summary.computedAtEpochMs,
-      expireAtEpochMs: work.expireAtEpochMs,
-    },
-    serviceId,
-  );
+  const identity = {
+    commandId: work.commandId,
+    effectKind: 'rtc-topology-recompute',
+    payloadKind: 'group-revision',
+    acceptedCausalRevision: snapshot.causalRevision,
+  } as const;
+  const computed: ComputedRtcTopologyOutbox = {
+    ...identity,
+    aggregateRef: work.aggregateRef,
+    groupSnapshot: snapshot,
+    senderId: serviceId,
+    resourceId: deriveRtcTopologyEntryResourceId(identity),
+    requestOptions: toCanonicalGroupTopologyConfigPatch({}),
+    publish: true,
+    createdAtEpochMs: summary.summary.computedAtEpochMs,
+    expireAtEpochMs: work.expireAtEpochMs,
+  };
+  return computeRtcTopologyEntry(computed);
 }
 
 export function toGroupPresenceSummaryQueueContextId(ref: GroupRef): string {

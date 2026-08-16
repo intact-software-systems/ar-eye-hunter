@@ -71,13 +71,13 @@ describe('group formation metrics recorder', () => {
 
     recorder.topologyOutboxWritten();
     recorder.topologyOutboxWritten();
-    recorder.rttMutation({ recomputeIntentCount: 3 });
+    recorder.rttMutation({ topologyEffectCount: 3 });
     recorder.presenceSummary({ downstreamTopicIds: [APP_OUTBOX_RTC_TOPOLOGY_TOPIC] });
 
     const metrics = recorder.readMetrics();
     expect(metrics.topologyRecomputeTriggeredCount).toBe(3);
     expect(metrics.rttAcceptedWriteCount).toBe(1);
-    expect(metrics.rttRecomputeIntentCount).toBe(3);
+    expect(metrics.rttTopologyEffectCount).toBe(3);
   });
 
   it('counts WS delivery events by bounded topic dimension', () => {
@@ -149,12 +149,12 @@ describe('group formation metrics recorder', () => {
         outcome: 'unexpected' as 'write',
       }),
     ).not.toThrow();
-    expect(() => recorder.rttMutation({ recomputeIntentCount: Number.NaN })).not.toThrow();
+    expect(() => recorder.rttMutation({ topologyEffectCount: Number.NaN })).not.toThrow();
 
     const metrics = recorder.readMetrics();
     expect(metrics.groupMutationCount.join.rejected).toBe(1);
     expect(metrics.rttAcceptedWriteCount).toBe(1);
-    expect(metrics.rttRecomputeIntentCount).toBe(0);
+    expect(metrics.rttTopologyEffectCount).toBe(0);
   });
 
   it('round-trips read and reset back to the empty metrics shape', () => {

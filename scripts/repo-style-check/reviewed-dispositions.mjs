@@ -113,13 +113,6 @@ export const reviewedDispositions = Object.freeze([
     rule: 'boundary.unknown',
     symbol: 'validateExpectedRevision',
   }),
-  Object.freeze({
-    path:
-      'packages/shared-server/rallar-system/rtc-topology/persistence/' +
-      'validate-rtc-rtt-recompute-intent.ts',
-    rule: 'boundary.unknown',
-    symbol: 'validateRtcRttRecomputeIntent',
-  }),
 ]);
 
 export function readReviewedDispositionContext(repoRoot, candidateHead, dependencies = {}) {

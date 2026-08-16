@@ -31,7 +31,7 @@ Browser callers can set:
 
 ```ts
 rallar.setDefaults({
-    rtc: { rttReportingDegreeLimit: 5 },
+  rtc: { rttReportingDegreeLimit: 5 },
 });
 ```
 
@@ -265,13 +265,15 @@ diagnostics before treating it as a production shape.
   selected-peer heartbeat reconciliation, and WS enqueue.
 - `packages/shared/repository/rtt-repository.ts`: in-memory latest RTT
   repository and unordered pair key.
-- `packages/shared-server/rallar-system/repositories/RtcRttRepository.ts`:
+- `packages/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts`:
   durable runtime-state latest RTT repository.
-- `packages/shared-server/rallar-system/services/rtc-rtt-measurement-policy.ts`:
+- `packages/shared-server/rallar-system/rtc-topology/policy/rtc-rtt-measurement-policy.ts`:
   server-side acceptance policy and rejection reasons.
-- `packages/shared-server/rallar-system/ws-system-topics.ts`: server RTT topic,
-  acceptance, stale-version no-op handling, Vivaldi update, and topology
-  recompute scheduling.
+- `packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts`:
+  server RTT decoding, durable-versus-in-memory handoff, Vivaldi update, and
+  topology refresh scheduling.
+- `packages/shared-server/rallar-system/ws-system-topics.ts`: server topic
+  composition and RTC RTT topic registration.
 - `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`:
   RTT-weighted sparse room graph construction and overlay topology planning.
 - `packages/shared-graph/graph/vivaldi.ts`: complete and degree-capped Vivaldi

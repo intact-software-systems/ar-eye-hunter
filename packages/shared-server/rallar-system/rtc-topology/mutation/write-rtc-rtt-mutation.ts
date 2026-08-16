@@ -46,20 +46,21 @@ export async function writeRtcRttMutation(
   requireAcceptedRttWrite(
     await repository.insertMutationReceipt(computed.receipt, mutationExpireAtTimestamp),
   );
-  for (const intent of computed.recomputeIntents) {
+  for (let index = 0; index < computed.affectedGroups.length; index += 1) {
+    const group = computed.affectedGroups[index]!;
     await writeRtcTopologyOutbox(transaction, {
-      commandId: intent.receiptId,
-      resourceId: intent.outboxId,
-      aggregateRef: intent.groupSnapshot.group,
-      acceptedCausalRevision: intent.groupSnapshot.causalRevision,
-      groupSnapshot: intent.groupSnapshot,
+      commandId: computed.receipt.receiptId,
+      resourceId: computed.receipt.outboxIds[index]!,
+      aggregateRef: group.group,
+      acceptedCausalRevision: group.causalRevision,
+      groupSnapshot: group,
       effectKind: 'rtc-topology-recompute',
       payloadKind: 'rtt-refresh',
-      rtt: intent.rtt,
-      refinementObservationId: intent.receiptId,
-      createdAtEpochMs: intent.createdAtEpochMs,
+      rtt: computed.measurementGuard.value,
+      refinementObservationId: computed.receipt.receiptId,
+      createdAtEpochMs: computed.receipt.acceptedAtEpochMs,
       expireAtEpochMs: mutationExpireAtTimestamp,
-      senderId: intent.senderId,
+      senderId: computed.senderId,
       requestOptions: toCanonicalGroupTopologyConfigPatch({}),
       publish: true,
     });

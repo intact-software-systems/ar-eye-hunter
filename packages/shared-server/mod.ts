@@ -41,15 +41,7 @@ export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-vali
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-storage-keys.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.ts';
-export * from './rallar-system/rtc-topology/persistence/migrate-legacy-rtc-rtt-measurement-keys.ts';
-// prettier-ignore
-export *
-  from './rallar-system/rtc-topology/persistence/migrate-legacy-rtc-rtt-recompute-intents.ts';
 export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-write-candidate.ts';
-export {
-  validateRtcRttEndpointAdmission as validateEndpointAdmission,
-  validateRtcRttMeasurement as validateMeasurement,
-} from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 export * from './rallar-system/repositories/RtcTopologySnapshotRepository.ts';
 export * from './rallar-system/repositories/RtcTopologyPublicationRepository.ts';
 export * from './rallar-system/repositories/RtcTopologyExecutionRepository.ts';
@@ -153,28 +145,6 @@ export * from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
 export * from './rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-result.ts';
-// prettier-ignore
-export { computeRtcRttMutation as computeRttMutation }
-  from './rallar-system/rtc-topology/mutation/compute-rtc-rtt-mutation.ts';
-// prettier-ignore
-export { validateRtcRttMutationFacts as validateRttMutationFacts }
-  from './rallar-system/rtc-topology/mutation/rtc-rtt-mutation-authority.ts';
-// prettier-ignore
-export { validateRtcRttMutation as validateRttMutation }
-  from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.ts';
-// prettier-ignore
-export { readRtcRttMutation as readRttMutation }
-  from './rallar-system/rtc-topology/mutation/read-rtc-rtt-mutation.ts';
-// prettier-ignore
-export { writeRtcRttMutation as writeRttMutation }
-  from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
-// prettier-ignore
-export { executeRtcRttMutation as executeRttMutation }
-  from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
-export type {
-  ExecuteRtcRttMutationInput as ExecuteRttMutationInput,
-  ExecuteRtcRttMutationResult as ExecuteRttMutationResult,
-} from './rallar-system/rtc-topology/mutation/execute-rtc-rtt-mutation.ts';
 export * from './rallar-system/services/group-state-snapshot-read-through-cache.ts';
 export * from './rallar-system/services/timing.ts';
 export * from './rallar-system/services/ws-lifecycle-service.ts';

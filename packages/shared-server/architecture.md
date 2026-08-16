@@ -73,7 +73,7 @@ The implementation guard covers these exact operation families:
 | Group mutation           | `readGroupMutation`, `computeGroupMutation`, `validateGroupMutation`, `writeGroupMutation`                                     | group aggregate or presence-session insert/CAS/delete | admission/member rows, compact group `MutationReceipt`, direct `ResourceInbox` effects, event |
 | Topology config mutation | `readTopologyConfigMutation`, `computeTopologyConfigMutation`, `validateTopologyConfigMutation`, `writeTopologyConfigMutation` | group authority fence, then config/override guard     | invariant/target generations, compact receipt, recompute outbox                               |
 | RTC topology mutation    | `readTopologyMutation`, `computeTopologyMutation`, `validateTopologyMutation`, `writeTopologyMutation`                         | topology snapshot CAS                                 | work claim and immutable publication when the computed variant carries a publication          |
-| RTC RTT mutation         | `readRtcRttMutation`, `computeRtcRttMutation`, `validateRtcRttMutation`, `writeRtcRttMutation`                                 | lexically ordered endpoint-admission guards           | measurement, compact receipt, every computed recompute intent                                 |
+| RTC RTT mutation         | `readRtcRttMutation`, `computeRtcRttMutation`, `validateRtcRttMutation`, `writeRtcRttMutation`                                 | lexically ordered endpoint-admission guards           | measurement, compact receipt, final per-group topology AppOutbox work                         |
 
 `RtcTopologyOutboxWork` handles both publication-null and publication-bearing
 RTC topology variants. ResourceInbox/QueueBox owns the downstream attempt and
@@ -104,9 +104,9 @@ does not publish committed mutation effects inline.
 
 RTC topology execution atomically guards the snapshot and inserts its compact
 work claim plus immutable publication. RTT acceptance guards endpoint
-admissions before measurement, receipt, and per-group recompute-intent inserts.
-Publication and recompute drainers deliver after commit and can resume after a
-process restart.
+admissions before measurement, receipt, and final per-group topology AppOutbox
+inserts. Publication and topology-work drainers deliver after commit and can
+resume after a process restart.
 
 ## Concurrency Domains
 

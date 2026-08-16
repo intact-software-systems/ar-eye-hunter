@@ -688,7 +688,11 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/rtc-topology-replay-service.test.ts`
 - `packages/tests/shared-server/rtc-topology-reconnect-hydrator.test.ts`
 - `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`
-- `packages/tests/shared-server/rtc-topology-runtime-state-repositories.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-read-write.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-convergence.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-corruption.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-topology-snapshot-repository.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-topology-publication-repository.test.ts`
 - `packages/tests/shared-server/group-topology-management-service.test.ts`
 - `packages/tests/shared-server/queuebox-pubsub-bridge.test.ts`
 - `packages/tests/shared-server/rallar-middleware.test.ts`

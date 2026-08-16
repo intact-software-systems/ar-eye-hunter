@@ -32,12 +32,10 @@ export type GroupFormationPresenceSummaryEvent = Readonly<{
   downstreamTopicIds: readonly string[];
 }>;
 
-export type GroupFormationPresenceSummarySink = (
-  event: GroupFormationPresenceSummaryEvent,
-) => void;
+export type GroupFormationPresenceSummarySink = (event: GroupFormationPresenceSummaryEvent) => void;
 
 export type GroupFormationRttMutationEvent = Readonly<{
-  recomputeIntentCount: number;
+  topologyEffectCount: number;
 }>;
 
 export type GroupFormationRttMutationSink = (event: GroupFormationRttMutationEvent) => void;
@@ -73,7 +71,7 @@ interface MutableGroupFormationMetrics {
   wsEgressBytesByTopicId: Record<string, number>;
   wsOutboxNoLocalRecipientCount: number;
   rttAcceptedWriteCount: number;
-  rttRecomputeIntentCount: number;
+  rttTopologyEffectCount: number;
 }
 
 export function emptyGroupFormationMetrics(): RallarGroupFormationMetrics {
@@ -139,8 +137,8 @@ export function createGroupFormationMetricsRecorder(): RallarGroupFormationMetri
   const rttMutation: GroupFormationRttMutationSink = (event) => {
     try {
       metrics.rttAcceptedWriteCount += 1;
-      if (Number.isSafeInteger(event.recomputeIntentCount) && event.recomputeIntentCount > 0) {
-        metrics.rttRecomputeIntentCount += event.recomputeIntentCount;
+      if (Number.isSafeInteger(event.topologyEffectCount) && event.topologyEffectCount > 0) {
+        metrics.rttTopologyEffectCount += event.topologyEffectCount;
       }
     } catch {
       // Recording must never affect RTT mutation behavior.
@@ -209,7 +207,7 @@ function createMutableGroupFormationMetrics(): MutableGroupFormationMetrics {
     wsEgressBytesByTopicId: {},
     wsOutboxNoLocalRecipientCount: 0,
     rttAcceptedWriteCount: 0,
-    rttRecomputeIntentCount: 0,
+    rttTopologyEffectCount: 0,
   };
 }
 
