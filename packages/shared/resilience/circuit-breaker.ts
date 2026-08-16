@@ -58,11 +58,16 @@ export class CircuitBreaker {
     }
 
     static create(policy: CircuitBreakerPolicy): CircuitBreaker {
+        return CircuitBreaker.createWithTs(policy, nowMs());
+    }
+
+    static createWithTs(policy: CircuitBreakerPolicy, createdTs: number): CircuitBreaker {
         return new CircuitBreaker(
             new AtomicReference<CircuitBreakerState>(CircuitBreakerState.CLOSE),
-            SlidingWindowCounter.init(
+            SlidingWindowCounter.initWithTs(
                 policy.slidingWindow.total({ unit: 'milliseconds' }),
                 Math.floor(policy.slidingWindow.total({ unit: 'milliseconds' }) / 10),
+                createdTs,
             ),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
             new AtomicLong(CircuitBreaker.RESET_VALUE),
@@ -120,7 +125,11 @@ export class CircuitBreaker {
     }
 
     success(): CircuitBreaker {
-        this.slidingWindow.reset();
+        return this.successAt(nowMs());
+    }
+
+    successAt(nowEpochMs: number): CircuitBreaker {
+        SlidingWindowCounter.resetWithNow(this.slidingWindow, nowEpochMs);
 
         this.timestampOpen.set(CircuitBreaker.RESET_VALUE);
         this.timestampHalfOpen.set(CircuitBreaker.RESET_VALUE);
@@ -133,10 +142,21 @@ export class CircuitBreaker {
         return this.failureCount(1);
     }
 
-    failureCount(count: number): CircuitBreaker {
-        this.slidingWindow.update(count);
+    failureAt(nowEpochMs: number): CircuitBreaker {
+        return this.failureCountAt(1, nowEpochMs);
+    }
 
-        const sumInWindow = this.slidingWindow.sumInWindow();
+    failureCount(count: number): CircuitBreaker {
+        return this.failureCountAt(count, nowMs());
+    }
+
+    failureCountAt(count: number, nowEpochMs: number): CircuitBreaker {
+        SlidingWindowCounter.updateWithNow(this.slidingWindow, count, nowEpochMs);
+
+        const sumInWindow = SlidingWindowCounter.sumInWindowWithNow(
+            this.slidingWindow,
+            nowEpochMs,
+        );
         if (
             // if failures in window exceed the maximum allowed, trip the circuit OPEN
             sumInWindow > this.policy.maxConsecutiveFailures ||
@@ -146,7 +166,7 @@ export class CircuitBreaker {
             const previous = this.state.getAndSet(CircuitBreakerState.OPEN);
             if (previous !== CircuitBreakerState.OPEN) {
                 // this thread set new state
-                this.timestampOpen.set(nowMs());
+                this.timestampOpen.set(nowEpochMs);
                 this.timestampHalfOpen.set(CircuitBreaker.RESET_VALUE);
             }
         }
@@ -156,23 +176,27 @@ export class CircuitBreaker {
 
     // Mutating update of circuit breaker
     allow(): boolean {
+        return this.allowAt(nowMs());
+    }
+
+    allowAt(nowEpochMs: number): boolean {
         if (this.state.get() === CircuitBreakerState.OPEN) {
-            const timeSinceOpened = nowMs() - this.timestampOpen.get();
+            const timeSinceOpened = nowEpochMs - this.timestampOpen.get();
 
             if (timeSinceOpened > this.policy.resetTimeout.total({ unit: 'milliseconds' })) {
                 const previous = this.state.getAndSet(CircuitBreakerState.HALF_OPEN);
                 if (previous === CircuitBreakerState.OPEN) {
                     // This thread set circuit to half open and is allowed through
-                    this.timestampHalfOpen.set(nowMs());
+                    this.timestampHalfOpen.set(nowEpochMs);
                     return true;
                 }
             }
         } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
             // check if state has been in half open too long
-            const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
+            const timeSinceHalfOpened = nowEpochMs - this.timestampHalfOpen.get();
 
             if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({ unit: 'milliseconds' })) {
-                this.failureCount(1);
+                this.failureCountAt(1, nowEpochMs);
             }
         }
 
@@ -181,13 +205,17 @@ export class CircuitBreaker {
 
     // Note: Non-mutating check of circuit breaker
     isAllowedThrough(): boolean {
+        return this.isAllowedThroughAt(nowMs());
+    }
+
+    isAllowedThroughAt(nowEpochMs: number): boolean {
         if (this.state.get() === CircuitBreakerState.OPEN) {
-            const timeSinceOpened = nowMs() - this.timestampOpen.get();
+            const timeSinceOpened = nowEpochMs - this.timestampOpen.get();
             if (timeSinceOpened > this.policy.resetTimeout.total({ unit: 'milliseconds' })) {
                 return true;
             }
         } else if (this.state.get() === CircuitBreakerState.HALF_OPEN) {
-            const timeSinceHalfOpened = nowMs() - this.timestampHalfOpen.get();
+            const timeSinceHalfOpened = nowEpochMs - this.timestampHalfOpen.get();
             if (timeSinceHalfOpened > this.policy.halfOpenTimeout.total({ unit: 'milliseconds' })) {
                 return true;
             }

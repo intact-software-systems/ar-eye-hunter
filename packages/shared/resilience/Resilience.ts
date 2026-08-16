@@ -191,8 +191,13 @@ export class SlidingWindowCounter {
     }
 
     static reset(windowCounter: SlidingWindowCounter): SlidingWindowCounter {
-        const createdTs = nowMs();
+        return SlidingWindowCounter.resetWithNow(windowCounter, nowMs());
+    }
 
+    static resetWithNow(
+        windowCounter: SlidingWindowCounter,
+        createdTs: number,
+    ): SlidingWindowCounter {
         for (const bucket of windowCounter.counterByBucket.keys()) {
             windowCounter.counterByBucket.set(
                 bucket,
@@ -345,23 +350,36 @@ export class RateAdjuster {
     }
 
     static create(policy: RateAdjusterPolicy): RateAdjuster {
+        return RateAdjuster.createWithTs(policy, nowMs());
+    }
+
+    static createWithTs(policy: RateAdjusterPolicy, createdTs: number): RateAdjuster {
         return new RateAdjuster(
             new AtomicReference(new RateAdjusterStatus(policy.initialRate, 0)),
-            SlidingWindowCounter.init(
+            SlidingWindowCounter.initWithTs(
                 policy.adjustWindowMs,
                 Math.floor(policy.adjustWindowMs / 4),
+                createdTs,
             ),
             policy,
         );
     }
 
     success(): RateAdjuster {
-        this.slidingWindow.update(1);
+        return this.successAt(nowMs());
+    }
+
+    successAt(nowEpochMs: number): RateAdjuster {
+        SlidingWindowCounter.updateWithNow(this.slidingWindow, 1, nowEpochMs);
         return this;
     }
 
     failure(): RateAdjuster {
-        this.slidingWindow.reset();
+        return this.failureAt(nowMs());
+    }
+
+    failureAt(nowEpochMs: number): RateAdjuster {
+        SlidingWindowCounter.resetWithNow(this.slidingWindow, nowEpochMs);
 
         this.status.updateAndGet((existingStatus) => {
             return new RateAdjusterStatus(
@@ -375,7 +393,14 @@ export class RateAdjuster {
 
     // NB! calculates and mutates
     calculateRate(): number {
-        const numSuccesses = this.slidingWindow.sumInWindow();
+        return this.calculateRateAt(nowMs());
+    }
+
+    calculateRateAt(nowEpochMs: number): number {
+        const numSuccesses = SlidingWindowCounter.sumInWindowWithNow(
+            this.slidingWindow,
+            nowEpochMs,
+        );
         const existingStatus = this.status.get();
 
         if ((numSuccesses - existingStatus.currentNumSuccesses) >= this.policy.minConsecutiveSuccesses) {
@@ -419,10 +444,19 @@ export class RateLimiter {
     }
 
     static init(timebasedFilterMs: number, maxNumberToAllow: number): RateLimiter {
+        return RateLimiter.initWithTs(timebasedFilterMs, maxNumberToAllow, nowMs());
+    }
+
+    static initWithTs(
+        timebasedFilterMs: number,
+        maxNumberToAllow: number,
+        createdTs: number,
+    ): RateLimiter {
         return new RateLimiter(
-            SlidingWindowCounter.init(
+            SlidingWindowCounter.initWithTs(
                 timebasedFilterMs,
                 Math.floor(timebasedFilterMs / 4),
+                createdTs,
             ),
             new RateLimiterPolicy(timebasedFilterMs, maxNumberToAllow),
         );
@@ -452,11 +486,18 @@ export class RateLimiter {
     }
 
     allow(): boolean {
-        if (this.slidingWindow.sumInWindow() >= this.policy.maxNumberToAllow) {
+        return this.allowAt(nowMs());
+    }
+
+    allowAt(nowEpochMs: number): boolean {
+        if (
+            SlidingWindowCounter.sumInWindowWithNow(this.slidingWindow, nowEpochMs) >=
+                this.policy.maxNumberToAllow
+        ) {
             return false;
         }
 
-        this.slidingWindow.update(1);
+        SlidingWindowCounter.updateWithNow(this.slidingWindow, 1, nowEpochMs);
         return true;
     }
 

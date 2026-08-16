@@ -1,13 +1,26 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { predictedRttMs, type VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
+
 import type { RtcRttRefinementGate } from './rtc-rtt-refinement-gate.ts';
+
+export const DEFAULT_RTT_REFINEMENT_PRUNE_LIMIT = {
+  windowMs: 5_000,
+  maxPerWindow: 2,
+} as const;
+
+export interface RtcRttRefinementPruneLimit {
+  readonly windowMs: number;
+  readonly maxPerWindow: number;
+}
 
 export interface RtcRttRefinementServiceDependencies {
   readonly gate: RtcRttRefinementGate;
   readonly nowEpochMs: () => number;
   readonly observeRtt: (rtt: RttMeasurementInfo) => boolean;
   readonly readPredictedNodeData: () => ReadonlyMap<string, VivaldiNodeData>;
+  readonly pruneLimit?: RtcRttRefinementPruneLimit;
 }
 
 export interface ClaimRtcRttRefinementWorkInput {
@@ -31,20 +44,29 @@ type ExpiringDecision = Readonly<{
 /** Coordinates stable refinement decisions across durable work retries. */
 export class RtcRttRefinementService {
   private readonly dependencies: RtcRttRefinementServiceDependencies;
+  private readonly pruneRateLimiter: RateLimiter;
   private readonly observations = new Map<string, ExpiringObservation>();
   private readonly decisions = new Map<string, ExpiringDecision>();
 
   constructor(dependencies: RtcRttRefinementServiceDependencies) {
     this.dependencies = dependencies;
+    const pruneLimit = dependencies.pruneLimit ?? DEFAULT_RTT_REFINEMENT_PRUNE_LIMIT;
+    this.pruneRateLimiter = RateLimiter.initWithTs(
+      pruneLimit.windowMs,
+      pruneLimit.maxPerWindow,
+      dependencies.nowEpochMs(),
+    );
   }
 
   claimWork(input: ClaimRtcRttRefinementWorkInput): boolean {
     const nowEpochMs = this.dependencies.nowEpochMs();
-    this.pruneExpired(nowEpochMs);
-    const existingDecision = this.decisions.get(input.workId);
+    if (this.pruneRateLimiter.allowAt(nowEpochMs)) {
+      this.pruneExpired(nowEpochMs);
+    }
+    const existingDecision = readUnexpiredEntry(this.decisions, input.workId, nowEpochMs);
     if (existingDecision) return existingDecision.claimed;
 
-    const predictedDeltaMs = this.readOrObserveDelta(input);
+    const predictedDeltaMs = this.readOrObserveDelta(input, nowEpochMs);
     const claimed = this.dependencies.gate.claimRefinement({
       groupKey: input.groupKey,
       predictedDeltaMs,
@@ -57,8 +79,15 @@ export class RtcRttRefinementService {
     return claimed;
   }
 
-  private readOrObserveDelta(input: ClaimRtcRttRefinementWorkInput): number {
-    const existing = this.observations.get(input.observationId);
+  readRetainedEntryCounts(): Readonly<{ observations: number; decisions: number }> {
+    return { observations: this.observations.size, decisions: this.decisions.size };
+  }
+
+  private readOrObserveDelta(
+    input: ClaimRtcRttRefinementWorkInput,
+    nowEpochMs: number,
+  ): number {
+    const existing = readUnexpiredEntry(this.observations, input.observationId, nowEpochMs);
     if (existing) return existing.predictedDeltaMs;
 
     const predictedDeltaMs = this.observeAndMeasurePredictedDelta(input.rtt);
@@ -91,6 +120,20 @@ function readPredictedPairRttMs(
   const fromNode = nodes.get(rtt.sessionIdFrom);
   const toNode = nodes.get(rtt.sessionIdTo);
   return fromNode && toNode ? predictedRttMs(fromNode, toNode) : undefined;
+}
+
+function readUnexpiredEntry<T extends Readonly<{ expireAtEpochMs: number }>>(
+  entries: Map<string, T>,
+  key: string,
+  nowEpochMs: number,
+): T | undefined {
+  const entry = entries.get(key);
+  if (entry === undefined) return undefined;
+  if (entry.expireAtEpochMs <= nowEpochMs) {
+    entries.delete(key);
+    return undefined;
+  }
+  return entry;
 }
 
 function pruneExpiredEntries<T extends Readonly<{ expireAtEpochMs: number }>>(
