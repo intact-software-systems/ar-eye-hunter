@@ -4,7 +4,7 @@ export type LoanedValueRefresh<T> = (
     current: T | undefined,
 ) => T | Promise<T>;
 
-export type LoanedValueValidityChecker<T> = (value: T) => boolean;
+export type LoanedValueValidityChecker<T> = (value: T, nowEpochMs: number) => boolean;
 
 export interface LoanedValueOptions<T> {
     ttlMs?: number;
@@ -19,6 +19,7 @@ export class LoanedValue<T> implements ReadableValue<T> {
 
     private value: T | undefined;
     private valueStartMs = 0;
+    private holdsValue = false;
     private inFlightRefresh: Promise<T> | undefined;
 
     private readonly refresher: LoanedValueRefresh<T>;
@@ -40,8 +41,19 @@ export class LoanedValue<T> implements ReadableValue<T> {
         }
     }
 
+    public acceptAt(value: T, nowEpochMs: number): void {
+        this.value = value;
+        this.valueStartMs = nowEpochMs;
+        this.holdsValue = true;
+        this.inFlightRefresh = undefined;
+    }
+
     public read(): T | undefined {
-        return this.isExpired(this.value) ? undefined : this.value;
+        return this.readAt(Date.now());
+    }
+
+    public readAt(nowEpochMs: number): T | undefined {
+        return this.isExpiredAt(this.value, nowEpochMs) ? undefined : this.value;
     }
 
     public peek(): T | undefined {
@@ -79,7 +91,11 @@ export class LoanedValue<T> implements ReadableValue<T> {
     }
 
     public takeIfExpired(): T | undefined {
-        if (!this.isExpired(this.value)) {
+        return this.takeIfExpiredAt(Date.now());
+    }
+
+    public takeIfExpiredAt(nowEpochMs: number): T | undefined {
+        if (!this.isExpiredAt(this.value, nowEpochMs)) {
             return undefined;
         }
 
@@ -91,12 +107,17 @@ export class LoanedValue<T> implements ReadableValue<T> {
     }
 
     public expired(): boolean {
-        return this.isExpired(this.value);
+        return this.expiredAt(Date.now());
+    }
+
+    public expiredAt(nowEpochMs: number): boolean {
+        return this.isExpiredAt(this.value, nowEpochMs);
     }
 
     public clear(): void {
         this.value = undefined;
         this.valueStartMs = 0;
+        this.holdsValue = false;
     }
 
     public refreshing(): boolean {
@@ -135,18 +156,22 @@ export class LoanedValue<T> implements ReadableValue<T> {
     }
 
     private isExpired(value: T | undefined): boolean {
+        return this.isExpiredAt(value, Date.now());
+    }
+
+    private isExpiredAt(value: T | undefined, nowEpochMs: number): boolean {
         if (value === undefined) {
             return true;
         }
 
-        if (this.valueStartMs === 0) {
+        if (!this.holdsValue && this.valueStartMs === 0) {
             return true;
         }
 
-        if (Date.now() - this.valueStartMs > this.ttlMs) {
+        if (nowEpochMs - this.valueStartMs > this.ttlMs) {
             return true;
         }
 
-        return !this.isValid(value);
+        return !this.isValid(value, nowEpochMs);
     }
 }

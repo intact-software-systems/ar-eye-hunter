@@ -32,6 +32,44 @@ export class LoanedRepository<K, V> implements PullKeyedValues<K, V> {
         return this.entries.get(key)?.read();
     }
 
+    public readAt(key: K, nowEpochMs: number): V | undefined {
+        const entry = this.entries.get(key);
+        if (entry === undefined) {
+            return undefined;
+        }
+
+        const value = entry.readAt(nowEpochMs);
+        if (value === undefined && !entry.refreshing()) {
+            this.entries.delete(key);
+        }
+        return value;
+    }
+
+    public expiredAt(key: K, nowEpochMs: number): boolean {
+        return this.entries.get(key)?.expiredAt(nowEpochMs) ?? true;
+    }
+
+    public takeIfExpiredAt(key: K, nowEpochMs: number): V | undefined {
+        const value = this.entries.get(key)?.takeIfExpiredAt(nowEpochMs);
+        if (value !== undefined) {
+            this.entries.delete(key);
+        }
+        return value;
+    }
+
+    public deleteExpiredAt(nowEpochMs: number): number {
+        let removed = 0;
+
+        for (const [key, entry] of this.entries) {
+            if (!entry.refreshing() && entry.expiredAt(nowEpochMs)) {
+                this.entries.delete(key);
+                removed += 1;
+            }
+        }
+
+        return removed;
+    }
+
     public peek(key: K): V | undefined {
         return this.entries.get(key)?.peek();
     }
