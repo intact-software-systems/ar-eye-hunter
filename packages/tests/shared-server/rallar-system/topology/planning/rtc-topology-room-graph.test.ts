@@ -11,6 +11,8 @@ import {
 // prettier-ignore
 import {
   createRtcRoomGraph,
+  materializeSparseRtcRoomGraphFallback,
+  type CreateRtcRoomGraphResult,
 } from '@shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts';
 
 import {
@@ -34,25 +36,22 @@ describe('RTC topology weighted room graph planning', () => {
       meshParamK: 2,
     });
 
-    expect(result.usedSparseFallback).toBe(false);
-    expect(result.graph.getAttributes()).toEqual({
+    const graph = expectReadyRoomGraph(result);
+    expect(graph.getAttributes()).toEqual({
       id: '["app-1","workspace-1","room-graph-owner"]',
       version: 1,
       degreeLimitMember: 5,
       degreeLimitSteiner: 5,
     });
-    expect(result.graph.edges().map((edge) => result.graph.extremities(edge))).toEqual([
+    expect(graph.edges().map((edge) => graph.extremities(edge))).toEqual([
       ['peer-1', 'peer-2'],
       ['peer-1', 'peer-3'],
       ['peer-2', 'peer-3'],
     ]);
     expect(
-      result.graph
+      graph
         .edges()
-        .map((edge) => [
-          result.graph.extremities(edge),
-          result.graph.getEdgeAttribute(edge, 'weight'),
-        ]),
+        .map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')]),
     ).toEqual([
       [['peer-1', 'peer-2'], computeCanonicalTopologyPairWeight('peer-1', 'peer-2')],
       [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')],
@@ -85,8 +84,7 @@ describe('RTC topology weighted room graph planning', () => {
       meshParamK: 2,
     });
 
-    expect(result.usedSparseFallback).toBe(false);
-    expect(edgeWeight(result.graph, 'peer-1', 'peer-3')).toBe(7);
+    expect(edgeWeight(expectReadyRoomGraph(result), 'peer-1', 'peer-3')).toBe(7);
   });
 
   it('reports sparse fallback when bounded sparse edges cannot connect the room', () => {
@@ -108,8 +106,12 @@ describe('RTC topology weighted room graph planning', () => {
       meshParamK: 2,
     });
 
-    expect(result.usedSparseFallback).toBe(true);
-    expect(result.graph.edges().map((edge) => result.graph.extremities(edge))).toEqual([
+    expect(result.outcome).toBe('sparse-fallback');
+    if (result.outcome !== 'sparse-fallback') {
+      throw new Error('expected sparse room-graph fallback');
+    }
+    const graph = materializeSparseRtcRoomGraphFallback(result);
+    expect(graph.edges().map((edge) => graph.extremities(edge))).toEqual([
       ['peer-1', 'peer-2'],
       ['peer-1', 'peer-3'],
     ]);
@@ -140,14 +142,11 @@ describe('RTC topology weighted room graph planning', () => {
       meshParamK: 2,
     });
 
-    expect(result.usedSparseFallback).toBe(false);
+    const graph = expectReadyRoomGraph(result);
     expect(
-      result.graph
+      graph
         .edges()
-        .map((edge) => [
-          result.graph.extremities(edge),
-          result.graph.getEdgeAttribute(edge, 'weight'),
-        ]),
+        .map((edge) => [graph.extremities(edge), graph.getEdgeAttribute(edge, 'weight')]),
     ).toEqual([
       [['peer-1', 'peer-2'], 5],
       [['peer-2', 'peer-3'], 7],
@@ -250,9 +249,8 @@ describe('RTC topology weighted room graph planning', () => {
       seedTopology: 'tree',
       meshParamK: 2,
     });
-    const graph = result.graph;
+    const graph = expectReadyRoomGraph(result);
 
-    expect(result.usedSparseFallback).toBe(false);
     expect(edgeWeight(graph, 'a', 'b::c')).toBe(55);
     expect(edgeWeight(graph, 'a::b', 'c')).toBe(22);
     expect(edgeWeight(graph, composed, 'a')).toBe(33);
@@ -291,9 +289,8 @@ describe('RTC topology weighted room graph planning', () => {
       seedTopology: 'tree',
       meshParamK: 2,
     });
-    const graph = result.graph;
+    const graph = expectReadyRoomGraph(result);
 
-    expect(result.usedSparseFallback).toBe(false);
     expect(graph.edges().map((edge) => graph.extremities(edge))).toEqual([
       [decomposed, 'z'],
       [decomposed, composed],
@@ -396,4 +393,12 @@ function edgeWeight(
 ): number | undefined {
   const edge = graph.edge(from, to);
   return edge === undefined ? undefined : graph.getEdgeAttribute(edge, 'weight');
+}
+
+function expectReadyRoomGraph(result: CreateRtcRoomGraphResult) {
+  expect(result.outcome).toBe('ready');
+  if (result.outcome !== 'ready') {
+    throw new Error('expected ready room graph');
+  }
+  return result.graph;
 }

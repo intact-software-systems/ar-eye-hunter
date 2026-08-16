@@ -24,11 +24,11 @@ describe('RtcTopologyRttRebuildScheduler', () => {
     });
     expect(scheduler.claimDue('overlay-1')).toBe(true);
     expect(metrics.read(0, scheduler.size)).toMatchObject({
-      rttQueueRequestCount: 1,
+      rttQueueRequestCount: 0,
       rttQueueNewCount: 1,
       rttQueueCoalescedCount: 0,
       rttQueueImmediateCount: 1,
-      rttFlushAttemptCount: 1,
+      rttFlushAttemptCount: 0,
       rttFlushSkippedCount: 0,
       rttFlushExecutedCount: 1,
     });
@@ -60,7 +60,7 @@ describe('RtcTopologyRttRebuildScheduler', () => {
     expect(scheduler.readDelayMs('overlay-1')).toBe(25);
     expect(scheduler.readDebounceMs()).toBe(50);
     expect(metrics.read(0, scheduler.size)).toMatchObject({
-      rttQueueRequestCount: 2,
+      rttQueueRequestCount: 0,
       rttQueueNewCount: 1,
       rttQueueCoalescedCount: 1,
       rttQueueImmediateCount: 0,
@@ -79,13 +79,13 @@ describe('RtcTopologyRttRebuildScheduler', () => {
     expect(scheduler.claimDue('overlay-1')).toBe(true);
     expect(scheduler.claimDue('overlay-1')).toBe(false);
     expect(metrics.read(0, scheduler.size)).toMatchObject({
-      rttFlushAttemptCount: 4,
+      rttFlushAttemptCount: 0,
       rttFlushSkippedCount: 3,
       rttFlushExecutedCount: 1,
     });
   });
 
-  it('removes pending work and records request metrics before a clock failure', () => {
+  it('removes pending work while leaving public request attempts to the facade', () => {
     const clock = createMutableClock(100);
     const metrics = new RtcTopologyMetrics();
     const scheduler = createScheduler(clock, metrics);
@@ -122,8 +122,8 @@ describe('RtcTopologyRttRebuildScheduler', () => {
       unavailableClockScheduler.queue({ overlayId: 'overlay-3', hasSnapshot: false }),
     ).toThrow('clock unavailable');
     expect(metrics.read(0, scheduler.size)).toMatchObject({
-      rttQueueRequestCount: 3,
-      rttFlushAttemptCount: 1,
+      rttQueueRequestCount: 0,
+      rttFlushAttemptCount: 0,
     });
   });
 });

@@ -72,6 +72,10 @@ describe('RTC topology planning options and revisions', () => {
     expect(weighted.snapshot.topology).toBe('mesh');
     expect(weighted.snapshot.degreeLimit).toBe(2);
     expect(metrics.read(0, 0)).toMatchObject({
+      topologyUpdateCount: 0,
+      updatesWithoutRttMeasurementCount: 1,
+      updatesWithRttMeasurementCount: 1,
+      topologyChangedCount: 2,
       noRttTreePlanCount: 1,
       weightedPlanCount: 1,
       weightedRoomGraphBuildCount: 1,

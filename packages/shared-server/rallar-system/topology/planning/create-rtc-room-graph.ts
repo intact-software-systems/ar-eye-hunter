@@ -29,17 +29,20 @@ export interface CreateRtcRoomGraphInput {
   readonly meshParamK: number;
 }
 
-export interface CreateRtcRoomGraphResult {
+export interface RtcRoomGraphReady {
+  readonly outcome: 'ready';
   readonly graph: WeightedGraph;
-  readonly usedSparseFallback: boolean;
 }
 
-interface CreateFallbackRoomGraphInput {
+export interface RtcRoomGraphSparseFallback {
+  readonly outcome: 'sparse-fallback';
   readonly group: GroupSnapshot;
   readonly activeSessionIds: readonly string[];
   readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
   readonly degreeLimit: number;
 }
+
+export type CreateRtcRoomGraphResult = RtcRoomGraphReady | RtcRoomGraphSparseFallback;
 
 interface PopulateSparseRoomGraphInput {
   readonly graph: WeightedGraph;
@@ -65,13 +68,6 @@ interface AddRoomEdgeIfAbsentInput {
   readonly weight: number;
 }
 
-interface SetRttWeightInput {
-  readonly lookup: Map<string, Map<string, number>>;
-  readonly from: string;
-  readonly to: string;
-  readonly rttMs: number;
-}
-
 interface WeightedRoomEdge {
   readonly from: string;
   readonly to: string;
@@ -79,16 +75,12 @@ interface WeightedRoomEdge {
   readonly version: number;
 }
 
-type RttWeightLookup = ReadonlyMap<string, ReadonlyMap<string, number>>;
-
 export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoomGraphResult {
   const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
-  const rttBySessionId =
-    input.rttMeasurements.length > 0 ? createRttWeightLookup(input.rttMeasurements) : undefined;
 
   if (input.rttMeasurements.length === 0) {
-    addCompleteFallbackRoomEdges(graph, input.activeSessionIds, rttBySessionId);
-    return { graph, usedSparseFallback: false };
+    addCompleteFallbackRoomEdges(graph, input.activeSessionIds);
+    return { outcome: 'ready', graph };
   }
 
   const fallbackNextHops = computeNoRttTopologyNextHops({
@@ -107,17 +99,32 @@ export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoo
 
   if (!sparse.connected) {
     return {
-      graph: createFallbackRoomGraph({
-        group: input.group,
-        activeSessionIds: input.activeSessionIds,
-        nextHopsBySessionId: fallbackNextHops,
-        degreeLimit: input.degreeLimit,
-      }),
-      usedSparseFallback: true,
+      outcome: 'sparse-fallback',
+      group: input.group,
+      activeSessionIds: input.activeSessionIds,
+      nextHopsBySessionId: fallbackNextHops,
+      degreeLimit: input.degreeLimit,
     };
   }
 
-  return { graph, usedSparseFallback: false };
+  return { outcome: 'ready', graph };
+}
+
+export function materializeSparseRtcRoomGraphFallback(
+  fallback: RtcRoomGraphSparseFallback,
+): WeightedGraph {
+  const graph = createRoomGraph(fallback.group, fallback.activeSessionIds, fallback.degreeLimit);
+  for (const [from, nextHops] of Object.entries(fallback.nextHopsBySessionId)) {
+    for (const to of nextHops) {
+      addRoomEdgeIfAbsent({
+        graph,
+        from,
+        to,
+        weight: computeCanonicalTopologyPairWeight(from, to),
+      });
+    }
+  }
+  return graph;
 }
 
 function createRoomGraph(
@@ -147,7 +154,6 @@ function createRoomGraph(
 function addCompleteFallbackRoomEdges(
   graph: WeightedGraph,
   activeSessionIds: readonly string[],
-  rttBySessionId: RttWeightLookup | undefined,
 ): void {
   for (let i = 0; i < activeSessionIds.length; i++) {
     for (let j = i + 1; j < activeSessionIds.length; j++) {
@@ -156,26 +162,10 @@ function addCompleteFallbackRoomEdges(
       graph.addEdge(from, to, {
         from,
         to,
-        weight:
-          readRttWeight(rttBySessionId, from, to) ?? computeCanonicalTopologyPairWeight(from, to),
-      });
-    }
-  }
-}
-
-function createFallbackRoomGraph(input: CreateFallbackRoomGraphInput): WeightedGraph {
-  const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
-  for (const [from, nextHops] of Object.entries(input.nextHopsBySessionId)) {
-    for (const to of nextHops) {
-      addRoomEdgeIfAbsent({
-        graph,
-        from,
-        to,
         weight: computeCanonicalTopologyPairWeight(from, to),
       });
     }
   }
-  return graph;
 }
 
 function populateSparseRoomGraph(
@@ -301,30 +291,4 @@ function isConnectedRoomGraph(graph: WeightedGraph, activeSessionIds: readonly s
     }
   }
   return seen.size === activeSessionIds.length;
-}
-
-function createRttWeightLookup(rttMeasurements: readonly RttMeasurementInfo[]): RttWeightLookup {
-  const lookup = new Map<string, Map<string, number>>();
-  for (const rtt of rttMeasurements) {
-    setRttWeight({ lookup, from: rtt.sessionIdFrom, to: rtt.sessionIdTo, rttMs: rtt.rttMs });
-    setRttWeight({ lookup, from: rtt.sessionIdTo, to: rtt.sessionIdFrom, rttMs: rtt.rttMs });
-  }
-  return lookup;
-}
-
-function setRttWeight(input: SetRttWeightInput): void {
-  let byPeer = input.lookup.get(input.from);
-  if (byPeer === undefined) {
-    byPeer = new Map();
-    input.lookup.set(input.from, byPeer);
-  }
-  byPeer.set(input.to, input.rttMs);
-}
-
-function readRttWeight(
-  lookup: RttWeightLookup | undefined,
-  from: string,
-  to: string,
-): number | undefined {
-  return lookup?.get(from)?.get(to);
 }

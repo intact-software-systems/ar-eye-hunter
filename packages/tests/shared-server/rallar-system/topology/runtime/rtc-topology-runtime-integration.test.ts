@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 // prettier-ignore
 import {
   RallarRtcTopologyService,
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -126,6 +128,50 @@ describe('RTC topology process runtime integration', () => {
     });
   });
 
+  it.each([
+    {
+      name: 'plan reads active sessions before scope and retains its attempt',
+      metric: 'topologyUpdateCount' as const,
+      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) =>
+        service.planGroupTopologyAt(group, [], {}, 100),
+      createGroup: createGroupWithThrowingSessionsAndScope,
+      expectedError: 'group sessions unavailable',
+      expectedClockReads: 0,
+    },
+    {
+      name: 'queue retains its request before scope translation fails',
+      metric: 'rttQueueRequestCount' as const,
+      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) =>
+        service.queueRttTopologyUpdate(group),
+      createGroup: createGroupWithThrowingScope,
+      expectedError: 'group scope unavailable',
+      expectedClockReads: 0,
+    },
+    {
+      name: 'claim retains its attempt before scope translation fails',
+      metric: 'rttFlushAttemptCount' as const,
+      invoke: (service: RallarRtcTopologyService, group: GroupSnapshot) =>
+        service.claimDueRttTopologyUpdate(group.group),
+      createGroup: createGroupWithThrowingNestedScope,
+      expectedError: 'group scope unavailable',
+      expectedClockReads: 0,
+    },
+  ])('$name', ({ metric, invoke, createGroup, expectedError, expectedClockReads }) => {
+    let clockReads = 0;
+    const service = new RallarRtcTopologyService({
+      now: () => {
+        clockReads += 1;
+        throw new Error('clock unavailable');
+      },
+    });
+    const group = createGroup();
+
+    expect(() => invoke(service, group)).toThrowError(new Error(expectedError));
+
+    expect(service.readMetrics()[metric]).toBe(1);
+    expect(clockReads).toBe(expectedClockReads);
+  });
+
   it('does not record a weighted graph attempt when topology selection throws first', () => {
     const group = createGroupWithThrowingActiveSessionRead(1);
     const service = new RallarRtcTopologyService({ now: () => 100 });
@@ -185,6 +231,42 @@ describe('RTC topology process runtime integration', () => {
       topologyUnchangedCount: 0,
     });
     expect(service.readMetrics().weightedPlanDurationMs).toBeGreaterThan(0);
+  });
+
+  it('records sparse fallback timing before fallback graph materialization throws', () => {
+    const group = createGroupWithThrowingSecondGraphScopeRead();
+    const metrics = new RtcTopologyMetrics();
+    const times = [10, 17];
+    const planner = new RtcTopologyPlanner(
+      { topologyKind: 'tree', rttReportingDegreeLimit: 1 },
+      { metrics, durationNowMs: () => times.shift() ?? 17 },
+    );
+
+    expect(() =>
+      planner.plan({
+        group,
+        rttMeasurements: [
+          {
+            sessionIdFrom: 'peer-1',
+            sessionIdTo: 'peer-2',
+            rttMs: 5,
+            createdAtEpochMs: 1,
+            version: 1,
+          },
+        ],
+        previous: undefined,
+        updateOptions: {},
+        nowEpochMs: 100,
+      }),
+    ).toThrowError(new Error('fallback graph scope unavailable'));
+    expect(metrics.read(0, 0)).toMatchObject({
+      weightedRoomGraphBuildCount: 1,
+      weightedRoomGraphSparseFallbackCount: 1,
+      weightedRoomGraphBuildDurationMs: 7,
+      weightedPlanCount: 0,
+      topologyChangedCount: 0,
+      topologyUnchangedCount: 0,
+    });
   });
 
   it('records topology rebuild, RTT queue, flush, and publish metrics', () => {
@@ -356,6 +438,64 @@ function createGroupWithThrowingActiveSessionRead(throwOnRead: number): GroupSna
         throw new Error('group sessions unavailable');
       }
       return activeSessions;
+    },
+  });
+  return group;
+}
+
+function createGroupWithThrowingSessionsAndScope(): GroupSnapshot {
+  const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+  Object.defineProperty(group, 'activeSessions', {
+    get: () => {
+      throw new Error('group sessions unavailable');
+    },
+  });
+  Object.defineProperty(group, 'group', {
+    get: () => {
+      throw new Error('group scope unavailable');
+    },
+  });
+  return group;
+}
+
+function createGroupWithThrowingScope(): GroupSnapshot {
+  const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+  Object.defineProperty(group, 'group', {
+    get: () => {
+      throw new Error('group scope unavailable');
+    },
+  });
+  return group;
+}
+
+function createGroupWithThrowingNestedScope(): GroupSnapshot {
+  const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(5));
+  const groupRef = group.group;
+  Object.defineProperty(group, 'group', { value: createThrowingGroupRef(groupRef) });
+  return group;
+}
+
+function createThrowingGroupRef(groupRef: GroupRef): GroupRef {
+  return {
+    get applicationId(): string {
+      throw new Error('group scope unavailable');
+    },
+    workspaceId: groupRef.workspaceId,
+    groupId: groupRef.groupId,
+  };
+}
+
+function createGroupWithThrowingSecondGraphScopeRead(): GroupSnapshot {
+  const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(3));
+  const applicationId = group.group.applicationId;
+  let applicationIdReads = 0;
+  Object.defineProperty(group.group, 'applicationId', {
+    get: () => {
+      applicationIdReads += 1;
+      if (applicationIdReads === 2) {
+        throw new Error('fallback graph scope unavailable');
+      }
+      return applicationId;
     },
   });
   return group;

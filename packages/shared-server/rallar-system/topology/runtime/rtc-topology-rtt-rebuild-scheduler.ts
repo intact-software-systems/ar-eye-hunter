@@ -30,7 +30,6 @@ export class RtcTopologyRttRebuildScheduler {
   }
 
   queue(input: RtcTopologyRttRebuildScheduler.QueueInput): RallarRtcTopologyRttQueueResult {
-    this.dependencies.metrics.recordRttQueueRequest();
     const nowEpochMs = this.dependencies.nowEpochMs();
     const existingDueAtEpochMs = this.pendingRttUpdateDueAtByOverlayId.get(input.overlayId);
     if (existingDueAtEpochMs !== undefined) {
@@ -58,7 +57,6 @@ export class RtcTopologyRttRebuildScheduler {
   }
 
   claimDue(overlayId: string): boolean {
-    this.dependencies.metrics.recordRttFlushAttempt();
     const dueAtEpochMs = this.pendingRttUpdateDueAtByOverlayId.get(overlayId);
     if (dueAtEpochMs === undefined || dueAtEpochMs > this.dependencies.nowEpochMs()) {
       this.dependencies.metrics.recordRttFlushResult(false);

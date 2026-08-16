@@ -114,7 +114,7 @@ export class RallarRtcTopologyService {
   }
 
   observeCommittedTopologySnapshot(snapshot: RallarOverlayTopologySnapshot): boolean {
-    const changed = this.snapshots.observe(snapshot);
+    const changed = this.observeTopologySnapshot(snapshot);
     this.rttRebuildScheduler.remove(snapshot.overlayId);
     return changed;
   }
@@ -133,16 +133,21 @@ export class RallarRtcTopologyService {
     options: RallarRtcTopologyUpdateOptions,
     nowEpochMs: number,
   ): RallarRtcTopologyUpdateResult {
+    this.metrics.recordTopologyUpdateAttempt();
+    const activePlanningInput = this.planner.createActivePlanningInput(group, rttMeasurements);
     const overlayId = toScopedOverlayId(group.group);
     const previous =
       options.previous?.overlayId === overlayId ? options.previous : this.snapshots.get(overlayId);
-    return this.planner.plan({
-      group,
-      rttMeasurements,
-      previous,
-      updateOptions: options,
-      nowEpochMs,
-    });
+    return this.planner.planPrepared(
+      {
+        group,
+        ...activePlanningInput,
+        previous,
+        updateOptions: options,
+        nowEpochMs,
+      },
+      this,
+    );
   }
 
   removeGroupTopology(group: GroupSnapshot): boolean {
@@ -158,6 +163,7 @@ export class RallarRtcTopologyService {
   }
 
   queueRttTopologyUpdate(group: GroupSnapshot): RallarRtcTopologyRttQueueResult {
+    this.metrics.recordRttQueueRequest();
     const overlayId = toScopedOverlayId(group.group);
     return this.rttRebuildScheduler.queue({
       overlayId,
@@ -177,6 +183,7 @@ export class RallarRtcTopologyService {
   }
 
   claimDueRttTopologyUpdate(groupRef: GroupRef): boolean {
+    this.metrics.recordRttFlushAttempt();
     return this.rttRebuildScheduler.claimDue(toScopedOverlayId(groupRef));
   }
 
@@ -208,7 +215,7 @@ export class RallarRtcTopologyService {
     group: GroupSnapshot,
     rttMeasurements: readonly RttMeasurementInfo[] = [],
   ): WeightedGraph {
-    return this.planner.createRoomGraph(group, rttMeasurements);
+    return this.planner.createRoomGraph(group, rttMeasurements, this);
   }
 
   readKindHysteresisWidths(): RtcTopologyKindHysteresisWidths {
