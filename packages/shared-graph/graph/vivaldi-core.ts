@@ -196,8 +196,46 @@ export function predictedRttMs(
     target: VivaldiNodeData,
     cfg?: Partial<VivaldiConfig>,
 ): number {
-    const mergedCfg = { ...DEFAULT_VIVALDI_CONFIG, ...cfg };
-    const sourceCoords = new Coordinates(source.coords, mergedCfg);
-    const targetCoords = new Coordinates(target.coords, mergedCfg);
-    return sourceCoords.distance(targetCoords);
+    return computePredictedRttMs(source, target, { ...DEFAULT_VIVALDI_CONFIG, ...cfg });
+}
+
+/**
+ * Allocation-free distance over an already-merged config. Graph construction
+ * calls this once per candidate pair, so it is O(N^2) per build; going through
+ * `Coordinates` there would allocate a merged config, two coordinate copies,
+ * and a difference vector for every pair.
+ */
+export function computePredictedRttMs(
+    source: VivaldiNodeData,
+    target: VivaldiNodeData,
+    cfg: VivaldiConfig,
+): number {
+    const sourceCoords = source.coords;
+    const targetCoords = target.coords;
+    if (sourceCoords.length !== targetCoords.length) {
+        throw new Error('Coordinates must have the same dimension');
+    }
+    if (cfg.useLInf) {
+        let max = 0;
+        for (let axis = 0; axis < sourceCoords.length; axis++) {
+            const difference = Math.abs(sourceCoords[axis] - targetCoords[axis]);
+            if (difference > max) {
+                max = difference;
+            }
+        }
+        return max;
+    }
+    if (cfg.useL1) {
+        let sum = 0;
+        for (let axis = 0; axis < sourceCoords.length; axis++) {
+            sum += Math.abs(sourceCoords[axis] - targetCoords[axis]);
+        }
+        return sum;
+    }
+    let sumSquares = 0;
+    for (let axis = 0; axis < sourceCoords.length; axis++) {
+        const difference = sourceCoords[axis] - targetCoords[axis];
+        sumSquares += difference * difference;
+    }
+    return Math.sqrt(sumSquares);
 }

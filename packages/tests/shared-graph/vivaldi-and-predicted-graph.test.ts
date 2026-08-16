@@ -171,6 +171,21 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
         }
     });
 
+    // A grid makes most predicted weights tie exactly, so the tie-break decides
+    // real edges. Before the planning input was canonicalized the tie-break read
+    // whichever node the map happened to yield first, and the same member set
+    // produced different graphs on servers that learned the members in a
+    // different order. The permutation is a shuffle rather than a reversal:
+    // reversing an evenly spaced set is a mirror symmetry that can hide the
+    // difference.
+    it('builds the same degree-capped graph regardless of node insertion order', () => {
+        const ids = Array.from({ length: 16 }, (_value, index) => `peer-${index + 1}`);
+        const shuffled = [4, 12, 0, 7, 15, 2, 9, 1, 13, 5, 10, 3, 14, 6, 11, 8].map(
+            (index) => ids[index],
+        );
+        expect(toDegreeCappedEdgeKeys(shuffled)).toEqual(toDegreeCappedEdgeKeys(ids));
+    });
+
     it('ignores invalid remote data during direct Vivaldi node updates', () => {
         const node = new VivaldiNode(2, 0.5);
         const before = node.toNodeData('peer-a');
@@ -191,3 +206,20 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
         expect(node.toNodeData('peer-a')).toEqual(before);
     });
 });
+
+function toDegreeCappedEdgeKeys(order: readonly string[]): string[] {
+    const nodeDataById = new Map<string, VivaldiNodeData>(
+        order.map((id) => {
+            const index = Number(id.split('-')[1]) - 1;
+            return [id, { id, coords: [index % 4, Math.floor(index / 4)], err: 0.1, rttMs: 0 }];
+        }),
+    );
+    const graph = createDegreeCappedPredictedGraph(nodeDataById, DEFAULT_GRAPH_PROP, {
+        degreeLimit: 3,
+    });
+    const edges: string[] = [];
+    graph.forEachEdge((_edge, _attributes, source, target) => {
+        edges.push(source < target ? `${source}|${target}` : `${target}|${source}`);
+    });
+    return edges.sort();
+}
