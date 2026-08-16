@@ -68,16 +68,24 @@ function decodeRtcBaselineWorkerSamples(
   runtimeObservation: RtcBaselineRuntimeObservationDto,
 ): RtcBaselineSampleDto[] {
   const normalized = normalizeRtcBaselineJson(JSON.parse(stdout));
-  if (!normalized.ok) throw new Error(JSON.stringify(normalized.issues));
-  if (!Array.isArray(normalized.value)) throw new Error('Worker output must be a JSON array.');
+  if (!normalized.ok) {
+    throw new Error(JSON.stringify(normalized.issues));
+  }
+  if (!Array.isArray(normalized.value)) {
+    throw new Error('Worker output must be a JSON array.');
+  }
   return normalized.value.map((sampleJson) => {
     const decoded = decodeRtcBaselineSample(sampleJson);
-    if (!decoded.ok) throw new Error(JSON.stringify(decoded.issues));
+    if (!decoded.ok) {
+      throw new Error(JSON.stringify(decoded.issues));
+    }
     if (!isRtcBaselineSampleDto(decoded.value)) {
       throw new Error('Decoded worker sample is untyped.');
     }
     const issues = validateRtcBaselineSample(decoded.value);
-    if (issues.length > 0) throw new Error(JSON.stringify(issues));
+    if (issues.length > 0) {
+      throw new Error(JSON.stringify(issues));
+    }
     return { ...decoded.value, runtimeObservation };
   });
 }
@@ -95,20 +103,30 @@ async function runRtcBaselineDenoWorker(
       entry.caseId === workerRequest.outerAttempt.caseId &&
       entry.inputKey === workerRequest.outerAttempt.inputKey,
   );
-  if (!caseEntry) throw new Error('The manifest outer attempt is absent from the catalog.');
+  if (!caseEntry) {
+    throw new Error('The manifest outer attempt is absent from the catalog.');
+  }
   const environment = await evidence.readEnvironment(workerRequest.baselineId);
-  if (!environment.ok) throw new Error(JSON.stringify(environment.issues));
+  if (!environment.ok) {
+    throw new Error(JSON.stringify(environment.issues));
+  }
   const runtimeObservation = environment.value.observation;
-  if (!runtimeObservation) throw new Error('The initialized runtime observation is absent.');
+  if (!runtimeObservation) {
+    throw new Error('The initialized runtime observation is absent.');
+  }
   const command = createRtcBaselineWorkerCommand({
     baselineId: workerRequest.baselineId,
     caseEntry,
     outerAttempt: workerRequest.outerAttempt,
     resolvedConfiguration: runtimeObservation.resolvedConfiguration,
   });
-  if (!command.ok) throw new Error(JSON.stringify(command.issues));
+  if (!command.ok) {
+    throw new Error(JSON.stringify(command.issues));
+  }
   const result = await freshWorker.run(command.value.redactedArgv);
-  if (!result.ok) throw new Error(JSON.stringify(result.issues));
+  if (!result.ok) {
+    throw new Error(JSON.stringify(result.issues));
+  }
   return { outcomes: decodeRtcBaselineWorkerSamples(result.value.stdout, runtimeObservation) };
 }
 

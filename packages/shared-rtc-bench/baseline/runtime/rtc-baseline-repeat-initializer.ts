@@ -12,7 +12,9 @@ export function createRtcBaselineRepeatInitializer(
       return envelope.initializeBaseline(request);
     }
     const repeatOf = Reflect.get(request, 'repeatOf');
-    if (typeof repeatOf !== 'string') return envelope.initializeBaseline(request);
+    if (typeof repeatOf !== 'string') {
+      return envelope.initializeBaseline(request);
+    }
     if (repeatOf.endsWith('-repeat-01')) {
       return {
         ok: false,
@@ -22,7 +24,9 @@ export function createRtcBaselineRepeatInitializer(
       };
     }
     const primary = await finalizedReader.readVerifiedRepeatPrimary({ baselineId: repeatOf });
-    if (!primary.ok) return primary;
+    if (!primary.ok) {
+      return primary;
+    }
     const prepared = prepareRtcBaselineRepeatRequest({
       primary: {
         ...primary.value.manifest.request,

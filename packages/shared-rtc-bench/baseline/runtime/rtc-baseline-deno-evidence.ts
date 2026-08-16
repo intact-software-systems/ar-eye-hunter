@@ -69,9 +69,13 @@ export function createRtcBaselineDenoEvidence(
   const reconcileAcceptedOperation = createRtcBaselineRuntimeReconciler({
     async readInitialized(baselineId) {
       const environment = await readEnvironment(baselineId);
-      if (!environment.ok) return environment;
+      if (!environment.ok) {
+        return environment;
+      }
       const manifest = await readManifest(baselineId);
-      if (!manifest.ok) return manifest;
+      if (!manifest.ok) {
+        return manifest;
+      }
       if (environment.value.observation === null) {
         return {
           ok: false,

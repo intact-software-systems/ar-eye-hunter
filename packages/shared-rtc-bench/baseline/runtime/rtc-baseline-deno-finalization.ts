@@ -119,7 +119,9 @@ function appendRtcBaselineSample(
     decodeRtcBaselineSample(sampleJson),
     isRtcBaselineSampleDto,
   );
-  if (!decoded.ok) return decoded;
+  if (!decoded.ok) {
+    return decoded;
+  }
   const duplicate = appendUniqueSamples(collection, [decoded.value]);
   return duplicate ? { ok: false, issues: [duplicate] } : { ok: true, value: undefined };
 }
@@ -132,7 +134,9 @@ function appendRtcBaselineExternalAttempt(
     decodeRtcBaselineExternalAttempt(attemptJson),
     isRtcBaselineExternalAttemptDto,
   );
-  if (!decoded.ok) return decoded;
+  if (!decoded.ok) {
+    return decoded;
+  }
   collection.externalAttempts.push(decoded.value);
   const duplicate = appendUniqueSamples(collection, decoded.value.samples);
   return duplicate ? { ok: false, issues: [duplicate] } : { ok: true, value: undefined };
@@ -146,7 +150,9 @@ function appendRtcBaselineExternalCohort(
     decodeRtcBaselineExternalCohort(cohortJson),
     isRtcBaselineExternalCohortDto,
   );
-  if (!decoded.ok) return decoded;
+  if (!decoded.ok) {
+    return decoded;
+  }
   collection.cohortOutcomes.push(decoded.value);
   const duplicate = appendUniqueSamples(collection, decoded.value.samples);
   return duplicate ? { ok: false, issues: [duplicate] } : { ok: true, value: undefined };
@@ -158,7 +164,9 @@ function appendRtcBaselineFailureOutcome(
   relativePath: string,
 ): RtcBaselineResult<void> {
   const decoded = decodeRtcBaselineFailureOutcome(failureJson, relativePath);
-  if (!decoded.ok) return decoded;
+  if (!decoded.ok) {
+    return decoded;
+  }
   collection.failures.push(decoded.value);
   if (isRtcBaselineSampleFailureOutcomeArtifact(decoded.value)) {
     collection.sampleOutcomes.push(decoded.value);
@@ -218,16 +226,22 @@ async function collectRtcBaselineResultArtifacts(
   };
   for (const listedFile of listedFiles) {
     const kind = classifyRtcBaselineArtifactPath(listedFile.relativePath);
-    if (kind === null) return unsupportedArtifactPath(listedFile.relativePath);
+    if (kind === null) {
+      return unsupportedArtifactPath(listedFile.relativePath);
+    }
     const artifact = await evidence.store.readJson(baselineId, listedFile.relativePath);
-    if (!artifact.ok) return artifact;
+    if (!artifact.ok) {
+      return artifact;
+    }
     const appended = appendRtcBaselineResultArtifact({
       collection,
       kind,
       artifactJson: artifact.value,
       relativePath: listedFile.relativePath,
     });
-    if (!appended.ok) return appended;
+    if (!appended.ok) {
+      return appended;
+    }
   }
   return { ok: true, value: collection };
 }
@@ -240,7 +254,9 @@ async function readRtcBaselineRetainedArtifacts(
   const retainedArtifacts: CollectedArtifacts['retainedArtifacts'][number][] = [];
   for (const relativePath of relativePaths) {
     const bytes = await evidence.store.readBytes(baselineId, relativePath);
-    if (!bytes.ok) return bytes;
+    if (!bytes.ok) {
+      return bytes;
+    }
     retainedArtifacts.push({ relativePath, bytes: bytes.value });
   }
   return { ok: true as const, value: retainedArtifacts };
@@ -251,9 +267,13 @@ async function collectRtcBaselineArtifacts(
   baselineId: string,
 ): Promise<RtcBaselineResult<CollectedArtifacts>> {
   const reconciliation = await evidence.reconcileAcceptedOperation('finalize', { baselineId });
-  if (reconciliation.length > 0) return { ok: false, issues: reconciliation };
+  if (reconciliation.length > 0) {
+    return { ok: false, issues: reconciliation };
+  }
   const environment = await evidence.readEnvironment(baselineId);
-  if (!environment.ok) return environment;
+  if (!environment.ok) {
+    return environment;
+  }
   const observation = environment.value.observation;
   if (observation === null) {
     return {
@@ -262,17 +282,25 @@ async function collectRtcBaselineArtifacts(
     };
   }
   const manifest = await evidence.readManifest(baselineId);
-  if (!manifest.ok) return manifest;
+  if (!manifest.ok) {
+    return manifest;
+  }
   const listed = await evidence.store.listArtifacts(baselineId, 'results');
-  if (!listed.ok) return listed;
+  if (!listed.ok) {
+    return listed;
+  }
   const collection = await collectRtcBaselineResultArtifacts(evidence, baselineId, listed.value);
-  if (!collection.ok) return collection;
+  if (!collection.ok) {
+    return collection;
+  }
   const retained = await readRtcBaselineRetainedArtifacts(evidence, baselineId, [
     'environment.json',
     'manifest.json',
     ...listed.value.map((entry) => entry.relativePath),
   ]);
-  if (!retained.ok) return retained;
+  if (!retained.ok) {
+    return retained;
+  }
   return {
     ok: true,
     value: {
@@ -293,13 +321,19 @@ async function listRtcBaselineFinalizedArtifactPaths(
   baselineId: string,
 ) {
   const results = await evidence.store.listArtifacts(baselineId, 'results');
-  if (!results.ok) return results;
+  if (!results.ok) {
+    return results;
+  }
   const artifacts = await evidence.store.listArtifacts(baselineId, 'artifacts');
-  if (!artifacts.ok) return artifacts;
+  if (!artifacts.ok) {
+    return artifacts;
+  }
   const unsupported = results.value.find(
     (entry) => classifyRtcBaselineArtifactPath(entry.relativePath) === null,
   );
-  if (unsupported) return unsupportedArtifactPath(unsupported.relativePath);
+  if (unsupported) {
+    return unsupportedArtifactPath(unsupported.relativePath);
+  }
   return {
     ok: true as const,
     value: [

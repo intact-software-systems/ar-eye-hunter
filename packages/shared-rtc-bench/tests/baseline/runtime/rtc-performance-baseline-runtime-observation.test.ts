@@ -10,7 +10,9 @@ const baselineId = '20260816-956a057c9ab5-e1-local';
 
 function readWorkerFlag(arguments_: readonly string[], name: string) {
   const value = arguments_.find((argument) => argument.startsWith(`--${name}=`));
-  if (!value) throw new Error(`Worker command is missing --${name}.`);
+  if (!value) {
+    throw new Error(`Worker command is missing --${name}.`);
+  }
   return value.slice(name.length + 3);
 }
 
