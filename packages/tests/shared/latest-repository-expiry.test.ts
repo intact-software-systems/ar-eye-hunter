@@ -163,6 +163,29 @@ describe('LatestRepository expiry surface', () => {
         expect(seen).toEqual([7_777, 7_777]);
     });
 
+    // The two expiry mechanisms differ at the boundary and this pins it: an
+    // absolute deadline expires AT its instant, a relative ttl expires one
+    // millisecond after elapsing. The deadline is inclusive because every
+    // hand-rolled store in this repo tests `expireAt <= now`; the ttl rule is
+    // older than that and unchanged here. Mixing both on one entry means the
+    // deadline decides first.
+    it('expires a deadline inclusively and a ttl exclusively', () => {
+        const deadline = new LatestRepository<string, Decision>({ evictsPerWindow: 0 });
+        deadline.acceptAt({
+            key: 'a',
+            value: { claimed: true },
+            nowEpochMs: 0,
+            expireAtEpochMs: 100,
+        });
+        expect(deadline.readAt('a', 99)).toEqual({ claimed: true });
+        expect(deadline.readAt('a', 100)).toBeUndefined();
+
+        const ttl = new LatestRepository<string, Decision>({ ttlMs: 100, evictsPerWindow: 0 });
+        ttl.acceptAt({ key: 'a', value: { claimed: true }, nowEpochMs: 0 });
+        expect(ttl.readAt('a', 100)).toEqual({ claimed: true });
+        expect(ttl.readAt('a', 101)).toBeUndefined();
+    });
+
     it('honours a relative ttl when no deadline is supplied', () => {
         const repository = new LatestRepository<string, Decision>({ ttlMs: 100 });
 
