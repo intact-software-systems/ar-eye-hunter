@@ -8,7 +8,7 @@ import {
 // prettier-ignore
 import {
   RtcTopologyMetrics,
-} from '@shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts';
+} from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 // prettier-ignore
 import {
   planRallarRtcTopologySnapshot,

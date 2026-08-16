@@ -31,7 +31,7 @@ import {
   DEFAULT_TREE_EXIT_WIDTH,
   resolveTopologyKindWithHysteresis,
 } from './topology-kind-hysteresis.ts';
-import type { RtcTopologyMetrics } from '../rallar-rtc-topology-metrics.ts';
+import type { RtcTopologyMetrics } from '../runtime/rtc-topology-metrics.ts';
 
 const DEFAULT_DEGREE_LIMIT = 5;
 const DEFAULT_TREE_MIN_SIZE = 5;

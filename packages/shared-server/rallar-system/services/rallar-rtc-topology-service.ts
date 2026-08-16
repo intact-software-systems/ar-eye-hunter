@@ -2,18 +2,21 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-  compareOverlayTopologyCausalTuple,
-  type RallarOverlayTopologySnapshot,
-  type RallarRtcTopologyKind,
+import type {
+  RallarOverlayTopologySnapshot,
+  RallarRtcTopologyKind,
 } from '@shared/api/overlay-topology.ts';
 import type { WeightedGraph } from '@shared-graph/graph-props.ts';
 
-import { rtcTopologySemanticEqual } from '../rtc-topology-semantic-equality.ts';
 import {
   RtcTopologyMetrics,
   type RallarRtcTopologyMetrics,
-} from '../topology/rallar-rtc-topology-metrics.ts';
+} from '../topology/runtime/rtc-topology-metrics.ts';
+import {
+  RtcTopologyRttRebuildScheduler,
+  type RallarRtcTopologyRttQueueResult,
+} from '../topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
+import { RtcTopologySnapshotRegistry } from '../topology/runtime/rtc-topology-snapshot-registry.ts';
 import { RtcTopologyPlanner } from '../topology/planning/rtc-topology-planner.ts';
 
 export interface RallarRtcTopologyServiceOptions {
@@ -53,25 +56,24 @@ export {
   planRallarRtcTopologySnapshot,
 } from '../topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 
-export interface RallarRtcTopologyRttQueueResult {
-  readonly overlayId: string;
-  readonly dueAtEpochMs: number;
-  readonly delayMs: number;
-  readonly newlyQueued: boolean;
-  readonly immediate: boolean;
-}
+export type { RallarRtcTopologyRttQueueResult } from '../topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts';
 
 const DEFAULT_RTT_REBUILD_DEBOUNCE_MS = 250;
 
 export class RallarRtcTopologyService {
-  private readonly snapshotsByOverlayId = new Map<string, RallarOverlayTopologySnapshot>();
-  private readonly pendingRttUpdateDueAtByOverlayId = new Map<string, number>();
   private readonly metrics = new RtcTopologyMetrics();
+  private readonly snapshots = new RtcTopologySnapshotRegistry();
   private readonly planner: RtcTopologyPlanner;
+  private readonly rttRebuildScheduler: RtcTopologyRttRebuildScheduler;
   private readonly options: RallarRtcTopologyServiceOptions;
 
   constructor(options: RallarRtcTopologyServiceOptions = {}) {
     this.options = options;
+    this.rttRebuildScheduler = new RtcTopologyRttRebuildScheduler({
+      nowEpochMs: () => this.now(),
+      debounceMs: options.rttRebuildDebounceMs ?? DEFAULT_RTT_REBUILD_DEBOUNCE_MS,
+      metrics: this.metrics,
+    });
     this.planner = new RtcTopologyPlanner(options, {
       metrics: this.metrics,
       durationNowMs: () => this.durationNowMs(),
@@ -79,10 +81,7 @@ export class RallarRtcTopologyService {
   }
 
   readMetrics(): RallarRtcTopologyMetrics {
-    return this.metrics.read(
-      this.snapshotsByOverlayId.size,
-      this.pendingRttUpdateDueAtByOverlayId.size,
-    );
+    return this.metrics.read(this.snapshots.size, this.rttRebuildScheduler.size);
   }
 
   resetMetrics(): void {
@@ -90,19 +89,7 @@ export class RallarRtcTopologyService {
   }
 
   observeTopologySnapshot(snapshot: RallarOverlayTopologySnapshot): boolean {
-    const current = this.snapshotsByOverlayId.get(snapshot.overlayId);
-    const comparison = current ? compareOverlayTopologyCausalTuple(snapshot, current) : null;
-    if (!current || comparison === 'dominates') {
-      this.snapshotsByOverlayId.set(snapshot.overlayId, snapshot);
-      return true;
-    }
-    if (comparison === 'equal' && !rtcTopologySemanticEqual(snapshot, current)) {
-      throw new Error(`RTC topology process-cache revision conflict: ${snapshot.overlayId}`);
-    }
-    if (comparison === 'incomparable') {
-      throw new Error(`RTC topology process-cache causal conflict: ${snapshot.overlayId}`);
-    }
-    return false;
+    return this.snapshots.observe(snapshot);
   }
 
   recordTopologyPublishResult(changed: boolean): void {
@@ -125,7 +112,7 @@ export class RallarRtcTopologyService {
 
   observeCommittedTopologySnapshot(snapshot: RallarOverlayTopologySnapshot): boolean {
     const changed = this.observeTopologySnapshot(snapshot);
-    this.pendingRttUpdateDueAtByOverlayId.delete(snapshot.overlayId);
+    this.rttRebuildScheduler.remove(snapshot.overlayId);
     return changed;
   }
 
@@ -145,9 +132,7 @@ export class RallarRtcTopologyService {
   ): RallarRtcTopologyUpdateResult {
     const overlayId = toScopedOverlayId(group.group);
     const previous =
-      options.previous?.overlayId === overlayId
-        ? options.previous
-        : this.snapshotsByOverlayId.get(overlayId);
+      options.previous?.overlayId === overlayId ? options.previous : this.snapshots.get(overlayId);
     return this.planner.plan({
       group,
       rttMeasurements,
@@ -159,43 +144,22 @@ export class RallarRtcTopologyService {
 
   removeGroupTopology(group: GroupSnapshot): boolean {
     const overlayId = toScopedOverlayId(group.group);
-    this.pendingRttUpdateDueAtByOverlayId.delete(overlayId);
-    const removed = this.snapshotsByOverlayId.delete(overlayId);
+    this.rttRebuildScheduler.remove(overlayId);
+    const removed = this.snapshots.remove(overlayId);
     this.metrics.recordRemoval(removed);
     return removed;
   }
 
   readSnapshot(group: GroupSnapshot): RallarOverlayTopologySnapshot | undefined {
-    return this.snapshotsByOverlayId.get(toScopedOverlayId(group.group));
+    return this.snapshots.get(toScopedOverlayId(group.group));
   }
 
   queueRttTopologyUpdate(group: GroupSnapshot): RallarRtcTopologyRttQueueResult {
-    this.metrics.recordRttQueueRequest();
     const overlayId = toScopedOverlayId(group.group);
-    const now = this.now();
-    const existingDueAt = this.pendingRttUpdateDueAtByOverlayId.get(overlayId);
-    if (existingDueAt !== undefined) {
-      this.metrics.recordRttQueueResult('coalesced', existingDueAt <= now);
-      return {
-        overlayId,
-        dueAtEpochMs: existingDueAt,
-        delayMs: Math.max(0, existingDueAt - now),
-        newlyQueued: false,
-        immediate: existingDueAt <= now,
-      };
-    }
-    const dueAtEpochMs = this.snapshotsByOverlayId.has(overlayId)
-      ? now + this.rttRebuildDebounceMs()
-      : now;
-    this.pendingRttUpdateDueAtByOverlayId.set(overlayId, dueAtEpochMs);
-    this.metrics.recordRttQueueResult('new', dueAtEpochMs <= now);
-    return {
+    return this.rttRebuildScheduler.queue({
       overlayId,
-      dueAtEpochMs,
-      delayMs: Math.max(0, dueAtEpochMs - now),
-      newlyQueued: true,
-      immediate: dueAtEpochMs <= now,
-    };
+      hasSnapshot: this.snapshots.has(overlayId),
+    });
   }
 
   flushDueRttTopologyUpdate(
@@ -210,25 +174,15 @@ export class RallarRtcTopologyService {
   }
 
   claimDueRttTopologyUpdate(groupRef: GroupRef): boolean {
-    this.metrics.recordRttFlushAttempt();
-    const overlayId = toScopedOverlayId(groupRef);
-    const dueAtEpochMs = this.pendingRttUpdateDueAtByOverlayId.get(overlayId);
-    if (dueAtEpochMs === undefined || dueAtEpochMs > this.now()) {
-      this.metrics.recordRttFlushResult(false);
-      return false;
-    }
-    this.pendingRttUpdateDueAtByOverlayId.delete(overlayId);
-    this.metrics.recordRttFlushResult(true);
-    return true;
+    return this.rttRebuildScheduler.claimDue(toScopedOverlayId(groupRef));
   }
 
   readRttTopologyUpdateDelayMs(group: GroupSnapshot): number | undefined {
-    const dueAtEpochMs = this.pendingRttUpdateDueAtByOverlayId.get(toScopedOverlayId(group.group));
-    return dueAtEpochMs === undefined ? undefined : Math.max(0, dueAtEpochMs - this.now());
+    return this.rttRebuildScheduler.readDelayMs(toScopedOverlayId(group.group));
   }
 
   readRttRebuildDebounceMs(): number {
-    return this.rttRebuildDebounceMs();
+    return this.rttRebuildScheduler.readDebounceMs();
   }
 
   readNowEpochMs(): number {
@@ -256,10 +210,6 @@ export class RallarRtcTopologyService {
 
   readKindHysteresisWidths(): RtcTopologyKindHysteresisWidths {
     return this.planner.readKindHysteresisWidths();
-  }
-
-  private rttRebuildDebounceMs(): number {
-    return Math.max(0, this.options.rttRebuildDebounceMs ?? DEFAULT_RTT_REBUILD_DEBOUNCE_MS);
   }
 
   private now(): number {
