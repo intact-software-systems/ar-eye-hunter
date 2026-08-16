@@ -77,7 +77,9 @@ function createCandidateHeap(input: DegreeCappedEdgeSelectionInput): CandidateHe
             index += 1;
         }
     }
-    for (let parent = (pairCount >> 1) - 1; parent >= 0; parent--) {
+    // Math.floor and not a bit shift: `>>` coerces to int32, so a candidate
+    // count above 2^31 would silently start heapifying from a negative index.
+    for (let parent = Math.floor(pairCount / 2) - 1; parent >= 0; parent--) {
         siftDown(heap, parent);
     }
     return heap;
