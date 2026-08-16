@@ -25,11 +25,15 @@ function createTemporaryFilePort(rootPath: string): DenoRtcBaselineAdapters['fil
         return null;
       }
     },
-    createDirectory: async (path, options) => mkdir(toTemporaryPath(path), options),
+    createDirectory: async (path, options) => {
+      await mkdir(toTemporaryPath(path), options);
+    },
     writeFileCreateNew: async (path, bytes) =>
       writeFile(toTemporaryPath(path), bytes, { flag: 'wx' }),
     readFile: async (path) => readFile(toTemporaryPath(path)),
-    removeFile: async (path) => rm(toTemporaryPath(path)),
+    removeFile: async (path) => {
+      await rm(toTemporaryPath(path));
+    },
     removeDirectory: async (path) => rm(toTemporaryPath(path), { force: true, recursive: true }),
     listDirectory: async (path) =>
       (await readdir(toTemporaryPath(path), { withFileTypes: true })).map((entry) => ({
