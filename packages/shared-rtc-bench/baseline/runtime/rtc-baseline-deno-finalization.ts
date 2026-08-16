@@ -250,7 +250,7 @@ async function readRtcBaselineRetainedArtifacts(
   evidence: RtcBaselineDenoEvidence,
   baselineId: string,
   relativePaths: readonly string[],
-) {
+): Promise<RtcBaselineResult<CollectedArtifacts['retainedArtifacts']>> {
   const retainedArtifacts: CollectedArtifacts['retainedArtifacts'][number][] = [];
   for (const relativePath of relativePaths) {
     const bytes = await evidence.store.readBytes(baselineId, relativePath);

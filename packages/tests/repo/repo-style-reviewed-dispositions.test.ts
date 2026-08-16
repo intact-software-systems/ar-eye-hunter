@@ -56,6 +56,16 @@ describe('reviewed repository style dispositions', () => {
         symbol: 'parseRtcBaselineCommand',
       },
       {
+        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
+        rule: 'layout.primary-export-name',
+        symbol: 'createRtcBaselineDenoAcceptance',
+      },
+      {
+        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
+        rule: 'layout.primary-export-name',
+        symbol: 'createRtcBaselineRepeatInitializer',
+      },
+      {
         path:
           'packages/shared-server/rallar-system/rtc-topology/persistence/' +
           'rtc-rtt-persistence-validation-primitives.ts',
