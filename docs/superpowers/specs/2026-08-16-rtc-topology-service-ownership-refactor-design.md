@@ -7,9 +7,10 @@ responsibilities inside `RallarRtcTopologyService` without changing its supporte
 observable topology behavior. This design owns
 [#236](https://github.com/intact-software-systems/ar-eye-hunter/issues/236).
 
-The design is based on clean local `main` and freshly fetched `origin/main` at exact commit
-`8746c9e035785e4ecd8907f92d984f0a54e4ae69` on 2026-08-16. The earlier RTC RTT ownership work is
-already present. This document is architectural guidance, not a live progress ledger, ownership
+The execution base is exact commit `956a057c9ab51c3060f30e60cae48ade24f5ec5c` on 2026-08-16, with
+base artifact ID `20260816-956a057c9ab5-e1-local`. Newer `main` changed shared-graph selection,
+but not the service, direct tests, or selected ownership, so this architecture remains current.
+The earlier RTC RTT ownership work is already present. This document is architectural guidance, not a live progress ledger, ownership
 reservation, completion receipt, or authorization to commit on `main`.
 
 ## Current problem
@@ -319,9 +320,10 @@ hypotheses unless code proves the growth shape. The accepted RTC-B03 workload al
 exact affected production symbols across star, tree, mesh, RTT room graph, and inactive churn at
 30, 100, and 300 sessions.
 
-Capture RTC-B03 on exact base `8746c9e035785e4ecd8907f92d984f0a54e4ae69` before implementation
-and on a clean candidate commit after both slices. Use the same host and environment. Require both
-artifacts to pass their semantic validation. Compare distributions without inventing a new numeric
+Capture RTC-B03 on exact base `956a057c9ab51c3060f30e60cae48ade24f5ec5c` as
+`20260816-956a057c9ab5-e1-local` before implementation and on a clean candidate commit after both
+slices. For both artifacts, run capture → finalize → validate. Use the same host and environment.
+Require both artifacts to pass their semantic validation. Compare distributions without inventing a new numeric
 SLO; repeat or profile a suspicious movement before calling it a regression. Generated evidence
 stays under `tmp/perf/` and is not committed.
 

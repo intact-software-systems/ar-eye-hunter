@@ -174,8 +174,9 @@ export function createRtcBaselineDenoRuntime(
       if (!caseEntry) throw new Error('The manifest outer attempt is absent from the catalog.');
       const environment = await readEnvironment(input.baselineId);
       if (!environment.ok) throw new Error(JSON.stringify(environment.issues));
-      const resolvedConfiguration = environment.value.observation?.resolvedConfiguration;
-      if (!resolvedConfiguration) throw new Error('The initialized configuration is absent.');
+      const runtimeObservation = environment.value.observation;
+      if (!runtimeObservation) throw new Error('The initialized runtime observation is absent.');
+      const { resolvedConfiguration } = runtimeObservation;
       const command = createRtcBaselineWorkerCommand({
         baselineId: input.baselineId,
         caseEntry,
@@ -195,7 +196,7 @@ export function createRtcBaselineDenoRuntime(
         if (!isSample(decoded.value)) throw new Error('Decoded worker sample is untyped.');
         const issues = validateRtcBaselineSample(decoded.value);
         if (issues.length > 0) throw new Error(JSON.stringify(issues));
-        return decoded.value;
+        return { ...decoded.value, runtimeObservation };
       });
       return { outcomes };
     },

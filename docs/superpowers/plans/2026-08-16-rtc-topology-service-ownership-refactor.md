@@ -19,8 +19,9 @@ Graphology, `packages/shared-graph`, the shared RTC benchmark package, Markdown.
 **Design:**
 `docs/superpowers/specs/2026-08-16-rtc-topology-service-ownership-refactor-design.md`
 
-**Exact planning base:** `8746c9e035785e4ecd8907f92d984f0a54e4ae69` (`origin/main` on
-2026-08-16).
+**Exact execution base:** `956a057c9ab51c3060f30e60cae48ade24f5ec5c`, with base artifact ID
+`20260816-956a057c9ab5-e1-local` (2026-08-16). Newer `main` changed shared-graph selection but
+not the service, direct tests, or selected ownership, so the architecture remains current.
 
 ## Global Constraints
 
@@ -178,7 +179,7 @@ git status --short --branch
 
 Expected at plan start:
 
-- `origin/main` is `8746c9e035785e4ecd8907f92d984f0a54e4ae69`;
+- the execution base is `956a057c9ab51c3060f30e60cae48ade24f5ec5c`;
 - the implementation worktree is on `codex/rtc-topology-service-ownership`; and
 - the worktree is clean.
 
@@ -188,23 +189,23 @@ compatibility, or validation assumptions changed. Do not rebase merely for an un
 
 - [ ] **Step 3: Capture the clean base RTC-B03 evidence**
 
-Run from exact base commit `8746c9e035785e4ecd8907f92d984f0a54e4ae69`:
+Run from exact base commit `956a057c9ab51c3060f30e60cae48ade24f5ec5c`:
 
 ```bash
 npm run perf:rtc-baseline -- initialize \
-  --baseline-id=20260816-8746c9e03578-e1-local \
+  --baseline-id=20260816-956a057c9ab5-e1-local \
   --workloads=RTC-B03 \
   --environment=E1-local
 
 npm run perf:rtc-baseline -- capture \
-  --baseline-id=20260816-8746c9e03578-e1-local \
+  --baseline-id=20260816-956a057c9ab5-e1-local \
   --workload=RTC-B03
 
-npm run perf:rtc-baseline -- validate \
-  --baseline-id=20260816-8746c9e03578-e1-local
-
 npm run perf:rtc-baseline -- finalize \
-  --baseline-id=20260816-8746c9e03578-e1-local
+  --baseline-id=20260816-956a057c9ab5-e1-local
+
+npm run perf:rtc-baseline -- validate \
+  --baseline-id=20260816-956a057c9ab5-e1-local
 ```
 
 Expected: all commands exit zero; the finalized evidence under `tmp/perf/rtc-baseline` validates
@@ -658,7 +659,7 @@ Run:
 npm run check:repo-style -- --root packages/shared-server/rallar-system/topology/planning
 npm run check:repo-style:construction-details -- \
   --root packages/shared-server/rallar-system/services
-npm run check:repo-structure -- --base 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-structure -- --base 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npx prettier --check \
   packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts \
   packages/shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts \
@@ -875,7 +876,7 @@ npm run check:repo-style -- --root packages/shared-server/rallar-system/topology
 npm run check:repo-style -- --root packages/shared-server/rallar-system/topology/planning
 npm run check:repo-style:construction-details -- \
   --root packages/shared-server/rallar-system/services
-npm run check:repo-structure -- --base 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-structure -- --base 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npm run test:repo-structure
 npx prettier --check \
   packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts \
@@ -1010,14 +1011,14 @@ cursor, replay, reconnect, retention, or cutover behavior changed.
 - [ ] **Step 6: Run complete style, structure, format, and diff validation**
 
 ```bash
-npm run check:repo-style:changed -- 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-style:changed -- 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npm run check:repo-style
-npm run check:repo-structure -- --base 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-structure -- --base 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npm run test:repo-structure
 git diff --name-only --diff-filter=ACMR \
-  8746c9e035785e4ecd8907f92d984f0a54e4ae69..HEAD -- '*.ts' '*.md' \
+  956a057c9ab51c3060f30e60cae48ade24f5ec5c..HEAD -- '*.ts' '*.md' \
   | xargs npx prettier --check
-git diff --check 8746c9e035785e4ecd8907f92d984f0a54e4ae69..HEAD
+git diff --check 956a057c9ab51c3060f30e60cae48ade24f5ec5c..HEAD
 ```
 
 Expected: changed-style, structure tests, Prettier, and diff checks pass. Full style remains
@@ -1053,10 +1054,10 @@ npm run perf:rtc-baseline -- capture \
   --baseline-id="${RTC_TOPOLOGY_CANDIDATE_ID}" \
   --workload=RTC-B03
 
-npm run perf:rtc-baseline -- validate \
+npm run perf:rtc-baseline -- finalize \
   --baseline-id="${RTC_TOPOLOGY_CANDIDATE_ID}"
 
-npm run perf:rtc-baseline -- finalize \
+npm run perf:rtc-baseline -- validate \
   --baseline-id="${RTC_TOPOLOGY_CANDIDATE_ID}"
 ```
 
