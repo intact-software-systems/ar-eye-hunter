@@ -77,7 +77,7 @@ export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     }
 
     public readOrAcceptAt(
-        input: AcceptLatestEntryInput<K, V> & { readonly create: () => V },
+        input: Omit<AcceptLatestEntryInput<K, V>, 'value'> & { readonly create: () => V },
     ): V {
         const existing = this.readAt(input.key, input.nowEpochMs);
         if (existing !== undefined) {
