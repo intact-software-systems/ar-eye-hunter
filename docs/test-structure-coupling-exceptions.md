@@ -966,9 +966,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/recipe-matrix.test.ts#points every entry at a catalog recipe file"
     },
     {
-      "id": "test-structure-coupling-0472647408807a03",
+      "id": "test-structure-coupling-fb291a422405f9f0",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 151,
+      "line": 154,
       "column": 17,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--forbids-literal-set-values-from-claiming-durable-state-write-evi",
@@ -1109,9 +1109,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a dead exact registration masking the live named route owner"
     },
     {
-      "id": "test-structure-coupling-3dbbecadc0b567f3",
+      "id": "test-structure-coupling-dd6e9a473736ed3c",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 426,
+      "line": 424,
       "column": 9,
       "kind": "symbol-assertion",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
@@ -1655,9 +1655,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a translator case routed to another operation type"
     },
     {
-      "id": "test-structure-coupling-7d29c8dbac2bcb59",
+      "id": "test-structure-coupling-37eab7de5df607a3",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 166,
+      "line": 169,
       "column": 35,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--uses-one-bounded-execution-identity-for-the-command-and-its-evid",
@@ -1668,9 +1668,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/state-write-recipe-evidence.test.ts#uses one bounded execution identity for the command and its evidence"
     },
     {
-      "id": "test-structure-coupling-7d9fa62ed4f9ff0a",
+      "id": "test-structure-coupling-34419725117cff44",
       "path": "packages/tests/shared-test/state-write-recipe-evidence.test.ts",
-      "line": 127,
+      "line": 130,
       "column": 17,
       "kind": "production-source-read",
       "contract": "state-write-recipe-evidence--observes-committed-socket-authorization-before-clustered-ws-effe",
@@ -2383,9 +2383,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#exports a syntax-aware analyzer for named, default, namespace, dynamic, and alias evasions"
     },
     {
-      "id": "test-structure-coupling-d1db7e3352ce50e1",
+      "id": "test-structure-coupling-fe56265019c14a46",
       "path": "packages/tests/shared-test/recipe-matrix.test.ts",
-      "line": 424,
+      "line": 422,
       "column": 24,
       "kind": "production-source-read",
       "contract": "recipe-matrix-public-interface--advertises-the-api-v1-profile-in-recipe-matrix-cli-usage",
