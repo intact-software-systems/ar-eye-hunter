@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
-import { createRtcRoomGraph } from '@shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts';
+// prettier-ignore
+import {
+  RallarRtcTopologyService,
+} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+// prettier-ignore
+import {
+  computeCanonicalTopologyPairWeight,
+} from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
+// prettier-ignore
+import {
+  createRtcRoomGraph,
+} from '@shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -26,10 +35,28 @@ describe('RTC topology weighted room graph planning', () => {
     });
 
     expect(result.usedSparseFallback).toBe(false);
+    expect(result.graph.getAttributes()).toEqual({
+      id: '["app-1","workspace-1","room-graph-owner"]',
+      version: 1,
+      degreeLimitMember: 5,
+      degreeLimitSteiner: 5,
+    });
     expect(result.graph.edges().map((edge) => result.graph.extremities(edge))).toEqual([
       ['peer-1', 'peer-2'],
       ['peer-1', 'peer-3'],
       ['peer-2', 'peer-3'],
+    ]);
+    expect(
+      result.graph
+        .edges()
+        .map((edge) => [
+          result.graph.extremities(edge),
+          result.graph.getEdgeAttribute(edge, 'weight'),
+        ]),
+    ).toEqual([
+      [['peer-1', 'peer-2'], computeCanonicalTopologyPairWeight('peer-1', 'peer-2')],
+      [['peer-1', 'peer-3'], computeCanonicalTopologyPairWeight('peer-1', 'peer-3')],
+      [['peer-2', 'peer-3'], computeCanonicalTopologyPairWeight('peer-2', 'peer-3')],
     ]);
   });
 
@@ -86,6 +113,30 @@ describe('RTC topology weighted room graph planning', () => {
       ['peer-1', 'peer-2'],
       ['peer-1', 'peer-3'],
     ]);
+  });
+
+  it('keeps a connected sparse graph without materializing fallback edges', () => {
+    const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
+    const result = createRtcRoomGraph({
+      group,
+      activeSessionIds: createRtcTopologyMemberIds(3),
+      rttMeasurements: [
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'peer-1',
+          sessionIdTo: 'peer-2',
+          rttMs: 5,
+          version: 1,
+        }),
+      ],
+      degreeLimit: 5,
+      rttReportingDegreeLimit: 5,
+      seedTopology: 'tree',
+      meshParamK: 2,
+    });
+
+    expect(result.usedSparseFallback).toBe(false);
+    expect(edgeWeight(result.graph, 'peer-1', 'peer-2')).toBe(5);
+    expect(result.graph.size).toBe(3);
   });
 
   it('uses fallback graph weights until RTT measurements are available', () => {
@@ -185,6 +236,7 @@ describe('RTC topology weighted room graph planning', () => {
     });
     const graph = result.graph;
 
+    expect(result.usedSparseFallback).toBe(false);
     expect(edgeWeight(graph, 'a', 'b::c')).toBe(55);
     expect(edgeWeight(graph, 'a::b', 'c')).toBe(22);
     expect(edgeWeight(graph, composed, 'a')).toBe(33);
@@ -225,6 +277,7 @@ describe('RTC topology weighted room graph planning', () => {
     });
     const graph = result.graph;
 
+    expect(result.usedSparseFallback).toBe(false);
     expect(graph.edges().map((edge) => graph.extremities(edge))).toEqual([
       [decomposed, 'z'],
       [decomposed, composed],

@@ -1,4 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
+import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type {
   RallarOverlayTopologySnapshot,
@@ -12,8 +14,6 @@ import type { WeightedGraph } from '@shared-graph/graph-props.ts';
 import { DynamicMeshAlgo } from '@shared-graph/mesh/group-dynamics-mesh-types.ts';
 import { insertToMesh } from '@shared-graph/mesh/insert-mesh-algs.ts';
 
-import { readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
-import type { GroupTopologyKindSetting } from '@shared/api/graph-topology-management-types.ts';
 import type {
   RallarRtcTopologyServiceOptions,
   RallarRtcTopologyUpdateOptions,
@@ -79,6 +79,16 @@ interface CreateMeasuredRoomGraphInput {
   readonly options: RallarRtcTopologyServiceOptions;
 }
 
+interface PlannedNextHopsResult {
+  readonly nextHopsBySessionId: Record<string, readonly string[]>;
+  readonly weightedPlanDurationMs: number | undefined;
+}
+
+interface WeightedTopologyPlanResult {
+  readonly nextHopsBySessionId: Record<string, readonly string[]>;
+  readonly durationMs: number;
+}
+
 export class RtcTopologyPlanner {
   private readonly serviceOptions: RallarRtcTopologyServiceOptions;
   private readonly dependencies: RtcTopologyPlanner.Dependencies;
@@ -103,7 +113,7 @@ export class RtcTopologyPlanner {
     const topologyOptions = this.readTopologyOptions(input.updateOptions);
     const topology = this.selectPlanTopology(input.group, topologyOptions, input.previous);
     const degreeLimit = this.readDegreeLimit(topologyOptions);
-    const nextHopsBySessionId = this.computePlannedNextHops({
+    const plannedNextHops = this.computePlannedNextHops({
       group: input.group,
       activeSessionIds,
       relevantRttMeasurements,
@@ -116,10 +126,13 @@ export class RtcTopologyPlanner {
       group: input.group,
       previous: input.previous,
       topology,
-      nextHopsBySessionId,
+      nextHopsBySessionId: plannedNextHops.nextHopsBySessionId,
       degreeLimit,
       nowEpochMs: input.nowEpochMs,
     });
+    if (plannedNextHops.weightedPlanDurationMs !== undefined) {
+      this.dependencies.metrics.recordWeightedPlanDuration(plannedNextHops.weightedPlanDurationMs);
+    }
     this.dependencies.metrics.recordTopologyResult(result.changed);
     return result;
   }
@@ -128,13 +141,24 @@ export class RtcTopologyPlanner {
     group: GroupSnapshot,
     rttMeasurements: readonly RttMeasurementInfo[] = [],
   ): WeightedGraph {
-    return this.createMeasuredRoomGraph({
+    const startedAtMs = this.dependencies.durationNowMs();
+    this.dependencies.metrics.recordWeightedRoomGraphAttempt();
+    const activeSessionIds = toCanonicalTopologySessionIds(readGroupMemberSessionIds(group));
+    const topology = this.selectTopology(group, this.serviceOptions);
+    const result = createRtcRoomGraph({
       group,
-      activeSessionIds: toCanonicalTopologySessionIds(readGroupMemberSessionIds(group)),
+      activeSessionIds,
       rttMeasurements,
-      topology: this.selectTopology(group, this.serviceOptions),
-      options: this.serviceOptions,
+      degreeLimit: this.readDegreeLimit(this.serviceOptions),
+      rttReportingDegreeLimit: this.readRttReportingDegreeLimit(this.serviceOptions),
+      seedTopology: topology,
+      meshParamK: this.readMeshArgs(this.serviceOptions).meshParamK,
     });
+    this.dependencies.metrics.recordWeightedRoomGraphDuration(
+      this.dependencies.durationNowMs() - startedAtMs,
+      result.usedSparseFallback,
+    );
+    return result.graph;
   }
 
   selectTopology(
@@ -186,18 +210,24 @@ export class RtcTopologyPlanner {
     return topology;
   }
 
-  private computePlannedNextHops(plan: RtcTopologyPlanInput): Record<string, readonly string[]> {
+  private computePlannedNextHops(plan: RtcTopologyPlanInput): PlannedNextHopsResult {
     if (plan.topology === 'star') {
-      return this.computeStarNextHops(plan);
+      return {
+        nextHopsBySessionId: this.computeStarNextHops(plan),
+        weightedPlanDurationMs: undefined,
+      };
     }
     const evolved = this.computeEvolvedNextHops(plan);
     if (evolved !== undefined) {
-      return evolved;
+      return { nextHopsBySessionId: evolved, weightedPlanDurationMs: undefined };
     }
     if (plan.relevantRttMeasurements.length === 0) {
-      return this.computeNoRttNextHops(plan);
+      return {
+        nextHopsBySessionId: this.computeNoRttNextHops(plan),
+        weightedPlanDurationMs: undefined,
+      };
     }
-    return this.createNextHopMap({
+    const weightedPlan = this.createNextHopMap({
       topology: plan.topology,
       group: plan.group,
       activeSessionIds: plan.activeSessionIds,
@@ -210,6 +240,10 @@ export class RtcTopologyPlanner {
       }),
       options: plan.topologyOptions,
     });
+    return {
+      nextHopsBySessionId: weightedPlan.nextHopsBySessionId,
+      weightedPlanDurationMs: weightedPlan.durationMs,
+    };
   }
 
   private computeStarNextHops(plan: RtcTopologyPlanInput): Record<string, readonly string[]> {
@@ -294,9 +328,7 @@ export class RtcTopologyPlanner {
     return result.graph;
   }
 
-  private createNextHopMap(
-    input: CreateWeightedTopologyNextHopsInput,
-  ): Record<string, readonly string[]> {
+  private createNextHopMap(input: CreateWeightedTopologyNextHopsInput): WeightedTopologyPlanResult {
     const startedAtMs = this.dependencies.durationNowMs();
     this.dependencies.metrics.recordWeightedPlanAttempt();
     const graph =
@@ -319,10 +351,10 @@ export class RtcTopologyPlanner {
         graph.hasNode(sessionId) ? (graph.neighbors(sessionId) as string[]).sort() : [],
       ]),
     );
-    this.dependencies.metrics.recordWeightedPlanDuration(
-      this.dependencies.durationNowMs() - startedAtMs,
-    );
-    return nextHopsBySessionId;
+    return {
+      nextHopsBySessionId,
+      durationMs: this.dependencies.durationNowMs() - startedAtMs,
+    };
   }
 
   private readTopologyOptions(

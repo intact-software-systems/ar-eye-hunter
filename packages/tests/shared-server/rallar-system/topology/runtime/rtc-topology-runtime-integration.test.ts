@@ -147,6 +147,38 @@ describe('RTC topology process runtime integration', () => {
     });
   });
 
+  it('does not record weighted-plan duration or result when later group access throws', () => {
+    const memberSessionIds = createRtcTopologyMemberIds(5);
+    const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);
+    const activeSessions = group.activeSessions;
+    let activeSessionReadCount = 0;
+    Object.defineProperty(group, 'activeSessions', {
+      get: () => {
+        activeSessionReadCount += 1;
+        if (activeSessionReadCount === 4) {
+          throw new Error('group sessions unavailable');
+        }
+        return activeSessions;
+      },
+    });
+    const service = new RallarRtcTopologyService({ now: () => 100 });
+
+    expect(() =>
+      service.planGroupTopologyAt(
+        group,
+        createCentralRtcTopologyRttMeasurements(memberSessionIds, 'peer-1'),
+        {},
+        100,
+      ),
+    ).toThrow('group sessions unavailable');
+    expect(service.readMetrics()).toMatchObject({
+      weightedPlanCount: 1,
+      weightedPlanDurationMs: 0,
+      topologyChangedCount: 0,
+      topologyUnchangedCount: 0,
+    });
+  });
+
   it('records a weighted plan attempt before a throwing group dependency', () => {
     const memberSessionIds = createRtcTopologyMemberIds(5);
     const group = createRtcTopologyGroupSnapshot('room-1', memberSessionIds);

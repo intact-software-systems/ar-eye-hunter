@@ -1,16 +1,31 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts';
-import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
-import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+// prettier-ignore
+import {
+  RallarRtcTopologyService,
+} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+// prettier-ignore
+import {
+  RtcTopologyMetrics,
+} from '@shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts';
+// prettier-ignore
+import {
+  planRallarRtcTopologySnapshot,
+} from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+// prettier-ignore
+import {
+  RtcTopologyPlanner,
+} from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
   createRtcTopologyGroupSnapshot,
   createRtcTopologyMemberIds,
 } from '../rtc-topology-test-fixtures.ts';
+
+const MESH_TOPOLOGY_OVERRIDE_DESCRIPTION =
+  'honors request topology kind override for mesh topology when group size can support mesh';
 
 describe('RTC topology planning options and revisions', () => {
   it('plans a star topology through the dedicated planning owner', () => {
@@ -66,6 +81,106 @@ describe('RTC topology planning options and revisions', () => {
     });
   });
 
+  it('records direct incremental planning, ordinary fallback, and hysteresis hold', () => {
+    const metrics = new RtcTopologyMetrics();
+    const planner = new RtcTopologyPlanner({}, { metrics, durationNowMs: () => 0 });
+    const memberSessionIds = createRtcTopologyMemberIds(20);
+    const formed = planner.plan({
+      group: createRtcTopologyGroupSnapshot('planner-incremental', memberSessionIds),
+      rttMeasurements: [],
+      previous: undefined,
+      updateOptions: { planningIntent: 'membership-delta' },
+      nowEpochMs: 100,
+    });
+    const incrementallyPlanned = planner.plan({
+      group: createRtcTopologyGroupSnapshot('planner-incremental', [
+        ...memberSessionIds,
+        'peer-21',
+      ]),
+      rttMeasurements: [],
+      previous: formed.snapshot,
+      updateOptions: { planningIntent: 'membership-delta' },
+      nowEpochMs: 200,
+    });
+    const ordinaryFallback = planner.plan({
+      group: createRtcTopologyGroupSnapshot('planner-incremental', [
+        ...memberSessionIds.slice(0, 10),
+        ...createRtcTopologyMemberIds(10).map((sessionId) => `${sessionId}-replacement`),
+      ]),
+      rttMeasurements: [],
+      previous: formed.snapshot,
+      updateOptions: { planningIntent: 'membership-delta' },
+      nowEpochMs: 300,
+    });
+    expect(incrementallyPlanned.snapshot.topology).toBe('mesh');
+    expect(ordinaryFallback.snapshot.topology).toBe('mesh');
+    expect(metrics.read(0, 0)).toMatchObject({
+      incrementalPlanCount: 1,
+      incrementalPlanFallbackFullCount: 1,
+      incrementalPlanInvariantFallbackCount: 0,
+    });
+
+    const hysteresisMetrics = new RtcTopologyMetrics();
+    const hysteresisPlanner = new RtcTopologyPlanner(
+      {},
+      { metrics: hysteresisMetrics, durationNowMs: () => 0 },
+    );
+    const meshMembers = createRtcTopologyMemberIds(16);
+    const meshPlan = hysteresisPlanner.plan({
+      group: createRtcTopologyGroupSnapshot('planner-hysteresis', meshMembers),
+      rttMeasurements: [],
+      previous: undefined,
+      updateOptions: { planningIntent: 'membership-delta' },
+      nowEpochMs: 300,
+    });
+    const heldKind = hysteresisPlanner.plan({
+      group: createRtcTopologyGroupSnapshot('planner-hysteresis', meshMembers.slice(0, 13)),
+      rttMeasurements: [],
+      previous: meshPlan.snapshot,
+      updateOptions: { planningIntent: 'membership-delta' },
+      nowEpochMs: 400,
+    });
+
+    expect(heldKind.snapshot.topology).toBe('mesh');
+    expect(hysteresisMetrics.read(0, 0)).toMatchObject({
+      incrementalPlanCount: 0,
+      incrementalPlanFallbackFullCount: 1,
+      hysteresisHeldKindCount: 1,
+    });
+  });
+
+  it('records a direct invariant fallback when a tree removal cannot validate', () => {
+    const metrics = new RtcTopologyMetrics();
+    const planner = new RtcTopologyPlanner({}, { metrics, durationNowMs: () => 0 });
+    const memberSessionIds = createRtcTopologyMemberIds(8);
+    const formed = planner.plan({
+      group: createRtcTopologyGroupSnapshot('planner-invariant', memberSessionIds),
+      rttMeasurements: [],
+      previous: undefined,
+      updateOptions: { planningIntent: 'membership-delta' },
+      nowEpochMs: 100,
+    });
+
+    for (const sessionId of memberSessionIds) {
+      planner.plan({
+        group: createRtcTopologyGroupSnapshot(
+          'planner-invariant',
+          memberSessionIds.filter((candidate) => candidate !== sessionId),
+        ),
+        rttMeasurements: [],
+        previous: formed.snapshot,
+        updateOptions: { planningIntent: 'membership-delta' },
+        nowEpochMs: 200,
+      });
+    }
+
+    expect(metrics.read(0, 0)).toMatchObject({
+      incrementalPlanInvariantFallbackCount: expect.any(Number),
+      incrementalPlanFallbackFullCount: expect.any(Number),
+    });
+    expect(metrics.read(0, 0).incrementalPlanInvariantFallbackCount).toBeGreaterThan(0);
+  });
+
   it('honors request topology kind override for star topology', () => {
     const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(8));
     const service = new RallarRtcTopologyService({ now: () => 100 });
@@ -100,7 +215,7 @@ describe('RTC topology planning options and revisions', () => {
     }
   });
 
-  it('honors request topology kind override for mesh topology when group size can support mesh', () => {
+  it(MESH_TOPOLOGY_OVERRIDE_DESCRIPTION, () => {
     const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(16));
     const service = new RallarRtcTopologyService({ now: () => 100, meshMinSize: 999 });
 
