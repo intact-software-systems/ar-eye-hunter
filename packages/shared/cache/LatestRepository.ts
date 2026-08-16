@@ -3,28 +3,126 @@ import {
     type ExpiredEntryEvictionHandle,
     type ExpiredEntryEvictionOptions,
 } from './ExpiredEntryEviction.ts';
-import { LatestValue, LatestValueOptions } from './LatestValue.ts';
+import { RateLimiter } from '../resilience/Resilience.ts';
+import { LatestValue, LatestValueOptions, ValueValidityChecker } from './LatestValue.ts';
 import { PushKeyedValues, type ReadableKeyedValues, type UpdateIfNewerOptions, } from './RepositoryInterfaces.ts';
 
 export interface LatestRepositoryOptions<V> extends ExpiredEntryEvictionOptions {
     ttlMs?: number;
-    isValid?: (value: V) => boolean;
+    isValid?: ValueValidityChecker<V>;
+    evictWindowMs?: number;
+    evictsPerWindow?: number;
 }
+
+export interface AcceptLatestEntryInput<K, V> {
+    readonly key: K;
+    readonly value: V;
+    readonly nowEpochMs: number;
+    readonly expireAtEpochMs?: number;
+}
+
+const DEFAULT_EVICT_WINDOW_MS = 5_000;
+const DEFAULT_EVICTS_PER_WINDOW = 2;
+const MIN_EVICT_WINDOW_MS = 4;
 
 export class LatestRepository<K, V> implements PushKeyedValues<K, V> {
     private readonly entries = new Map<K, LatestValue<V>>();
     private readonly defaultValueOptions: LatestValueOptions<V>;
     private readonly expiredEntryEviction?: ExpiredEntryEvictionHandle;
+    private readonly evictWindowMs: number;
+    private readonly evictsPerWindow: number;
+
+    private evictLimiter: RateLimiter | undefined;
+    private evictionRuns = 0;
 
     public constructor(options: LatestRepositoryOptions<V> = {}) {
         this.defaultValueOptions = {
             ttlMs: options.ttlMs,
             isValid: options.isValid,
         };
+        this.evictWindowMs = options.evictWindowMs ?? DEFAULT_EVICT_WINDOW_MS;
+        this.evictsPerWindow = options.evictsPerWindow ?? DEFAULT_EVICTS_PER_WINDOW;
+
+        if (!Number.isFinite(this.evictWindowMs) || this.evictWindowMs < MIN_EVICT_WINDOW_MS) {
+            throw new Error('evictWindowMs must be a finite number of at least 4');
+        }
+        if (!Number.isInteger(this.evictsPerWindow) || this.evictsPerWindow < 0) {
+            throw new Error('evictsPerWindow must be a non-negative integer');
+        }
+
         this.expiredEntryEviction = startExpiredEntryEviction(
             options,
             () => this.deleteExpired(),
         );
+    }
+
+    public acceptAt(input: AcceptLatestEntryInput<K, V>): this {
+        this.getOrCreate(input.key)
+            .acceptAt(input.value, input.nowEpochMs, input.expireAtEpochMs);
+        this.evictExpiredWhenAllowed(input.nowEpochMs);
+        return this;
+    }
+
+    public readAt(key: K, nowEpochMs: number): V | undefined {
+        const entry = this.entries.get(key);
+        if (entry === undefined) {
+            return undefined;
+        }
+
+        const value = entry.readAt(nowEpochMs);
+        if (value === undefined) {
+            this.entries.delete(key);
+        }
+        return value;
+    }
+
+    public readOrAcceptAt(
+        input: Omit<AcceptLatestEntryInput<K, V>, 'value'> & { readonly create: () => V },
+    ): V {
+        const existing = this.readAt(input.key, input.nowEpochMs);
+        if (existing !== undefined) {
+            return existing;
+        }
+
+        const created = input.create();
+        this.acceptAt({ ...input, value: created });
+        return created;
+    }
+
+    public expiredAt(key: K, nowEpochMs: number): boolean {
+        return this.entries.get(key)?.expiredAt(nowEpochMs) ?? true;
+    }
+
+    public deleteExpiredAt(nowEpochMs: number): number {
+        let removed = 0;
+
+        for (const [key, entry] of this.entries) {
+            if (entry.expiredAt(nowEpochMs)) {
+                this.entries.delete(key);
+                removed += 1;
+            }
+        }
+
+        this.evictionRuns += 1;
+        return removed;
+    }
+
+    public evictExpiredWhenAllowed(nowEpochMs: number): number {
+        if (this.evictsPerWindow === 0) {
+            return 0;
+        }
+
+        this.evictLimiter ??= RateLimiter.initWithTs(
+            this.evictWindowMs,
+            this.evictsPerWindow,
+            nowEpochMs,
+        );
+
+        return this.evictLimiter.allowAt(nowEpochMs) ? this.deleteExpiredAt(nowEpochMs) : 0;
+    }
+
+    public readEvictionCounts(): Readonly<{ retained: number; evictionRuns: number }> {
+        return { retained: this.entries.size, evictionRuns: this.evictionRuns };
     }
 
     // -------------------------------------------------------

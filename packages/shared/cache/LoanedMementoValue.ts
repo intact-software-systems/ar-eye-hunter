@@ -399,10 +399,12 @@ export class LoanedMementoValue<T> {
         value: T,
         options: LoanedValueOptions<T> = {},
     ): LoanedValue<T> {
-        return new LoanedValue<T>(async () => value, {
+        const loan = new LoanedValue<T>(async () => value, {
             ttlMs: Number.MAX_SAFE_INTEGER,
             isValid: () => true,
             ...options,
         });
+        loan.acceptAt(value, Date.now());
+        return loan;
     }
 }
