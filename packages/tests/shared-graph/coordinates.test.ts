@@ -137,24 +137,24 @@ describe('Coordinates', () => {
         });
     });
 
-    // Only the separated case is pinned here. The collocated case reaches the
-    // random tie-break, which #251 covers.
-    describe('getDirectionality between separated coordinates', () => {
+    // The collocated case is covered in vivaldi-direction.test.ts, which owns
+    // the random tie-break.
+    describe('computeDirectionality between separated coordinates', () => {
         // The difference is this minus remote, so the unit vector points from
         // the remote coordinate toward this one.
         it('points from the remote coordinate toward this one', () => {
             const here = new Coordinates([3, 0]);
             const remote = new Coordinates([0, 0]);
 
-            expect(here.getDirectionality(remote).values).toEqual([1, 0]);
-            expect(remote.getDirectionality(here).values).toEqual([-1, 0]);
+            expect(here.computeDirectionality(remote).values).toEqual([1, 0]);
+            expect(remote.computeDirectionality(here).values).toEqual([-1, 0]);
         });
 
         it('leaves both coordinates untouched', () => {
             const here = new Coordinates([3, 4]);
             const remote = new Coordinates([0, 0]);
 
-            here.getDirectionality(remote);
+            here.computeDirectionality(remote);
 
             expect(here.values).toEqual([3, 4]);
             expect(remote.values).toEqual([0, 0]);
@@ -170,7 +170,7 @@ describe('Coordinates', () => {
             const here = new Coordinates([3, -4], cfg);
             const remote = new Coordinates([0, 0], cfg);
 
-            expect(here.getDirectionality(remote).norm()).toBeCloseTo(1, 12);
+            expect(here.computeDirectionality(remote).norm()).toBeCloseTo(1, 12);
         });
     });
 });

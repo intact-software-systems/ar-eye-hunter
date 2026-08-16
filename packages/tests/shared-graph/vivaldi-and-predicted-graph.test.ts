@@ -187,7 +187,7 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
     });
 
     it('ignores invalid remote data during direct Vivaldi node updates', () => {
-        const node = new VivaldiNode(2, 0.5);
+        const node = new VivaldiNode({ dimensions: 2, initialError: 0.5 });
         const before = node.toNodeData('peer-a');
 
         node.update({
