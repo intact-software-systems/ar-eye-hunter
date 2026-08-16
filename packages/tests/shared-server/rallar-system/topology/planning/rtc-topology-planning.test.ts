@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts';
 import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
+import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -11,6 +13,59 @@ import {
 } from '../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology planning options and revisions', () => {
+  it('plans a star topology through the dedicated planning owner', () => {
+    const planner = new RtcTopologyPlanner(
+      { topologyKind: 'star' },
+      { metrics: new RtcTopologyMetrics(), durationNowMs: () => 0 },
+    );
+
+    const result = planner.plan({
+      group: createRtcTopologyGroupSnapshot('planner-owner', createRtcTopologyMemberIds(3)),
+      rttMeasurements: [],
+      previous: undefined,
+      updateOptions: {},
+      nowEpochMs: 100,
+    });
+
+    expect(result.snapshot.topology).toBe('star');
+  });
+
+  it('owns no-RTT tree, weighted tree, and per-update topology decisions', () => {
+    const metrics = new RtcTopologyMetrics();
+    const planner = new RtcTopologyPlanner(
+      { topologyKind: 'tree', degreeLimit: 5 },
+      { metrics, durationNowMs: () => 0 },
+    );
+    const group = createRtcTopologyGroupSnapshot('planner-owner', createRtcTopologyMemberIds(5));
+
+    const noRtt = planner.plan({
+      group,
+      rttMeasurements: [],
+      previous: undefined,
+      updateOptions: {},
+      nowEpochMs: 100,
+    });
+    const weighted = planner.plan({
+      group,
+      rttMeasurements: createCentralRtcTopologyRttMeasurements(
+        createRtcTopologyMemberIds(5),
+        'peer-1',
+      ),
+      previous: noRtt.snapshot,
+      updateOptions: { topologyOptions: { topologyKind: 'mesh', degreeLimit: 2 } },
+      nowEpochMs: 200,
+    });
+
+    expect(noRtt.snapshot.topology).toBe('tree');
+    expect(weighted.snapshot.topology).toBe('mesh');
+    expect(weighted.snapshot.degreeLimit).toBe(2);
+    expect(metrics.read(0, 0)).toMatchObject({
+      noRttTreePlanCount: 1,
+      weightedPlanCount: 1,
+      weightedRoomGraphBuildCount: 1,
+    });
+  });
+
   it('honors request topology kind override for star topology', () => {
     const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(8));
     const service = new RallarRtcTopologyService({ now: () => 100 });

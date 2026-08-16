@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
+import { createRtcRoomGraph } from '@shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts';
 
 import {
   createCentralRtcTopologyRttMeasurements,
@@ -11,6 +12,82 @@ import {
 } from '../rtc-topology-test-fixtures.ts';
 
 describe('RTC topology weighted room graph planning', () => {
+  it('returns the deterministic complete fallback graph when RTT is absent', () => {
+    const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
+
+    const result = createRtcRoomGraph({
+      group,
+      activeSessionIds: createRtcTopologyMemberIds(3),
+      rttMeasurements: [],
+      degreeLimit: 5,
+      rttReportingDegreeLimit: 5,
+      seedTopology: 'tree',
+      meshParamK: 2,
+    });
+
+    expect(result.usedSparseFallback).toBe(false);
+    expect(result.graph.edges().map((edge) => result.graph.extremities(edge))).toEqual([
+      ['peer-1', 'peer-2'],
+      ['peer-1', 'peer-3'],
+      ['peer-2', 'peer-3'],
+    ]);
+  });
+
+  it('keeps the latest reverse RTT pair in the direct graph owner', () => {
+    const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
+    const result = createRtcRoomGraph({
+      group,
+      activeSessionIds: createRtcTopologyMemberIds(3),
+      rttMeasurements: [
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'peer-1',
+          sessionIdTo: 'peer-3',
+          rttMs: 42,
+          version: 1,
+        }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'peer-3',
+          sessionIdTo: 'peer-1',
+          rttMs: 7,
+          version: 2,
+        }),
+      ],
+      degreeLimit: 5,
+      rttReportingDegreeLimit: 5,
+      seedTopology: 'tree',
+      meshParamK: 2,
+    });
+
+    expect(result.usedSparseFallback).toBe(false);
+    expect(edgeWeight(result.graph, 'peer-1', 'peer-3')).toBe(7);
+  });
+
+  it('reports sparse fallback when bounded sparse edges cannot connect the room', () => {
+    const group = createRtcTopologyGroupSnapshot('room-graph-owner', createRtcTopologyMemberIds(3));
+    const result = createRtcRoomGraph({
+      group,
+      activeSessionIds: createRtcTopologyMemberIds(3),
+      rttMeasurements: [
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'peer-1',
+          sessionIdTo: 'peer-2',
+          rttMs: 5,
+          version: 1,
+        }),
+      ],
+      degreeLimit: 5,
+      rttReportingDegreeLimit: 0,
+      seedTopology: 'tree',
+      meshParamK: 2,
+    });
+
+    expect(result.usedSparseFallback).toBe(true);
+    expect(result.graph.edges().map((edge) => result.graph.extremities(edge))).toEqual([
+      ['peer-1', 'peer-2'],
+      ['peer-1', 'peer-3'],
+    ]);
+  });
+
   it('uses fallback graph weights until RTT measurements are available', () => {
     const group = createRtcTopologyGroupSnapshot('room-1', createRtcTopologyMemberIds(3));
     const service = new RallarRtcTopologyService({ now: () => 100 });
@@ -65,14 +142,11 @@ describe('RTC topology weighted room graph planning', () => {
     const composed = '\u00e9';
     const decomposed = 'e\u0301';
     const sessionIds = ['a', 'a::b', 'b::c', 'c', composed, decomposed];
-    const service = new RallarRtcTopologyService({
-      now: () => 100,
-      degreeLimit: sessionIds.length,
-      rttReportingDegreeLimit: sessionIds.length,
-    });
-    const graph = service.createRoomGraph(
-      createRtcTopologyGroupSnapshot('room-pairs', sessionIds),
-      [
+    const group = createRtcTopologyGroupSnapshot('room-pairs', sessionIds);
+    const result = createRtcRoomGraph({
+      group,
+      activeSessionIds: sessionIds,
+      rttMeasurements: [
         createRtcTopologyRttMeasurement({
           sessionIdFrom: 'a',
           sessionIdTo: 'b::c',
@@ -104,7 +178,12 @@ describe('RTC topology weighted room graph planning', () => {
           version: 2,
         }),
       ],
-    );
+      degreeLimit: sessionIds.length,
+      rttReportingDegreeLimit: sessionIds.length,
+      seedTopology: 'tree',
+      meshParamK: 2,
+    });
+    const graph = result.graph;
 
     expect(edgeWeight(graph, 'a', 'b::c')).toBe(55);
     expect(edgeWeight(graph, 'a::b', 'c')).toBe(22);
@@ -116,32 +195,35 @@ describe('RTC topology weighted room graph planning', () => {
     const decomposed = 'e\u0301';
     const composed = '\u00e9';
     const group = createRtcTopologyGroupSnapshot('room-1', [composed, decomposed, 'z']);
-    const service = new RallarRtcTopologyService({
-      now: () => 100,
+    const result = createRtcRoomGraph({
+      group,
+      activeSessionIds: [composed, decomposed, 'z'],
+      rttMeasurements: [
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: decomposed,
+          sessionIdTo: composed,
+          rttMs: 5,
+          version: 1,
+        }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: decomposed,
+          sessionIdTo: 'z',
+          rttMs: 5,
+          version: 2,
+        }),
+        createRtcTopologyRttMeasurement({
+          sessionIdFrom: 'z',
+          sessionIdTo: composed,
+          rttMs: 5,
+          version: 3,
+        }),
+      ],
       degreeLimit: 3,
       rttReportingDegreeLimit: 3,
+      seedTopology: 'tree',
+      meshParamK: 2,
     });
-
-    const graph = service.createRoomGraph(group, [
-      createRtcTopologyRttMeasurement({
-        sessionIdFrom: decomposed,
-        sessionIdTo: composed,
-        rttMs: 5,
-        version: 1,
-      }),
-      createRtcTopologyRttMeasurement({
-        sessionIdFrom: decomposed,
-        sessionIdTo: 'z',
-        rttMs: 5,
-        version: 2,
-      }),
-      createRtcTopologyRttMeasurement({
-        sessionIdFrom: 'z',
-        sessionIdTo: composed,
-        rttMs: 5,
-        version: 3,
-      }),
-    ]);
+    const graph = result.graph;
 
     expect(graph.edges().map((edge) => graph.extremities(edge))).toEqual([
       [decomposed, 'z'],
