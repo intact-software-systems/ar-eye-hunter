@@ -53,7 +53,7 @@ export function getOrCreateNode(
 ): VivaldiNode {
     return requireVivaldiRepository(manager).setIfAbsent(
         nodeId,
-        () => new VivaldiNode(dimensions, initialError)
+        () => new VivaldiNode({ dimensions, initialError })
     );
 }
 

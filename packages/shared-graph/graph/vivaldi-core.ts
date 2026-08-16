@@ -5,6 +5,8 @@ export type VivaldiNodeData = {
     readonly rttMs: number;
 };
 
+export type VivaldiRandom = () => number;
+
 export type VivaldiConfig = {
     readonly cc: number;
     readonly ce: number;
@@ -12,7 +14,6 @@ export type VivaldiConfig = {
     readonly minNodeErr: number;
     readonly useL1: boolean;
     readonly useLInf: boolean;
-    readonly jitterScale: number;
 };
 
 export const DEFAULT_VIVALDI_CONFIG: VivaldiConfig = {
@@ -22,12 +23,18 @@ export const DEFAULT_VIVALDI_CONFIG: VivaldiConfig = {
     minNodeErr: 0.0,
     useL1: false,
     useLInf: false,
-    jitterScale: 1.0,
 };
+
+export interface VivaldiNodeInput {
+    readonly dimensions: number;
+    readonly initialError?: number;
+    readonly cfg?: Partial<VivaldiConfig>;
+    readonly random?: VivaldiRandom;
+}
 
 export class Coordinates {
     readonly #cfg: VivaldiConfig;
-    #values: number[];
+    readonly #values: number[];
 
     constructor(values: readonly number[], cfg?: Partial<VivaldiConfig>) {
         this.#cfg = { ...DEFAULT_VIVALDI_CONFIG, ...cfg };
@@ -93,25 +100,44 @@ export class Coordinates {
         return this.subtract(other).norm();
     }
 
-    adjustCoordinates(scale = this.#cfg.jitterScale): void {
-        this.#values = this.#values.map(value => value + scale * (Math.random() * 2 - 1));
-    }
-
-    getDirectionality(remote: Coordinates): Coordinates {
-        let diff = this.subtract(remote);
-        let currentNorm = diff.norm();
-
-        while (currentNorm === 0) {
-            this.adjustCoordinates();
-            diff = this.subtract(remote);
-            currentNorm = diff.norm();
+    computeDirectionality(
+        remote: Coordinates,
+        random: VivaldiRandom = Math.random,
+    ): Coordinates {
+        const difference = this.subtract(remote);
+        const norm = difference.norm();
+        if (norm > 0) {
+            return difference.multiply(1 / norm);
         }
 
-        return diff.multiply(1 / currentNorm);
+        return this.#toRandomUnitVector(random);
     }
 
     isValid(): boolean {
         return this.#values.every(Number.isFinite);
+    }
+
+    // Collocated coordinates have no direction between them, so Vivaldi breaks
+    // the tie with a random one. Drawing the vector directly keeps the function
+    // total: the previous jitter-and-retry loop had no exit other than the
+    // randomness happening to work.
+    #toRandomUnitVector(random: VivaldiRandom): Coordinates {
+        if (this.#values.length === 0) {
+            throw new Error('Direction is undefined for zero-dimensional coordinates');
+        }
+
+        const candidate = new Coordinates(
+            this.#values.map(() => random() * 2 - 1),
+            this.#cfg,
+        );
+        const norm = candidate.norm();
+        if (norm > 0) {
+            return candidate.multiply(1 / norm);
+        }
+
+        const basis = new Array<number>(this.#values.length).fill(0);
+        basis[0] = 1;
+        return new Coordinates(basis, this.#cfg);
     }
 
     #assertSameDimension(other: Coordinates): void {
@@ -125,13 +151,19 @@ export class Coordinates {
 
 export class VivaldiNode {
     readonly #cfg: VivaldiConfig;
+    readonly #random: VivaldiRandom;
     #coords: Coordinates;
     #myError: number;
 
-    constructor(dimensions: number, initialError = 1.0, cfg?: Partial<VivaldiConfig>) {
-        this.#cfg = { ...DEFAULT_VIVALDI_CONFIG, ...cfg };
-        this.#coords = new Coordinates(new Array(dimensions).fill(0), this.#cfg);
-        this.#myError = initialError;
+    constructor(input: VivaldiNodeInput) {
+        if (!Number.isInteger(input.dimensions) || input.dimensions < 1) {
+            throw new Error('Vivaldi node dimensions must be an integer >= 1');
+        }
+
+        this.#cfg = { ...DEFAULT_VIVALDI_CONFIG, ...input.cfg };
+        this.#random = input.random ?? Math.random;
+        this.#coords = new Coordinates(new Array(input.dimensions).fill(0), this.#cfg);
+        this.#myError = input.initialError ?? 1.0;
     }
 
     get coords(): Coordinates {
@@ -166,7 +198,7 @@ export class VivaldiNode {
             this.#myError * (1 - this.#cfg.ce * weight);
         const delta = this.#cfg.cc * weight;
 
-        const direction = this.#coords.getDirectionality(remoteCoords);
+        const direction = this.#coords.computeDirectionality(remoteCoords, this.#random);
         const movement = direction.multiply(delta * diffErr);
         const nextCoords = this.#coords.add(movement);
 
