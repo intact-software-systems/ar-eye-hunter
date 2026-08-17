@@ -1037,7 +1037,7 @@ middleware initializer, options compatibility type, or SQL double assertion. Sem
 black-box proof cover the selected design. The diff itself addresses issue #237; issues #259 and
 #261 record independent weaknesses rather than replacing required work.
 
-- [ ] **Step 7: Commit and publish navigation/closure**
+- [x] **Step 7: Commit and publish navigation/closure**
 
 Commit:
 
@@ -1048,6 +1048,10 @@ git push
 
 Update PR #257 with final Goal, Changes, Acceptance, exact Validation results, Risk and rollback,
 and Follow-up issue URLs or `None`.
+
+Execution evidence: commit `72af398e89bf2ab9abf12979fdb74711d2bd3787` is pushed to PR
+#257, and the PR body records the final acceptance mapping, exact local validation, baseline-only
+failures, risk/rollback, and issues #259 and #261.
 
 - [ ] **Step 8: Request delivery readiness once**
 
