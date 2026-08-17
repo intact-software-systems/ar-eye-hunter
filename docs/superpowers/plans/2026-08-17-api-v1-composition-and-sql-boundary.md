@@ -831,19 +831,19 @@ export function createDefaultRallarServer(
 ): RallarServerApplication<ApiV1Runtime, Hono>;
 ```
 
-- [ ] **Step 1: Write required-factory RED tests**
+- [x] **Step 1: Write required-factory RED tests**
 
 Build a complete fake `ApiV1Runtime` and explicit installers. Assert `createRallarServer` preserves
 their identities, mounts each installer once, exposes the same Rallar Game extension surface, and
 starts the same QueueBox engine. The test must compile only with complete required input.
 
-- [ ] **Step 2: Write default-factory RED tests**
+- [x] **Step 2: Write default-factory RED tests**
 
 Exercise the production default path with PGlite and controlled configuration. Assert the one
 translated database identity reaches runtime, topology, admin, CRDT, and app-data repositories;
 default WS behavior is unchanged; and Relic WS options override only the two approved fields.
 
-- [ ] **Step 3: Run RED and implement both factories**
+- [x] **Step 3: Run RED and implement both factories**
 
 `createRallarServer` contains one call to `createRallarServerApplication` and no defaults, config
 reads, SQL conversion, service construction, or forward capture.
@@ -852,7 +852,7 @@ reads, SQL conversion, service construction, or forward capture.
 constructs lifecycle/runtime/topology/admin/system/routes/default repositories in visible phases,
 then calls `createRallarServer`.
 
-- [ ] **Step 4: Migrate API-v1 and Relic entry points**
+- [x] **Step 4: Migrate API-v1 and Relic entry points**
 
 API-v1:
 
@@ -878,7 +878,7 @@ Use `rallar.runtime.authSessionRepository` for REST auth and
 `rallar.runtime.groupStateService.readSnapshot` for policy reads. Remove the independent app-local
 group-state constructor import.
 
-- [ ] **Step 5: Prove no compatibility path remains**
+- [x] **Step 5: Prove no compatibility path remains**
 
 Run:
 
@@ -889,7 +889,7 @@ rg -n "CreateRallarServerOptions|createRallarServer\(\)|getMiddleware|initialise
 Expected: no production match. Test names may mention rejected predecessor behavior only when the
 test is semantic and temporary wording is removed before commit.
 
-- [ ] **Step 6: Run GREEN consumer validation**
+- [x] **Step 6: Run GREEN consumer validation**
 
 Run:
 
@@ -902,7 +902,12 @@ cd apps/relic-hunter-server-v1 && deno task check
 cd apps/relic-hunter-server-v1 && deno task test
 ```
 
-- [ ] **Step 7: Review, commit, push, and update PR #257**
+Execution finding: the Relic server type-checks through the new default factory, but its declared
+`deno task test` command has no test modules and exits 1. This pre-existing validation gap is tracked
+by [issue #261](https://github.com/intact-software-systems/ar-eye-hunter/issues/261); this slice does
+not hide the failed command or expand into a new Relic test program.
+
+- [x] **Step 7: Review, commit, push, and update PR #257**
 
 Commit:
 

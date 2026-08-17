@@ -3,7 +3,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { cors } from 'jsr:@hono/hono@4.11.9/cors';
 
 import { requireApiAuthSession, toAuthErrorResponse } from './services/request-auth-service.ts';
-import { createRallarServer } from './create-rallar-server.ts';
+import { createDefaultRallarServer } from './composition/create-default-rallar-server.ts';
 import { createStateApiResilienceMiddleware } from './services/state-api-resilience-middleware.ts';
 import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts';
 import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/database-config.ts';
@@ -39,7 +39,7 @@ const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig();
 logRtcTopologyReplayConfig(console.log, rtcTopologyReplayConfig);
 logGroupFormationDampingConfig(console.log);
 logGroupStateDisseminationConfig(console.log);
-const rallar = createRallarServer();
+const rallar = createDefaultRallarServer();
 addEventListener('unload', () => {
   void rallar.runtime.backgroundTasks.stop().catch((error) => {
     console.error('Failed to stop middleware background tasks:', error);

@@ -45,6 +45,12 @@ The current shape has the following concrete problems:
 The verified repository consumers of `createRallarServer` are API-v1 `main.ts`, the Relic server,
 API-v1 tests, and active documentation. `apps/api-v1/deno.json` exports no package surface.
 
+Execution confirmed that the Relic server package's declared test task has no test modules and exits
+
+1. [Issue #261](https://github.com/intact-software-systems/ar-eye-hunter/issues/261) owns that
+   pre-existing validation gap; this behavior-preserving composition refactor retains the successful
+   Relic type-check without inventing unrelated tests in its final factory slice.
+
 ## Selected approach
 
 Use two independently testable slices:

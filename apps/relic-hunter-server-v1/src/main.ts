@@ -2,7 +2,7 @@ import { loadSync } from '@std/dotenv';
 import { type Context, Hono } from 'hono';
 import { cors } from 'hono/cors';
 
-import { createRallarServer } from '@api-v1/src/create-rallar-server.ts';
+import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
 import {
   requireApiAuthSession,
   toAuthErrorResponse,
@@ -36,7 +36,7 @@ assertRelicProductionEnv(Deno.env);
 const app: Hono = new Hono();
 const port = Number(Deno.env.get('PORT') ?? '8090');
 const relicRestAuthMode = readRelicRestAuthMode(Deno.env);
-const rallar = createRallarServer({
+const rallar = createDefaultRallarServer({
   ws: {
     allowImplicitUserTopics: false,
     defaultFanout: 'live-only',
