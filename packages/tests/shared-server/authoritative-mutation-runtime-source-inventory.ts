@@ -48,5 +48,5 @@ export const authoritativeMutationRuntimeSourcePaths = [
   `${systemRoot}/repositories/RtcTopologyScalarAuthorityMigration.ts`,
   `${systemRoot}/middleware/RallarMiddleware.ts`,
   'packages/shared-server/mod.ts',
-  'apps/api-v1/src/middleware.ts',
+  'apps/api-v1/src/initialise-middleware.ts',
 ] as const;

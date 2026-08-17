@@ -225,8 +225,13 @@ function isKnownAppInboxCall(value: unknown): boolean {
   if (!callee || (callee.type !== 'MemberExpression' && callee.type !== 'OptionalMemberExpression'))
     return false;
   const receiver = asNode(callee.object);
-  if (receiver?.type === 'Identifier') {
-    return EXACT_APP_INBOX_RECEIVERS.has(readNodeName(receiver));
+  const receiverPath = readMemberPath(receiver);
+  if (
+    [...EXACT_APP_INBOX_RECEIVERS].some(
+      (name) => receiverPath === name || receiverPath.endsWith(`.${name}`),
+    )
+  ) {
+    return true;
   }
   if (
     !receiver ||
@@ -236,6 +241,15 @@ function isKnownAppInboxCall(value: unknown): boolean {
   }
   const factory = asNode(receiver.callee);
   return factory !== undefined && APP_INBOX_RECEIVER_FACTORIES.has(readMemberName(factory));
+}
+
+function readMemberPath(node: AstNode | undefined): string {
+  if (!node) return '';
+  if (node.type === 'Identifier') return readNodeName(node);
+  if (node.type !== 'MemberExpression' && node.type !== 'OptionalMemberExpression') return '';
+  const object = readMemberPath(asNode(node.object));
+  const property = readNodeName(node.property);
+  return object && property ? `${object}.${property}` : '';
 }
 
 function isForbiddenImportSource(source: string): boolean {

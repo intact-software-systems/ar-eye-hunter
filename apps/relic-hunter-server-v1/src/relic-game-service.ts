@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Hono } from 'hono';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import {
   applyRelicCommand,
@@ -13,10 +13,10 @@ import {
   toPublicRelicSnapshot,
 } from '@relic-hunters/mod.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import type { Middleware } from '../../api-v1/src/middleware.ts';
+import type { ApiV1Runtime } from '@api-v1/src/composition/api-v1-runtime.ts';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
 
-type RelicRallarServer = RallarServerApplication<Middleware, Hono>;
+type RelicRallarServer = RallarServerApplication<ApiV1Runtime, Hono>;
 
 export type RelicHunterGameServiceOptions = Readonly<{
   createInitialState?: RelicInitialStateFactory;

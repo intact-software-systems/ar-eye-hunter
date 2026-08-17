@@ -1,7 +1,8 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import * as metered from '../integration/metered-api.ts';
 import { IceConfig } from '@shared/api/api-config.ts';
-import { requireApiAuthSession, toAuthErrorResponse } from '../services/request-auth-service.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { toAuthErrorResponse } from '../services/request-auth-service.ts';
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
@@ -44,12 +45,18 @@ const iceConfigCache = new LoanedValue<IceConfig>(
   },
 );
 
-export function init(app: Hono): void {
+export interface RegisterIceRoutesInput {
+  readonly requireApiAuthSession: (
+    request: Readonly<{ header(name: string): string | undefined }>,
+  ) => Promise<AuthSession>;
+}
+
+export function registerIceRoutes(app: Hono, input: RegisterIceRoutesInput): void {
   app.get(
     '/api/webrtc/ice',
     async (c) => {
       try {
-        const authSession = await requireApiAuthSession(c.req);
+        const authSession = await input.requireApiAuthSession(c.req);
 
         return await RateLimiter.tryToExecuteOrDefault<Response>(
           readRateLimiter('webrtc-ice', authSession.clientId, ICE_RATE_LIMIT),

@@ -18,9 +18,9 @@ import {
 } from '@shared-server/rallar-system/formation-metrics.ts';
 import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
 
-import type { Middleware } from '../src/middleware-contract.ts';
+import type { ApiV1Runtime } from '../src/composition/api-v1-runtime.ts';
 import { createRallarServer } from '../src/create-rallar-server.ts';
-import { init as initCrdtAdminRoutes } from '../src/routes/crdt-admin-routes.ts';
+import { registerCrdtAdminRoutes as initCrdtAdminRoutes } from '../src/routes/crdt-admin-routes.ts';
 
 Deno.test(
   'createRallarServer wires system topics, lifecycle, routes, and start',
@@ -115,6 +115,8 @@ Deno.test('CRDT admin routes expose read-only repository health operations', asy
     audit,
     now: () => 12_000,
     requireAuth: false,
+    requireApiAdminSession: () => Promise.reject(new Error('auth disabled')),
+    requireApiUserSession: () => Promise.reject(new Error('auth disabled')),
   });
 
   const list = await postJson(app, '/api/crdt/admin/documents/list', {});
@@ -153,7 +155,7 @@ interface FakeMiddlewareState {
 }
 
 interface FakeRuntime extends Readonly<FakeMiddlewareState> {
-  readonly middleware: Middleware;
+  readonly middleware: ApiV1Runtime;
 }
 
 function createFakeWebSocketQueue(
@@ -190,7 +192,7 @@ function createFakeWebSocketQueue(
 function createFakeMiddlewareRuntime(
   state: FakeMiddlewareState,
   wsQBoxServerService: WsQueueBoxServerService,
-): Middleware {
+): ApiV1Runtime {
   return {
     qboxEngine: {
       start(): void {
@@ -224,10 +226,18 @@ function createFakeMiddlewareRuntime(
     appCrdtInboxService: {
       setAuditSink(): void {},
     },
+    authSessionRepository: {
+      findByAccessToken: () => Promise.resolve(undefined),
+    },
+    backgroundTasks: {
+      beginStartupGeneration: () => ({} as never),
+      register: () => () => {},
+      stop: () => Promise.resolve(),
+    },
     clientsRepository: {},
     groupsRepository: {},
     groupFormationMetrics: createGroupFormationMetricsRecorder(),
-  } as unknown as Middleware;
+  } as unknown as ApiV1Runtime;
 }
 
 function createFakeMiddleware(): FakeRuntime {

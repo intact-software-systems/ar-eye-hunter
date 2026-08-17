@@ -201,23 +201,14 @@ Deno.test('topology writes require group manager or platform admin auth', async 
   );
 });
 
-Deno.test('all topology mutation routes submit complete AppInbox commands and never call direct writers', async () => {
+Deno.test('all topology mutation routes submit complete AppInbox commands', async () => {
   const appInboxCommands: unknown[] = [];
-  const directTopologyMutationCalls: string[] = [];
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
     processTopologyAppInbox: (authority, enqueue) => {
       appInboxCommands.push({ authority, enqueue });
       return Promise.resolve({ operation: enqueue.type, committed: true });
-    },
-    topologyManagement: {
-      putConfig: () => recordDirectMutation(directTopologyMutationCalls, 'putConfig'),
-      deleteConfig: () => recordDirectMutation(directTopologyMutationCalls, 'deleteConfig'),
-      putOverride: () => recordDirectMutation(directTopologyMutationCalls, 'putOverride'),
-      deleteOverride: () => recordDirectMutation(directTopologyMutationCalls, 'deleteOverride'),
-      reconfigureGroupTopology: () =>
-        recordDirectMutation(directTopologyMutationCalls, 'reconfigureGroupTopology'),
     },
   });
 
@@ -274,7 +265,6 @@ Deno.test('all topology mutation routes submit complete AppInbox commands and ne
       'TOPOLOGY_RECONFIGURE',
     ],
   );
-  assert.deepEqual(directTopologyMutationCalls, []);
   for (const value of appInboxCommands) {
     const command = value as {
       authority: ReturnType<typeof createIssuedSession>;
@@ -324,6 +314,7 @@ Deno.test('topology AppInbox context ids preserve scoped component boundaries', 
       group: createGroupSnapshot(ref.groupId, ['owner'], ref),
       session: createIssuedSession('owner', 'owner-session'),
       processTopologyAppInbox: (_authority, enqueue) => {
+        assert.ok(enqueue.contextId);
         contexts.push(enqueue.contextId);
         return Promise.resolve({ status: 'queued' });
       },
@@ -440,16 +431,9 @@ Deno.test('all topology mutation routes reject requests without a stable identit
   const app = createRouteApp({
     group: createGroupSnapshot('room-1', ['owner']),
     session: createIssuedSession('owner', 'owner-session'),
-    topologyManagement: {
-      reconfigureGroupTopology: (input) => {
-        calls.push(input);
-        return Promise.resolve({
-          changed: false,
-          published: false,
-          snapshot: { version: 1 },
-          config: { effective: { topologyKind: 'auto' } },
-        });
-      },
+    processTopologyAppInbox: (_authority, enqueue) => {
+      calls.push(enqueue);
+      return Promise.resolve({ committed: true });
     },
   });
 
@@ -621,21 +605,12 @@ function createRouteApp(options: {
   readonly topologyManagement?: Partial<
     graphTopologyRoutes.GraphTopologyRouteDependencies['topologyManagement']
   >;
-  readonly processTopologyAppInbox?: (
-    authority: ReturnType<typeof createIssuedSession>,
-    enqueue: {
-      type: string;
-      resourceId: string;
-      contextId: string;
-      senderId: string;
-      data: unknown;
-    },
-  ) => Promise<unknown>;
+  readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
   readonly onCurrentGroupRead?: () => void;
 }): Hono {
   const app = new Hono();
-  graphTopologyRoutes.init(app, {
-    getGroupStateService: () => ({
+  graphTopologyRoutes.registerGraphTopologyRoutes(app, {
+    groupStateService: {
       readCurrentSnapshot: (ref: GroupRef) => {
         options.onCurrentGroupRead?.();
         return Promise.resolve(
@@ -647,7 +622,7 @@ function createRouteApp(options: {
             : undefined,
         );
       },
-    }),
+    },
     requireApiAuthSession: options.requireApiAuthSession ??
       (() => Promise.resolve(options.session ?? createIssuedSession('owner', 'owner-session'))),
     adminClientIds: options.adminClientIds ?? [],
@@ -662,22 +637,13 @@ function createRouteApp(options: {
         ((groupRef) => Promise.resolve({ groupRef, overlayId: 'overlay', config: {} })),
       readConfig: options.topologyManagement?.readConfig ??
         (() => Promise.resolve({ effective: { topologyKind: 'auto' } })),
-      putConfig: options.topologyManagement?.putConfig ??
-        (() => Promise.resolve({ ok: true })),
-      deleteConfig: options.topologyManagement?.deleteConfig ??
-        (() => Promise.resolve({ ok: true })),
       readOverride: options.topologyManagement?.readOverride ??
         (() => Promise.resolve(undefined)),
-      putOverride: options.topologyManagement?.putOverride ??
-        (() => Promise.resolve({ ok: true })),
-      deleteOverride: options.topologyManagement?.deleteOverride ??
-        (() => Promise.resolve({ ok: true })),
-      reconfigureGroupTopology: options.topologyManagement?.reconfigureGroupTopology ??
-        (() => Promise.resolve({ changed: false, published: false })),
     },
-    processTopologyAppInbox: options.processTopologyAppInbox,
+    processTopologyAppInbox: options.processTopologyAppInbox ??
+      (() => Promise.resolve({ committed: true })),
     now: () => 123_456,
-  } as unknown as Partial<graphTopologyRoutes.GraphTopologyRouteDependencies>);
+  });
   return app;
 }
 
@@ -690,11 +656,6 @@ function createIssuedSession(clientId: string, sessionId: string) {
     issuedAtEpochMs: 100,
     expiresAtEpochMs: 1_000_000,
   };
-}
-
-function recordDirectMutation(calls: string[], operation: string): Promise<unknown> {
-  calls.push(operation);
-  return Promise.resolve({ operation, committed: true });
 }
 
 type GraphTopologyRouteRequireApiAuthSession =

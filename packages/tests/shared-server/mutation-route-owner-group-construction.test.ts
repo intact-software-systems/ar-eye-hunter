@@ -8,8 +8,7 @@ import {
 
 const ROOT_ROUTES = 'apps/api-v1/src/group-state/register-group-state-routes.ts';
 const PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presence-routes.ts';
-const ROOT_PRESENCE_CALL =
-  '  registerGroupPresenceRoutes(app, resolvedDependencies, authorization);';
+const ROOT_PRESENCE_CALL = '  registerGroupPresenceRoutes(app, dependencies, authorization);';
 const PRIVATE_PRESENCE_CALL =
   '  registerConnectGroupPresenceRoute(app, dependencies, authorization);';
 
@@ -47,7 +46,7 @@ function registerUnexpectedGroupRoute(app: Hono): void {
   it('rejects a family removed from the exported root', () => {
     const source = readFileSync(ROOT_ROUTES, 'utf8');
     const mutated = source.replace(
-      '  registerGroupMembershipRoutes(app, resolvedDependencies, authorization);\n',
+      '  registerGroupMembershipRoutes(app, dependencies, authorization);\n',
       '',
     );
     expectInvalid(ROOT_ROUTES, source, mutated);
@@ -57,7 +56,7 @@ function registerUnexpectedGroupRoute(app: Hono): void {
     const source = readFileSync(ROOT_ROUTES, 'utf8');
     const mutated = source.replace(
       ROOT_PRESENCE_CALL,
-      `  if (false) registerGroupPresenceRoutes(app, resolvedDependencies, authorization);`,
+      `  if (false) registerGroupPresenceRoutes(app, dependencies, authorization);`,
     );
     expectInvalid(ROOT_ROUTES, source, mutated);
   });
@@ -81,7 +80,7 @@ function registerUnexpectedGroupRoute(app: Hono): void {
     const source = readFileSync(ROOT_ROUTES, 'utf8');
     const mutated = source.replace(
       ROOT_PRESENCE_CALL,
-      '  registerGroupPresenceRoutes(undefined, resolvedDependencies, authorization);',
+      '  registerGroupPresenceRoutes(undefined, dependencies, authorization);',
     );
     expectInvalid(ROOT_ROUTES, source, mutated);
   });
@@ -90,7 +89,7 @@ function registerUnexpectedGroupRoute(app: Hono): void {
     const source = readFileSync(ROOT_ROUTES, 'utf8');
     const mutated = source.replace(
       ROOT_PRESENCE_CALL,
-      '  registerGroupPresenceRoutes(resolvedDependencies, app, authorization);',
+      '  registerGroupPresenceRoutes(dependencies, app, authorization);',
     );
     expectInvalid(ROOT_ROUTES, source, mutated);
   });
@@ -99,16 +98,16 @@ function registerUnexpectedGroupRoute(app: Hono): void {
     const source = readFileSync(ROOT_ROUTES, 'utf8');
     const mutated = source.replace(
       ROOT_PRESENCE_CALL,
-      '  registerGroupPresenceRoutes(app, resolvedDependencies, authorization, app);',
+      '  registerGroupPresenceRoutes(app, dependencies, authorization, app);',
     );
     expectInvalid(ROOT_ROUTES, source, mutated);
   });
 
-  it('rejects a family call before resolved dependencies and authorization exist', () => {
+  it('rejects a family call before authorization exists', () => {
     const source = readFileSync(ROOT_ROUTES, 'utf8');
     const mutated = source.replace(
-      '  const resolvedDependencies = createGroupStateRouteDependencies(dependencies);',
-      `${ROOT_PRESENCE_CALL.trim()}\n  const resolvedDependencies = createGroupStateRouteDependencies(dependencies);`,
+      '  const authorization = createGroupStateRouteAuthorization(dependencies);',
+      `${ROOT_PRESENCE_CALL.trim()}\n  const authorization = createGroupStateRouteAuthorization(dependencies);`,
     );
     expectInvalid(ROOT_ROUTES, source, mutated);
   });

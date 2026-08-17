@@ -1,6 +1,9 @@
 import path from 'node:path';
 
-import type { MutationRoutingAstNode as AstNode } from './mutation-routing-call-graph.ts';
+import {
+  type MutationRoutingAstNode as AstNode,
+  resolveModuleString,
+} from './mutation-routing-call-graph.ts';
 
 interface FindGroupRouteHandlerInput {
   readonly program: AstNode;
@@ -36,34 +39,29 @@ const ROOT_FAMILY_CALLS = [
     'registerGroupStateReadRoutes',
     './register-group-state-read-routes.ts',
     'app',
-    'resolvedDependencies',
+    'dependencies',
     'authorization',
   ],
   [
     'registerGroupStateMutationRoutes',
     './register-group-state-mutation-routes.ts',
     'app',
-    'resolvedDependencies',
+    'dependencies',
     'authorization',
   ],
-  [
-    'registerGroupAdmissionRoutes',
-    './register-group-admission-routes.ts',
-    'app',
-    'resolvedDependencies',
-  ],
+  ['registerGroupAdmissionRoutes', './register-group-admission-routes.ts', 'app', 'dependencies'],
   [
     'registerGroupMembershipRoutes',
     './register-group-membership-routes.ts',
     'app',
-    'resolvedDependencies',
+    'dependencies',
     'authorization',
   ],
   [
     'registerGroupPresenceRoutes',
     './register-group-presence-routes.ts',
     'app',
-    'resolvedDependencies',
+    'dependencies',
     'authorization',
   ],
 ] as const;
@@ -88,21 +86,15 @@ export function hasExactGroupRegistrationRoot({
   const root = roots[0]!;
   if (!sameNames(readParameterNames(root), ['app', 'dependencies'])) return false;
   const statements = readBlockStatements(asNode(root.body));
-  if (statements.length !== 2 + ROOT_FAMILY_CALLS.length) return false;
+  if (statements.length !== 1 + ROOT_FAMILY_CALLS.length) return false;
   if (
-    !hasExactConstCall(statements[0], 'resolvedDependencies', 'createGroupStateRouteDependencies', [
+    !hasExactConstCall(statements[0], 'authorization', 'createGroupStateRouteAuthorization', [
       'dependencies',
     ])
   )
     return false;
-  if (
-    !hasExactConstCall(statements[1], 'authorization', 'createGroupStateRouteAuthorization', [
-      'resolvedDependencies',
-    ])
-  )
-    return false;
   return ROOT_FAMILY_CALLS.every(([name, , ...argumentNames], index) =>
-    isExactDirectCall(statements[index + 2], name, argumentNames),
+    isExactDirectCall(statements[index + 1], name, argumentNames),
   );
 }
 
@@ -277,7 +269,7 @@ function readDirectRegistration(
   const callee = asNode(call?.callee);
   if (call?.type !== 'CallExpression' || callee?.type !== 'MemberExpression') return undefined;
   if (readName(asNode(callee.object)) !== 'app') return undefined;
-  const handler = asNodes(call.arguments)[1];
+  const handler = resolveDirectHandler(program, asNodes(call.arguments)[1]);
   const routePath = resolveModuleString(program, asNodes(call.arguments)[0]);
   const method = readName(asNode(callee.property));
   const ownerName = readName(asNode(owner.id));
@@ -286,57 +278,34 @@ function readDirectRegistration(
     : undefined;
 }
 
-function resolveModuleString(
-  program: AstNode,
-  value: AstNode | undefined,
-  resolving = new Set<string>(),
-): string | undefined {
-  if (!value) return undefined;
-  const direct = readString(value);
-  if (direct !== undefined) return direct;
-  if (value.type === 'Identifier') {
-    const name = readName(value);
-    if (!name || resolving.has(name)) return undefined;
-    const binding = findModuleConst(program, name);
-    return binding
-      ? resolveModuleString(program, asNode(binding.init), new Set(resolving).add(name))
-      : undefined;
+function resolveDirectHandler(program: AstNode, handler: AstNode | undefined): AstNode | undefined {
+  if (!handler) return undefined;
+  if (handler.type === 'Identifier') {
+    const targets = findTopLevelFunctions(program, readName(handler));
+    return targets.length === 1 ? targets[0] : undefined;
   }
-  if (value.type === 'TemplateLiteral') return resolveTemplate(program, value, resolving);
-  if (value.type !== 'BinaryExpression' || value.operator !== '+') return undefined;
-  const left = resolveModuleString(program, asNode(value.left), resolving);
-  const right = resolveModuleString(program, asNode(value.right), resolving);
-  return left === undefined || right === undefined ? undefined : `${left}${right}`;
+  if (handler.type !== 'ArrowFunctionExpression' && handler.type !== 'FunctionExpression') {
+    return handler;
+  }
+  const call = readDirectWrapperCall(handler);
+  if (!call) return handler;
+  const callee = asNode(call.callee);
+  if (callee?.type !== 'Identifier') return undefined;
+  const targets = findTopLevelFunctions(program, readName(callee));
+  if (targets.length !== 1) return undefined;
+  const target = targets[0]!;
+  return sameNames(asNodes(call.arguments).map(readName), readParameterNames(target))
+    ? target
+    : undefined;
 }
 
-function resolveTemplate(
-  program: AstNode,
-  template: AstNode,
-  resolving: ReadonlySet<string>,
-): string | undefined {
-  const expressions = asNodes(template.expressions);
-  const quasis = asNodes(template.quasis);
-  if (quasis.length !== expressions.length + 1) return undefined;
-  let resolved = readTemplateElement(quasis[0]);
-  if (resolved === undefined) return undefined;
-  for (const [index, expression] of expressions.entries()) {
-    const expressionValue = resolveModuleString(program, expression, new Set(resolving));
-    const following = readTemplateElement(quasis[index + 1]);
-    if (expressionValue === undefined || following === undefined) return undefined;
-    resolved += expressionValue + following;
-  }
-  return resolved;
-}
-
-function findModuleConst(program: AstNode, name: string): AstNode | undefined {
-  for (const statement of asNodes(program.body)) {
-    if (statement.type !== 'VariableDeclaration' || statement.kind !== 'const') continue;
-    const binding = asNodes(statement.declarations).find(
-      (declaration) => readName(asNode(declaration.id)) === name,
-    );
-    if (binding) return binding;
-  }
-  return undefined;
+function readDirectWrapperCall(handler: AstNode): AstNode | undefined {
+  const body = asNode(handler.body);
+  if (body?.type === 'CallExpression') return body;
+  const statements = readBlockStatements(body);
+  if (statements.length !== 1 || statements[0]?.type !== 'ReturnStatement') return undefined;
+  const returned = asNode(statements[0].argument);
+  return returned?.type === 'CallExpression' ? returned : undefined;
 }
 
 function findExportedFunctions(program: AstNode, name: string): readonly AstNode[] {
@@ -364,12 +333,6 @@ function readTopLevelDeclaration(statement: AstNode): AstNode | undefined {
 
 function readBlockStatements(block: AstNode | undefined): readonly AstNode[] {
   return block?.type === 'BlockStatement' ? asNodes(block.body) : [];
-}
-
-function readTemplateElement(node: AstNode | undefined): string | undefined {
-  if (node?.type !== 'TemplateElement') return undefined;
-  const value = asNode(node.value);
-  return typeof value?.cooked === 'string' ? value.cooked : undefined;
 }
 
 function readName(node: AstNode | undefined): string {

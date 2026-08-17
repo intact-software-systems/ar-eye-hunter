@@ -52,7 +52,7 @@ Deno.test(
       });
       const app = new Hono();
       installClientStateRouteAuthMiddleware(app, clientDeps.requireApiAuthSession);
-      clientStateRoutes.init(app, clientDeps);
+      clientStateRoutes.registerClientStateRoutes(app, clientDeps);
       registerGroupStateRoutes(app, groupDeps);
 
       const clientsResponse = await app.request(
@@ -102,7 +102,7 @@ Deno.test(
       });
       const app = new Hono();
       installClientStateRouteAuthMiddleware(app, clientDeps.requireApiAuthSession);
-      clientStateRoutes.init(app, clientDeps);
+      clientStateRoutes.registerClientStateRoutes(app, clientDeps);
       registerGroupStateRoutes(app, groupDeps);
 
       const clientResponse = await app.request(
@@ -152,7 +152,7 @@ Deno.test(
       });
       const app = new Hono();
       installClientStateRouteAuthMiddleware(app, clientDeps.requireApiAuthSession);
-      clientStateRoutes.init(app, clientDeps);
+      clientStateRoutes.registerClientStateRoutes(app, clientDeps);
       registerGroupStateRoutes(app, groupDeps);
 
       const clientResponse = await app.request(

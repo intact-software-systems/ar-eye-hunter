@@ -8,8 +8,8 @@ import {
 } from '@shared-server/rallar-system/state-event-listing.ts';
 
 import {
+  type GroupStateRouteDependencies,
   type GroupStateRouteService,
-  type ResolvedGroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
 import {
@@ -25,7 +25,7 @@ const GROUP_PATH = `${GROUPS_PATH}/:groupId`;
 
 export function registerGroupStateReadRoutes(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.get(GROUPS_PATH, (context) => readGroupSnapshotList(context, dependencies, authorization));
@@ -42,15 +42,15 @@ export function registerGroupStateReadRoutes(
 
 async function readGroupSnapshotList(
   context: Context,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): Promise<Response> {
   try {
     const authSession = await authorization.readStrictAuthSession(context.req);
     const snapshots = authSession
-      ? (await dependencies.getGroupStateService().listSnapshots(toGroupStateRouteScope(context)))
+      ? (await dependencies.groupStateService.listSnapshots(toGroupStateRouteScope(context)))
         .filter((snapshot) => isGroupStateRouteSnapshotReadable(snapshot, authSession.clientId))
-      : await dependencies.getGroupStateService().listSnapshots(
+      : await dependencies.groupStateService.listSnapshots(
         toGroupStateRouteScope(context),
       );
     hydrateGroupSnapshots(dependencies, snapshots);
@@ -63,7 +63,7 @@ async function readGroupSnapshotList(
 
 async function readGroupSnapshot(
   context: Context,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): Promise<Response> {
   try {
@@ -97,7 +97,7 @@ async function readGroupSnapshot(
 
 async function readGroupEventArray(
   context: Context,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): Promise<Response> {
   try {
@@ -114,7 +114,7 @@ async function readGroupEventArray(
 
     return context.json(
       await listRecentGroupEventsForArrayRoute(
-        dependencies.getGroupStateService(),
+        dependencies.groupStateService,
         ref,
         query,
       ),
@@ -126,7 +126,7 @@ async function readGroupEventArray(
 
 async function readGroupEventPage(
   context: Context,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): Promise<Response> {
   try {
@@ -137,7 +137,7 @@ async function readGroupEventPage(
     });
 
     return context.json(
-      await dependencies.getGroupStateService().listEventPage(
+      await dependencies.groupStateService.listEventPage(
         {
           ...toGroupStateRouteScope(context),
           groupId,
@@ -151,7 +151,7 @@ async function readGroupEventPage(
 }
 
 function hydrateGroupSnapshots(
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   groups: readonly GroupSnapshot[],
 ): void {
   if (groups.length === 0) {

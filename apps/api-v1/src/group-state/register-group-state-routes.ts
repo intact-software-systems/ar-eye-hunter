@@ -1,6 +1,5 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
-import { createGroupStateRouteDependencies } from './create-group-state-route-dependencies.ts';
 import { createGroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import type { GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { registerGroupAdmissionRoutes } from './register-group-admission-routes.ts';
@@ -11,14 +10,13 @@ import { registerGroupStateReadRoutes } from './register-group-state-read-routes
 
 export function registerGroupStateRoutes(
   app: Hono,
-  dependencies: GroupStateRouteDependencies = {},
+  dependencies: GroupStateRouteDependencies,
 ): void {
-  const resolvedDependencies = createGroupStateRouteDependencies(dependencies);
-  const authorization = createGroupStateRouteAuthorization(resolvedDependencies);
+  const authorization = createGroupStateRouteAuthorization(dependencies);
 
-  registerGroupStateReadRoutes(app, resolvedDependencies, authorization);
-  registerGroupStateMutationRoutes(app, resolvedDependencies, authorization);
-  registerGroupAdmissionRoutes(app, resolvedDependencies);
-  registerGroupMembershipRoutes(app, resolvedDependencies, authorization);
-  registerGroupPresenceRoutes(app, resolvedDependencies, authorization);
+  registerGroupStateReadRoutes(app, dependencies, authorization);
+  registerGroupStateMutationRoutes(app, dependencies, authorization);
+  registerGroupAdmissionRoutes(app, dependencies);
+  registerGroupMembershipRoutes(app, dependencies, authorization);
+  registerGroupPresenceRoutes(app, dependencies, authorization);
 }

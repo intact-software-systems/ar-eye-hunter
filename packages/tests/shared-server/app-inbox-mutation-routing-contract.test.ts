@@ -16,6 +16,7 @@ const GROUP_DISPATCH_PATH = 'packages/shared-server/rallar-system/services/AppGr
 const GROUP_MEMBERSHIP_ROUTES = 'apps/api-v1/src/group-state/register-group-membership-routes.ts';
 const GROUP_PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presence-routes.ts';
 const GROUP_COMMAND_TRANSLATOR = 'apps/api-v1/src/group-state/to-group-state-command.ts';
+const CRDT_ADMIN_ROUTES = 'apps/api-v1/src/routes/crdt-admin-routes.ts';
 
 describe('AppInbox mutation routing contract', { timeout: 30_000 }, () => {
   it('inventories every command type with an explicit transport, entrypoint, and owner', () => {
@@ -80,18 +81,19 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     const source = readFileSync(GROUP_PRESENCE_ROUTES, 'utf8');
     const liveRegistration = `  app.put(
     GROUP_PRESENCE_PATH,
-    async (context) => {`;
+    (context) => handleConnectGroupPresenceRoute(context, dependencies, authorization),
+  );`;
     const lateRegistration = `  app.put(
     \`\${GROUP_PRESENCE_PATH}/wrong\`,
-    async (context) => {
+    (context) => {
       app.put(
-        '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/sessions/:sessionId',
-        async (lateContext) =>
-          toGroupStateCommand({
-            operation: 'connect-group-presence',
-            authSession: lateContext,
-          }),
-      );`;
+        GROUP_PRESENCE_PATH,
+        (lateContext) =>
+          handleConnectGroupPresenceRoute(lateContext, dependencies, authorization),
+      );
+      return handleConnectGroupPresenceRoute(context, dependencies, authorization);
+    },
+  );`;
     const mutated = source.replace(liveRegistration, lateRegistration);
     expect(mutated).not.toBe(source);
 
@@ -158,6 +160,18 @@ function deadCorrectPresenceRegistration(app: Hono): void {
     expect(validateWithOverride(GROUP_COMMAND_TRANSLATOR, mutated)).toEqual(
       expect.arrayContaining([
         expect.stringContaining('GROUP_MEMBER_REMOVE operation is not connected'),
+      ]),
+    );
+  });
+
+  it('rejects a CRDT route connected to another admin mutation operation', () => {
+    const source = readFileSync(CRDT_ADMIN_ROUTES, 'utf8');
+    const mutated = source.replace("operation: 'compact',", "operation: 'lifecycle',");
+    expect(mutated).not.toBe(source);
+
+    expect(validateWithOverride(CRDT_ADMIN_ROUTES, mutated)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('CRDT_SNAPSHOT_COMPACT registered handler is not connected'),
       ]),
     );
   });

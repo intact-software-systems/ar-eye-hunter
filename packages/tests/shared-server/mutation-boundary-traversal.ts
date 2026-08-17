@@ -12,10 +12,7 @@ const PRODUCTION_ROOTS = [
 ] as const;
 
 const EXACT_RESOLVED_HANDOFFS = new Set([
-  'apps/api-v1/src/middleware.ts',
-  'apps/api-v1/src/repository/createStateRepositories.ts',
-  'apps/api-v1/src/services/client-state-service.ts',
-  'apps/api-v1/src/services/group-state-service.ts',
+  'apps/api-v1/src/initialise-middleware.ts',
   'packages/shared/mod.ts',
   'packages/shared-server/http/request-auth-service.ts',
   'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',
@@ -59,14 +56,15 @@ export function findMutationBoundaryViolationsFromRootFiles(
     for (const imported of readRuntimeImportSources(source, filePath)) {
       const resolved = resolveLocalImport(filePath, imported.source);
       if (
-        resolved && visited.get(resolved) !== true &&
+        resolved &&
+        visited.get(resolved) !== true &&
         (isProductionSource(resolved) || isExplicitFixtureSource(resolved, input.roots))
       ) {
         pending.push({
           filePath: resolved,
-          inspect: next.inspect && !(
-            filePath === 'packages/shared-server/mod.ts' && imported.kind === 'export'
-          ),
+          inspect:
+            next.inspect &&
+            !(filePath === 'packages/shared-server/mod.ts' && imported.kind === 'export'),
         });
       }
     }
@@ -167,7 +165,9 @@ function addStringLiteral(
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AstNode : undefined;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as AstNode)
+    : undefined;
 }
 
 function asNodeArray(value: unknown): readonly AstNode[] {

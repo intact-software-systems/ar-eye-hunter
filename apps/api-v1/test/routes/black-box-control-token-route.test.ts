@@ -113,12 +113,19 @@ Deno.test('black-box control token route reports missing signing secret clearly'
 });
 
 function createApp(
-  dependencies: configRoutes.ConfigRouteDependencies,
+  dependencies: Partial<configRoutes.ConfigRouteDependencies>,
 ): Hono {
   const app = new Hono();
-  configRoutes.init(app, {
+  configRoutes.registerConfigRoutes(app, {
+    requireApiAuthSession: () => Promise.resolve(createAuthSession('alice-client')),
+    readEnv: () => undefined,
     now: () => NOW_EPOCH_MS,
     createTokenId: () => 'token-id-1',
+    appAuthInbox: {} as never,
+    authUserRepository: {} as never,
+    staticClients: [],
+    registrationMode: 'public',
+    adminClientIds: new Set(),
     ...dependencies,
   });
   return app;

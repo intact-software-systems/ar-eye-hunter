@@ -6,13 +6,7 @@ import type {
   WorkspaceSpaStatisticsResponse,
 } from '@shared/api/spa-statistics-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import {
-  isGroupPolicyDeniedError,
-} from '@shared-server/rallar-system/group-policy.ts';
-import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
-import { getClientStateService } from '../services/client-state-service.ts';
-import { getGroupStateService } from '../services/group-state-service.ts';
-import { requireApiAuthSession as defaultRequireApiAuthSession } from '../services/request-auth-service.ts';
+import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 
 export type SpaStatisticsRouteReadWorkspaceInput = Readonly<{
   scope: StateScope;
@@ -22,8 +16,8 @@ export type SpaStatisticsRouteReadWorkspaceInput = Readonly<{
 export type SpaStatisticsRouteReadGroupInput =
   & SpaStatisticsRouteReadWorkspaceInput
   & Readonly<{
-  groupId: string;
-}>;
+    groupId: string;
+  }>;
 
 export type SpaStatisticsRouteService = Readonly<{
   readWorkspaceSummary(
@@ -38,25 +32,23 @@ export type SpaStatisticsRouteService = Readonly<{
 }>;
 
 export type SpaStatisticsRouteDependencies = Readonly<{
-  statistics?: SpaStatisticsRouteService;
-  requireApiAuthSession?: (
+  statistics: SpaStatisticsRouteService;
+  requireApiAuthSession: (
     req: {
       header(name: string): string | undefined;
     },
   ) => Promise<AuthSession>;
 }>;
 
-export function init(
+export function registerSpaStatisticsRoutes(
   app: Hono,
-  dependencies: SpaStatisticsRouteDependencies = {},
+  dependencies: SpaStatisticsRouteDependencies,
 ): void {
-  const deps = toSpaStatisticsRouteDependencies(dependencies);
-
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/stats/summary',
     (c) =>
-      withStats(c, deps, (authSession) =>
-        deps.statistics.readWorkspaceSummary({
+      withStats(c, dependencies, (authSession) =>
+        dependencies.statistics.readWorkspaceSummary({
           scope: toScope(c),
           authSession,
         })),
@@ -65,8 +57,8 @@ export function init(
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/stats',
     (c) =>
-      withStats(c, deps, (authSession) =>
-        deps.statistics.readGroupStats({
+      withStats(c, dependencies, (authSession) =>
+        dependencies.statistics.readGroupStats({
           scope: toScope(c),
           groupId: c.req.param('groupId'),
           authSession,
@@ -76,30 +68,17 @@ export function init(
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/stats/me/realtime',
     (c) =>
-      withStats(c, deps, (authSession) =>
-        deps.statistics.readMyRealtimeStatus({
+      withStats(c, dependencies, (authSession) =>
+        dependencies.statistics.readMyRealtimeStatus({
           scope: toScope(c),
           authSession,
         })),
   );
 }
 
-function toSpaStatisticsRouteDependencies(
-  dependencies: SpaStatisticsRouteDependencies,
-): Required<SpaStatisticsRouteDependencies> {
-  return {
-    statistics: dependencies.statistics ?? new SpaStatisticsService({
-      clientStateService: getClientStateService(),
-      groupStateService: getGroupStateService(),
-    }),
-    requireApiAuthSession: dependencies.requireApiAuthSession ??
-      defaultRequireApiAuthSession,
-  };
-}
-
 async function withStats(
   c: Context,
-  deps: Required<SpaStatisticsRouteDependencies>,
+  deps: SpaStatisticsRouteDependencies,
   execute: (authSession: AuthSession) => Promise<unknown>,
 ): Promise<Response> {
   try {

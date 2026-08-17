@@ -36,10 +36,11 @@ The current shape has the following concrete problems:
   group, graph, configuration, WebSocket, and state-sync paths.
 - Admin and statistics services capture `rallarApplication` before it is assigned so they can read
   WebSocket status later.
-- Background task state is module-global rather than owned by the API runtime whose shutdown uses it.
-- The changed-file style audit identifies hidden factory defaults, a 54-line unsegmented construction
-  block, repeated `unknown` double assertions, line-width debt, a pass-through clock candidate, and
-  nested callback pressure in the two owning files.
+- Background task state is module-global rather than owned by the API runtime whose shutdown uses
+  it.
+- The changed-file style audit identifies hidden factory defaults, a 54-line unsegmented
+  construction block, repeated `unknown` double assertions, line-width debt, a pass-through clock
+  candidate, and nested callback pressure in the two owning files.
 
 The verified repository consumers of `createRallarServer` are API-v1 `main.ts`, the Relic server,
 API-v1 tests, and active documentation. `apps/api-v1/deno.json` exports no package surface.
@@ -70,8 +71,8 @@ createDefaultRallarServer({ ws });
 
 `createRallarServer(input)` becomes the required-input canonical assembly function. The existing
 optional `CreateRallarServerOptions`, app-local middleware service locator, app-local state-service
-getters, and alternate default construction paths are removed. No compatibility wrapper,
-deprecated export, dual construction path, or fallback is retained.
+getters, and alternate default construction paths are removed. No compatibility wrapper, deprecated
+export, dual construction path, or fallback is retained.
 
 This decision does not approve changes to shared-server package exports, REST or OpenAPI contracts,
 WebSocket protocol or topic contracts, persisted formats, AppInbox transaction and retry behavior,
@@ -112,8 +113,8 @@ Owns the canonical `ApiV1Runtime` contract and the fail-closed conversion from t
 services; RTC publication, execution, delivery, and replay; auth AppInbox; client and group REST
 snapshot selectors; group formation metrics; repositories; queues; WebSocket QueueBox; readiness;
 and health failure. It adds one mandatory `backgroundTasks: ApiV1BackgroundTaskLifecycle`
-capability. The implementation plan spells out that complete contract and does not use an open
-index signature or a rename-only alias.
+capability. The implementation plan spells out that complete contract and does not use an open index
+signature or a rename-only alias.
 
 ### `api-v1-background-task-lifecycle.ts`
 
@@ -131,8 +132,8 @@ export interface ApiV1BackgroundTaskLifecycle {
 }
 ```
 
-The startup-generation result uses the existing canonical
-`RuntimeStateExpiryStartupGeneration` type directly.
+The startup-generation result uses the existing canonical `RuntimeStateExpiryStartupGeneration` type
+directly.
 
 `stop()` snapshots the registered stops, clears ownership before awaiting them, stops the expiry
 lifecycle, invokes every captured stop, and exposes failure to its caller. Repeated stop is safe.
@@ -168,9 +169,9 @@ refinement decisions to their existing canonical shared-server owners.
 ### `create-api-v1-admin-services.ts`
 
 Constructs `AdminOperationsService`, `AdminSupportService`, and `SpaStatisticsService` from explicit
-runtime, topology, repository, database, timing, identity, configuration, and clock dependencies.
-It receives a direct `readApiV1WebSocketStatus` capability over the already-constructed runtime.
-This eliminates the current `rallarApplication` forward capture and the local empty status fallback.
+runtime, topology, repository, database, timing, identity, configuration, and clock dependencies. It
+receives a direct `readApiV1WebSocketStatus` capability over the already-constructed runtime. This
+eliminates the current `rallarApplication` forward capture and the local empty status fallback.
 
 The API-local status reader is a boundary projection from the runtime WebSocket server's current
 connections into the existing `RallarServerWsStatus` contract. It contains no connection policy or
@@ -247,7 +248,7 @@ required-input owners rather than expanding these default options.
 
 ## SQL boundary
 
-`apps/api-v1/src/db/api-v1-sql-boundary.ts` owns the one supported translation:
+`apps/api-v1/src/db/to-p-sql-sql.ts` owns the one supported translation:
 
 ```ts
 export function toPSqlSql(sqlClient: ApiV1Sql): PSqlSql;
@@ -258,11 +259,16 @@ required by shared-server Postgres repositories. The function performs one expli
 assertion and returns the same object identity. It does not validate a network connection, select a
 backend, wrap queries, or change transaction behavior.
 
-Below this boundary, API composition and repository factories accept `PSqlSql` directly.
-`repository/createStateRepositories.ts` removes `Sql` defaults and double assertions. Functions that
-also accept an already-created `RuntimeStateRepositoryLike` retain that genuine union. Raw
-Postgres.js-specific notification or lifecycle consumers continue to use their explicit raw SQL
-client boundary and do not flow through domain repository construction.
+Below this boundary, API composition imports the canonical shared-server repository factories and
+passes `PSqlSql` directly. The app-local `repository/create-state-repositories.ts` wrapper is
+deleted because its seven exports only forwarded identical inputs and outputs to those canonical
+owners. Shared factories that also accept an already-created `RuntimeStateRepositoryLike` retain
+that genuine union. Raw Postgres.js-specific notification or lifecycle consumers continue to use
+their explicit raw SQL client boundary and do not flow through domain repository construction.
+
+The former `repository/login-repository.ts` path is moved to `services/api-login-service.ts`. It
+owns login and registration request policy plus the static-client configuration boundary; it does
+not own persistence and therefore does not belong in a repository subtree.
 
 ## Construction and registration timeline
 
@@ -399,8 +405,8 @@ Primary semantic tests prove:
 - tests replace dependencies through production ports, not an alternate test-only factory.
 
 The existing broad `apps/api-v1/test/rallar-server.test.ts` is split by behavior. Observable route,
-topic, lifecycle, game-authority, and CRDT assertions remain. Assertions coupled only to private file
-topology are replaced or removed.
+topic, lifecycle, game-authority, and CRDT assertions remain. Assertions coupled only to private
+file topology are replaced or removed.
 
 ## Validation design
 
@@ -445,9 +451,9 @@ implementation begins, it records the newly resolved exact merge base and uses t
 in these three commands. Deno formatting covers app-owned TypeScript and Markdown formatting uses
 the repository Prettier command.
 
-The state-write comparative performance gate is activated only if implementation evidence changes
-a mutation path or concurrency domain. A pure construction relocation makes no new performance
-claim and does not create a new benchmark.
+The state-write comparative performance gate is activated only if implementation evidence changes a
+mutation path or concurrency domain. A pure construction relocation makes no new performance claim
+and does not create a new benchmark.
 
 ## Touched-file standards closure
 

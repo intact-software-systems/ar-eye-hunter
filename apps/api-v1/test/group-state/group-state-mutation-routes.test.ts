@@ -19,7 +19,6 @@ import {
   captureGroupStateRouteWrite,
   createGroupStateRouteAuthSession,
   createGroupStateRouteSnapshot,
-  createGroupStateRouteTestDependencies,
   createGroupStateRouteTestRuntime,
   createPredecessorGroupStateRouteAuthSession,
   createPredecessorGroupStateRouteSnapshot,
@@ -29,7 +28,6 @@ import {
   putGroupStateMutation,
   TEST_GROUP_SCOPE,
   toGroupStateWritten,
-  withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';

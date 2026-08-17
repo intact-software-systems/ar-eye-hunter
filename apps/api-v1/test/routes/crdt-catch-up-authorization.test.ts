@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import * as crdtAdminRoutes from '../../src/routes/crdt-admin-routes.ts';
 
 const NOW = 1_700_000_000_000;
-const USER: AuthSession = {
+const USER: IssuedAuthSession = {
   clientId: 'alice',
   username: 'alice',
   accessToken: 'token',
   sessionId: 'alice-session',
+  issuedAtEpochMs: NOW,
   expiresAtEpochMs: NOW + 60_000,
 };
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -24,7 +28,7 @@ const DOCUMENT: RallarCrdtDocumentRef = {
 Deno.test('durable CRDT catch-up denies an authenticated non-member without reading the log', async () => {
   let logReads = 0;
   const app = new Hono();
-  crdtAdminRoutes.init(app, {
+  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
     repository: {
       listAfter: () => {
         logReads += 1;
@@ -36,6 +40,7 @@ Deno.test('durable CRDT catch-up denies an authenticated non-member without read
       },
     } as never,
     requireApiUserSession: () => Promise.resolve(USER),
+    requireApiAdminSession: () => Promise.resolve(USER),
     authorizeCatchUp: () => Promise.resolve({ allowed: false }),
   });
 
@@ -50,7 +55,7 @@ Deno.test('durable CRDT catch-up denies an authenticated non-member without read
 Deno.test('durable CRDT catch-up serves the log for an authorized caller', async () => {
   const app = new Hono();
   const authorizeInputs: Array<{ document: RallarCrdtDocumentRef; session: AuthSession }> = [];
-  crdtAdminRoutes.init(app, {
+  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
     repository: {
       listAfter: () =>
         Promise.resolve({ records: [{ update: { updateId: 'update-1' } }], hasMore: false }),
@@ -58,6 +63,7 @@ Deno.test('durable CRDT catch-up serves the log for an authorized caller', async
     } as never,
     now: () => NOW,
     requireApiUserSession: () => Promise.resolve(USER),
+    requireApiAdminSession: () => Promise.resolve(USER),
     authorizeCatchUp: (input) => {
       authorizeInputs.push(input);
       return Promise.resolve({ allowed: true });
@@ -77,7 +83,7 @@ Deno.test('durable CRDT catch-up serves the log for an authorized caller', async
 
 Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async () => {
   const app = new Hono();
-  crdtAdminRoutes.init(app, {
+  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
     repository: {
       listAfter: () => Promise.reject(new Error('unused')),
       readSnapshot: () => Promise.reject(new Error('unused')),
@@ -85,6 +91,7 @@ Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async
     requireApiUserSession: () => {
       throw new Error('Unauthorized: Missing bearer token');
     },
+    requireApiAdminSession: () => Promise.resolve(USER),
     authorizeCatchUp: () => Promise.resolve({ allowed: true }),
   });
 
@@ -95,7 +102,7 @@ Deno.test('durable CRDT catch-up rejects a missing bearer token with 401', async
 
 Deno.test('CRDT admin middleware denies a non-admin with 403 on the authenticated route', async () => {
   const app = new Hono();
-  crdtAdminRoutes.init(app, {
+  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
     repository: {} as never,
     mutations: {
       processAdminMutationUntilCompletion: () => {
@@ -108,14 +115,20 @@ Deno.test('CRDT admin middleware denies a non-admin with 403 on the authenticate
         username: 'non-admin',
         sessionId: 'session-1',
         accessToken: 'token',
+        issuedAtEpochMs: NOW,
         expiresAtEpochMs: NOW + 60_000,
       }),
+    requireApiUserSession: () => Promise.resolve(USER),
     authorizeAdmin: () => false,
   });
 
   const response = await app.request('/api/crdt/admin/documents/compact', {
     method: 'POST',
-    headers: { authorization: 'Bearer token', 'x-client-id': 'non-admin', 'content-type': 'application/json' },
+    headers: {
+      authorization: 'Bearer token',
+      'x-client-id': 'non-admin',
+      'content-type': 'application/json',
+    },
     body: JSON.stringify({ document: DOCUMENT }),
   });
   assert.equal(response.status, 403);

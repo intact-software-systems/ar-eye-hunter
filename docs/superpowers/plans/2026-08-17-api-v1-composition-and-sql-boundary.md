@@ -16,16 +16,15 @@ one required canonical factory, no service locator, and no compatibility wrapper
 **Tech Stack:** TypeScript with `erasableSyntaxOnly`, Deno 2, Hono, Postgres.js/PGlite,
 `@shared-server` Rallar facades and AppInbox services, Node/npm repository checks, Markdown.
 
-**Design:**
-`docs/superpowers/specs/2026-08-17-api-v1-composition-and-sql-boundary-design.md`
+**Design:** `docs/superpowers/specs/2026-08-17-api-v1-composition-and-sql-boundary-design.md`
 
 **Issue:** [#237](https://github.com/intact-software-systems/ar-eye-hunter/issues/237)
 
 **Draft PR:** [#257](https://github.com/intact-software-systems/ar-eye-hunter/pull/257)
 
-**Exact execution base:** `04615706883bef612cdf40f13e488a98644b8710` (2026-08-17). Before
-production edits, fetch `origin/main`, verify that this remains the merge base, and amend only the
-base and validation commands if a material main change alters the design.
+**Exact execution base:** `04615706883bef612cdf40f13e488a98644b8710` (2026-08-17). Before production
+edits, fetch `origin/main`, verify that this remains the merge base, and amend only the base and
+validation commands if a material main change alters the design.
 
 ## Global Constraints
 
@@ -103,11 +102,11 @@ before more production work. Do not activate a third slice.
 
 ### Database boundary
 
-- Create: `apps/api-v1/src/db/api-v1-sql-boundary.ts` — `ApiV1Sql` to `PSqlSql` translation.
-- Modify: `apps/api-v1/src/repository/createStateRepositories.ts` — required normalized inputs and
-  no casts/defaults.
-- Modify: `apps/api-v1/src/repository/login-repository.ts` — explicit auth repository, static-client
-  policy, clock, and identity inputs.
+- Create: `apps/api-v1/src/db/to-p-sql-sql.ts` — `ApiV1Sql` to `PSqlSql` translation.
+- Delete after consumer migration: `apps/api-v1/src/repository/create-state-repositories.ts` — the
+  app-local exports only duplicate canonical shared-server repository factories.
+- Move/modify: `apps/api-v1/src/services/api-login-service.ts` — explicit auth repository,
+  static-client policy, clock, and identity inputs under its real request-policy owner.
 
 ### Explicit route and service dependencies
 
@@ -116,10 +115,9 @@ before more production work. Do not activate a third slice.
 - Delete after consumer migration: `apps/api-v1/src/services/client-state-service.ts`,
   `apps/api-v1/src/services/group-state-service.ts`, and
   `apps/api-v1/src/services/state-sync-service.ts`.
-- Modify and split when required by touched-file closure:
-  `routes/config-route.ts`, `routes/ws-routes.ts`, `routes/client-state-routes.ts`,
-  `routes/graph-topology-routes.ts`, `routes/ice-route.ts`,
-  `routes/spa-statistics-routes.ts`, `routes/crdt-admin-routes.ts`, and
+- Modify and split when required by touched-file closure: `routes/config-route.ts`,
+  `routes/ws-routes.ts`, `routes/client-state-routes.ts`, `routes/graph-topology-routes.ts`,
+  `routes/ice-route.ts`, `routes/spa-statistics-routes.ts`, `routes/crdt-admin-routes.ts`, and
   `group-state/create-group-state-route-dependencies.ts`.
 - Modify: `routes/create-state-snapshot-read-route-registrars.ts` and
   `group-state/group-state-route-contracts.ts` to use already-constructed direct services.
@@ -127,7 +125,7 @@ before more production work. Do not activate a third slice.
 
 ### Retired broad owners
 
-- Delete after transfer and consumer migration: `apps/api-v1/src/middleware.ts`,
+- Delete after transfer and consumer migration: `apps/api-v1/src/initialise-middleware.ts`,
   `apps/api-v1/src/middleware-contract.ts`, `apps/api-v1/src/middleware-background-tasks.ts`, and
   `apps/api-v1/src/create-rallar-server.ts`.
 
@@ -137,8 +135,8 @@ before more production work. Do not activate a third slice.
 - Modify: `apps/relic-hunter-server-v1/src/main.ts`.
 - Modify current navigation: `apps/api-v1/README.md`, `docs/environment-variables.md`, and
   `packages/shared-server/rallar-server-repositories.md`.
-- Update semantic tests under `apps/api-v1/test/**` and relevant repository-governance fixtures
-  only when their independent contract still applies.
+- Update semantic tests under `apps/api-v1/test/**` and relevant repository-governance fixtures only
+  when their independent contract still applies.
 
 ---
 
@@ -148,7 +146,7 @@ before more production work. Do not activate a third slice.
 
 **Files:**
 
-- Create: `apps/api-v1/src/db/api-v1-sql-boundary.ts`.
+- Create: `apps/api-v1/src/db/to-p-sql-sql.ts`.
 - Create: `apps/api-v1/test/composition/api-v1-sql-boundary.test.ts`.
 - Keep repository signatures unchanged until Task 4 migrates every direct consumer in the same
   coherent commit.
@@ -162,7 +160,7 @@ before more production work. Do not activate a third slice.
 export function toPSqlSql(sqlClient: ApiV1Sql): PSqlSql;
 ```
 
-- [ ] **Step 1: Verify current identity and baseline**
+- [x] **Step 1: Verify current identity and baseline**
 
 Run:
 
@@ -174,11 +172,11 @@ cd apps/api-v1 && deno task check
 cd apps/api-v1 && deno test --allow-env --allow-read --allow-write test/rallar-server.test.ts
 ```
 
-Expected: merge base `04615706883bef612cdf40f13e488a98644b8710`, clean tracked state,
-API check exit 0, server suite 4 passed/0 failed. If the merge base differs, inspect the material main
-delta before editing and record the new exact base in this plan and PR.
+Expected: merge base `04615706883bef612cdf40f13e488a98644b8710`, clean tracked state, API check exit
+0, server suite 4 passed/0 failed. If the merge base differs, inspect the material main delta before
+editing and record the new exact base in this plan and PR.
 
-- [ ] **Step 2: Write the failing identity test**
+- [x] **Step 2: Write the failing identity test**
 
 Create a callable fake with a `begin` method and assert that translation preserves object identity:
 
@@ -200,7 +198,7 @@ Deno.test('toPSqlSql preserves the supported API SQL client identity', () => {
 });
 ```
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run:
 
@@ -209,9 +207,9 @@ cd apps/api-v1 && deno test --allow-env --allow-read --allow-write \
   test/composition/api-v1-sql-boundary.test.ts
 ```
 
-Expected: fail because `src/db/api-v1-sql-boundary.ts` does not exist.
+Expected: fail because `src/db/to-p-sql-sql.ts` does not exist.
 
-- [ ] **Step 4: Implement the single translation**
+- [x] **Step 4: Implement the single translation**
 
 Use one boundary assertion, never a double assertion:
 
@@ -227,7 +225,7 @@ export function toPSqlSql(sqlClient: ApiV1Sql): PSqlSql {
 Do not change repository inputs in this task. Task 4 migrates those signatures and all consumers
 together, after explicit route dependencies exist.
 
-- [ ] **Step 5: Run GREEN and the app type-check**
+- [x] **Step 5: Run GREEN and the app type-check**
 
 Run:
 
@@ -239,7 +237,7 @@ cd apps/api-v1 && deno task check
 
 Expected: identity test passes and API check exits 0.
 
-- [ ] **Step 6: Review, commit, push, and update PR #257**
+- [x] **Step 6: Review, commit, push, and update PR #257**
 
 Run Deno format only over changed API files, inspect every changed file in full, run
 `git diff --check`, stage exact Task 1 paths, and commit:
@@ -278,7 +276,7 @@ export function createApiV1BackgroundTaskLifecycle(
 ): ApiV1BackgroundTaskLifecycle;
 ```
 
-- [ ] **Step 1: Write lifecycle RED tests**
+- [x] **Step 1: Write lifecycle RED tests**
 
 The tests use a fake `RuntimeStateExpiryLifecycle` and prove:
 
@@ -321,22 +319,22 @@ Deno.test('background lifecycle is repeat-stop safe and starts a fresh generatio
 ```
 
 Define `createFakeRuntimeStateExpiryLifecycle` in the test file as a complete
-`RuntimeStateExpiryLifecycle`: `beginStartupGeneration` appends `begin` and returns a new object with
-the three required generation operations; both start operations resolve `0`; `stop` appends
+`RuntimeStateExpiryLifecycle`: `beginStartupGeneration` appends `begin` and returns a new object
+with the three required generation operations; both start operations resolve `0`; `stop` appends
 `expiry-stop` only on its first call. This keeps the assertions semantic without reading source.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run the new test file. Expected: missing composition lifecycle module.
 
-- [ ] **Step 3: Implement lifecycle ownership**
+- [x] **Step 3: Implement lifecycle ownership**
 
 Use a private `Set<() => void | Promise<void>>`. `stop()` snapshots and clears the set before
 awaiting, stops runtime-state expiry before invoking captured callbacks, starts every callback via
 `Promise.all`, and is idempotent. `register` returns an unregister function whose body performs the
 delete without returning the Set boolean.
 
-- [ ] **Step 4: Run GREEN and existing expiry tests**
+- [x] **Step 4: Run GREEN and existing expiry tests**
 
 Run:
 
@@ -350,7 +348,7 @@ Replace the existing source-text assertions about `middleware.ts` and
 `middleware-background-tasks.ts` with semantic lifecycle assertions. Do not introduce a new
 source-file inventory.
 
-- [ ] **Step 5: Review, commit, push, and update PR #257**
+- [x] **Step 5: Review, commit, push, and update PR #257**
 
 Commit:
 
@@ -399,20 +397,20 @@ export interface ApiV1Runtime extends Omit<
 ```
 
 `requireApiV1Runtime` receives the shared runtime plus the auth repository, selectors, metrics, and
-background lifecycle as required named inputs. It preserves the existing fail-closed checks and
-adds no open index signature or rename alias.
+background lifecycle as required named inputs. It preserves the existing fail-closed checks and adds
+no open index signature or rename alias.
 
 `createApiV1MutationRuntime` owns the existing QueueBox/repository/cache/auth/AppInbox factory
-construction and returns the complete named inputs consumed by `createRallarMiddleware`; it does
-not open or retry an AppInbox transaction.
+construction and returns the complete named inputs consumed by `createRallarMiddleware`; it does not
+open or retry an AppInbox transaction.
 
-- [ ] **Step 1: Write runtime contract RED tests**
+- [x] **Step 1: Write runtime contract RED tests**
 
 Port the existing `requireApiMiddleware` success and missing-capability cases into
-`api-v1-runtime.test.ts`. Add assertions for required `authSessionRepository` and
-`backgroundTasks`, and prove the returned object preserves the shared runtime's service identities.
+`api-v1-runtime.test.ts`. Add assertions for required `authSessionRepository` and `backgroundTasks`,
+and prove the returned object preserves the shared runtime's service identities.
 
-- [ ] **Step 2: Write mutation composition characterization tests**
+- [x] **Step 2: Write mutation composition characterization tests**
 
 Use fake required repositories and dependencies to prove that the returned AppInbox factories:
 
@@ -423,19 +421,19 @@ Use fake required repositories and dependencies to prove that the returned AppIn
 
 Name the production operation whose change would make each assertion fail before writing it.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run both new files. Expected: missing runtime and mutation-composition modules.
 
-- [ ] **Step 4: Implement the runtime contract and mutation owner**
+- [x] **Step 4: Implement the runtime contract and mutation owner**
 
-Move the cohesive QueueBox, repositories, caches, auth credential issuer, AppInbox factory callbacks,
-CRDT factories, resilience, retry telemetry, and group-presence-summary wiring from `middleware.ts`
-without changing their order or deferred invocation semantics. Keep operational defaults out of the
-factory input; pass database, configuration, identities, timing, clock, secret, and lifecycle as
-required values.
+Move the cohesive QueueBox, repositories, caches, auth credential issuer, AppInbox factory
+callbacks, CRDT factories, resilience, retry telemetry, and group-presence-summary wiring from
+`middleware.ts` without changing their order or deferred invocation semantics. Keep operational
+defaults out of the factory input; pass database, configuration, identities, timing, clock, secret,
+and lifecycle as required values.
 
-- [ ] **Step 5: Run GREEN and relevant auth/repository tests**
+- [x] **Step 5: Run GREEN and relevant auth/repository tests**
 
 Run:
 
@@ -447,7 +445,7 @@ cd apps/api-v1 && deno test --allow-env --allow-read --allow-write \
 cd apps/api-v1 && deno task check
 ```
 
-- [ ] **Step 6: Review, commit, push, and update PR #257**
+- [x] **Step 6: Review, commit, push, and update PR #257**
 
 Commit:
 
@@ -462,18 +460,18 @@ git push
 
 - Create: `apps/api-v1/src/composition/create-api-v1-runtime.ts`.
 - Create: `apps/api-v1/test/composition/create-api-v1-runtime.test.ts`.
-- Modify: `apps/api-v1/src/repository/createStateRepositories.ts`.
-- Modify: `apps/api-v1/src/repository/login-repository.ts`.
+- Delete: `apps/api-v1/src/repository/create-state-repositories.ts` after direct consumers import
+  the canonical shared-server factories.
+- Move/modify: `apps/api-v1/src/services/api-login-service.ts`.
 - Modify: `services/request-auth-service.ts`.
-- Modify/split: `routes/config-route.ts`, `routes/ws-routes.ts`,
-  `routes/client-state-routes.ts`, `routes/graph-topology-routes.ts`, `routes/ice-route.ts`,
-  `routes/spa-statistics-routes.ts`, `routes/crdt-admin-routes.ts`,
-  `group-state/create-group-state-route-dependencies.ts`,
+- Modify/split: `routes/config-route.ts`, `routes/ws-routes.ts`, `routes/client-state-routes.ts`,
+  `routes/graph-topology-routes.ts`, `routes/ice-route.ts`, `routes/spa-statistics-routes.ts`,
+  `routes/crdt-admin-routes.ts`, `group-state/create-group-state-route-dependencies.ts`,
   `group-state/group-state-route-contracts.ts`, and
   `routes/create-state-snapshot-read-route-registrars.ts`.
 - Delete when no verified import remains: app-local client/group/state-sync service files.
-- Modify: `middleware.ts` into the temporary existing default entry that returns a fresh explicit
-  runtime without storing it globally; Task 7 absorbs and deletes this entry.
+- Rename/modify: `initialise-middleware.ts` into the temporary default entry that returns a fresh
+  explicit runtime without storing it globally; Task 7 absorbs and deletes this entry.
 - Delete after transfer: `middleware-contract.ts` and `middleware-background-tasks.ts`.
 - Modify: root `create-rallar-server.ts` only enough to consume `ApiV1Runtime` and its owned
   background lifecycle until Tasks 5-7 move the remaining composition.
@@ -522,7 +520,7 @@ export function createClientStateRepository(
 The auth, group, and event repository functions use the same required
 `RuntimeStateRepositoryLike | PSqlSql` pattern.
 
-- [ ] **Step 1: Write runtime construction and failure-order RED tests**
+- [x] **Step 1: Write runtime construction and failure-order RED tests**
 
 Characterize the current order around RTC runtime creation, shared middleware construction, replay
 attachment, background registration, scalar worker first run, reconciliation startup, selector
@@ -530,19 +528,19 @@ creation, and complete runtime validation. Use injected operations that append n
 selected boundary. Assert both the call sequence and that later phases are not invoked after a
 synchronous failure.
 
-- [ ] **Step 2: Write explicit route-dependency RED tests**
+- [x] **Step 2: Write explicit route-dependency RED tests**
 
-For WS, config, client, group, graph, ICE, statistics, and CRDT families, add or update semantic tests
-that call the production registration function with complete fakes. Prove requests reach the exact
-supplied auth, state, AppInbox, topology, socket, and statistics capabilities. Delete tests that
-only assert a private fallback import or source filename.
+For WS, config, client, group, graph, ICE, statistics, and CRDT families, add or update semantic
+tests that call the production registration function with complete fakes. Prove requests reach the
+exact supplied auth, state, AppInbox, topology, socket, and statistics capabilities. Delete tests
+that only assert a private fallback import or source filename.
 
-- [ ] **Step 3: Run RED**
+- [x] **Step 3: Run RED**
 
 Run the new runtime test and the focused route tests. Expected failures name missing required
 contracts or the still-present locator fallback, not unrelated fixture errors.
 
-- [ ] **Step 4: Implement `createApiV1Runtime`**
+- [x] **Step 4: Implement `createApiV1Runtime`**
 
 Move the RTC runtime and startup sequence from `middleware.ts` in the same observable order:
 
@@ -564,7 +562,7 @@ require complete ApiV1Runtime
 All callback captures refer only to values constructed earlier. Preserve detached error logging and
 first-run behavior exactly.
 
-- [ ] **Step 5: Remove the locator from every production path**
+- [x] **Step 5: Remove the locator from every production path**
 
 Make `requireApiAuthSession` require `AuthSessionRepository`. Make `requireWsAuthSession` require
 AppAuthInbox and immutable request facts. Supply those operations from route composition.
@@ -585,9 +583,10 @@ with direct required capabilities captured by the owning registration function. 
 getter modules after `rg` proves no verified consumer remains. Import canonical shared-server types
 and factories directly instead of retaining rename-only re-exports.
 
-Remove `postgres.Sql`, `defaultSql`, all default parameters, and all assertions from
-`createStateRepositories.ts`. Delegate required normalized inputs directly to shared-server
-factories. Refactor `login-repository.ts` to required inputs:
+Remove `postgres.Sql`, `defaultSql`, all default parameters, and all assertions from the app-local
+repository path by deleting its pass-through factory file. Import the canonical shared-server
+factories directly and pass required normalized inputs. Move the login request policy out of the
+repository subtree and refactor `api-login-service.ts` to required inputs:
 
 ```ts
 export interface LoginInput {
@@ -604,22 +603,22 @@ export interface RegisterInput {
 }
 ```
 
-`login` and `register` consume those complete inputs. Keep `readAuthStaticClientsMode` and export one
-explicit `readAuthorisedClients(env)` boundary for default route composition.
+`login` and `register` consume those complete inputs. Keep `readAuthStaticClientsMode` and export
+one explicit `readAuthorisedClients(env)` boundary for default route composition.
 
-- [ ] **Step 6: Close each materially touched route file**
+- [x] **Step 6: Close each materially touched route file**
 
 Split only where the file owns distinct route families or a handler exceeds 30 lines. Keep request
 decoding, auth/policy decisions, AppInbox invocation, response mapping, and error mapping traceable
 from each registration entry. Rename generic `init` exports to `registerConfigRoutes`,
-`registerWsRoutes`, `registerClientStateRoutes`, `registerGraphTopologyRoutes`,
-`registerIceRoutes`, `registerSpaStatisticsRoutes`, and `registerCrdtAdminRoutes`.
+`registerWsRoutes`, `registerClientStateRoutes`, `registerGraphTopologyRoutes`, `registerIceRoutes`,
+`registerSpaStatisticsRoutes`, and `registerCrdtAdminRoutes`.
 
 Use direct named inputs rather than suppliers. Resolve the current four-parameter topology write
 helper and CRDT mutation helper with named input interfaces. Do not alter route paths or response
 semantics.
 
-- [ ] **Step 7: Run GREEN and Slice 1 validation**
+- [x] **Step 7: Run GREEN and Slice 1 validation**
 
 Run focused composition/auth/route tests, then:
 
@@ -638,12 +637,16 @@ cd apps/api-v1 && deno test --allow-env --allow-read --allow-write \
   test/routes/crdt-admin-routes.test.ts
 ```
 
-Expected: all selected tests pass, type-check and lint exit 0, and `rg` finds no production
-`getMiddleware`, module-global runtime, app-local service getter, or deleted module import. The
-existing `initialiseMiddleware` name may remain only as the temporary default entry consumed by the
-root server factory; it must contain no storage or locator and Task 7 deletes it.
+Expected: all selected tests pass, type-check exits 0, and `rg` finds no production `getMiddleware`,
+module-global runtime, app-local service getter, or deleted module import. The existing
+`initialiseMiddleware` name may remain only as the temporary default entry consumed by the root
+server factory; it must contain no storage or locator and Task 7 deletes it.
 
-- [ ] **Step 8: Review, commit, push, and update PR #257**
+Execution correction: app-wide `deno task lint` still reports 30 existing issues in untouched test
+files. The exact 53 changed API TypeScript files pass `deno lint` and `deno fmt --check`; the broad
+failure is retained as baseline evidence rather than expanding this slice into unrelated test debt.
+
+- [x] **Step 8: Review, commit, push, and update PR #257**
 
 Run focused changed-file style and construction review. Record every construction finding by path,
 rule, symbol, and disposition. Commit:
@@ -693,7 +696,8 @@ export interface ApiV1AdminServices {
 ```
 
 `createApiV1AdminServices` receives a direct `readWebSocketStatus` function over the already-created
-runtime socket. It never captures a later `RallarServerApplication` and has no empty-status fallback.
+runtime socket. It never captures a later `RallarServerApplication` and has no empty-status
+fallback.
 
 - [ ] **Step 1: Write topology composition RED tests**
 
@@ -704,14 +708,14 @@ existing canonical topology classes; assert no graph or persistence algorithm is
 - [ ] **Step 2: Write admin composition RED tests**
 
 Use a runtime with a mutable connection map. Construct admin services, change connections after
-construction, and assert operations/support/statistics read the current status. Add a throwing status
-reader case and prove the same exception reaches the caller without an empty fallback.
+construction, and assert operations/support/statistics read the current status. Add a throwing
+status reader case and prove the same exception reaches the caller without an empty fallback.
 
 - [ ] **Step 3: Run RED, implement by movement, and run GREEN**
 
-Move the existing topology and admin blocks into their owners. Pass `PSqlSql`, runtime, repositories,
-clock, timing, identity, and configuration as required inputs. Preserve every callback body and
-failure boundary unless a RED characterization proves an existing bug.
+Move the existing topology and admin blocks into their owners. Pass `PSqlSql`, runtime,
+repositories, clock, timing, identity, and configuration as required inputs. Preserve every callback
+body and failure boundary unless a RED characterization proves an existing bug.
 
 Run both new tests, relevant graph/admin route tests, and `deno task check`.
 
@@ -760,15 +764,16 @@ translations, retry delays, release facts, and failure timing match the current 
 - [ ] **Step 2: Write route installer RED tests**
 
 Use a Hono app plus complete fake dependencies. Mount the returned WS and REST installers and prove
-the existing representative config, ICE, client, group, graph, statistics, admin, CRDT, Swagger,
-and WebSocket routes are registered. Assert behavior through requests, not source text or a path
+the existing representative config, ICE, client, group, graph, statistics, admin, CRDT, Swagger, and
+WebSocket routes are registered. Assert behavior through requests, not source text or a path
 inventory.
 
 - [ ] **Step 3: Run RED, implement installers, and run GREEN**
 
 Move system and route wiring from the retiring server file. Keep all service construction outside
-route installer creation. Absorb admin route inventory directly; delete the one-use admin initializer
-factory. Preserve installer order because route shadowing and middleware order are observable.
+route installer creation. Absorb admin route inventory directly; delete the one-use admin
+initializer factory. Preserve installer order because route shadowing and middleware order are
+observable.
 
 Run new tests, `test/rallar-server.test.ts`, focused route suites, and `deno task check`.
 
@@ -835,9 +840,9 @@ default WS behavior is unchanged; and Relic WS options override only the two app
 `createRallarServer` contains one call to `createRallarServerApplication` and no defaults, config
 reads, SQL conversion, service construction, or forward capture.
 
-`createDefaultRallarServer` reads all operational inputs, calls `toPSqlSql(getSql())` once, constructs
-lifecycle/runtime/topology/admin/system/routes/default repositories in visible phases, then calls
-`createRallarServer`.
+`createDefaultRallarServer` reads all operational inputs, calls `toPSqlSql(getSql())` once,
+constructs lifecycle/runtime/topology/admin/system/routes/default repositories in visible phases,
+then calls `createRallarServer`.
 
 - [ ] **Step 4: Migrate API-v1 and Relic entry points**
 
@@ -924,10 +929,10 @@ Link every current owner and entry directly. Remove old `createRallarServer()` a
 - [ ] **Step 2: Perform cold code-only navigation review**
 
 Starting separately at API-v1 `main.ts` and Relic `main.ts`, follow production symbols without the
-design, plan, Git history, or file inventory. Record in the PR whether a reviewer can locate defaults,
-SQL translation, runtime creation, route/system registration, AppInbox ingress, failures, readiness,
-and shutdown without a wrong-file guess or hidden lookup. One coherent consolidation is required
-before escalating a failed navigation probe.
+design, plan, Git history, or file inventory. Record in the PR whether a reviewer can locate
+defaults, SQL translation, runtime creation, route/system registration, AppInbox ingress, failures,
+readiness, and shutdown without a wrong-file guess or hidden lookup. One coherent consolidation is
+required before escalating a failed navigation probe.
 
 - [ ] **Step 3: Complete touched-file and construction review**
 

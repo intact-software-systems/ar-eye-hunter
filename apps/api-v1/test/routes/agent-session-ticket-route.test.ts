@@ -30,29 +30,30 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
   const sessions = new Map<string, ConsumeAgentSessionTicketResponse>();
   const app = createApp({
     requireApiAuthSession: () => Promise.resolve(createAuthSession()),
-    readAppAuthInbox: () => ({
+    appAuthInbox: ({
       issueAgentSessionTickets: (input: {
         agents: readonly { agentId: string; sessionId: string }[];
         ticketExpiresAtEpochMs: number;
         sessionExpiresAtEpochMs: number;
-      }) => Promise.resolve(Either.ofRight({
-        tickets: input.agents.map(({ agentId, sessionId }) => {
-          const ticket = `ticket-for-${sessionId}-long-enough`;
-          sessions.set(ticket, {
-            clientId: 'alice-client',
-            username: 'alice',
-            accessToken: `access-for-${sessionId}-long-enough`,
-            sessionId,
-            expiresAtEpochMs: input.sessionExpiresAtEpochMs,
-          });
-          return {
-            agentId,
-            ticket,
-            sessionId,
-            expiresAtEpochMs: input.ticketExpiresAtEpochMs,
-          };
-        }),
-      })),
+      }) =>
+        Promise.resolve(Either.ofRight({
+          tickets: input.agents.map(({ agentId, sessionId }) => {
+            const ticket = `ticket-for-${sessionId}-long-enough`;
+            sessions.set(ticket, {
+              clientId: 'alice-client',
+              username: 'alice',
+              accessToken: `access-for-${sessionId}-long-enough`,
+              sessionId,
+              expiresAtEpochMs: input.sessionExpiresAtEpochMs,
+            });
+            return {
+              agentId,
+              ticket,
+              sessionId,
+              expiresAtEpochMs: input.ticketExpiresAtEpochMs,
+            };
+          }),
+        })),
       consumeAgentSessionTicket: (input: { ticket: string }) => {
         const session = sessions.get(input.ticket);
         if (!session) {
@@ -114,10 +115,21 @@ Deno.test('agent session ticket route mints distinct same-user sessions and cons
 });
 
 function createApp(
-  dependencies: configRoutes.ConfigRouteDependencies,
+  dependencies: Partial<configRoutes.ConfigRouteDependencies>,
 ): Hono {
   const app = new Hono();
-  configRoutes.init(app, dependencies);
+  configRoutes.registerConfigRoutes(app, {
+    requireApiAuthSession: () => Promise.resolve(createAuthSession()),
+    readEnv: () => undefined,
+    now: () => NOW_EPOCH_MS,
+    createTokenId: () => crypto.randomUUID(),
+    appAuthInbox: {} as never,
+    authUserRepository: {} as never,
+    staticClients: [],
+    registrationMode: 'public',
+    adminClientIds: new Set(),
+    ...dependencies,
+  });
   return app;
 }
 

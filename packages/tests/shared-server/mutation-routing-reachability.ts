@@ -179,8 +179,12 @@ function findReachableHandoff({
       ? { program: source, root: handler }
       : undefined;
   }
-  const bridgeNames = collectCallNames(handler);
-  for (const bridgeName of bridgeNames) {
+  for (const bridgeName of findFunctionLikeNames(enqueueSource)) {
+    const bridgeIsReachable = hasReachableAstNode(source, handler, (node) => {
+      if (node.type !== 'CallExpression' && node.type !== 'OptionalCallExpression') return false;
+      return readCallName(asNode(node.callee)) === bridgeName;
+    });
+    if (!bridgeIsReachable) continue;
     for (const target of findFunctionLikes(enqueueSource, bridgeName)) {
       if (
         hasReachableAstNode(enqueueSource, target, (node) =>
@@ -270,6 +274,29 @@ function hasHandoffCall(
   return path === marker || path.endsWith(`.${marker}`);
 }
 
+function findFunctionLikeNames(program: AstNode): ReadonlySet<string> {
+  const names = findAll(program, (node) => functionLikeName(node) !== '')
+    .map(functionLikeName)
+    .filter(Boolean);
+  return new Set(names);
+}
+
+function functionLikeName(node: AstNode): string {
+  if (node.type === 'FunctionDeclaration') return readName(node.id);
+  if (
+    node.type === 'ClassMethod' ||
+    node.type === 'ClassPrivateMethod' ||
+    node.type === 'ObjectMethod'
+  ) {
+    return readName(node.key);
+  }
+  if (node.type !== 'VariableDeclarator' && node.type !== 'ObjectProperty') return '';
+  const value = asNode(node.type === 'VariableDeclarator' ? node.init : node.value);
+  return value && (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
+    ? readName(node.type === 'VariableDeclarator' ? node.id : node.key)
+    : '';
+}
+
 function findFunctionLikes(program: AstNode, name: string): readonly AstNode[] {
   return findAll(program, (node) => {
     if (node.type === 'FunctionDeclaration') return readName(node.id) === name;
@@ -318,17 +345,6 @@ function findCall(
       node.type === 'CallExpression' &&
       readMemberName(asNode(node.callee)) === name &&
       predicate(node),
-  );
-}
-
-function collectCallNames(value: AstNode): ReadonlySet<string> {
-  return new Set(
-    findAll(
-      value,
-      (node) => node.type === 'CallExpression' || node.type === 'OptionalCallExpression',
-    )
-      .map((call) => readCallName(asNode(call.callee)))
-      .filter(Boolean),
   );
 }
 

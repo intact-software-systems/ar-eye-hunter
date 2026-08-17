@@ -1,11 +1,11 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { isSupportedSourcePath } from './auth-server-compatibility-governance-validation.ts';
 import {
-  readModuleReferenceEvidence,
   type ModuleReference,
   type NonliteralModuleReference,
+  readModuleReferenceEvidence,
 } from './auth-server-module-reference-validation.ts';
 
 export interface AuthCompatibilityConsumerInventory {
@@ -28,9 +28,6 @@ export const authCompatibilityConsumerInventory = [
   {
     compatibilityPath: 'packages/shared-server/rallar-system/services/AppAuthInboxService.ts',
     consumers: [
-      'apps/api-v1/src/middleware-contract.ts',
-      'apps/api-v1/src/middleware.ts',
-      'apps/api-v1/src/routes/config-route.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
       'packages/shared-server/http/request-auth-service.ts',
@@ -38,7 +35,6 @@ export const authCompatibilityConsumerInventory = [
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
     ],
     identityConsumers: [
-      'apps/api-v1/src/middleware.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
@@ -50,7 +46,6 @@ export const authCompatibilityConsumerInventory = [
   {
     compatibilityPath: 'packages/shared-server/rallar-system/services/auth-state-mutations.ts',
     consumers: [
-      'apps/api-v1/src/middleware.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
       'apps/api-v1/test/db/pglite-auth-transaction-rollback.test.ts',
@@ -59,7 +54,6 @@ export const authCompatibilityConsumerInventory = [
       'packages/tests/shared/authoritative-state-contracts.test.ts',
     ],
     identityConsumers: [
-      'apps/api-v1/src/middleware.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
       'apps/api-v1/test/db/pglite-auth-transaction-rollback.test.ts',
@@ -72,15 +66,14 @@ export const authCompatibilityConsumerInventory = [
   },
   {
     compatibilityPath: 'packages/shared-server/rallar-system/services/auth-login-service.ts',
-    consumers: ['apps/api-v1/src/repository/login-repository.ts'],
-    identityConsumers: ['apps/api-v1/src/repository/login-repository.ts'],
+    consumers: ['apps/api-v1/src/services/api-login-service.ts'],
+    identityConsumers: ['apps/api-v1/src/services/api-login-service.ts'],
     governanceIdentityConsumers: [runtimeIdentityGovernanceTest],
-    removalCondition: 'Move the API-v1 login repository to canonical login owners first.',
+    removalCondition: 'Move the API-v1 login service to canonical login owners first.',
   },
   {
     compatibilityPath: 'packages/shared-server/rallar-system/services/auth-credential-issuer.ts',
     consumers: [
-      'apps/api-v1/src/middleware.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
       'apps/api-v1/test/db/pglite-auth-transaction-rollback.test.ts',
@@ -88,7 +81,6 @@ export const authCompatibilityConsumerInventory = [
       'packages/tests/shared-server/app-inbox-expired-row-replacement.test.ts',
     ],
     identityConsumers: [
-      'apps/api-v1/src/middleware.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
       'apps/api-v1/test/db/pglite-auth-transaction-rollback.test.ts',
@@ -102,13 +94,9 @@ export const authCompatibilityConsumerInventory = [
   {
     compatibilityPath: 'packages/shared-server/rallar-system/repositories/AuthSessionRepository.ts',
     consumers: [
-      'apps/api-v1/src/group-state/create-group-state-route-dependencies.ts',
       'apps/api-v1/src/group-state/group-state-route-contracts.ts',
-      'apps/api-v1/src/repository/createStateRepositories.ts',
       'apps/api-v1/src/routes/client-state-routes.ts',
-      'apps/api-v1/src/routes/config-route.ts',
       'apps/api-v1/src/routes/graph-topology-routes.ts',
-      'apps/api-v1/src/services/request-auth-service.ts',
       'apps/api-v1/test/db/pglite-app-inbox-ws-close-test-harness.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
@@ -153,7 +141,6 @@ export const authCompatibilityConsumerInventory = [
       'scripts/perf/group-list-fanout-bench.ts',
     ],
     identityConsumers: [
-      'apps/api-v1/src/repository/createStateRepositories.ts',
       'apps/api-v1/test/db/pglite-app-inbox-ws-close-test-harness.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
       'apps/api-v1/test/db/pglite-auth-failure-atomicity.test.ts',
@@ -186,16 +173,14 @@ export const authCompatibilityConsumerInventory = [
   {
     compatibilityPath: 'packages/shared-server/rallar-system/repositories/AuthUserRepository.ts',
     consumers: [
-      'apps/api-v1/src/repository/createStateRepositories.ts',
-      'apps/api-v1/src/repository/login-repository.ts',
+      'apps/api-v1/src/services/api-login-service.ts',
+      'apps/api-v1/test/api-login-service.test.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
-      'apps/api-v1/test/login-repository.test.ts',
       'packages/shared-server/postgres/rallar-system/createStateRepositories.ts',
     ],
     identityConsumers: [
-      'apps/api-v1/src/repository/createStateRepositories.ts',
+      'apps/api-v1/test/api-login-service.test.ts',
       'apps/api-v1/test/db/pglite-auth-app-inbox.test.ts',
-      'apps/api-v1/test/login-repository.test.ts',
       'packages/shared-server/postgres/rallar-system/createStateRepositories.ts',
     ],
     governanceIdentityConsumers: [runtimeIdentityGovernanceTest],

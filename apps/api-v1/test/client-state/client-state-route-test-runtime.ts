@@ -4,7 +4,6 @@ import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
 
 import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
@@ -20,7 +19,7 @@ export function createClientRouteApp(
 ): Hono {
   const app = new Hono();
   installClientStateRouteAuthMiddleware(app, deps.requireApiAuthSession);
-  clientStateRoutes.init(app, deps);
+  clientStateRoutes.registerClientStateRoutes(app, deps);
   return app;
 }
 
@@ -57,14 +56,14 @@ export function createClientRouteDeps(
   }> {
   let authCalls = 0;
   return {
-    getClientStateService: () => ({
+    clientStateService: {
       listSnapshots: () => Promise.resolve([]),
       readSnapshot: () => Promise.resolve(undefined),
       readPresenceSnapshot: () => Promise.resolve(undefined),
       listEvents: () => Promise.resolve([]),
       listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
       ...input.clientService,
-    } as clientStateRoutes.ClientStateRouteService),
+    } as clientStateRoutes.ClientStateRouteService,
     requireApiAuthSession: () => {
       authCalls += 1;
       return Promise.resolve(input.session);

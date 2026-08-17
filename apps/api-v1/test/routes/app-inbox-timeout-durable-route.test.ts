@@ -30,7 +30,7 @@ Deno.test('HTTP wait timeout leaves the durable AppInbox row eligible without fa
   );
   let directMutationFallbacks = 0;
   const app = new Hono();
-  clientStateRoutes.init(app, {
+  clientStateRoutes.registerClientStateRoutes(app, {
     requireApiAuthSession: () =>
       Promise.resolve({
         clientId: 'alice',
@@ -40,14 +40,14 @@ Deno.test('HTTP wait timeout leaves the durable AppInbox row eligible without fa
         issuedAtEpochMs: 1,
         expiresAtEpochMs: 60_000,
       }),
-    getClientStateService: () => ({
+    clientStateService: {
       listSnapshots: () => Promise.resolve([]),
       readSnapshot: () => Promise.resolve(undefined),
       readPresenceSnapshot: () => Promise.resolve(undefined),
       listEvents: () => Promise.resolve([]),
       listRecentEvents: () => Promise.resolve([]),
       listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-    }),
+    },
     hydrateStateSyncSnapshotCaches: () =>
       Promise.resolve({
         clientSnapshotCount: 0,

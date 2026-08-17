@@ -286,7 +286,10 @@ function hasDirectExactMarker(program: AstNode, marker: string): boolean {
     if (readCallName(callee) !== call[2]) return false;
     if (call[1] && readIdentifier(asNode(callee?.object)) !== call[1]) return false;
     return (
-      !call[3] || asNodes(program.arguments).some((argument) => readString(argument) === call[3])
+      !call[3] ||
+      asNodes(program.arguments).some((argument) =>
+        someNode(argument, (node) => readString(node) === call[3]),
+      )
     );
   }
   const property = marker.replace(/:$/, '');

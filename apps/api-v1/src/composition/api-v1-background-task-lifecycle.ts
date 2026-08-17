@@ -51,7 +51,7 @@ async function stopApiV1BackgroundTasks(
   try {
     runtimeStateExpiry.stop();
   } catch (error) {
-    failures.push(toError(error));
+    failures.push(error instanceof Error ? error : new Error(String(error)));
   }
 
   const results = await Promise.allSettled(
@@ -59,7 +59,9 @@ async function stopApiV1BackgroundTasks(
   );
   for (const result of results) {
     if (result.status === 'rejected') {
-      failures.push(toError(result.reason));
+      failures.push(
+        result.reason instanceof Error ? result.reason : new Error(String(result.reason)),
+      );
     }
   }
 
@@ -69,8 +71,4 @@ async function stopApiV1BackgroundTasks(
   if (failures.length > 1) {
     throw new AggregateError(failures, 'API-v1 background task shutdown failed');
   }
-}
-
-function toError(value: unknown): Error {
-  return value instanceof Error ? value : new Error(String(value));
 }

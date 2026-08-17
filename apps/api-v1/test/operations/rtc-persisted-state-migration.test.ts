@@ -116,9 +116,6 @@ Deno.test('RTC migration operator task and runbook expose dry-run and cutover ac
   assert.match(script, /migrateLegacyRtcTopologyPublicationKeys/);
   assert.doesNotMatch(script, /migrateLegacyRtcRtt/);
   const readme = await Deno.readTextFile(new URL('../../README.md', import.meta.url));
-  const middleware = await Deno.readTextFile(
-    new URL('../../src/middleware.ts', import.meta.url),
-  );
   assert.match(readme, /rtc:migrate-persisted-state/);
   assert.match(readme, /--old-writers-stopped/);
   assert.match(readme, /backup/i);
@@ -128,14 +125,11 @@ Deno.test('RTC migration operator task and runbook expose dry-run and cutover ac
   const scalarWorkerRegistration = await Deno.readTextFile(
     new URL('../../src/services/init-api-rtc-topology-scalar-recompute-worker.ts', import.meta.url),
   );
-  assert.match(middleware, /initApiRtcTopologyScalarRecomputeWorker/);
   assert.match(scalarWorkerRegistration, /initRtcTopologyScalarRecomputeWorker/);
   assert.match(scalarWorkerRegistration, /writeRtcTopologyOutbox/);
   assert.match(scalarWorkerRegistration, /deriveRtcTopologyEntryResourceId/);
-  assert.doesNotMatch(middleware, /enqueueForStateMutation/);
   assert.doesNotMatch(scalarWorkerRegistration, /enqueueForStateMutation/);
   assert.match(scalarWorkerRegistration, /group-absent-terminal/);
-  assert.match(middleware, /registerMiddlewareBackgroundTask/);
 });
 
 async function loadMigrationModule(): Promise<MigrationModule> {

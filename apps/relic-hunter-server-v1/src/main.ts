@@ -1,13 +1,12 @@
-import { loadSync } from 'jsr:@std/dotenv@0.225.6';
-import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
-import { cors } from 'jsr:@hono/hono@4.11.9/cors';
+import { loadSync } from '@std/dotenv';
+import { type Context, Hono } from 'hono';
+import { cors } from 'hono/cors';
 
-import { createRallarServer } from '../../api-v1/src/create-rallar-server.ts';
+import { createRallarServer } from '@api-v1/src/create-rallar-server.ts';
 import {
   requireApiAuthSession,
   toAuthErrorResponse,
-} from '../../api-v1/src/services/request-auth-service.ts';
-import { getGroupStateService } from '../../api-v1/src/services/group-state-service.ts';
+} from '@api-v1/src/services/request-auth-service.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
 import {
   createRelicExpeditionInitialStateFactory,
@@ -84,7 +83,7 @@ initRelicSwaggerRoutes(app);
 
 app.use('/api/relic/*', async (c, next) => {
   try {
-    await requireApiAuthSession(c.req);
+    await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
     await next();
   } catch (error) {
     return toAuthErrorResponse(c, error);
@@ -94,7 +93,7 @@ app.use('/api/relic/*', async (c, next) => {
 app.get('/api/relic/games/:gameId', async (c) => {
   try {
     const gameId = c.req.param('gameId');
-    const session = await requireApiAuthSession(c.req);
+    const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
     authorizeRelicSnapshotRead({
       mode: relicRestAuthMode,
       gameId,
@@ -110,7 +109,7 @@ app.get('/api/relic/games/:gameId', async (c) => {
 app.post('/api/relic/games/:gameId/commands', async (c) => {
   try {
     const gameId = c.req.param('gameId');
-    const session = await requireApiAuthSession(c.req);
+    const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
     authorizeRelicCommand({
       mode: relicRestAuthMode,
       gameId,
@@ -137,7 +136,7 @@ app.post('/api/relic/games/:gameId/commands', async (c) => {
 app.post('/api/relic/games/:gameId/reset', async (c) => {
   try {
     const gameId = c.req.param('gameId');
-    const session = await requireApiAuthSession(c.req);
+    const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
     authorizeRelicReset({
       mode: relicRestAuthMode,
       gameId,
@@ -193,7 +192,7 @@ async function readRelicGroupSnapshotForPolicy(
     return undefined;
   }
 
-  return await getGroupStateService().readSnapshot({
+  return await rallar.runtime.groupStateService.readSnapshot({
     applicationId: DEFAULT_STATE_APPLICATION_ID,
     workspaceId: DEFAULT_STATE_WORKSPACE_ID,
     groupId: gameId,

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 import type { ApiV1Sql } from '../../src/db/db.ts';
-import { toPSqlSql } from '../../src/db/api-v1-sql-boundary.ts';
+import { toPSqlSql } from '../../src/db/to-p-sql-sql.ts';
 
 Deno.test('toPSqlSql preserves the supported API SQL client identity', () => {
   const database = Object.assign(

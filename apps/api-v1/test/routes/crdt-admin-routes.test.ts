@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import * as crdtAdminRoutes from '../../src/routes/crdt-admin-routes.ts';
 
 const NOW = 1_700_000_000_000;
-const SESSION: AuthSession = {
+const SESSION: IssuedAuthSession = {
   clientId: 'platform-admin',
   username: 'admin',
   accessToken: 'token',
   sessionId: 'admin-session',
+  issuedAtEpochMs: NOW,
   expiresAtEpochMs: NOW + 60_000,
 };
 const DOCUMENT: RallarCrdtDocumentRef = {
@@ -29,7 +33,7 @@ Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay dir
   const directCalls: string[] = [];
   const mutationCalls: Array<{ operation: string; input: unknown }> = [];
   const app = new Hono();
-  crdtAdminRoutes.init(app, {
+  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
     repository: {
       listDocuments: () => {
         directCalls.push('list');
@@ -51,6 +55,7 @@ Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay dir
       },
     },
     requireApiAdminSession: () => Promise.resolve(SESSION),
+    requireApiUserSession: () => Promise.resolve(SESSION),
     adminClientIds: ['platform-admin'],
     now: () => NOW,
   });
@@ -59,24 +64,26 @@ Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay dir
   const integrity = await post(app, '/api/crdt/admin/documents/integrity', {
     document: DOCUMENT,
   });
-  for (const [path, operation, body] of [
-    ['/api/crdt/admin/documents/rebuild-projection', 'rebuild-projection', {
-      document: DOCUMENT,
-      projectionId: 'summary',
-    }],
-    ['/api/crdt/admin/documents/compact', 'compact', {
-      document: DOCUMENT,
-      reason: 'operator',
-    }],
-    ['/api/crdt/admin/documents/lifecycle', 'lifecycle', {
-      document: DOCUMENT,
-      lifecycle: 'archived',
-    }],
-    ['/api/crdt/admin/documents/erase', 'erase', {
-      document: DOCUMENT,
-      mode: 'destroy-document',
-    }],
-  ] as const) {
+  for (
+    const [path, operation, body] of [
+      ['/api/crdt/admin/documents/rebuild-projection', 'rebuild-projection', {
+        document: DOCUMENT,
+        projectionId: 'summary',
+      }],
+      ['/api/crdt/admin/documents/compact', 'compact', {
+        document: DOCUMENT,
+        reason: 'operator',
+      }],
+      ['/api/crdt/admin/documents/lifecycle', 'lifecycle', {
+        document: DOCUMENT,
+        lifecycle: 'archived',
+      }],
+      ['/api/crdt/admin/documents/erase', 'erase', {
+        document: DOCUMENT,
+        mode: 'destroy-document',
+      }],
+    ] as const
+  ) {
     const response = await post(app, path, body);
     assert.equal(response.status, 200);
     assert.equal((await response.json()).result.operation, operation);
@@ -91,15 +98,17 @@ Deno.test('CRDT admin mutating routes use AppCrdt while read operations stay dir
     'lifecycle',
     'erase',
   ]);
-  assert.ok(mutationCalls.every((call) =>
-    (call.input as { adminSession: AuthSession }).adminSession === SESSION
-  ));
+  assert.ok(
+    mutationCalls.every((call) =>
+      (call.input as { adminSession: AuthSession }).adminSession === SESSION
+    ),
+  );
 });
 
 Deno.test('CRDT admin routes never fall back to direct mutation methods', async () => {
   let directMutationCalls = 0;
   const app = new Hono();
-  crdtAdminRoutes.init(app, {
+  crdtAdminRoutes.registerCrdtAdminRoutes(app, {
     repository: {
       writeSnapshot: () => {
         directMutationCalls += 1;
@@ -115,24 +124,29 @@ Deno.test('CRDT admin routes never fall back to direct mutation methods', async 
       },
     } as never,
     mutations: {
-      processAdminMutationUntilCompletion: () =>
-        Promise.resolve({ status: 'queued' }),
+      processAdminMutationUntilCompletion: () => Promise.resolve({ status: 'queued' }),
     },
     requireApiAdminSession: () => Promise.resolve(SESSION),
+    requireApiUserSession: () => Promise.resolve(SESSION),
     adminClientIds: ['platform-admin'],
   });
 
-  for (const path of [
-    '/api/crdt/admin/documents/rebuild-projection',
-    '/api/crdt/admin/documents/compact',
-    '/api/crdt/admin/documents/lifecycle',
-    '/api/crdt/admin/documents/erase',
-  ]) {
-    assert.equal((await post(app, path, {
-      document: DOCUMENT,
-      lifecycle: 'archived',
-      mode: 'destroy-document',
-    })).status, 200);
+  for (
+    const path of [
+      '/api/crdt/admin/documents/rebuild-projection',
+      '/api/crdt/admin/documents/compact',
+      '/api/crdt/admin/documents/lifecycle',
+      '/api/crdt/admin/documents/erase',
+    ]
+  ) {
+    assert.equal(
+      (await post(app, path, {
+        document: DOCUMENT,
+        lifecycle: 'archived',
+        mode: 'destroy-document',
+      })).status,
+      200,
+    );
   }
   assert.equal(directMutationCalls, 0);
 });

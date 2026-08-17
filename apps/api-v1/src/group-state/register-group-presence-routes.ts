@@ -1,4 +1,4 @@
-import type { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type {
   ConnectGroupPresenceSessionRequest,
@@ -15,7 +15,7 @@ import type {
 import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
-  type ResolvedGroupStateRouteDependencies,
+  type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
@@ -30,7 +30,7 @@ const GROUP_PRESENCE_PATH =
 
 export function registerGroupPresenceRoutes(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   registerConnectGroupPresenceRoute(app, dependencies, authorization);
@@ -40,136 +40,152 @@ export function registerGroupPresenceRoutes(
 
 function registerConnectGroupPresenceRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.put(
     GROUP_PRESENCE_PATH,
-    async (context) => {
-      try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const scope = toGroupStateRouteScope(context);
-        const groupId = context.req.param('groupId');
-        const sessionId = context.req.param('sessionId');
-        requireGroupAdmissionQuota('presence-connect', { ...scope, groupId }, authSession.clientId);
-        authorization.assertSelfSession(authSession, sessionId);
-        const receipt = await dependencies.processGroupAppInbox<
-          GroupStateRouteCommandPayload,
-          GroupMutationReceipt
-        >(
-          authSession,
-          toGroupStateCommand({
-            operation: 'connect-group-presence',
-            authSession,
-            scope,
-            groupId,
-            sessionId,
-            request: await readGroupStateRouteRequest<ConnectGroupPresenceSessionRequest>(
-              context,
-            ),
-          }),
-        );
-        return context.json(
-          await toGroupStateResponse({
-            kind: 'presence',
-            receipt,
-            ref: { ...scope, groupId },
-            service: dependencies.getGroupStateService(),
-          }),
-        );
-      } catch (error) {
-        return toGroupStateErrorResponse(context, error);
-      }
-    },
+    (context) => handleConnectGroupPresenceRoute(context, dependencies, authorization),
   );
 }
 
 function registerHeartbeatGroupPresenceRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.post(
     `${GROUP_PRESENCE_PATH}/heartbeat`,
-    async (context) => {
-      try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const scope = toGroupStateRouteScope(context);
-        const groupId = context.req.param('groupId');
-        const sessionId = context.req.param('sessionId');
-        authorization.assertSelfSession(authSession, sessionId);
-        const receipt = await dependencies.processGroupAppInbox<
-          GroupStateRouteCommandPayload,
-          GroupMutationReceipt
-        >(
-          authSession,
-          toGroupStateCommand({
-            operation: 'heartbeat-group-presence',
-            authSession,
-            scope,
-            groupId,
-            sessionId,
-            request: await readGroupStateRouteRequest<HeartbeatGroupPresenceSessionRequest>(
-              context,
-            ),
-          }),
-        );
-        return context.json(
-          await toGroupStateResponse({
-            kind: 'presence',
-            receipt,
-            ref: { ...scope, groupId },
-            service: dependencies.getGroupStateService(),
-          }),
-        );
-      } catch (error) {
-        return toGroupStateErrorResponse(context, error);
-      }
-    },
+    (context) => handleHeartbeatGroupPresenceRoute(context, dependencies, authorization),
   );
 }
 
 function registerDisconnectGroupPresenceRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.post(
     `${GROUP_PRESENCE_PATH}/disconnect`,
-    async (context) => {
-      try {
-        const authSession = await dependencies.requireApiAuthSession(context.req);
-        const scope = toGroupStateRouteScope(context);
-        const groupId = context.req.param('groupId');
-        const sessionId = context.req.param('sessionId');
-        authorization.assertSelfSession(authSession, sessionId);
-        const receipt = await dependencies.processGroupAppInbox<
-          GroupStateRouteCommandPayload,
-          GroupMutationReceipt
-        >(
-          authSession,
-          toGroupStateCommand({
-            operation: 'disconnect-group-presence',
-            authSession,
-            scope,
-            groupId,
-            sessionId,
-            request: await readGroupStateRouteRequest<DisconnectGroupPresenceSessionRequest>(
-              context,
-            ),
-          }),
-        );
-        return context.json(
-          await toGroupStateResponse({
-            kind: 'presence',
-            receipt,
-            ref: { ...scope, groupId },
-            service: dependencies.getGroupStateService(),
-          }),
-        );
-      } catch (error) {
-        return toGroupStateErrorResponse(context, error);
-      }
-    },
+    (context) => handleDisconnectGroupPresenceRoute(context, dependencies, authorization),
   );
+}
+
+async function handleConnectGroupPresenceRoute(
+  context: Context,
+  dependencies: GroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const scope = toGroupStateRouteScope(context);
+    const groupId = context.req.param('groupId');
+    const sessionId = context.req.param('sessionId');
+    requireGroupAdmissionQuota(
+      'presence-connect',
+      { ...scope, groupId },
+      authSession.clientId,
+    );
+    authorization.assertSelfSession(authSession, sessionId);
+    const receipt = await dependencies.processGroupAppInbox<
+      GroupStateRouteCommandPayload,
+      GroupMutationReceipt
+    >(
+      authSession,
+      toGroupStateCommand({
+        operation: 'connect-group-presence',
+        authSession,
+        scope,
+        groupId,
+        sessionId,
+        request: await readGroupStateRouteRequest<ConnectGroupPresenceSessionRequest>(context),
+      }),
+    );
+    return context.json(
+      await toGroupStateResponse({
+        kind: 'presence',
+        receipt,
+        ref: { ...scope, groupId },
+        service: dependencies.groupStateService,
+      }),
+    );
+  } catch (error) {
+    return toGroupStateErrorResponse(context, error);
+  }
+}
+
+async function handleHeartbeatGroupPresenceRoute(
+  context: Context,
+  dependencies: GroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const scope = toGroupStateRouteScope(context);
+    const groupId = context.req.param('groupId');
+    const sessionId = context.req.param('sessionId');
+    authorization.assertSelfSession(authSession, sessionId);
+    const receipt = await dependencies.processGroupAppInbox<
+      GroupStateRouteCommandPayload,
+      GroupMutationReceipt
+    >(
+      authSession,
+      toGroupStateCommand({
+        operation: 'heartbeat-group-presence',
+        authSession,
+        scope,
+        groupId,
+        sessionId,
+        request: await readGroupStateRouteRequest<HeartbeatGroupPresenceSessionRequest>(context),
+      }),
+    );
+    return context.json(
+      await toGroupStateResponse({
+        kind: 'presence',
+        receipt,
+        ref: { ...scope, groupId },
+        service: dependencies.groupStateService,
+      }),
+    );
+  } catch (error) {
+    return toGroupStateErrorResponse(context, error);
+  }
+}
+
+async function handleDisconnectGroupPresenceRoute(
+  context: Context,
+  dependencies: GroupStateRouteDependencies,
+  authorization: GroupStateRouteAuthorization,
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const scope = toGroupStateRouteScope(context);
+    const groupId = context.req.param('groupId');
+    const sessionId = context.req.param('sessionId');
+    authorization.assertSelfSession(authSession, sessionId);
+    const receipt = await dependencies.processGroupAppInbox<
+      GroupStateRouteCommandPayload,
+      GroupMutationReceipt
+    >(
+      authSession,
+      toGroupStateCommand({
+        operation: 'disconnect-group-presence',
+        authSession,
+        scope,
+        groupId,
+        sessionId,
+        request: await readGroupStateRouteRequest<DisconnectGroupPresenceSessionRequest>(context),
+      }),
+    );
+    return context.json(
+      await toGroupStateResponse({
+        kind: 'presence',
+        receipt,
+        ref: { ...scope, groupId },
+        service: dependencies.groupStateService,
+      }),
+    );
+  } catch (error) {
+    return toGroupStateErrorResponse(context, error);
+  }
 }

@@ -17,7 +17,7 @@ import type {
 
 import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import {
-  type ResolvedGroupStateRouteDependencies,
+  type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
@@ -31,7 +31,7 @@ const GROUP_INVITE_PATH =
 
 export function registerGroupAdmissionRoutes(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   registerJoinGroupRoute(app, dependencies);
   registerAcceptGroupInviteRoute(app, dependencies);
@@ -42,7 +42,7 @@ export function registerGroupAdmissionRoutes(
 
 function registerJoinGroupRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join',
@@ -79,7 +79,7 @@ function registerJoinGroupRoute(
 
 function registerAcceptGroupInviteRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/accept',
@@ -116,7 +116,7 @@ function registerAcceptGroupInviteRoute(
 
 function registerRotateGroupJoinCodeRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/join-code/rotate',
@@ -152,7 +152,7 @@ function registerRotateGroupJoinCodeRoute(
 
 function registerCreateGroupInviteRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/invites/:principalId',
@@ -190,7 +190,7 @@ function registerCreateGroupInviteRoute(
 
 function registerRevokeGroupInviteRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     `${GROUP_INVITE_PATH}/revoke`,

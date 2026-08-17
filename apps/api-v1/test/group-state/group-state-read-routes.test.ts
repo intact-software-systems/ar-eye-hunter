@@ -5,9 +5,6 @@ import {
   createGroupStateRouteAuthorization,
 } from '../../src/group-state/group-state-route-authorization.ts';
 import {
-  createGroupStateRouteDependencies,
-} from '../../src/group-state/create-group-state-route-dependencies.ts';
-import {
   registerGroupStateReadRoutes,
 } from '../../src/group-state/register-group-state-read-routes.ts';
 
@@ -30,14 +27,14 @@ const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
 Deno.test('canonical group read registrar uses resolved route dependencies', async () => {
   const snapshot = createGroupStateRouteSnapshot('room-1');
   const app = new Hono();
-  const dependencies = createGroupStateRouteDependencies({
-    getGroupStateService: () => ({
+  const dependencies = createGroupStateRouteTestDependencies({
+    groupService: {
       listSnapshots: () => Promise.resolve([snapshot]),
       readSnapshot: () => Promise.resolve(snapshot),
       readCurrentSnapshot: () => Promise.resolve(snapshot),
       listEvents: () => Promise.resolve([]),
       listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-    }),
+    },
     hydrateStateSyncSnapshotCaches: () =>
       Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 1 }),
   });
@@ -58,15 +55,15 @@ Deno.test(
   async () => {
     const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
     const app = new Hono();
-    const dependencies = createGroupStateRouteDependencies({
-      getGroupStateService: () => ({
+    const dependencies = createGroupStateRouteTestDependencies({
+      groupService: {
         listSnapshots: () => Promise.resolve([]),
         readSnapshot: () => Promise.resolve(undefined),
         readCurrentSnapshot: () =>
           Promise.resolve(createGroupStateRouteSnapshot('room-1', ['bob'])),
         listEvents: () => Promise.resolve([]),
         listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-      }),
+      },
       requireApiAuthSession: () => Promise.resolve(createGroupStateRouteAuthSession('alice')),
     });
     registerGroupStateReadRoutes(
@@ -98,14 +95,14 @@ Deno.test(
     const allowedSnapshot = createGroupStateRouteSnapshot('room-1', ['alice']);
     const deniedSnapshot = createGroupStateRouteSnapshot('room-2', ['bob']);
     const app = new Hono();
-    const dependencies = createGroupStateRouteDependencies({
-      getGroupStateService: () => ({
+    const dependencies = createGroupStateRouteTestDependencies({
+      groupService: {
         listSnapshots: () => Promise.resolve([allowedSnapshot, deniedSnapshot]),
         readSnapshot: () => Promise.resolve(undefined),
         readCurrentSnapshot: () => Promise.resolve(undefined),
         listEvents: () => Promise.resolve([]),
         listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-      }),
+      },
       requireApiAuthSession: () => Promise.resolve(createGroupStateRouteAuthSession('alice')),
       hydrateStateSyncSnapshotCaches: () =>
         Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 1 }),
