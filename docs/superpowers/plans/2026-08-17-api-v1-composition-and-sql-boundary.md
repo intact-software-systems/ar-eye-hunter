@@ -927,7 +927,7 @@ git push
 - Modify only accurate repo-governance fixtures that identify current owners.
 - No historical plan, receipt, catalog, digest, or completion ledger changes.
 
-- [ ] **Step 1: Write current navigation**
+- [x] **Step 1: Write current navigation**
 
 Document two code-derived timelines:
 
@@ -939,7 +939,12 @@ Document two code-derived timelines:
 Link every current owner and entry directly. Remove old `createRallarServer()` and
 `initialiseMiddleware` guidance.
 
-- [ ] **Step 2: Perform cold code-only navigation review**
+Execution evidence: `apps/api-v1/src/composition/README.md` now maps both timelines and the active
+API, environment, repository, auth, group-state, and topology navigation points link to the current
+composition owners. Current guidance no longer names the deleted root factory or middleware
+initializer.
+
+- [x] **Step 2: Perform cold code-only navigation review**
 
 Starting separately at API-v1 `main.ts` and Relic `main.ts`, follow production symbols without the
 design, plan, Git history, or file inventory. Record in the PR whether a reviewer can locate
@@ -947,7 +952,11 @@ defaults, SQL translation, runtime creation, route/system registration, AppInbox
 readiness, and shutdown without a wrong-file guess or hidden lookup. One coherent consolidation is
 required before escalating a failed navigation probe.
 
-- [ ] **Step 3: Complete touched-file and construction review**
+Execution evidence: separate traces from API-v1 and Relic `main.ts` located defaults, the single SQL
+translation, runtime creation, topology/admin composition, system and route installation, AppInbox
+ingress, failure propagation, readiness, and shutdown without a wrong-file guess or hidden lookup.
+
+- [x] **Step 3: Complete touched-file and construction review**
 
 Run:
 
@@ -964,7 +973,12 @@ If the authenticated merge base changed, replace the three exact base arguments 
 every changed human-authored file in full. Resolve every real finding; classify false positives by
 path/rule/symbol in the PR. Trace every changed production path and classify all affected legacy.
 
-- [ ] **Step 4: Run focused and broad affected validation**
+Execution evidence: changed-file style passed; construction review found only reviewed boundary,
+route, and untouched baseline warnings; structure passed with the existing singleton operations-test
+notice; structure tests passed 14/14. Legacy review returned 22 inspected candidates: deleted legacy,
+current fallback/protocol vocabulary, and current composition owners only.
+
+- [x] **Step 4: Run focused and broad affected validation**
 
 Run:
 
@@ -987,7 +1001,16 @@ The state-write performance gate is not selected unless evidence proves a mutati
 concurrency domain changed. If activated, run a fresh migrated-database baseline and candidate with
 the exact comparative command from the testing skill.
 
-- [ ] **Step 5: Inspect live PR state before broad reruns or base work**
+Execution evidence: API-v1 check and 467 tests passed; changed API-v1/Relic files passed Deno format
+and lint; Relic check passed. Relic's test task still has no test modules, tracked by issue #261.
+Repository governance passed 360/360. The memory matrix passed 22/22, medium PostgreSQL churn passed
+1/1 with 2,748 successful operations, and topology replay exited 0 with a complete live-replay and
+reconnect-hydration proof. The full API-v1 formatter and linter remain independently red on 18
+untouched files and 30 untouched lint findings; neither set intersects this branch's changed files.
+The state-write performance gate was not activated because composition ownership changed without a
+mutation algorithm or concurrency-domain change.
+
+- [x] **Step 5: Inspect live PR state before broad reruns or base work**
 
 Run:
 
@@ -998,12 +1021,21 @@ npm run pr:delivery -- status
 Repair `REPAIR_CONFLICT` before final validation. Diagnose `REPAIR_CHECK`. Do not rebase or merge
 main merely for `BEHIND` while GitHub reports the PR mergeable.
 
-- [ ] **Step 6: Final requirement audit**
+Execution evidence: `pr:delivery -- status` reported PR #257 in draft `WORK` state with no conflict;
+no base merge or rebase was performed.
+
+- [x] **Step 6: Final requirement audit**
 
 Re-read the design and this plan line by line. For every acceptance item, identify current source,
 semantic test, command result, and PR evidence. Treat missing or indirect evidence as incomplete.
 Confirm issue #237 is addressed by the actual diff and that no required work was replaced by an
 issue.
+
+Execution evidence: the final source search finds exactly one production SQL translation call, one
+required factory, one default factory, both consumers on the default factory, and no deleted locator,
+middleware initializer, options compatibility type, or SQL double assertion. Semantic tests and the
+black-box proof cover the selected design. The diff itself addresses issue #237; issues #259 and
+#261 record independent weaknesses rather than replacing required work.
 
 - [ ] **Step 7: Commit and publish navigation/closure**
 

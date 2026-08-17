@@ -26,8 +26,10 @@ these canonical owners. Compatibility paths exist only for the listed callers.
    [`toAuthMutationPublicResult`](./mutation/to-auth-mutation-public-result.ts).
 
 The API-v1 composition roots are
-[`create-api-v1-runtime.ts`](../../../../apps/api-v1/src/composition/create-api-v1-runtime.ts)
-and [`create-rallar-server.ts`](../../../../apps/api-v1/src/create-rallar-server.ts).
+[`create-default-rallar-server.ts`](../../../../apps/api-v1/src/composition/create-default-rallar-server.ts),
+[`create-api-v1-runtime.ts`](../../../../apps/api-v1/src/composition/create-api-v1-runtime.ts), and
+required assembly
+[`create-rallar-server.ts`](../../../../apps/api-v1/src/composition/create-rallar-server.ts).
 The prose traces below are supplementary navigation; the auth behavior,
 security, and ownership suites remain primary evidence. The auth child
 temporarily freezes the exact reviewed source blobs and named owner regions

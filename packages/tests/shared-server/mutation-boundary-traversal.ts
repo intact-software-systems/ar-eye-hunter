@@ -12,7 +12,7 @@ const PRODUCTION_ROOTS = [
 ] as const;
 
 const EXACT_RESOLVED_HANDOFFS = new Set([
-  'apps/api-v1/src/initialise-middleware.ts',
+  'apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts',
   'packages/shared/mod.ts',
   'packages/shared-server/http/request-auth-service.ts',
   'packages/shared-server/rallar-system/services/AppAdminInboxService.ts',

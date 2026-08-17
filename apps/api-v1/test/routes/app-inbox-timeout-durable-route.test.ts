@@ -53,6 +53,7 @@ Deno.test('HTTP wait timeout leaves the durable AppInbox row eligible without fa
         clientSnapshotCount: 0,
         groupSnapshotCount: 0,
       }),
+    readClientSnapshot: () => Promise.resolve({ status: 'not-found', source: 'durable' }),
     processClientAppInbox: async (input) => {
       const result = await service.processEntryUntilCompletion(input);
       return result.fold(

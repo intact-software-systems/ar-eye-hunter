@@ -54,8 +54,9 @@ invocation so it is not a second runtime specification.
 
 ## Construction And Registration
 
-The API-v1 [initialise](../../../../apps/api-v1/src/middleware.ts#initialise) composition
-creates the group repository and its GroupStateSnapshotReadThroughCache first,
+The API-v1
+[`createApiV1MutationRuntime`](../../../../apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts#createApiV1MutationRuntime)
+composition creates the group repository and its GroupStateSnapshotReadThroughCache first,
 then creates the runtime-state repository and auth-session repository. Its
 later `createAppGroupInboxService` factory consumes those latter repositories
 to create a durable
@@ -78,7 +79,8 @@ invocation is therefore only possible after the repositories, transaction
 writer, handlers, summary worker, and queue-reader callbacks have been made
 available by this composition path.
 
-The API-v1 [createRallarServer](../../../../apps/api-v1/src/create-rallar-server.ts#createRallarServer)
+The API-v1
+[`createApiV1RouteInstallers`](../../../../apps/api-v1/src/composition/create-api-v1-route-installers.ts#createApiV1RouteInstallers)
 composition later calls
 [registerGroupStateRoutes](../../../../apps/api-v1/src/group-state/register-group-state-routes.ts#registerGroupStateRoutes).
 That registrar resolves the route dependencies and
@@ -188,7 +190,7 @@ transaction returns.
 ### Session-cleanup and expiry maintenance
 
 [initWsLifecycle](../services/ws-lifecycle-service.ts#initWsLifecycle), registered by
-[createRallarServer](../../../../apps/api-v1/src/create-rallar-server.ts#createRallarServer),
+[`createApiV1SystemInstallers`](../../../../apps/api-v1/src/composition/create-api-v1-system-installers.ts#createApiV1SystemInstallers),
 turns a WebSocket close into
 `AppGroupInboxService.enqueueGroupSessionCleanup`. Before that later queue
 phase, this lifecycle owner holds one pending close per session generation. A

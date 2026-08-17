@@ -697,8 +697,9 @@ intentional coordinated-deployment boundary described by this architecture.
   queue bridge installation and combined runtime readiness ownership.
 - `apps/api-v1/src/runtime/rtc-topology/**`: process stream registration,
   readiness, replay configuration, health shutdown, and metrics composition.
-- `apps/api-v1/src/middleware.ts` and `create-rallar-server.ts`: single-owner
-  API composition and consumer wiring.
+- `apps/api-v1/src/composition/create-default-rallar-server.ts` and its explicit composition owners:
+  single-owner API defaults, runtime construction, topology/admin services, installers, and final
+  application assembly.
 
 ## Verification
 

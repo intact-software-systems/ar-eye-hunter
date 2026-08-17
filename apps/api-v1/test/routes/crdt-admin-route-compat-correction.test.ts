@@ -114,7 +114,7 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
         },
       );
     const app = new Hono();
-    routes.init(app, {
+    routes.registerCrdtAdminRoutes(app, {
       repository: new PSqlCrdtLogRepository(sql),
       mutations: appCrdt,
       requireAuth: false,
@@ -124,8 +124,10 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
           username: 'admin',
           sessionId: 'admin-session',
           accessToken: 'token',
+          issuedAtEpochMs: now,
           expiresAtEpochMs: now + 60_000,
         }),
+      requireApiUserSession: () => Promise.reject(new Error('unused')),
     });
 
     const missing = await postAndProcessRaw(app, inbox, sql, '/api/crdt/admin/documents/compact', {
@@ -235,70 +237,74 @@ Deno.test('actual CRDT admin routes preserve compact/lifecycle/erase responses a
 });
 
 Deno.test('actual CRDT admin Hono routes preserve 401 and 403 denials', async () => {
-    const unauthorized = new Hono();
-    routes.init(unauthorized, {
-        repository: {} as never,
-        mutations: {
-            processAdminMutationUntilCompletion: () => {
-                throw new Error('mutation must not run');
-            },
-        } as never,
-        requireAuth: false,
-        requireApiAdminSession: () => {
-            throw Object.assign(new Error('Unauthorized: expired session'), { status: 401 });
-        },
-    });
-    const unauthorizedResponse = await unauthorized.request(
-        '/api/crdt/admin/documents/compact',
-        {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ document: DOCUMENT }),
-        },
-    );
-    assert.equal(unauthorizedResponse.status, 401);
-    assert.equal((await unauthorizedResponse.json()).ok, false);
+  const unauthorized = new Hono();
+  routes.registerCrdtAdminRoutes(unauthorized, {
+    repository: {} as never,
+    mutations: {
+      processAdminMutationUntilCompletion: () => {
+        throw new Error('mutation must not run');
+      },
+    } as never,
+    requireAuth: false,
+    requireApiAdminSession: () => {
+      throw Object.assign(new Error('Unauthorized: expired session'), { status: 401 });
+    },
+    requireApiUserSession: () => Promise.reject(new Error('unused')),
+  });
+  const unauthorizedResponse = await unauthorized.request(
+    '/api/crdt/admin/documents/compact',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ document: DOCUMENT }),
+    },
+  );
+  assert.equal(unauthorizedResponse.status, 401);
+  assert.equal((await unauthorizedResponse.json()).ok, false);
 
-    const forbidden = new Hono();
-    routes.init(forbidden, {
-        repository: {} as never,
-        mutations: {
-            processAdminMutationUntilCompletion: () => {
-                throw new Error('mutation must not run');
-            },
-        } as never,
-        requireAuth: false,
-        requireApiAdminSession: () => Promise.resolve({
-            clientId: 'non-admin',
-            username: 'non-admin',
-            sessionId: 'session-1',
-            accessToken: 'token',
-            expiresAtEpochMs: Date.now() + 60_000,
-        }),
-        authorizeAdmin: () => false,
-    });
-    const forbiddenResponse = await forbidden.request(
-        '/api/crdt/admin/documents/compact',
-        {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ document: DOCUMENT }),
-        },
-    );
-    assert.equal(forbiddenResponse.status, 403);
-    assert.equal((await forbiddenResponse.json()).ok, false);
+  const forbidden = new Hono();
+  routes.registerCrdtAdminRoutes(forbidden, {
+    repository: {} as never,
+    mutations: {
+      processAdminMutationUntilCompletion: () => {
+        throw new Error('mutation must not run');
+      },
+    } as never,
+    requireAuth: false,
+    requireApiAdminSession: () =>
+      Promise.resolve({
+        clientId: 'non-admin',
+        username: 'non-admin',
+        sessionId: 'session-1',
+        accessToken: 'token',
+        issuedAtEpochMs: Date.now(),
+        expiresAtEpochMs: Date.now() + 60_000,
+      }),
+    requireApiUserSession: () => Promise.reject(new Error('unused')),
+    authorizeAdmin: () => false,
+  });
+  const forbiddenResponse = await forbidden.request(
+    '/api/crdt/admin/documents/compact',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ document: DOCUMENT }),
+    },
+  );
+  assert.equal(forbiddenResponse.status, 403);
+  assert.equal((await forbiddenResponse.json()).ok, false);
 });
 
 async function mutationCounts(
-    sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
-    documentKey: string,
+  sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
+  documentKey: string,
 ) {
-    const [counts] = await sql<{
-        revision: string | number;
-        snapshots: string | number;
-        updates: string | number;
-        outbox: string | number;
-    }[]>`
+  const [counts] = await sql<{
+    revision: string | number;
+    snapshots: string | number;
+    updates: string | number;
+    outbox: string | number;
+  }[]>`
       select
         (select document_revision from crdt_documents where document_key = ${documentKey})
           as revision,
@@ -309,12 +315,12 @@ async function mutationCounts(
         (select count(*) from resource_inbox where ri_type_id in ('WS_OUTBOX', 'APP_OUTBOX'))
           as outbox
     `;
-    return {
-        revision: Number(counts!.revision),
-        snapshots: Number(counts!.snapshots),
-        updates: Number(counts!.updates),
-        outbox: Number(counts!.outbox),
-    };
+  return {
+    revision: Number(counts!.revision),
+    snapshots: Number(counts!.snapshots),
+    updates: Number(counts!.updates),
+    outbox: Number(counts!.outbox),
+  };
 }
 
 async function postAndProcess<T>(

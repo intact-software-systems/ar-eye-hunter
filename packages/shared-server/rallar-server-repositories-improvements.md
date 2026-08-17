@@ -216,11 +216,11 @@ Overlay and graph identity follow-up:
 - Treat browser overlay identity as a separate iteration from AL target scoping. `groupRef` now protects message
   authorization/routing and graph snapshots, but overlay topology lookup still depends on `overlayId`.
 - Prove the bug first with same-`groupId` rooms in two workspaces in one browser runtime:
-    - `createAndSetStarOverlays([workspaceA, workspaceB])` should not collapse or overwrite overlays.
-    - `removeOverlayById(groupId)` should not delete another workspace's overlay.
-    - a `GraphInfoSnapshot` with workspace B `groupRef` should update only workspace B's overlay next hops.
-    - RTC multicast with a scoped `groupRef` should use the matching scoped overlay topology, not whatever same-id
-      overlay was last written.
+  - `createAndSetStarOverlays([workspaceA, workspaceB])` should not collapse or overwrite overlays.
+  - `removeOverlayById(groupId)` should not delete another workspace's overlay.
+  - a `GraphInfoSnapshot` with workspace B `groupRef` should update only workspace B's overlay next hops.
+  - RTC multicast with a scoped `groupRef` should use the matching scoped overlay topology, not whatever same-id
+    overlay was last written.
 - Candidate fix: introduce a scoped overlay key derived from `GroupRef`, while retaining human-readable `groupId` and
   optional custom `overlayId` for diagnostics or explicitly shared topologies.
 - Candidate API direction: add helpers such as `toOverlayRef(groupRef)` and `toOverlayKey(groupRef)`. Graph snapshots
@@ -286,21 +286,18 @@ Implementation status:
 
 How `GroupStateSnapshotReadThroughCache` is used:
 
-- `apps/api-v1/src/middleware.ts` creates one `GroupStateSnapshotReadThroughCache` around the API-v1
-  `GroupStateRepository`.
-- Middleware target resolution calls `groupSnapshotReadThroughCache.findByRef(ref)`. This is intentionally synchronous
-  and only checks the process-local observable latest snapshot repository and the read-through cache's already-loaded
-  loaned value.
-- `apps/api-v1/src/create-rallar-server.ts` builds the dynamic WS room authorizer with `middleware.groupsRepository`.
-- `apps/api-v1/src/services/ws-topic-room-authorizer.ts` creates a second read-through cache for the authorizer and
-  wires `findGroupSnapshotByRef` to `await readThroughCache.findOrLoadByRef(ref, { minSnapshotVersion })`.
-- In the inbound dynamic WS topic path, `RallarServerWsFacade.authorizeDynamicTopic(...)` awaits the room authorizer
-  before fanout. That gives the authorizer a safe async point where it can load or refresh the group snapshot from
-  durable `GroupStateRepository.readSnapshot(ref)`.
-- Successful durable loads emit an `ObservableLoanedRepository` change event. The read-through cache uses that callback
-  to write the snapshot into the shared process-local `group-state-snapshots` observable latest repository.
-- After authorization has warmed that shared snapshot repository, the existing synchronous `WsQueueBoxServerService`
-  target resolver can route the same message fanout from the hot cache.
+- `apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts` creates one
+  `GroupStateSnapshotReadThroughCache` around the API-v1 `GroupStateRepository`.
+- `create-api-v1-runtime.ts` passes that cache's synchronous `findByRef` capability into shared
+  middleware target resolution. It checks only the process-local observable latest snapshot and
+  already-loaded read-through value.
+- `create-default-rallar-server.ts` builds the dynamic WS room authorizer from the completed
+  runtime's cached group-state service.
+- `apps/api-v1/src/services/ws-topic-room-authorizer.ts` awaits
+  `groupStateService.readCurrentSnapshot(ref)` before fanout. This is the safe async authorization
+  point for loading or refreshing the durable group snapshot.
+- Successful durable reads update the shared cache used by later synchronous target resolution, so
+  the same message can fan out from the now-current process-local snapshot.
 - `ClientStateSnapshotReadThroughCache` is available as the matching client-side server cache helper, but it is not yet
   wired into state-sync recipient routing because that path is still synchronous. It is ready for the same async-routing
   direction as group snapshots once state-sync routing can await durable reads.
@@ -475,26 +472,26 @@ Implementation status:
 - API-v1 WS lifecycle routes authorised client connect/disconnect through the client app inbox and group cleanup through
   the narrow maintenance capability.
 - Current behavior is now documented in tests:
-    - group mutation state, event, receipt, and mutation-outbox intent commit atomically; injected drainer failures leave
-      the exact intent pending without reapplying the group mutation;
-    - client mutation state and event rows are committed before snapshot enqueue failure is returned by
-      `AppClientInboxService`, with the app-inbox command left retryable and no failed result row written;
-    - replaying group mutation-outbox work publishes snapshot/event effects idempotently and preserves causal ordering;
-    - group app-inbox processes authenticated create/update/member/presence commands while maintenance cleanup remains
-      absent from its public surface;
-    - client app-inbox processes principal/instance/session commands, authorised WS connect/disconnect commands,
-      publishes returned written results, stores readable success/failure results, and publishes stored idempotent
-      mutation results on handler replay;
-    - browser HTTP workflows reuse request IDs across `Command` retries for create-and-join, join, leave, and heartbeat
-      mutation steps;
-    - browser operation retry options are forwarded to state workflows with retryable/non-retryable HTTP status
-      classification;
-    - browser room mutation responses hydrate local state caches immediately, without waiting for WS state-sync echo;
-    - authorised WS disconnect app-inbox handling can still clean up client session state after auth-session deletion;
-    - real-browser/full-stack Playwright coverage now proves browser `Rallar.rooms.create` retries injected transient
-      `503` and `429` failures with stable per-step `requestId` values before succeeding against API-v1;
-    - real-browser/full-stack Playwright coverage now proves WS close cleanup records the disconnected client state
-      when `/api/auth/logout` deletes the auth session before the browser socket is closed.
+  - group mutation state, event, receipt, and mutation-outbox intent commit atomically; injected drainer failures leave
+    the exact intent pending without reapplying the group mutation;
+  - client mutation state and event rows are committed before snapshot enqueue failure is returned by
+    `AppClientInboxService`, with the app-inbox command left retryable and no failed result row written;
+  - replaying group mutation-outbox work publishes snapshot/event effects idempotently and preserves causal ordering;
+  - group app-inbox processes authenticated create/update/member/presence commands while maintenance cleanup remains
+    absent from its public surface;
+  - client app-inbox processes principal/instance/session commands, authorised WS connect/disconnect commands,
+    publishes returned written results, stores readable success/failure results, and publishes stored idempotent
+    mutation results on handler replay;
+  - browser HTTP workflows reuse request IDs across `Command` retries for create-and-join, join, leave, and heartbeat
+    mutation steps;
+  - browser operation retry options are forwarded to state workflows with retryable/non-retryable HTTP status
+    classification;
+  - browser room mutation responses hydrate local state caches immediately, without waiting for WS state-sync echo;
+  - authorised WS disconnect app-inbox handling can still clean up client session state after auth-session deletion;
+  - real-browser/full-stack Playwright coverage now proves browser `Rallar.rooms.create` retries injected transient
+    `503` and `429` failures with stable per-step `requestId` values before succeeding against API-v1;
+  - real-browser/full-stack Playwright coverage now proves WS close cleanup records the disconnected client state
+    when `/api/auth/logout` deletes the auth session before the browser socket is closed.
 - Transaction-local mutation-outbox intents and the restart-safe drainer are implemented. App inbox remains command
   ingress; it is not the owner of group state-sync or presence-summary publication.
 

@@ -82,7 +82,9 @@ flowchart LR
 
 The current API runtime is composed in `apps/api-v1/src/main.ts`.
 
-- `createRallarServer()` builds the shared server facade and injects API-v1 dependencies.
+- `createDefaultRallarServer()` reads production configuration and constructs the complete API-v1
+  runtime, topology/admin services, and system/route installers.
+- Required-input `createRallarServer(input)` performs only the final shared application assembly.
 - `rallar.system.useDefaultMiddlewareTopics()` installs built-in WS topics, then installs the dynamic WS router.
 - `rallar.system.useWebSocketLifecycle()` installs close handling for client/group presence cleanup.
 - `rallar.ws.mount(app)` mounts the WS route and installs the server WS facade.
@@ -90,6 +92,9 @@ The current API runtime is composed in `apps/api-v1/src/main.ts`.
 - `rallar.start()` starts the `InboxOutboxEngine`.
 
 The reusable facade is `packages/shared-server/rallar-facade/RallarServer.ts`.
+
+The code-derived API construction and shutdown trace is
+`apps/api-v1/src/composition/README.md`.
 
 - `RallarServer.ws` wraps topic definition, handlers, proxies, publish, and WS status.
 - `RallarServer.system` wraps default middleware topics and WS lifecycle installation.
