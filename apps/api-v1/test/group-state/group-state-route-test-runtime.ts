@@ -21,7 +21,6 @@ import type {
   GroupStateRouteDependencies,
   GroupStateRouteService,
   ProcessGroupAppInbox,
-  ResolvedGroupStateRouteDependencies,
 } from '../../src/group-state/group-state-route-contracts.ts';
 
 export const TEST_GROUP_SCOPE: StateScope = {
@@ -83,11 +82,11 @@ export function createPredecessorGroupStateRouteTestRuntime(
 
 export function createGroupStateRouteTestDependencies(
   input: GroupStateRouteTestRuntimeInput = {},
-): ResolvedGroupStateRouteDependencies {
+): GroupStateRouteDependencies {
   const session = input.session ?? createGroupStateRouteAuthSession('alice');
   const requireApiAuthSession = input.requireApiAuthSession ?? (() => Promise.resolve(session));
   return {
-    getGroupStateService: () => createGroupStateRouteService(input.groupService),
+    groupStateService: createGroupStateRouteService(input.groupService),
     requireApiAuthSession,
     processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
     hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
@@ -105,7 +104,7 @@ export function createGroupStateRouteTestDependencies(
 
 export function createPredecessorGroupStateRouteTestDependencies(
   input: GroupStateRouteTestRuntimeInput = {},
-): ResolvedGroupStateRouteDependencies {
+): GroupStateRouteDependencies {
   const session = input.session ?? createPredecessorGroupStateRouteAuthSession('alice');
   const processGroupAppInbox = input.processGroupAppInbox ?? rejectUnexpectedGroupMutation;
   return createGroupStateRouteTestDependencies({ ...input, session, processGroupAppInbox });

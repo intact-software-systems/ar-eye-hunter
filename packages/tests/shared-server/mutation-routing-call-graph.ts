@@ -12,8 +12,33 @@ export function findRouteRegistration(
     if (node.type !== 'CallExpression') return false;
     const callee = asNode(node.callee);
     const arguments_ = asNodes(node.arguments);
-    return readMemberName(callee) === method && readString(arguments_[0]) === routePath;
+    return (
+      readMemberName(callee) === method && resolveModuleString(program, arguments_[0]) === routePath
+    );
   });
+}
+
+export function resolveModuleString(
+  program: MutationRoutingAstNode,
+  value: MutationRoutingAstNode | undefined,
+  resolving = new Set<string>(),
+): string | undefined {
+  if (!value) return undefined;
+  const direct = readString(value);
+  if (direct !== undefined) return direct;
+  if (value.type === 'Identifier') {
+    const name = readIdentifier(value);
+    if (!name || resolving.has(name)) return undefined;
+    const binding = findModuleConst(program, name);
+    return binding
+      ? resolveModuleString(program, asNode(binding.init), new Set(resolving).add(name))
+      : undefined;
+  }
+  if (value.type === 'TemplateLiteral') return resolveTemplate(program, value, resolving);
+  if (value.type !== 'BinaryExpression' || value.operator !== '+') return undefined;
+  const left = resolveModuleString(program, asNode(value.left), resolving);
+  const right = resolveModuleString(program, asNode(value.right), resolving);
+  return left === undefined || right === undefined ? undefined : `${left}${right}`;
 }
 
 export function hasReachableAstNode(
@@ -123,11 +148,14 @@ function collectLocalFunctions(
       const name = readIdentifier(asNode(node.id));
       const init = asNode(node.init);
       if (
-        name && init &&
+        name &&
+        init &&
         (init.type === 'ArrowFunctionExpression' || init.type === 'FunctionExpression')
-      ) functions.set(name, init);
+      )
+        functions.set(name, init);
     } else if (
-      node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod' ||
+      node.type === 'ClassMethod' ||
+      node.type === 'ClassPrivateMethod' ||
       node.type === 'ObjectMethod'
     ) {
       const name = readIdentifier(asNode(node.key));
@@ -136,12 +164,47 @@ function collectLocalFunctions(
       const name = readIdentifier(asNode(node.key));
       const value = asNode(node.value);
       if (
-        name && value &&
+        name &&
+        value &&
         (value.type === 'ArrowFunctionExpression' || value.type === 'FunctionExpression')
-      ) functions.set(name, value);
+      )
+        functions.set(name, value);
     }
   });
   return functions;
+}
+
+function resolveTemplate(
+  program: MutationRoutingAstNode,
+  template: MutationRoutingAstNode,
+  resolving: ReadonlySet<string>,
+): string | undefined {
+  const expressions = asNodes(template.expressions);
+  const quasis = asNodes(template.quasis);
+  if (quasis.length !== expressions.length + 1) return undefined;
+  let resolved = readTemplateElement(quasis[0]);
+  if (resolved === undefined) return undefined;
+  for (const [index, expression] of expressions.entries()) {
+    const expressionValue = resolveModuleString(program, expression, new Set(resolving));
+    const following = readTemplateElement(quasis[index + 1]);
+    if (expressionValue === undefined || following === undefined) return undefined;
+    resolved += expressionValue + following;
+  }
+  return resolved;
+}
+
+function findModuleConst(
+  program: MutationRoutingAstNode,
+  name: string,
+): MutationRoutingAstNode | undefined {
+  for (const statement of asNodes(program.body)) {
+    if (statement.type !== 'VariableDeclaration' || statement.kind !== 'const') continue;
+    const binding = asNodes(statement.declarations).find(
+      (declaration) => readIdentifier(asNode(declaration.id)) === name,
+    );
+    if (binding) return binding;
+  }
+  return undefined;
 }
 
 function visitAll(value: unknown, visit: (node: MutationRoutingAstNode) => void): void {
@@ -171,13 +234,19 @@ function readIdentifier(node: MutationRoutingAstNode | undefined): string {
   return node && typeof node.name === 'string' ? node.name : '';
 }
 
-function readString(node: MutationRoutingAstNode | undefined): string {
-  return node && typeof node.value === 'string' ? node.value : '';
+function readString(node: MutationRoutingAstNode | undefined): string | undefined {
+  return node && typeof node.value === 'string' ? node.value : undefined;
+}
+
+function readTemplateElement(node: MutationRoutingAstNode | undefined): string | undefined {
+  if (node?.type !== 'TemplateElement') return undefined;
+  const value = asNode(node.value);
+  return typeof value?.cooked === 'string' ? value.cooked : undefined;
 }
 
 function asNode(value: unknown): MutationRoutingAstNode | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as MutationRoutingAstNode
+    ? (value as MutationRoutingAstNode)
     : undefined;
 }
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
-import { login, register } from '../src/repository/login-repository.ts';
+import { login, readAuthorisedClients, register } from '../src/services/api-login-service.ts';
 import type {
   RuntimeStateEntry,
   RuntimeStateTransactionalRepositoryLike,
@@ -8,17 +8,16 @@ import type {
 
 Deno.test('register prepares a mandatory user command without writing before AppInbox', async () => {
   const runtimeRepository = new FakeRuntimeStateRepository();
-  const registered = await register(
-    {
+  const registered = await register({
+    request: {
       username: 'new-user',
       password: 'secret',
       displayName: 'New User',
     },
-    {
-      now: () => 1_234,
-      createClientId: () => 'client-1',
-    },
-  );
+    staticClients: readAuthorisedClients(Deno.env),
+    capturedAtEpochMs: 1_234,
+    clientId: 'client-1',
+  });
 
   assert.equal(registered.username, 'new-user');
   assert.equal(registered.displayName, 'New User');
@@ -28,30 +27,28 @@ Deno.test('register prepares a mandatory user command without writing before App
 
   const userRepository = new AuthUserRepository(runtimeRepository);
   await userRepository.putUser(registered);
-  const session = await login(
-    {
+  const session = await login({
+    request: {
       username: 'new-user',
       password: 'secret',
     },
-    {
-      userRepository,
-    },
-  );
+    userRepository,
+    staticClients: readAuthorisedClients(Deno.env),
+  });
 
   assert.ok(session);
   assert.equal(session.clientId, registered.clientId);
   assert.equal(session.username, 'new-user');
 
   assert.equal(
-    await login(
-      {
+    await login({
+      request: {
         username: 'new-user',
         password: 'wrong',
       },
-      {
-        userRepository,
-      },
-    ),
+      userRepository,
+      staticClients: readAuthorisedClients(Deno.env),
+    }),
     undefined,
   );
 });
@@ -59,13 +56,15 @@ Deno.test('register prepares a mandatory user command without writing before App
 Deno.test('register rejects usernames reserved by static dev clients', async () => {
   await assert.rejects(
     () =>
-      register(
-        {
+      register({
+        request: {
           username: 'admin',
           password: 'secret',
         },
-        {},
-      ),
+        staticClients: readAuthorisedClients(Deno.env),
+        capturedAtEpochMs: 1_234,
+        clientId: 'client-1',
+      }),
     /Auth user already exists: admin/,
   );
 });
@@ -73,41 +72,41 @@ Deno.test('register rejects usernames reserved by static dev clients', async () 
 Deno.test('AUTH_STATIC_CLIENTS_MODE=disabled removes demo clients and frees reserved names', async () => {
   await withEnv('AUTH_STATIC_CLIENTS_MODE', 'disabled', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    const registered = await register(
-      {
+    const registered = await register({
+      request: {
         username: 'admin',
         password: 'secret',
         displayName: 'Runtime Admin',
       },
-      {},
-    );
+      staticClients: readAuthorisedClients(Deno.env),
+      capturedAtEpochMs: 1_234,
+      clientId: 'client-1',
+    });
 
     assert.equal(registered.username, 'admin');
 
     const userRepository = new AuthUserRepository(runtimeRepository);
     await userRepository.putUser(registered);
     assert.equal(
-      await login(
-        {
+      await login({
+        request: {
           username: 'admin',
           password: 'admin',
         },
-        {
-          userRepository,
-        },
-      ),
+        userRepository,
+        staticClients: readAuthorisedClients(Deno.env),
+      }),
       undefined,
     );
 
-    const session = await login(
-      {
+    const session = await login({
+      request: {
         username: 'admin',
         password: 'secret',
       },
-      {
-        userRepository,
-      },
-    );
+      userRepository,
+      staticClients: readAuthorisedClients(Deno.env),
+    });
     assert.ok(session);
     assert.equal(session.clientId, registered.clientId);
   });

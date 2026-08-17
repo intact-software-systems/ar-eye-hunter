@@ -18,7 +18,7 @@ export const ROUTING_SOURCE_MARKERS = {
     'processAuthenticatedEntryUntilCompletionResult',
     'AppInboxType.TOPOLOGY_RECONFIGURE',
   ],
-  'apps/api-v1/src/routes/config-route.ts': ['AppAuthInboxService', 'readAppAuthInbox'],
+  'apps/api-v1/src/routes/config-route.ts': ['AppAuthInboxService', 'appAuthInbox'],
   'apps/api-v1/src/routes/crdt-admin-routes.ts': ['processAdminMutationUntilCompletion'],
   'apps/api-v1/src/services/create-api-admin-mutation-gateway.ts': [
     'AppInboxType.TOPOLOGY_RECONFIGURE',

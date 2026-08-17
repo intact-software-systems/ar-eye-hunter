@@ -1,12 +1,9 @@
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import { type Context, Hono } from 'jsr:@hono/hono@4.11.9';
 import type { StateScope, UpsertClientInstanceRequest } from '@shared/api/state-types.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
-import {
-  type ClientStateService,
-  getClientStateService,
-} from '../services/client-state-service.ts';
-import { requireApiAuthSession as defaultRequireApiAuthSession } from '../services/request-auth-service.ts';
-import { getMiddleware } from '../middleware.ts';
+import type {
+  ClientStateService,
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import {
   type AppInboxEnqueueInput,
   AppInboxType,
@@ -16,28 +13,36 @@ import {
   type ClientSessionDisconnectAppInboxPayload,
   type ClientSessionHeartbeatAppInboxPayload,
 } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
+import type {
+  ClientStateWritten,
+} from '@shared-server/rallar-system/services/client-state-service.ts';
 import {
   filterStateEventsForList,
   readStateEventListQuery,
   type StateEventListQuery,
 } from '@shared-server/rallar-system/state-event-listing.ts';
 import {
-  hydrateStateSyncSnapshotCaches as defaultHydrateStateSyncSnapshotCaches,
   type StateSyncCacheHydrationInput,
   type StateSyncCacheHydrationResult,
 } from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import {
   ClientMutationRejectedError,
   validateClientMutationRequest,
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 import {
   type ClientStatePointRead,
-  createDurableClientStatePointRead,
   readCurrentClientSnapshot,
   registerClientStatePointReadRoute,
 } from './client-state-point-read-route.ts';
+import { toClientStateRouteErrorResponse } from './to-client-state-route-error-response.ts';
+
+const CLIENT_PRINCIPAL_PATH =
+  '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId';
+const CLIENT_INSTANCE_PATH = `${CLIENT_PRINCIPAL_PATH}/instances/:clientInstanceId`;
+const CLIENT_SESSION_PATH = `${CLIENT_INSTANCE_PATH}/sessions/:sessionId`;
 
 export type ClientStateRouteService =
   & Pick<
@@ -53,32 +58,30 @@ export type ClientStateRouteService =
     readCurrentSnapshot?(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
   }>;
 
-export type ClientStateRouteAuthSession = IssuedAuthSession;
-
 export type ProcessClientAppInbox = <V>(
   enqueue: AppInboxEnqueueInput<V>,
-  authority: ClientStateRouteAuthSession,
+  authority: IssuedAuthSession,
 ) => Promise<ClientStateWritten>;
 
 export type ClientStateRouteDependencies = Readonly<{
-  getClientStateService?: () => ClientStateRouteService;
-  requireApiAuthSession?: (
+  clientStateService: ClientStateRouteService;
+  requireApiAuthSession: (
     req: {
       header(name: string): string | undefined;
     },
-  ) => Promise<ClientStateRouteAuthSession>;
-  hydrateStateSyncSnapshotCaches?: (
+  ) => Promise<IssuedAuthSession>;
+  hydrateStateSyncSnapshotCaches: (
     input: StateSyncCacheHydrationInput,
   ) => Promise<StateSyncCacheHydrationResult>;
-  processClientAppInbox?: ProcessClientAppInbox;
-  readClientSnapshot?: ClientStatePointRead;
+  processClientAppInbox: ProcessClientAppInbox;
+  readClientSnapshot: ClientStatePointRead;
 }>;
 
-export function init(
+export function registerClientStateRoutes(
   app: Hono,
-  dependencies: ClientStateRouteDependencies = {},
+  dependencies: ClientStateRouteDependencies,
 ): void {
-  const deps = toClientStateRouteDependencies(dependencies);
+  const deps = dependencies;
 
   app.get(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/clients',
@@ -88,16 +91,19 @@ export function init(
         const authSession = await readStrictReadAuthSession(c.req, deps);
         const snapshots = authSession
           ? [
-            await readCurrentClientSnapshot(deps.getClientStateService(), {
+            await readCurrentClientSnapshot(deps.clientStateService, {
               ...scope,
               principalId: authSession.clientId,
             }),
           ].filter(isDefined)
-          : await deps.getClientStateService().listSnapshots(scope);
+          : await deps.clientStateService.listSnapshots(scope);
         hydrateClientSnapshots(deps, snapshots);
         return c.json(snapshots);
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toClientStateRouteErrorResponse(
+          c,
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     },
   );
@@ -106,7 +112,11 @@ export function init(
     read: deps.readClientSnapshot,
     requireAuthSession: deps.requireApiAuthSession,
     hydrate: (snapshots) => hydrateClientSnapshots(deps, snapshots),
-    toErrorResponse,
+    toErrorResponse: (response, error) =>
+      toClientStateRouteErrorResponse(
+        response,
+        error instanceof Error ? error : new Error(String(error)),
+      ),
   });
 
   app.get(
@@ -115,7 +125,7 @@ export function init(
       try {
         const principalId = c.req.param('principalId');
         await assertCanReadClientState(c.req, deps, principalId);
-        const snapshot = await deps.getClientStateService().readPresenceSnapshot({
+        const snapshot = await deps.clientStateService.readPresenceSnapshot({
           ...toScope(c),
           principalId,
         });
@@ -124,7 +134,10 @@ export function init(
           ? c.json(snapshot)
           : c.json({ error: `Client presence not found: ${principalId}` }, 404);
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toClientStateRouteErrorResponse(
+          c,
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     },
   );
@@ -145,13 +158,16 @@ export function init(
 
         return c.json(
           await listRecentClientEventsForArrayRoute(
-            deps.getClientStateService(),
+            deps.clientStateService,
             ref,
             query,
           ),
         );
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toClientStateRouteErrorResponse(
+          c,
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     },
   );
@@ -164,7 +180,7 @@ export function init(
         await assertCanReadClientState(c.req, deps, principalId);
 
         return c.json(
-          await deps.getClientStateService().listEventPage(
+          await deps.clientStateService.listEventPage(
             {
               ...toScope(c),
               principalId,
@@ -175,222 +191,212 @@ export function init(
           ),
         );
       } catch (error) {
-        return toErrorResponse(c, error);
+        return toClientStateRouteErrorResponse(
+          c,
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     },
   );
 
   app.put(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/principal',
-    async (c) => {
-      try {
-        const authSession = await deps.requireApiAuthSession(c.req);
-        const scope = toScope(c);
-        const principalId = c.req.param('principalId');
-        assertSelfPrincipal(authSession.clientId, principalId);
-        const requestBody = await readRequestWithRequestId(c);
-        validateClientMutationRequest('upsertPrincipal', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>(
-          deps,
-          {
-            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-            resourceId: request.requestId,
-            contextId: toClientAppInboxContextId(scope, principalId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              principalId,
-              request,
-            },
-          },
-          authSession,
-        );
-        return c.json(snapshot);
-      } catch (error) {
-        return toErrorResponse(c, error);
-      }
-    },
+    `${CLIENT_PRINCIPAL_PATH}/principal`,
+    (context) => handleClientPrincipalUpsert(context, deps),
   );
 
   app.put(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId',
-    async (c) => {
-      try {
-        const authSession = await deps.requireApiAuthSession(c.req);
-        const scope = toScope(c);
-        const principalId = c.req.param('principalId');
-        const clientInstanceId = c.req.param('clientInstanceId');
-        assertSelfPrincipal(authSession.clientId, principalId);
-        const requestBody = await readRequestWithRequestId(c);
-        validateClientMutationRequest('upsertInstance', requestBody);
-        const request = withActor(
-          requestBody as UpsertClientInstanceRequest & { requestId: string },
-          authSession,
-        );
-        const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>(
-          deps,
-          {
-            type: AppInboxType.CLIENT_INSTANCE_UPSERT,
-            resourceId: request.requestId,
-            contextId: toClientAppInboxContextId(scope, principalId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              principalId,
-              clientInstanceId,
-              request,
-            },
-          },
-          authSession,
-        );
-        return c.json(snapshot);
-      } catch (error) {
-        return toErrorResponse(c, error);
-      }
-    },
+    CLIENT_INSTANCE_PATH,
+    (context) => handleClientInstanceUpsert(context, deps),
   );
 
   app.put(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId/sessions/:sessionId',
-    async (c) => {
-      try {
-        const authSession = await deps.requireApiAuthSession(c.req);
-        const scope = toScope(c);
-        const principalId = c.req.param('principalId');
-        const clientInstanceId = c.req.param('clientInstanceId');
-        const sessionId = c.req.param('sessionId');
-        assertSelfSession(
-          authSession,
-          principalId,
-          sessionId,
-        );
-        const requestBody = await readRequestWithRequestId(c);
-        validateClientMutationRequest('connectSession', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientSessionConnectAppInboxPayload>(
-          deps,
-          {
-            type: AppInboxType.CLIENT_SESSION_CONNECT,
-            resourceId: request.requestId,
-            contextId: toClientAppInboxContextId(scope, principalId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              principalId,
-              clientInstanceId,
-              sessionId,
-              request,
-            },
-          },
-          authSession,
-        );
-        return c.json(snapshot);
-      } catch (error) {
-        return toErrorResponse(c, error);
-      }
-    },
+    CLIENT_SESSION_PATH,
+    (context) => handleClientSessionConnect(context, deps),
   );
 
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId/sessions/:sessionId/heartbeat',
-    async (c) => {
-      try {
-        const authSession = await deps.requireApiAuthSession(c.req);
-        const scope = toScope(c);
-        const principalId = c.req.param('principalId');
-        const clientInstanceId = c.req.param('clientInstanceId');
-        const sessionId = c.req.param('sessionId');
-        assertSelfSession(
-          authSession,
-          principalId,
-          sessionId,
-        );
-        const requestBody = await readRequestWithRequestId(c);
-        validateClientMutationRequest('heartbeatSession', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>(
-          deps,
-          {
-            type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
-            resourceId: request.requestId,
-            contextId: toClientAppInboxContextId(scope, principalId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              principalId,
-              clientInstanceId,
-              sessionId,
-              request,
-            },
-          },
-          authSession,
-        );
-        return c.json(snapshot);
-      } catch (error) {
-        return toErrorResponse(c, error);
-      }
-    },
+    `${CLIENT_SESSION_PATH}/heartbeat`,
+    (context) => handleClientSessionHeartbeat(context, deps),
   );
 
   app.post(
-    '/api/state/apps/:applicationId/workspaces/:workspaceId/clients/:principalId/instances/:clientInstanceId/sessions/:sessionId/disconnect',
-    async (c) => {
-      try {
-        const authSession = await deps.requireApiAuthSession(c.req);
-        const scope = toScope(c);
-        const principalId = c.req.param('principalId');
-        const clientInstanceId = c.req.param('clientInstanceId');
-        const sessionId = c.req.param('sessionId');
-        assertSelfSession(
-          authSession,
-          principalId,
-          sessionId,
-        );
-        const requestBody = await readRequestWithRequestId(c);
-        validateClientMutationRequest('disconnectSession', requestBody);
-        const request = withActor(requestBody, authSession);
-        const snapshot = await processClientAppInbox<ClientSessionDisconnectAppInboxPayload>(
-          deps,
-          {
-            type: AppInboxType.CLIENT_SESSION_DISCONNECT,
-            resourceId: request.requestId,
-            contextId: toClientAppInboxContextId(scope, principalId),
-            senderId: authSession.clientId,
-            data: {
-              scope,
-              principalId,
-              clientInstanceId,
-              sessionId,
-              request,
-            },
-          },
-          authSession,
-        );
-        return c.json(snapshot);
-      } catch (error) {
-        return toErrorResponse(c, error);
-      }
-    },
+    `${CLIENT_SESSION_PATH}/disconnect`,
+    (context) => handleClientSessionDisconnect(context, deps),
   );
 }
 
-function toClientStateRouteDependencies(
+async function handleClientPrincipalUpsert(
+  context: Context,
   dependencies: ClientStateRouteDependencies,
-): Required<ClientStateRouteDependencies> {
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const scope = toScope(context);
+    const principalId = context.req.param('principalId');
+    assertSelfPrincipal(authSession.clientId, principalId);
+    const requestBody = await readRequestWithRequestId(context);
+    validateClientMutationRequest('upsertPrincipal', requestBody);
+    const request = withActor(requestBody, authSession);
+    const snapshot = await processClientAppInbox<ClientPrincipalUpsertAppInboxPayload>(
+      dependencies,
+      {
+        type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+        resourceId: request.requestId,
+        contextId: toClientAppInboxContextId(scope, principalId),
+        senderId: authSession.clientId,
+        data: { scope, principalId, request },
+      },
+      authSession,
+    );
+    return context.json(snapshot);
+  } catch (error) {
+    return toClientStateRouteErrorResponse(
+      context,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+}
+
+async function handleClientInstanceUpsert(
+  context: Context,
+  dependencies: ClientStateRouteDependencies,
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const scope = toScope(context);
+    const principalId = context.req.param('principalId');
+    const clientInstanceId = context.req.param('clientInstanceId');
+    assertSelfPrincipal(authSession.clientId, principalId);
+    const requestBody = await readRequestWithRequestId(context);
+    validateClientMutationRequest('upsertInstance', requestBody);
+    const request = withActor(
+      requestBody as UpsertClientInstanceRequest & { requestId: string },
+      authSession,
+    );
+    const snapshot = await processClientAppInbox<ClientInstanceUpsertAppInboxPayload>(
+      dependencies,
+      {
+        type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+        resourceId: request.requestId,
+        contextId: toClientAppInboxContextId(scope, principalId),
+        senderId: authSession.clientId,
+        data: { scope, principalId, clientInstanceId, request },
+      },
+      authSession,
+    );
+    return context.json(snapshot);
+  } catch (error) {
+    return toClientStateRouteErrorResponse(
+      context,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+}
+
+async function handleClientSessionConnect(
+  context: Context,
+  dependencies: ClientStateRouteDependencies,
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const { scope, principalId, clientInstanceId, sessionId } = readClientSessionRoute(context);
+    assertSelfSession(authSession, principalId, sessionId);
+    const requestBody = await readRequestWithRequestId(context);
+    validateClientMutationRequest('connectSession', requestBody);
+    const request = withActor(requestBody, authSession);
+    const snapshot = await processClientAppInbox<ClientSessionConnectAppInboxPayload>(
+      dependencies,
+      {
+        type: AppInboxType.CLIENT_SESSION_CONNECT,
+        resourceId: request.requestId,
+        contextId: toClientAppInboxContextId(scope, principalId),
+        senderId: authSession.clientId,
+        data: { scope, principalId, clientInstanceId, sessionId, request },
+      },
+      authSession,
+    );
+    return context.json(snapshot);
+  } catch (error) {
+    return toClientStateRouteErrorResponse(
+      context,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+}
+
+async function handleClientSessionHeartbeat(
+  context: Context,
+  dependencies: ClientStateRouteDependencies,
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const { scope, principalId, clientInstanceId, sessionId } = readClientSessionRoute(context);
+    assertSelfSession(authSession, principalId, sessionId);
+    const requestBody = await readRequestWithRequestId(context);
+    validateClientMutationRequest('heartbeatSession', requestBody);
+    const request = withActor(requestBody, authSession);
+    const snapshot = await processClientAppInbox<ClientSessionHeartbeatAppInboxPayload>(
+      dependencies,
+      {
+        type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+        resourceId: request.requestId,
+        contextId: toClientAppInboxContextId(scope, principalId),
+        senderId: authSession.clientId,
+        data: { scope, principalId, clientInstanceId, sessionId, request },
+      },
+      authSession,
+    );
+    return context.json(snapshot);
+  } catch (error) {
+    return toClientStateRouteErrorResponse(
+      context,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+}
+
+async function handleClientSessionDisconnect(
+  context: Context,
+  dependencies: ClientStateRouteDependencies,
+): Promise<Response> {
+  try {
+    const authSession = await dependencies.requireApiAuthSession(context.req);
+    const { scope, principalId, clientInstanceId, sessionId } = readClientSessionRoute(context);
+    assertSelfSession(authSession, principalId, sessionId);
+    const requestBody = await readRequestWithRequestId(context);
+    validateClientMutationRequest('disconnectSession', requestBody);
+    const request = withActor(requestBody, authSession);
+    const snapshot = await processClientAppInbox<ClientSessionDisconnectAppInboxPayload>(
+      dependencies,
+      {
+        type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+        resourceId: request.requestId,
+        contextId: toClientAppInboxContextId(scope, principalId),
+        senderId: authSession.clientId,
+        data: { scope, principalId, clientInstanceId, sessionId, request },
+      },
+      authSession,
+    );
+    return context.json(snapshot);
+  } catch (error) {
+    return toClientStateRouteErrorResponse(
+      context,
+      error instanceof Error ? error : new Error(String(error)),
+    );
+  }
+}
+
+function readClientSessionRoute(context: Context): Readonly<{
+  scope: StateScope;
+  principalId: string;
+  clientInstanceId: string;
+  sessionId: string;
+}> {
   return {
-    getClientStateService: dependencies.getClientStateService ??
-      getClientStateService,
-    requireApiAuthSession: dependencies.requireApiAuthSession ??
-      defaultRequireApiAuthSession,
-    hydrateStateSyncSnapshotCaches: dependencies.hydrateStateSyncSnapshotCaches ??
-      defaultHydrateStateSyncSnapshotCaches,
-    processClientAppInbox: dependencies.processClientAppInbox ??
-      defaultProcessClientAppInbox,
-    readClientSnapshot: dependencies.readClientSnapshot ??
-      createDurableClientStatePointRead(
-        dependencies.getClientStateService ?? getClientStateService,
-      ),
+    scope: toScope(context),
+    principalId: context.req.param('principalId'),
+    clientInstanceId: context.req.param('clientInstanceId'),
+    sessionId: context.req.param('sessionId'),
   };
 }
 
@@ -408,7 +414,7 @@ async function assertCanReadClientState(
   req: {
     header(name: string): string | undefined;
   },
-  deps: Required<ClientStateRouteDependencies>,
+  deps: ClientStateRouteDependencies,
   principalId: string,
 ): Promise<void> {
   const authSession = await readStrictReadAuthSession(req, deps);
@@ -427,8 +433,8 @@ async function readStrictReadAuthSession(
   req: {
     header(name: string): string | undefined;
   },
-  deps: Required<ClientStateRouteDependencies>,
-): Promise<ClientStateRouteAuthSession | undefined> {
+  deps: ClientStateRouteDependencies,
+): Promise<IssuedAuthSession | undefined> {
   return isStrictReadAuthEnabled() ? await deps.requireApiAuthSession(req) : undefined;
 }
 
@@ -442,7 +448,7 @@ function isStrictReadAuthEnabled(): boolean {
 }
 
 function hydrateClientSnapshots(
-  deps: Required<ClientStateRouteDependencies>,
+  deps: ClientStateRouteDependencies,
   clients: readonly ClientSnapshot[],
 ): void {
   if (clients.length === 0) {
@@ -458,9 +464,9 @@ function isDefined<T>(value: T | undefined): value is T {
 }
 
 async function processClientAppInbox<V>(
-  deps: Required<ClientStateRouteDependencies>,
+  deps: ClientStateRouteDependencies,
   enqueue: AppInboxEnqueueInput<V>,
-  authority: ClientStateRouteAuthSession,
+  authority: IssuedAuthSession,
 ): Promise<ClientSnapshot> {
   const written = await deps.processClientAppInbox(enqueue, authority);
   const snapshot = requireClientStateWrittenSnapshot(written);
@@ -468,33 +474,12 @@ async function processClientAppInbox<V>(
   return snapshot;
 }
 
-async function defaultProcessClientAppInbox<V>(
-  enqueue: AppInboxEnqueueInput<V>,
-  authority: ClientStateRouteAuthSession,
-): Promise<ClientStateWritten> {
-  const result = await getMiddleware().appClientInboxService
-    .processAuthenticatedEntryUntilCompletion<
-      V,
-      ClientStateWritten
-    >(
-      enqueue,
-      authority,
-    );
-
-  return result.fold(
-    (error) => {
-      throw toClientAppInboxError(error);
-    },
-    (value) => value,
-  );
-}
-
 export function toClientAppInboxError(failure: string): Error {
   return new Error(failure);
 }
 
 async function hydrateClientMutationSnapshot(
-  deps: Required<ClientStateRouteDependencies>,
+  deps: ClientStateRouteDependencies,
   snapshot: ClientSnapshot,
 ): Promise<void> {
   try {
@@ -562,73 +547,6 @@ function toScope(c: {
     applicationId: c.req.param('applicationId'),
     workspaceId: c.req.param('workspaceId'),
   };
-}
-
-function toErrorResponse(
-  c: {
-    json(value: unknown, status?: number): Response;
-  },
-  error: unknown,
-): Response {
-  const message = error instanceof Error ? error.message : String(error);
-  const serialized = readSerializedRouteError(message);
-  const explicitStatus = readErrorStatus(error) ?? serialized?.status;
-  const responseMessage = serialized?.error ?? serialized?.message ?? message;
-  const status = explicitStatus ??
-    (message.includes('not found')
-      ? 404
-      : message.startsWith('Unauthorized:')
-      ? 401
-      : message.startsWith('Forbidden:')
-      ? 403
-      : message.includes('already exists')
-      ? 409
-      : 400);
-
-  return c.json({
-    error: responseMessage,
-    ...(serialized?.code ? { code: serialized.code } : {}),
-  }, status);
-}
-
-function readErrorStatus(error: unknown): number | undefined {
-  if (
-    typeof error !== 'object' || error === null || !('status' in error) ||
-    !Number.isSafeInteger(error.status) ||
-    (error.status as number) < 400 || (error.status as number) > 599
-  ) {
-    return undefined;
-  }
-  return error.status as number;
-}
-
-function readSerializedRouteError(message: string):
-  | Readonly<{
-    error?: string;
-    message?: string;
-    code?: string;
-    status?: number;
-  }>
-  | undefined {
-  try {
-    const value = JSON.parse(message) as unknown;
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return undefined;
-    }
-    const record = value as Record<string, unknown>;
-    const status = Number.isSafeInteger(record.status) &&
-        (record.status as number) >= 400 && (record.status as number) <= 599
-      ? record.status as number
-      : undefined;
-    return {
-      ...(typeof record.error === 'string' ? { error: record.error } : {}),
-      ...(typeof record.message === 'string' ? { message: record.message } : {}),
-      ...(typeof record.code === 'string' ? { code: record.code } : {}),
-      ...(status === undefined ? {} : { status }),
-    };
-  } catch {
-    return undefined;
-  }
 }
 
 function withActor<

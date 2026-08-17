@@ -14,13 +14,11 @@ import type {
 import {
   createGroupStateRouteAuthSession,
   createGroupStateRouteSnapshot,
-  createGroupStateRouteTestDependencies,
   createGroupStateRouteTestRuntime,
   createPredecessorGroupStateRouteAuthSession,
   createPredecessorGroupStateRouteSnapshot,
   createPredecessorGroupStateRouteTestRuntime,
   TEST_GROUP_SCOPE,
-  withStrictGroupStateRouteReadAuth,
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE =

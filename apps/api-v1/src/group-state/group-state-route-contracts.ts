@@ -20,7 +20,7 @@ import type {
 } from '@shared/api/state-types.ts';
 import type {
   CachedGroupStateService,
-} from '@shared-server/rallar-system/services/cached-group-state-service.ts';
+} from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type {
   AppInboxEnqueueInput,
 } from '@shared-server/rallar-system/services/AppInboxService.ts';
@@ -37,18 +37,15 @@ import type {
 } from '@shared/api/state-snapshot-read.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import type { GroupStateService } from '../services/group-state-service.ts';
-
-export type GroupStateRouteService =
-  & Pick<
-    GroupStateService,
-    | 'listSnapshots'
-    | 'readSnapshot'
-    | 'listEvents'
-    | 'listRecentEvents'
-    | 'listEventPage'
-  >
-  & Pick<CachedGroupStateService, 'readCurrentSnapshot'>;
+export type GroupStateRouteService = Pick<
+  CachedGroupStateService,
+  | 'listSnapshots'
+  | 'readSnapshot'
+  | 'listEvents'
+  | 'listRecentEvents'
+  | 'listEventPage'
+  | 'readCurrentSnapshot'
+>;
 
 export type GroupStateRouteAuthSession = Pick<
   IssuedAuthSession,
@@ -231,23 +228,19 @@ export interface GroupStateRouteScopeContext {
 }
 
 export interface GroupStateRouteDependencies {
-  readonly getGroupStateService?: () => GroupStateRouteService;
-  readonly requireApiAuthSession?: (
+  readonly groupStateService: GroupStateRouteService;
+  readonly requireApiAuthSession: (
     request: GroupStateRouteRequest,
   ) => Promise<GroupStateRouteAuthSession>;
-  readonly processGroupAppInbox?: ProcessGroupAppInbox;
-  readonly hydrateStateSyncSnapshotCaches?: (
+  readonly processGroupAppInbox: ProcessGroupAppInbox;
+  readonly hydrateStateSyncSnapshotCaches: (
     input: StateSyncCacheHydrationInput,
   ) => Promise<StateSyncCacheHydrationResult>;
-  readonly readGroupSnapshot?: (
+  readonly readGroupSnapshot: (
     ref: GroupRef,
     options: GroupStateSnapshotReadOptions & Readonly<{ strictMode?: boolean }>,
   ) => Promise<StateSnapshotReadResult<GroupSnapshot>>;
 }
-
-export type ResolvedGroupStateRouteDependencies = Required<
-  GroupStateRouteDependencies
->;
 
 export function toGroupStateRouteScope(
   context: GroupStateRouteScopeContext,

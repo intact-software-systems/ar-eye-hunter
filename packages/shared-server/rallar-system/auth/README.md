@@ -25,31 +25,34 @@ these canonical owners. Compatibility paths exist only for the listed callers.
    [`decodeAuthMutationResult`](./mutation/decode-auth-mutation-result.ts) and
    [`toAuthMutationPublicResult`](./mutation/to-auth-mutation-public-result.ts).
 
-The API-v1 composition root remains
-[`middleware.ts`](../../../../apps/api-v1/src/middleware.ts). The prose traces
-below are supplementary navigation; the auth behavior, security, and ownership
-suites remain primary evidence. The auth child temporarily freezes the exact
-reviewed source blobs and named owner regions behind all five families. The
-later ledger may remove that snapshot only after PR C's resulting-main workflow
-publishes equivalent semantic evidence. The approved timing waiver remains in
-force: no human timing sample was repeated, and these traces make no
-productivity or statistical claim.
+The API-v1 composition roots are
+[`create-default-rallar-server.ts`](../../../../apps/api-v1/src/composition/create-default-rallar-server.ts),
+[`create-api-v1-runtime.ts`](../../../../apps/api-v1/src/composition/create-api-v1-runtime.ts), and
+required assembly
+[`create-rallar-server.ts`](../../../../apps/api-v1/src/composition/create-rallar-server.ts).
+The prose traces below are supplementary navigation; the auth behavior,
+security, and ownership suites remain primary evidence. The auth child
+temporarily freezes the exact reviewed source blobs and named owner regions
+behind all five families. The later ledger may remove that snapshot only after
+PR C's resulting-main workflow publishes equivalent semantic evidence. The
+approved timing waiver remains in force: no human timing sample was repeated,
+and these traces make no productivity or statistical claim.
 
 ## Login and credential issuance
 
 ### Construction and callback registration
 
-- **Construction:** `config-route.init` resolves its route dependencies once at
+- **Construction:** `registerConfigRoutes` resolves its route dependencies once at
   application construction; reading the already-constructed
   `AppAuthInboxService` remains deferred until a request reaches the route.
 - **Callback registration:** API-v1
-  [`config-route.init`](../../../../apps/api-v1/src/routes/config-route.ts)
+  [`registerConfigRoutes`](../../../../apps/api-v1/src/routes/config-route.ts)
   passes the `/api/auth/login` callback to `app.post`.
 
 ### Later handler invocation
 
 1. **Later handler invocation:** the route applies IP and username rate limits,
-   decodes the request, and calls `login-repository.login`; a later successful
+   decodes the request, and calls `api-login-service.login`; a later successful
    proof invokes `AppAuthInboxService.issueSession`. Queue conflicts retry the
    whole AppInbox attempt, not credential proof.
 2. **First guard/validation:**
@@ -79,9 +82,9 @@ productivity or statistical claim.
 10. **Caller propagation:** the API route maps a missing proof to 401 and a completed
     `Either.right` to the established login JSON shape.
 11. **Compatibility path:** API-v1 login composition currently reaches canonical
-    login behavior through `services/auth-login-service.ts`, and its repositories
-    through `repositories/AuthUserRepository.ts`. Those wrappers contain named
-    re-exports only.
+    login behavior through `apps/api-v1/src/services/api-login-service.ts` and
+    the canonical shared `services/auth-login-service.ts`; its repository contract
+    comes from `repositories/AuthUserRepository.ts`.
 
 Registration follows the sibling
 [`prepareAuthUserRegistration`](./login/prepare-auth-user-registration.ts)
@@ -143,7 +146,7 @@ path, then enters the same durable mutation pipeline through `registerUser`.
   before any later session queue invocation.
 - **Callback registration:** that constructor passes the session issue and
   logout callbacks to `onStateMessage`; API-v1 separately installs login and
-  logout route callbacks during `config-route.init`.
+  logout route callbacks during `registerConfigRoutes`.
 
 ### Later handler invocation
 
@@ -197,7 +200,7 @@ and [`auth-session-types.ts`](./persistence/auth-session-types.ts).
 - **Construction:** the auth service constructor creates the canonical handler
   before ticket queue work starts.
 - **Callback registration:** that constructor passes all four ticket
-  issue/consume callbacks to `onStateMessage`; `config-route.init` separately
+  issue/consume callbacks to `onStateMessage`; `registerConfigRoutes` separately
   installs the WebSocket and agent ticket endpoint callbacks.
 
 ### Later handler invocation
@@ -313,7 +316,7 @@ The machine-checked exact path inventory is
 | --------------------------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | `services/AppAuthInboxService.ts`       | API-v1 composition/routes/DB tests, shared HTTP/middleware, one shared-server test | Migrate every listed caller to canonical inbox owners, then retire the supported path. |
 | `services/auth-state-mutations.ts`      | API-v1 composition/DB tests, package root, shared tests                            | Move the package export and every listed caller to canonical mutation owners first.    |
-| `services/auth-login-service.ts`        | API-v1 login repository                                                            | Move that repository to canonical login owners first.                                  |
+| `services/auth-login-service.ts`        | API-v1 login service                                                               | Move that service to canonical login owners first.                                     |
 | `services/auth-credential-issuer.ts`    | API-v1 composition/DB tests, shared HTTP hardening, one shared-server test         | Move every issuer and secret-validation caller to canonical credentials first.         |
 | `repositories/AuthSessionRepository.ts` | API-v1, shared HTTP/Postgres/domain code, fixtures/tests, performance harnesses    | Migrate every listed consumer to canonical persistence.                                |
 | `repositories/AuthUserRepository.ts`    | API-v1 and Postgres repository composition/tests                                   | Migrate every listed consumer to canonical persistence.                                |

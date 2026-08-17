@@ -277,14 +277,14 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
   const hydrationInputs: unknown[] = [];
   let cachedSnapshot = baseSnapshot;
   const app = new Hono();
-  clientStateRoutes.init(app, {
-    getClientStateService: () => ({
+  clientStateRoutes.registerClientStateRoutes(app, {
+    clientStateService: {
       listSnapshots: () => Promise.resolve([]),
       readSnapshot: () => Promise.resolve(cachedSnapshot),
       readPresenceSnapshot: () => Promise.resolve(undefined),
       listEvents: () => Promise.resolve([]),
       listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-    }),
+    },
     requireApiAuthSession: () => Promise.resolve(createAuthSession('alice')),
     processClientAppInbox: <V>(
       _input: AppInboxEnqueueInput<V>,
@@ -298,6 +298,8 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
       cachedSnapshot = input.clients?.[0] ?? cachedSnapshot;
       return Promise.resolve({ clientSnapshotCount: 1, groupSnapshotCount: 0 });
     },
+    readClientSnapshot: () =>
+      Promise.resolve({ status: 'found', source: 'cache', snapshot: cachedSnapshot }),
   });
 
   const response = await app.request(

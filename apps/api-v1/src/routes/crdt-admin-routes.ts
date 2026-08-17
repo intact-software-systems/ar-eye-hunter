@@ -9,11 +9,10 @@ import type {
 } from '@shared/crdt/mod.ts';
 import { RALLAR_CRDT_PROTOCOL_VERSION } from '@shared/crdt/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-  requireApiAuthSession,
-  toAuthErrorResponse,
-  toAuthSession,
-} from '../services/request-auth-service.ts';
+import type {
+  IssuedAuthSession,
+} from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { toAuthErrorResponse, toAuthSession } from '../services/request-auth-service.ts';
 
 export type RallarCrdtAdminMutationOperation =
   | 'rebuild-projection'
@@ -41,14 +40,24 @@ export type RallarCrdtAdminRoutesOptions = Readonly<{
       context: Context;
     }>,
   ) => boolean | Promise<boolean>;
-  requireApiAdminSession?: (context: Context) => Promise<AuthSession>;
-  requireApiUserSession?: (context: Context) => Promise<AuthSession>;
+  requireApiAdminSession: (context: Context) => Promise<IssuedAuthSession>;
+  requireApiUserSession: (context: Context) => Promise<IssuedAuthSession>;
   authorizeCatchUp?: (
     input: Readonly<{ document: RallarCrdtDocumentRef; session: AuthSession }>,
   ) => Promise<Readonly<{ allowed: boolean }>>;
 }>;
 
-export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
+interface ProcessCrdtAdminMutationInput {
+  readonly context: Context;
+  readonly options: RallarCrdtAdminRoutesOptions;
+  readonly operation: RallarCrdtAdminMutationOperation;
+  readonly request: unknown;
+}
+
+export function registerCrdtAdminRoutes(
+  app: Hono,
+  options: RallarCrdtAdminRoutesOptions,
+): void {
   const requireAuth = options.requireAuth ?? true;
 
   if (requireAuth) {
@@ -66,9 +75,7 @@ export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
     let session: AuthSession | undefined;
     if (requireAuth) {
       try {
-        session = options.requireApiUserSession
-          ? await options.requireApiUserSession(c)
-          : toAuthSession(await requireApiAuthSession(c.req));
+        session = toAuthSession(await options.requireApiUserSession(c));
       } catch (error) {
         return toAuthErrorResponse(c, error);
       }
@@ -138,40 +145,58 @@ export function init(app: Hono, options: RallarCrdtAdminRoutesOptions): void {
     '/api/crdt/admin/documents/rebuild-projection',
     (c) =>
       withAdminError(c, async () => {
-        return await mutate(c, options, 'rebuild-projection', await readJson(c));
+        return await processCrdtAdminMutation({
+          context: c,
+          options,
+          operation: 'rebuild-projection',
+          request: await readJson(c),
+        });
       }),
   );
 
   app.post('/api/crdt/admin/documents/compact', (c) =>
     withAdminError(c, async () => {
-      return await mutate(c, options, 'compact', await readJson(c));
+      return await processCrdtAdminMutation({
+        context: c,
+        options,
+        operation: 'compact',
+        request: await readJson(c),
+      });
     }));
 
   app.post('/api/crdt/admin/documents/lifecycle', (c) =>
     withAdminError(
       c,
-      async () => await mutate(c, options, 'lifecycle', await readJson(c)),
+      async () =>
+        await processCrdtAdminMutation({
+          context: c,
+          options,
+          operation: 'lifecycle',
+          request: await readJson(c),
+        }),
     ));
 
   app.post('/api/crdt/admin/documents/erase', (c) =>
     withAdminError(c, async () => {
-      return await mutate(c, options, 'erase', await readJson(c));
+      return await processCrdtAdminMutation({
+        context: c,
+        options,
+        operation: 'erase',
+        request: await readJson(c),
+      });
     }));
 }
 
-async function mutate(
-  context: Context,
-  options: RallarCrdtAdminRoutesOptions,
-  operation: RallarCrdtAdminMutationOperation,
-  request: unknown,
+async function processCrdtAdminMutation(
+  input: ProcessCrdtAdminMutationInput,
 ): Promise<unknown> {
-  if (!options.mutations) {
+  if (!input.options.mutations) {
     throw new Error('CRDT AppInbox mutations are not configured.');
   }
-  const adminSession = await requireCrdtAdminSession(context, options);
-  return await options.mutations.processAdminMutationUntilCompletion(
-    operation,
-    { adminSession, request },
+  const adminSession = await requireCrdtAdminSession(input.context, input.options);
+  return await input.options.mutations.processAdminMutationUntilCompletion(
+    input.operation,
+    { adminSession, request: input.request },
   );
 }
 
@@ -202,9 +227,7 @@ async function requireCrdtAdminSession(
   c: Context,
   options: RallarCrdtAdminRoutesOptions,
 ): Promise<AuthSession> {
-  const session = options.requireApiAdminSession
-    ? await options.requireApiAdminSession(c)
-    : await requireApiAuthSession(c.req);
+  const session = await options.requireApiAdminSession(c);
   const authorized = options.authorizeAdmin !== undefined
     ? await Promise.resolve(
       options.authorizeAdmin({

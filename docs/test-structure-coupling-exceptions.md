@@ -33,7 +33,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 133 entries were reviewed by independently meaningful behavior,
+The current 134 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -44,7 +44,7 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Browser control protocol                         |       7 | Two approved assertions protect server import direction and shared-test monitor ownership.                       |
 | Auth compatibility                               |       3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges.                         |
 | Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
-| AppInbox transport routing                       |       7 | Concrete route mutations must fail before they bypass the canonical transaction owner.                           |
+| AppInbox transport routing                       |       8 | Concrete route mutations must fail before they bypass the canonical transaction owner.                           |
 | Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
 | Mutation route and owner traversal               |      13 | Route, export, helper, and capability evasions must still resolve to AppInbox.                                   |
 | Group mutation construction                      |      14 | Missing, duplicate, reordered, conditional, or rebound owner calls must be rejected.                             |
@@ -146,6 +146,14 @@ moved or changed test.
       "summary": "Authoritative state mutations enter through AppInbox-owned routes and cannot bypass their transaction boundary. Executable assertion: “rejects a translator case routed to another operation type”.",
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a translator case routed to another operation type",
       "coverageRelation": "The AppInbox transaction suite proves the canonical owner commits mutation, result, effects, and completion atomically; this mutation fixture proves the routing analyzer rejects the named way a transport could bypass or misroute that owner."
+    },
+    {
+      "id": "app-inbox-mutation-routing--rejects-a-crdt-route-connected-to-another-admin-operation",
+      "domain": "Authoritative AppInbox mutation routing",
+      "owner": "Rallar server maintainers",
+      "summary": "Authoritative state mutations enter through AppInbox-owned routes and cannot bypass their transaction boundary. Executable assertion: “rejects a CRDT route connected to another admin mutation operation”.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a CRDT route connected to another admin mutation operation",
+      "coverageRelation": "The AppInbox transaction suite proves the canonical owner commits mutation, result, effects, and completion atomically; this mutation fixture proves the routing analyzer rejects a CRDT route whose operation marker points at another canonical admin mutation."
     },
     {
       "id": "app-inbox-mutation-routing--rejects-a-wrong-local-presence-route-constant",
@@ -396,11 +404,11 @@ moved or changed test.
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
     {
-      "id": "group-mutation-construction--rejects-a-family-call-before-resolved-dependencies-and-authoriza",
+      "id": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
       "domain": "Group mutation construction boundary",
       "owner": "Rallar server maintainers",
-      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family call before resolved dependencies and authorization exist”.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call before resolved dependencies and authorization exist",
+      "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects a family call before authorization exists”.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
     },
     {
@@ -862,6 +870,19 @@ moved or changed test.
   ],
   "entries": [
     {
+      "id": "test-structure-coupling-c00305d4ae5c95f0",
+      "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
+      "line": 168,
+      "column": 20,
+      "kind": "production-source-read",
+      "contract": "app-inbox-mutation-routing--rejects-a-crdt-route-connected-to-another-admin-operation",
+      "disposition": "durable-boundary",
+      "boundary": "security",
+      "owner": "Rallar server maintainers",
+      "rationale": "Mutates the compact route to the lifecycle operation and requires the routing analyzer to reject the wrong canonical CRDT owner before publication.",
+      "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects a CRDT route connected to another admin mutation operation"
+    },
+    {
       "id": "test-structure-coupling-18fc3cbf53d4a31b",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
       "line": 58,
@@ -888,9 +909,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-d674a5b2e6c2a1d5",
+      "id": "test-structure-coupling-80873537a59d5843",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 62,
+      "line": 64,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
@@ -901,9 +922,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-a5dfdd324a5ece62",
+      "id": "test-structure-coupling-1bbd4a226b00650f",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 65,
+      "line": 67,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
@@ -914,9 +935,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-0e82e2b1f3cd4f22",
+      "id": "test-structure-coupling-5b10e1314515e7c5",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 68,
+      "line": 70,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
@@ -927,9 +948,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-a8100a51077e02f4",
+      "id": "test-structure-coupling-80a7bf9af77930a0",
       "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "line": 74,
+      "line": 76,
       "column": 5,
       "kind": "symbol-assertion",
       "contract": "group-topology-canonical-import-direction",
@@ -940,17 +961,17 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
-      "id": "test-structure-coupling-042b548b08a48aab",
+      "id": "test-structure-coupling-f903c4487c4113b0",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 108,
+      "line": 107,
       "column": 20,
       "kind": "production-source-read",
-      "contract": "group-mutation-construction--rejects-a-family-call-before-resolved-dependencies-and-authoriza",
+      "contract": "group-mutation-construction--rejects-a-family-call-before-authorization-exists",
       "disposition": "durable-boundary",
       "boundary": "security",
       "owner": "Rallar server maintainers",
-      "rationale": "Moves family construction ahead of dependency and authorization resolution, testing lifecycle order at the root composition boundary.",
-      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call before resolved dependencies and authorization exist"
+      "rationale": "Moves family construction ahead of authorization resolution, testing lifecycle order at the root composition boundary.",
+      "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects a family call before authorization exists"
     },
     {
       "id": "test-structure-coupling-d326eafe832b6f45",
@@ -1070,9 +1091,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#keeps distributed run monitor derivation in shared-test instead of the SPA app"
     },
     {
-      "id": "test-structure-coupling-1b4734649c1d8e9f",
+      "id": "test-structure-coupling-3a878309715ba30c",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 80,
+      "line": 81,
       "column": 20,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-an-exact-route-registered-only-from-a-request-time-callb",
@@ -1083,9 +1104,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts#rejects an exact route registered only from a request-time callback"
     },
     {
-      "id": "test-structure-coupling-1bcb566a757b25b4",
+      "id": "test-structure-coupling-ddde1657cf06b0cb",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 35,
+      "line": 34,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-uninventoryed-live-private-owner-and-route-in-a-famil",
@@ -1096,9 +1117,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an uninventoryed live private owner and route in a family"
     },
     {
-      "id": "test-structure-coupling-1f45a7919de747df",
+      "id": "test-structure-coupling-db4d003fea035dc2",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 53,
+      "line": 54,
       "column": 20,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-dead-exact-registration-masking-the-live-named-route-o",
@@ -1174,9 +1195,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts#resolves mutable repository capabilities through the shared-server barrel"
     },
     {
-      "id": "test-structure-coupling-2a7284aec9b1e383",
+      "id": "test-structure-coupling-35de774f05b8bf97",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 117,
+      "line": 116,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-different-app-passed-from-a-family-to-its-private-owne",
@@ -1317,9 +1338,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#requires the admin mutation gateway and contains no direct-write fallback"
     },
     {
-      "id": "test-structure-coupling-4cf49ab336aca78f",
+      "id": "test-structure-coupling-4305e13260503b7c",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 81,
+      "line": 80,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-wrong-root-to-family-arguments",
@@ -1421,9 +1442,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/repo/typescript-7-boundaries.test.ts#keeps TypeScript and Deno checking as separate release gates"
     },
     {
-      "id": "test-structure-coupling-5f163dad42005183",
+      "id": "test-structure-coupling-1bd68b39317fa044",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 48,
+      "line": 47,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-removed-from-the-exported-root",
@@ -1447,9 +1468,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/hetzner/spa-env-script.test.ts#uses the control-server Deno config for Hetzner cache warming and systemd start"
     },
     {
-      "id": "test-structure-coupling-61963fb19df633bb",
+      "id": "test-structure-coupling-3db6ee5af71049ff",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 106,
+      "line": 108,
       "column": 20,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-membership-route-constant-swapped-to-the-presence-path",
@@ -1486,9 +1507,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
-      "id": "test-structure-coupling-674f545af17ca390",
+      "id": "test-structure-coupling-fa377a8a33d63f8a",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 18,
+      "line": 17,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-canonical-family-name-rebound-to-a-different-imported-",
@@ -1551,9 +1572,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-state-read-convergence-recipe.test.ts#proves tertiary scalar and causal floors with revision and source headers"
     },
     {
-      "id": "test-structure-coupling-71fa08fee9fde3c0",
+      "id": "test-structure-coupling-adae296474840965",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 99,
+      "line": 98,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-extra-root-to-family-argument",
@@ -1642,9 +1663,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-collections.test.ts#rejects GROUP_CREATE removed from the imported live group registration collection"
     },
     {
-      "id": "test-structure-coupling-7b8bdb38badaaa52",
+      "id": "test-structure-coupling-7464849d962314a4",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 151,
+      "line": 153,
       "column": 20,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-translator-case-routed-to-another-operation-type",
@@ -1798,9 +1819,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/hetzner/distributed-recipe-workflow.test.ts#persists control-server snapshots with an atomic temp-file rename"
     },
     {
-      "id": "test-structure-coupling-8b4a9afb05cb8a4f",
+      "id": "test-structure-coupling-f7231c750a7d2d64",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 126,
+      "line": 125,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-reordered-family-to-private-owner-arguments",
@@ -1889,9 +1910,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/api-v1-three-server-recipe-semantics.test.ts#defines a no-browser three-server topology convergence recipe"
     },
     {
-      "id": "test-structure-coupling-9833177c97d5402e",
+      "id": "test-structure-coupling-d92e5182a2de7b9c",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 38,
+      "line": 39,
       "column": 20,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-wrong-local-presence-route-constant",
@@ -1928,9 +1949,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-test/rallar-bb-test-schema.test.ts#keeps schema compatibility guide JSON examples validating"
     },
     {
-      "id": "test-structure-coupling-9d37781ac9bd36fb",
+      "id": "test-structure-coupling-7ebd69486497a4f6",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 90,
+      "line": 89,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-reordered-root-to-family-arguments",
@@ -1993,9 +2014,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#evaluates safe logical includes and identity map chains exactly"
     },
     {
-      "id": "test-structure-coupling-a3e23173670f94ee",
+      "id": "test-structure-coupling-047bddb47bfb4c30",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 66,
+      "line": 65,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-duplicate-family-call-in-the-exported-root",
@@ -2032,9 +2053,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects an AppInbox type overridden by a later result-object spread"
     },
     {
-      "id": "test-structure-coupling-b046d0deb1646bc4",
+      "id": "test-structure-coupling-d74e211410ea2681",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 144,
+      "line": 143,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-an-extra-family-to-private-owner-argument",
@@ -2045,9 +2066,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects an extra family-to-private-owner argument"
     },
     {
-      "id": "test-structure-coupling-b227c3f176f70934",
+      "id": "test-structure-coupling-4e6e38cdb1471e2a",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 136,
+      "line": 138,
       "column": 20,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--fails-closed-when-a-named-route-path-uses-an-unknown-expression",
@@ -2097,9 +2118,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-boundary-traversal.test.ts#uses the canonical inventory in the original routing contract test"
     },
     {
-      "id": "test-structure-coupling-c65fdd89d62c3de9",
+      "id": "test-structure-coupling-65b0463cbe621b05",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 57,
+      "line": 56,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-conditional-family-call-in-the-exported-root",
@@ -2331,9 +2352,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
-      "id": "test-structure-coupling-ec47d2397c9621d7",
+      "id": "test-structure-coupling-82fec1ab778e1097",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 75,
+      "line": 74,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-family-call-after-an-exported-root-return",
@@ -2422,9 +2443,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-analysis.test.ts#uses one named readonly input object for each authorised websocket enqueue helper"
     },
     {
-      "id": "test-structure-coupling-fad637d78525c610",
+      "id": "test-structure-coupling-5bc85419a31dcac0",
       "path": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts",
-      "line": 135,
+      "line": 134,
       "column": 20,
       "kind": "production-source-read",
       "contract": "group-mutation-construction--rejects-a-missing-family-to-private-owner-argument",
@@ -2461,9 +2482,9 @@ moved or changed test.
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-http-shapes.test.ts#rejects a correct handoff found only in an uninvoked nested handler function"
     },
     {
-      "id": "test-structure-coupling-fea17e209a2be374",
+      "id": "test-structure-coupling-e426886fca4be29a",
       "path": "packages/tests/shared-server/app-inbox-mutation-routing-contract.test.ts",
-      "line": 121,
+      "line": 123,
       "column": 20,
       "kind": "production-source-read",
       "contract": "app-inbox-mutation-routing--rejects-a-remove-member-route-translated-through-the-ban-operati",

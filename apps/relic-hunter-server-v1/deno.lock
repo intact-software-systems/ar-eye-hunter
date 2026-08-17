@@ -55,12 +55,23 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@hono/hono@4.11.9",
+      "jsr:@std/dotenv@0.225.6",
       "npm:@electric-sql/pglite@0.4.1",
       "npm:@js-temporal/polyfill@~0.5.1",
       "npm:graphology@0.26.0",
       "npm:postgres@^3.4.9"
     ],
     "links": {
+      "jsr:rallar-server-api-v1@0.1.0": {
+        "dependencies": [
+          "npm:@electric-sql/pglite@0.4.1",
+          "npm:@js-temporal/polyfill@~0.5.1",
+          "npm:graphology@0.26.0",
+          "npm:postgres@^3.4.9",
+          "npm:prisma@^7.8.0"
+        ]
+      },
       "npm:@ar-eye-hunter/relic-hunters@0.1.0": {},
       "npm:@ar-eye-hunter/shared-graph@0.1.0": {
         "dependencies": [

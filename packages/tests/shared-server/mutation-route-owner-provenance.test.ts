@@ -136,6 +136,24 @@ it('rejects a cross-file auth handoff discriminator and owner reroute', () => {
   );
 });
 
+it('rejects a websocket auth handoff moved to an unreachable helper', () => {
+  const item = requireEntry(AppInboxType.AUTH_WS_TICKET_CONSUME, 'HTTP');
+  const source = readFileSync(item.sourcePath, 'utf8');
+  const live = 'const authSession = await input.requireWsAuthSession({ sessionId, ticket });';
+  const mutated =
+    source.replace(live, 'const authSession = await Promise.resolve({ sessionId });') +
+    `
+async function deadWsAuthHandoff(input: RegisterWsRoutesInput): Promise<void> {
+  await input.requireWsAuthSession({ sessionId: 'dead' });
+}
+`;
+  expect(source).toContain(live);
+
+  expect(validateWithOverride(item.sourcePath, mutated)).toEqual(
+    expect.arrayContaining([expect.stringContaining('registered handler is not connected')]),
+  );
+});
+
 function requireEntry(type: AppInboxType, transport: string) {
   const item = MUTATION_ROUTE_INVENTORY.find(
     (entry) => entry.type === type && entry.transport === transport,

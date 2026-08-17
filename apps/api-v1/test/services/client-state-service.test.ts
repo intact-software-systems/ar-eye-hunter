@@ -14,7 +14,7 @@ import type {
 import {
   createLegacyClientStateTestDriver as createClientStateService,
 } from '../../../../packages/tests/shared-server/client-state/client-state-test-runtime.ts';
-import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
+import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 
 const TEST_SCOPE: StateScope = {
   applicationId: 'app-1',
@@ -441,8 +441,7 @@ async function readSnapshot(
   return snapshot;
 }
 
-class FakeRuntimeStateRepository
-  implements RuntimeStateOptimisticTransactionalRepositoryLike {
+class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
   readonly data = new Map<string, RuntimeStateEntry>();
 
   async begin<T>(

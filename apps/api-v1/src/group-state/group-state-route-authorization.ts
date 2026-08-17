@@ -8,8 +8,8 @@ import {
 
 import type {
   GroupStateRouteAuthSession,
+  GroupStateRouteDependencies,
   GroupStateRouteRequest,
-  ResolvedGroupStateRouteDependencies,
 } from './group-state-route-contracts.ts';
 
 export interface GroupStateRouteAuthorization {
@@ -50,7 +50,7 @@ export function isGroupStateRouteSnapshotReadable(
 }
 
 export function createGroupStateRouteAuthorization(
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): GroupStateRouteAuthorization {
   return {
     readStrictAuthSession: (request) => readStrictAuthSession(request, dependencies),
@@ -71,14 +71,14 @@ export function createGroupStateRouteAuthorization(
 async function assertCanReadGroupRef(
   request: GroupStateRouteRequest,
   ref: GroupRef,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): Promise<void> {
   const authSession = await readStrictAuthSession(request, dependencies);
   if (!authSession) {
     return;
   }
 
-  const snapshot = await dependencies.getGroupStateService().readCurrentSnapshot(ref);
+  const snapshot = await dependencies.groupStateService.readCurrentSnapshot(ref);
   if (!snapshot) {
     throw new Error(`Group not found: ${ref.groupId}`);
   }
@@ -89,7 +89,7 @@ async function assertCanReadGroupRef(
 async function assertCanReadGroupState(
   request: GroupStateRouteRequest,
   snapshot: GroupSnapshot,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): Promise<void> {
   const authSession = await readStrictAuthSession(request, dependencies);
   if (!authSession) {
@@ -112,9 +112,9 @@ function assertCanReadGroupSnapshot(principalId: string, snapshot: GroupSnapshot
 async function assertCanUpdateGroup(
   principalId: string,
   ref: GroupRef,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): Promise<void> {
-  const snapshot = await dependencies.getGroupStateService().readSnapshot(ref);
+  const snapshot = await dependencies.groupStateService.readSnapshot(ref);
   if (!snapshot) {
     throw new Error(`Group not found: ${ref.groupId}`);
   }
@@ -165,7 +165,7 @@ function assertSelfServiceMemberStatus(
 
 async function readStrictAuthSession(
   request: GroupStateRouteRequest,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): Promise<GroupStateRouteAuthSession | undefined> {
   return isStrictReadAuthEnabled() ? await dependencies.requireApiAuthSession(request) : undefined;
 }

@@ -18,7 +18,7 @@ import type {
 import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
-  type ResolvedGroupStateRouteDependencies,
+  type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
@@ -32,7 +32,7 @@ const GROUP_MEMBER_PATH =
 
 export function registerGroupMembershipRoutes(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   registerRemoveGroupMemberRoute(app, dependencies);
@@ -45,7 +45,7 @@ export function registerGroupMembershipRoutes(
 
 function registerRemoveGroupMemberRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     `${GROUP_MEMBER_PATH}/remove`,
@@ -83,7 +83,7 @@ function registerRemoveGroupMemberRoute(
 
 function registerBanGroupMemberRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     `${GROUP_MEMBER_PATH}/ban`,
@@ -121,7 +121,7 @@ function registerBanGroupMemberRoute(
 
 function registerUnbanGroupMemberRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     `${GROUP_MEMBER_PATH}/unban`,
@@ -159,7 +159,7 @@ function registerUnbanGroupMemberRoute(
 
 function registerSetGroupMemberRoleRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.put(
     `${GROUP_MEMBER_PATH}/role`,
@@ -197,7 +197,7 @@ function registerSetGroupMemberRoleRoute(
 
 function registerTransferGroupOwnershipRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/owner/transfer',
@@ -233,7 +233,7 @@ function registerTransferGroupOwnershipRoute(
 
 function registerUpsertSelfGroupMemberRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.put(

@@ -8,7 +8,7 @@ import {
   type TestAuthenticatedGroupStateService,
   type TestGroupStateMaintenanceService,
 } from '../../../../packages/tests/shared-server/group-state/group-state-test-runtime.ts';
-import type { StateSyncPublisher } from '../../src/services/state-sync-service.ts';
+import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import type {
@@ -1595,10 +1595,12 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
 
 function createTestGroupStateService(
   syncPublisher: StateSyncPublisher = NO_OP_SYNC_PUBLISHER,
-): TestAuthenticatedGroupStateService & Pick<
-  TestGroupStateMaintenanceService,
-  'expireExpiredPresenceSessions'
-> {
+):
+  & TestAuthenticatedGroupStateService
+  & Pick<
+    TestGroupStateMaintenanceService,
+    'expireExpiredPresenceSessions'
+  > {
   const runtime = createTestGroupStateRuntime({
     runtimeRepository: new FakeRuntimeStateRepository(),
     formationDamping: 'damped',

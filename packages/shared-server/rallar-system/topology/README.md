@@ -163,8 +163,10 @@ and metrics live under `runtime/`.
 
 ## Construction and registration
 
-`create-rallar-server.ts` constructs the repositories, RTC topology service,
-public management facade, and authenticated `AppGroupInboxService`. The facade
+API-v1
+[`create-api-v1-topology-services.ts`](../../../../apps/api-v1/src/composition/create-api-v1-topology-services.ts)
+constructs the repositories, RTC topology service, public management facade, and installs topology
+dependencies on the authenticated `AppGroupInboxService`. The facade
 constructs one generation-readiness owner shared by config query and mutation,
 plus the planning and reconfigure owners. Mutation owners are created only when
 their required repositories exist. `AppGroupInboxService` requires and captures

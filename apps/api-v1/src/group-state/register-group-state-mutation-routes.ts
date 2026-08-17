@@ -14,7 +14,7 @@ import type {
 
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import {
-  type ResolvedGroupStateRouteDependencies,
+  type GroupStateRouteDependencies,
   toGroupStateRouteScope,
 } from './group-state-route-contracts.ts';
 import { toGroupStateErrorResponse } from './group-state-route-errors.ts';
@@ -26,7 +26,7 @@ type GroupStateRouteCommandPayload = AuthenticatedGroupMutationEnqueue['data'];
 
 export function registerGroupStateMutationRoutes(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   registerCreateGroupRoute(app, dependencies);
@@ -36,7 +36,7 @@ export function registerGroupStateMutationRoutes(
 
 function registerCreateGroupRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups',
@@ -70,7 +70,7 @@ function registerCreateGroupRoute(
 
 function registerUpdateGroupRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {
   app.put(
@@ -107,7 +107,7 @@ function registerUpdateGroupRoute(
 
 function registerAppointGroupDirectorRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
 ): void {
   app.post(
     '/api/state/apps/:applicationId/workspaces/:workspaceId/groups/:groupId/director/appoint',

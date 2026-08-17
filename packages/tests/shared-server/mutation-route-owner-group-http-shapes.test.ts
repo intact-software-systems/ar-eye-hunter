@@ -11,12 +11,12 @@ const PRESENCE_ROUTES = 'apps/api-v1/src/group-state/register-group-presence-rou
 const COMMAND_TRANSLATOR = 'apps/api-v1/src/group-state/to-group-state-command.ts';
 const CONNECT_OWNER = `function registerConnectGroupPresenceRoute(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {`;
 const PRESENCE_FAMILY = `export function registerGroupPresenceRoutes(
   app: Hono,
-  dependencies: ResolvedGroupStateRouteDependencies,
+  dependencies: GroupStateRouteDependencies,
   authorization: GroupStateRouteAuthorization,
 ): void {`;
 const REMOVE_HANDLER = `  app.post(

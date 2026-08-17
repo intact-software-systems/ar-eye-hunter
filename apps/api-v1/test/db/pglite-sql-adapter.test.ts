@@ -2281,12 +2281,16 @@ Deno.test('PGlite topology route preserves structured AppInbox terminal and unav
     const appGroup = createAppGroup(5_000);
     const createRouteApp = (service: AppGroupInboxService) => {
       const app = new Hono();
-      graphTopologyRoutes.init(app, {
-        getGroupStateService: () => ({
+      graphTopologyRoutes.registerGraphTopologyRoutes(app, {
+        groupStateService: {
           readCurrentSnapshot: (ref) => groupRepository.readSnapshot(ref),
-        }),
+        },
+        graphDiagnostics: {} as graphTopologyRoutes.GraphTopologyRouteGraphDiagnostics,
+        topologyManagement: topology,
+        processTopologyAppInbox: (authSession, enqueue) =>
+          graphTopologyRoutes.processTopologyAppInbox(service, authSession, enqueue),
         requireApiAuthSession: () => Promise.resolve(authority),
-        readAppGroupInboxService: () => service,
+        adminClientIds: [],
         now: () => nowEpochMs,
       });
       return app;
@@ -2895,8 +2899,8 @@ Deno.test('PGlite topology worker rereads terminal authority and the topology pr
       processRttReader: () => [],
       now: () => nowEpochMs,
     });
-    const readTopologyPlanningAuthority =
-      topologyManagement.planningService.readTopologyPlanningAuthority.bind(
+    const readTopologyPlanningAuthority = topologyManagement.planningService
+      .readTopologyPlanningAuthority.bind(
         topologyManagement.planningService,
       );
     topologyManagement.planningService.readTopologyPlanningAuthority = async (input) => {

@@ -3,13 +3,12 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { cors } from 'jsr:@hono/hono@4.11.9/cors';
 
 import { requireApiAuthSession, toAuthErrorResponse } from './services/request-auth-service.ts';
-import { createRallarServer } from './create-rallar-server.ts';
+import { createDefaultRallarServer } from './composition/create-default-rallar-server.ts';
 import { createStateApiResilienceMiddleware } from './services/state-api-resilience-middleware.ts';
 import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts';
 import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/database-config.ts';
 import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
 import { assertApiV1ProductionEnv } from '@shared-server/http/production-env-hardening.ts';
-import { shutdownMiddlewareBackgroundTasks } from './middleware.ts';
 import {
   STATE_SNAPSHOT_READ_EXPOSED_HEADERS,
 } from './routes/state-snapshot-read-exposed-headers.ts';
@@ -30,11 +29,6 @@ import {
 } from './runtime/group-formation/group-state-dissemination-config.ts';
 
 const app: Hono = new Hono();
-addEventListener('unload', () => {
-  void shutdownMiddlewareBackgroundTasks().catch((error) => {
-    console.error('Failed to stop middleware background tasks:', error);
-  });
-});
 assertApiV1ProductionEnv(Deno.env);
 const corsOrigins = readCorsOrigins();
 
@@ -45,6 +39,12 @@ const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig();
 logRtcTopologyReplayConfig(console.log, rtcTopologyReplayConfig);
 logGroupFormationDampingConfig(console.log);
 logGroupStateDisseminationConfig(console.log);
+const rallar = createDefaultRallarServer();
+addEventListener('unload', () => {
+  void rallar.runtime.backgroundTasks.stop().catch((error) => {
+    console.error('Failed to stop middleware background tasks:', error);
+  });
+});
 
 const apiCors = cors(
   {
@@ -75,7 +75,7 @@ app.use('/api/*', createHttpTimingMiddleware());
 
 app.use('/api/state/*', async (c, next) => {
   try {
-    await requireApiAuthSession(c.req);
+    await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
     await next();
   } catch (error) {
     return toAuthErrorResponse(c, error);
@@ -83,8 +83,6 @@ app.use('/api/state/*', async (c, next) => {
 });
 
 app.use('/api/state/*', createStateApiResilienceMiddleware());
-
-const rallar = createRallarServer();
 
 rallar.system
   .useDefaultMiddlewareTopics()
@@ -121,7 +119,7 @@ if (rallar.runtime.healthFailure) {
         );
       }
     },
-    stopBackgroundTasks: shutdownMiddlewareBackgroundTasks,
+    stopBackgroundTasks: () => rallar.runtime.backgroundTasks.stop(),
     shutdownHttp: async () => await httpServer.shutdown(),
     onShutdownStepFailure: (step, error) => {
       console.error(`RTC topology delivery shutdown step ${step} failed:`, error);

@@ -15,16 +15,21 @@ const SESSION = {
 Deno.test('logout routes the session mutation through AppAuthInbox', async () => {
   const calls: unknown[] = [];
   const app = new Hono();
-  configRoutes.init(app, {
+  configRoutes.registerConfigRoutes(app, {
     requireApiAuthSession: () => Promise.resolve(SESSION),
     now: () => 2_000,
     createTokenId: () => 'logout-request-1',
-    readAppAuthInbox: () => ({
+    readEnv: () => undefined,
+    appAuthInbox: ({
       logoutSession: (input: unknown) => {
         calls.push(input);
         return Promise.resolve(Either.ofRight({ loggedOut: true }));
       },
     }) as never,
+    authUserRepository: {} as never,
+    staticClients: [],
+    registrationMode: 'public',
+    adminClientIds: new Set(),
   });
 
   const response = await app.request('/api/auth/logout', { method: 'POST' });
@@ -39,14 +44,22 @@ Deno.test('logout routes the session mutation through AppAuthInbox', async () =>
 
 Deno.test('logout returns the durable AppInbox failure status', async () => {
   const app = new Hono();
-  configRoutes.init(app, {
+  configRoutes.registerConfigRoutes(app, {
     requireApiAuthSession: () => Promise.resolve(SESSION),
-    readAppAuthInbox: () => ({
-      logoutSession: () => Promise.resolve(Either.ofLeft({
-        message: 'Auth logout authority differs',
-        status: 403,
-      })),
+    readEnv: () => undefined,
+    now: () => 2_000,
+    createTokenId: () => 'unused',
+    appAuthInbox: ({
+      logoutSession: () =>
+        Promise.resolve(Either.ofLeft({
+          message: 'Auth logout authority differs',
+          status: 403,
+        })),
     }) as never,
+    authUserRepository: {} as never,
+    staticClients: [],
+    registrationMode: 'public',
+    adminClientIds: new Set(),
   });
 
   const response = await app.request('/api/auth/logout', { method: 'POST' });

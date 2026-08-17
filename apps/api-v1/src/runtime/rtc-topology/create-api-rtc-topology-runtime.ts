@@ -32,20 +32,18 @@ import {
   RtcTopologyReplayEntryHandlerService,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-entry-handler.ts';
 import {
-  RtcTopologyReconnectHydrator,
   type RtcTopologyHydrationIdentity,
+  RtcTopologyReconnectHydrator,
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-reconnect-hydrator.ts';
 import type {
   RuntimeStateOptimisticTransactionalRepositoryLike,
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
-import {
-  startApiRtcTopologyDelivery,
-} from './rtc-topology-delivery-startup.ts';
+import { startApiRtcTopologyDelivery } from './rtc-topology-delivery-startup.ts';
 import type { RtcTopologyReplayMode } from './rtc-topology-replay-config.ts';
 import { startApiRtcTopologyReplay } from './rtc-topology-replay-startup.ts';
 
-interface CreateApiRtcTopologyRuntimeInput {
+export interface CreateApiRtcTopologyRuntimeInput {
   readonly database: PSqlSql;
   readonly runtimeStateRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
   readonly groupsRepository: Pick<GroupStateRepository, 'readSnapshot'>;
@@ -69,9 +67,11 @@ export interface ApiRtcTopologyRuntime {
   readonly readiness: Promise<void>;
   readonly healthFailure: Promise<never>;
   readonly topologyReplay: Readonly<{
-    attach(input: Readonly<{
-      wsQueueBoxServerService: WsQueueBoxServerService;
-    }>): void;
+    attach(
+      input: Readonly<{
+        wsQueueBoxServerService: WsQueueBoxServerService;
+      }>,
+    ): void;
     wake(source: RtcTopologyReplayWakeSource): void;
     readMetrics(): RtcTopologyReplayMetrics;
     resetMetrics(): void;
@@ -110,8 +110,7 @@ export function createApiRtcTopologyRuntime(
     repository: {
       registerStream: (registration) => deliveryRepository.registerStream(registration),
       renewStreamLease: (renewal) => deliveryRepository.renewStreamLease(renewal),
-      compactExpiredEntries: (compaction) =>
-        deliveryRepository.compactExpiredEntries(compaction),
+      compactExpiredEntries: (compaction) => deliveryRepository.compactExpiredEntries(compaction),
       retireExpiredConsumerCursors: (retirement) =>
         replayRepository.retireExpiredConsumerCursors(retirement),
       retireEmptyStreams: (retirement) => replayRepository.retireEmptyStreams(retirement),
@@ -149,8 +148,7 @@ export function createApiRtcTopologyRuntime(
             snapshots: topologySnapshots,
             sender: wsQueueBoxServerService,
           }),
-          hydrateGap: async (signal) =>
-            await reconnectHydrator.hydrateOpenConnections(signal),
+          hydrateGap: async (signal) => await reconnectHydrator.hydrateOpenConnections(signal),
         });
       },
       wake: replay.wake,

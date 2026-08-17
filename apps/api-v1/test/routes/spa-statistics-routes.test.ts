@@ -26,8 +26,7 @@ const AUTH_SESSION: AuthSession = {
 Deno.test('SPA statistics routes require route-local auth for workspace stats', async () => {
   let serviceCalled = false;
   const app = createApp({
-    requireApiAuthSession: () =>
-      Promise.reject(new Error('Unauthorized: Missing bearer token')),
+    requireApiAuthSession: () => Promise.reject(new Error('Unauthorized: Missing bearer token')),
     statistics: {
       readWorkspaceSummary: () => {
         serviceCalled = true;
@@ -179,7 +178,7 @@ function createApp(
 ): Hono {
   const app = new Hono();
   const { statistics, ...routeOptions } = options;
-  spaStatisticsRoutes.init(app, {
+  spaStatisticsRoutes.registerSpaStatisticsRoutes(app, {
     requireApiAuthSession: () => Promise.resolve(AUTH_SESSION),
     statistics: createStatistics(statistics),
     ...routeOptions,

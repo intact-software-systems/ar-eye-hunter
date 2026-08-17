@@ -127,7 +127,7 @@ Deno.test('operator CRDT status defaults disabled and matches configured mutatio
       assert.equal(admin.documents[0]?.rollout, mutation.rollout);
       const productionSource = await Deno.readTextFile(
         new URL(
-          '../../src/create-rallar-server.ts',
+          '../../src/composition/create-default-rallar-server.ts',
           import.meta.url,
         ),
       );
