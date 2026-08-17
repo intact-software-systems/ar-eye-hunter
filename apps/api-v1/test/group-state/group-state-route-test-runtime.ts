@@ -22,6 +22,7 @@ import type {
   GroupStateRouteService,
   ProcessGroupAppInbox,
 } from '../../src/group-state/group-state-route-contracts.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 export const TEST_GROUP_SCOPE: StateScope = {
   applicationId: 'app-1',
@@ -143,18 +144,10 @@ export function createGroupStateRouteSnapshot(
   return {
     stateRevision: 1,
     causalRevision: { groupRevision: 1, presenceRevision: 0 },
-    group: {
+    group: createTestGroup({
       ...TEST_GROUP_SCOPE,
       groupId,
-      slug: null,
       displayName: groupId,
-      description: null,
-      kind: 'room',
-      status: 'active',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: activePrincipalIds.length,
       ownerPrincipalId: activePrincipalIds[0] ?? 'alice',
       snapshotVersion: 1,
@@ -163,12 +156,7 @@ export function createGroupStateRouteSnapshot(
       presenceVersion: 0,
       created: testAuditStamp(1),
       updated: testAuditStamp(1),
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-      archived: null,
-      deleted: null,
-    },
+    }),
     members: activePrincipalIds.map((principalId) =>
       createGroupStateRouteMember(groupId, principalId)
     ),

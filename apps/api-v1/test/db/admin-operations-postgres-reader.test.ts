@@ -15,6 +15,7 @@ import {
 } from '@shared-server/rallar-system/group-state-storage-keys.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 Deno.test('PSqlAdminOperationsStatsReader aggregates admin read statistics', async () => {
   await withPGliteSql(async (sql) => {
@@ -1370,17 +1371,9 @@ function canonicalGroupRuntimeValue(
   overrides: Readonly<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   const identity = decodeGroupStateGroupStorageKey(key);
-  const value: Record<string, unknown> = {
+  const value: Record<string, unknown> = createTestGroup({
     ...identity,
-    slug: null,
     displayName: identity.groupId,
-    description: null,
-    kind: 'room',
-    status: 'active',
-    joinMode: 'open',
-    maxMembers: null,
-    maxSessionsPerMember: null,
-    metadata: {},
     activeMemberCount: 1,
     ownerPrincipalId: 'admin-test-owner',
     snapshotVersion: 1,
@@ -1389,13 +1382,8 @@ function canonicalGroupRuntimeValue(
     presenceVersion: 0,
     created: CANONICAL_AUDIT,
     updated: CANONICAL_AUDIT,
-    archived: null,
-    deleted: null,
-    expiresAtEpochMs: null,
-    emptySinceEpochMs: null,
-    purgeAfterEpochMs: null,
     ...overrides,
-  };
+  });
   if (value.status === 'archived' && !Object.hasOwn(overrides, 'archived')) {
     value.archived = CANONICAL_AUDIT;
   }

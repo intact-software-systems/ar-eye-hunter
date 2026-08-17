@@ -4,6 +4,7 @@ import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-t
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../../src/services/ws-topic-room-authorizer.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 Deno.test('API room authorization reads the current scoped group snapshot', async () => {
   const snapshot = createSnapshot();
@@ -179,19 +180,11 @@ function createSnapshot(): GroupSnapshot {
   return {
     stateRevision: 3,
     causalRevision: { groupRevision: 2, presenceRevision: 1 },
-    group: {
+    group: createTestGroup({
       applicationId: 'app-1',
       workspaceId: 'workspace-1',
       groupId: 'group-1',
-      slug: null,
       displayName: 'Group 1',
-      description: null,
-      kind: 'room',
-      status: 'active',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       snapshotVersion: 2,
       metadataVersion: 1,
       rosterVersion: 1,
@@ -200,12 +193,7 @@ function createSnapshot(): GroupSnapshot {
       ownerPrincipalId: 'alice',
       created: auditStamp(1),
       updated: auditStamp(2),
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-      archived: null,
-      deleted: null,
-    },
+    }),
     members: [{
       applicationId: 'app-1',
       workspaceId: 'workspace-1',

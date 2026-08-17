@@ -35,11 +35,13 @@ export function createTestGroup(overrides: Partial<Group> = {}): Group {
     presenceVersion: 0,
     created: audit,
     updated: audit,
-    archived: null,
-    deleted: null,
+    // Key order is observable: several route tests pin the serialized JSON of a
+    // group built here. Keep new fields last so existing wire order is stable.
     expiresAtEpochMs: null,
     emptySinceEpochMs: null,
     purgeAfterEpochMs: null,
+    archived: null,
+    deleted: null,
     lifecycleState: 'active',
   };
 

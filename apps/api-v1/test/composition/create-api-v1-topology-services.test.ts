@@ -20,6 +20,7 @@ import {
   createApiV1TopologyServices,
   type CreateApiV1TopologyServicesInput,
 } from '../../src/composition/create-api-v1-topology-services.ts';
+import { createTestGroup } from '@shared-test/create-test-group.ts';
 
 const NOW_EPOCH_MS = 4_000_000_000_000;
 
@@ -174,18 +175,11 @@ function createGroupSnapshot(): GroupSnapshot {
   return {
     stateRevision: 1,
     causalRevision: { groupRevision: 1, presenceRevision: 1 },
-    group: {
+    group: createTestGroup({
       applicationId: 'app',
       workspaceId: 'workspace',
       groupId: 'group',
-      slug: null,
       displayName: 'Group',
-      description: null,
-      kind: 'room',
-      joinMode: 'open',
-      maxMembers: null,
-      maxSessionsPerMember: null,
-      metadata: {},
       activeMemberCount: 0,
       ownerPrincipalId: 'owner',
       snapshotVersion: 1,
@@ -194,13 +188,7 @@ function createGroupSnapshot(): GroupSnapshot {
       presenceVersion: 1,
       created: audit,
       updated: audit,
-      expiresAtEpochMs: null,
-      emptySinceEpochMs: null,
-      purgeAfterEpochMs: null,
-      status: 'active',
-      archived: null,
-      deleted: null,
-    },
+    }),
     members: [],
     activeSessions: [],
     memberCount: 0,
