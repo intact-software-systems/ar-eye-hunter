@@ -763,20 +763,20 @@ export function createApiV1RouteInstallers(
 ): ApiV1RouteInstallers;
 ```
 
-- [ ] **Step 1: Write system installer RED tests**
+- [x] **Step 1: Write system installer RED tests**
 
 Prove default-topic reinstall stops and unregisters the prior topic owner; CRDT topics require the
 constructed AppInbox mutation ingress; WebSocket lifecycle registers exactly one stop; enqueue
 translations, retry delays, release facts, and failure timing match the current server suite.
 
-- [ ] **Step 2: Write route installer RED tests**
+- [x] **Step 2: Write route installer RED tests**
 
 Use a Hono app plus complete fake dependencies. Mount the returned WS and REST installers and prove
 the existing representative config, ICE, client, group, graph, statistics, admin, CRDT, Swagger, and
 WebSocket routes are registered. Assert behavior through requests, not source text or a path
 inventory.
 
-- [ ] **Step 3: Run RED, implement installers, and run GREEN**
+- [x] **Step 3: Run RED, implement installers, and run GREEN**
 
 Move system and route wiring from the retiring server file. Keep all service construction outside
 route installer creation. Absorb admin route inventory directly; delete the one-use admin
@@ -785,7 +785,7 @@ observable.
 
 Run new tests, `test/rallar-server.test.ts`, focused route suites, and `deno task check`.
 
-- [ ] **Step 4: Review, commit, push, and update PR #257**
+- [x] **Step 4: Review, commit, push, and update PR #257**
 
 Commit:
 
