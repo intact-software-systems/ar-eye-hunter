@@ -19,8 +19,54 @@ Graphology, `packages/shared-graph`, the shared RTC benchmark package, Markdown.
 **Design:**
 `docs/superpowers/specs/2026-08-16-rtc-topology-service-ownership-refactor-design.md`
 
-**Exact planning base:** `8746c9e035785e4ecd8907f92d984f0a54e4ae69` (`origin/main` on
-2026-08-16).
+**Exact product execution base:** `956a057c9ab51c3060f30e60cae48ade24f5ec5c` (2026-08-16).
+Artifact `20260816-956a057c9ab5-e1-local` is a preserved failed harness diagnostic, not the accepted
+comparative base. After the separately explained runtime-observation harness fix, exact prerequisite
+head `15ff8b402e9985802caa72ca5535abfb96b6b18b` produced accepted same-host pre-topology artifact
+`20260816-15ff8b402e99-e1-local`. Newer `main` did not change the service, direct tests, or selected
+ownership, so the architecture remains current.
+
+## Final correction round
+
+Final whole-branch review at `fa0288d772f540cd80f195d86dc9a81783d1db51` proved compatibility,
+failure-boundary, graph-timing, test-authority, and allocation facts that were not protected by the
+completed slices. This is one bounded final-fix round; it does not reopen the ownership model or
+activate another feature slice.
+
+The correction acceptance is:
+
+- Preserve the baseline subclass dispatch chain exactly: update -> `planGroupTopology` ->
+  `planGroupTopologyAt`; planning and room-graph work dispatch through the public
+  `selectTopology` and `readRttReportingDegreeLimit`; committed observation dispatches through
+  `observeTopologySnapshot`; flush dispatches through claim then update. Table-driven semantic
+  subclass tests assert exact counts, order, and returned results. The committed-observation
+  virtual call is an intentional observable compatibility boundary, not a direct-registry cleanup
+  opportunity.
+- Move topology, queue, and flush request-attempt increments to the lifecycle facade before their
+  session/scope translation boundaries. Remove duplicate increments from planner/scheduler;
+  planners and schedulers continue to own result and duration metrics. Generalized throwing
+  session/scope/clock tests assert the exact error order and counters without flags or callbacks.
+- Make room-graph construction return an explicit discriminated connected or sparse-fallback
+  outcome. Record build duration and fallback count before a same-owner fallback materializer runs,
+  so fallback materialization is excluded and a throwing second graph-scope construction observes
+  build 1, fallback 1, and the already recorded boundary duration.
+- Delete
+  `packages/shared-rtc-bench/tests/architecture/rtc-benchmark-executable-ownership.test.ts`
+  without replacement inventory. Existing executable capability suites, catalog tests, navigation,
+  and package/import boundaries remain the semantic authority.
+- Remove the dead measured-graph `createRttWeightLookup` O(M) preprocessing and helpers. Open issue
+  [#253](https://github.com/intact-software-systems/ar-eye-hunter/issues/253) records the proven
+  weakness and safe acceptance; this branch fixes it but does not close the issue externally.
+
+Execute behavior corrections with strict RED -> GREEN. Amend plan/design before production edits,
+commit the amendment coherently, then commit production/tests and the obsolete inventory deletion
+as coherent non-default-branch changes. Run the full focused topology and integration set,
+shared-server typecheck, shared RTC benchmark check, governance, API Deno check, the unweakened
+medium-scale PostgreSQL gate, style/changed-style/construction/structure/tests/Prettier/diff/legacy
+review, current-main merge-tree compatibility, and terminal clean-head RTC-B03 capture. Inspect the
+remote Release Gate through `npm run pr:delivery -- status`. A deterministic changed-style failure
+invalidates any earlier `keep` assumption and requires a real ownership correction before
+publication; do not add a static exception or a source-inventory test.
 
 ## Global Constraints
 
@@ -34,6 +80,8 @@ Graphology, `packages/shared-graph`, the shared RTC benchmark package, Markdown.
 - Do not implement [#235](https://github.com/intact-software-systems/ar-eye-hunter/issues/235),
   [#237](https://github.com/intact-software-systems/ar-eye-hunter/issues/237), or
   [#240](https://github.com/intact-software-systems/ar-eye-hunter/issues/240) in this work.
+  The #240 implementation is independently present on `main` at `40b9c2b0`; GitHub issue metadata
+  remains open, and tracker closure is external to this branch.
 - A real bug gets a failing semantic test and a separately explained minimal fix. A confirmed
   weakness outside touched-file standards closure reuses or creates a focused GitHub issue before
   delivery.
@@ -74,7 +122,13 @@ validation risk amends this working plan before more production work.
   semantic changed/version/timestamp snapshot materialization.
 - Create:
   `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts` —
-  deterministic star, tree, and mesh fallback next hops.
+  deterministic no-RTT dispatch, star/mesh calculation, and canonical output translation.
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts` —
+  deterministic tree construction and distance state.
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`
+  — decision-dense tree attachment selection over explicit state.
 - Create:
   `packages/shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts` — canonical
   weighted, sparse, complete, and fallback Graphology graph construction.
@@ -178,7 +232,7 @@ git status --short --branch
 
 Expected at plan start:
 
-- `origin/main` is `8746c9e035785e4ecd8907f92d984f0a54e4ae69`;
+- the execution base is `956a057c9ab51c3060f30e60cae48ade24f5ec5c`;
 - the implementation worktree is on `codex/rtc-topology-service-ownership`; and
 - the worktree is clean.
 
@@ -188,29 +242,38 @@ compatibility, or validation assumptions changed. Do not rebase merely for an un
 
 - [ ] **Step 3: Capture the clean base RTC-B03 evidence**
 
-Run from exact base commit `8746c9e035785e4ecd8907f92d984f0a54e4ae69`:
+Current evidence correction: the commands below produced
+`20260816-956a057c9ab5-e1-local`, which is preserved as a failed diagnostic because the then-current
+harness omitted initialized runtime observations from accepted samples. After the separately
+explained harness fix, exact prerequisite head `15ff8b402e9985802caa72ca5535abfb96b6b18b`
+captured, finalized, and validated accepted same-host pre-topology artifact
+`20260816-15ff8b402e99-e1-local`. Task 5 compares its candidate to that accepted artifact; it does
+not reinterpret the diagnostic artifact.
+
+Run from exact base commit `956a057c9ab51c3060f30e60cae48ade24f5ec5c`:
 
 ```bash
 npm run perf:rtc-baseline -- initialize \
-  --baseline-id=20260816-8746c9e03578-e1-local \
+  --baseline-id=20260816-956a057c9ab5-e1-local \
   --workloads=RTC-B03 \
   --environment=E1-local
 
 npm run perf:rtc-baseline -- capture \
-  --baseline-id=20260816-8746c9e03578-e1-local \
+  --baseline-id=20260816-956a057c9ab5-e1-local \
   --workload=RTC-B03
 
-npm run perf:rtc-baseline -- validate \
-  --baseline-id=20260816-8746c9e03578-e1-local
-
 npm run perf:rtc-baseline -- finalize \
-  --baseline-id=20260816-8746c9e03578-e1-local
+  --baseline-id=20260816-956a057c9ab5-e1-local
+
+npm run perf:rtc-baseline -- validate \
+  --baseline-id=20260816-956a057c9ab5-e1-local
 ```
 
-Expected: all commands exit zero; the finalized evidence under `tmp/perf/rtc-baseline` validates
-star, tree, mesh, sparse/complete RTT graph, and inactive-churn cases at 30, 100, and 300 sessions.
-If a command fails, preserve the artifact and classify environment, harness, or baseline behavior
-before editing production.
+Historical expectation: all commands exit zero and the finalized evidence validates star, tree,
+mesh, sparse/complete RTT graph, and inactive-churn cases at 30, 100, and 300 sessions. Actual
+result: capture succeeded, finalization exposed the runtime-observation harness defect, and the
+artifact was preserved for diagnosis. The accepted prerequisite artifact above supplies the same
+semantic workload after that independently tested harness repair.
 
 - [ ] **Step 4: Split the broad test by behavior without changing assertions**
 
@@ -320,6 +383,10 @@ Never run this commit step on `main`.
   `packages/shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts`
 - Create:
   `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts`
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts`
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`
 - Modify: `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`
 - Create/modify: `packages/tests/shared-server/rallar-system/topology/runtime/rtc-topology-metrics.test.ts`
 - Modify: `packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-planning.test.ts`
@@ -371,8 +438,9 @@ Add tests that import the new module paths and assert:
 - `planRallarRtcTopologySnapshot` reuses the exact previous object for semantic equality, advances
   causal source revision without a topology version bump, bumps version/timestamp for an ordered
   next-hop change, and preserves canonical group scope;
-- `computeNoRttTopologyNextHops` returns exact star adjacency, deterministic tree output across
-  shuffled input, and deterministic degree-limited mesh output; and
+- `computeNoRttTopologyNextHops` returns exact star adjacency and deterministic degree-limited mesh
+  output, while `computeNoRttTreeNextHops` returns exact deterministic tree edge sets across
+  shuffled input; and
 - `RtcTopologyMetrics` records each category, returns supplied live map counts, and resets counters
   without changing supplied live counts.
 
@@ -418,16 +486,18 @@ export { planRallarRtcTopologySnapshot } from '../topology/planning/plan-rallar-
 The service itself imports the function from the same owning module for execution. Do not keep a
 wrapper body or second equality implementation.
 
-- [ ] **Step 5: Extract the complete no-RTT algorithm family**
+- [ ] **Step 5: Extract the no-RTT owners without changing output**
 
-Move star, tree, mesh, tree state, nearest choice, distance updates, and canonical output helpers to
-`compute-no-rtt-topology-next-hops.ts`. Convert plain object state contracts to interfaces, replace
-the pass-through `noRttTreeWeight` call with the canonical weight function, and replace every
-four-parameter helper with one domain-named input interface or a state operation that remains
-directly readable.
+Keep the supported dispatcher, star/mesh calculation, and canonical record translation in
+`compute-no-rtt-topology-next-hops.ts`. Move mutable tree construction and distance state to
+`compute-no-rtt-tree-next-hops.ts`. Move parent/nearest attachment selection to
+`update-no-rtt-tree-attachment-selection.ts` with one explicit named input. Keep one canonical
+implementation for every decision; do not add callbacks, wrappers, aliases, or duplicate output
+normalization.
 
-The function must receive already canonical session order. It does not sort, read clocks, mutate
-caller values, record metrics, or call repositories.
+The no-RTT owners receive already canonical session order. They do not read clocks, mutate caller
+values, record metrics, or call repositories; only the stable entry translates edge sets into
+canonically ordered result arrays.
 
 - [ ] **Step 6: Run focused leaf and public integration tests**
 
@@ -457,6 +527,8 @@ npx prettier --check \
   packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts \
   packages/shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts \
   packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts \
+  packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts \
+  packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts \
   packages/shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts
 git diff --check
 ```
@@ -658,7 +730,7 @@ Run:
 npm run check:repo-style -- --root packages/shared-server/rallar-system/topology/planning
 npm run check:repo-style:construction-details -- \
   --root packages/shared-server/rallar-system/services
-npm run check:repo-structure -- --base 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-structure -- --base 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npx prettier --check \
   packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts \
   packages/shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts \
@@ -875,7 +947,7 @@ npm run check:repo-style -- --root packages/shared-server/rallar-system/topology
 npm run check:repo-style -- --root packages/shared-server/rallar-system/topology/planning
 npm run check:repo-style:construction-details -- \
   --root packages/shared-server/rallar-system/services
-npm run check:repo-structure -- --base 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-structure -- --base 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npm run test:repo-structure
 npx prettier --check \
   packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts \
@@ -924,7 +996,9 @@ entry. Add a current RTC topology service section naming:
 - planning result: `planning/plan-rallar-rtc-topology-snapshot.ts`;
 - planner: `planning/rtc-topology-planner.ts`;
 - room graph: `planning/create-rtc-room-graph.ts`;
-- no-RTT calculation: `planning/compute-no-rtt-topology-next-hops.ts`;
+- no-RTT dispatch/star/mesh: `planning/compute-no-rtt-topology-next-hops.ts`;
+- no-RTT tree construction: `planning/compute-no-rtt-tree-next-hops.ts`;
+- no-RTT tree attachment selection: `planning/update-no-rtt-tree-attachment-selection.ts`;
 - snapshot registry: `runtime/rtc-topology-snapshot-registry.ts`;
 - RTT scheduler: `runtime/rtc-topology-rtt-rebuild-scheduler.ts`; and
 - metrics: `runtime/rtc-topology-metrics.ts`.
@@ -1010,19 +1084,19 @@ cursor, replay, reconnect, retention, or cutover behavior changed.
 - [ ] **Step 6: Run complete style, structure, format, and diff validation**
 
 ```bash
-npm run check:repo-style:changed -- 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-style:changed -- 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npm run check:repo-style
-npm run check:repo-structure -- --base 8746c9e035785e4ecd8907f92d984f0a54e4ae69
+npm run check:repo-structure -- --base 956a057c9ab51c3060f30e60cae48ade24f5ec5c
 npm run test:repo-structure
 git diff --name-only --diff-filter=ACMR \
-  8746c9e035785e4ecd8907f92d984f0a54e4ae69..HEAD -- '*.ts' '*.md' \
+  956a057c9ab51c3060f30e60cae48ade24f5ec5c..HEAD -- '*.ts' '*.md' \
   | xargs npx prettier --check
-git diff --check 8746c9e035785e4ecd8907f92d984f0a54e4ae69..HEAD
+git diff --check 956a057c9ab51c3060f30e60cae48ade24f5ec5c..HEAD
 ```
 
-Expected: changed-style, structure tests, Prettier, and diff checks pass. Full style remains
-warning-only globally, but every finding in a changed file is resolved or demonstrated false
-positive. Record every construction-detail finding by path, rule, and symbol with its disposition.
+Expected: changed style, structure tests, Prettier, and diff checks pass. Full style remains
+warning-only globally. Resolve every changed-file finding, and record every construction-detail
+finding by path, rule, and symbol with its disposition.
 
 - [ ] **Step 7: Commit current navigation on the non-default branch**
 
@@ -1053,17 +1127,19 @@ npm run perf:rtc-baseline -- capture \
   --baseline-id="${RTC_TOPOLOGY_CANDIDATE_ID}" \
   --workload=RTC-B03
 
-npm run perf:rtc-baseline -- validate \
+npm run perf:rtc-baseline -- finalize \
   --baseline-id="${RTC_TOPOLOGY_CANDIDATE_ID}"
 
-npm run perf:rtc-baseline -- finalize \
+npm run perf:rtc-baseline -- validate \
   --baseline-id="${RTC_TOPOLOGY_CANDIDATE_ID}"
 ```
 
-Expected: all commands exit zero and every B03 semantic case is accepted. Compare the exact base and
-candidate summaries case by case on the same host. Do not invent a numeric SLO. If timing movement is
-suspicious, repeat both sides or profile before classifying a regression. A deterministic output,
-operation-count, allocation-growth, or obvious algorithmic regression blocks completion.
+Expected: all commands exit zero and every B03 semantic case is accepted. Compare the candidate
+summary case by case on the same host against accepted prerequisite artifact
+`20260816-15ff8b402e99-e1-local`, not the preserved product-base diagnostic. Do not invent a numeric
+SLO. If timing movement is suspicious, repeat both sides or profile before classifying a regression.
+A deterministic output, operation-count, allocation-growth, or obvious algorithmic regression
+blocks completion.
 
 - [ ] **Step 9: Perform the complete code and legacy review**
 
@@ -1093,8 +1169,10 @@ For each finding made during implementation:
 5. reuse an accurate issue or create one with evidence, impact, safe next step, and acceptance; and
 6. include every reused/created issue URL in the final handoff.
 
-At minimum retain these dispositions: #235 open/out of scope, #237 open/out of scope, #240 open/out
-of scope, and #236 ready to close only when every acceptance criterion passes.
+At minimum retain these dispositions: #235 open/out of scope; #237 open/out of scope; #240's
+implementation is present independently on `main` at `40b9c2b0`, while GitHub issue metadata remains
+open and tracker closure is external; and #236 is ready to close only when every acceptance
+criterion passes.
 
 - [ ] **Step 11: Prepare the local completion handoff**
 

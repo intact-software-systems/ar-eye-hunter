@@ -127,11 +127,12 @@ writing.
 
 ## How RTT Affects Topology
 
-`RallarRtcTopologyService` builds overlay topology snapshots for active groups.
-The default active topology degree limit is `5`, configurable through
-`RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT` in API-v1. The RTT reporting limit defaults
-to that effective topology degree unless `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`
-is set.
+`RallarRtcTopologyService` is the supported API used by composition, benchmarks, and RTT topic
+scheduling to build overlay topology snapshots for active groups. `RtcTopologyPlanner` owns kind
+selection and the no-RTT-versus-weighted planning decision; `createRtcRoomGraph` owns weighted
+sparse/complete graph construction. The default active topology degree limit is `5`, configurable
+through `RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT` in API-v1. The RTT reporting limit defaults to that
+effective topology degree unless `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` is set.
 
 For small rooms, the service selects `star` topology. For rooms at or above
 `treeMinSize`, default `5`, it selects `tree`. For rooms at or above
@@ -275,7 +276,17 @@ diagnostics before treating it as a production shape.
 - `packages/shared-server/rallar-system/ws-system-topics.ts`: server topic
   composition and RTC RTT topic registration.
 - `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`:
-  RTT-weighted sparse room graph construction and overlay topology planning.
+  supported topology API and process-lifecycle coordination.
+- `packages/shared-server/rallar-system/topology/planning/rtc-topology-planner.ts`:
+  topology kind and no-RTT-versus-weighted planning decisions.
+- `packages/shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts`:
+  RTT-weighted sparse/complete room graph construction.
+- `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts`:
+  deterministic no-RTT dispatch, star/mesh calculation, and canonical output translation.
+- `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts`:
+  deterministic no-RTT tree construction and distance state.
+- `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`:
+  no-RTT tree parent and nearest-vertex selection policy.
 - `packages/shared-graph/graph/vivaldi.ts`: complete and degree-capped Vivaldi
   predicted graph builders.
 - `packages/shared/api/overlay-topology.ts`: overlay snapshot and per-session

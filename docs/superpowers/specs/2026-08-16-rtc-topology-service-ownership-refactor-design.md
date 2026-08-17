@@ -7,10 +7,64 @@ responsibilities inside `RallarRtcTopologyService` without changing its supporte
 observable topology behavior. This design owns
 [#236](https://github.com/intact-software-systems/ar-eye-hunter/issues/236).
 
-The design is based on clean local `main` and freshly fetched `origin/main` at exact commit
-`8746c9e035785e4ecd8907f92d984f0a54e4ae69` on 2026-08-16. The earlier RTC RTT ownership work is
-already present. This document is architectural guidance, not a live progress ledger, ownership
+The product execution base is exact commit `956a057c9ab51c3060f30e60cae48ade24f5ec5c`
+on 2026-08-16. Its artifact `20260816-956a057c9ab5-e1-local` is a preserved failed harness
+diagnostic: accepted samples lacked the initialized runtime observation, so finalization could not
+accept it as comparative evidence. After the separately explained runtime-observation harness fix,
+exact prerequisite head `15ff8b402e9985802caa72ca5535abfb96b6b18b` produced the accepted same-host
+pre-topology artifact `20260816-15ff8b402e99-e1-local`. Newer `main` changed shared-graph selection
+and independently landed the #240 implementation at `40b9c2b0a865aca46f3b9f2c0a4eb6df1d617e77`,
+but did not change the service, direct tests, or selected ownership, so this architecture remains
+current.
+The earlier RTC RTT ownership work is already present. This document is architectural guidance, not a live progress ledger, ownership
 reservation, completion receipt, or authorization to commit on `main`.
+
+## Final compatibility correction currentness
+
+Final whole-branch review at `fa0288d772f540cd80f195d86dc9a81783d1db51` proved five
+remaining correction boundaries that supersede narrower implementation wording below without
+changing the selected owners:
+
+1. `RallarRtcTopologyService` is a supported subclassable class, and the repository already
+   subclasses `planGroupTopologyAt`. Its baseline public-to-public calls are observable
+   compatibility: update dispatches through `planGroupTopology`, planning through
+   `planGroupTopologyAt`, committed observation through `observeTopologySnapshot`, topology
+   selection through `selectTopology`, RTT degree policy through `readRttReportingDegreeLimit`,
+   and flush through `claimDueRttTopologyUpdate` then `updateGroupTopology`. These virtual calls
+   remain intentional public compatibility boundaries. In particular, committed observation must
+   not bypass the public method for a direct registry call; this one retained public dispatch is
+   not avoidable cognitive indirection.
+2. Public request-attempt metrics belong at the lifecycle-facade entry before session reads or
+   scoped-identity translation can throw. `RtcTopologyPlanner` and
+   `RtcTopologyRttRebuildScheduler` retain result and duration ownership, but no longer duplicate
+   topology, queue, or flush attempt increments.
+3. Sparse room-graph fallback is a two-stage outcome owned by
+   `planning/create-rtc-room-graph.ts`. The graph owner returns a discriminated connected-graph or
+   fallback-materialization outcome; the planner records graph duration and sparse-fallback count
+   from that outcome before the same graph owner materializes fallback nodes and edges. This
+   preserves the baseline error boundary and excludes fallback materialization from the recorded
+   build duration without a callback or duplicate decision.
+4. `packages/shared-rtc-bench/tests/architecture/rtc-benchmark-executable-ownership.test.ts` is
+   deleted. Executable capability tests, catalog behavior, navigation, and package/import
+   boundaries remain authoritative; no replacement path, tree, source-text, or count inventory is
+   introduced.
+5. The measured graph path's `createRttWeightLookup` allocation is proven dead: it allocates
+   bidirectional O(M) map entries only when measurements exist, while its sole read is in the
+   no-measurement branch. [#253](https://github.com/intact-software-systems/ar-eye-hunter/issues/253)
+   records the exact symbol, evidence, impact, and safe acceptance. The helpers and allocation are
+   removed in this branch without changing graph output or closing the issue externally.
+
+The final correction preserves all public, deep-import, package, protocol, and graph-result
+contracts. It adds semantic subclass dispatch, throwing entry-boundary, and fallback timing tests;
+it does not add a compatibility shim, alternate facade, hidden callback, metric flag, or duplicate
+graph decision.
+
+Final Release Gate evidence invalidated the earlier assumption that the no-RTT cognitive-load
+warning could remain as a reviewed `keep`. The changed-style gate rejects every new warning, and
+the score 80 file contains two separable responsibilities: mutable tree construction/distance
+maintenance and attachment-selection policy. The stable no-RTT entry retains star/mesh dispatch
+and canonical output translation; tree construction and attachment selection move to direct
+planning owners. This is an ownership correction, not a static exception or a mechanical split.
 
 ## Current problem
 
@@ -80,6 +134,7 @@ packages/shared-server/rallar-system/
     planning/
       canonical-topology-planning-input.ts
       compute-no-rtt-topology-next-hops.ts
+      compute-no-rtt-tree-next-hops.ts
       create-rtc-room-graph.ts
       evolve-planned-topology.ts
       group-topology-planning-authority.ts
@@ -88,6 +143,7 @@ packages/shared-server/rallar-system/
       plan-rallar-rtc-topology-snapshot.ts
       rtc-topology-planner.ts
       select-group-topology-planning-snapshot.ts
+      update-no-rtt-tree-attachment-selection.ts
       topology-kind-hysteresis.ts
     runtime/
       rtc-topology-metrics.ts
@@ -101,18 +157,20 @@ public symbol set.
 
 ### Responsibility dispositions
 
-| Current responsibility                                              | Judgment | Final owner                                     | Reason                                                                            |
-| ------------------------------------------------------------------- | -------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
-| Public constructor, options, and methods                            | Keep     | `services/rallar-rtc-topology-service.ts`       | This is the supported package and lifecycle boundary.                             |
-| Snapshot materialization and semantic change/version decision       | Move     | `planning/plan-rallar-rtc-topology-snapshot.ts` | Pure deterministic planning result with an existing public function.              |
-| Kind selection, option resolution, incremental/full planning choice | Split    | `planning/rtc-topology-planner.ts`              | One planning capability that composes existing canonical planning owners.         |
-| Weighted/sparse/fallback room graph construction                    | Split    | `planning/create-rtc-room-graph.ts`             | One graph-calculation family with explicit inputs and no process state.           |
-| Star/tree/mesh no-RTT next hops                                     | Split    | `planning/compute-no-rtt-topology-next-hops.ts` | One deterministic fallback-algorithm family shared by the planner and room graph. |
-| Accepted snapshot map and causal conflicts                          | Split    | `runtime/rtc-topology-snapshot-registry.ts`     | One process-local observation lifecycle.                                          |
-| RTT due-time map and debounce decisions                             | Split    | `runtime/rtc-topology-rtt-rebuild-scheduler.ts` | One clock-driven scheduling lifecycle.                                            |
-| Mutable counters and duration observations                          | Move     | `runtime/rtc-topology-metrics.ts`               | Metrics remain non-authoritative and independently resettable.                    |
-| Existing input canonicalization, evolution, and hysteresis modules  | Keep     | Existing files under `topology/planning`        | They already have truthful owners; duplicating them is prohibited.                |
-| Graphology and shared graph algorithms                              | Keep     | `packages/shared-graph`                         | Step 1 consumes them and does not fork or optimize them.                          |
+| Current responsibility                                              | Judgment | Final owner                                           | Reason                                                                    |
+| ------------------------------------------------------------------- | -------- | ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| Public constructor, options, and methods                            | Keep     | `services/rallar-rtc-topology-service.ts`             | This is the supported package and lifecycle boundary.                     |
+| Snapshot materialization and semantic change/version decision       | Move     | `planning/plan-rallar-rtc-topology-snapshot.ts`       | Pure deterministic planning result with an existing public function.      |
+| Kind selection, option resolution, incremental/full planning choice | Split    | `planning/rtc-topology-planner.ts`                    | One planning capability that composes existing canonical planning owners. |
+| Weighted/sparse/fallback room graph construction                    | Split    | `planning/create-rtc-room-graph.ts`                   | One graph-calculation family with explicit inputs and no process state.   |
+| No-RTT dispatch, star/mesh calculation, and output translation      | Split    | `planning/compute-no-rtt-topology-next-hops.ts`       | Stable entry shared by the planner and room graph.                        |
+| No-RTT tree construction and distance state                         | Split    | `planning/compute-no-rtt-tree-next-hops.ts`           | One mutable tree-assembly capability.                                     |
+| No-RTT tree attachment selection                                    | Split    | `planning/update-no-rtt-tree-attachment-selection.ts` | One decision-dense policy over explicit tree state.                       |
+| Accepted snapshot map and causal conflicts                          | Split    | `runtime/rtc-topology-snapshot-registry.ts`           | One process-local observation lifecycle.                                  |
+| RTT due-time map and debounce decisions                             | Split    | `runtime/rtc-topology-rtt-rebuild-scheduler.ts`       | One clock-driven scheduling lifecycle.                                    |
+| Mutable counters and duration observations                          | Move     | `runtime/rtc-topology-metrics.ts`                     | Metrics remain non-authoritative and independently resettable.            |
+| Existing input canonicalization, evolution, and hysteresis modules  | Keep     | Existing files under `topology/planning`              | They already have truthful owners; duplicating them is prohibited.        |
+| Graphology and shared graph algorithms                              | Keep     | `packages/shared-graph`                               | Step 1 consumes them and does not fork or optimize them.                  |
 
 A disposition reopens only if implementation evidence shows that the proposed owner cannot state a
 coherent API without a pass-through layer, a runtime dependency cycle, or changed behavior.
@@ -307,7 +365,9 @@ Current boundaries are:
 - [#237](https://github.com/intact-software-systems/ar-eye-hunter/issues/237) owns API-v1 composition
   density and SQL-boundary normalization and remains untouched;
 - [#240](https://github.com/intact-software-systems/ar-eye-hunter/issues/240) owns RTT refinement
-  decision-expiry cleanup and remains untouched; and
+  decision-expiry cleanup. Its implementation is present independently on `main` at `40b9c2b0`,
+  while GitHub issue metadata remains open; this branch does not implement it and tracker closure
+  is external; and
 - #236 is closed only by the completed, validated ownership refactor described here.
 
 Touched-file standards problems are remediated in this work rather than deferred as issues.
@@ -319,11 +379,14 @@ hypotheses unless code proves the growth shape. The accepted RTC-B03 workload al
 exact affected production symbols across star, tree, mesh, RTT room graph, and inactive churn at
 30, 100, and 300 sessions.
 
-Capture RTC-B03 on exact base `8746c9e035785e4ecd8907f92d984f0a54e4ae69` before implementation
-and on a clean candidate commit after both slices. Use the same host and environment. Require both
-artifacts to pass their semantic validation. Compare distributions without inventing a new numeric
-SLO; repeat or profile a suspicious movement before calling it a regression. Generated evidence
-stays under `tmp/perf/` and is not committed.
+Keep `20260816-956a057c9ab5-e1-local` as the failed diagnostic tied to the product execution base;
+do not relabel it as accepted evidence. Use exact prerequisite head
+`15ff8b402e9985802caa72ca5535abfb96b6b18b` and its accepted same-host pre-topology artifact
+`20260816-15ff8b402e99-e1-local` as the comparative base for the clean candidate captured after both
+slices. The prerequisite and candidate artifacts both run capture → finalize → validate on the same
+host and environment and must pass semantic validation. Compare distributions without inventing a
+new numeric SLO; repeat or profile a suspicious movement before calling it a regression. Generated
+evidence stays under `tmp/perf/` and is not committed.
 
 The implementation must not optimize or change graph output under #235. A verified regression
 caused by the extraction is fixed before completion; an independent pre-existing weakness gets an
@@ -357,7 +420,10 @@ concurrency domain.
 
 Style and structure validation includes changed-file and full warning review, complete dispositions
 for construction findings, repository structure checks, Prettier, `git diff --check`, and a cold
-code-only owner-to-result navigation trace from the supported service export.
+code-only owner-to-result navigation trace from the supported service export. The exact
+changed-style gate must pass with no new warning. Focused cognitive evidence must keep the no-RTT
+entry, tree construction, and attachment-selection owners below the warning threshold while their
+direct semantic tests preserve exact star, tree, and mesh output.
 
 ## Local delivery boundary
 

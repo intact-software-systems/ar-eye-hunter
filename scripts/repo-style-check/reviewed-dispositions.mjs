@@ -39,6 +39,19 @@ export const reviewedDispositions = Object.freeze([
     rule: 'layout.primary-export-name',
     symbol: 'parseRtcBaselineCommand',
   }),
+  // These runtime capability modules intentionally use noun-based filenames:
+  // each contains the cohesive helpers needed to construct that capability,
+  // while the checker sees only the exported factory as the primary symbol.
+  Object.freeze({
+    path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
+    rule: 'layout.primary-export-name',
+    symbol: 'createRtcBaselineDenoAcceptance',
+  }),
+  Object.freeze({
+    path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
+    rule: 'layout.primary-export-name',
+    symbol: 'createRtcBaselineRepeatInitializer',
+  }),
   // RTC RTT persistence decoders own the untrusted persisted-JSON boundary.
   // Each listed owner validates or narrows its unknown input before domain use;
   // keep these exact symbols reviewed while the checker treats all unknown

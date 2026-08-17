@@ -56,6 +56,16 @@ describe('reviewed repository style dispositions', () => {
         symbol: 'parseRtcBaselineCommand',
       },
       {
+        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
+        rule: 'layout.primary-export-name',
+        symbol: 'createRtcBaselineDenoAcceptance',
+      },
+      {
+        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
+        rule: 'layout.primary-export-name',
+        symbol: 'createRtcBaselineRepeatInitializer',
+      },
+      {
         path:
           'packages/shared-server/rallar-system/rtc-topology/persistence/' +
           'rtc-rtt-persistence-validation-primitives.ts',
@@ -138,7 +148,7 @@ describe('reviewed repository style dispositions', () => {
     expect(result.stdout).toContain('PASS: no new repository style findings');
   });
 
-  it('emits checker-owned symbols for every reviewed key', () => {
+  it('emits checker-owned symbols for every reviewed RTC baseline key', () => {
     const findings = scanProductionSources({
       repoRoot,
       sources: reviewedSources(repoRoot),
@@ -167,6 +177,16 @@ describe('reviewed repository style dispositions', () => {
         path: 'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
         ruleId: 'layout.primary-export-name',
         symbol: 'parseRtcBaselineCommand',
+      },
+      {
+        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
+        ruleId: 'layout.primary-export-name',
+        symbol: 'createRtcBaselineDenoAcceptance',
+      },
+      {
+        path: 'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
+        ruleId: 'layout.primary-export-name',
+        symbol: 'createRtcBaselineRepeatInitializer',
       },
     ]);
     expect(findings.find(({ message }) => message.startsWith('... and '))).toMatchObject({
@@ -342,26 +362,37 @@ function reviewedSources(root: string) {
         root,
         'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
       ),
-      raw: 'export function parseRtcBaselineCommand(value: string): string { return value; }\n',
+      raw: primaryExportSource('parseRtcBaselineCommand'),
+    },
+    {
+      file: path.join(
+        root,
+        'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-deno-acceptance.ts',
+      ),
+      raw: primaryExportSource('createRtcBaselineDenoAcceptance'),
+    },
+    {
+      file: path.join(
+        root,
+        'packages/shared-rtc-bench/baseline/runtime/rtc-baseline-repeat-initializer.ts',
+      ),
+      raw: primaryExportSource('createRtcBaselineRepeatInitializer'),
     },
   ];
 }
 
 function writeReviewedSources(fixture: string): void {
-  writeFixture(
-    fixture,
-    'packages/shared-rtc-bench/baseline/contracts/rtc-baseline-decoding.ts',
-    decodingSource('normalizeRtcBaselineJson'),
-  );
-  writeFixture(
-    fixture,
-    'packages/shared-rtc-bench/baseline/command/rtc-baseline-cli-grammar.ts',
-    'export function parseRtcBaselineCommand(value: string): string { return value; }\n',
-  );
+  for (const source of reviewedSources(fixture)) {
+    writeFixture(fixture, path.relative(fixture, source.file), source.raw);
+  }
 }
 
 function decodingSource(symbol: string): string {
   return unknownSource(symbol, 7);
+}
+
+function primaryExportSource(symbol: string): string {
+  return `export function ${symbol}(value: string): string { return value; }\n`;
 }
 
 function unknownSource(symbol: string, localCount: number): string {

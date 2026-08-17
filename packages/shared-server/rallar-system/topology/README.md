@@ -105,6 +105,62 @@ compatibility boundaries remain `packages/shared-server/mod.ts`, the public
 management facade, and the direct one-hop topology command/type exports on
 `AppGroupInboxService`.
 
+## Current RTC topology service owners
+
+`RallarRtcTopologyService` remains the supported package facade and process-lifecycle boundary.
+Planning and graph decisions live under `planning/`; accepted process observations, RTT scheduling,
+and metrics live under `runtime/`.
+
+| Boundary                   | Canonical owner                                                                                                                               | Primary symbol                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Supported facade           | [../services/rallar-rtc-topology-service.ts](../services/rallar-rtc-topology-service.ts#RallarRtcTopologyService)                             | `RallarRtcTopologyService`           |
+| Planning result            | [planning/plan-rallar-rtc-topology-snapshot.ts](planning/plan-rallar-rtc-topology-snapshot.ts#planRallarRtcTopologySnapshot)                  | `planRallarRtcTopologySnapshot`      |
+| Planning selection         | [planning/rtc-topology-planner.ts](planning/rtc-topology-planner.ts#RtcTopologyPlanner)                                                       | `RtcTopologyPlanner`                 |
+| Weighted room graph        | [planning/create-rtc-room-graph.ts](planning/create-rtc-room-graph.ts#createRtcRoomGraph)                                                     | `createRtcRoomGraph`                 |
+| No-RTT dispatch/star/mesh  | [planning/compute-no-rtt-topology-next-hops.ts](planning/compute-no-rtt-topology-next-hops.ts#computeNoRttTopologyNextHops)                   | `computeNoRttTopologyNextHops`       |
+| No-RTT tree construction   | [planning/compute-no-rtt-tree-next-hops.ts](planning/compute-no-rtt-tree-next-hops.ts#computeNoRttTreeNextHops)                               | `computeNoRttTreeNextHops`           |
+| Tree attachment selection  | [planning/update-no-rtt-tree-attachment-selection.ts](planning/update-no-rtt-tree-attachment-selection.ts#updateNoRttTreeAttachmentSelection) | `updateNoRttTreeAttachmentSelection` |
+| Accepted snapshot registry | [runtime/rtc-topology-snapshot-registry.ts](runtime/rtc-topology-snapshot-registry.ts#RtcTopologySnapshotRegistry)                            | `RtcTopologySnapshotRegistry`        |
+| RTT rebuild scheduler      | [runtime/rtc-topology-rtt-rebuild-scheduler.ts](runtime/rtc-topology-rtt-rebuild-scheduler.ts#RtcTopologyRttRebuildScheduler)                 | `RtcTopologyRttRebuildScheduler`     |
+| Topology metrics           | [runtime/rtc-topology-metrics.ts](runtime/rtc-topology-metrics.ts#RtcTopologyMetrics)                                                         | `RtcTopologyMetrics`                 |
+
+### RTC topology service construction
+
+1. API-v1 or `initRallarSystemWsTopics` creates `RallarRtcTopologyService` with the supported
+   options.
+2. The facade creates `RtcTopologyMetrics` and `RtcTopologySnapshotRegistry`.
+3. It creates `RtcTopologyRttRebuildScheduler` with the configured clock, debounce, and metrics.
+4. It creates `RtcTopologyPlanner` with service options, the duration clock, and metrics.
+5. Group-topology management, RTT topic scheduling, work handling, admin metrics, benchmarks, and
+   tests receive the completed facade. No callback can run before these dependencies exist.
+
+### Planning invocation
+
+1. Local reconciliation or durable `APP_OUTBOX` work invokes `GroupTopologyPlanningService`.
+2. That owner reads group, config, RTT, prior snapshot, and clock authority, then calls the supported
+   facade's `planGroupTopologyAt` once.
+3. The facade selects the explicit previous snapshot or the registry observation and calls
+   `RtcTopologyPlanner.plan` once.
+4. The planner canonicalizes sessions and RTT inputs, resolves kind and options, and selects one
+   star, incremental, no-RTT, or weighted path.
+5. The selected planning leaf computes next hops; `planRallarRtcTopologySnapshot` returns the
+   caller-visible changed flag, version, timestamps, previous value, and canonical next-hop arrays.
+6. `GroupTopologyPlanningService` validates next-hop invariants. Existing AppInbox, transaction,
+   retry, persistence, replay, reconnect, and publication owners remain unchanged.
+
+### Local update and RTT scheduling invocation
+
+1. `updateGroupTopology` plans once and observes the returned snapshot through
+   `RtcTopologySnapshotRegistry`.
+2. A committed observation clears pending RTT work for the same overlay after observation succeeds;
+   causal or revision conflicts throw before cleanup.
+3. `queueRttTopologyUpdate` checks registry presence once and asks
+   `RtcTopologyRttRebuildScheduler` for an immediate or debounced due time.
+4. `flushDueRttTopologyUpdate` claims once. A failed claim returns `undefined`; a successful claim
+   invokes the same update path once.
+5. `removeGroupTopology` clears both the pending schedule and snapshot, then records the removal or
+   miss. `resetMetrics` clears counters without clearing either runtime owner.
+
 ## Construction and registration
 
 `create-rallar-server.ts` constructs the repositories, RTC topology service,
