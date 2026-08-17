@@ -163,8 +163,17 @@ RTT repositories; the supported `RallarRtcTopologyService`; refinement gate and 
 management; topology admin metrics; group AppInbox topology installation; and RTT policy-input
 wiring.
 
+The combined planning/replay metrics object remains private to this owner. Its result exposes the
+two direct `readRtcTopologyMetrics` and `resetRtcTopologyMetrics` capabilities required by admin
+composition, avoiding a second metrics owner or an opaque object handoff.
+
 It delegates graph calculation, snapshot planning, runtime delivery, replay, persistence, and RTT
 refinement decisions to their existing canonical shared-server owners.
+
+The current RTT policy-input callback still scans all retained presence sessions for every RTT
+command before reading candidate group and topology snapshots. This refactor preserves that
+behavior; [issue #259](https://github.com/intact-software-systems/ar-eye-hunter/issues/259) owns
+measurement and a bounded lookup design.
 
 ### `create-api-v1-admin-services.ts`
 

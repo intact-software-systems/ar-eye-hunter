@@ -686,6 +686,8 @@ export interface ApiV1TopologyServices {
   readonly rttRefinementGate: RtcRttRefinementGate;
   readonly rttRefinementService: RtcRttRefinementService;
   readonly adminClientIds: readonly string[];
+  readonly readRtcTopologyMetrics: () => object;
+  readonly resetRtcTopologyMetrics: () => void;
 }
 
 export interface ApiV1AdminServices {
@@ -695,23 +697,24 @@ export interface ApiV1AdminServices {
 }
 ```
 
-`createApiV1AdminServices` receives a direct `readWebSocketStatus` function over the already-created
-runtime socket. It never captures a later `RallarServerApplication` and has no empty-status
-fallback.
+The topology owner keeps the existing combined planning/replay metrics object private and exposes
+only its read/reset capabilities to the admin owner. `createApiV1AdminServices` receives those
+capabilities plus a direct `readWebSocketStatus` function over the already-created runtime socket.
+It never captures a later `RallarServerApplication` and has no empty-status fallback.
 
-- [ ] **Step 1: Write topology composition RED tests**
+- [x] **Step 1: Write topology composition RED tests**
 
 Characterize repository identity, topology service/default option identity, management publisher,
 group AppInbox topology installation, RTT policy input selection, and failure propagation. Use the
 existing canonical topology classes; assert no graph or persistence algorithm is duplicated.
 
-- [ ] **Step 2: Write admin composition RED tests**
+- [x] **Step 2: Write admin composition RED tests**
 
 Use a runtime with a mutable connection map. Construct admin services, change connections after
 construction, and assert operations/support/statistics read the current status. Add a throwing
 status reader case and prove the same exception reaches the caller without an empty fallback.
 
-- [ ] **Step 3: Run RED, implement by movement, and run GREEN**
+- [x] **Step 3: Run RED, implement by movement, and run GREEN**
 
 Move the existing topology and admin blocks into their owners. Pass `PSqlSql`, runtime,
 repositories, clock, timing, identity, and configuration as required inputs. Preserve every callback
@@ -719,7 +722,12 @@ body and failure boundary unless a RED characterization proves an existing bug.
 
 Run both new tests, relevant graph/admin route tests, and `deno task check`.
 
-- [ ] **Step 4: Review, commit, push, and update PR #257**
+Execution finding: the moved RTT policy callback performs one full retained-presence scan per RTT
+command and then reads each candidate group/topology snapshot. The ownership refactor preserves
+that behavior; [issue #259](https://github.com/intact-software-systems/ar-eye-hunter/issues/259)
+owns measurement and a bounded lookup design without expanding this slice.
+
+- [x] **Step 4: Review, commit, push, and update PR #257**
 
 Commit:
 

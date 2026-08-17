@@ -15,57 +15,29 @@ import {
   RallarServerSystemFacade,
 } from '@shared-server/rallar-facade/RallarServer.ts';
 import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
-import {
-  RallarRtcTopologyService,
-  type RallarRtcTopologyServiceOptions,
+import type {
+  RallarRtcTopologyServiceOptions,
 } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/\
-AdminOperationsService.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/\
-persistence/group-topology-config-repository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
-GroupStateRepository.ts';
-// prettier-ignore
-import {
-  RtcRttRepository,
-} from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/\
-RtcTopologySnapshotRepository.ts';
-import {
-  GroupTopologyManagementService,
-} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-import {
-  PSqlAdminOperationsStatsReader,
-} from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
-import { AdminSupportService } from '@shared-server/rallar-system/admin-support/\
-AdminSupportService.ts';
-import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/\
-PSqlAdminSupportReader.ts';
-import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync-routing.ts';
 import {
   readGroupGraphDiagnostic,
   readScopedGlobalGraphDiagnostic,
 } from '@shared-graph/graph-diagnostics-service.ts';
-import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
 import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { ApiV1Runtime } from './composition/api-v1-runtime.ts';
+import {
+  createApiV1AdminServices,
+  readApiV1WebSocketStatus,
+} from './composition/create-api-v1-admin-services.ts';
+import { createApiV1TopologyServices } from './composition/create-api-v1-topology-services.ts';
 import { initialiseMiddleware } from './initialise-middleware.ts';
 import {
   getApiRtcTopologyServiceOptions,
   readApiGlobalGraphRecomputeLimit,
   readApiRtcRttRefinementGateConfig,
 } from './services/rtc-topology-config.ts';
-// prettier-ignore
-import {
-  RtcRttRefinementGate,
-} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
-import {
-  RtcRttRefinementService,
-} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.ts';
 import { getApiTimingSink } from './services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from './services/ws-topic-room-authorizer.ts';
 import { createCrdtWsMutationIngress } from './services/create-crdt-ws-mutation-ingress.ts';
-import { createApiAdminMutationGateway } from './services/create-api-admin-mutation-gateway.ts';
 import { readConfiguredCrdtPolicies } from './services/create-api-mutation-inbox-factories.ts';
 import { createRallarAdminRouteInitializers } from './create-rallar-admin-route-initializers.ts';
 import * as configRoutes from './routes/config-route.ts';
@@ -92,13 +64,6 @@ import {
   createRuntimeStateRepository,
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { readAuthorisedClients } from './services/api-login-service.ts';
-import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/\
-SpaStatisticsService.ts';
-import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
-import {
-  createApiRtcTopologyAdminMetrics,
-} from './runtime/rtc-topology/create-api-rtc-topology-admin-metrics.ts';
 import { readAdminClientIds } from './services/read-admin-client-ids.ts';
 import { requireApiAuthSession, requireWsAuthSession } from './services/request-auth-service.ts';
 
@@ -135,171 +100,48 @@ export function createRallarServer(
     getApiRtcTopologyServiceOptions();
   const now = configuredRtcTopologyOptions.now ?? (() => Date.now());
   const timing = getApiTimingSink();
-  const rtcTopologyOptions = {
-    ...configuredRtcTopologyOptions,
-    now,
-  };
-  const rtcTopologyServerDefaults = {
-    ...rtcTopologyOptions,
-    topologyKind: rtcTopologyOptions.topologyKind ?? 'auto' as const,
-  };
-  const rtcTopologyService = new RallarRtcTopologyService(rtcTopologyOptions);
-  const rttRefinementGate = new RtcRttRefinementGate({
-    ...readApiRtcRttRefinementGateConfig(),
-  });
-  const rttRefinementService = new RtcRttRefinementService({
-    gate: rttRefinementGate,
-    nowEpochMs: now,
-    observeRtt: vivaldiService.observeRtt,
-    readPredictedNodeData: vivaldiService.readablePredictedNodeData,
-  });
-  const topologyConfigRepository = new GroupTopologyConfigRepository(
-    runtimeStateRepository,
-  );
-  const groupStateRepository = new GroupStateRepository(runtimeStateRepository);
-  const topologySnapshotRepository = new RtcTopologySnapshotRepository(
-    runtimeStateRepository,
-  );
-  const rttRepository = new RtcRttRepository(runtimeStateRepository, {
-    now: rtcTopologyOptions.now,
-  });
   const adminClientIds = readAdminClientIds();
-  const rtcTopologyAdminMetrics = createApiRtcTopologyAdminMetrics({
-    planning: rtcTopologyService,
-    replay: middleware.rtcTopologyReplay,
-  });
-
-  const topologyManagement = new GroupTopologyManagementService({
-    findGroupSnapshotByRef: (ref, cacheOptions) =>
-      middleware.groupStateService.readSnapshotAtLeast(ref, cacheOptions ?? {}),
-    groupStateRepository,
-    configRepository: topologyConfigRepository,
-    topologyService: rtcTopologyService,
-    topologySnapshotRepository,
-    rttRepository,
-    publisher: (message) => {
-      sendStateSyncMessage(middleware.wsQBoxServerService.socket, message);
-    },
-    serverDefaults: rtcTopologyServerDefaults,
-    now,
-    timing,
+  const topology = createApiV1TopologyServices({
+    runtimeStateRepository,
+    groupStateService: middleware.groupStateService,
+    groupInbox: middleware.appGroupInboxService,
+    groupFormationRttMutation: middleware.groupFormationMetrics.rttMutation,
+    webSocketServer: middleware.wsQBoxServerService.socket,
+    topologyReplayMetrics: middleware.rtcTopologyReplay,
     serviceId: myServerId,
-    adminPrincipalIds: new Set(adminClientIds),
-  });
-  middleware.appGroupInboxService.setTopologyManagementService(
-    topologyManagement,
-  );
-
-  middleware.appGroupInboxService.setRtcRttAppInboxDependencies({
-    repository: rttRepository,
-    formationMetrics: middleware.groupFormationMetrics.rttMutation,
-    readPolicyInputs: async (command) => {
-      const sessionsByGroupKey = new Map<string, {
-        ref: GroupRef;
-        sessionIds: Set<string>;
-      }>();
-
-      for (const session of await groupStateRepository.listAllPresenceSessions()) {
-        if (session.status !== 'active' || session.expiresAtEpochMs <= now()) {
-          continue;
-        }
-        const key = toWebRtcGroupKey(session);
-        const current = sessionsByGroupKey.get(key) ?? {
-          ref: {
-            applicationId: session.applicationId,
-            workspaceId: session.workspaceId,
-            groupId: session.groupId,
-          },
-          sessionIds: new Set<string>(),
-        };
-        current.sessionIds.add(session.sessionId);
-        sessionsByGroupKey.set(key, current);
-      }
-      const groupRefs = [...sessionsByGroupKey.values()]
-        .filter(({ sessionIds }) =>
-          sessionIds.has(command.rtt.sessionIdFrom) &&
-          sessionIds.has(command.rtt.sessionIdTo)
-        )
-        .map(({ ref }) => ref);
-
-      const candidateGroups = (
-        await Promise.all(
-          groupRefs.map((ref) => middleware.groupStateService.readSnapshotAtLeast(ref, {})),
-        )
-      ).filter((snapshot) => snapshot !== undefined);
-      const overlaySnapshotsByGroupKey = new Map();
-      for (const group of candidateGroups) {
-        const snapshot = await topologySnapshotRepository.findSnapshot(
-          group.group,
-        );
-        if (snapshot) {
-          overlaySnapshotsByGroupKey.set(
-            toWebRtcGroupKey(group.group),
-            snapshot,
-          );
-        }
-      }
-      return {
-        candidateGroups,
-        overlaySnapshotsByGroupKey,
-        degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
-      };
-    },
+    adminClientIds,
+    rtcTopologyOptions: configuredRtcTopologyOptions,
+    rttRefinementGateConfig: readApiRtcRttRefinementGateConfig(),
+    nowEpochMs: now,
+    timing,
   });
 
   const databaseConfig = readApiV1DatabaseBackendConfig();
   const databasePubSubConfig = readApiV1DatabasePubSubConfig(Deno.env, databaseConfig);
-  const emptyWsStatus = {
-    transport: 'ws-server' as const,
-    connectionCount: 0,
-    openConnectionCount: 0,
-    connectionIds: [],
-    openConnectionIds: [],
-    connections: [],
-  };
-  if (!middleware.appAdminInboxService || !middleware.appCrdtInboxService) {
+  const appAdminInboxService = middleware.appAdminInboxService;
+  const appCrdtInboxService = middleware.appCrdtInboxService;
+  if (!appAdminInboxService || !appCrdtInboxService) {
     throw new Error('Admin database mutations require AppInbox services');
   }
-
-  const adminOperations: AdminOperationsService = new AdminOperationsService({
-    now,
-    serverId: myServerId,
-    statsReader: new PSqlAdminOperationsStatsReader(database, {
-      now,
-      serverId: myServerId,
-      sqlBackend: databaseConfig.sqlBackend,
-      dbPubSub: databasePubSubConfig.mode,
-    }),
-    wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
-    readRtcTopologyMetrics: rtcTopologyAdminMetrics.read,
-    resetRtcTopologyMetrics: rtcTopologyAdminMetrics.reset,
-    readGroupFormationMetrics: () => middleware.groupFormationMetrics.readMetrics(),
-    resetGroupFormationMetrics: () => middleware.groupFormationMetrics.resetMetrics(),
-    crdtAdminRepository: crdtLogRepository,
-    mutationGateway: createApiAdminMutationGateway({
-      appAdmin: middleware.appAdminInboxService,
-      appCrdt: middleware.appCrdtInboxService,
-      appGroup: middleware.appGroupInboxService,
-      now,
-    }),
+  const admin = createApiV1AdminServices({
+    database,
+    databaseConfig,
+    databasePubSub: databasePubSubConfig,
+    nowEpochMs: now,
+    serviceId: myServerId,
     timing,
-  });
-  const adminSupport: AdminSupportService = new AdminSupportService({
-    now,
-    serverId: myServerId,
-    reader: new PSqlAdminSupportReader(database),
+    readWebSocketStatus: () => readApiV1WebSocketStatus(middleware.wsQBoxServerService.socket),
+    readRtcTopologyMetrics: topology.readRtcTopologyMetrics,
+    resetRtcTopologyMetrics: topology.resetRtcTopologyMetrics,
+    readGroupFormationMetrics: middleware.groupFormationMetrics.readMetrics,
+    resetGroupFormationMetrics: middleware.groupFormationMetrics.resetMetrics,
+    crdtAdminRepository: crdtLogRepository,
+    topologyManagement: topology.topologyManagement,
     clientStateService: middleware.clientStateService,
     groupStateService: middleware.groupStateService,
-    topologyManagement,
-    wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
-    crdtAdminRepository: crdtLogRepository,
-    timing,
-  });
-  const spaStatistics = new SpaStatisticsService({
-    now,
-    clientStateService: middleware.clientStateService,
-    groupStateService: middleware.groupStateService,
-    wsStatus: () => rallarApplication?.ws.status() ?? emptyWsStatus,
+    appAdminInboxService,
+    appCrdtInboxService,
+    appGroupInboxService: middleware.appGroupInboxService,
   });
   let stopSystemTopics: (() => void) | undefined;
 
@@ -325,11 +167,11 @@ export function createRallarServer(
           runtime.wsQBoxServerService,
           {
             initDynamicTopics: false,
-            rtcTopologyService,
-            rtcTopologyOptions,
-            rtcTopologyManagement: topologyManagement,
-            rttRefinementGate,
-            rttRefinementService,
+            rtcTopologyService: topology.rtcTopologyService,
+            rtcTopologyOptions: topology.rtcTopologyOptions,
+            rtcTopologyManagement: topology.topologyManagement,
+            rttRefinementGate: topology.rttRefinementGate,
+            rttRefinementService: topology.rttRefinementService,
             observeGroupSnapshot: async (snapshot) => {
               await runtime.groupStateService.observeSnapshot(snapshot);
             },
@@ -337,10 +179,10 @@ export function createRallarServer(
               await runtime.clientStateService.observeSnapshot(snapshot);
             },
             rtcTopologyRepositories: {
-              topologyConfig: topologyConfigRepository,
-              groupState: groupStateRepository,
-              topologySnapshots: topologySnapshotRepository,
-              rtts: rttRepository,
+              topologyConfig: topology.topologyConfigRepository,
+              groupState: topology.groupStateRepository,
+              topologySnapshots: topology.topologySnapshotRepository,
+              rtts: topology.rttRepository,
             },
             globalGraphRecomputeLimit: readApiGlobalGraphRecomputeLimit(),
             rtcTopologyAppOutbox: {
@@ -444,7 +286,7 @@ export function createRallarServer(
 
         (app) =>
           spaStatisticsRoutes.registerSpaStatisticsRoutes(app, {
-            statistics: spaStatistics,
+            statistics: admin.statistics,
             requireApiAuthSession: (request) =>
               requireApiAuthSession(request, middleware.authSessionRepository),
           }),
@@ -456,7 +298,7 @@ export function createRallarServer(
               readScopedGlobalGraphDiagnostic,
               readGroupGraphDiagnostic,
             },
-            topologyManagement,
+            topologyManagement: topology.topologyManagement,
             processTopologyAppInbox: (authority, enqueue) =>
               graphTopologyRoutes.processTopologyAppInbox(
                 middleware.appGroupInboxService,
@@ -493,14 +335,14 @@ export function createRallarServer(
           },
           operations: {
             adminClientIds,
-            operations: adminOperations,
+            operations: admin.operations,
             now,
             requireApiAuthSession: (request) =>
               requireApiAuthSession(request, middleware.authSessionRepository),
           },
           support: {
             adminClientIds,
-            support: adminSupport,
+            support: admin.support,
             requireApiAuthSession: (request) =>
               requireApiAuthSession(request, middleware.authSessionRepository),
           },
