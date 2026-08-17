@@ -282,7 +282,11 @@ diagnostics before treating it as a production shape.
 - `packages/shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts`:
   RTT-weighted sparse/complete room graph construction.
 - `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts`:
-  deterministic no-RTT star, tree, and mesh next hops.
+  deterministic no-RTT dispatch, star/mesh calculation, and canonical output translation.
+- `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts`:
+  deterministic no-RTT tree construction and distance state.
+- `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`:
+  no-RTT tree parent and nearest-vertex selection policy.
 - `packages/shared-graph/graph/vivaldi.ts`: complete and degree-capped Vivaldi
   predicted graph builders.
 - `packages/shared/api/overlay-topology.ts`: overlay snapshot and per-session

@@ -661,7 +661,11 @@ intentional coordinated-deployment boundary described by this architecture.
 - `packages/shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts`:
   weighted sparse/complete room graph decisions.
 - `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts`:
-  deterministic star, tree, and mesh no-RTT next hops.
+  deterministic no-RTT dispatch, star/mesh calculation, and canonical output translation.
+- `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts`:
+  deterministic no-RTT tree construction and distance state.
+- `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`:
+  no-RTT tree parent and nearest-vertex selection policy.
 - `packages/shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts`:
   caller-visible snapshot change, version, timestamp, and canonical next-hop result.
 - `packages/shared-server/rallar-system/topology/runtime/rtc-topology-snapshot-registry.ts`:

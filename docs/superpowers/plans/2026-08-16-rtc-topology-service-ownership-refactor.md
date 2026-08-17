@@ -64,9 +64,9 @@ as coherent non-default-branch changes. Run the full focused topology and integr
 shared-server typecheck, shared RTC benchmark check, governance, API Deno check, the unweakened
 medium-scale PostgreSQL gate, style/changed-style/construction/structure/tests/Prettier/diff/legacy
 review, current-main merge-tree compatibility, and terminal clean-head RTC-B03 capture. Inspect the
-remote Release Gate through `npm run pr:delivery -- status` and its supported reviewed-disposition
-path; do not push, edit PR state, add an untruthful static exception, or split the cohesive no-RTT
-owner merely to silence the gate.
+remote Release Gate through `npm run pr:delivery -- status`. A deterministic changed-style failure
+invalidates any earlier `keep` assumption and requires a real ownership correction before
+publication; do not add a static exception or a source-inventory test.
 
 ## Global Constraints
 
@@ -122,7 +122,13 @@ validation risk amends this working plan before more production work.
   semantic changed/version/timestamp snapshot materialization.
 - Create:
   `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts` —
-  deterministic star, tree, and mesh fallback next hops.
+  deterministic no-RTT dispatch, star/mesh calculation, and canonical output translation.
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts` —
+  deterministic tree construction and distance state.
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`
+  — decision-dense tree attachment selection over explicit state.
 - Create:
   `packages/shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts` — canonical
   weighted, sparse, complete, and fallback Graphology graph construction.
@@ -377,6 +383,10 @@ Never run this commit step on `main`.
   `packages/shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts`
 - Create:
   `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts`
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts`
+- Create:
+  `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`
 - Modify: `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`
 - Create/modify: `packages/tests/shared-server/rallar-system/topology/runtime/rtc-topology-metrics.test.ts`
 - Modify: `packages/tests/shared-server/rallar-system/topology/planning/rtc-topology-planning.test.ts`
@@ -428,8 +438,9 @@ Add tests that import the new module paths and assert:
 - `planRallarRtcTopologySnapshot` reuses the exact previous object for semantic equality, advances
   causal source revision without a topology version bump, bumps version/timestamp for an ordered
   next-hop change, and preserves canonical group scope;
-- `computeNoRttTopologyNextHops` returns exact star adjacency, deterministic tree output across
-  shuffled input, and deterministic degree-limited mesh output; and
+- `computeNoRttTopologyNextHops` returns exact star adjacency and deterministic degree-limited mesh
+  output, while `computeNoRttTreeNextHops` returns exact deterministic tree edge sets across
+  shuffled input; and
 - `RtcTopologyMetrics` records each category, returns supplied live map counts, and resets counters
   without changing supplied live counts.
 
@@ -475,16 +486,18 @@ export { planRallarRtcTopologySnapshot } from '../topology/planning/plan-rallar-
 The service itself imports the function from the same owning module for execution. Do not keep a
 wrapper body or second equality implementation.
 
-- [ ] **Step 5: Extract the complete no-RTT algorithm family**
+- [ ] **Step 5: Extract the no-RTT owners without changing output**
 
-Move star, tree, mesh, tree state, nearest choice, distance updates, and canonical output helpers to
-`compute-no-rtt-topology-next-hops.ts`. Convert plain object state contracts to interfaces, replace
-the pass-through `noRttTreeWeight` call with the canonical weight function, and replace every
-four-parameter helper with one domain-named input interface or a state operation that remains
-directly readable.
+Keep the supported dispatcher, star/mesh calculation, and canonical record translation in
+`compute-no-rtt-topology-next-hops.ts`. Move mutable tree construction and distance state to
+`compute-no-rtt-tree-next-hops.ts`. Move parent/nearest attachment selection to
+`update-no-rtt-tree-attachment-selection.ts` with one explicit named input. Keep one canonical
+implementation for every decision; do not add callbacks, wrappers, aliases, or duplicate output
+normalization.
 
-The function must receive already canonical session order. It does not sort, read clocks, mutate
-caller values, record metrics, or call repositories.
+The no-RTT owners receive already canonical session order. They do not read clocks, mutate caller
+values, record metrics, or call repositories; only the stable entry translates edge sets into
+canonically ordered result arrays.
 
 - [ ] **Step 6: Run focused leaf and public integration tests**
 
@@ -514,6 +527,8 @@ npx prettier --check \
   packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts \
   packages/shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts \
   packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts \
+  packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts \
+  packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts \
   packages/shared-server/rallar-system/topology/rallar-rtc-topology-metrics.ts
 git diff --check
 ```
@@ -981,7 +996,9 @@ entry. Add a current RTC topology service section naming:
 - planning result: `planning/plan-rallar-rtc-topology-snapshot.ts`;
 - planner: `planning/rtc-topology-planner.ts`;
 - room graph: `planning/create-rtc-room-graph.ts`;
-- no-RTT calculation: `planning/compute-no-rtt-topology-next-hops.ts`;
+- no-RTT dispatch/star/mesh: `planning/compute-no-rtt-topology-next-hops.ts`;
+- no-RTT tree construction: `planning/compute-no-rtt-tree-next-hops.ts`;
+- no-RTT tree attachment selection: `planning/update-no-rtt-tree-attachment-selection.ts`;
 - snapshot registry: `runtime/rtc-topology-snapshot-registry.ts`;
 - RTT scheduler: `runtime/rtc-topology-rtt-rebuild-scheduler.ts`; and
 - metrics: `runtime/rtc-topology-metrics.ts`.
@@ -1077,12 +1094,8 @@ git diff --name-only --diff-filter=ACMR \
 git diff --check 956a057c9ab51c3060f30e60cae48ade24f5ec5c..HEAD
 ```
 
-Expected: structure tests, Prettier, and diff checks pass. Full style remains warning-only globally.
-Changed-style is expected to report the already independently approved cohesive
-`planning/compute-no-rtt-topology-next-hops.ts` warning (cognitive-load score 80; worst function
-score 12). Record it as a reviewed structural `keep` disposition because the file owns one complete
-deterministic algorithm family; do not falsely claim a zero-warning exit or split it mechanically.
-Resolve or demonstrate every other changed-file finding, and record every construction-detail
+Expected: changed style, structure tests, Prettier, and diff checks pass. Full style remains
+warning-only globally. Resolve every changed-file finding, and record every construction-detail
 finding by path, rule, and symbol with its disposition.
 
 - [ ] **Step 7: Commit current navigation on the non-default branch**

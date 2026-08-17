@@ -111,16 +111,18 @@ management facade, and the direct one-hop topology command/type exports on
 Planning and graph decisions live under `planning/`; accepted process observations, RTT scheduling,
 and metrics live under `runtime/`.
 
-| Boundary                   | Canonical owner                                                                                                               | Primary symbol                   |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| Supported facade           | [../services/rallar-rtc-topology-service.ts](../services/rallar-rtc-topology-service.ts#RallarRtcTopologyService)             | `RallarRtcTopologyService`       |
-| Planning result            | [planning/plan-rallar-rtc-topology-snapshot.ts](planning/plan-rallar-rtc-topology-snapshot.ts#planRallarRtcTopologySnapshot)  | `planRallarRtcTopologySnapshot`  |
-| Planning selection         | [planning/rtc-topology-planner.ts](planning/rtc-topology-planner.ts#RtcTopologyPlanner)                                       | `RtcTopologyPlanner`             |
-| Weighted room graph        | [planning/create-rtc-room-graph.ts](planning/create-rtc-room-graph.ts#createRtcRoomGraph)                                     | `createRtcRoomGraph`             |
-| No-RTT calculation         | [planning/compute-no-rtt-topology-next-hops.ts](planning/compute-no-rtt-topology-next-hops.ts#computeNoRttTopologyNextHops)   | `computeNoRttTopologyNextHops`   |
-| Accepted snapshot registry | [runtime/rtc-topology-snapshot-registry.ts](runtime/rtc-topology-snapshot-registry.ts#RtcTopologySnapshotRegistry)            | `RtcTopologySnapshotRegistry`    |
-| RTT rebuild scheduler      | [runtime/rtc-topology-rtt-rebuild-scheduler.ts](runtime/rtc-topology-rtt-rebuild-scheduler.ts#RtcTopologyRttRebuildScheduler) | `RtcTopologyRttRebuildScheduler` |
-| Topology metrics           | [runtime/rtc-topology-metrics.ts](runtime/rtc-topology-metrics.ts#RtcTopologyMetrics)                                         | `RtcTopologyMetrics`             |
+| Boundary                   | Canonical owner                                                                                                                               | Primary symbol                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Supported facade           | [../services/rallar-rtc-topology-service.ts](../services/rallar-rtc-topology-service.ts#RallarRtcTopologyService)                             | `RallarRtcTopologyService`           |
+| Planning result            | [planning/plan-rallar-rtc-topology-snapshot.ts](planning/plan-rallar-rtc-topology-snapshot.ts#planRallarRtcTopologySnapshot)                  | `planRallarRtcTopologySnapshot`      |
+| Planning selection         | [planning/rtc-topology-planner.ts](planning/rtc-topology-planner.ts#RtcTopologyPlanner)                                                       | `RtcTopologyPlanner`                 |
+| Weighted room graph        | [planning/create-rtc-room-graph.ts](planning/create-rtc-room-graph.ts#createRtcRoomGraph)                                                     | `createRtcRoomGraph`                 |
+| No-RTT dispatch/star/mesh  | [planning/compute-no-rtt-topology-next-hops.ts](planning/compute-no-rtt-topology-next-hops.ts#computeNoRttTopologyNextHops)                   | `computeNoRttTopologyNextHops`       |
+| No-RTT tree construction   | [planning/compute-no-rtt-tree-next-hops.ts](planning/compute-no-rtt-tree-next-hops.ts#computeNoRttTreeNextHops)                               | `computeNoRttTreeNextHops`           |
+| Tree attachment selection  | [planning/update-no-rtt-tree-attachment-selection.ts](planning/update-no-rtt-tree-attachment-selection.ts#updateNoRttTreeAttachmentSelection) | `updateNoRttTreeAttachmentSelection` |
+| Accepted snapshot registry | [runtime/rtc-topology-snapshot-registry.ts](runtime/rtc-topology-snapshot-registry.ts#RtcTopologySnapshotRegistry)                            | `RtcTopologySnapshotRegistry`        |
+| RTT rebuild scheduler      | [runtime/rtc-topology-rtt-rebuild-scheduler.ts](runtime/rtc-topology-rtt-rebuild-scheduler.ts#RtcTopologyRttRebuildScheduler)                 | `RtcTopologyRttRebuildScheduler`     |
+| Topology metrics           | [runtime/rtc-topology-metrics.ts](runtime/rtc-topology-metrics.ts#RtcTopologyMetrics)                                                         | `RtcTopologyMetrics`                 |
 
 ### RTC topology service construction
 

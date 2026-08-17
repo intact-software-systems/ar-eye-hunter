@@ -57,10 +57,14 @@ changing the selected owners:
 The final correction preserves all public, deep-import, package, protocol, and graph-result
 contracts. It adds semantic subclass dispatch, throwing entry-boundary, and fallback timing tests;
 it does not add a compatibility shim, alternate facade, hidden callback, metric flag, or duplicate
-graph decision. Remote Release Gate failure is diagnosed through the supported delivery and
-reviewed-disposition path after code correction. The accepted no-RTT cohesion warning remains
-truthful and is neither waived with a new static exception nor silenced by splitting its cohesive
-algorithm family.
+graph decision.
+
+Final Release Gate evidence invalidated the earlier assumption that the no-RTT cognitive-load
+warning could remain as a reviewed `keep`. The changed-style gate rejects every new warning, and
+the score 80 file contains two separable responsibilities: mutable tree construction/distance
+maintenance and attachment-selection policy. The stable no-RTT entry retains star/mesh dispatch
+and canonical output translation; tree construction and attachment selection move to direct
+planning owners. This is an ownership correction, not a static exception or a mechanical split.
 
 ## Current problem
 
@@ -130,6 +134,7 @@ packages/shared-server/rallar-system/
     planning/
       canonical-topology-planning-input.ts
       compute-no-rtt-topology-next-hops.ts
+      compute-no-rtt-tree-next-hops.ts
       create-rtc-room-graph.ts
       evolve-planned-topology.ts
       group-topology-planning-authority.ts
@@ -138,6 +143,7 @@ packages/shared-server/rallar-system/
       plan-rallar-rtc-topology-snapshot.ts
       rtc-topology-planner.ts
       select-group-topology-planning-snapshot.ts
+      update-no-rtt-tree-attachment-selection.ts
       topology-kind-hysteresis.ts
     runtime/
       rtc-topology-metrics.ts
@@ -151,18 +157,20 @@ public symbol set.
 
 ### Responsibility dispositions
 
-| Current responsibility                                              | Judgment | Final owner                                     | Reason                                                                            |
-| ------------------------------------------------------------------- | -------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
-| Public constructor, options, and methods                            | Keep     | `services/rallar-rtc-topology-service.ts`       | This is the supported package and lifecycle boundary.                             |
-| Snapshot materialization and semantic change/version decision       | Move     | `planning/plan-rallar-rtc-topology-snapshot.ts` | Pure deterministic planning result with an existing public function.              |
-| Kind selection, option resolution, incremental/full planning choice | Split    | `planning/rtc-topology-planner.ts`              | One planning capability that composes existing canonical planning owners.         |
-| Weighted/sparse/fallback room graph construction                    | Split    | `planning/create-rtc-room-graph.ts`             | One graph-calculation family with explicit inputs and no process state.           |
-| Star/tree/mesh no-RTT next hops                                     | Split    | `planning/compute-no-rtt-topology-next-hops.ts` | One deterministic fallback-algorithm family shared by the planner and room graph. |
-| Accepted snapshot map and causal conflicts                          | Split    | `runtime/rtc-topology-snapshot-registry.ts`     | One process-local observation lifecycle.                                          |
-| RTT due-time map and debounce decisions                             | Split    | `runtime/rtc-topology-rtt-rebuild-scheduler.ts` | One clock-driven scheduling lifecycle.                                            |
-| Mutable counters and duration observations                          | Move     | `runtime/rtc-topology-metrics.ts`               | Metrics remain non-authoritative and independently resettable.                    |
-| Existing input canonicalization, evolution, and hysteresis modules  | Keep     | Existing files under `topology/planning`        | They already have truthful owners; duplicating them is prohibited.                |
-| Graphology and shared graph algorithms                              | Keep     | `packages/shared-graph`                         | Step 1 consumes them and does not fork or optimize them.                          |
+| Current responsibility                                              | Judgment | Final owner                                           | Reason                                                                    |
+| ------------------------------------------------------------------- | -------- | ----------------------------------------------------- | ------------------------------------------------------------------------- |
+| Public constructor, options, and methods                            | Keep     | `services/rallar-rtc-topology-service.ts`             | This is the supported package and lifecycle boundary.                     |
+| Snapshot materialization and semantic change/version decision       | Move     | `planning/plan-rallar-rtc-topology-snapshot.ts`       | Pure deterministic planning result with an existing public function.      |
+| Kind selection, option resolution, incremental/full planning choice | Split    | `planning/rtc-topology-planner.ts`                    | One planning capability that composes existing canonical planning owners. |
+| Weighted/sparse/fallback room graph construction                    | Split    | `planning/create-rtc-room-graph.ts`                   | One graph-calculation family with explicit inputs and no process state.   |
+| No-RTT dispatch, star/mesh calculation, and output translation      | Split    | `planning/compute-no-rtt-topology-next-hops.ts`       | Stable entry shared by the planner and room graph.                        |
+| No-RTT tree construction and distance state                         | Split    | `planning/compute-no-rtt-tree-next-hops.ts`           | One mutable tree-assembly capability.                                     |
+| No-RTT tree attachment selection                                    | Split    | `planning/update-no-rtt-tree-attachment-selection.ts` | One decision-dense policy over explicit tree state.                       |
+| Accepted snapshot map and causal conflicts                          | Split    | `runtime/rtc-topology-snapshot-registry.ts`           | One process-local observation lifecycle.                                  |
+| RTT due-time map and debounce decisions                             | Split    | `runtime/rtc-topology-rtt-rebuild-scheduler.ts`       | One clock-driven scheduling lifecycle.                                    |
+| Mutable counters and duration observations                          | Move     | `runtime/rtc-topology-metrics.ts`                     | Metrics remain non-authoritative and independently resettable.            |
+| Existing input canonicalization, evolution, and hysteresis modules  | Keep     | Existing files under `topology/planning`              | They already have truthful owners; duplicating them is prohibited.        |
+| Graphology and shared graph algorithms                              | Keep     | `packages/shared-graph`                               | Step 1 consumes them and does not fork or optimize them.                  |
 
 A disposition reopens only if implementation evidence shows that the proposed owner cannot state a
 coherent API without a pass-through layer, a runtime dependency cycle, or changed behavior.
@@ -412,11 +420,10 @@ concurrency domain.
 
 Style and structure validation includes changed-file and full warning review, complete dispositions
 for construction findings, repository structure checks, Prettier, `git diff --check`, and a cold
-code-only owner-to-result navigation trace from the supported service export. The changed-style
-evidence is expected to report the independently approved cohesive
-`planning/compute-no-rtt-topology-next-hops.ts` file warning (cognitive-load score 80; worst function
-score 12). Its reviewed structural disposition is to keep the complete deterministic no-RTT
-algorithm family together; do not claim a zero-warning exit or split it mechanically.
+code-only owner-to-result navigation trace from the supported service export. The exact
+changed-style gate must pass with no new warning. Focused cognitive evidence must keep the no-RTT
+entry, tree construction, and attachment-selection owners below the warning threshold while their
+direct semantic tests preserve exact star, tree, and mesh output.
 
 ## Local delivery boundary
 

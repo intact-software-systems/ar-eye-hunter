@@ -1,9 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { toCanonicalTopologySessionIds } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
-import { computeNoRttTopologyNextHops } from '@shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts';
+// prettier-ignore
+import {
+  RallarRtcTopologyService,
+} from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+// prettier-ignore
+import {
+  toCanonicalTopologySessionIds,
+} from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
+// prettier-ignore
+import {
+  computeNoRttTopologyNextHops,
+} from '@shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts';
+// prettier-ignore
+import {
+  computeNoRttTreeNextHops,
+} from '@shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts';
 
 import {
   createRtcTopologyGroupSnapshot,
@@ -168,6 +181,22 @@ describe('RTC topology planning without RTT measurements', () => {
         degreeLimit: 2,
         meshParamK: 2,
       }),
+    );
+  });
+
+  it('constructs the exact deterministic tree edge sets in the tree owner', () => {
+    expect(
+      computeNoRttTreeNextHops({
+        activeSessionIds: ['peer-1', 'peer-2', 'peer-3', 'peer-4'],
+        degreeLimit: 2,
+      }),
+    ).toEqual(
+      new Map([
+        ['peer-1', new Set(['peer-2', 'peer-4'])],
+        ['peer-2', new Set(['peer-1'])],
+        ['peer-3', new Set(['peer-4'])],
+        ['peer-4', new Set(['peer-1', 'peer-3'])],
+      ]),
     );
   });
 
