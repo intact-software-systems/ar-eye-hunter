@@ -1,3 +1,7 @@
+// prettier-ignore
+import {
+  toNormalizedGroupLifecyclePolicy,
+} from '@shared/api/group-lifecycle/to-normalized-group-lifecycle-policy.ts';
 import {
   DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
   normalizeRallarGroupDirectorHeartbeatTtlMs,
@@ -107,6 +111,9 @@ function toCreateCommand(
       description: request.description ?? null,
       kind: request.kind,
       joinMode: request.joinMode ?? 'invite-only',
+      ...(request.lifecyclePolicy === undefined
+        ? {}
+        : { lifecyclePolicy: toNormalizedGroupLifecyclePolicy(request.lifecyclePolicy) }),
       maxMembers: request.maxMembers ?? null,
       maxSessionsPerMember: request.maxSessionsPerMember ?? null,
       metadata: structuredClone(request.metadata ?? {}),

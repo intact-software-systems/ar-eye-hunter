@@ -1,3 +1,7 @@
+// prettier-ignore
+import {
+  validateGroupLifecyclePolicy,
+} from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import {
   createRallarGroupDirectorAppointment,
   mergeRallarGroupDirectorMetadata,
@@ -69,6 +73,19 @@ export function computeCreate(
       read,
       facts,
       message: `Group already exists: ${command.aggregateRef.groupId}`,
+    });
+  }
+  const policyIssues = command.input.lifecyclePolicy === undefined
+    ? []
+    : validateGroupLifecyclePolicy(command.input.lifecyclePolicy).left ?? [];
+  if (policyIssues.length > 0) {
+    return rejected({
+      command,
+      read,
+      facts,
+      message: `Group lifecycle policy is not coherent: ${
+        policyIssues.map((issue) => `${issue.field} ${issue.code}`).join('; ')
+      }`,
     });
   }
   const audit = auditStamp(command, facts, command.input.createdByPrincipalId);

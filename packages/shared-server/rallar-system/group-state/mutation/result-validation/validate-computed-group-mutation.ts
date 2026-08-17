@@ -92,6 +92,7 @@ function validateWriteOutcomeKeys(value: object): void {
     'receipt',
     'idempotency',
     'outboxEntries',
+    'lifecyclePolicy',
   ];
   assertExactKeys(value, keys, 'Group mutation computed result');
   assertRequiredKeys(value, keys, 'Group mutation computed result');

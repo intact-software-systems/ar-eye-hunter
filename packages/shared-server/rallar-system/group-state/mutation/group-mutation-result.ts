@@ -128,6 +128,8 @@ export function computeGroupMutationWriteResult(
     receipt,
     idempotency: toGroupMutationIdempotency(command, facts, receipt),
     outboxEntries,
+    lifecyclePolicy:
+      command.operation === 'createGroup' ? command.input.lifecyclePolicy ?? null : null,
   };
 }
 

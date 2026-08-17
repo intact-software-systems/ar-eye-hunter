@@ -1090,6 +1090,31 @@
       "description": "Three-server REST point-read convergence with scalar and causal floor/header evidence."
     },
     {
+      "id": "api-v1-group-lifecycle-policy",
+      "recipe": "tests/api-v1/api-v1-group-lifecycle-policy.json",
+      "category": "api-v1-black-box",
+      "mode": "run",
+      "tier": 1,
+      "profiles": [
+        "api-v1-black-box-cluster"
+      ],
+      "expectedExitCode": 0,
+      "artifactName": "api-v1-group-lifecycle-policy",
+      "requires": {
+        "livePreflight": {
+          "timeoutMs": 10000
+        },
+        "httpServices": [
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          }
+        ]
+      },
+      "description": "No-browser API-v1 group create recipe covering the optional lifecyclePolicy request field: a normalized preset with overrides, and a create that omits it."
+    },
+    {
       "id": "api-v1-rtc-topology-convergence",
       "recipe": "tests/api-v1/api-v1-rtc-topology-convergence.json",
       "category": "api-v1-black-box",
