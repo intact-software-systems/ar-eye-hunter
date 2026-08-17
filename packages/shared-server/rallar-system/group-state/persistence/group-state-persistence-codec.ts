@@ -48,6 +48,7 @@ const PERSISTED_GROUP_KEYS = [
   'expiresAtEpochMs',
   'emptySinceEpochMs',
   'purgeAfterEpochMs',
+  'lifecycleState',
 ] as const;
 
 export function normalizePersistedGroup(value: unknown, ref: GroupRef): Group {
@@ -79,6 +80,7 @@ export function normalizePersistedGroup(value: unknown, ref: GroupRef): Group {
     expiresAtEpochMs: persistedOrDefault(legacy, 'expiresAtEpochMs', null),
     emptySinceEpochMs: persistedOrDefault(legacy, 'emptySinceEpochMs', null),
     purgeAfterEpochMs: persistedOrDefault(legacy, 'purgeAfterEpochMs', null),
+    lifecycleState: persistedOrDefault(legacy, 'lifecycleState', 'active'),
   };
   validatePersistedGroup(canonical, ref);
   return canonical;

@@ -1,3 +1,4 @@
+import type { GroupLifecycleState } from './group-lifecycle/group-lifecycle-policy.ts';
 import type { MutationActor } from './mutation-actor.ts';
 
 export type ApplicationId = string;
@@ -74,6 +75,13 @@ type GroupBase =
     expiresAtEpochMs: number | null;
     emptySinceEpochMs: number | null;
     purgeAfterEpochMs: number | null;
+
+    /**
+     * Formation intent, orthogonal to the business `status` below. Authoritative
+     * and policy-driven; the RTC activation projection observes connectivity and
+     * never decides this.
+     */
+    lifecycleState: GroupLifecycleState;
 }>;
 
 export type Group = GroupBase & (

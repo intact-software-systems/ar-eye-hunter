@@ -303,6 +303,7 @@ function createGroupSnapshotGroup(input: CreateGroupSnapshotInput): GroupSnapsho
     expiresAtEpochMs: null,
     emptySinceEpochMs: null,
     purgeAfterEpochMs: null,
+    lifecycleState: 'active',
   };
 }
 

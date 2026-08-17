@@ -222,6 +222,7 @@ function createGroupSnapshotGroup(
     expiresAtEpochMs: null,
     emptySinceEpochMs: null,
     purgeAfterEpochMs: null,
+    lifecycleState: 'active',
   };
 }
 

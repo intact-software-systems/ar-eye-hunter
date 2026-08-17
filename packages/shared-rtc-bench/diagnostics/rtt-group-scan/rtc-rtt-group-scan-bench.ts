@@ -209,6 +209,7 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
       expiresAtEpochMs: null,
       emptySinceEpochMs: null,
       purgeAfterEpochMs: null,
+      lifecycleState: 'active',
     },
     members: memberSessionIds.map((sessionId) => ({
       applicationId,
