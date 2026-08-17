@@ -16,6 +16,10 @@
       "env": "RALLAR_ALICE_PASSWORD",
       "default": "secret",
       "secret": true
+    },
+    "runId": {
+      "env": "RALLAR_BB_RUN_ID",
+      "default": "local"
     }
   },
   "execution": {
