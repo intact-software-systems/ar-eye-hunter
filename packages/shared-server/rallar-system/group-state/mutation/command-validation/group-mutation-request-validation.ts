@@ -165,6 +165,7 @@ const GROUP_MUTATION_REQUEST_KEYS: Readonly<
     'createdByPrincipalId',
     'expiresAtEpochMs',
     'purgeAfterEpochMs',
+    'lifecyclePolicy',
   ],
   updateGroup: [
     ...MUTATION_REQUEST_KEYS,

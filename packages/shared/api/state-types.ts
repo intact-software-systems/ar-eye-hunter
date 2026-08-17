@@ -1,3 +1,4 @@
+import type { GroupLifecyclePolicyInput } from './group-lifecycle/group-lifecycle-policy.ts';
 import type {
     ClientInstanceStatus,
     ClientPlatform,
@@ -94,6 +95,7 @@ export type CreateGroupRequest =
     createdByPrincipalId: string;
     expiresAtEpochMs?: number;
     purgeAfterEpochMs?: number;
+    lifecyclePolicy?: GroupLifecyclePolicyInput;
 }>;
 
 export type UpdateGroupRequest =

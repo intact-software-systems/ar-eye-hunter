@@ -1,3 +1,4 @@
+import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type {
   AuditStamp,
   Group,
@@ -53,6 +54,7 @@ export type GroupMutationCommand =
             createdByPrincipalId: string;
             expiresAtEpochMs: number | null;
             purgeAfterEpochMs: number | null;
+            lifecyclePolicy?: GroupLifecyclePolicy;
           }>;
       }>)
   | (GroupMutationCommandBase &
@@ -309,6 +311,7 @@ export type GroupMutationComputed =
       receipt: GroupMutationReceipt;
       idempotency: GroupMutationIdempotencyRecord | null;
       outboxEntries: readonly ResourceEntry[];
+      lifecyclePolicy: GroupLifecyclePolicy | null;
     }>;
 
 export type GroupMutationComputedWrite = Extract<GroupMutationComputed, { outcome: 'write' }>;

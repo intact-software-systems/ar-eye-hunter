@@ -1,3 +1,7 @@
+// prettier-ignore
+import {
+  GroupLifecyclePolicyRepository,
+} from '../../persistence/group-lifecycle-policy-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import {
@@ -111,6 +115,13 @@ export async function writeGroupMutation(
     await executeGuardedGroupMutationBatch(runtime, materialized.batch);
   } else {
     await executeSequentialGroupMutationWrites(repository, computed);
+  }
+
+  if (computed.lifecyclePolicy !== null) {
+    await new GroupLifecyclePolicyRepository(runtime).writePolicy(
+      computed.receipt.aggregateRef,
+      computed.lifecyclePolicy,
+    );
   }
 
   await repository.appendEvent(computed.event);

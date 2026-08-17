@@ -90,6 +90,9 @@ function validateAggregateOperationInput(
       requireNonEmptyString(input.createdByPrincipalId, 'Group createdByPrincipalId');
       validateNullableInteger(input, 'expiresAtEpochMs', true);
       validateNullableInteger(input, 'purgeAfterEpochMs', true);
+      if (input.lifecyclePolicy !== undefined) {
+        requireRecord(input.lifecyclePolicy, 'Group lifecyclePolicy');
+      }
       return;
     case 'updateGroup':
       validateNullableString(input, 'slug');
@@ -252,6 +255,7 @@ const GROUP_MUTATION_INPUT_KEYS: Readonly<
     'createdByPrincipalId',
     'expiresAtEpochMs',
     'purgeAfterEpochMs',
+    'lifecyclePolicy',
   ],
   updateGroup: [
     ...ACTOR_INPUT_KEYS,

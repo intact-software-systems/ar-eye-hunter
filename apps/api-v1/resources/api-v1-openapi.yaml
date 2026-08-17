@@ -4701,6 +4701,92 @@ components:
         requestId:
           type: string
 
+    GroupLifecyclePolicyInput:
+      type: object
+      description: >-
+        Sparse group lifecycle policy. Omitted fields take the named preset or the
+        server default, which is the optimistic preset. Numeric fields are clamped
+        to server bounds. Combinations that are individually legal but jointly
+        unreachable are rejected with every issue reported.
+      properties:
+        preset:
+          type: string
+          enum: [optimistic, managed, match, drop-in-social]
+        formation:
+          type: string
+          enum: [phased, immediate]
+        manager:
+          type: object
+          properties:
+            selection:
+              type: string
+              enum: [none, creator, assigned, elected-by-rank, elected-random-deterministic]
+            assignedPrincipalIds:
+              type: array
+              items:
+                type: string
+            count:
+              type: integer
+              format: int64
+            succession:
+              type: string
+              enum: [next-by-selection, none]
+        establishment:
+          type: object
+          properties:
+            transports:
+              type: string
+              enum: [rtc-and-ws, ws-only, rtc-preferred]
+            initiator:
+              type: string
+              enum: [manager, any-member, server-auto]
+            maxConcurrentEdgeSetups:
+              type: integer
+              format: int64
+        activation:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [threshold, deadline, manual, threshold-or-deadline]
+            successRate:
+              type: number
+            minimumViableRate:
+              type: number
+              description: >-
+                Floor below which the group does not activate at all. Equal to
+                successRate means all-or-nothing.
+            deadlineMs:
+              type: integer
+              format: int64
+            maxFormationAttempts:
+              type: integer
+              format: int64
+            strictConfirmation:
+              type: boolean
+              description: >-
+                Selects the per-edge confirmation ledger, which is not implemented.
+                Setting it true is rejected.
+        admission:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [open, manager-approval, closed]
+            untilEpochMs:
+              type: integer
+              format: int64
+              nullable: true
+            untilMemberCount:
+              type: integer
+              format: int64
+              nullable: true
+        data:
+          type: object
+          properties:
+            preActivationAppData:
+              type: string
+              enum: [allowed, blocked-until-active]
     CreateGroupRequest:
       type: object
       required: [groupId, displayName, kind]
@@ -4734,6 +4820,8 @@ components:
         purgeAfterEpochMs:
           type: integer
           format: int64
+        lifecyclePolicy:
+          $ref: '#/components/schemas/GroupLifecyclePolicyInput'
         reason:
           type: string
         traceId:
