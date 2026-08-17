@@ -1049,9 +1049,11 @@ git push
 Update PR #257 with final Goal, Changes, Acceptance, exact Validation results, Risk and rollback,
 and Follow-up issue URLs or `None`.
 
-Execution evidence: commit `72af398e89bf2ab9abf12979fdb74711d2bd3787` is pushed to PR
-#257, and the PR body records the final acceptance mapping, exact local validation, baseline-only
-failures, risk/rollback, and issues #259 and #261.
+Execution evidence: navigation commit `72af398e89bf2ab9abf12979fdb74711d2bd3787` and closure
+evidence commits through `f92f9521dff58be2366cc46e076136fca95e1b42` are pushed to PR #257.
+The release-gate correction authenticates all 134 current structure-coupling candidates after the
+topology composition source moved. The PR body records the final acceptance mapping, exact local
+validation, baseline-only failures, risk/rollback, and issues #259 and #261.
 
 - [ ] **Step 8: Request delivery readiness once**
 
